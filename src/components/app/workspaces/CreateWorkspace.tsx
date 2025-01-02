@@ -55,7 +55,7 @@ function CreateWorkspace () {
           </div>
         }
       >
-        {t('workspace.new')}
+        {t('workspace.create')}
       </Button>
       <NormalModal
         title={t('workspace.create')}

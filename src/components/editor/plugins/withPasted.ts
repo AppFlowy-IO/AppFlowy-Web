@@ -69,8 +69,15 @@ export const withPasted = (editor: ReactEditor) => {
         }
       }
 
-      if (lineLength > 1 && html && node.type !== BlockType.CodeBlock) {
-        return insertHtmlData(editor, data);
+      if (lineLength > 1 && node.type !== BlockType.CodeBlock) {
+        if (html) {
+          return insertHtmlData(editor, data);
+        } else {
+          const fragment = lines.map((line) => ({ type: BlockType.Paragraph, children: [{ text: line }] }));
+
+          insertFragment(editor, fragment);
+          return true;
+        }
       }
 
       for (const line of lines) {

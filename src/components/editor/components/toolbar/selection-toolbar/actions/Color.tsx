@@ -21,6 +21,10 @@ function Color () {
   } = useSelectionToolbarContext();
   const editor = useSlateStatic() as YjsEditor;
   const isActivated = CustomEditor.isMarkActive(editor, EditorMarkFormat.BgColor) || CustomEditor.isMarkActive(editor, EditorMarkFormat.FontColor);
+  const marks = CustomEditor.getAllMarks(editor);
+  const activeBgColor = marks.find(mark => mark[EditorMarkFormat.BgColor])?.[EditorMarkFormat.BgColor];
+  const activeFontColor = marks.find(mark => mark[EditorMarkFormat.FontColor])?.[EditorMarkFormat.FontColor];
+
   const [anchorEl, setAnchorEl] = React.useState<HTMLButtonElement | null>(null);
   const open = Boolean(anchorEl);
 
@@ -141,7 +145,8 @@ function Color () {
                 <div
                   className={`w-full h-full absolute top-0 left-0 rounded-[6px] border-2 cursor-pointer opacity-50 hover:opacity-100`}
                   style={{
-                    borderColor: color.color || 'var(--text-title)',
+                    borderColor: activeFontColor === color.color ? 'var(--fill-default)' : undefined,
+                    color: renderColor(color.color) || 'var(--text-title)',
                     opacity: color.color ? undefined : 1,
                   }}
                 />
@@ -169,7 +174,7 @@ function Color () {
                 <div
                   className={`w-full h-full absolute top-0 left-0 rounded-[6px] border-2`}
                   style={{
-                    borderColor: renderColor(color.color),
+                    borderColor: activeBgColor === color.color ? 'var(--fill-default)' : undefined,
                   }}
                 />
                 <div
@@ -184,7 +189,7 @@ function Color () {
         </div>
       </div>
     </div>;
-  }, [editorBgColors, editorTextColors, handlePickedColor, t]);
+  }, [activeBgColor, activeFontColor, editorBgColors, editorTextColors, handlePickedColor, t]);
 
   return (
     <>
