@@ -21,7 +21,7 @@ function PageIcon({
 }) {
 
   const emoji = useMemo(() => {
-    if (view.icon && view.icon.ty === ViewIconType.Emoji) {
+    if (view.icon && view.icon.ty === ViewIconType.Emoji && view.icon.value) {
       return view.icon.value;
     }
 
@@ -33,7 +33,7 @@ function PageIcon({
   }, [emoji]);
 
   const icon = useMemo(() => {
-    if (view.icon && view.icon.ty === ViewIconType.Icon) {
+    if (view.icon && view.icon.ty === ViewIconType.Icon && view.icon.value) {
       const json = JSON.parse(view.icon.value);
       const cleanSvg = DOMPurify.sanitize(json.iconContent.replaceAll('black', renderColor(json.color)).replace('<svg', '<svg width="100%" height="100%"'), {
         USE_PROFILES: { svg: true, svgFilters: true },

@@ -1681,3 +1681,24 @@ export async function cancelSubscription (workspaceId: string, plan: Subscriptio
 
   return Promise.reject(res?.data);
 }
+
+export async function searchWorkspace (workspaceId: string, query: string) {
+  const url = `/api/search/${workspaceId}`;
+  const res = await axiosInstance?.get<{
+    code: number;
+    data: {
+      object_id: string
+    }[];
+    message: string;
+  }>(url, {
+    params: {
+      query,
+    },
+  });
+
+  if (res?.data.code === 0) {
+    return res?.data.data.map(item => item.object_id);
+  }
+
+  return Promise.reject(res?.data);
+}

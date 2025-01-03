@@ -436,7 +436,8 @@
     "gotIt": "Got it",
     "retry": "Retry",
     "uploadFailed": "Upload failed.",
-    "copyLinkOriginal": "Copy link to original"
+    "copyLinkOriginal": "Copy link to original",
+    "search": "Search"
   },
   "label": {
     "welcome": "Welcome!",
@@ -3039,5 +3040,7 @@
   "memberCount_zero": "{{count}} members",
   "memberCount_one": "{{count}} member",
   "memberCount_many": "{{count}} members",
-  "memberCount_other": "{{count}} members"
+  "memberCount_other": "{{count}} members",
+  "aiMatch": "AI match",
+  "titleMatch": "Title match"
 }

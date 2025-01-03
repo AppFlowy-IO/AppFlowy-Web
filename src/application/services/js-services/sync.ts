@@ -29,7 +29,7 @@ export class SyncManager {
   private setupListener () {
     this.doc.on('update', (_update: Uint8Array, origin: CollabOrigin) => {
       if (origin === CollabOrigin.Remote) return;
-
+      console.log('Local changes detected. Sending update...', origin);
       this.debouncedSendUpdate();
     });
   }
@@ -118,6 +118,7 @@ export class SyncManager {
 
   public initialize () {
     if (this.hasUnsyncedChanges) {
+      console.log('Unsynced changes found. Sending update...');
       // Send an update if there are unsynced changes
       this.debouncedSendUpdate();
     }

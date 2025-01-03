@@ -53,6 +53,7 @@ export interface WorkspaceService {
   deleteWorkspace: (workspaceId: string) => Promise<void>;
   getWorkspaceMembers: (workspaceId: string) => Promise<WorkspaceMember[]>;
   inviteMembers: (workspaceId: string, emails: string[]) => Promise<void>;
+  searchWorkspace: (workspaceId: string, searchTerm: string) => Promise<string[]>;
 }
 
 export interface AppService {

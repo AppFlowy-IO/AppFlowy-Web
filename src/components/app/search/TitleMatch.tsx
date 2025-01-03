@@ -1,0 +1,32 @@
+import { filterViews } from '@/components/_shared/outline/utils';
+import { useAppOutline } from '@/components/app/app.hooks';
+import ViewList from '@/components/app/search/ViewList';
+import React, { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
+function TitleMatch ({
+  onClose,
+  searchValue,
+}: {
+  onClose: () => void;
+  searchValue: string;
+}) {
+  const outline = useAppOutline();
+  const { t } = useTranslation();
+
+  const views = useMemo(() => {
+    if (!outline) return [];
+    return filterViews(outline, searchValue);
+  }, [outline, searchValue]);
+
+  return (
+    <ViewList
+      views={views}
+      title={t('commandPalette.bestMatches')}
+      onClose={onClose}
+      loading={false}
+    />
+  );
+}
+
+export default TitleMatch;

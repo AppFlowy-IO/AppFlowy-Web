@@ -568,4 +568,8 @@ export class AFClientService implements AFService {
   deleteQuickNote (workspaceId: string, id: string) {
     return APIService.deleteQuickNote(workspaceId, id);
   }
+
+  searchWorkspace(workspaceId: string, query: string) {
+    return APIService.searchWorkspace(workspaceId, query);
+  }
 }

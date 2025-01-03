@@ -15,6 +15,7 @@ export const getModifier = () => {
 
 export enum HOT_KEY_NAME {
   ENTER = 'enter',
+  TAB = 'tab',
   CLEAR_CACHE = 'clear-cache',
   UP = 'up',
   DOWN = 'down',
@@ -62,6 +63,7 @@ export enum HOT_KEY_NAME {
   TOGGLE_THEME = 'toggle-theme',
   TOGGLE_SIDEBAR = 'toggle-sidebar',
   QUICK_NOTE = 'quick-note',
+  SEARCH = 'search',
 }
 
 const defaultHotKeys = {
@@ -110,6 +112,8 @@ const defaultHotKeys = {
   [HOT_KEY_NAME.MOVE_CURSOR_TO_TOP]: ['mod+up'],
   [HOT_KEY_NAME.ENTER]: ['enter'],
   [HOT_KEY_NAME.QUICK_NOTE]: ['mod+/'],
+  [HOT_KEY_NAME.SEARCH]: ['mod+p'],
+  [HOT_KEY_NAME.TAB]: ['tab'],
 };
 
 const replaceModifier = (hotkey: string) => {

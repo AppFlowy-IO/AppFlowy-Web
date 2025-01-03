@@ -12,7 +12,7 @@ export function applyYDoc(doc: Y.Doc, state: Uint8Array) {
     doc,
     () => {
       try {
-        Y.applyUpdate(doc, state);
+        Y.applyUpdate(doc, state, CollabOrigin.Remote);
       } catch (e) {
         console.error('Error applying', doc, e);
         throw e;
