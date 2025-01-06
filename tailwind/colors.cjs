@@ -1,12 +1,22 @@
 
 /**
 * Do not edit directly
-* Generated on Fri, 03 Jan 2025 08:02:02 GMT
+* Generated on Tue, 07 Jan 2025 10:54:45 GMT
 * Generated from $pnpm css:variables 
 */
 
 
 module.exports = {
+  "bg": {
+    "selection": "var(--bg-selection)",
+    "body": "var(--bg-body)",
+    "base": "var(--bg-base)",
+    "mask": "var(--bg-mask)",
+    "tips": "var(--bg-tips)",
+    "brand": "var(--bg-brand)",
+    "header": "var(--bg-header)",
+    "footer": "var(--bg-footer)"
+  },
   "text": {
     "title": "var(--text-title)",
     "caption": "var(--text-caption)",
@@ -51,15 +61,6 @@ module.exports = {
     "on-fill-hover": "var(--content-on-fill-hover)",
     "on-fill": "var(--content-on-fill)",
     "on-tag": "var(--content-on-tag)"
-  },
-  "bg": {
-    "body": "var(--bg-body)",
-    "base": "var(--bg-base)",
-    "mask": "var(--bg-mask)",
-    "tips": "var(--bg-tips)",
-    "brand": "var(--bg-brand)",
-    "header": "var(--bg-header)",
-    "footer": "var(--bg-footer)"
   },
   "function": {
     "error": "var(--function-error)",

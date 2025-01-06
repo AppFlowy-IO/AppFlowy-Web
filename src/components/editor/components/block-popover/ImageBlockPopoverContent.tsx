@@ -12,7 +12,7 @@ import { FileHandler } from '@/utils/file';
 import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 
-function ImageBlockPopoverContent({
+function ImageBlockPopoverContent ({
   blockId,
   onClose,
 }: {
@@ -143,7 +143,7 @@ function ImageBlockPopoverContent({
       {
         key: 'unsplash',
         label: t('pageStyle.unsplash'),
-        panel: <Unsplash onDone={handleUpdateLink}/>,
+        panel: <Unsplash onDone={handleUpdateLink} />,
       },
     ];
   }, [entry, handleChangeUploadFiles, handleUpdateLink, t]);

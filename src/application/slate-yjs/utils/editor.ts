@@ -51,7 +51,7 @@ import {
   updateBlockParent,
 } from '@/application/slate-yjs/utils/yjs';
 
-export function ensureBlockText(editor: YjsEditor) {
+export function ensureBlockText (editor: YjsEditor) {
   const { selection } = editor;
 
   if (!selection) {
@@ -98,7 +98,7 @@ export function ensureBlockText(editor: YjsEditor) {
   });
 }
 
-export function handleCollapsedBreakWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, at: BaseRange) {
+export function handleCollapsedBreakWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, at: BaseRange) {
   const { startBlock, startOffset } = getBreakInfo(editor, sharedRoot, at);
   const [blockNode, path] = startBlock;
   const blockId = blockNode.blockId as string;
@@ -164,7 +164,7 @@ export function handleCollapsedBreakWithTxn(editor: YjsEditor, sharedRoot: YShar
 
 }
 
-export function removeRangeWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, range: Range) {
+export function removeRangeWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, range: Range) {
   const { startBlock, endBlock, middleBlocks, startRange, endRange } = getAffectedBlocks(editor, range);
   const operations: (() => void)[] = [];
   const isSameBlock = startBlock[0].blockId === endBlock[0].blockId;
@@ -186,7 +186,7 @@ export function removeRangeWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, r
 
 }
 
-export function handleRangeBreak(editor: YjsEditor, sharedRoot: YSharedRoot, range: Range) {
+export function handleRangeBreak (editor: YjsEditor, sharedRoot: YSharedRoot, range: Range) {
   removeRangeWithTxn(editor, sharedRoot, range);
 
   const selection = editor.selection;
@@ -196,7 +196,7 @@ export function handleRangeBreak(editor: YjsEditor, sharedRoot: YSharedRoot, ran
   handleCollapsedBreakWithTxn(editor, sharedRoot, selection);
 }
 
-function moveToNextLine(editor: Editor, block: YBlock, at: BaseRange, blockId: string) {
+function moveToNextLine (editor: Editor, block: YBlock, at: BaseRange, blockId: string) {
   const { selection } = editor;
 
   if (!selection) return;
@@ -232,7 +232,7 @@ function moveToNextLine(editor: Editor, block: YBlock, at: BaseRange, blockId: s
   Transforms.move(editor, { distance: 1, unit: 'line' });
 }
 
-export function getNextSiblingBlockPath(editor: Editor, blockId: string) {
+export function getNextSiblingBlockPath (editor: Editor, blockId: string) {
   const [blockSlateNode] = editor.nodes({
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId === blockId,
   });
@@ -253,7 +253,7 @@ export function getNextSiblingBlockPath(editor: Editor, blockId: string) {
   return nextPath;
 }
 
-export function getBlockTextRange(editor: YjsEditor, entry: NodeEntry<Element>) {
+export function getBlockTextRange (editor: YjsEditor, entry: NodeEntry<Element>) {
   const [node, path] = entry;
   const textId = TEXT_BLOCK_TYPES.includes(node.type as BlockType) ? (node.children[0] as Element)?.textId : null;
 
@@ -266,7 +266,7 @@ export function getBlockTextRange(editor: YjsEditor, entry: NodeEntry<Element>) 
   return [start, Editor.end(editor, [...path, 0])];
 }
 
-export function getAffectedBlocks(editor: YjsEditor, range: Range): {
+export function getAffectedBlocks (editor: YjsEditor, range: Range): {
   startBlock: NodeEntry<Element>;
   endBlock: NodeEntry<Element>;
   middleBlocks: NodeEntry<Element>[];
@@ -318,11 +318,11 @@ export function getAffectedBlocks(editor: YjsEditor, range: Range): {
   return { startBlock, endBlock, middleBlocks, startRange, endRange };
 }
 
-function getTextIdFromSlateNode(node: Element) {
+function getTextIdFromSlateNode (node: Element) {
   return node.textId ?? (node.children[0] as Element).textId;
 }
 
-export function deleteSlateRangeInBlock(sharedRoot: YSharedRoot, editor: Editor, block: Element, range: BaseRange) {
+export function deleteSlateRangeInBlock (sharedRoot: YSharedRoot, editor: Editor, block: Element, range: BaseRange) {
   const [start, end] = Editor.edges(editor, range);
 
   const relativeOffset = slatePointToRelativePosition(sharedRoot, editor, start);
@@ -337,7 +337,7 @@ export function deleteSlateRangeInBlock(sharedRoot: YSharedRoot, editor: Editor,
   deleteRangeInBlock(sharedRoot, block, startPos.index, endPos.index);
 }
 
-export function deleteRangeInBlock(
+export function deleteRangeInBlock (
   sharedRoot: YSharedRoot,
   block: Element,
   start: number,
@@ -352,7 +352,7 @@ export function deleteRangeInBlock(
   }
 }
 
-export function mergeBlocks(
+export function mergeBlocks (
   sharedRoot: YSharedRoot,
   sourceBlock: Element,
   targetBlock: Element,
@@ -371,7 +371,7 @@ export function mergeBlocks(
 
   sourceOps.forEach((op) => {
     if (op.insert && typeof op.insert === 'string') {
-      targetYText.insert(targetYText.length, op.insert);
+      targetYText.insert(targetYText.length, op.insert, op.attributes);
     }
   });
 
@@ -382,7 +382,7 @@ export function mergeBlocks(
   deleteBlock(sharedRoot, sourceBlock.blockId as string);
 }
 
-export function getBreakInfo(editor: YjsEditor, sharedRoot: YSharedRoot, at: BaseRange) {
+export function getBreakInfo (editor: YjsEditor, sharedRoot: YSharedRoot, at: BaseRange) {
   const startPoint = Editor.start(editor, at);
   const doc = assertDocExists(sharedRoot);
 
@@ -425,7 +425,7 @@ export function getBreakInfo(editor: YjsEditor, sharedRoot: YSharedRoot, at: Bas
   return { startBlock, startOffset };
 }
 
-export function isAtBlockStart(editor: Editor, point: Point) {
+export function isAtBlockStart (editor: Editor, point: Point) {
   const entry = Editor.above(editor, {
     at: point,
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.textId !== undefined,
@@ -439,7 +439,7 @@ export function isAtBlockStart(editor: Editor, point: Point) {
   return Point.equals(point, start);
 }
 
-export function isAtBlockEnd(editor: Editor, point: Point) {
+export function isAtBlockEnd (editor: Editor, point: Point) {
   const entry = Editor.above(editor, {
     at: point,
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.textId !== undefined,
@@ -453,7 +453,7 @@ export function isAtBlockEnd(editor: Editor, point: Point) {
   return Point.equals(point, end);
 }
 
-export function getSharedRoot(editor: YjsEditor) {
+export function getSharedRoot (editor: YjsEditor) {
   if (!editor.sharedRoot || !editor.sharedRoot.doc) {
     throw new Error('Shared root not found');
   }
@@ -461,7 +461,7 @@ export function getSharedRoot(editor: YjsEditor) {
   return editor.sharedRoot;
 }
 
-export function getSelectionOrThrow(editor: YjsEditor, at?: BaseRange) {
+export function getSelectionOrThrow (editor: YjsEditor, at?: BaseRange) {
   const newAt = at || editor.selection;
 
   if (!newAt) {
@@ -471,7 +471,7 @@ export function getSelectionOrThrow(editor: YjsEditor, at?: BaseRange) {
   return newAt;
 }
 
-export function getBlockEntry(editor: YjsEditor, point?: Point) {
+export function getBlockEntry (editor: YjsEditor, point?: Point) {
   const { selection } = editor;
   const at = point || (selection ? Editor.start(editor, selection) : null);
 
@@ -491,7 +491,7 @@ export function getBlockEntry(editor: YjsEditor, point?: Point) {
   return blockEntry as NodeEntry<Element>;
 }
 
-export function handleNonParagraphBlockBackspaceAndEnterWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: BasePoint) {
+export function handleNonParagraphBlockBackspaceAndEnterWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: BasePoint) {
   const data = dataStringTOJson(block.get(YjsEditorKey.block_data));
   const blockType = block.get(YjsEditorKey.block_type);
 
@@ -515,7 +515,7 @@ export function handleNonParagraphBlockBackspaceAndEnterWithTxn(editor: YjsEdito
   executeOperations(sharedRoot, operations, 'turnToBlock');
 }
 
-export function handleLiftBlockOnBackspaceAndEnterWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: Point) {
+export function handleLiftBlockOnBackspaceAndEnterWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: Point) {
   const operations: (() => void)[] = [];
   const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
   const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
@@ -551,7 +551,7 @@ export function handleLiftBlockOnBackspaceAndEnterWithTxn(editor: YjsEditor, sha
   return false;
 }
 
-export function handleMergeBlockBackwardWithTxn(editor: YjsEditor, node: Element, point: Point) {
+export function handleMergeBlockBackwardWithTxn (editor: YjsEditor, node: Element, point: Point) {
   const operations: (() => void)[] = [];
   const sharedRoot = getSharedRoot(editor);
 
@@ -599,7 +599,7 @@ export function handleMergeBlockBackwardWithTxn(editor: YjsEditor, node: Element
   executeOperations(sharedRoot, operations, 'deleteBlockBackward');
 }
 
-export function handleMergeBlockForwardWithTxn(editor: YjsEditor, node: Element, point: Point) {
+export function handleMergeBlockForwardWithTxn (editor: YjsEditor, node: Element, point: Point) {
   const operations: (() => void)[] = [];
   const sharedRoot = getSharedRoot(editor);
 
@@ -632,7 +632,7 @@ export function handleMergeBlockForwardWithTxn(editor: YjsEditor, node: Element,
   executeOperations(sharedRoot, operations, 'deleteBlockForward');
 }
 
-export function preventIndentNode(editor: YjsEditor, blockId: string) {
+export function preventIndentNode (editor: YjsEditor, blockId: string) {
   const sharedRoot = getSharedRoot(editor);
   const block = getBlock(blockId, sharedRoot);
   const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
@@ -659,7 +659,7 @@ export function preventIndentNode(editor: YjsEditor, blockId: string) {
   return false;
 }
 
-export function findSlateEntryByBlockId(editor: Editor, blockId: string) {
+export function findSlateEntryByBlockId (editor: Editor, blockId: string) {
   const [node] = Editor.nodes(editor, {
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId === blockId,
     at: [],
@@ -670,7 +670,7 @@ export function findSlateEntryByBlockId(editor: Editor, blockId: string) {
   return node as NodeEntry<Element>;
 }
 
-export function beforePasted(editor: ReactEditor) {
+export function beforePasted (editor: ReactEditor) {
   const { selection } = editor;
 
   if (!selection) {
@@ -688,7 +688,7 @@ export function beforePasted(editor: ReactEditor) {
   return true;
 }
 
-export function getSelectedPaths(editor: ReactEditor) {
+export function getSelectedPaths (editor: ReactEditor) {
   const { selection } = editor;
 
   if (!selection) {
@@ -756,7 +756,7 @@ export function getSelectedPaths(editor: ReactEditor) {
   return blockEntries.map(([, path]) => path);
 }
 
-export function filterValidNodes(editor: ReactEditor, selectedPaths: Path[]): [
+export function filterValidNodes (editor: ReactEditor, selectedPaths: Path[]): [
   Element,
   Path,
 ][] {
@@ -781,7 +781,7 @@ export function filterValidNodes(editor: ReactEditor, selectedPaths: Path[]): [
   });
 }
 
-export function sortNodesByDepth(editor: Editor, selectedPaths: Path[]) {
+export function sortNodesByDepth (editor: Editor, selectedPaths: Path[]) {
   const pathsWithDepth = selectedPaths.map(path => ({
     path,
     depth: path.length,
@@ -799,7 +799,7 @@ export function sortNodesByDepth(editor: Editor, selectedPaths: Path[]) {
   });
 }
 
-export function preventLiftNode(editor: YjsEditor, blockId: string) {
+export function preventLiftNode (editor: YjsEditor, blockId: string) {
   const [, path] = findSlateEntryByBlockId(editor, blockId);
   const level = path.length;
 
@@ -810,7 +810,7 @@ export function preventLiftNode(editor: YjsEditor, blockId: string) {
   return false;
 }
 
-export function liftEditorNode(editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: Point) {
+export function liftEditorNode (editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: Point) {
   if (preventLiftNode(editor, block.get(YjsEditorKey.block_id))) {
     return;
   }
@@ -831,7 +831,7 @@ export function liftEditorNode(editor: YjsEditor, sharedRoot: YSharedRoot, block
 
 }
 
-export function isEntireDocumentSelected(editor: YjsEditor) {
+export function isEntireDocumentSelected (editor: YjsEditor) {
   const selection = getSelectionOrThrow(editor);
   const [start, end] = Editor.edges(editor, selection);
   const startEdge = Editor.start(editor, []);
@@ -840,7 +840,7 @@ export function isEntireDocumentSelected(editor: YjsEditor) {
   return Point.equals(start, startEdge) && Point.equals(end, endEdge);
 }
 
-export function handleDeleteEntireDocumentWithTxn(editor: YjsEditor) {
+export function handleDeleteEntireDocumentWithTxn (editor: YjsEditor) {
   const sharedRoot = getSharedRoot(editor);
   const operations = [() => {
     editor.deselect();
@@ -861,7 +861,7 @@ export function handleDeleteEntireDocumentWithTxn(editor: YjsEditor) {
   Transforms.select(editor, Editor.start(editor, [0]));
 }
 
-export function getNodeAtPath(children: Descendant[], path: Path): Descendant | null {
+export function getNodeAtPath (children: Descendant[], path: Path): Descendant | null {
   let currentNode: Descendant | null = null;
   let currentChildren = children;
 
@@ -887,7 +887,7 @@ export function getNodeAtPath(children: Descendant[], path: Path): Descendant | 
   return currentNode;
 }
 
-export function getSelectionTexts(editor: ReactEditor) {
+export function getSelectionTexts (editor: ReactEditor) {
   const selection = editor.selection;
 
   if (!selection) return [];
@@ -921,7 +921,7 @@ export function getSelectionTexts(editor: ReactEditor) {
   return texts;
 }
 
-export function getOffsetPointFromSlateRange(editor: YjsEditor, point: BasePoint): { offset: number; textId: string } {
+export function getOffsetPointFromSlateRange (editor: YjsEditor, point: BasePoint): { offset: number; textId: string } {
 
   const [node] = editor.nodes({
     at: point,
@@ -940,7 +940,7 @@ export function getOffsetPointFromSlateRange(editor: YjsEditor, point: BasePoint
   };
 }
 
-export function getSlatePointFromOffset(editor: YjsEditor, range: { offset: number; textId: string }): BasePoint {
+export function getSlatePointFromOffset (editor: YjsEditor, range: { offset: number; textId: string }): BasePoint {
   const [node] = editor.nodes({
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.textId === range.textId,
   });
@@ -956,7 +956,7 @@ export function getSlatePointFromOffset(editor: YjsEditor, range: { offset: numb
   return start;
 }
 
-export function addBlock(editor: YjsEditor, {
+export function addBlock (editor: YjsEditor, {
   ty,
   data,
 }: {

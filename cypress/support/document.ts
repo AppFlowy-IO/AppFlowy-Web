@@ -6,7 +6,7 @@ import * as Y from 'yjs';
 export interface FromBlockJSON {
   type: string;
   children: FromBlockJSON[];
-  data: Record<string, number | string | boolean>;
+  data: Record<string, number | string | boolean | null>;
   text: Op[];
 }
 

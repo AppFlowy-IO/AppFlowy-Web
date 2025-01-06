@@ -5,12 +5,12 @@ import { useTranslation } from 'react-i18next';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
-import { Subscription, SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
+import { SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
 import { useAppHandlers } from '@/components/app/app.hooks';
 import { ReactComponent as TipIcon } from '@/assets/warning.svg';
 import { useSearchParams } from 'react-router-dom';
 
-function InviteMember({ workspace, onClick }: {
+function InviteMember ({ workspace, onClick }: {
   workspace: Workspace;
   onClick?: () => void;
 }) {
@@ -40,33 +40,40 @@ function InviteMember({ workspace, onClick }: {
     }
   }, [currentWorkspaceId, service]);
 
-  const [activeSubscription, setActiveSubscription] = React.useState<Subscription | null>(null);
+  const [activeSubscriptionPlan, setActiveSubscriptionPaln] = React.useState<SubscriptionPlan | null>(null);
 
   const loadSubscription = useCallback(async () => {
     try {
       const subscriptions = await getSubscriptions?.();
 
-      if (!subscriptions || subscriptions.length === 0) return;
+      if (!subscriptions || subscriptions.length === 0) {
+        setActiveSubscriptionPaln(SubscriptionPlan.Free);
+
+        return;
+      }
+
       const subscription = subscriptions[0];
 
-      setActiveSubscription(subscription);
+      setActiveSubscriptionPaln(subscription?.plan || SubscriptionPlan.Free);
     } catch (e) {
+      setActiveSubscriptionPaln(SubscriptionPlan.Free);
       console.error(e);
     }
   }, [getSubscriptions]);
 
   const isExceed = useMemo(() => {
 
-    if (!activeSubscription || activeSubscription.plan === SubscriptionPlan.Free) {
+    if (activeSubscriptionPlan === null) return false;
+    if (activeSubscriptionPlan === SubscriptionPlan.Free) {
       return memberCount >= 2;
     }
 
-    if (activeSubscription.plan === SubscriptionPlan.Pro) {
+    if (activeSubscriptionPlan === SubscriptionPlan.Pro) {
       return memberCount >= 10;
     }
 
     return false;
-  }, [activeSubscription, memberCount]);
+  }, [activeSubscriptionPlan, memberCount]);
 
   const handleOk = async () => {
     if (!service || !currentWorkspaceId) return;
@@ -121,11 +128,11 @@ function InviteMember({ workspace, onClick }: {
           setOpen(true);
           onClick?.();
         }}
-        startIcon={<AddUserIcon/>}
+        startIcon={<AddUserIcon />}
       >{t('settings.appearance.members.inviteMembers')}
       </Button>
       <NormalModal
-        classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[10%] ' }}
+        classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[10%] ', paper: 'w-[500px]' }}
         open={open}
         okLoading={loading}
         okButtonProps={{
@@ -139,18 +146,28 @@ function InviteMember({ workspace, onClick }: {
           {t('inviteMember.requestInviteMembers')}
         </div>}
         okText={t('inviteMember.requestInvites')}
-        onOk={handleOk}>
-        {isExceed && <div className={'text-text-caption gap-1 items-center w-[460px] flex mb-8'}>
-          <TipIcon className={'w-4 h-4 text-function-warning'}/>
+        onOk={handleOk}
+      >
+        <div
+          style={{
+            display: isExceed ? 'flex' : 'none',
+          }}
+          className={'text-text-caption overflow-hidden flex-wrap w-full gap-1 items-center flex mb-8'}
+        >
+          <TipIcon className={'w-4 h-4 text-function-warning'} />
           {t('inviteMember.inviteFailedMemberLimit')}
           <span
             onClick={handleUpgrade}
-            className={'hover:underline cursor-pointer text-fill-default'}>{t('inviteMember.upgrade')}</span>
-        </div>}
+            className={'hover:underline cursor-pointer text-fill-default'}
+          >{t('inviteMember.upgrade')}</span>
+        </div>
         <div className={'text-text-caption text-xs mb-1'}>{t('inviteMember.emails')}</div>
         <OutlinedInput
           readOnly={isExceed}
-          fullWidth={true} size={'small'} value={value} onChange={e => setValue(e.target.value)}
+          fullWidth={true}
+          size={'small'}
+          value={value}
+          onChange={e => setValue(e.target.value)}
           placeholder={t('inviteMember.addEmail')}
         />
       </NormalModal>

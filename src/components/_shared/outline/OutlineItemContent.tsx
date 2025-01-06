@@ -6,7 +6,7 @@ import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 
-function OutlineItemContent({
+function OutlineItemContent ({
   item,
   setIsExpanded,
   navigateToView,
@@ -53,7 +53,11 @@ function OutlineItemContent({
           value={extra.space_icon || ''}
           char={extra.space_icon ? undefined : name.slice(0, 1)}
         /> :
-        <PageIcon view={item} className={'flex h-5 w-5 min-w-5 items-center justify-center'}/>
+        <PageIcon
+          view={item}
+          iconSize={16}
+          className={'flex w-4 h-4 text-sm items-center justify-center'}
+        />
       }
 
       <Tooltip

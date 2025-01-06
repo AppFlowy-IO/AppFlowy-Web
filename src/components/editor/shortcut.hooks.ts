@@ -8,11 +8,11 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { openUrl } from '@/utils/url';
 import { KeyboardEvent, useCallback } from 'react';
-import { Editor, Text, Range, Transforms, BasePoint, Path } from 'slate';
+import { Editor, Text, Range, Transforms, BasePoint, Path, Element } from 'slate';
 import { ReactEditor, useReadOnly } from 'slate-react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
-export function useShortcuts(editor: ReactEditor) {
+export function useShortcuts (editor: ReactEditor) {
   const yjsEditor = editor as YjsEditor;
   const { viewId } = useEditorContext();
   const readOnly = useReadOnly();
@@ -88,11 +88,17 @@ export function useShortcuts(editor: ReactEditor) {
           }
 
           const path = editor.start(selection).path;
+          const currentLineText = CustomEditor.getBlockTextContent(node);
+
+          if (editor.children.length > 1 && (editor.children[0] as Element).blockId === node.blockId && currentLineText === '') {
+            CustomEditor.deleteBlock(yjsEditor, node.blockId as string);
+          }
 
           const before = Editor.before(editor, selection, { unit: 'offset' });
 
           if (!before && Path.isAncestor([0, 0], path)) {
-            focusedFocusableElement(true);
+            e.preventDefault();
+            focusedFocusableElement(false);
           }
 
           break;
@@ -484,7 +490,7 @@ export function useShortcuts(editor: ReactEditor) {
   };
 }
 
-function findInlineTextNode(editor: Editor, point?: BasePoint) {
+function findInlineTextNode (editor: Editor, point?: BasePoint) {
   const [node] = editor.nodes({
     at: point,
     match: (n) => {

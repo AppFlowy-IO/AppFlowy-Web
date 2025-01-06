@@ -7,7 +7,7 @@ import React, { useCallback, useRef } from 'react';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 import { Element } from 'slate';
 
-function CalloutIcon({ block: node, className }: { block: CalloutNode; className: string }) {
+function CalloutIcon ({ block: node, className }: { block: CalloutNode; className: string }) {
   const ref = useRef<HTMLButtonElement>(null);
   const editor = useSlateStatic();
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
@@ -40,7 +40,8 @@ function CalloutIcon({ block: node, className }: { block: CalloutNode; className
         }}
       >
         <span
-          className={`text-[20px] p-1 px-2 ${readOnly ? '' : 'hover:bg-fill-list-hover rounded-[6px]'}`}>{node.data.icon || `📌`}</span>
+          className={`text-[18px] py-1 px-1 ${readOnly ? '' : 'hover:bg-fill-list-hover rounded-[6px]'}`}
+        >{node.data.icon || `📌`}</span>
 
       </span>
       <ChangeIconPopover

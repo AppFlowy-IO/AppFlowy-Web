@@ -6,7 +6,7 @@ import { ReactComponent as ExpandSvg } from '@/assets/drop_menu_show.svg';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 import { Element } from 'slate';
 
-function ToggleIcon({ block, className }: { block: ToggleListNode; className: string }) {
+function ToggleIcon ({ block, className }: { block: ToggleListNode; className: string }) {
   const { collapsed } = block.data;
   const editor = useSlateStatic();
   const readOnly = useReadOnly() || editor.isElementReadOnly(block as unknown as Element);
@@ -23,16 +23,17 @@ function ToggleIcon({ block, className }: { block: ToggleListNode; className: st
 
   return (
     <span
-      onClick={handleClick}
+      data-testid={'toggle-icon'}
       data-playwright-selected={false}
       contentEditable={false}
       draggable={false}
       onMouseDown={e => {
         e.preventDefault();
+        handleClick(e);
       }}
       className={`${className} ${readOnly ? '' : 'cursor-pointer hover:text-fill-default'} pr-1 toggle-icon`}
     >
-      {collapsed ? <ExpandSvg className={'-rotate-90 transform'}/> : <ExpandSvg/>}
+      {collapsed ? <ExpandSvg className={'-rotate-90 transform'} /> : <ExpandSvg />}
     </span>
   );
 }

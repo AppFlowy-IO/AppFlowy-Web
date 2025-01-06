@@ -12,10 +12,10 @@ import AutoSizer from 'react-virtualized-auto-sizer';
 import DOMPurify from 'dompurify';
 
 const ICONS_PER_ROW = 9;
-const ROW_HEIGHT = 40;
-const CATEGORY_HEIGHT = 32;
+const ROW_HEIGHT = 42;
+const CATEGORY_HEIGHT = 42;
 
-function IconPicker({
+function IconPicker ({
   onSelect,
   onEscape,
 }: {
@@ -156,7 +156,7 @@ function IconPicker({
       <div className={'px-0.5 py-2'}>
         <div className={'search-input flex items-end justify-between gap-2'}>
           <OutlinedInput
-            startAdornment={<SearchOutlined className={'w-6 h-6'}/>}
+            startAdornment={<SearchOutlined className={'w-5 h-5'} />}
             value={searchValue}
             onChange={(e) => {
               setSearchValue(e.target.value);
@@ -192,7 +192,7 @@ function IconPicker({
                   onSelect({ value: icon.id, color, content: icon.content });
                 }}
               >
-                <ShuffleIcon className={'h-5 w-5'}/>
+                <ShuffleIcon className={'h-5 w-5'} />
               </Button>
             </Tooltip>
 
@@ -200,7 +200,7 @@ function IconPicker({
         </div>
       </div>
 
-      <div className={'flex-1 flex flex-col gap-2'}>
+      <div className={'flex-1 mt-2 flex flex-col gap-2'}>
         <div
           className="flex-1"
           style={{

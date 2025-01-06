@@ -31,9 +31,9 @@ import {
 import {
   CreatePagePayload, CreateSpacePayload, CreateWorkspacePayload,
   DatabaseRelations,
-  DuplicatePublishView, QuickNoteEditorData,
+  DuplicatePublishView, PublishViewPayload, QuickNoteEditorData,
   SubscriptionInterval, SubscriptionPlan,
-  Types, UpdatePagePayload, UpdateSpacePayload, UpdateWorkspacePayload, WorkspaceMember,
+  Types, UpdatePagePayload, UpdateSpacePayload, UpdateWorkspacePayload, UploadPublishNamespacePayload, WorkspaceMember,
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
@@ -63,6 +63,43 @@ export class AFClientService implements AFService {
 
   getClientId () {
     return this.clientId;
+  }
+
+  async publishView (workspaceId: string, viewId: string, payload?: PublishViewPayload) {
+    if (this.publishViewInfo.has(viewId)) {
+      this.publishViewInfo.delete(viewId);
+    }
+
+    return APIService.publishView(workspaceId, viewId, payload);
+  }
+
+  async unpublishView (workspaceId: string, viewId: string) {
+    if (this.publishViewInfo.has(viewId)) {
+      this.publishViewInfo.delete(viewId);
+    }
+
+    return APIService.unpublishView(workspaceId, viewId);
+  }
+
+  async updatePublishNamespace (workspaceId: string, payload: UploadPublishNamespacePayload) {
+    this.publishViewInfo.clear();
+    return APIService.updatePublishNamespace(workspaceId, payload);
+  }
+
+  async getPublishNamespace (workspaceId: string) {
+    return APIService.getPublishNamespace(workspaceId);
+  }
+
+  async getPublishHomepage (workspaceId: string) {
+    return APIService.getPublishHomepage(workspaceId);
+  }
+
+  async updatePublishHomepage (workspaceId: string, viewId: string) {
+    return APIService.updatePublishHomepage(workspaceId, viewId);
+  }
+
+  async removePublishHomepage (workspaceId: string) {
+    return APIService.removePublishHomepage(workspaceId);
   }
 
   async getPublishViewMeta (namespace: string, publishName: string) {
@@ -165,6 +202,9 @@ export class AFClientService implements AFService {
       return this.publishViewInfo.get(viewId) as {
         namespace: string;
         publishName: string;
+        publisherEmail: string;
+        viewId: string;
+        publishedAt: string;
       };
     }
 
@@ -179,6 +219,9 @@ export class AFClientService implements AFService {
     const data = {
       namespace,
       publishName: info.publish_name,
+      publisherEmail: info.publisher_email,
+      viewId: info.view_id,
+      publishedAt: info.publish_timestamp,
     };
 
     this.publishViewInfo.set(viewId, data);
@@ -569,7 +612,7 @@ export class AFClientService implements AFService {
     return APIService.deleteQuickNote(workspaceId, id);
   }
 
-  searchWorkspace(workspaceId: string, query: string) {
+  searchWorkspace (workspaceId: string, query: string) {
     return APIService.searchWorkspace(workspaceId, query);
   }
 }

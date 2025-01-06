@@ -10,7 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { QuickNote } from '@/application/types';
 import { getTitle } from '@/components/quick-note/utils';
 
-function NoteHeader({ note, onBack, onClose, expand, onToggleExpand }: {
+function NoteHeader ({ note, onBack, onClose, expand, onToggleExpand }: {
   onBack: () => void;
   onClose: () => void;
   expand?: boolean;
@@ -25,20 +25,30 @@ function NoteHeader({ note, onBack, onClose, expand, onToggleExpand }: {
 
   return (
     <div className={'flex items-center gap-4 w-full overflow-hidden'}>
-      <IconButton onClick={onBack} size={'small'}>
-        <RightIcon className={'transform rotate-180'}/>
+      <IconButton
+        onClick={onBack}
+        size={'small'}
+      >
+        <RightIcon className={'transform rotate-180'} />
       </IconButton>
       <div className={'pl-[24px] truncate text-center font-medium flex-1'}>
         {title}
       </div>
-      <IconButton onClick={e => {
-        e.currentTarget.blur();
-        onToggleExpand?.();
-      }} size={'small'}>
-        {expand ? <CollapseIcon className={'transform rotate-45'}/> : <OpenIcon/>}
+      <IconButton
+        onMouseDown={e => e.preventDefault()}
+        onClick={e => {
+          e.currentTarget.blur();
+          onToggleExpand?.();
+        }}
+        size={'small'}
+      >
+        {expand ? <CollapseIcon className={'transform rotate-45'} /> : <OpenIcon />}
       </IconButton>
-      <IconButton onClick={onClose} size={'small'}>
-        <CloseIcon/>
+      <IconButton
+        onClick={onClose}
+        size={'small'}
+      >
+        <CloseIcon />
       </IconButton>
     </div>
   );

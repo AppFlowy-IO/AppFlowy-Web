@@ -1,7 +1,7 @@
 import { BlockType, ToggleListBlockData } from '@/application/types';
 import { HeadingNode, ToggleListNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import React, { CSSProperties, useEffect, useMemo, useState } from 'react';
+import React, { CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
 import { ReactEditor, useFocused, useSelected, useSlate } from 'slate-react';
 import { Editor, Element, Range } from 'slate';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +15,7 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
   const [isComposing, setIsComposing] = useState(false);
   const selected = focused && blockSelected && editor.selection && Range.isCollapsed(editor.selection);
 
-  const block = useMemo(() => {
+  const getBlock = useCallback(() => {
     const path = ReactEditor.findPath(editor, node);
     const match = Editor.above(editor, {
       match: (n) => {
@@ -28,6 +28,8 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
 
     return match[0] as Element;
   }, [editor, node]);
+
+  const block = getBlock();
 
   const className = useMemo(() => {
     const classList = attributes.className?.split(' ') ?? [];
@@ -101,6 +103,7 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
   }, [block, t]);
 
   const selectedPlaceholder = useMemo(() => {
+
     if (block?.type === BlockType.ToggleListBlock && (block?.data as ToggleListBlockData).level) {
       return unSelectedPlaceholder;
     }

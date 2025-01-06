@@ -46,7 +46,7 @@ import {
 
 export const CustomEditor = {
   // Get the text content of a block node, including the text content of its children and formula nodes
-  getBlockTextContent(node: Node, depth: number = Infinity): string {
+  getBlockTextContent (node: Node, depth: number = Infinity): string {
     if (Text.isText(node)) {
       if (node.formula) {
         return node.formula;
@@ -77,7 +77,7 @@ export const CustomEditor = {
       .join('');
   },
 
-  setBlockData<T = BlockData>(editor: YjsEditor, blockId: string, updateData: T, select?: boolean) {
+  setBlockData<T = BlockData> (editor: YjsEditor, blockId: string, updateData: T, select?: boolean) {
 
     if (editor.readOnly) {
       return;
@@ -118,7 +118,7 @@ export const CustomEditor = {
 
   },
   // Insert break line at the specified path
-  insertBreak(editor: YjsEditor, at?: BaseRange) {
+  insertBreak (editor: YjsEditor, at?: BaseRange) {
     const sharedRoot = getSharedRoot(editor);
     const newAt = getSelectionOrThrow(editor, at);
 
@@ -132,7 +132,7 @@ export const CustomEditor = {
 
   },
 
-  deleteBlockBackward(editor: YjsEditor, at?: BaseRange) {
+  deleteBlockBackward (editor: YjsEditor, at?: BaseRange) {
     console.trace('deleteBlockBackward', editor.selection, at);
 
     const sharedRoot = getSharedRoot(editor);
@@ -172,7 +172,7 @@ export const CustomEditor = {
     }
   },
 
-  deleteBlockForward(editor: YjsEditor, at?: BaseRange) {
+  deleteBlockForward (editor: YjsEditor, at?: BaseRange) {
     const sharedRoot = getSharedRoot(editor);
     const newAt = getSelectionOrThrow(editor, at);
 
@@ -192,15 +192,15 @@ export const CustomEditor = {
     }
   },
 
-  deleteEntireDocument(editor: YjsEditor) {
+  deleteEntireDocument (editor: YjsEditor) {
     handleDeleteEntireDocumentWithTxn(editor);
   },
 
-  removeRange(editor: YjsEditor, at: BaseRange) {
+  removeRange (editor: YjsEditor, at: BaseRange) {
     removeRangeWithTxn(editor, getSharedRoot(editor), at);
   },
 
-  tabEvent(editor: YjsEditor, event: KeyboardEvent) {
+  tabEvent (editor: YjsEditor, event: KeyboardEvent) {
     const type = event.shiftKey ? 'tabBackward' : 'tabForward';
     const sharedRoot = getSharedRoot(editor);
     const { selection } = editor;
@@ -286,7 +286,7 @@ export const CustomEditor = {
     });
   },
 
-  toggleToggleList(editor: YjsEditor, blockId: string) {
+  toggleToggleList (editor: YjsEditor, blockId: string) {
     const sharedRoot = getSharedRoot(editor);
     const data = dataStringTOJson(getBlock(blockId, sharedRoot).get(YjsEditorKey.block_data)) as ToggleListBlockData;
     const { selection } = editor;
@@ -310,7 +310,7 @@ export const CustomEditor = {
     }, selected);
   },
 
-  toggleTodoList(editor: YjsEditor, blockId: string, shiftKey: boolean) {
+  toggleTodoList (editor: YjsEditor, blockId: string, shiftKey: boolean) {
     const sharedRoot = getSharedRoot(editor);
     const block = getBlock(blockId, sharedRoot);
     const data = dataStringTOJson(block.get(YjsEditorKey.block_data)) as TodoListBlockData;
@@ -344,7 +344,7 @@ export const CustomEditor = {
     });
   },
 
-  toggleMark(editor: ReactEditor, {
+  toggleMark (editor: ReactEditor, {
     key, value,
   }: {
     key: EditorMarkFormat, value: boolean | string
@@ -358,11 +358,11 @@ export const CustomEditor = {
     }
   },
 
-  getTextNodes(editor: ReactEditor) {
+  getTextNodes (editor: ReactEditor) {
     return getSelectionTexts(editor);
   },
 
-  addMark(editor: ReactEditor, {
+  addMark (editor: ReactEditor, {
     key, value,
   }: {
     key: EditorMarkFormat, value: boolean | string | Mention
@@ -370,11 +370,11 @@ export const CustomEditor = {
     editor.addMark(key, value);
   },
 
-  removeMark(editor: ReactEditor, key: EditorMarkFormat) {
+  removeMark (editor: ReactEditor, key: EditorMarkFormat) {
     editor.removeMark(key);
   },
 
-  turnToBlock<T extends BlockData>(editor: YjsEditor, blockId: string, type: BlockType, data: T) {
+  turnToBlock<T extends BlockData> (editor: YjsEditor, blockId: string, type: BlockType, data: T) {
     const operations: (() => void)[] = [];
     const sharedRoot = getSharedRoot(editor);
     const sourceBlock = getBlock(blockId, sharedRoot);
@@ -395,7 +395,7 @@ export const CustomEditor = {
     return newBlockId;
   },
 
-  isBlockActive(editor: YjsEditor, type: BlockType) {
+  isBlockActive (editor: YjsEditor, type: BlockType) {
     try {
       const [node] = getBlockEntry(editor);
 
@@ -405,7 +405,7 @@ export const CustomEditor = {
     }
   },
 
-  hasMark(editor: ReactEditor, key: string) {
+  hasMark (editor: ReactEditor, key: string) {
     const selection = editor.selection;
 
     if (!selection) return false;
@@ -429,7 +429,7 @@ export const CustomEditor = {
     return marks ? !!marks[key] : false;
   },
 
-  getAllMarks(editor: ReactEditor) {
+  getAllMarks (editor: ReactEditor) {
     const selection = editor.selection;
 
     if (!selection) return [];
@@ -452,7 +452,7 @@ export const CustomEditor = {
     return [marks];
   },
 
-  isMarkActive(editor: ReactEditor, key: string) {
+  isMarkActive (editor: ReactEditor, key: string) {
     const selection = editor.selection;
 
     if (!selection) return false;
@@ -476,7 +476,7 @@ export const CustomEditor = {
     return marks ? !!marks[key] : false;
   },
 
-  addChildBlock(editor: YjsEditor, blockId: string, type: BlockType, data: BlockData) {
+  addChildBlock (editor: YjsEditor, blockId: string, type: BlockType, data: BlockData) {
     const sharedRoot = getSharedRoot(editor);
     const parent = getBlock(blockId, sharedRoot);
 
@@ -510,7 +510,7 @@ export const CustomEditor = {
     }
   },
 
-  addBlock(editor: YjsEditor, blockId: string, direction: 'below' | 'above', type: BlockType, data: BlockData) {
+  addBlock (editor: YjsEditor, blockId: string, direction: 'below' | 'above', type: BlockType, data: BlockData) {
     const parent = getParent(blockId, editor.sharedRoot);
     const index = getBlockIndex(blockId, editor.sharedRoot);
 
@@ -540,15 +540,15 @@ export const CustomEditor = {
     }
   },
 
-  addBelowBlock(editor: YjsEditor, blockId: string, type: BlockType, data: BlockData) {
+  addBelowBlock (editor: YjsEditor, blockId: string, type: BlockType, data: BlockData) {
     return CustomEditor.addBlock(editor, blockId, 'below', type, data);
   },
 
-  addAboveBlock(editor: YjsEditor, blockId: string, type: BlockType, data: BlockData) {
+  addAboveBlock (editor: YjsEditor, blockId: string, type: BlockType, data: BlockData) {
     return CustomEditor.addBlock(editor, blockId, 'above', type, data);
   },
 
-  deleteBlock(editor: YjsEditor, blockId: string) {
+  deleteBlock (editor: YjsEditor, blockId: string) {
     const sharedRoot = getSharedRoot(editor);
     const parent = getParent(blockId, sharedRoot);
 
@@ -601,7 +601,7 @@ export const CustomEditor = {
     ReactEditor.focus(editor);
   },
 
-  duplicateBlock(editor: YjsEditor, blockId: string, prevId?: string) {
+  duplicateBlock (editor: YjsEditor, blockId: string, prevId?: string) {
     const sharedRoot = getSharedRoot(editor);
     const block = getBlock(blockId, sharedRoot);
 
@@ -631,7 +631,7 @@ export const CustomEditor = {
     return newBlockId;
   },
 
-  pastedText(editor: YjsEditor, text: string) {
+  pastedText (editor: YjsEditor, text: string) {
     if (!beforePasted(editor))
       return;
 
@@ -640,7 +640,7 @@ export const CustomEditor = {
     Transforms.insertNodes(editor, { text }, { at: point, select: true, voids: false });
   },
 
-  highlight(editor: ReactEditor) {
+  highlight (editor: ReactEditor) {
     const selection = editor.selection;
 
     if (!selection) return;

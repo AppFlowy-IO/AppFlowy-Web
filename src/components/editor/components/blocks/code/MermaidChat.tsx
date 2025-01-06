@@ -2,7 +2,8 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { CodeNode } from '@/components/editor/editor.type';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { Alert } from '@mui/material';
-import React, { useContext, useEffect, useRef } from 'react';
+import { debounce } from 'lodash-es';
+import React, { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import mermaid from 'mermaid';
 
 const lightTheme = {
@@ -68,36 +69,37 @@ function MermaidChat ({ node }: {
   const isDark = useContext(ThemeModeContext)?.isDark;
   const [error, setError] = React.useState<string | null>(null);
 
-  useEffect(() => {
-    const element = ref.current;
+  const updateMermaid = useCallback(async () => {
+    const sanitizedDiagram = sanitizeDiagram(diagram);
+    const theme = isDark ? darkTheme : lightTheme;
 
-    if (!element || !diagram) return;
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore
+    mermaid.initialize({
+      startOnLoad: true,
+      securityLevel: 'loose',
+      ...theme,
+    });
+    try {
+      await mermaid.parse(sanitizedDiagram);
+      const { svg } = await mermaid.render(`mermaid-${id}`, diagram);
 
-    setError(null);
-    void (async () => {
-      const sanitizedDiagram = sanitizeDiagram(diagram);
-      const theme = isDark ? darkTheme : lightTheme;
-
+      setError(null);
+      setInnerHtml(svg);
+    } catch (e) {
       // eslint-disable-next-line @typescript-eslint/ban-ts-comment
       // @ts-ignore
-      mermaid.initialize({
-        startOnLoad: true,
-        securityLevel: 'loose',
-        ...theme,
-      });
-      try {
-        await mermaid.parse(sanitizedDiagram);
-        const { svg } = await mermaid.render(`mermaid-${id}`, diagram);
-
-        setInnerHtml(svg);
-      } catch (e) {
-        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-        // @ts-ignore
-        setError(e.message);
-      }
-    })();
-
+      setError(e.message);
+    }
   }, [diagram, id, isDark]);
+
+  const deboucenUpdateMermaid = useMemo(() => {
+    return debounce(updateMermaid, 300);
+  }, [updateMermaid]);
+
+  useEffect(() => {
+    void deboucenUpdateMermaid();
+  }, [deboucenUpdateMermaid]);
 
   if (error) {
     return (

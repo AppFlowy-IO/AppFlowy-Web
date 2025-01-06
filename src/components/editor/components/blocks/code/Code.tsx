@@ -61,7 +61,7 @@ export const CodeBlock = memo(
           </pre>
         </div>
 
-        {showToolbar && <CodeToolbar node={node}/>}
+        {showToolbar && <CodeToolbar node={node} />}
       </div>
     );
   }),

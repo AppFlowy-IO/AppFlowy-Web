@@ -684,6 +684,16 @@ export enum CollabOrigin {
 
 }
 
+export interface PublishViewPayload {
+  publish_name?: string;
+  visible_database_view_ids?: string[];
+}
+
+export interface UploadPublishNamespacePayload {
+  old_namespace: string;
+  new_namespace: string;
+}
+
 export const layoutMap = {
   [ViewLayout.Document]: 'document',
   [ViewLayout.Grid]: 'grid',
@@ -1020,4 +1030,11 @@ export interface CreateWorkspacePayload {
 
 export interface UpdateWorkspacePayload {
   workspace_name: string;
+}
+
+export enum SettingMenuItem {
+  ACCOUNT = 'ACCOUNT',
+  WORKSPACE = 'WORKSPACE',
+  MEMBERS = 'MEMBERS',
+  SITES = 'SITES',
 }

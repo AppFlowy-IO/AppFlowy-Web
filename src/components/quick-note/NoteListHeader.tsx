@@ -9,7 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { debounce } from 'lodash-es';
 
-function NoteListHeader({
+function NoteListHeader ({
   onSearch,
   onClose,
   expand,
@@ -32,7 +32,10 @@ function NoteListHeader({
     <div
       className={'flex relative items-center w-full h-full gap-4'}
     >
-      <Tooltip title={t('quickNote.search')} placement={'top'}>
+      <Tooltip
+        title={t('quickNote.search')}
+        placement={'top'}
+      >
         <IconButton
           className={`z-[2] ${activeSearch ? 'cursor-default hover:bg-transparent' : ''}`}
           onClick={(e) => {
@@ -41,8 +44,10 @@ function NoteListHeader({
               inputRef.current?.focus();
               setActiveSearch(true);
             }
-          }} size={'small'}>
-          <SearchIcon/>
+          }}
+          size={'small'}
+        >
+          <SearchIcon />
         </IconButton>
       </Tooltip>
       <div className={'flex-1'}>
@@ -70,22 +75,30 @@ function NoteListHeader({
         }
       </div>
 
-      <IconButton onClick={e => {
-        e.currentTarget.blur();
-        onToggleExpand?.();
-      }} size={'small'}>
-        {expand ? <CollapseIcon className={'transform rotate-45'}/> : <OpenIcon/>}
+      <IconButton
+        onMouseDown={e => e.preventDefault()}
+        onClick={e => {
+          e.currentTarget.blur();
+          onToggleExpand?.();
+        }}
+        size={'small'}
+      >
+        {expand ? <CollapseIcon className={'transform rotate-45'} /> : <OpenIcon />}
       </IconButton>
 
-      <IconButton className={''} onClick={() => {
-        if (activeSearch) {
-          setActiveSearch(false);
-          debounceSearch('');
-        } else {
-          onClose();
-        }
-      }} size={'small'}>
-        <CloseIcon/>
+      <IconButton
+        className={''}
+        onClick={() => {
+          if (activeSearch) {
+            setActiveSearch(false);
+            debounceSearch('');
+          } else {
+            onClose();
+          }
+        }}
+        size={'small'}
+      >
+        <CloseIcon />
       </IconButton>
     </div>
   );

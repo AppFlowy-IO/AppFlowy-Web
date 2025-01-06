@@ -1,4 +1,5 @@
 import { YjsEditor } from '@/application/slate-yjs';
+import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
 import { Origins, Popover } from '@/components/_shared/popover';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
@@ -9,7 +10,6 @@ import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 import MathEquationPopoverContent from './MathEquationPopoverContent';
-import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 
 const defaultOrigins: Origins = {
   anchorOrigin: {
@@ -22,7 +22,7 @@ const defaultOrigins: Origins = {
   },
 };
 
-function BlockPopover() {
+function BlockPopover () {
   const {
     open,
     anchorEl,
@@ -85,8 +85,10 @@ function BlockPopover() {
 
       const rect = anchorEl.getBoundingClientRect();
       const paperRect = paperRef.current.getBoundingClientRect();
+      const isImage = type === BlockType.ImageBlock;
+      const paperHeight = isImage ? paperRect.height + 100 : paperRect.height;
 
-      if (rect.bottom + paperRect.height > window.innerHeight) {
+      if (rect.bottom + paperHeight > window.innerHeight) {
         setOrigins({
           anchorOrigin: {
             vertical: -8,
@@ -101,7 +103,7 @@ function BlockPopover() {
       }
 
     }, 50);
-  }, [anchorEl]);
+  }, [anchorEl, type]);
 
   useEffect(() => {
     if (!open) return;

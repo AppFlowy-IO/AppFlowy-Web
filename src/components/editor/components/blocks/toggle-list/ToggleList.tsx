@@ -45,9 +45,11 @@ export const ToggleList = memo(
           {children}
           {!readOnly && !collapsed && node.children.slice(1).length === 0 &&
             <div
-              onClick={() => {
+              onMouseDown={e => {
+                e.preventDefault();
                 CustomEditor.addChildBlock(editor, blockId, BlockType.Paragraph, {});
               }}
+              data-testid={'toggle-list-empty'}
               contentEditable={false}
               className={'text-text-caption select-none text-sm hover:bg-fill-list-hover rounded-[6px] cursor-pointer flex items-center h-[36px] px-[0.5em] ml-[1.45em]'}
             >

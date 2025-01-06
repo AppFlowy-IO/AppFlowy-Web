@@ -21,7 +21,13 @@ import {
   CreateSpacePayload,
   UpdateSpacePayload,
   Role,
-  WorkspaceMember, QuickNote, QuickNoteEditorData, CreateWorkspacePayload, UpdateWorkspacePayload,
+  WorkspaceMember,
+  QuickNote,
+  QuickNoteEditorData,
+  CreateWorkspacePayload,
+  UpdateWorkspacePayload,
+  PublishViewPayload,
+  UploadPublishNamespacePayload,
 } from '@/application/types';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
@@ -328,6 +334,48 @@ export async function getUserWorkspaceInfo (): Promise<{
   return Promise.reject(data);
 }
 
+export async function publishView (workspaceId: string, viewId: string, payload?: PublishViewPayload) {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/publish`;
+  const response = await axiosInstance?.post<{
+    code: number;
+    message: string;
+  }>(url, payload);
+
+  if (response?.data.code === 0) {
+    return;
+  }
+
+  return Promise.reject(response?.data);
+}
+
+export async function unpublishView (workspaceId: string, viewId: string) {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/unpublish`;
+  const response = await axiosInstance?.post<{
+    code: number;
+    message: string;
+  }>(url);
+
+  if (response?.data.code === 0) {
+    return;
+  }
+
+  return Promise.reject(response?.data);
+}
+
+export async function updatePublishNamespace (workspaceId: string, payload: UploadPublishNamespacePayload) {
+  const url = `/api/workspace/${workspaceId}/publish-namespace`;
+  const response = await axiosInstance?.put<{
+    code: number;
+    message: string;
+  }>(url, payload);
+
+  if (response?.data.code === 0) {
+    return;
+  }
+
+  return Promise.reject(response?.data);
+}
+
 export async function getPublishViewMeta (namespace: string, publishName: string) {
   const url = `/api/workspace/v1/published/${namespace}/${publishName}`;
   const response = await axiosInstance?.get<{
@@ -485,12 +533,15 @@ export async function getPublishView (publishNamespace: string, publishName: str
 }
 
 export async function getPublishInfoWithViewId (viewId: string) {
-  const url = `/api/workspace/published-info/${viewId}`;
+  const url = `/api/workspace/v1/published-info/${viewId}`;
   const response = await axiosInstance?.get<{
     code: number;
     data?: {
       namespace: string;
       publish_name: string;
+      publisher_email: string;
+      view_id: string;
+      publish_timestamp: string;
     };
     message: string;
   }>(url);
@@ -594,6 +645,75 @@ export async function getView (workspaceId: string, viewId: string, depth: numbe
   }
 
   return Promise.reject(data);
+}
+
+export async function getPublishNamespace (workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/publish-namespace`;
+  const response = await axiosInstance?.get<{
+    code: number;
+    data?: string;
+    message: string;
+  }>(url);
+
+  const data = response?.data;
+
+  if (data?.code === 0 && data.data) {
+    return data.data;
+  }
+
+  return Promise.reject(data);
+}
+
+export async function getPublishHomepage (workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/publish-default`;
+  const response = await axiosInstance?.get<{
+    code: number;
+    data?: {
+      namespace: string;
+      publish_name: string;
+      publisher_email: string;
+      view_id: string;
+    };
+    message: string;
+  }>(url);
+
+  const data = response?.data;
+
+  if (data?.code === 0 && data.data) {
+    return data.data;
+  }
+
+  return Promise.reject(data);
+}
+
+export async function updatePublishHomepage (workspaceId: string, viewId: string) {
+  const url = `/api/workspace/${workspaceId}/publish-default`;
+  const response = await axiosInstance?.put<{
+    code: number;
+    message: string;
+  }>(url, {
+    view_id: viewId,
+  });
+
+  if (response?.data.code === 0) {
+    return;
+  }
+
+  return Promise.reject(response?.data);
+}
+
+export async function removePublishHomepage (workspaceId: string) {
+  const url = `/api/workspace/${workspaceId}/publish-default`;
+  const response = await axiosInstance?.delete<{
+    code: number;
+    message: string;
+  }>(url);
+
+  if (response?.data.code === 0) {
+    return;
+  }
+
+  return Promise.reject(response?.data);
 }
 
 export async function getPublishOutline (publishNamespace: string) {

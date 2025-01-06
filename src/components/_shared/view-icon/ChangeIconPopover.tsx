@@ -8,7 +8,7 @@ import { PopoverProps } from '@mui/material/Popover';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function ChangeIconPopover({
+function ChangeIconPopover ({
   open,
   anchorEl,
   onClose,
@@ -50,7 +50,7 @@ function ChangeIconPopover({
       anchorPosition={anchorPosition}
       anchorReference={anchorPosition ? 'anchorPosition' : 'anchorEl'}
     >
-      <div className={'border-b border-line-divider px-4 pt-2 flex items-center justify-between'}>
+      <div className={'border-b w-[402px] border-line-divider px-4 pt-2 flex items-center justify-between'}>
         <ViewTabs
           onChange={(_e, newValue) => setValue(newValue)}
           value={value}

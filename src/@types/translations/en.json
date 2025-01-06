@@ -307,7 +307,7 @@
     "openMenu": "Click to open menu",
     "dragRow": "Drag to reorder the row",
     "viewDataBase": "View database",
-    "referencePage": "This {name} is referenced",
+    "referencePage": "This {{name}} is referenced",
     "addBlockBelow": "Add a block below",
     "aiGenerate": "Generate"
   },
@@ -508,6 +508,8 @@
         "namespaceLengthAtLeast2Characters": "The namespace must be at least 2 characters long",
         "onlyWorkspaceOwnerCanUpdateNamespace": "Only workspace owner can update the namespace",
         "onlyWorkspaceOwnerCanRemoveHomepage": "Only workspace owner can remove the homepage",
+        "onlyWorkspaceOwnerCanChangeHomepage": "Only workspace owner can change the homepage",
+        "onlyProCanSetHomepage": "Only Pro Plan workspace owner can set the homepage",
         "setHomepageFailed": "Failed to set homepage",
         "namespaceTooLong": "The namespace is too long, please try another one",
         "namespaceTooShort": "The namespace is too short, please try another one",
@@ -1522,7 +1524,7 @@
       "cannotFindCreatableField": "Cannot find a suitable field to sort by",
       "deleteAllSorts": "Delete all sorts",
       "addSort": "Add sort",
-      "sortsActive": "Cannot {intention} while sorting",
+      "sortsActive": "Cannot {{intention}} while sorting",
       "removeSorting": "Would you like to remove all the sorts in this view and continue?",
       "fieldInUse": "You are already sorting by this field"
     },
@@ -1732,7 +1734,7 @@
       "toggleList": "Toggle list",
       "emptyToggleHeading": "Empty toggle h{}. Click to add content.",
       "emptyToggleList": "Empty toggle list. Click to add content.",
-      "emptyToggleHeadingWeb": "Empty toggle h{level}. Click to add content",
+      "emptyToggleHeadingWeb": "Empty toggle h{{level}}. Click to add content",
       "quoteList": "Quote list",
       "numberedList": "Numbered list",
       "bulletedList": "Bulleted list",
@@ -2169,8 +2171,8 @@
   },
   "unSupportBlock": "The current version does not support this Block.",
   "views": {
-    "deleteContentTitle": "Are you sure want to delete the {pageType}?",
-    "deleteContentCaption": "if you delete this {pageType}, you can restore it from the trash."
+    "deleteContentTitle": "Are you sure want to delete the {{pageType}}?",
+    "deleteContentCaption": "if you delete this {{pageType}}, you can restore it from the trash."
   },
   "colors": {
     "custom": "Custom",
@@ -2676,8 +2678,8 @@
     "signInError": "Sign in error",
     "login": "Sign up or log in",
     "fileBlock": {
-      "uploadedAt": "Uploaded on {time}",
-      "linkedAt": "Link added on {time}",
+      "uploadedAt": "Uploaded on {{time}}",
+      "linkedAt": "Link added on {{time}}",
       "empty": "Upload or embed a file",
       "uploadFailed": "Upload failed, please try again",
       "retry": "Retry"
@@ -2745,7 +2747,7 @@
     "featured": "PIN to Featured",
     "relatedTemplates": "Related Templates",
     "requiredField": "{field} is required",
-    "addCategory": "Add \"{category}\"",
+    "addCategory": "Add \"{{category}}\"",
     "addNewCategory": "Add new category",
     "addNewCreator": "Add new creator",
     "deleteCategory": "Delete category",
@@ -2785,7 +2787,7 @@
     "addRelatedTemplate": "Add related template",
     "removeRelatedTemplate": "Remove related template",
     "uploadAvatar": "Upload avatar",
-    "searchInCategory": "Search in {category}",
+    "searchInCategory": "Search in {{category}}",
     "label": "Templates"
   },
   "fileDropzone": {
@@ -2823,7 +2825,7 @@
     "alreadyAccepted": "You've already accepted the invitation",
     "errorModal": {
       "title": "Something went wrong",
-      "description": "Your current account {email} may not have access to this workspace. Please log in with the correct account or contact the workspace owner for help.",
+      "description": "Your current account {{email}} may not have access to this workspace. Please log in with the correct account or contact the workspace owner for help.",
       "contactOwner": "Contact owner",
       "close": "Back to home",
       "changeAccount": "Change account"
@@ -2865,7 +2867,7 @@
   },
   "upgradePlanModal": {
     "title": "Upgrade to Pro",
-    "message": "{name} has reached the free member limit. Upgrade to the Pro Plan to invite more members.",
+    "message": "{{name}} has reached the free member limit. Upgrade to the Pro Plan to invite more members.",
     "upgradeSteps": "How to upgrade your plan on AppFlowy:",
     "step1": "1. Go to Settings",
     "step2": "2. Click on 'Plan'",
@@ -2945,7 +2947,7 @@
     "upgrade": "upgrade",
     "addEmail": "email@example.com, email2@example.com...",
     "requestInvites": "Send invites",
-    "inviteAlready": "You've already invited this email: {email}",
+    "inviteAlready": "You've already invited this email: {{email}}",
     "inviteSuccess": "Invitation sent successfully",
     "description": "Input emails below with commas between them. Charges are based on member count.",
     "emails": "Email"
@@ -3042,5 +3044,8 @@
   "memberCount_many": "{{count}} members",
   "memberCount_other": "{{count}} members",
   "aiMatch": "AI match",
-  "titleMatch": "Title match"
+  "titleMatch": "Title match",
+  "namespace": "Namespace",
+  "manageNamespaceDescription": "Manage your namespace and homepage",
+  "homepage": "Homepage"
 }

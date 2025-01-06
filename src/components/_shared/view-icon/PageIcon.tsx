@@ -9,15 +9,17 @@ import { isFlagEmoji } from '@/utils/emoji';
 import DOMPurify from 'dompurify';
 import { renderColor } from '@/utils/color';
 
-function PageIcon({
+function PageIcon ({
   view,
   className,
+  iconSize,
 }: {
   view: {
     icon?: ViewIcon | null;
     layout: ViewLayout;
   };
   className?: string;
+  iconSize?: number;
 }) {
 
   const emoji = useMemo(() => {
@@ -39,11 +41,18 @@ function PageIcon({
         USE_PROFILES: { svg: true, svgFilters: true },
       });
 
-      return <span className={`${className ? className : 'w-full h-full'} `} dangerouslySetInnerHTML={{
-        __html: cleanSvg,
-      }}/>;
+      return <span
+        style={{
+          width: iconSize,
+          height: iconSize,
+        }}
+        className={`${className ? className : 'w-full h-full'} `}
+        dangerouslySetInnerHTML={{
+          __html: cleanSvg,
+        }}
+      />;
     }
-  }, [view, className]);
+  }, [view.icon, iconSize, className]);
 
   if (emoji) {
     return <>
@@ -57,15 +66,15 @@ function PageIcon({
 
   switch (view.layout) {
     case ViewLayout.AIChat:
-      return <ChatSvg className={className}/>;
+      return <ChatSvg className={className} />;
     case ViewLayout.Grid:
-      return <GridSvg className={className}/>;
+      return <GridSvg className={className} />;
     case ViewLayout.Board:
-      return <BoardSvg className={className}/>;
+      return <BoardSvg className={className} />;
     case ViewLayout.Calendar:
-      return <CalendarSvg className={className}/>;
+      return <CalendarSvg className={className} />;
     case ViewLayout.Document:
-      return <DocumentSvg className={className}/>;
+      return <DocumentSvg className={className} />;
     default:
       return null;
   }

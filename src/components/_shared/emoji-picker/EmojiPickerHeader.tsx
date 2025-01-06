@@ -46,7 +46,7 @@ interface Props {
   hideRemove?: boolean;
 }
 
-function EmojiPickerHeader({ hideRemove, onEmojiSelect, onSkinSelect, searchValue, onSearchChange, skin }: Props) {
+function EmojiPickerHeader ({ hideRemove, onEmojiSelect, onSkinSelect, searchValue, onSearchChange, skin }: Props) {
   const { onOpen, ...popoverProps } = useSelectSkinPopoverProps();
   const { t } = useTranslation();
 
@@ -74,14 +74,14 @@ function EmojiPickerHeader({ hideRemove, onEmojiSelect, onSkinSelect, searchValu
         </Tooltip>
       );
     },
-    []
+    [],
   );
 
   return (
     <div className={'px-0.5 py-2'}>
       <div className={'search-input flex items-end justify-between gap-2'}>
         <OutlinedInput
-          startAdornment={<SearchOutlined className={'h-6 h-6'} />}
+          startAdornment={<SearchOutlined className={'h-5 w-5'} />}
           value={searchValue}
           onChange={(e) => {
             onSearchChange(e.target.value);
@@ -118,18 +118,21 @@ function EmojiPickerHeader({ hideRemove, onEmojiSelect, onSkinSelect, searchValu
           {hideRemove
             ? null
             : renderButton({
-                onClick: () => {
-                  onEmojiSelect('');
-                },
-                tooltip: t('emoji.remove'),
-                children: <DeleteOutlineRounded className={'h-5 w-5'} />,
-              })}
+              onClick: () => {
+                onEmojiSelect('');
+              },
+              tooltip: t('emoji.remove'),
+              children: <DeleteOutlineRounded className={'h-5 w-5'} />,
+            })}
         </div>
       </div>
       <Popover {...popoverProps}>
         <div className={'flex items-center p-2'}>
           {skinTones.map((skinTone) => (
-            <div className={'mx-0.5'} key={skinTone.value}>
+            <div
+              className={'mx-0.5'}
+              key={skinTone.value}
+            >
               <Button
                 style={{
                   backgroundColor: skinTone.value === skin ? 'var(--fill-list-hover)' : undefined,
