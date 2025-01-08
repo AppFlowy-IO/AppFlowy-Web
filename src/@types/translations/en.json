@@ -509,6 +509,7 @@
         "onlyWorkspaceOwnerCanUpdateNamespace": "Only workspace owner can update the namespace",
         "onlyWorkspaceOwnerCanRemoveHomepage": "Only workspace owner can remove the homepage",
         "onlyWorkspaceOwnerCanChangeHomepage": "Only workspace owner can change the homepage",
+        "onlyProCanUpdateNamespace": "Only Pro Plan workspace owner can update the namespace",
         "onlyProCanSetHomepage": "Only Pro Plan workspace owner can set the homepage",
         "setHomepageFailed": "Failed to set homepage",
         "namespaceTooLong": "The namespace is too long, please try another one",

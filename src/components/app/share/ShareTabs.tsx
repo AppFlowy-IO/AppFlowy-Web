@@ -3,7 +3,7 @@ import PublishPanel from '@/components/app/share/PublishPanel';
 import TemplatePanel from '@/components/app/share/TemplatePanel';
 import SharePanel from '@/components/app/share/SharePanel';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ViewTabs, ViewTab, TabPanel } from 'src/components/_shared/tabs/ViewTabs';
 import { ReactComponent as Templates } from '@/assets/template.svg';
@@ -40,7 +40,7 @@ function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: stri
       value: TabKey;
       label: string;
       icon?: React.JSX.Element;
-      Panel: React.FC<{ viewId: string; onClose: () => void }>
+      Panel: React.FC<{ viewId: string; onClose: () => void; opened: boolean }>
     }[];
 
   }, [currentUser?.email, t, view?.is_published]);
@@ -49,6 +49,12 @@ function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: stri
     setValue(newValue);
   }, []);
 
+  useEffect(() => {
+    if (opened) {
+      setValue(TabKey.SHARE);
+    }
+  }, [opened]);
+
   return (
     <>
       <ViewTabs
@@ -56,7 +62,7 @@ function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: stri
         onChange={onChange}
         value={value}
       >
-        {opened && options.map((option) => (
+        {options.map((option) => (
           <ViewTab
             className={'flex items-center flex-row justify-center gap-1.5'}
             key={option.value}
@@ -77,6 +83,7 @@ function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: stri
             <option.Panel
               viewId={viewId}
               onClose={onClose}
+              opened={opened}
             />
           </TabPanel>
         ))}

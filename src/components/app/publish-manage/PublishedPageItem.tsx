@@ -109,6 +109,7 @@ function PublishedPageItem ({ onClose, view, onUnPublish, onPublish }: {
         IconComponent: SettingIcon,
         onClick: () => {
           if (!(isOwner || isPublisher)) return;
+          setAnchorEl(null);
           setOpenSetting(true);
         },
       },

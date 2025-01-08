@@ -3,11 +3,11 @@ import { useAppHandlers } from '@/components/app/app.hooks';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
 import { Button, CircularProgress, Typography } from '@mui/material';
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as PublishIcon } from '@/assets/publish.svg';
 
-function PublishPanel ({ viewId, onClose }: { viewId: string; onClose: () => void }) {
+function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: () => void; opened: boolean }) {
   const { t } = useTranslation();
   const {
     publish,
@@ -22,6 +22,12 @@ function PublishPanel ({ viewId, onClose }: { viewId: string; onClose: () => voi
     isOwner,
     isPublisher,
   } = useLoadPublishInfo(viewId);
+
+  useEffect(() => {
+    if (opened) {
+      void loadPublishInfo();
+    }
+  }, [loadPublishInfo, opened]);
 
   const handlePublish = useCallback(async (publishName?: string) => {
     if (!publish || !view) return;

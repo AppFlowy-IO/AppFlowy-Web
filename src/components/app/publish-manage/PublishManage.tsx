@@ -241,7 +241,7 @@ export function PublishManage ({
             onUpdateHomePage={handleUpdateHomePage}
           />
           <Tooltip
-            title={isOwner ? (activeSubscription === SubscriptionPlan.Free ? t('settings.sites.error.onlyProCanSetHomepage') : undefined)
+            title={isOwner ? (activeSubscription === SubscriptionPlan.Free ? t('settings.sites.error.onlyProCanUpdateNamespace') : undefined)
               : t('settings.sites.error.onlyWorkspaceOwnerCanUpdateNamespace')}
           >
             <IconButton
