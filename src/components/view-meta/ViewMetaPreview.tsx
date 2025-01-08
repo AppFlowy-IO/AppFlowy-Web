@@ -8,7 +8,7 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 
 const AddIconCover = lazy(() => import('@/components/view-meta/AddIconCover'));
 
-export function ViewMetaPreview({
+export function ViewMetaPreview ({
   icon: iconProp,
   cover: coverProp,
   name,
@@ -121,6 +121,31 @@ export function ViewMetaPreview({
     }
   }, [extra, icon, name, updatePage, viewId]);
 
+  const ref = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    const handleMouseEnter = () => {
+      setIsHover(true);
+    };
+
+    const handleMouseLeave = () => {
+      setIsHover(false);
+    };
+
+    if (el) {
+      el.addEventListener('mouseenter', handleMouseEnter);
+      el.addEventListener('mouseleave', handleMouseLeave);
+    }
+
+    return () => {
+      if (el) {
+        el.removeEventListener('mouseenter', handleMouseEnter);
+        el.removeEventListener('mouseleave', handleMouseLeave);
+      }
+    };
+  }, []);
+
   return (
     <div className={'flex w-full flex-col items-center'}>
       {cover && <ViewCover
@@ -131,8 +156,7 @@ export function ViewMetaPreview({
         readOnly={readOnly}
       />}
       <div
-        onMouseEnter={() => setIsHover(true)}
-        onMouseLeave={() => setIsHover(false)}
+        ref={ref}
         className={'flex mt-2 flex-col relative w-full overflow-hidden'}
       >
         <div className={'relative flex justify-center max-sm:h-[38px] h-[52px] w-full'}>
