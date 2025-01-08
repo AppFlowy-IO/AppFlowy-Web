@@ -4,23 +4,24 @@ import { findView } from '@/components/_shared/outline/utils';
 import { useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import ViewList from '@/components/app/search/ViewList';
 import { useService } from '@/components/main/app.hooks';
-import { debounce } from 'lodash-es';
+import { debounce, uniq } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 function BestMatch ({
   onClose,
-  searchValue
+  searchValue,
+  setLoading,
 }: {
   onClose: () => void;
   searchValue: string;
+  setLoading: (loading: boolean) => void;
 }) {
   const [views, setViews] = React.useState<View[]>([]);
   const { t } = useTranslation();
   const outline = useAppOutline();
-  const [loading, setLoading] = React.useState<boolean>(false);
   const service = useService();
-  const currentWorkspaceId = useCurrentWorkspaceId()
+  const currentWorkspaceId = useCurrentWorkspaceId();
   const handleSearch = useCallback(async (searchTerm: string) => {
     if (!outline) return;
     if (!currentWorkspaceId || !service) return;
@@ -29,11 +30,11 @@ function BestMatch ({
       return;
     }
 
-    setLoading(true)
+    setLoading(true);
 
     try {
       const res = await service.searchWorkspace(currentWorkspaceId, searchTerm);
-      const views = res.map(id => {
+      const views = uniq(res).map(id => {
         return findView(outline, id);
       });
 
@@ -44,19 +45,22 @@ function BestMatch ({
     }
 
     setLoading(false);
-    
-  }, [currentWorkspaceId, outline, service]);
+
+  }, [currentWorkspaceId, outline, service, setLoading]);
 
   const debounceSearch = useMemo(() => {
     return debounce(handleSearch, 300);
   }, [handleSearch]);
-  
+
   useEffect(() => {
     void debounceSearch(searchValue);
   }, [searchValue, debounceSearch]);
 
-
-  return <ViewList views={views} title={t('commandPalette.bestMatches')} onClose={onClose} loading={loading} />
+  return <ViewList
+    views={views}
+    title={t('commandPalette.bestMatches')}
+    onClose={onClose}
+  />;
 }
 
 export default BestMatch;

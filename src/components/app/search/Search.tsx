@@ -3,11 +3,11 @@ import BestMatch from '@/components/app/search/BestMatch';
 import RecentViews from '@/components/app/search/RecentViews';
 import TitleMatch from '@/components/app/search/TitleMatch';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import { Button, Dialog, InputBase, Tooltip } from '@mui/material';
+import { Button, CircularProgress, Dialog, InputBase, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { ReactComponent as SearchIcon } from '@/assets/search.svg';
 import { ReactComponent as CheckIcon } from '@/assets/check.svg';
-import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
+// import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
 
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as CloseIcon } from '@/assets/close.svg';
@@ -21,9 +21,9 @@ export function Search () {
   const [open, setOpen] = React.useState<boolean>(false);
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = React.useState<string>('');
-  const [searchType, setSearchType] = React.useState<SEARCH_TYPE>(SEARCH_TYPE.TITLE_MATCH);
+  const [searchType, setSearchType] = React.useState<SEARCH_TYPE>(SEARCH_TYPE.AI_SUGGESTION);
   const [searchTypeAnchorEl, setSearchTypeAnchorEl] = React.useState<null | HTMLElement>(null);
-
+  const [loading, setLoading] = React.useState<boolean>(false);
   const handleClose = () => {
     setOpen(false);
     setSearchValue('');
@@ -71,7 +71,8 @@ export function Search () {
       >
         <div className={'flex gap-2 border-b border-line-default w-full p-4'}>
           <div className={'w-full flex gap-4 items-center min-w-[500px] max-w-[70vw]'}>
-            <SearchIcon className={'w-5 opacity-60 h-5 mr-[1px]'} />
+            {loading ? <CircularProgress size={14} /> : <SearchIcon className={'w-5 opacity-60 h-5 mr-[1px]'} />}
+
             <InputBase
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
@@ -91,25 +92,32 @@ export function Search () {
                 setSearchValue('');
               }}
             ><CloseIcon className={'w-3 h-3'} /></span>
-            <Tooltip title={searchType === SEARCH_TYPE.TITLE_MATCH ? undefined : 'we currently only support searching for pages and content in documents'}>
-              <div
-                onClick={e => {
-                  setSearchTypeAnchorEl(e.currentTarget);
-                }}
-                className={'cursor-pointer flex items-center p-1 px-2 text-xs rounded bg-fill-list-hover'}
-              >
-                {
-                  searchType === SEARCH_TYPE.TITLE_MATCH ?
-                    t('titleMatch') :
-                    t('aiMatch')
-                }
-                <DownIcon className={'w-3 h-3 ml-1 opacity-60'} />
-              </div>
+            <Tooltip title={'we currently only support searching for pages and content in documents'}>
+              <span className={'cursor-pointer flex items-center p-1 px-2 text-xs rounded bg-fill-list-hover'}>BETA</span>
             </Tooltip>
+            {/*<Tooltip title={searchType === SEARCH_TYPE.TITLE_MATCH ? undefined : 'we currently only support searching for pages and content in documents'}>*/}
+            {/*  <div*/}
+            {/*    onClick={e => {*/}
+            {/*      setSearchTypeAnchorEl(e.currentTarget);*/}
+            {/*    }}*/}
+            {/*    className={'cursor-pointer flex items-center p-1 px-2 text-xs rounded bg-fill-list-hover'}*/}
+            {/*  >*/}
+            {/*    {*/}
+            {/*      searchType === SEARCH_TYPE.TITLE_MATCH ?*/}
+            {/*        t('titleMatch') :*/}
+            {/*        t('aiMatch')*/}
+            {/*    }*/}
+            {/*    <DownIcon className={'w-3 h-3 ml-1 opacity-60'} />*/}
+            {/*  </div>*/}
+            {/*</Tooltip>*/}
           </div>
         </div>
-        {!searchValue ? <RecentViews onClose={handleClose} /> : searchType === SEARCH_TYPE.AI_SUGGESTION ? <BestMatch
+        {!searchValue ? <RecentViews
+          setLoading={setLoading}
+          onClose={handleClose}
+        /> : searchType === SEARCH_TYPE.AI_SUGGESTION ? <BestMatch
           searchValue={searchValue}
+          setLoading={setLoading}
           onClose={handleClose}
         /> : <TitleMatch
           searchValue={searchValue}

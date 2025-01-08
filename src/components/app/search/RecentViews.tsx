@@ -4,16 +4,17 @@ import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 function RecentViews ({
-  onClose
+  onClose,
+  setLoading,
 }: {
   onClose: () => void;
+  setLoading: (loading: boolean) => void;
 }) {
   const {
     recentViews,
-    loadRecentViews
+    loadRecentViews,
   } = useAppRecent();
   const { t } = useTranslation();
-  const [loading, setLoading] = React.useState<boolean>(false);
 
   useEffect(() => {
     void (async () => {
@@ -21,11 +22,14 @@ function RecentViews ({
       await loadRecentViews?.();
       setLoading(false);
     })();
-  }, [loadRecentViews]);
-  
+  }, [loadRecentViews, setLoading]);
 
   return (
-    <ViewList views={recentViews} title={t('commandPalette.recentHistory')} onClose={onClose} loading={loading} />
+    <ViewList
+      views={recentViews}
+      title={t('commandPalette.recentHistory')}
+      onClose={onClose}
+    />
   );
 }
 

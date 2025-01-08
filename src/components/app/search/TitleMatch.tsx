@@ -24,7 +24,6 @@ function TitleMatch ({
       views={views}
       title={t('commandPalette.bestMatches')}
       onClose={onClose}
-      loading={false}
     />
   );
 }

@@ -2,7 +2,6 @@ import { View } from '@/application/types';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppHandlers } from '@/components/app/app.hooks';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import CircularProgress from '@mui/material/CircularProgress';
 import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -10,12 +9,10 @@ function ViewList ({
   title,
   views,
   onClose,
-  loading
 }: {
   title: string;
   views?: View[];
   onClose: () => void;
-  loading: boolean;
 }) {
   const { t } = useTranslation();
   const [selectedView, setSelectedView] = React.useState<string>('');
@@ -52,17 +49,17 @@ function ViewList ({
           el.scrollIntoView({
             behavior: 'smooth',
             block: 'nearest',
-            inline: 'nearest'
+            inline: 'nearest',
           });
         }
 
       }
-    }
+    };
 
     document.addEventListener('keydown', handleKeyDown);
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
-    }
+    };
 
   }, [navigateToView, onClose, views, selectedView]);
   return (
@@ -78,7 +75,7 @@ function ViewList ({
           <div
             data-item-id={view.view_id}
             style={{
-              backgroundColor: selectedView === view.view_id ? 'var(--fill-list-active)' : undefined
+              backgroundColor: selectedView === view.view_id ? 'var(--fill-list-active)' : undefined,
             }}
             onClick={() => {
               void navigateToView(view.view_id);
@@ -98,11 +95,6 @@ function ViewList ({
         )) : <div className={'text-center p-6 text-sm text-text-caption'}>
           {t('findAndReplace.noResult')}
         </div>}
-        {loading &&
-          <div className={'text-center text-sm text-text-caption bg-bg-body opacity-75 absolute w-full h-full inset-0 flex items-center justify-center'}>
-            <CircularProgress />
-          </div>
-        }
       </div>
       <div className={'w-full p-4 flex text-text-caption text-xs gap-2 items-center'}>
         <span className={'rounded bg-fill-list-hover p-1'}>TAB</span>
