@@ -21,7 +21,6 @@ Before you mark this PR ready for review, run through this checklist!
 
 #### PR Checklist
 
-- [ ] My code adheres to [AppFlowy's Conventions](https://docs.appflowy.io/docs/documentation/software-contributions/conventions)
 - [ ] I've listed at least one issue that this PR fixes in the description above.
 - [ ] I've added a test(s) to validate changes in this PR, or this PR only contains semantic changes.
 - [ ] All existing tests are passing.
