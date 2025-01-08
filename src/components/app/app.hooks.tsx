@@ -15,7 +15,6 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
-import { notify } from '@/components/_shared/notify';
 import { findAncestors, findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { AFConfigContext, useService } from '@/components/main/app.hooks';
