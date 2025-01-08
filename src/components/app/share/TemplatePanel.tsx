@@ -73,6 +73,7 @@ function TemplatePanel ({ viewId }: { viewId: string }) {
     window.open(`${window.origin}/as-template?viewUrl=${encodeURIComponent(publishUrl)}&viewName=${view?.name || ''}&viewId=${view?.view_id || ''}`, '_blank');
   }, [view, publishUrl]);
 
+  // test
   const renderTemplateButtons = useCallback(() => {
     return <>
       <LinkPreview url={url} />
