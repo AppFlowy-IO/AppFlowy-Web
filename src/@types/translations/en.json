@@ -508,8 +508,6 @@
         "namespaceLengthAtLeast2Characters": "The namespace must be at least 2 characters long",
         "onlyWorkspaceOwnerCanUpdateNamespace": "Only workspace owner can update the namespace",
         "onlyWorkspaceOwnerCanRemoveHomepage": "Only workspace owner can remove the homepage",
-        "onlyWorkspaceOwnerCanChangeHomepage": "Only workspace owner can change the homepage",
-        "onlyProCanSetHomepage": "Only Pro Plan workspace owner can set the homepage",
         "setHomepageFailed": "Failed to set homepage",
         "namespaceTooLong": "The namespace is too long, please try another one",
         "namespaceTooShort": "The namespace is too short, please try another one",
@@ -3044,8 +3042,5 @@
   "memberCount_many": "{{count}} members",
   "memberCount_other": "{{count}} members",
   "aiMatch": "AI match",
-  "titleMatch": "Title match",
-  "namespace": "Namespace",
-  "manageNamespaceDescription": "Manage your namespace and homepage",
-  "homepage": "Homepage"
+  "titleMatch": "Title match"
 }

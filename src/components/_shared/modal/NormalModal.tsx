@@ -7,7 +7,7 @@ import { ReactComponent as CloseIcon } from '@/assets/close.svg';
 // @ts-ignore
 export interface NormalModalProps extends DialogProps {
   okText?: string;
-  cancelText?: string | React.ReactNode;
+  cancelText?: string;
   onOk?: () => void;
   onCancel?: () => void;
   danger?: boolean;
@@ -17,7 +17,6 @@ export interface NormalModalProps extends DialogProps {
   cancelButtonProps?: ButtonProps;
   okLoading?: boolean;
   closable?: boolean;
-  overflowHidden?: boolean;
 }
 
 export function NormalModal ({
@@ -33,7 +32,6 @@ export function NormalModal ({
   cancelButtonProps,
   okLoading,
   closable = true,
-  overflowHidden = false,
   ...dialogProps
 }: NormalModalProps) {
   const { t } = useTranslation();
@@ -53,12 +51,7 @@ export function NormalModal ({
       }}
       {...dialogProps}
     >
-      <div
-        style={{
-          overflow: overflowHidden ? 'hidden' : 'auto',
-        }}
-        className={'relative flex flex-col gap-4 p-5'}
-      >
+      <div className={'relative flex flex-col gap-4 p-5'}>
         <div className={'flex w-full items-center justify-between text-base font-medium'}>
           <div className={'flex-1 text-center font-medium truncate'}>{title}</div>
           {closable && <div className={'relative -right-1.5'}>
@@ -74,12 +67,7 @@ export function NormalModal ({
 
         </div>
 
-        <div
-          style={{
-            overflow: overflowHidden ? 'hidden' : 'auto',
-          }}
-          className={'flex-1 w-full'}
-        >{children}</div>
+        <div className={'flex-1'}>{children}</div>
         <div className={'flex w-full justify-end gap-3'}>
           <Button
             color={'inherit'}

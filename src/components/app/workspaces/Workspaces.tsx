@@ -125,6 +125,7 @@ export function Workspaces () {
           }}
           workspace={currentWorkspace}
         />}
+
         <Button
           size={'small'}
           component={'div'}

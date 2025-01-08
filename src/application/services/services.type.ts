@@ -19,12 +19,7 @@ import {
   UpdateSpacePayload,
   WorkspaceMember,
   QuickNoteEditorData,
-  QuickNote,
-  Subscription,
-  CreateWorkspacePayload,
-  UpdateWorkspacePayload,
-  PublishViewPayload,
-  UploadPublishNamespacePayload,
+  QuickNote, Subscription, CreateWorkspacePayload, UpdateWorkspacePayload,
 } from '@/application/types';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { ViewMeta } from '@/application/db/tables/view_metas';
@@ -143,22 +138,11 @@ export interface TemplateService {
 }
 
 export interface PublishService {
-  publishView: (workspaceId: string, viewId: string, payload?: PublishViewPayload) => Promise<void>;
-  unpublishView: (workspaceId: string, viewId: string) => Promise<void>;
-  updatePublishNamespace: (workspaceId: string, payload: UploadPublishNamespacePayload) => Promise<void>;
+
   getPublishViewMeta: (namespace: string, publishName: string) => Promise<ViewMeta>;
   getPublishView: (namespace: string, publishName: string) => Promise<YDoc>;
   getPublishRowDocument: (viewId: string) => Promise<YDoc>;
-  getPublishInfo: (viewId: string) => Promise<{
-    namespace: string;
-    publishName: string,
-    publisherEmail: string,
-    publishedAt: string
-  }>;
-  getPublishNamespace: (namespace: string) => Promise<string>;
-  getPublishHomepage: (workspaceId: string) => Promise<{ view_id: string }>;
-  updatePublishHomepage: (workspaceId: string, viewId: string) => Promise<void>;
-  removePublishHomepage: (workspaceId: string) => Promise<void>;
+  getPublishInfo: (viewId: string) => Promise<{ namespace: string; publishName: string }>;
 
   getPublishOutline (namespace: string): Promise<View[]>;
 
