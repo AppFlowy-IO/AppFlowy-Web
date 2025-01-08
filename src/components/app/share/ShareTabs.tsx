@@ -15,7 +15,7 @@ enum TabKey {
   TEMPLATE = 'template',
 }
 
-function ShareTabs({ viewId }: { viewId: string }) {
+function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: string; onClose: () => void }) {
   const { t } = useTranslation();
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
@@ -29,18 +29,18 @@ function ShareTabs({ viewId }: { viewId: string }) {
     }, {
       value: TabKey.PUBLISH,
       label: t('shareAction.publish'),
-      icon: view?.is_published ? <PublishedWithChanges className={'w-4 h-4 text-function-success mb-0'}/> : undefined,
+      icon: view?.is_published ? <PublishedWithChanges className={'w-4 h-4 text-function-success mb-0'} /> : undefined,
       Panel: PublishPanel,
     }, currentUser?.email?.endsWith('appflowy.io') && view?.is_published && {
       value: TabKey.TEMPLATE,
       label: t('template.asTemplate'),
-      icon: <Templates className={'w-4 h-4 mb-0'}/>,
+      icon: <Templates className={'w-4 h-4 mb-0'} />,
       Panel: TemplatePanel,
     }].filter(Boolean) as {
       value: TabKey;
       label: string;
       icon?: React.JSX.Element;
-      Panel: React.FC<{ viewId: string }>
+      Panel: React.FC<{ viewId: string; onClose: () => void }>
     }[];
 
   }, [currentUser?.email, t, view?.is_published]);
@@ -56,7 +56,7 @@ function ShareTabs({ viewId }: { viewId: string }) {
         onChange={onChange}
         value={value}
       >
-        {options.map((option) => (
+        {opened && options.map((option) => (
           <ViewTab
             className={'flex items-center flex-row justify-center gap-1.5'}
             key={option.value}
@@ -74,7 +74,10 @@ function ShareTabs({ viewId }: { viewId: string }) {
             index={option.value}
             value={value}
           >
-            <option.Panel viewId={viewId}/>
+            <option.Panel
+              viewId={viewId}
+              onClose={onClose}
+            />
           </TabPanel>
         ))}
       </div>

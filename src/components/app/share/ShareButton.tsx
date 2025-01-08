@@ -22,7 +22,8 @@ export function ShareButton ({ viewId }: { viewId: string }) {
         variant={'contained'}
         color={'primary'}
       >{t('shareAction.buttonText')}</Button>
-      {opened && <Popover
+      <Popover
+        keepMounted
         open={opened}
         anchorEl={ref.current}
         onClose={() => setOpened(false)}
@@ -41,9 +42,13 @@ export function ShareButton ({ viewId }: { viewId: string }) {
         }}
       >
         <div className={'flex flex-col gap-2 w-fit p-2'}>
-          <ShareTabs viewId={viewId} />
+          <ShareTabs
+            opened={opened}
+            viewId={viewId}
+            onClose={() => setOpened(false)}
+          />
         </div>
-      </Popover>}
+      </Popover>
     </>
   );
 }

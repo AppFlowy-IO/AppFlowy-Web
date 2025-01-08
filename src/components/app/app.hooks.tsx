@@ -15,6 +15,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { notify } from '@/components/_shared/notify';
 import { findAncestors, findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { AFConfigContext, useService } from '@/components/main/app.hooks';
@@ -62,6 +63,8 @@ export interface AppContextType {
   updateSpace?: (payload: UpdateSpacePayload) => Promise<void>;
   uploadFile?: (viewId: string, file: File, onProgress?: (n: number) => void) => Promise<string>;
   getSubscriptions?: () => Promise<Subscription[]>;
+  publish?: (view: View, publishName?: string) => Promise<void>;
+  unpublish?: (viewId: string) => Promise<void>;
 }
 
 const USER_NO_ACCESS_CODE = [1024, 1012];
@@ -641,6 +644,24 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [currentWorkspaceId, service]);
 
+  const publish = useCallback(async (view: View, publishName?: string) => {
+    if (!service || !currentWorkspaceId) return;
+    const isDatabase = [ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar].includes(view.layout);
+    const viewId = view.view_id;
+
+    await service.publishView(currentWorkspaceId, viewId, {
+      publish_name: publishName,
+      visible_database_view_ids: isDatabase ? view.children?.map((v) => v.view_id) : undefined,
+    });
+    void loadOutline(currentWorkspaceId, false);
+  }, [currentWorkspaceId, loadOutline, service]);
+
+  const unpublish = useCallback(async (viewId: string) => {
+    if (!service || !currentWorkspaceId) return;
+    await service.unpublishView(currentWorkspaceId, viewId);
+    void loadOutline(currentWorkspaceId, false);
+  }, [currentWorkspaceId, loadOutline, service]);
+
   return <AppContext.Provider
     value={{
       currentWorkspaceId,
@@ -679,6 +700,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       updateSpace,
       uploadFile,
       getSubscriptions,
+      publish,
+      unpublish,
     }}
   >
     {requestAccessOpened ? <RequestAccess /> : children}
@@ -819,6 +842,8 @@ export function useAppHandlers () {
     updateSpace: context.updateSpace,
     uploadFile: context.uploadFile,
     getSubscriptions: context.getSubscriptions,
+    publish: context.publish,
+    unpublish: context.unpublish,
   };
 }
 

@@ -5,7 +5,7 @@ import { CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material'
 import { ReactComponent as LinkIcon } from '@/assets/link.svg';
 import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
 import { ReactComponent as CheckIcon } from '@/assets/check.svg';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 function PublishLinkPreview ({
@@ -15,6 +15,7 @@ function PublishLinkPreview ({
   url,
   isOwner,
   isPublisher,
+  onClose,
 }: {
   publishInfo: { namespace: string, publishName: string };
   onUnPublish: () => Promise<void>;
@@ -22,6 +23,7 @@ function PublishLinkPreview ({
   url: string;
   isOwner: boolean;
   isPublisher: boolean;
+  onClose?: () => void;
 }) {
   const [siteOpen, setSiteOpen] = React.useState<boolean>(false);
   const [renameOpen, setRenameOpen] = React.useState<boolean>(false);
@@ -30,6 +32,10 @@ function PublishLinkPreview ({
   const [focused, setFocused] = React.useState<boolean>(false);
   const [loading, setLoading] = React.useState<boolean>(false);
 
+  useEffect(() => {
+    setPublishName(publishInfo.publishName);
+
+  }, [publishInfo.publishName]);
   const handlePublish = async () => {
     if (loading) return;
     if (publishName === publishInfo.publishName) return;
@@ -62,6 +68,7 @@ function PublishLinkPreview ({
                 size={'small'}
                 onClick={() => {
                   setSiteOpen(true);
+                  onClose?.();
                 }}
               >
                 <DownIcon className={'w-4 h-4'} />
@@ -111,6 +118,7 @@ function PublishLinkPreview ({
                   }
 
                   setRenameOpen(true);
+                  onClose?.();
                 }}
               >
                 {loading ? <CircularProgress size={14} /> :
@@ -142,7 +150,7 @@ function PublishLinkPreview ({
           onPublish={onPublish}
           url={url}
         />}
-        {siteOpen && <NormalModal
+        <NormalModal
           okButtonProps={{
             className: 'hidden',
           }}
@@ -168,7 +176,7 @@ function PublishLinkPreview ({
             />
           </div>
 
-        </NormalModal>}
+        </NormalModal>
       </div>
 
     </>

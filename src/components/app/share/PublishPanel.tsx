@@ -1,17 +1,18 @@
-import { ViewLayout } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
-import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppHandlers } from '@/components/app/app.hooks';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
-import { useService } from '@/components/main/app.hooks';
 import { Button, CircularProgress, Typography } from '@mui/material';
 import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as PublishIcon } from '@/assets/publish.svg';
 
-function PublishPanel ({ viewId }: { viewId: string }) {
-  const currentWorkspaceId = useCurrentWorkspaceId();
+function PublishPanel ({ viewId, onClose }: { viewId: string; onClose: () => void }) {
   const { t } = useTranslation();
+  const {
+    publish,
+    unpublish,
+  } = useAppHandlers();
   const {
     url,
     loadPublishInfo,
@@ -22,40 +23,35 @@ function PublishPanel ({ viewId }: { viewId: string }) {
     isPublisher,
   } = useLoadPublishInfo(viewId);
 
-  const service = useService();
   const handlePublish = useCallback(async (publishName?: string) => {
-    if (!service || !currentWorkspaceId || !view) return;
-    const isDatabase = [ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar].includes(view.layout);
+    if (!publish || !view) return;
 
     try {
-      await service.publishView(currentWorkspaceId, viewId, {
-        publish_name: publishName,
-        visible_database_view_ids: isDatabase ? view.children?.map((v) => v.view_id) : undefined,
-      });
-      await loadPublishInfo();
+      await publish(view, publishName);
+      void loadPublishInfo();
       notify.success(t('publish.publishSuccessfully'));
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
     }
-  }, [currentWorkspaceId, loadPublishInfo, service, t, view, viewId]);
+  }, [loadPublishInfo, publish, t, view]);
 
   const handleUnpublish = useCallback(async () => {
-    if (!service || !currentWorkspaceId || !view) return;
+    if (!view || !unpublish) return;
     if (!isOwner && !isPublisher) {
       notify.error(t('settings.sites.error.publishPermissionDenied'));
       return;
     }
 
     try {
-      await service.unpublishView(currentWorkspaceId, viewId);
+      await unpublish(viewId);
       await loadPublishInfo();
       notify.success(t('publish.unpublishSuccessfully'));
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
     }
-  }, [currentWorkspaceId, isOwner, isPublisher, loadPublishInfo, service, t, view, viewId]);
+  }, [isOwner, isPublisher, loadPublishInfo, t, unpublish, view, viewId]);
 
   const renderPublished = useCallback(() => {
     if (!publishInfo || !view) return null;
@@ -67,6 +63,7 @@ function PublishPanel ({ viewId }: { viewId: string }) {
         onUnPublish={handleUnpublish}
         isOwner={isOwner}
         isPublisher={isPublisher}
+        onClose={onClose}
       />
       <div className={'flex items-center gap-4 justify-end w-full'}>
         <Button
@@ -86,7 +83,7 @@ function PublishPanel ({ viewId }: { viewId: string }) {
         >{t('shareAction.visitSite')}</Button>
       </div>
     </div>;
-  }, [handlePublish, handleUnpublish, isOwner, isPublisher, publishInfo, t, url, view]);
+  }, [handlePublish, handleUnpublish, isOwner, isPublisher, onClose, publishInfo, t, url, view]);
 
   const renderUnpublished = useCallback(() => {
     return <Button

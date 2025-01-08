@@ -1,4 +1,4 @@
-import { SubscriptionPlan, View, ViewLayout } from '@/application/types';
+import { SubscriptionPlan, View } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { flattenViews } from '@/components/_shared/outline/utils';
 import { useAppHandlers, useUserWorkspaceInfo } from '@/components/app/app.hooks';
@@ -129,36 +129,34 @@ export function PublishManage ({
 
   }, [isOwner, service, t, workspaceId]);
 
-  const currentWorkspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
+  const {
+    publish,
+    unpublish,
+  } = useAppHandlers();
   const handlePublish = useCallback(async (view: View, publishName: string) => {
-    if (!service || !currentWorkspaceId) return;
-    const isDatabase = [ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar].includes(view.layout);
-    const viewId = view.view_id;
+    if (!publish) return;
 
     try {
-      await service.publishView(currentWorkspaceId, viewId, {
-        publish_name: publishName,
-        visible_database_view_ids: isDatabase ? view.children?.map((v) => v.view_id) : undefined,
-      });
+      await publish(view, publishName);
       notify.success(t('publish.publishSuccessfully'));
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
     }
-  }, [currentWorkspaceId, service, t]);
+  }, [publish, t]);
 
   const handleUnpublish = useCallback(async (viewId: string) => {
-    if (!service || !currentWorkspaceId) return;
+    if (!unpublish) return;
 
     try {
-      await service.unpublishView(currentWorkspaceId, viewId);
+      await unpublish(viewId);
       void loadPublishPages();
       notify.success(t('publish.unpublishSuccessfully'));
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
     }
-  }, [currentWorkspaceId, loadPublishPages, service, t]);
+  }, [loadPublishPages, t, unpublish]);
 
   const {
     getSubscriptions,
@@ -252,7 +250,7 @@ export function PublishManage ({
                 if (!isOwner || activeSubscription === SubscriptionPlan.Free) {
                   return;
                 }
-                
+
                 e.currentTarget.blur();
                 setUpdateOpen(true);
               }}
