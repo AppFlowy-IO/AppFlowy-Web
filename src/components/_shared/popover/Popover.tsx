@@ -1,6 +1,6 @@
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import isEqual from 'lodash-es/isEqual';
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Popover as PopoverComponent, PopoverProps as PopoverComponentProps } from '@mui/material';
 
 const defaultProps: Partial<PopoverComponentProps> = {
@@ -33,7 +33,7 @@ const DEFAULT_ORIGINS: Origins = {
   },
 };
 
-function calculateOptimalOrigins(
+export function calculateOptimalOrigins (
   position: Position,
   popoverWidth: number,
   popoverHeight: number,
@@ -103,7 +103,7 @@ function calculateOptimalOrigins(
   };
 }
 
-export function Popover({
+export function Popover ({
   children,
   transformOrigin = DEFAULT_ORIGINS.transformOrigin,
   anchorOrigin = DEFAULT_ORIGINS.anchorOrigin,
@@ -119,7 +119,7 @@ export function Popover({
     anchorOrigin,
   });
 
-  const handleEntered = (element: HTMLElement) => {
+  const handleEntered = useCallback((element: HTMLElement) => {
     const { width, height } = element.getBoundingClientRect();
     let position: Position;
 
@@ -145,7 +145,7 @@ export function Popover({
     );
 
     setOrigins(newOrigins);
-  };
+  }, [anchorEl, anchorOrigin, anchorPosition, transformOrigin]);
 
   useEffect(() => {
     if (!adjustOrigins) {

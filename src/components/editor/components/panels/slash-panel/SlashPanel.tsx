@@ -41,18 +41,19 @@ import { ReactComponent as ToggleHeading2Icon } from '@/assets/toggle_heading2.s
 import { ReactComponent as ToggleHeading3Icon } from '@/assets/toggle_heading3.svg';
 import { ReactComponent as MathIcon } from '@/assets/slash_menu_icon_math_equation.svg';
 import { notify } from '@/components/_shared/notify';
-import { Popover } from '@/components/_shared/popover';
+import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@mui/material';
+import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
-export function SlashPanel({
+export function SlashPanel ({
   setEmojiPosition,
 }: {
   setEmojiPosition: (position: { top: number; left: number }) => void;
@@ -68,6 +69,7 @@ export function SlashPanel({
   const optionsRef = useRef<HTMLDivElement>(null);
   const editor = useSlateStatic() as YjsEditor;
   const [selectedOption, setSelectedOption] = React.useState<string | null>(null);
+  const [transformOrigin, setTransformOrigin] = React.useState<PopoverOrigin | undefined>(undefined);
   const selectedOptionRef = React.useRef<string | null>(null);
   const {
     openPopover,
@@ -142,7 +144,7 @@ export function SlashPanel({
       {
         label: t('document.slashMenu.name.text'),
         key: 'text',
-        icon: <TextIcon/>,
+        icon: <TextIcon />,
         onClick: () => {
           turnInto(BlockType.Paragraph, {});
         },
@@ -150,7 +152,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.heading1'),
         key: 'heading1',
-        icon: <Heading1Icon/>,
+        icon: <Heading1Icon />,
         keywords: ['heading1', 'h1', 'heading'],
         onClick: () => {
           turnInto(BlockType.HeadingBlock, {
@@ -160,7 +162,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.heading2'),
         key: 'heading2',
-        icon: <Heading2Icon/>,
+        icon: <Heading2Icon />,
         keywords: ['heading2', 'h2', 'subheading', 'heading'],
         onClick: () => {
           turnInto(BlockType.HeadingBlock, {
@@ -170,7 +172,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.heading3'),
         key: 'heading3',
-        icon: <Heading3Icon/>,
+        icon: <Heading3Icon />,
         keywords: ['heading3', 'h3', 'subheading', 'heading'],
         onClick: () => {
           turnInto(BlockType.HeadingBlock, {
@@ -180,7 +182,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.image'),
         key: 'image',
-        icon: <ImageIcon/>,
+        icon: <ImageIcon />,
         keywords: ['image', 'img'],
         onClick: () => {
           turnInto(BlockType.ImageBlock, {
@@ -191,7 +193,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.bulletedList'),
         key: 'bulletedList',
-        icon: <BulletedListIcon/>,
+        icon: <BulletedListIcon />,
         keywords: ['bulleted', 'list'],
         onClick: () => {
           turnInto(BlockType.BulletedListBlock, {});
@@ -199,7 +201,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.numberedList'),
         key: 'numberedList',
-        icon: <NumberedListIcon/>,
+        icon: <NumberedListIcon />,
         keywords: ['numbered', 'list'],
         onClick: () => {
           turnInto(BlockType.NumberedListBlock, {});
@@ -207,7 +209,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.todoList'),
         key: 'todoList',
-        icon: <TodoListIcon/>,
+        icon: <TodoListIcon />,
         keywords: ['todo', 'list'],
         onClick: () => {
           turnInto(BlockType.TodoListBlock, {});
@@ -215,7 +217,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.divider'),
         key: 'divider',
-        icon: <DividerIcon/>,
+        icon: <DividerIcon />,
         keywords: ['divider', 'line'],
         onClick: () => {
           turnInto(BlockType.DividerBlock, {});
@@ -223,7 +225,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.quote'),
         key: 'quote',
-        icon: <QuoteIcon/>,
+        icon: <QuoteIcon />,
         keywords: ['quote'],
         onClick: () => {
           turnInto(BlockType.QuoteBlock, {});
@@ -231,7 +233,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.linkedDoc'),
         key: 'linkedDoc',
-        icon: <DocumentIcon/>,
+        icon: <DocumentIcon />,
         keywords: ['linked', 'doc', 'page', 'document'],
         onClick: () => {
           const rect = getRangeRect();
@@ -242,7 +244,7 @@ export function SlashPanel({
       }, {
         label: t('document.menuName'),
         key: 'document',
-        icon: <AddDocumentIcon/>,
+        icon: <AddDocumentIcon />,
         keywords: ['document', 'doc', 'page', 'create', 'add'],
         onClick: async () => {
           if (!viewId || !addPage || !openPageModal) return;
@@ -350,7 +352,7 @@ export function SlashPanel({
       {
         label: t('document.slashMenu.name.callout'),
         key: 'callout',
-        icon: <CalloutIcon/>,
+        icon: <CalloutIcon />,
         keywords: ['callout'],
         onClick: () => {
           turnInto(BlockType.CalloutBlock, {
@@ -360,7 +362,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.outline'),
         key: 'outline',
-        icon: <OutlineIcon/>,
+        icon: <OutlineIcon />,
         keywords: ['outline', 'table', 'contents'],
         onClick: () => {
           turnInto(BlockType.OutlineBlock, {});
@@ -368,7 +370,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.mathEquation'),
         key: 'math',
-        icon: <MathIcon/>,
+        icon: <MathIcon />,
         keywords: ['math', 'equation', 'formula'],
         onClick: () => {
           turnInto(BlockType.EquationBlock, {});
@@ -376,7 +378,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.code'),
         key: 'code',
-        icon: <CodeIcon/>,
+        icon: <CodeIcon />,
         keywords: ['code', 'block'],
         onClick: () => {
           turnInto(BlockType.CodeBlock, {});
@@ -384,7 +386,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.toggleList'),
         key: 'toggleList',
-        icon: <ToggleListIcon/>,
+        icon: <ToggleListIcon />,
         keywords: ['toggle', 'list'],
         onClick: () => {
           turnInto(BlockType.ToggleListBlock, {
@@ -394,7 +396,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.toggleHeading1'),
         key: 'toggleHeading1',
-        icon: <ToggleHeading1Icon/>,
+        icon: <ToggleHeading1Icon />,
         keywords: ['toggle', 'heading1', 'h1', 'heading'],
         onClick: () => {
           turnInto(BlockType.ToggleListBlock, {
@@ -405,7 +407,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.toggleHeading2'),
         key: 'toggleHeading2',
-        icon: <ToggleHeading2Icon/>,
+        icon: <ToggleHeading2Icon />,
         keywords: ['toggle', 'heading2', 'h2', 'subheading', 'heading'],
         onClick: () => {
           turnInto(BlockType.ToggleListBlock, {
@@ -416,7 +418,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.toggleHeading3'),
         key: 'toggleHeading3',
-        icon: <ToggleHeading3Icon/>,
+        icon: <ToggleHeading3Icon />,
         keywords: ['toggle', 'heading3', 'h3', 'subheading', 'heading'],
         onClick: () => {
           turnInto(BlockType.ToggleListBlock, {
@@ -427,7 +429,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.emoji'),
         key: 'emoji',
-        icon: <EmojiIcon/>,
+        icon: <EmojiIcon />,
         keywords: ['emoji'],
         onClick: () => {
           setTimeout(() => {
@@ -444,7 +446,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.file'),
         key: 'file',
-        icon: <FileIcon/>,
+        icon: <FileIcon />,
         keywords: ['file', 'upload'],
         onClick: () => {
           turnInto(BlockType.FileBlock, {});
@@ -542,9 +544,21 @@ export function SlashPanel({
     setSelectedOption(null);
   }, [options.length]);
 
+  useEffect(() => {
+    if (open && panelPosition) {
+      const origins = calculateOptimalOrigins(panelPosition, 320, 400, undefined, 16);
+      const isAlignBottom = origins.transformOrigin.vertical === 'bottom';
+
+      setTransformOrigin(isAlignBottom ? origins.transformOrigin : {
+        vertical: -30,
+        horizontal: origins.transformOrigin.horizontal,
+      });
+    }
+  }, [open, panelPosition]);
+
   return (
     <Popover
-      adjustOrigins={true}
+      adjustOrigins={false}
       data-testid={'slash-panel'}
       open={open}
       onClose={closePanel}
@@ -553,10 +567,7 @@ export function SlashPanel({
       disableAutoFocus={true}
       disableRestoreFocus={true}
       disableEnforceFocus={true}
-      transformOrigin={{
-        vertical: -32,
-        horizontal: 'left',
-      }}
+      transformOrigin={transformOrigin}
       onMouseDown={e => e.preventDefault()}
     >
       <div
@@ -580,7 +591,8 @@ export function SlashPanel({
             </Button>
           )) :
           <div
-            className={'text-text-caption text-sm flex justify-center items-center py-4'}>{t('findAndReplace.noResult')}</div>}
+            className={'text-text-caption text-sm flex justify-center items-center py-4'}
+          >{t('findAndReplace.noResult')}</div>}
       </div>
 
 

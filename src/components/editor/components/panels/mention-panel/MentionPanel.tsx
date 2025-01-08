@@ -7,6 +7,7 @@ import { usePanelContext } from '@/components/editor/components/panels/Panels.ho
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button, Divider } from '@mui/material';
+import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import { sortBy, uniqBy } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -15,7 +16,7 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 import { ReactComponent as AddIcon } from '@/assets/add.svg';
 import { ReactComponent as ArrowIcon } from '@/assets/north_east.svg';
 import { ReactComponent as MoreIcon } from '@/assets/more.svg';
-import { Popover } from '@/components/_shared/popover';
+import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import dayjs from 'dayjs';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 
@@ -33,7 +34,7 @@ interface Option {
   index: number;
 }
 
-function createMentionOptions({
+function createMentionOptions ({
   showMore,
   viewsLength,
   dateLength,
@@ -67,7 +68,7 @@ function createMentionOptions({
   return options;
 }
 
-export function MentionPanel() {
+export function MentionPanel () {
   const {
     isPanelOpen,
     panelPosition,
@@ -327,10 +328,23 @@ export function MentionPanel() {
       slateDom.removeEventListener('keydown', handleKeyDown);
     };
   }, [editor, handleClickMore, handleAddPage, handleSelectedPage, open, selectedOptionRef, splicedViews, dateOptions, showMore]);
+  const [transformOrigin, setTransformOrigin] = React.useState<PopoverOrigin | undefined>(undefined);
+
+  useEffect(() => {
+    if (open && panelPosition) {
+      const origins = calculateOptimalOrigins(panelPosition, 320, 560, undefined, 16);
+      const isAlignBottom = origins.transformOrigin.vertical === 'bottom';
+
+      setTransformOrigin(isAlignBottom ? origins.transformOrigin : {
+        vertical: -30,
+        horizontal: origins.transformOrigin.horizontal,
+      });
+    }
+  }, [open, panelPosition]);
 
   return (
     <Popover
-      adjustOrigins={true}
+      adjustOrigins={false}
       data-testid={'mention-panel'}
       open={open}
       onClose={closePanel}
@@ -339,10 +353,7 @@ export function MentionPanel() {
       disableAutoFocus={true}
       disableRestoreFocus={true}
       disableEnforceFocus={true}
-      transformOrigin={{
-        vertical: -32,
-        horizontal: -8,
-      }}
+      transformOrigin={transformOrigin}
       onMouseDown={e => e.preventDefault()}
     >
       <div
@@ -363,7 +374,10 @@ export function MentionPanel() {
                     key={view.view_id}
                     data-option-index={index}
                     startIcon={
-                      <PageIcon view={view} className={'flex h-5 w-5 min-w-5 items-center justify-center'}/>
+                      <PageIcon
+                        view={view}
+                        className={'flex h-5 w-5 min-w-5 items-center justify-center'}
+                      />
                     }
                     className={`justify-start truncate scroll-m-2 min-h-[32px] hover:bg-fill-list-hover ${selectedOption?.index === index && selectedOption?.category === MentionTag.Page ? 'bg-fill-list-hover' : ''}`}
                     onClick={() => handleSelectedPage(view.view_id)}
@@ -374,15 +388,19 @@ export function MentionPanel() {
               </div>
             ) :
             <div
-              className={'text-text-caption text-sm flex justify-center items-center p-2'}>{t('findAndReplace.noResult')}</div>
+              className={'text-text-caption text-sm flex justify-center items-center p-2'}
+            >{t('findAndReplace.noResult')}</div>
           }
           {showMore &&
-            <div data-option-category={MentionTag.LoadMore} className={'w-full'}>
+            <div
+              data-option-category={MentionTag.LoadMore}
+              className={'w-full'}
+            >
               <Button
                 color={'inherit'}
                 size={'small'}
                 data-option-index={0}
-                startIcon={<MoreIcon/>}
+                startIcon={<MoreIcon />}
                 className={`justify-start w-full scroll-m-2 min-h-[32px] hover:bg-fill-list-hover ${selectedOption?.index === 0 && selectedOption?.category === MentionTag.LoadMore ? 'bg-fill-list-hover' : ''}`}
                 onClick={handleClickMore}
               >
@@ -391,7 +409,10 @@ export function MentionPanel() {
             </div>
           }
         </div>
-        {showDate && <div className={'flex flex-col gap-2'} data-option-category={MentionTag.Date}>
+        {showDate && <div
+          className={'flex flex-col gap-2'}
+          data-option-category={MentionTag.Date}
+        >
           <div className={'text-text-caption scroll-my-10 px-1'}>{t('inlineActions.date')}</div>
           {
             dateOptions.map((option, index) => (
@@ -416,10 +437,10 @@ export function MentionPanel() {
           data-option-category={MentionTag.NewPage}
           className={'flex w-full flex-col gap-2'}
         >
-          <Divider/>
+          <Divider />
           <Button
             color={'inherit'}
-            startIcon={<AddIcon/>}
+            startIcon={<AddIcon />}
             size={'small'}
             data-option-index={0}
             className={`justify-start scroll-m-2 min-h-[32px] hover:bg-fill-list-hover ${selectedOption?.index === 0 && selectedOption?.category === MentionTag.NewPage ? 'bg-fill-list-hover' : ''}`}
@@ -438,7 +459,7 @@ export function MentionPanel() {
 
           <Button
             color={'inherit'}
-            startIcon={<ArrowIcon className={' text-content-blue-900 w-[0.75em] h-[0.75em] mx-0.5'}/>}
+            startIcon={<ArrowIcon className={' text-content-blue-900 w-[0.75em] h-[0.75em] mx-0.5'} />}
             size={'small'}
             data-option-index={1}
             className={`justify-start scroll-m-2 min-h-[32px] hover:bg-fill-list-hover ${selectedOption?.index === 1 && selectedOption?.category === MentionTag.NewPage ? 'bg-fill-list-hover' : ''}`}
