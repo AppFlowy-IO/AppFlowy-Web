@@ -7,7 +7,9 @@ export function filterViews (views: View[], keyword: string): View[] {
     for (const view of views) {
       if (view.name.toLowerCase().includes(keyword.toLowerCase())) {
         result.push(view);
-      } else if (view.children) {
+      }
+
+      if (view.children) {
         const filteredChildren = filterAndFlatten(view.children);
 
         result = result.concat(filteredChildren);

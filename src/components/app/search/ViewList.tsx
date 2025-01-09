@@ -71,8 +71,7 @@ function ViewList ({
       ref={ref}
       className={'flex flex-col'}
     >
-
-      <div className={'p-4 flex items-center gap-4'}>
+      <div className={'px-4 pt-5 pb-2 flex items-center gap-4'}>
         {!loading && views && views.length === 0 ? t('noSearchResults') : <>
           {title}
           {loading && <CircularProgress size={14} />}

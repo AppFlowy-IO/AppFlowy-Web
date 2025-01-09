@@ -1,6 +1,8 @@
 import { NormalModal } from '@/components/_shared/modal';
+import { notify } from '@/components/_shared/notify';
 import { PublishManage } from '@/components/app/publish-manage';
 import { PublishNameSetting } from '@/components/app/publish-manage/PublishNameSetting';
+import { copyTextToClipboard } from '@/utils/copy';
 import { CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material';
 import { ReactComponent as LinkIcon } from '@/assets/link.svg';
 import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
@@ -51,9 +53,14 @@ function PublishLinkPreview ({
     <>
       <div className={'overflow-hidden items-center w-full flex'}>
         <div className={'flex-1 overflow-hidden flex items-center gap-1'}>
-          <div className={'border w-[177px] truncate bg-fill-list-hover border-line-divider rounded-[6px] py-1 px-2'}>{window.location.origin}</div>
+          <Tooltip
+            placement={'top'}
+            title={window.location.origin}
+          >
+            <div className={'border flex-1 cursor-default truncate bg-fill-list-hover border-line-divider rounded-[6px] py-1 px-2'}>{window.location.origin}</div>
+          </Tooltip>
           {'/'}
-          <div className={'border gap-1 w-[100px] border-line-divider rounded-[6px] py-1 px-2 flex items-center'}>
+          <div className={'border gap-1 w-[110px] border-line-divider rounded-[6px] py-1 px-2 flex items-center'}>
             <Tooltip
               placement={'top'}
               title={publishInfo.namespace}
@@ -77,32 +84,39 @@ function PublishLinkPreview ({
 
           </div>
           {'/'}
+
+
           <div
-            className={'border gap-1  flex items-center truncate w-[140px] border-line-divider rounded-[6px] py-1 px-2'}
+            className={'border gap-1  flex items-center truncate w-[150px] border-line-divider rounded-[6px] py-1 px-2'}
           >
-            <InputBase
-              disabled={!isOwner && !isPublisher}
-              inputProps={{
-                className: 'pb-0',
-              }}
-              onFocus={() => {
-                setFocused(true);
-              }}
-              onBlur={() => {
-                setFocused(false);
-              }}
-              onKeyDown={async (e) => {
-                if (e.key === 'Enter') {
-                  void handlePublish();
-                }
-              }}
-              size={'small'}
-              value={publishName}
-              onChange={e => {
-                setPublishName(e.target.value);
-              }}
-              className={'flex-1 truncate'}
-            />
+            <Tooltip
+              placement={'top'}
+              title={publishName}
+            >
+              <InputBase
+                disabled={!isOwner && !isPublisher}
+                inputProps={{
+                  className: 'pb-0',
+                }}
+                onFocus={() => {
+                  setFocused(true);
+                }}
+                onBlur={() => {
+                  setFocused(false);
+                }}
+                onKeyDown={async (e) => {
+                  if (e.key === 'Enter') {
+                    void handlePublish();
+                  }
+                }}
+                size={'small'}
+                value={publishName}
+                onChange={e => {
+                  setPublishName(e.target.value);
+                }}
+                className={'flex-1 truncate'}
+              />
+            </Tooltip>
             {(isOwner || isPublisher) && <Tooltip
               placement={'top'}
               title={focused ? t('button.save') : t('settings.sites.customUrl')}
@@ -135,6 +149,10 @@ function PublishLinkPreview ({
             title={t('shareAction.copyLink')}
           >
             <IconButton
+              onClick={async () => {
+                await copyTextToClipboard(url);
+                notify.success(t('shareAction.copyLinkSuccess'));
+              }}
               color={'inherit'}
               size={'small'}
             >

@@ -51,10 +51,10 @@ function DuplicateModal ({ open, onClose }: { open: boolean; onClose: () => void
   }, [loadWorkspaces, open]);
 
   useEffect(() => {
-    if (selectedWorkspaceId) {
+    if (selectedWorkspaceId && open) {
       void loadSpaces(selectedWorkspaceId);
     }
-  }, [loadSpaces, selectedWorkspaceId]);
+  }, [loadSpaces, selectedWorkspaceId, open]);
 
   const handleDuplicate = useCallback(async () => {
     if (!viewId) return;

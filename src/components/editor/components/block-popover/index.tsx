@@ -1,12 +1,11 @@
 import { YjsEditor } from '@/application/slate-yjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
-import { Origins, Popover } from '@/components/_shared/popover';
+import { calculateOptimalOrigins, Origins, Popover } from '@/components/_shared/popover';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import FileBlockPopoverContent from '@/components/editor/components/block-popover/FileBlockPopoverContent';
 import ImageBlockPopoverContent from '@/components/editor/components/block-popover/ImageBlockPopoverContent';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 import MathEquationPopoverContent from './MathEquationPopoverContent';
@@ -79,36 +78,32 @@ function BlockPopover () {
     }
   }, [blockId, setSelectedBlockIds]);
 
-  const debouncePosition = useMemo(() => {
-    return debounce(() => {
-      if (!anchorEl || !paperRef.current) return;
-
-      const rect = anchorEl.getBoundingClientRect();
-      const paperRect = paperRef.current.getBoundingClientRect();
-      const isImage = type === BlockType.ImageBlock;
-      const paperHeight = isImage ? paperRect.height + 100 : paperRect.height;
-
-      if (rect.bottom + paperHeight > window.innerHeight) {
-        setOrigins({
-          anchorOrigin: {
-            vertical: -8,
-            horizontal: 'center',
-          },
-          transformOrigin: {
-            vertical: 'bottom',
-            horizontal: 'center',
-          },
-        });
-        return;
-      }
-
-    }, 50);
-  }, [anchorEl, type]);
-
   useEffect(() => {
     if (!open) return;
     editor.deselect();
   }, [open, editor]);
+
+  useEffect(() => {
+    const panelPosition = anchorEl?.getBoundingClientRect();
+
+    if (open && panelPosition) {
+      const origins = calculateOptimalOrigins({
+        top: panelPosition.bottom,
+        left: panelPosition.left,
+      }, 560, type === BlockType.ImageBlock ? 400 : 200, defaultOrigins, 16);
+
+      setOrigins({
+        transformOrigin: {
+          vertical: origins.transformOrigin.vertical,
+          horizontal: 'center',
+        },
+        anchorOrigin: {
+          vertical: origins.anchorOrigin.vertical,
+          horizontal: 'center',
+        },
+      });
+    }
+  }, [open, anchorEl, type]);
 
   return <Popover
     open={open}
@@ -118,12 +113,9 @@ function BlockPopover () {
     slotProps={{
       paper: {
         ref: paperRef,
+        className: 'w-[560px] min-h-[200px]',
       },
     }}
-    onTransitionEnter={() => {
-      setOrigins(defaultOrigins);
-    }}
-    onTransitionEnd={debouncePosition}
     {...origins}
     disableRestoreFocus={true}
   >

@@ -22,6 +22,8 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
     isOwner,
     isPublisher,
   } = useLoadPublishInfo(viewId);
+  const [unpublishLoading, setUnpublishLoading] = React.useState<boolean>(false);
+  const [publishLoading, setPublishLoading] = React.useState<boolean>(false);
 
   useEffect(() => {
     if (opened) {
@@ -32,22 +34,27 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
   const handlePublish = useCallback(async (publishName?: string) => {
     if (!publish || !view) return;
 
+    setPublishLoading(true);
     try {
-      await publish(view, publishName);
-      void loadPublishInfo();
+      await publish(view, publishName || publishInfo?.publishName);
+      await loadPublishInfo();
       notify.success(t('publish.publishSuccessfully'));
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
+    } finally {
+      setPublishLoading(false);
     }
-  }, [loadPublishInfo, publish, t, view]);
+  }, [loadPublishInfo, publish, t, view, publishInfo]);
 
   const handleUnpublish = useCallback(async () => {
     if (!view || !unpublish) return;
     if (!isOwner && !isPublisher) {
-      notify.error(t('settings.sites.error.publishPermissionDenied'));
+      notify.error(t('settings.sites.error.unPublishPermissionDenied'));
       return;
     }
+
+    setUnpublishLoading(true);
 
     try {
       await unpublish(viewId);
@@ -56,6 +63,8 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
+    } finally {
+      setUnpublishLoading(false);
     }
   }, [isOwner, isPublisher, loadPublishInfo, t, unpublish, view, viewId]);
 
@@ -79,7 +88,10 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
           }}
           color={'inherit'}
           variant={'outlined'}
-        >{t('shareAction.unPublish')}</Button>
+          startIcon={unpublishLoading ? <CircularProgress size={16} /> : undefined}
+        >{
+          t('shareAction.unPublish')
+        }</Button>
         <Button
           className={'flex-1 max-w-[50%]'}
           onClick={() => {
@@ -89,7 +101,7 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
         >{t('shareAction.visitSite')}</Button>
       </div>
     </div>;
-  }, [handlePublish, handleUnpublish, isOwner, isPublisher, onClose, publishInfo, t, url, view]);
+  }, [handlePublish, handleUnpublish, isOwner, isPublisher, onClose, publishInfo, t, unpublishLoading, url, view]);
 
   const renderUnpublished = useCallback(() => {
     return <Button
@@ -99,8 +111,14 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
       variant={'contained'}
       className={'w-full'}
       color={'primary'}
-    >{t('shareAction.publish')}</Button>;
-  }, [handlePublish, t]);
+      startIcon={publishLoading ? <CircularProgress
+        color={'inherit'}
+        size={16}
+      /> : undefined}
+    >{
+      t('shareAction.publish')
+    }</Button>;
+  }, [handlePublish, publishLoading, t]);
 
   return (
     <div className={'flex flex-col gap-2 w-full overflow-hidden'}>

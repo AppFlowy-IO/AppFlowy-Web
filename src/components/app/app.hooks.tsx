@@ -656,13 +656,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       publish_name: publishName,
       visible_database_view_ids: isDatabase ? visibleViewIds : undefined,
     });
-    void loadOutline(currentWorkspaceId, false);
+    await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline, service]);
 
   const unpublish = useCallback(async (viewId: string) => {
     if (!service || !currentWorkspaceId) return;
     await service.unpublishView(currentWorkspaceId, viewId);
-    void loadOutline(currentWorkspaceId, false);
+    await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline, service]);
 
   return <AppContext.Provider

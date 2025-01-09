@@ -34,6 +34,7 @@ function ListItem ({
     const isPrivate = view.is_private && view.extra?.is_space;
 
     return <Tooltip
+      enterDelay={700}
       disableInteractive={true}
       title={view.name}
     >
@@ -121,23 +122,25 @@ function ListItem ({
         backgroundColor: selectedView === view.view_id ? 'var(--fill-list-active)' : undefined,
       }}
       onClick={onClick}
-      className={'flex border-t border-line-default w-full p-4 cursor-pointer hover:bg-fill-list-active gap-2'}
+      className={'flex flex-col w-full px-4 py-2 cursor-pointer hover:bg-fill-list-active gap-1'}
     >
-      <div className={'w-7 h-7 border flex items-center justify-center rounded border-line-border'}>
-        <PageIcon
-          view={view}
-          className={'w-4 h-4 flex items-center justify-center'}
-        />
-      </div>
-      <div className={'flex flex-col py-[3px] gap-2 w-full'}>
+      <div className={'flex items-center gap-3'}>
+        <div className={'w-7 h-7 border flex items-center justify-center rounded border-line-border'}>
+          <PageIcon
+            view={view}
+            className={'w-4 h-4 flex items-center justify-center'}
+          />
+
+        </div>
         <div className={'text-base font-medium flex-1 truncate'}>
           {view.name.trim() || t('menuAppHeader.defaultNewPageName')}
         </div>
-        {ancestors?.length ?
-          <div className={'text-sm text-text-caption overflow-hidden w-full gap-2 flex items-center'}>
-            {breadcrumbs}
-          </div> : null}
+      </div>
 
+      <div className={'ml-10'}>
+        <div className={'text-sm text-text-caption overflow-hidden w-full gap-2 flex items-center'}>
+          {breadcrumbs}
+        </div>
       </div>
 
     </div>

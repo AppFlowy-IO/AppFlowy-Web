@@ -523,6 +523,7 @@
         "publishNameAlreadyInUse": "The path name is already in use, please try another one",
         "namespaceContainsInvalidCharacters": "The namespace contains invalid character(s), please try another one",
         "publishPermissionDenied": "Only the workspace owner or page publisher can manage the publish settings",
+        "unPublishPermissionDenied": "Only the workspace owner or page publisher can unpublish the page",
         "publishNameCannotBeEmpty": "The path name cannot be empty, please try another one"
       },
       "success": {
@@ -3052,6 +3053,6 @@
   "recentPages": "Recent pages",
   "searchResults": "Search results",
   "noSearchResults": "No search results",
-  "AISearchPlaceholder": "Search or ask a question..",
+  "AISearchPlaceholder": "Search or ask a question...",
   "searchLabel": "Search"
 }

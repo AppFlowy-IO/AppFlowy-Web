@@ -3,7 +3,7 @@ import { useAppRecent } from '@/components/app/app.hooks';
 import BestMatch from '@/components/app/search/BestMatch';
 import RecentViews from '@/components/app/search/RecentViews';
 import TitleMatch from '@/components/app/search/TitleMatch';
-import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Button, Dialog, Divider, InputBase, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { ReactComponent as SearchIcon } from '@/assets/search.svg';
@@ -66,25 +66,33 @@ export function Search () {
 
   return (
     <>
-      <Button
-        onClick={(e) => {
-          e.currentTarget.blur();
-          setOpen(true);
-        }}
-        startIcon={<SearchIcon className={'w-5 opacity-60 h-5 mr-[1px]'} />}
-        size={'small'}
-        className={'text-sm font-normal py-1.5 justify-start w-full hover:bg-fill-list-hover'}
-        color={'inherit'}
+      <Tooltip
+        title={<div className={'flex flex-col gap-1'}>
+          <span>{t('search.sidebarSearchIcon')}</span>
+          <div className={'text-text-caption'}>{createHotKeyLabel(HOT_KEY_NAME.SEARCH)}</div>
+        </div>}
       >
-        {t('button.search')}
-      </Button>
+        <Button
+          onClick={(e) => {
+            e.currentTarget.blur();
+            setOpen(true);
+          }}
+          startIcon={<SearchIcon className={'w-5 opacity-60 h-5 mr-[1px]'} />}
+          size={'small'}
+          className={'text-sm font-normal py-1.5 justify-start w-full hover:bg-fill-list-hover'}
+          color={'inherit'}
+        >
+          {t('button.search')}
+        </Button>
+      </Tooltip>
+
       <Dialog
         disableRestoreFocus={true}
         open={open}
         onClose={handleClose}
         classes={{
           container: 'items-start max-md:mt-auto max-md:items-center mt-[10%]',
-          paper: 'overflow-hidden min-w-[600px]  max-w-[70vw]',
+          paper: 'overflow-hidden min-w-[600px] w-[600px] max-w-[70vw]',
         }}
       >
         <div className={'flex gap-2 border-b border-line-default w-full p-4'}>
@@ -115,7 +123,7 @@ export function Search () {
             </Tooltip>
           </div>
         </div>
-        <div className={'p-4 w-full flex items-center gap-2'}>
+        <div className={'p-4 py-2 w-full flex items-center gap-2'}>
           <div
             onClick={(e) => {
               setSearchTypeAnchorEl(e.currentTarget);

@@ -64,7 +64,7 @@ export function PublishManage ({
     setLoading(true);
     try {
       const outline = await service.getPublishOutline(namespace);
-
+      
       setPublishViews(flattenViews(outline).filter(item => item.is_published));
       // eslint-disable-next-line
     } catch (e: any) {

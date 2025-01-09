@@ -10,7 +10,7 @@ import 'src/styles/tailwind.css';
 import 'src/styles/template.css';
 import { I18nextProvider } from 'react-i18next';
 
-function AppTheme({ children }: { children: React.ReactNode; }) {
+function AppTheme ({ children }: { children: React.ReactNode; }) {
   const { isDark, setIsDark } = useAppThemeMode();
 
   const theme = useMemo(
@@ -104,6 +104,7 @@ function AppTheme({ children }: { children: React.ReactNode; }) {
                 },
                 '&.MuiButton-containedSecondary': {
                   backgroundColor: 'var(--billing-primary)',
+                  color: 'white',
                   '&:hover': {
                     backgroundColor: 'var(--billing-primary-hover)',
                   },

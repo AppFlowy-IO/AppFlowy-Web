@@ -84,7 +84,7 @@ function PublishedPageItem ({ onClose, view, onUnPublish, onPublish }: {
         value: 'unpublish',
         disabled: unPublishLoading,
         label: t('shareAction.unPublish'),
-        tooltip: !(isOwner || isPublisher) ? t('settings.sites.error.publishPermissionDenied') : undefined,
+        tooltip: !(isOwner || isPublisher) ? t('settings.sites.error.unPublishPermissionDenied') : undefined,
         IconComponent: unPublishLoading ? CircularProgress : TrashIcon,
         onClick: async () => {
           if (!(isOwner || isPublisher)) {

@@ -111,7 +111,7 @@ export function useLoadWorkspaces () {
           setSpaceList([]);
         }
       } catch (e) {
-        notify.error('Failed to load spaces');
+        console.error('Failed to load spaces');
       } finally {
         setSelectedSpaceId('');
         setSpaceLoading(false);

@@ -62,7 +62,7 @@ function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: stri
         onChange={onChange}
         value={value}
       >
-        {options.map((option) => (
+        {opened && options.map((option) => (
           <ViewTab
             className={'flex items-center flex-row justify-center gap-1.5'}
             key={option.value}
@@ -75,7 +75,7 @@ function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: stri
       <div className={'p-2'}>
         {options.map((option) => (
           <TabPanel
-            className={'min-w-[460px] max-sm:min-w-[80vw]'}
+            className={'min-w-[500px] w-[500px] max-w-full max-sm:min-w-[80vw]'}
             key={option.value}
             index={option.value}
             value={value}

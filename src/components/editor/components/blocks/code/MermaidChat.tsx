@@ -94,7 +94,7 @@ function MermaidChat ({ node }: {
   }, [diagram, id, isDark]);
 
   const deboucenUpdateMermaid = useMemo(() => {
-    return debounce(updateMermaid, 300);
+    return debounce(updateMermaid, 1000);
   }, [updateMermaid]);
 
   useEffect(() => {
@@ -121,6 +121,7 @@ function MermaidChat ({ node }: {
         display: 'flex',
         flexDirection: 'row',
         placeContent: 'center',
+        minHeight: '250px',
       }}
       contentEditable={false}
       ref={ref}

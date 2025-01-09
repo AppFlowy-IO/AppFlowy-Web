@@ -15,7 +15,7 @@ interface SideBarProps {
   onResizeDrawerWidth: (width: number) => void;
 }
 
-function SideBar({
+function SideBar ({
   drawerWidth,
   drawerOpened,
   toggleOpenDrawer,
@@ -35,21 +35,21 @@ function SideBar({
       open={drawerOpened}
       variant={UIVariant.App}
       onClose={() => toggleOpenDrawer(false)}
-      header={<Workspaces/>}
+      header={<Workspaces />}
       onScroll={handleOnScroll}
     >
       <div
         className={'flex w-full gap-1 flex-1 flex-col'}
       >
         <div
-          className={'px-[10px] bg-bg-base z-[1] flex-col gap-1.5 justify-around items-center sticky top-12'}
+          className={'px-[10px] bg-bg-base z-[1] flex-col gap-2 justify-around items-center sticky top-12'}
         >
           <Search />
           <div
             style={{
               borderColor: scrollTop > 10 ? 'var(--line-divider)' : undefined,
             }}
-            className={'flex border-b pb-2 w-full border-transparent'}
+            className={'flex border-b pb-3 w-full border-transparent'}
           >
             <NewPage />
           </div>
