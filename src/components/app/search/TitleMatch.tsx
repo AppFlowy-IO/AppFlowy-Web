@@ -21,6 +21,7 @@ function TitleMatch ({
 
   return (
     <ViewList
+      loading={false}
       views={views}
       title={t('commandPalette.bestMatches')}
       onClose={onClose}

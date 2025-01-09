@@ -17,7 +17,7 @@ export interface CalculationCellProps {
   cell?: ICalculationCell;
 }
 
-export function CalculationCell({ cell }: CalculationCellProps) {
+export function CalculationCell ({ cell }: CalculationCellProps) {
   const { t } = useTranslation();
 
   const fieldId = cell?.fieldId || '';
@@ -27,7 +27,7 @@ export function CalculationCell({ cell }: CalculationCellProps) {
       field && Number(field?.get(YjsDatabaseKey.type)) === FieldType.Number
         ? parseNumberTypeOptions(field).format
         : undefined,
-    [field]
+    [field],
   );
 
   const prefix = useMemo(() => {
@@ -56,7 +56,7 @@ export function CalculationCell({ cell }: CalculationCellProps) {
   const num = useMemo(() => {
     const value = cell?.value;
 
-    if (value === undefined || isNaN(value)) return '';
+    if (value === undefined || isNaN(parseInt(value))) return '';
 
     if (format && currencyFormaterMap[format]) {
       return currencyFormaterMap[format](new Decimal(value).toNumber());

@@ -1,18 +1,21 @@
 import { View } from '@/application/types';
-import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppHandlers } from '@/components/app/app.hooks';
+import ListItem from '@/components/app/search/ListItem';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
+import CircularProgress from '@mui/material/CircularProgress';
 
 function ViewList ({
   title,
   views,
   onClose,
+  loading,
 }: {
   title: string;
   views?: View[];
   onClose: () => void;
+  loading: boolean;
 }) {
   const { t } = useTranslation();
   const [selectedView, setSelectedView] = React.useState<string>('');
@@ -62,39 +65,33 @@ function ViewList ({
     };
 
   }, [navigateToView, onClose, views, selectedView]);
+
   return (
     <div
       ref={ref}
       className={'flex flex-col'}
     >
-      <div className={'px-4 py-2'}>
-        {title}
+
+      <div className={'p-4 flex items-center gap-4'}>
+        {!loading && views && views.length === 0 ? t('noSearchResults') : <>
+          {title}
+          {loading && <CircularProgress size={14} />}
+        </>}
       </div>
       <div className={'flex min-h-[280px] flex-col  max-h-[360px] appflowy-scroller overflow-y-auto'}>
-        {views?.length ? views.map(view => (
-          <div
-            data-item-id={view.view_id}
-            style={{
-              backgroundColor: selectedView === view.view_id ? 'var(--fill-list-active)' : undefined,
-            }}
+        {views?.map(view => (
+          <ListItem
+            key={view.view_id}
+            selectedView={selectedView}
+            view={view}
             onClick={() => {
+              setSelectedView(view.view_id);
               void navigateToView(view.view_id);
               onClose();
             }}
-            key={view.view_id}
-            className={'flex items-center border-t border-line-default w-full p-4 cursor-pointer hover:bg-fill-list-active gap-2'}
-          >
-            <PageIcon
-              view={view}
-              className={'w-5 h-5'}
-            />
-            <div className={'text-sm font-normal flex-1 truncate'}>
-              {view.name.trim() || t('menuAppHeader.defaultNewPageName')}
-            </div>
-          </div>
-        )) : <div className={'text-center p-6 text-sm text-text-caption'}>
-          {t('findAndReplace.noResult')}
-        </div>}
+            onClose={onClose}
+          />
+        ))}
       </div>
       <div className={'w-full p-4 flex text-text-caption text-xs gap-2 items-center'}>
         <span className={'rounded bg-fill-list-hover p-1'}>TAB</span>

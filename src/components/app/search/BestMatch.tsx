@@ -11,16 +11,16 @@ import { useTranslation } from 'react-i18next';
 function BestMatch ({
   onClose,
   searchValue,
-  setLoading,
 }: {
   onClose: () => void;
   searchValue: string;
-  setLoading: (loading: boolean) => void;
 }) {
-  const [views, setViews] = React.useState<View[]>([]);
+  const [views, setViews] = React.useState<View[] | undefined>(undefined);
   const { t } = useTranslation();
   const outline = useAppOutline();
   const service = useService();
+  const [loading, setLoading] = React.useState<boolean>(false);
+
   const currentWorkspaceId = useCurrentWorkspaceId();
   const handleSearch = useCallback(async (searchTerm: string) => {
     if (!outline) return;
@@ -38,7 +38,10 @@ function BestMatch ({
         return findView(outline, id);
       });
 
-      setViews(views.filter(Boolean) as View[]);
+      setViews(views.filter(item => {
+        if (!item) return false;
+        return !item.extra?.is_space;
+      }) as View[]);
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
@@ -46,7 +49,7 @@ function BestMatch ({
 
     setLoading(false);
 
-  }, [currentWorkspaceId, outline, service, setLoading]);
+  }, [currentWorkspaceId, outline, service]);
 
   const debounceSearch = useMemo(() => {
     return debounce(handleSearch, 300);
@@ -58,7 +61,8 @@ function BestMatch ({
 
   return <ViewList
     views={views}
-    title={t('commandPalette.bestMatches')}
+    loading={loading}
+    title={t('searchResults')}
     onClose={onClose}
   />;
 }

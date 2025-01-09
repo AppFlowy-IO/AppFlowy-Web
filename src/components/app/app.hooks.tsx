@@ -403,12 +403,14 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       const views = uniqBy(res, 'view_id');
 
-      setRecentViews(views);
+      setRecentViews(views.filter(item => {
+        return !item.extra?.is_space && findView(outline || [], item.view_id);
+      }));
       return views;
     } catch (e) {
       console.error('Recent views not found');
     }
-  }, [currentWorkspaceId, service]);
+  }, [currentWorkspaceId, service, outline]);
 
   const loadTrash = useCallback(async (currentWorkspaceId: string) => {
 
@@ -647,10 +649,12 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     if (!service || !currentWorkspaceId) return;
     const isDatabase = [ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar].includes(view.layout);
     const viewId = view.view_id;
+    const children = view.children || [];
+    const visibleViewIds = [view.view_id, ...(children.map((v) => v.view_id))];
 
     await service.publishView(currentWorkspaceId, viewId, {
       publish_name: publishName,
-      visible_database_view_ids: isDatabase ? view.children?.map((v) => v.view_id) : undefined,
+      visible_database_view_ids: isDatabase ? visibleViewIds : undefined,
     });
     void loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline, service]);

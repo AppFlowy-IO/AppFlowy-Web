@@ -3044,9 +3044,14 @@
   "memberCount_one": "{{count}} member",
   "memberCount_many": "{{count}} members",
   "memberCount_other": "{{count}} members",
-  "aiMatch": "AI match",
-  "titleMatch": "Title match",
+  "AIsearch": "AI search",
+  "titleOnly": "Title only",
   "namespace": "Namespace",
   "manageNamespaceDescription": "Manage your namespace and homepage",
-  "homepage": "Homepage"
+  "homepage": "Homepage",
+  "recentPages": "Recent pages",
+  "searchResults": "Search results",
+  "noSearchResults": "No search results",
+  "AISearchPlaceholder": "Search or ask a question..",
+  "searchLabel": "Search"
 }

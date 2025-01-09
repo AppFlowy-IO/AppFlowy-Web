@@ -1,13 +1,14 @@
 import { Popover } from '@/components/_shared/popover';
+import { useAppRecent } from '@/components/app/app.hooks';
 import BestMatch from '@/components/app/search/BestMatch';
 import RecentViews from '@/components/app/search/RecentViews';
 import TitleMatch from '@/components/app/search/TitleMatch';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import { Button, CircularProgress, Dialog, InputBase, Tooltip } from '@mui/material';
+import { Button, Dialog, Divider, InputBase, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { ReactComponent as SearchIcon } from '@/assets/search.svg';
 import { ReactComponent as CheckIcon } from '@/assets/check.svg';
-// import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
+import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
 
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as CloseIcon } from '@/assets/close.svg';
@@ -23,7 +24,6 @@ export function Search () {
   const [searchValue, setSearchValue] = React.useState<string>('');
   const [searchType, setSearchType] = React.useState<SEARCH_TYPE>(SEARCH_TYPE.AI_SUGGESTION);
   const [searchTypeAnchorEl, setSearchTypeAnchorEl] = React.useState<null | HTMLElement>(null);
-  const [loading, setLoading] = React.useState<boolean>(false);
   const handleClose = () => {
     setOpen(false);
     setSearchValue('');
@@ -49,6 +49,21 @@ export function Search () {
     };
   }, [onKeyDown]);
 
+  const {
+    recentViews,
+    loadRecentViews,
+  } = useAppRecent();
+  const [loadingRecentViews, setLoadingRecentViews] = React.useState<boolean>(false);
+
+  useEffect(() => {
+    if (!open) return;
+    void (async () => {
+      setLoadingRecentViews(true);
+      await loadRecentViews?.();
+      setLoadingRecentViews(false);
+    })();
+  }, [loadRecentViews, open]);
+
   return (
     <>
       <Button
@@ -67,11 +82,14 @@ export function Search () {
         disableRestoreFocus={true}
         open={open}
         onClose={handleClose}
-        classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[10%]' }}
+        classes={{
+          container: 'items-start max-md:mt-auto max-md:items-center mt-[10%]',
+          paper: 'overflow-hidden min-w-[600px]  max-w-[70vw]',
+        }}
       >
         <div className={'flex gap-2 border-b border-line-default w-full p-4'}>
-          <div className={'w-full flex gap-4 items-center min-w-[500px] max-w-[70vw]'}>
-            {loading ? <CircularProgress size={14} /> : <SearchIcon className={'w-5 opacity-60 h-5 mr-[1px]'} />}
+          <div className={'w-full flex gap-4 items-center'}>
+            <SearchIcon className={'w-5 opacity-60 h-5 mr-[1px]'} />
 
             <InputBase
               value={searchValue}
@@ -79,7 +97,7 @@ export function Search () {
               autoFocus={true}
               className={'flex-1'}
               fullWidth={true}
-              placeholder={t('commandPalette.placeholder')}
+              placeholder={searchType === SEARCH_TYPE.AI_SUGGESTION ? t('AISearchPlaceholder') : t('searchLabel')}
             />
             <span
               style={{
@@ -93,36 +111,34 @@ export function Search () {
               }}
             ><CloseIcon className={'w-3 h-3'} /></span>
             <Tooltip title={'we currently only support searching for pages and content in documents'}>
-              <span className={'cursor-pointer flex items-center p-1 px-2 text-xs rounded bg-fill-list-hover'}>BETA</span>
+              <span className={'cursor-default flex items-center p-1 px-2 text-xs rounded bg-fill-list-hover'}>BETA</span>
             </Tooltip>
-            {/*<Tooltip title={searchType === SEARCH_TYPE.TITLE_MATCH ? undefined : 'we currently only support searching for pages and content in documents'}>*/}
-            {/*  <div*/}
-            {/*    onClick={e => {*/}
-            {/*      setSearchTypeAnchorEl(e.currentTarget);*/}
-            {/*    }}*/}
-            {/*    className={'cursor-pointer flex items-center p-1 px-2 text-xs rounded bg-fill-list-hover'}*/}
-            {/*  >*/}
-            {/*    {*/}
-            {/*      searchType === SEARCH_TYPE.TITLE_MATCH ?*/}
-            {/*        t('titleMatch') :*/}
-            {/*        t('aiMatch')*/}
-            {/*    }*/}
-            {/*    <DownIcon className={'w-3 h-3 ml-1 opacity-60'} />*/}
-            {/*  </div>*/}
-            {/*</Tooltip>*/}
           </div>
         </div>
+        <div className={'p-4 w-full flex items-center gap-2'}>
+          <div
+            onClick={(e) => {
+              setSearchTypeAnchorEl(e.currentTarget);
+            }}
+            className={'rounded-[8px] p-2 gap-2 border text-sm overflow-hidden cursor-pointer hover:border-text-title border-line-divider flex items-center'}
+          >
+            <span className={' max-w-[100px] truncate'}>{searchType === SEARCH_TYPE.TITLE_MATCH ? t('titleOnly') : t('AIsearch')}</span>
+            <DownIcon className={'w-4 h-4'} />
+          </div>
+        </div>
+        <Divider className={'border-line-default'} />
         {!searchValue ? <RecentViews
-          setLoading={setLoading}
+          loading={loadingRecentViews}
+          recentViews={recentViews}
           onClose={handleClose}
         /> : searchType === SEARCH_TYPE.AI_SUGGESTION ? <BestMatch
           searchValue={searchValue}
-          setLoading={setLoading}
           onClose={handleClose}
         /> : <TitleMatch
           searchValue={searchValue}
           onClose={handleClose}
         />}
+
       </Dialog>
       <Popover
         open={Boolean(searchTypeAnchorEl)}
@@ -134,17 +150,17 @@ export function Search () {
           },
         }}
       >
-        {[SEARCH_TYPE.TITLE_MATCH, SEARCH_TYPE.AI_SUGGESTION].map(type => (
+        {[SEARCH_TYPE.AI_SUGGESTION, SEARCH_TYPE.TITLE_MATCH].map(type => (
           <div
             key={type}
-            className={'px-2 py-1.5 text-xs rounded-[8px] flex items-center gap-2 cursor-pointer hover:bg-fill-list-hover'}
+            className={'p-2 text-sm rounded-[8px] flex items-center gap-2 cursor-pointer hover:bg-fill-list-hover'}
             onClick={() => {
               setSearchType(type);
               setSearchTypeAnchorEl(null);
             }}
           >
-            {type === SEARCH_TYPE.TITLE_MATCH ? t('titleMatch') : t('aiMatch')}
-            {type === searchType && <CheckIcon className={'w-4 text-function-info h-4 ml-2'} />}
+            {type === SEARCH_TYPE.TITLE_MATCH ? t('titleOnly') : t('AIsearch')}
+            {type === searchType && <CheckIcon className={'w-5 text-function-info h-5'} />}
           </div>
         ))}
       </Popover>
