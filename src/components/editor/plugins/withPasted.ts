@@ -61,9 +61,14 @@ export const withPasted = (editor: ReactEditor) => {
             }
           }
 
-          const currentBlockId = node.blockId as string;
-
-          CustomEditor.addBelowBlock(editor as YjsEditor, currentBlockId, BlockType.LinkPreview, { url: text } as LinkPreviewBlockData);
+          // const currentBlockId = node.blockId as string;
+          //
+          // CustomEditor.addBelowBlock(editor as YjsEditor, currentBlockId, BlockType.LinkPreview, { url: text } as LinkPreviewBlockData);
+          insertFragment(editor, [{
+            type: BlockType.LinkPreview,
+            data: { url: text } as LinkPreviewBlockData,
+            children: [{ text: '' }],
+          }]);
 
           return true;
         }
@@ -105,7 +110,7 @@ export const withPasted = (editor: ReactEditor) => {
   return editor;
 };
 
-export function insertHtmlData(editor: ReactEditor, data: DataTransfer) {
+export function insertHtmlData (editor: ReactEditor, data: DataTransfer) {
   const html = data.getData('text/html');
 
   if (html) {
@@ -120,7 +125,7 @@ export function insertHtmlData(editor: ReactEditor, data: DataTransfer) {
   return false;
 }
 
-function insertFragment(editor: ReactEditor, fragment: Node[], options = {}) {
+function insertFragment (editor: ReactEditor, fragment: Node[], options = {}) {
   console.log('insertFragment', fragment, options);
   if (!beforePasted(editor))
     return;
