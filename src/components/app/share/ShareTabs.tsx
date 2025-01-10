@@ -1,5 +1,5 @@
 import { useAppView } from '@/components/app/app.hooks';
-// import PublishPanel from '@/components/app/share/PublishPanel';
+import PublishPanel from '@/components/app/share/PublishPanel';
 import TemplatePanel from '@/components/app/share/TemplatePanel';
 import SharePanel from '@/components/app/share/SharePanel';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { ViewTabs, ViewTab, TabPanel } from 'src/components/_shared/tabs/ViewTabs';
 import { ReactComponent as Templates } from '@/assets/template.svg';
 
-// import { ReactComponent as PublishedWithChanges } from '@/assets/published_with_changes.svg';
+import { ReactComponent as PublishedWithChanges } from '@/assets/published_with_changes.svg';
 
 enum TabKey {
   SHARE = 'share',
@@ -28,12 +28,13 @@ function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: stri
       label: t('shareAction.shareTab'),
       Panel: SharePanel,
     },
-      //   {
-      //   value: TabKey.PUBLISH,
-      //   label: t('shareAction.publish'),
-      //   icon: view?.is_published ? <PublishedWithChanges className={'w-4 h-4 text-function-success mb-0'} /> : undefined,
-      //   Panel: PublishPanel,
-      // },
+      {
+        value: TabKey.PUBLISH,
+        label: t('shareAction.publish'),
+        icon: view?.is_published ?
+          <PublishedWithChanges className={'w-4 h-4 text-function-success mb-0'} /> : undefined,
+        Panel: PublishPanel,
+      },
       currentUser?.email?.endsWith('appflowy.io') && view?.is_published && {
         value: TabKey.TEMPLATE,
         label: t('template.asTemplate'),
