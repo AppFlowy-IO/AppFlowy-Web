@@ -4,12 +4,12 @@ import { Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppHandlers, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { PublishNameSetting } from '@/components/app/publish-manage/PublishNameSetting';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { copyTextToClipboard } from '@/utils/copy';
 import { openUrl } from '@/utils/url';
 import { Button, CircularProgress, IconButton, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
-import React, { useCallback, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as MoreIcon } from '@/assets/more.svg';
 import { ReactComponent as GlobalIcon } from '@/assets/publish.svg';
@@ -17,49 +17,31 @@ import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
 import { ReactComponent as TrashIcon } from '@/assets/trash.svg';
 import { ReactComponent as SettingIcon } from '@/assets/settings.svg';
 
-function PublishedPageItem ({ onClose, view, onUnPublish, onPublish }: {
+function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }: {
   view: View,
   onClose?: () => void;
   onUnPublish: (viewId: string) => Promise<void>;
   onPublish: (view: View, publishName: string) => Promise<void>
+  namespace: string;
 }) {
   const { t } = useTranslation();
   const [openSetting, setOpenSetting] = React.useState<boolean>(false);
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
-  const [publishInfo, setPublishInfo] = React.useState<{
-    namespace: string,
-    publishName: string,
-    publisherEmail: string
-    publishedAt: string
-  } | undefined>(undefined);
+  const [publishName, setPublishName] = React.useState<string>(view.publish_name || '');
   const toView = useAppHandlers().toView;
-  const service = useService();
   const [unPublishLoading, setUnPublishLoading] = React.useState<boolean>(false);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
-  const isPublisher = publishInfo?.publisherEmail === currentUser?.email;
-
-  const getPublishInfo = useCallback(async (viewId: string) => {
-    if (!service) return;
-
-    try {
-      const res = await service?.getPublishInfo(viewId);
-
-      setPublishInfo(res);
-      return res;
-    } catch (e) {
-      console.error(e);
-    }
-  }, [service]);
-
-  const url = useMemo(() => {
-    return `${window.origin}/${publishInfo?.namespace}/${publishInfo?.publishName}`;
-  }, [publishInfo]);
+  const isPublisher = view?.publisher_email === currentUser?.email;
 
   useEffect(() => {
-    void getPublishInfo(view.view_id);
-  }, [getPublishInfo, view.view_id]);
+    setPublishName(view.publish_name || '');
+  }, [view.publish_name]);
+
+  const url = useMemo(() => {
+    return `${window.origin}/${namespace}/${publishName}`;
+  }, [namespace, publishName]);
 
   const actions = useMemo(() => {
     return [
@@ -156,7 +138,7 @@ function PublishedPageItem ({ onClose, view, onUnPublish, onPublish }: {
         <Tooltip
           disableInteractive={true}
           title={<div className={'whitespace-pre-wrap break-words'}>
-            {`Open Page in New Tab \n${publishInfo?.publishName || ''}`}
+            {`Open Page in New Tab \n${publishName || ''}`}
           </div>}
         >
           <Button
@@ -169,13 +151,13 @@ function PublishedPageItem ({ onClose, view, onUnPublish, onPublish }: {
             className={'w-full p-1 px-2 justify-start overflow-hidden'}
           >
               <span className={'truncate'}>
-                {publishInfo?.publishName}
+                {publishName}
               </span>
           </Button>
         </Tooltip>
       </div>
       <div className={'flex-1  overflow-hidden flex gap-2 justify-between'}>
-        {dayjs(publishInfo?.publishedAt).format('MMM D, YYYY')}
+        {view?.publish_timestamp ? dayjs(view.publish_timestamp).format('MMM D, YYYY') : ''}
         <IconButton
           onClick={(e) => {
             setAnchorEl(e.currentTarget);
@@ -211,20 +193,20 @@ function PublishedPageItem ({ onClose, view, onUnPublish, onPublish }: {
           })}
         </div>
       </Popover>
-      {openSetting && publishInfo && <PublishNameSetting
+      {openSetting && <PublishNameSetting
         onUnPublish={() => {
           return onUnPublish(view.view_id);
         }}
         onPublish={async (publishName: string) => {
           await onPublish(view, publishName);
-          void getPublishInfo(view.view_id);
+          setPublishName(publishName);
         }}
         onClose={() => {
           setOpenSetting(false);
         }}
         url={url}
         open={openSetting}
-        defaultName={publishInfo.publishName}
+        defaultName={publishName}
       />}
     </div>
   );

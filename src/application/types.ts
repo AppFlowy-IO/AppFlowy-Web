@@ -846,6 +846,9 @@ export interface View {
   last_viewed_at?: string;
   created_at?: string;
   database_relations?: DatabaseRelations;
+  publisher_email?: string;
+  publish_name?: string;
+  publish_timestamp?: string;
 }
 
 export interface Invitation {

@@ -11,12 +11,14 @@ function PublishedPages ({
   onPublish,
   loading,
   onClose,
+  namespace,
 }: {
   publishViews: View[];
   loading: boolean;
   onUnPublish: (viewId: string) => Promise<void>;
   onPublish: (view: View, publishName: string) => Promise<void>;
-  onClose?: () => void
+  onClose?: () => void;
+  namespace: string;
 }) {
 
   return (
@@ -27,6 +29,7 @@ function PublishedPages ({
         : publishViews.map((view, index) => {
           return <React.StrictMode key={view.view_id}>
             <PublishedPageItem
+              namespace={namespace}
               onClose={onClose}
               view={view}
               onUnPublish={onUnPublish}

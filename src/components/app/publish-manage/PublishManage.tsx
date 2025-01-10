@@ -64,8 +64,14 @@ export function PublishManage ({
     setLoading(true);
     try {
       const outline = await service.getPublishOutline(namespace);
-      
-      setPublishViews(flattenViews(outline).filter(item => item.is_published));
+
+      setPublishViews(flattenViews(outline).filter(item => item.is_published).sort((a, b) => {
+        if (!a.publish_timestamp || !b.publish_timestamp) {
+          return 0;
+        }
+
+        return new Date(b.publish_timestamp).getTime() - new Date(a.publish_timestamp).getTime();
+      }));
       // eslint-disable-next-line
     } catch (e: any) {
       console.error(e);
@@ -279,6 +285,7 @@ export function PublishManage ({
         onPublish={handlePublish}
         onClose={onClose}
         onUnPublish={handleUnpublish}
+        namespace={namespace}
       />
 
       {updateOpen && <UpdateNamespace
