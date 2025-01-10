@@ -62,8 +62,7 @@ function OutlineItemContent ({
 
       <Tooltip
         title={name}
-        enterDelay={1000}
-        enterNextDelay={1000}
+        disableInteractive={true}
       >
         <div className={'flex-1 truncate'}>{name || t('menuAppHeader.defaultNewPageName')}</div>
       </Tooltip>
