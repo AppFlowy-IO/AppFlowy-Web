@@ -4,7 +4,7 @@ import React, { lazy } from 'react';
 import { Workspaces } from '@/components/app/workspaces';
 import Outline from 'src/components/app/outline/Outline';
 import { UIVariant } from '@/application/types';
-// import { Search } from 'src/components/app/search';
+import { Search } from 'src/components/app/search';
 
 const SideBarBottom = lazy(() => import('@/components/app/SideBarBottom'));
 
@@ -44,7 +44,7 @@ function SideBar ({
         <div
           className={'px-[10px] bg-bg-base z-[1] flex-col gap-2 justify-around items-center sticky top-12'}
         >
-          {/*<Search />*/}
+          <Search />
           <div
             style={{
               borderColor: scrollTop > 10 ? 'var(--line-divider)' : undefined,
