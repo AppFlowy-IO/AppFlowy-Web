@@ -69,7 +69,7 @@ function MermaidChat ({ node }: {
   const isDark = useContext(ThemeModeContext)?.isDark;
   const [error, setError] = React.useState<string | null>(null);
 
-  const updateMermaid = useCallback(async () => {
+  const updateMermaid = useCallback(async (diagram: string) => {
     const sanitizedDiagram = sanitizeDiagram(diagram);
     const theme = isDark ? darkTheme : lightTheme;
 
@@ -91,17 +91,23 @@ function MermaidChat ({ node }: {
       // @ts-ignore
       setError(e.message);
     }
-  }, [diagram, id, isDark]);
+  }, [id, isDark]);
 
   const deboucenUpdateMermaid = useMemo(() => {
     return debounce(updateMermaid, 1000);
   }, [updateMermaid]);
 
   useEffect(() => {
-    void deboucenUpdateMermaid();
-  }, [deboucenUpdateMermaid]);
+    if (!diagram.trim()) {
+      setError(null);
+      setInnerHtml('');
+      return;
+    }
 
-  if (error) {
+    void deboucenUpdateMermaid(diagram);
+  }, [deboucenUpdateMermaid, diagram]);
+
+  if (error && diagram) {
     return (
       <div
         contentEditable={false}
@@ -121,7 +127,6 @@ function MermaidChat ({ node }: {
         display: 'flex',
         flexDirection: 'row',
         placeContent: 'center',
-        minHeight: '250px',
       }}
       contentEditable={false}
       ref={ref}

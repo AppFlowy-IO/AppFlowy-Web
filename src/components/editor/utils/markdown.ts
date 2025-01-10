@@ -54,7 +54,7 @@ type Rule = {
   filter?: (editor: YjsEditor, match: RegExpMatchArray) => boolean
 }
 
-function deletePrefix(editor: YjsEditor, offset: number) {
+function deletePrefix (editor: YjsEditor, offset: number) {
   const [, path] = getBlockEntry(editor);
 
   const { selection } = editor;
@@ -67,19 +67,19 @@ function deletePrefix(editor: YjsEditor, offset: number) {
   editor.delete();
 }
 
-function getNodeType(editor: YjsEditor) {
+function getNodeType (editor: YjsEditor) {
   const [node] = getBlockEntry(editor);
 
   return node.type as BlockType;
 }
 
-function getBlockData(editor: YjsEditor) {
+function getBlockData (editor: YjsEditor) {
   const [node] = getBlockEntry(editor);
 
   return node.data as BlockData;
 }
 
-function getLineText(editor: YjsEditor) {
+function getLineText (editor: YjsEditor) {
   const [node] = getBlockEntry(editor);
   const sharedRoot = getSharedRoot(editor);
   const block = getBlock(node.blockId as string, sharedRoot);
@@ -331,7 +331,6 @@ const rules: Rule[] = [
     match: /--/,
     format: SpecialSymbol.EM_DASH,
     transform: (editor) => {
-
       editor.delete({
         unit: 'character',
         reverse: true,
@@ -422,6 +421,9 @@ export const applyMarkdown = (editor: YjsEditor, insertText: string): boolean =>
       }
 
     } else if (rule.type === 'symbol') {
+      const block = getBlockEntry(editor)[0];
+
+      if (block.type === BlockType.CodeBlock) return false;
       const path = selection.anchor.path;
       const text = editor.string({
         anchor: {
