@@ -1,0 +1,49 @@
+name: Sync Releases to Changelog
+on:
+  release:
+    types: [ published, edited ]
+
+jobs:
+  sync-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate Changelog
+        id: changelog
+        run: |
+          # Get all releases
+          echo "# Changelog" > CHANGELOG.md
+          echo "" >> CHANGELOG.md
+          
+          gh release list --limit 100 | while read -r line; do
+            # Parse release info
+            TAG=$(echo "$line" | awk '{print $1}')
+            DATE=$(echo "$line" | awk '{print $3}')
+          
+            # Get release body
+            BODY=$(gh release view "$TAG" --json body --jq .body)
+          
+            # Append to changelog
+            echo "## [$TAG] - $DATE" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+            echo "$BODY" >> CHANGELOG.md
+            echo "" >> CHANGELOG.md
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Commit and Push
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          # Check if there are changes
+          if [[ -n "$(git status --porcelain CHANGELOG.md)" ]]; then
+            git add CHANGELOG.md
+            git commit -m "docs: update changelog from releases"
+            git push
+          fi
