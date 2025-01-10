@@ -25,10 +25,10 @@ jobs:
       - name: Collect merged PRs
         id: collect_prs
         run: |
-          # 功能性更新
+          # Features
           FEATURES=$(gh pr list --state merged --label enhancement --limit 100 --json number,title --jq '.[] | "- \(.title) (#\(.number))"')
           
-          # Bug修复
+          # Fixes
           FIXES=$(gh pr list --state merged --label bug --limit 100 --json number,title --jq '.[] | "- \(.title) (#\(.number))"')
           
           echo "changelog<<EOF" >> $GITHUB_OUTPUT
