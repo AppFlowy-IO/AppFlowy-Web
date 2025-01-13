@@ -3056,5 +3056,7 @@
   "AISearchPlaceholder": "Search or ask a question...",
   "searchLabel": "Search",
   "publishSelectedViews": "Publish {{count}} selected views",
-  "untitled": "Untitled"
+  "untitled": "Untitled",
+  "comments": "Comments",
+  "duplicateAsTemplate": "Duplicate as template"
 }
