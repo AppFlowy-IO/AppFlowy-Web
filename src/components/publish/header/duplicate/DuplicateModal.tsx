@@ -1,6 +1,6 @@
 import { AFConfigContext } from '@/components/main/app.hooks';
 import React, { useCallback, useContext, useEffect } from 'react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import { NormalModal } from '@/components/_shared/modal';
 import SelectWorkspace from '@/components/publish/header/duplicate/SelectWorkspace';
 import { useLoadWorkspaces } from '@/components/publish/header/duplicate/useDuplicate';
@@ -31,6 +31,7 @@ function DuplicateModal ({ open, onClose }: { open: boolean; onClose: () => void
   const layout = viewMeta?.layout as ViewLayout;
   const [loading, setLoading] = React.useState<boolean>(false);
   const [successModalOpen, setSuccessModalOpen] = React.useState<boolean>(false);
+  const [newViewId, setNewViewId] = React.useState<string | undefined>(undefined);
   const {
     workspaceList,
     spaceList,
@@ -64,15 +65,18 @@ function DuplicateModal ({ open, onClose }: { open: boolean; onClose: () => void
 
     setLoading(true);
     try {
-      await service?.duplicatePublishView({
+      const newViewId = await service?.duplicatePublishView({
         workspaceId: selectedWorkspaceId,
         spaceViewId: selectedSpaceId,
         viewId,
         collabType,
       });
+
       onClose();
       setSuccessModalOpen(true);
+      setNewViewId(newViewId);
     } catch (e) {
+      setNewViewId(undefined);
       notify.error(t('publish.duplicateFailed'));
     } finally {
       setLoading(false);
@@ -115,18 +119,35 @@ function DuplicateModal ({ open, onClose }: { open: boolean; onClose: () => void
             maxWidth: 420,
           },
         }}
-        okText={t('publish.useThisTemplate')}
-        cancelText={t('publish.downloadIt')}
-        onOk={() => window.open(openAppFlowySchema, '_self')}
+        okText={t('openInBrowser')}
+        cancelText={t('openInApp')}
+        onOk={() => {
+          if (!newViewId || !selectedWorkspaceId) return;
+          window.open(`/app/${selectedWorkspaceId}/${newViewId}`, '_self');
+        }}
         onCancel={() => {
-          window.open(downloadPage, '_blank');
+          window.open(openAppFlowySchema, '_self');
         }}
         onClose={() => setSuccessModalOpen(false)}
         open={successModalOpen}
-        title={<div className={'text-left'}>{t('publish.duplicateSuccessfully')}</div>}
+        title={
+          <div className={'text-left'}>
+            {t('addToWorkspace')}
+          </div>
+        }
       >
         <div className={'w-full whitespace-pre-wrap break-words pb-1 text-text-caption'}>
-          {t('publish.duplicateSuccessfullyDescription')}
+          <Trans
+            i18nKey="downloadTip"
+            components={{
+              link: <span
+                onClick={() => {
+                  window.open(downloadPage, '_blank');
+                }}
+                className={'hover:underline cursor-pointer text-fill-default'}
+              >{t('here')}</span>,
+            }}
+          />
         </div>
       </NormalModal>
     </>

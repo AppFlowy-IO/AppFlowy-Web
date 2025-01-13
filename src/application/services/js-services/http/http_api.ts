@@ -972,11 +972,14 @@ export async function duplicatePublishView (workspaceId: string, payload: Duplic
 
   const res = await axiosInstance?.post<{
     code: number;
+    data: {
+      view_id: string;
+    };
     message: string;
   }>(url, payload);
 
   if (res?.data.code === 0) {
-    return;
+    return res.data.data.view_id;
   }
 
   return Promise.reject(res?.data.message);

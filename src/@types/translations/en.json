@@ -3056,5 +3056,10 @@
   "AISearchPlaceholder": "Search or ask a question...",
   "searchLabel": "Search",
   "publishSelectedViews": "Publish {{count}} selected views",
-  "untitled": "Untitled"
+  "untitled": "Untitled",
+  "addToWorkspace": "Added to your workspace",
+  "downloadTip": "Don't have AppFlowy Apps installed? Download <link/>.",
+  "here": "here",
+  "openInBrowser": "Open in browser",
+  "openInApp": "Open in app"
 }
