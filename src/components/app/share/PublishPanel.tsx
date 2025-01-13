@@ -1,11 +1,15 @@
+import { ViewLayout } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
+import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppHandlers } from '@/components/app/app.hooks';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
-import { Button, CircularProgress, Typography } from '@mui/material';
+import { Button, CircularProgress, Divider, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as PublishIcon } from '@/assets/publish.svg';
+import { ReactComponent as CheckboxCheckSvg } from '@/assets/check_filled.svg';
+import { ReactComponent as CheckboxUncheckSvg } from '@/assets/uncheck.svg';
 
 function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: () => void; opened: boolean }) {
   const { t } = useTranslation();
@@ -24,6 +28,7 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
   } = useLoadPublishInfo(viewId);
   const [unpublishLoading, setUnpublishLoading] = React.useState<boolean>(false);
   const [publishLoading, setPublishLoading] = React.useState<boolean>(false);
+  const [visibleViewId, setVisibleViewId] = React.useState<string[] | undefined>(undefined);
 
   useEffect(() => {
     if (opened) {
@@ -35,8 +40,10 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
     if (!publish || !view) return;
 
     setPublishLoading(true);
+    const newPublishName = publishName || publishInfo?.publishName || undefined;
+
     try {
-      await publish(view, publishName || publishInfo?.publishName);
+      await publish(view, newPublishName, visibleViewId);
       await loadPublishInfo();
       notify.success(t('publish.publishSuccessfully'));
       // eslint-disable-next-line
@@ -45,7 +52,7 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
     } finally {
       setPublishLoading(false);
     }
-  }, [loadPublishInfo, publish, t, view, publishInfo]);
+  }, [loadPublishInfo, publish, t, view, publishInfo, visibleViewId]);
 
   const handleUnpublish = useCallback(async () => {
     if (!view || !unpublish) return;
@@ -103,22 +110,84 @@ function PublishPanel ({ viewId, opened, onClose }: { viewId: string; onClose: (
     </div>;
   }, [handlePublish, handleUnpublish, isOwner, isPublisher, onClose, publishInfo, t, unpublishLoading, url, view]);
 
+  const layout = view?.layout;
+  const isDatabase = layout !== undefined ? [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar].includes(layout) : false;
+  const hasPublished = view?.is_published;
+
+  useEffect(() => {
+    if (!hasPublished && isDatabase && view) {
+      const childIds = [view.view_id, ...view.children.map((child) => child.view_id)];
+
+      setVisibleViewId(childIds);
+    } else {
+      setVisibleViewId(undefined);
+    }
+  }, [hasPublished, isDatabase, view]);
+
   const renderUnpublished = useCallback(() => {
-    return <Button
-      onClick={() => {
-        void handlePublish();
-      }}
-      variant={'contained'}
-      className={'w-full'}
-      color={'primary'}
-      startIcon={publishLoading ? <CircularProgress
-        color={'inherit'}
-        size={16}
-      /> : undefined}
-    >{
-      t('shareAction.publish')
-    }</Button>;
-  }, [handlePublish, publishLoading, t]);
+    if (!view) return null;
+    const list = [view, ...view.children];
+
+    return <div className={'flex flex-col gap-4 w-full'}>
+      {isDatabase &&
+        <div className={'flex mt-2 text-sm flex-col gap-3 rounded-[16px] border border-line-divider py-3 px-4'}>
+          <div className={'text-text-caption'}>{t('publishSelectedViews', {
+            count: visibleViewId?.length || 0,
+          })}</div>
+          <Divider />
+          <div className={'flex flex-col gap-1 overflow-y-auto max-h-[300px] appflowy-scroller overflow-x-hidden'}>
+            {list.map((item) => {
+              const id = item.view_id;
+              const isCurrentView = view.view_id === item.view_id;
+
+              const selected = visibleViewId?.includes(item.view_id);
+
+              return <Button
+                disabled={isCurrentView}
+                onClick={() => {
+                  setVisibleViewId(prev => {
+                    const checked = prev?.includes(id);
+
+                    if (checked) {
+                      return prev?.filter((i) => i !== id);
+                    } else {
+                      return [...(prev || []), id];
+                    }
+
+                  });
+                }}
+                key={id}
+                className={'flex justify-start items-center'}
+                size={'small'}
+                startIcon={selected ? <CheckboxCheckSvg className={'w-5 h-5'} /> :
+                  <CheckboxUncheckSvg className={'w-5 h-5'} />}
+                color={'inherit'}
+              >
+                <div className={'flex items-center gap-2'}>
+                  <PageIcon view={item} />
+                  {item.name || t('untitled')}
+                </div>
+
+              </Button>;
+            })}
+          </div>
+
+        </div>}
+      <Button
+        onClick={() => {
+          void handlePublish();
+        }}
+        variant={'contained'}
+        className={'w-full'}
+        color={'primary'}
+        startIcon={publishLoading ? <CircularProgress
+          color={'inherit'}
+          size={16}
+        /> : undefined}
+      >{
+        t('shareAction.publish')
+      }</Button></div>;
+  }, [handlePublish, isDatabase, publishLoading, t, view, visibleViewId]);
 
   return (
     <div className={'flex flex-col gap-2 w-full overflow-hidden'}>

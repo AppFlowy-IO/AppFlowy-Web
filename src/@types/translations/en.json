@@ -3054,5 +3054,7 @@
   "searchResults": "Search results",
   "noSearchResults": "No search results",
   "AISearchPlaceholder": "Search or ask a question...",
-  "searchLabel": "Search"
+  "searchLabel": "Search",
+  "publishSelectedViews": "Publish {{count}} selected views",
+  "untitled": "Untitled"
 }

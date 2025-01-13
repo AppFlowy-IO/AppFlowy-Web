@@ -62,7 +62,7 @@ export interface AppContextType {
   updateSpace?: (payload: UpdateSpacePayload) => Promise<void>;
   uploadFile?: (viewId: string, file: File, onProgress?: (n: number) => void) => Promise<string>;
   getSubscriptions?: () => Promise<Subscription[]>;
-  publish?: (view: View, publishName?: string) => Promise<void>;
+  publish?: (view: View, publishName?: string, visibleViewIds?: string[]) => Promise<void>;
   unpublish?: (viewId: string) => Promise<void>;
 }
 
@@ -645,16 +645,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     }
   }, [currentWorkspaceId, service]);
 
-  const publish = useCallback(async (view: View, publishName?: string) => {
+  const publish = useCallback(async (view: View, publishName?: string, visibleViewIds?: string[]) => {
     if (!service || !currentWorkspaceId) return;
-    const isDatabase = [ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar].includes(view.layout);
     const viewId = view.view_id;
-    const children = view.children || [];
-    const visibleViewIds = [view.view_id, ...(children.map((v) => v.view_id))];
 
     await service.publishView(currentWorkspaceId, viewId, {
       publish_name: publishName,
-      visible_database_view_ids: isDatabase ? visibleViewIds : undefined,
+      visible_database_view_ids: visibleViewIds,
     });
     await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline, service]);
