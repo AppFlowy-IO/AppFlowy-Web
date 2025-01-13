@@ -5,15 +5,16 @@ import React, { useCallback, useContext } from 'react';
 import { ReactComponent as Logo } from '@/assets/logo.svg';
 import { Duplicate } from '@/components/publish/header/duplicate';
 import { useTranslation } from 'react-i18next';
-import { PublishContext } from '@/application/publish';
+import { PublishContext, usePublishContext } from '@/application/publish';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import  { ReactComponent as TemplateIcon } from '@/assets/template.svg';
+import { ReactComponent as TemplateIcon } from '@/assets/template.svg';
 
 function RightMenu () {
   const { t } = useTranslation();
   const viewMeta = useContext(PublishContext)?.viewMeta;
   const viewId = viewMeta?.view_id;
   const viewName = viewMeta?.name;
+  const duplicateEnabled = usePublishContext()?.duplicateEnabled;
 
   const handleTemplateClick = useCallback(() => {
     const url = `${window.origin}${window.location.pathname}`;
@@ -28,10 +29,13 @@ function RightMenu () {
   return (
     <>
       <MoreActions />
-      <Duplicate />
+      {duplicateEnabled && <Duplicate />}
       {isAppFlowyUser && (
         <Tooltip title={t('template.asTemplate')}>
-          <IconButton onClick={handleTemplateClick} size={'small'}>
+          <IconButton
+            onClick={handleTemplateClick}
+            size={'small'}
+          >
             <TemplateIcon />
           </IconButton>
         </Tooltip>
