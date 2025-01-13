@@ -29,11 +29,22 @@ import {
   UploadTemplatePayload,
 } from '@/application/template.type';
 import {
-  CreatePagePayload, CreateSpacePayload, CreateWorkspacePayload,
+  CreatePagePayload,
+  CreateSpacePayload,
+  CreateWorkspacePayload,
   DatabaseRelations,
-  DuplicatePublishView, PublishViewPayload, QuickNoteEditorData,
-  SubscriptionInterval, SubscriptionPlan,
-  Types, UpdatePagePayload, UpdateSpacePayload, UpdateWorkspacePayload, UploadPublishNamespacePayload, WorkspaceMember,
+  DuplicatePublishView,
+  PublishViewPayload,
+  QuickNoteEditorData,
+  SubscriptionInterval,
+  SubscriptionPlan,
+  Types,
+  UpdatePagePayload,
+  UpdatePublishConfigPayload,
+  UpdateSpacePayload,
+  UpdateWorkspacePayload,
+  UploadPublishNamespacePayload,
+  WorkspaceMember,
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
@@ -205,6 +216,8 @@ export class AFClientService implements AFService {
         publisherEmail: string;
         viewId: string;
         publishedAt: string;
+        commentEnabled: boolean;
+        duplicateEnabled: boolean;
       };
     }
 
@@ -222,11 +235,17 @@ export class AFClientService implements AFService {
       publisherEmail: info.publisher_email,
       viewId: info.view_id,
       publishedAt: info.publish_timestamp,
+      commentEnabled: info.comments_enabled,
+      duplicateEnabled: info.duplicate_enabled,
     };
 
     this.publishViewInfo.set(viewId, data);
 
     return data;
+  }
+
+  async updatePublishConfig (workspaceId: string, config: UpdatePublishConfigPayload) {
+    return APIService.updatePublishConfig(workspaceId, config);
   }
 
   async getPublishOutline (namespace: string) {

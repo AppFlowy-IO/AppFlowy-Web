@@ -3061,5 +3061,7 @@
   "downloadTip": "Don't have AppFlowy Apps installed? Download <link/>.",
   "here": "here",
   "openInBrowser": "Open in browser",
-  "openInApp": "Open in app"
+  "openInApp": "Open in app",
+  "comments": "Comments",
+  "duplicateAsTemplate": "Duplicate as template"
 }

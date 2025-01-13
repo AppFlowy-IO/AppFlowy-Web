@@ -852,6 +852,12 @@ export interface View {
   publish_timestamp?: string;
 }
 
+export interface UpdatePublishConfigPayload {
+  comments_enabled?: boolean;
+  duplicate_enabled?: boolean;
+  view_id: string;
+}
+
 export interface Invitation {
   invite_id: string;
   workspace_id: string;

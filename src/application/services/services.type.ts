@@ -24,7 +24,7 @@ import {
   CreateWorkspacePayload,
   UpdateWorkspacePayload,
   PublishViewPayload,
-  UploadPublishNamespacePayload,
+  UploadPublishNamespacePayload, UpdatePublishConfigPayload,
 } from '@/application/types';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { ViewMeta } from '@/application/db/tables/view_metas';
@@ -153,8 +153,11 @@ export interface PublishService {
     namespace: string;
     publishName: string,
     publisherEmail: string,
-    publishedAt: string
+    publishedAt: string,
+    commentEnabled: boolean,
+    duplicateEnabled: boolean,
   }>;
+  updatePublishConfig: (workspaceId: string, payload: UpdatePublishConfigPayload) => Promise<void>;
   getPublishNamespace: (namespace: string) => Promise<string>;
   getPublishHomepage: (workspaceId: string) => Promise<{ view_id: string }>;
   updatePublishHomepage: (workspaceId: string, viewId: string) => Promise<void>;

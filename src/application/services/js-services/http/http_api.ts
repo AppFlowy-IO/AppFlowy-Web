@@ -27,7 +27,7 @@ import {
   CreateWorkspacePayload,
   UpdateWorkspacePayload,
   PublishViewPayload,
-  UploadPublishNamespacePayload,
+  UploadPublishNamespacePayload, UpdatePublishConfigPayload,
 } from '@/application/types';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
@@ -532,6 +532,20 @@ export async function getPublishView (publishNamespace: string, publishName: str
   }
 }
 
+export async function updatePublishConfig (workspaceId: string, payload: UpdatePublishConfigPayload) {
+  const url = `/api/workspace/${workspaceId}/publish`;
+  const response = await axiosInstance?.patch<{
+    code: number;
+    message: string;
+  }>(url, payload);
+
+  if (response?.data.code === 0) {
+    return;
+  }
+
+  return Promise.reject(response?.data);
+}
+
 export async function getPublishInfoWithViewId (viewId: string) {
   const url = `/api/workspace/v1/published-info/${viewId}`;
   const response = await axiosInstance?.get<{
@@ -542,6 +556,8 @@ export async function getPublishInfoWithViewId (viewId: string) {
       publisher_email: string;
       view_id: string;
       publish_timestamp: string;
+      comments_enabled: boolean;
+      duplicate_enabled: boolean;
     };
     message: string;
   }>(url);

@@ -13,7 +13,7 @@ import { notify } from '@/components/_shared/notify';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { useService } from '@/components/main/app.hooks';
 import { useLiveQuery } from 'dexie-react-hooks';
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 export interface PublishContextType {
@@ -31,6 +31,8 @@ export interface PublishContextType {
   breadcrumbs: View[];
   rendered?: boolean;
   onRendered?: () => void;
+  commentEnabled?: boolean;
+  duplicateEnabled?: boolean;
 }
 
 export const PublishContext = createContext<PublishContextType | null>(null);
@@ -72,6 +74,13 @@ export const PublishProvider = ({
       name: findView(outline, view.view_id)?.name || view.name,
     };
   }, [namespace, publishName, outline]);
+
+  const viewId = viewMeta?.view_id;
+
+  const [publishInfo, setPublishInfo] = React.useState<{
+    commentEnabled: boolean,
+    duplicateEnabled: boolean,
+  } | undefined>();
 
   const originalCrumbs = useMemo(() => {
     if (!viewMeta || !outline) return [];
@@ -175,6 +184,25 @@ export const PublishProvider = ({
     });
 
   }, [service, publishName]);
+
+  const loadPublishInfo = useCallback(async () => {
+    if (!service || !viewId) return;
+    try {
+      const res = await service.getPublishInfo(viewId);
+
+      setPublishInfo(res);
+
+      // eslint-disable-next-line
+    } catch (e: any) {
+      // do nothing
+    }
+
+  }, [viewId, service]);
+
+  useEffect(() => {
+    void loadPublishInfo();
+  }, [loadPublishInfo]);
+
   const navigate = useNavigate();
 
   const loadViewMeta = useCallback(
@@ -385,6 +413,8 @@ export const PublishProvider = ({
         appendBreadcrumb,
         onRendered,
         rendered,
+        commentEnabled: publishInfo?.commentEnabled !== false,
+        duplicateEnabled: publishInfo?.duplicateEnabled !== false,
       }}
     >
       {children}

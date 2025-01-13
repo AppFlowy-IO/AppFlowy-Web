@@ -1,3 +1,4 @@
+import { usePublishContext } from '@/application/publish';
 import { YDoc } from '@/application/types';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import { GlobalCommentProvider } from '@/components/global-comment';
@@ -8,10 +9,12 @@ function PublishMain ({ doc, isTemplate }: {
   doc?: YDoc;
   isTemplate: boolean;
 }) {
+  const commentEnabled = usePublishContext()?.commentEnabled;
+
   return (
     <>
       <CollabView doc={doc} />
-      {doc && !isTemplate && (
+      {doc && !isTemplate && commentEnabled && (
         <Suspense fallback={<ComponentLoading />}>
           <GlobalCommentProvider />
         </Suspense>
