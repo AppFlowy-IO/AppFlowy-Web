@@ -4,10 +4,11 @@ import { flattenViews } from '@/components/_shared/outline/utils';
 import { useAppHandlers, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import HomePageSetting from '@/components/app/publish-manage/HomePageSetting';
 import PublishedPages from '@/components/app/publish-manage/PublishedPages';
+import PublishPagesSkeleton from '@/components/app/publish-manage/PublishPagesSkeleton';
 import UpdateNamespace from '@/components/app/publish-manage/UpdateNamespace';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
 import { openUrl } from '@/utils/url';
-import { Button, Divider, IconButton, Tooltip } from '@mui/material';
+import { Button, CircularProgress, Divider, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as EditIcon } from '@/assets/edit.svg';
@@ -267,7 +268,10 @@ export function PublishManage ({
         </div>
       </div>
 
-      <div className={'text-base mt-4 px-1 font-medium'}>{t('settings.sites.publishedPage.title')}</div>
+      <div className={'text-base flex items-center gap-2 mt-4 px-1 font-medium'}>
+        {t('settings.sites.publishedPage.title')}
+        {loading && <CircularProgress size={14} />}
+      </div>
       <div className={'text-text-caption  px-1 text-xs'}>{t('settings.sites.publishedPage.description')}</div>
       <Divider className={'mb-2'} />
       <div className={'w-full px-1 flex text-sm font-medium items-center gap-4'}>
@@ -279,14 +283,14 @@ export function PublishManage ({
       </div>
 
       <Divider className={'mb-1'} />
-      <PublishedPages
-        loading={loading}
-        publishViews={publishViews}
-        onPublish={handlePublish}
-        onClose={onClose}
-        onUnPublish={handleUnpublish}
-        namespace={namespace}
-      />
+      {loading && !publishViews.length ? <PublishPagesSkeleton /> :
+        <PublishedPages
+          publishViews={publishViews}
+          onPublish={handlePublish}
+          onClose={onClose}
+          onUnPublish={handleUnpublish}
+          namespace={namespace}
+        />}
 
       {updateOpen && <UpdateNamespace
         namespace={namespace}

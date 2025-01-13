@@ -186,7 +186,10 @@ function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }
                 onClick={action.onClick}
                 size={'small'}
                 className={'justify-start'}
-                startIcon={<action.IconComponent className={'w-4 h-4'} />}
+                startIcon={<action.IconComponent
+                  size={14}
+                  className={'w-4 h-4'}
+                />}
                 color={'inherit'}
               >{action.label}</Button>
             </Tooltip>;
