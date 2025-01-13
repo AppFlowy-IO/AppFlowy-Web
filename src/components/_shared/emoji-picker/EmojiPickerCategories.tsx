@@ -8,7 +8,7 @@ import AutoSizer from 'react-virtualized-auto-sizer';
 import { FixedSizeList } from 'react-window';
 import { EmojiCategory, getRowsWithCategories } from './EmojiPicker.hooks';
 
-function EmojiPickerCategories({
+function EmojiPickerCategories ({
   emojiCategories,
   onEmojiSelect,
   onEscape,
@@ -30,7 +30,7 @@ function EmojiPickerCategories({
   }, [emojiCategories]);
   const mouseY = useRef<number | null>(null);
   const mouseX = useRef<number | null>(null);
-
+  
   const ref = React.useRef<HTMLDivElement>(null);
 
   const getCategoryName = useCallback(
@@ -49,7 +49,7 @@ function EmojiPickerCategories({
 
       return i18nName[id];
     },
-    [t]
+    [t],
   );
 
   useEffect(() => {
@@ -71,7 +71,10 @@ function EmojiPickerCategories({
       const isFlags = item.category === 'flags';
 
       return (
-        <div style={style} data-index={index}>
+        <div
+          style={style}
+          data-index={index}
+        >
           {item.type === 'category' ? (
             <div className={'pt-2 text-base font-medium text-text-caption'}>{tagName}</div>
           ) : null}
@@ -86,8 +89,6 @@ function EmojiPickerCategories({
 
               if (isSelected) {
                 classList.push('bg-fill-list-hover');
-              } else {
-                classList.push('hover:bg-transparent');
               }
 
               if (isDefaultEmoji) {
@@ -99,7 +100,13 @@ function EmojiPickerCategories({
               }
 
               return (
-                <Tooltip key={emoji.id} title={emoji.name} placement={'top'} enterDelay={500} disableInteractive={true}>
+                <Tooltip
+                  key={emoji.id}
+                  title={emoji.name}
+                  placement={'top'}
+                  enterDelay={500}
+                  disableInteractive={true}
+                >
                   <div
                     data-key={emoji.id}
                     style={{
@@ -114,13 +121,6 @@ function EmojiPickerCategories({
                       mouseX.current = e.clientX;
                     }}
                     onMouseEnter={(e) => {
-                      if (mouseY.current === null || mouseY.current !== e.clientY || mouseX.current !== e.clientX) {
-                        setSelectCell({
-                          row: index,
-                          column: columnIndex,
-                        });
-                      }
-
                       mouseX.current = e.clientX;
                       mouseY.current = e.clientY;
                     }}
@@ -135,7 +135,7 @@ function EmojiPickerCategories({
         </div>
       );
     },
-    [defaultEmoji, getCategoryName, onEmojiSelect, rows, selectCell.column, selectCell.row]
+    [defaultEmoji, getCategoryName, onEmojiSelect, rows, selectCell],
   );
 
   const getNewColumnIndex = useCallback(
@@ -150,7 +150,7 @@ function EmojiPickerCategories({
 
       return newColumnIndex;
     },
-    [rows]
+    [rows],
   );
 
   const findNextRow = useCallback(
@@ -171,7 +171,7 @@ function EmojiPickerCategories({
         column: newColumnIndex,
       };
     },
-    [getNewColumnIndex, rows]
+    [getNewColumnIndex, rows],
   );
 
   const findPrevRow = useCallback(
@@ -191,7 +191,7 @@ function EmojiPickerCategories({
         column: newColumnIndex,
       };
     },
-    [getNewColumnIndex, rows]
+    [getNewColumnIndex, rows],
   );
 
   const findPrevCell = useCallback(
@@ -215,7 +215,7 @@ function EmojiPickerCategories({
         column: prevColumn,
       };
     },
-    [findPrevRow, rows]
+    [findPrevRow, rows],
   );
 
   const findNextCell = useCallback(
@@ -239,7 +239,7 @@ function EmojiPickerCategories({
         column: nextColumn,
       };
     },
-    [findNextRow, rows]
+    [findNextRow, rows],
   );
 
   useEffect(() => {
@@ -325,7 +325,7 @@ function EmojiPickerCategories({
       rows,
       selectCell.column,
       selectCell.row,
-    ]
+    ],
   );
 
   useEffect(() => {

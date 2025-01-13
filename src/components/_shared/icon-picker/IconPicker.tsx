@@ -134,14 +134,14 @@ function IconPicker ({
             <Button
               size="small"
               color="inherit"
-              className="h-8 w-8 min-w-[32px] items-center px-1 py-1"
+              className="h-8 w-8 min-w-[32px] items-center p-[7px]"
               onClick={(e) => {
                 setSelectIcon(icon.id);
                 setAnchorEl(e.currentTarget);
               }}
             >
               <div
-                className={'w-6 h-6 text-text-title'}
+                className={'w-5 h-5 text-text-title'}
                 dangerouslySetInnerHTML={{ __html: icon.cleanSvg }}
               />
             </Button>

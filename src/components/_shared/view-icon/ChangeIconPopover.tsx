@@ -50,7 +50,10 @@ function ChangeIconPopover ({
       anchorPosition={anchorPosition}
       anchorReference={anchorPosition ? 'anchorPosition' : 'anchorEl'}
     >
-      <div className={'border-b w-[402px] border-line-divider px-4 pt-2 flex items-center justify-between'}>
+      <div
+        data-testid="change-icon-popover"
+        className={'border-b w-[402px] border-line-divider px-4 pt-2 flex items-center justify-between'}
+      >
         <ViewTabs
           onChange={(_e, newValue) => setValue(newValue)}
           value={value}
@@ -63,6 +66,7 @@ function ChangeIconPopover ({
                 className={'flex items-center flex-row justify-center gap-1.5'}
                 value={'emoji'}
                 label={'Emojis'}
+                data-testid="emoji-tab"
               />
             )
           }
@@ -72,6 +76,7 @@ function ChangeIconPopover ({
                 className={'flex items-center flex-row justify-center gap-1.5'}
                 value={'icon'}
                 label={'Icons'}
+                data-testid="icon-tab"
               />
             )
           }

@@ -55,10 +55,12 @@ function EmojiPickerHeader ({ hideRemove, onEmojiSelect, onSkinSelect, searchVal
       onClick,
       tooltip,
       children,
+      testId,
     }: {
       onClick: (e: React.MouseEvent<HTMLButtonElement>) => void;
       tooltip: string;
       children: React.ReactNode;
+      testId?: string;
     }) => {
       return (
         <Tooltip title={tooltip}>
@@ -66,6 +68,7 @@ function EmojiPickerHeader ({ hideRemove, onEmojiSelect, onSkinSelect, searchVal
             size={'small'}
             variant={'outlined'}
             color={'inherit'}
+            data-testid={testId}
             className={'h-9 w-9 min-w-[36px] px-0 py-0'}
             onClick={onClick}
           >
@@ -105,6 +108,7 @@ function EmojiPickerHeader ({ hideRemove, onEmojiSelect, onSkinSelect, searchVal
 
               onEmojiSelect(emoji);
             },
+            testId: 'random-emoji',
             tooltip: t('emoji.random'),
             children: <ShuffleIcon className={'h-5 w-5'} />,
           })}
