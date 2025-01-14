@@ -3,7 +3,7 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { Column, useFieldSelector } from '@/application/database-yjs/selector';
 import { FieldTypeIcon } from '@/components/database/components/field';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
-import { getIconSvgEncodedContent } from '@/utils/emoji';
+import { getIconBase64 } from '@/utils/emoji';
 import { Tooltip } from '@mui/material';
 import React, { useContext, useEffect, useMemo, useState } from 'react';
 import { ReactComponent as AIIndicatorSvg } from '@/assets/ai_indicator.svg';
@@ -25,8 +25,8 @@ export function GridColumn ({ column, index }: { column: Column; index: number }
 
   useEffect(() => {
     if (icon) {
-      void getIconSvgEncodedContent(icon, isDark ? 'white' : 'black').then((res) => {
-        setIconEncodeContent(res);
+      void getIconBase64(icon, isDark ? 'white' : 'black').then((res) => {
+        if (res) setIconEncodeContent(res);
       });
     }
   }, [icon, isDark]);

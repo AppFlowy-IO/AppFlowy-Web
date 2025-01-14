@@ -47,7 +47,7 @@ const fetchMetaData = async (namespace: string, publishName?: string) => {
   let url = `${baseURL}/api/workspace/published/${namespace}`;
 
   if (publishName) {
-    url += `/${publishName}`;
+    url = `${baseURL}/api/workspace/v1/published/${namespace}/${publishName}`;
   }
 
   logger.info(`Fetching meta data from ${url}`);
@@ -60,7 +60,11 @@ const fetchMetaData = async (namespace: string, publishName?: string) => {
       throw new Error(`HTTP error! Status: ${response.status}`);
     }
 
-    return response.json();
+    const data = await response.json();
+
+    logger.info(`Fetched meta data from ${url}: ${JSON.stringify(data)}`);
+
+    return data;
   } catch (error) {
     logger.error(`Error fetching meta data ${error}`);
     return null;
@@ -130,7 +134,11 @@ const createServer = async (req: Request) => {
       const data = await fetchMetaData(namespace, publishName);
 
       if (publishName) {
-        metaData = data;
+        if (data.code === 0) {
+          metaData = data.data;
+        } else {
+          logger.error(`Error fetching meta data: ${JSON.stringify(data)}`);
+        }
       } else {
 
         const publishInfo = data?.data?.info;
@@ -165,6 +173,7 @@ const createServer = async (req: Request) => {
       if (metaData && metaData.view) {
         const view = metaData.view;
         const emoji = view.icon?.ty === 0 && view.icon?.value;
+        const icon = view.icon?.ty === 2 && view.icon?.value;
         const titleList = [];
 
         if (emoji) {
@@ -172,6 +181,15 @@ const createServer = async (req: Request) => {
           const baseUrl = 'https://raw.githubusercontent.com/googlefonts/noto-emoji/main/svg/emoji_u';
 
           favicon = `${baseUrl}${emojiCode}.svg`;
+        } else if (icon) {
+          try {
+            const { iconContent, color } = JSON.parse(view.icon?.value);
+
+            favicon = getIconBase64(iconContent, color);
+            $('link[rel="icon"]').attr('type', 'image/svg+xml');
+          } catch (_) {
+            // Do nothing
+          }
         }
 
         if (view.name) {
@@ -253,3 +271,30 @@ const start = () => {
 start();
 
 export {};
+
+function getIconBase64 (svgText: string, color: string) {
+  let newSvgText = svgText.replace(/fill="[^"]*"/g, ``);
+
+  newSvgText = newSvgText.replace('<svg', `<svg fill="${argbToRgba(color)}"`);
+
+  const base64String = btoa(newSvgText);
+
+  return `data:image/svg+xml;base64,${base64String}`;
+}
+
+function argbToRgba (color: string): string {
+  const hex = color.replace(/^#|0x/, '');
+
+  const hasAlpha = hex.length === 8;
+
+  if (!hasAlpha) {
+    return color.replace('0x', '#');
+  }
+
+  const r = parseInt(hex.slice(2, 4), 16);
+  const g = parseInt(hex.slice(4, 6), 16);
+  const b = parseInt(hex.slice(6, 8), 16);
+  const a = hasAlpha ? parseInt(hex.slice(0, 2), 16) / 255 : 1;
+
+  return `rgba(${r}, ${g}, ${b}, ${a})`;
+}
