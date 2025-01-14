@@ -61,6 +61,13 @@ function WorkspaceList ({
             onUpdateCurrentWorkspace?.(name);
           }
         }}
+        onDeleted={() => {
+          if (workspace.id === currentWorkspaceId) {
+            window.location.href = `/app`;
+          } else {
+            void fetchWorkspaces();
+          }
+        }}
       /></div>;
     }
 

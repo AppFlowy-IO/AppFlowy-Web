@@ -8,9 +8,10 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import RenameWorkspace from '@/components/app/workspaces/RenameWorkspace';
 
-function MoreActions ({ workspace, onUpdated }: {
+function MoreActions ({ workspace, onUpdated, onDeleted }: {
   workspace: Workspace;
   onUpdated: (name: string) => void;
+  onDeleted?: () => void;
 }) {
   const ref = React.useRef<HTMLButtonElement | null>(null);
   const [open, setOpen] = React.useState(false);
@@ -56,6 +57,10 @@ function MoreActions ({ workspace, onUpdated }: {
             <DeleteWorkspace
               name={workspace.name}
               workspaceId={workspace.id}
+              onDeleted={() => {
+                setOpen(false);
+                onDeleted?.();
+              }}
             />
 
           </div>

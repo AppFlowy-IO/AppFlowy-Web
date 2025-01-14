@@ -71,7 +71,6 @@ function ViewItem ({ view, width, level = 0, renderExtra, expandIds, toggleExpan
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={() => {
-          console.log('view.layout', view.layout);
           if (layout === ViewLayout.AIChat) return;
           onClickView?.(viewId);
         }}

@@ -2970,7 +2970,7 @@
   "subscribe": {
     "upgradePlanTitle": "Compare & select plan",
     "yearly": "Yearly",
-    "save": "Save {discount}%",
+    "save": "Save {{discount}}%",
     "monthly": "Monthly",
     "priceIn": "Price in ",
     "free": "Free",
