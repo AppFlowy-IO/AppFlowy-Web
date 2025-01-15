@@ -9,7 +9,7 @@ import { fetch } from 'bun';
 const distDir = path.join(__dirname, 'dist');
 const indexPath = path.join(distDir, 'index.html');
 const baseURL = process.env.AF_BASE_URL as string;
-const defaultSite = 'https://appflowy.io';
+const defaultSite = 'https://appflowy.com';
 
 const setOrUpdateMetaTag = ($: CheerioAPI, selector: string, attribute: string, content: string) => {
   if ($(selector).length === 0) {

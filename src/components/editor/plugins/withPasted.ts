@@ -37,10 +37,9 @@ export const withPasted = (editor: ReactEditor) => {
 
         if (isUrl) {
           const isAppFlowyLinkUrl = isURL(text, {
-            host_whitelist: ['localhost', 'appflowy.com', 'test.appflowy.com', 'beta.appflowy.com'],
+            host_whitelist: [window.location.hostname],
           });
 
-          console.log('isAppFlowyLinkUrl', isAppFlowyLinkUrl);
           if (isAppFlowyLinkUrl) {
             const url = new URL(text);
             const blockId = url.searchParams.get('blockId');

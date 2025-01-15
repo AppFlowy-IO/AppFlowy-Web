@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import { ReactComponent as TrashIcon } from '@/assets/trash.svg';
 import { QuickNote } from '@/components/quick-note';
 
-function SideBarBottom () {
+function SideBarBottom() {
   const { t } = useTranslation();
   const navigate = useNavigate();
 
@@ -22,7 +22,7 @@ function SideBarBottom () {
           <IconButton
             size={'small'}
             onClick={() => {
-              window.open('https://appflowy.io/templates', '_blank');
+              window.open(`${window.location.origin}/templates`, '_blank');
             }}
           >
             <TemplateIcon />

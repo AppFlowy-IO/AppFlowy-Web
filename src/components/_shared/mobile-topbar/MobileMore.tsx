@@ -23,7 +23,7 @@ function MobileMore ({
         label: t('template.label'),
         icon: <TemplateIcon />,
         onClick: () => {
-          window.open('https://appflowy.io/templates', '_blank');
+          window.open('https://appflowy.com/templates', '_blank');
         },
       },
       {

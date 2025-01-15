@@ -14,7 +14,7 @@ export const AUTH_CALLBACK_PATH = '/auth/callback';
 export const AUTH_CALLBACK_URL = `${window.location.origin}${AUTH_CALLBACK_PATH}`;
 
 export function withSignIn() {
-  return function (
+  return function(
     // eslint-disable-next-line
     _target: any,
     _propertyKey: string,
@@ -23,14 +23,14 @@ export function withSignIn() {
     const originalMethod = descriptor.value;
 
     // eslint-disable-next-line
-    descriptor.value = async function (args: { redirectTo: string }) {
+    descriptor.value = async function(args: { redirectTo: string }) {
       const redirectTo = args.redirectTo;
 
       saveRedirectTo(redirectTo);
 
       try {
         await originalMethod.apply(this, [args]);
-      } catch (e) {
+      } catch(e) {
         console.error(e);
         return Promise.reject(e);
       }
@@ -43,8 +43,15 @@ export function withSignIn() {
 export function afterAuth() {
   const redirectTo = getRedirectTo();
 
-  if (redirectTo) {
+  if(redirectTo) {
     clearRedirectTo();
-    window.location.href = decodeURIComponent(redirectTo);
+    const url = new URL(decodeURIComponent(redirectTo));
+    const pathname = url.pathname;
+
+    if(pathname === '/' || !pathname) {
+      url.pathname = '/app';
+    }
+
+    window.location.href = url.toString();
   }
 }

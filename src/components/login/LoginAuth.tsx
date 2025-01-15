@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ReactComponent as ErrorIcon } from '@/assets/error.svg';
 
-function LoginAuth () {
+function LoginAuth() {
   const service = useContext(AFConfigContext)?.service;
   const [loading, setLoading] = useState<boolean>(false);
   const [modalOpened, setModalOpened] = useState(false);
@@ -16,13 +16,13 @@ function LoginAuth () {
   const openLoginModal = useContext(AFConfigContext)?.openLoginModal;
 
   useEffect(() => {
-    void (async () => {
+    void (async() => {
       setLoading(true);
       setError(null);
       try {
         await service?.loginAuth(window.location.href);
         // eslint-disable-next-line
-      } catch (e: any) {
+      } catch(e: any) {
         setError(e.message);
         setModalOpened(true);
       } finally {
@@ -51,7 +51,7 @@ function LoginAuth () {
       closable={false}
       cancelText={t('button.backToHome')}
       onOk={() => {
-        openLoginModal?.(getRedirectTo() || window.location.origin);
+        openLoginModal?.(getRedirectTo() || `${window.location.origin}/app`);
       }}
       okText={t('button.tryAgain')}
       title={<div className={'text-left font-bold flex gap-2 items-center'}>

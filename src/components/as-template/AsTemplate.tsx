@@ -15,7 +15,7 @@ import './template.scss';
 import { slugify } from '@/components/as-template/utils';
 import { ReactComponent as WebsiteIcon } from '@/assets/website.svg';
 
-function AsTemplate ({
+function AsTemplate({
   viewName,
   viewUrl,
   viewId,
@@ -37,8 +37,8 @@ function AsTemplate ({
     loading,
   } = useLoadTemplate(viewId);
 
-  const handleSubmit = useCallback(async (data: AsTemplateFormValue) => {
-    if (!service || !selectedCreatorId || selectedCategoryIds.length === 0) return;
+  const handleSubmit = useCallback(async(data: AsTemplateFormValue) => {
+    if(!service || !selectedCreatorId || selectedCategoryIds.length === 0) return;
     const formData: UploadTemplatePayload = {
       ...data,
       view_id: viewId,
@@ -50,7 +50,7 @@ function AsTemplate ({
     };
 
     try {
-      if (template) {
+      if(template) {
         await service?.updateTemplate(template.view_id, formData);
       } else {
         await service?.createTemplate(formData);
@@ -59,7 +59,7 @@ function AsTemplate ({
       await loadTemplate();
 
       notify.success('Template saved successfully');
-    } catch (error) {
+    } catch(error) {
       // eslint-disable-next-line
       // @ts-ignore
       notify.error(error.toString());
@@ -73,7 +73,7 @@ function AsTemplate ({
   }, [loadTemplate]);
 
   useEffect(() => {
-    if (!template) return;
+    if(!template) return;
     setSelectedCategoryIds(template.categories.map((category) => category.id));
     setSelectedCreatorId(template.creator.id);
     setIsNewTemplate(template.is_new_template);
@@ -81,7 +81,7 @@ function AsTemplate ({
   }, [template]);
 
   const defaultValue = useMemo(() => {
-    if (!template) return {
+    if(!template) return {
       name: viewName,
       description: '',
       about: '',
@@ -104,10 +104,11 @@ function AsTemplate ({
           startIcon={<WebsiteIcon />}
           variant={'text'}
           onClick={() => {
-            const origin = import.meta.env.AF_BASE_URL?.includes('test') ? 'https://test.appflowy.io' : 'https://appflowy.io';
+            const templateUrl = `${window.location.origin}/templates`;
 
-            window.open(`${origin}/templates/${slugify(template.categories[0].name)}/${template.view_id}`);
-          }} color={'primary'}
+            window.open(`${templateUrl}/${slugify(template.categories[0].name)}/${template.view_id}`);
+          }}
+          color={'primary'}
         >{t('template.viewTemplate')}</Button>}
         <div className={'flex items-center gap-2'}>
           {template && <Button
@@ -124,7 +125,9 @@ function AsTemplate ({
           <Button
             onClick={() => {
               submitRef.current?.click();
-            }} variant={'contained'} color={'primary'}
+            }}
+            variant={'contained'}
+            color={'primary'}
           >
             {t('button.save')}
           </Button>
@@ -133,11 +136,15 @@ function AsTemplate ({
       </div>
       <div className={'flex-1 flex gap-20 overflow-hidden'}>
         <Paper className={'w-full h-full flex-1 flex justify-center overflow-hidden'}>
-          <AFScroller className={'w-full h-full flex justify-center'} overflowXHidden>
+          <AFScroller
+            className={'w-full h-full flex justify-center'}
+            overflowXHidden
+          >
             {loading ?
               <CircularProgress /> :
               <AsTemplateForm
-                defaultValues={defaultValue} viewUrl={viewUrl}
+                defaultValues={defaultValue}
+                viewUrl={viewUrl}
                 onSubmit={handleSubmit}
                 ref={submitRef}
                 defaultRelatedTemplates={template?.related_templates}
@@ -146,8 +153,14 @@ function AsTemplate ({
           </AFScroller>
         </Paper>
         <div className={'w-[25%] flex flex-col gap-4'}>
-          <Categories value={selectedCategoryIds} onChange={setSelectedCategoryIds} />
-          <Creator value={selectedCreatorId} onChange={setSelectedCreatorId} />
+          <Categories
+            value={selectedCategoryIds}
+            onChange={setSelectedCategoryIds}
+          />
+          <Creator
+            value={selectedCreatorId}
+            onChange={setSelectedCreatorId}
+          />
           <div className={'flex gap-2 items-center'}>
             <InputLabel>{t('template.isNewTemplate')}</InputLabel>
             <Switch
