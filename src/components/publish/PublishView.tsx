@@ -15,18 +15,18 @@ export interface PublishViewProps {
   publishName: string;
 }
 
-export function PublishView ({ namespace, publishName }: PublishViewProps) {
+export function PublishView({ namespace, publishName }: PublishViewProps) {
   const [doc, setDoc] = useState<YDoc | undefined>();
   const [notFound, setNotFound] = useState<boolean>(false);
   const service = useContext(AFConfigContext)?.service;
-  const openPublishView = useCallback(async () => {
+  const openPublishView = useCallback(async() => {
     let doc;
 
     setNotFound(false);
     setDoc(undefined);
     try {
       doc = await service?.getPublishView(namespace, publishName);
-    } catch (e) {
+    } catch(e) {
       setNotFound(true);
       return;
     }
@@ -44,11 +44,12 @@ export function PublishView ({ namespace, publishName }: PublishViewProps) {
   const isTemplateThumb = isTemplate && search.get('thumbnail') === 'true';
 
   useEffect(() => {
-    if (!isTemplateThumb) return;
+    if(!isTemplateThumb) return;
+
     document.documentElement.setAttribute('thumbnail', 'true');
   }, [isTemplateThumb]);
 
-  if (notFound && !doc) {
+  if(notFound && !doc) {
     return <NotFound />;
   }
 

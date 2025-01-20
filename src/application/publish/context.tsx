@@ -62,12 +62,12 @@ export const PublishProvider = ({
     };
   }, []);
 
-  const viewMeta = useLiveQuery(async () => {
+  const viewMeta = useLiveQuery(async() => {
     const name = `${namespace}_${publishName}`;
 
     const view = await db.view_metas.get(name);
 
-    if (!view) return;
+    if(!view) return;
 
     return {
       ...view,
@@ -83,17 +83,17 @@ export const PublishProvider = ({
   } | undefined>();
 
   const originalCrumbs = useMemo(() => {
-    if (!viewMeta || !outline) return [];
+    if(!viewMeta || !outline) return [];
     const ancestors = findAncestors(outline, viewMeta?.view_id);
 
-    if (ancestors) return ancestors;
-    if (!viewMeta?.ancestor_views) return [];
+    if(ancestors) return ancestors;
+    if(!viewMeta?.ancestor_views) return [];
     const parseToView = (ancestor: ViewInfo): View => {
       let extra = null;
 
       try {
         extra = ancestor.extra ? JSON.parse(ancestor.extra) : null;
-      } catch (e) {
+      } catch(e) {
         // do nothing
       }
 
@@ -122,13 +122,13 @@ export const PublishProvider = ({
 
   const appendBreadcrumb = useCallback((view?: View) => {
     setBreadcrumbs((prev) => {
-      if (!view) {
+      if(!view) {
         return prev.slice(0, -1);
       }
 
       const index = prev.findIndex((v) => v.view_id === view.view_id);
 
-      if (index === -1) {
+      if(index === -1) {
         return [...prev, view];
       }
 
@@ -174,26 +174,26 @@ export const PublishProvider = ({
 
     createdRowKeys.current = [];
 
-    if (!rowKeys.length) return;
+    if(!rowKeys.length) return;
     rowKeys.forEach((rowKey) => {
       try {
         service?.deleteRowDoc(rowKey);
-      } catch (e) {
+      } catch(e) {
         console.error(e);
       }
     });
 
   }, [service, publishName]);
 
-  const loadPublishInfo = useCallback(async () => {
-    if (!service || !viewId) return;
+  const loadPublishInfo = useCallback(async() => {
+    if(!service || !viewId) return;
     try {
       const res = await service.getPublishInfo(viewId);
 
       setPublishInfo(res);
 
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       // do nothing
     }
 
@@ -206,11 +206,11 @@ export const PublishProvider = ({
   const navigate = useNavigate();
 
   const loadViewMeta = useCallback(
-    async (viewId: string, callback?: (meta: View) => void) => {
+    async(viewId: string, callback?: (meta: View) => void) => {
       try {
         const info = await service?.getPublishInfo(viewId);
 
-        if (!info) {
+        if(!info) {
           throw new Error('View has not been published yet');
         }
 
@@ -220,7 +220,7 @@ export const PublishProvider = ({
 
         const meta = await service?.getPublishViewMeta(namespace, publishName);
 
-        if (!meta) {
+        if(!meta) {
           return Promise.reject(new Error('View meta has not been published yet'));
         }
 
@@ -242,7 +242,7 @@ export const PublishProvider = ({
 
         callback?.(res);
 
-        if (callback) {
+        if(callback) {
           setSubscribers((prev) => {
             prev.set(name, (meta) => {
               return callback?.(parseMetaToView(meta));
@@ -253,7 +253,7 @@ export const PublishProvider = ({
         }
 
         return res;
-      } catch (e) {
+      } catch(e) {
         return Promise.reject(e);
       }
     },
@@ -261,13 +261,13 @@ export const PublishProvider = ({
   );
 
   const toView = useCallback(
-    async (viewId: string, blockId?: string) => {
+    async(viewId: string, blockId?: string) => {
       try {
         const view = await loadViewMeta(viewId);
 
         const res = await service?.getPublishInfo(viewId);
 
-        if (!res) {
+        if(!res) {
           throw new Error('View has not been published yet');
         }
 
@@ -276,8 +276,8 @@ export const PublishProvider = ({
         prevViewMeta.current = undefined;
         const searchParams = new URLSearchParams('');
 
-        if (blockId) {
-          switch (view.layout) {
+        if(blockId) {
+          switch(view.layout) {
             case ViewLayout.Document:
               searchParams.set('blockId', blockId);
               break;
@@ -291,13 +291,13 @@ export const PublishProvider = ({
           }
         }
 
-        if (isTemplate) {
+        if(isTemplate) {
           searchParams.set('template', 'true');
         }
 
         let url = `/${viewNamespace}/${publishName}`;
 
-        if (searchParams.toString()) {
+        if(searchParams.toString()) {
           url += `?${searchParams.toString()}`;
         }
 
@@ -305,40 +305,40 @@ export const PublishProvider = ({
           replace: true,
         });
         return;
-      } catch (e) {
+      } catch(e) {
         return Promise.reject(e);
       }
     },
     [loadViewMeta, service, isTemplate, navigate],
   );
 
-  const loadOutline = useCallback(async () => {
-    if (!service || !namespace) return;
+  const loadOutline = useCallback(async() => {
+    if(!service || !namespace) return;
     try {
       const res = await service?.getPublishOutline(namespace);
 
-      if (!res) {
+      if(!res) {
         throw new Error('Publish outline not found');
       }
 
       setOutline(res);
-    } catch (e) {
+    } catch(e) {
       notify.error('Publish outline not found');
     }
   }, [namespace, service]);
 
   const createRowDoc = useCallback(
-    async (rowKey: string) => {
+    async(rowKey: string) => {
       try {
         const doc = await service?.createRowDoc(rowKey);
 
-        if (!doc) {
+        if(!doc) {
           throw new Error('Failed to create row doc');
         }
 
         createdRowKeys.current.push(rowKey);
         return doc;
-      } catch (e) {
+      } catch(e) {
         return Promise.reject(e);
       }
     },
@@ -346,11 +346,11 @@ export const PublishProvider = ({
   );
 
   const loadView = useCallback(
-    async (viewId: string, isSubDocument?: boolean) => {
-      if (isSubDocument) {
+    async(viewId: string, isSubDocument?: boolean) => {
+      if(isSubDocument) {
         const data = await service?.getPublishRowDocument(viewId);
 
-        if (!data) {
+        if(!data) {
           return Promise.reject(new Error('View has not been published yet'));
         }
 
@@ -360,7 +360,7 @@ export const PublishProvider = ({
       try {
         const res = await service?.getPublishInfo(viewId);
 
-        if (!res) {
+        if(!res) {
           throw new Error('View has not been published yet');
         }
 
@@ -368,12 +368,12 @@ export const PublishProvider = ({
 
         const data = service?.getPublishView(namespace, publishName);
 
-        if (!data) {
+        if(!data) {
           throw new Error('View has not been published yet');
         }
 
         return data;
-      } catch (e) {
+      } catch(e) {
         return Promise.reject(e);
       }
     },
@@ -385,7 +385,7 @@ export const PublishProvider = ({
   }, []);
 
   useEffect(() => {
-    if (!viewMeta && prevViewMeta.current) {
+    if(!viewMeta && prevViewMeta.current) {
       window.location.reload();
       return;
     }
@@ -413,8 +413,8 @@ export const PublishProvider = ({
         appendBreadcrumb,
         onRendered,
         rendered,
-        commentEnabled: publishInfo?.commentEnabled !== false,
-        duplicateEnabled: publishInfo?.duplicateEnabled !== false,
+        commentEnabled: publishInfo?.commentEnabled,
+        duplicateEnabled: publishInfo?.duplicateEnabled,
       }}
     >
       {children}
@@ -422,6 +422,6 @@ export const PublishProvider = ({
   );
 };
 
-export function usePublishContext () {
+export function usePublishContext() {
   return useContext(PublishContext);
 }

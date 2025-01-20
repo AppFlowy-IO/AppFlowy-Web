@@ -185,5 +185,8 @@
     "vite-plugin-svgr": "^3.2.0",
     "vite-plugin-terminal": "^1.2.0",
     "vite-plugin-total-bundle-size": "^1.0.7"
+  },
+  "engines": {
+    "pnpm": "^8.0.0"
   }
 }
