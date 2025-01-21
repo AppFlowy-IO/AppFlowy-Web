@@ -1,24 +1,13 @@
-import { DatabaseViewLayout, View, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
+import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { DatabaseActions } from '@/components/database/components/conditions';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import DatabaseBlockActions from '@/components/database/components/conditions/DatabaseBlockActions';
 import { Tooltip } from '@mui/material';
-import {
-  forwardRef,
-  FunctionComponent,
-  SVGProps,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-import { ViewTabs, ViewTab } from 'src/components/_shared/tabs/ViewTabs';
+import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-
-import { ReactComponent as GridSvg } from '@/assets/grid.svg';
-import { ReactComponent as BoardSvg } from '@/assets/board.svg';
-import { ReactComponent as CalendarSvg } from '@/assets/calendar.svg';
+import { ViewTab, ViewTabs } from 'src/components/_shared/tabs/ViewTabs';
 
 export interface DatabaseTabBarProps {
   viewIds: string[];
@@ -29,16 +18,8 @@ export interface DatabaseTabBarProps {
   hideConditions?: boolean;
 }
 
-const DatabaseIcons: {
-  [key in DatabaseViewLayout]: FunctionComponent<SVGProps<SVGSVGElement> & { title?: string | undefined }>;
-} = {
-  [DatabaseViewLayout.Grid]: GridSvg,
-  [DatabaseViewLayout.Board]: BoardSvg,
-  [DatabaseViewLayout.Calendar]: CalendarSvg,
-};
-
 export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
-  ({ viewIds, viewName, iidIndex, selectedViewId, setSelectedViewId }, ref) => {
+  ({ viewIds, iidIndex, selectedViewId, setSelectedViewId }, ref) => {
     const { t } = useTranslation();
     const views = useDatabase().get(YjsDatabaseKey.views);
     const conditionsContext = useConditionsContext();
@@ -53,13 +34,13 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     };
 
     useEffect(() => {
-      void (async () => {
-        if (loadViewMeta) {
+      void (async() => {
+        if(loadViewMeta) {
           try {
             const meta = await loadViewMeta(iidIndex, setMeta);
 
             setMeta(meta);
-          } catch (e) {
+          } catch(e) {
             // do nothing
           }
         }
@@ -77,7 +58,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const getSelectedTabIndicatorProps = useCallback(() => {
       const selectedTab = document.getElementById(`view-tab-${selectedViewId}`);
 
-      if (!selectedTab) return;
+      if(!selectedTab) return;
 
       return {
         style: {
@@ -91,7 +72,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       return selectedViewId ? Number(views?.get(selectedViewId)?.get(YjsDatabaseKey.layout)) as DatabaseViewLayout : DatabaseViewLayout.Grid;
     }, [selectedViewId, views]);
 
-    if (viewIds.length === 0) return null;
+    console.log('====', viewIds, meta?.children);
+    if(viewIds.length === 0) return null;
     return (
       <div
         ref={ref}
@@ -124,17 +106,24 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
               {viewIds.map((viewId) => {
                 const view = views?.get(viewId) as YDatabaseView | null;
 
-                if (!view) return null;
-                const layout = Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
-                const Icon = DatabaseIcons[layout];
-                const name = viewId === iidIndex ? viewName : meta?.children?.find((v) => v.view_id === viewId)?.name;
+                if(!view) return null;
+                const databaseLayout = Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+                const folderView = viewId === iidIndex ? meta : meta?.children?.find((v) => v.view_id === viewId);
+
+                const name = folderView?.name || view.get(YjsDatabaseKey.name) || t('untitled');
 
                 return (
                   <ViewTab
                     key={viewId}
                     id={`view-tab-${viewId}`}
                     data-testid={`view-tab-${viewId}`}
-                    icon={<Icon className={'h-4 w-4'} />}
+                    icon={<PageIcon
+                      iconSize={16}
+                      view={folderView || {
+                        layout: databaseLayout === DatabaseViewLayout.Board ? ViewLayout.Board : databaseLayout === DatabaseViewLayout.Calendar ? ViewLayout.Calendar : ViewLayout.Grid,
+                      }}
+                      className={'h-4 w-4'}
+                    />}
                     iconPosition="start"
                     color="inherit"
                     label={
