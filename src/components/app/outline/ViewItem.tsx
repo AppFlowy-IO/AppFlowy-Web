@@ -21,7 +21,7 @@ const popoverProps: Origins = {
   },
 };
 
-function ViewItem ({ view, width, level = 0, renderExtra, expandIds, toggleExpand, onClickView }: {
+function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand, onClickView }: {
   view: View;
   width: number;
   level?: number;
@@ -58,7 +58,7 @@ function ViewItem ({ view, width, level = 0, renderExtra, expandIds, toggleExpan
   }, [isExpanded, level, toggleExpand, viewId]);
 
   const renderItem = useMemo(() => {
-    if (!view) return null;
+    if(!view) return null;
     const { layout } = view;
 
     return (
@@ -71,7 +71,7 @@ function ViewItem ({ view, width, level = 0, renderExtra, expandIds, toggleExpan
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={() => {
-          if (layout === ViewLayout.AIChat) return;
+          if(layout === ViewLayout.AIChat) return;
           onClickView?.(viewId);
         }}
         className={
@@ -129,7 +129,7 @@ function ViewItem ({ view, width, level = 0, renderExtra, expandIds, toggleExpan
     }</div>;
   }, [toggleExpand, onClickView, isExpanded, expandIds, level, renderExtra, view?.children, width]);
 
-  const handleChangeIcon = useCallback(async (icon: { ty: ViewIconType, value: string }) => {
+  const handleChangeIcon = useCallback(async(icon: { ty: ViewIconType, value: string }) => {
 
     try {
       await updatePage?.(view.view_id, {
@@ -140,7 +140,7 @@ function ViewItem ({ view, width, level = 0, renderExtra, expandIds, toggleExpan
       setIconPopoverAnchorEl(null);
 
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       notify.error(e);
     }
   }, [updatePage, view.extra, view.name, view.view_id]);
@@ -169,14 +169,13 @@ function ViewItem ({ view, width, level = 0, renderExtra, expandIds, toggleExpan
           }}
           popoverProps={popoverProps}
           onSelectIcon={(icon) => {
-            if (icon.ty === ViewIconType.Icon) {
+            if(icon.ty === ViewIconType.Icon) {
               void handleChangeIcon({
                 ty: ViewIconType.Icon,
                 value: JSON.stringify({
                   color: icon.color,
                   groupName: icon.value.split('/')[0],
                   iconName: icon.value.split('/')[1],
-                  iconContent: icon.content,
                 }),
               });
               return;

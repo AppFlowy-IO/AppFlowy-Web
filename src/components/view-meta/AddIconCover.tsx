@@ -42,13 +42,13 @@ function AddIconCover({
           onClick={e => {
             setIconAnchorEl(e.currentTarget);
           }}
-          startIcon={<AddIcon/>}
+          startIcon={<AddIcon />}
         >{t('document.plugins.cover.addIcon')}</Button>}
         {!hasCover && <Button
           size={'small'}
           color={'inherit'}
           onClick={onAddCover}
-          startIcon={<AddCover/>}
+          startIcon={<AddCover />}
         >{t('document.plugins.cover.addCover')}</Button>}
 
       </div>
@@ -62,14 +62,13 @@ function AddIconCover({
         iconEnabled={true}
         onSelectIcon={(icon) => {
           setIconAnchorEl(null);
-          if (icon.ty === ViewIconType.Icon) {
+          if(icon.ty === ViewIconType.Icon) {
             onUpdateIcon?.({
               ty: ViewIconType.Icon,
               value: JSON.stringify({
                 color: icon.color,
                 groupName: icon.value.split('/')[0],
                 iconName: icon.value.split('/')[1],
-                iconContent: icon.content,
               }),
             });
             return;

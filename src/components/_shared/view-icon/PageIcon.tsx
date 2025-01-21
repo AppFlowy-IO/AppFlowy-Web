@@ -1,15 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { ViewIcon, ViewIconType, ViewLayout } from '@/application/types';
 import { ReactComponent as BoardSvg } from '@/assets/board.svg';
 import { ReactComponent as CalendarSvg } from '@/assets/calendar.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/document.svg';
 import { ReactComponent as GridSvg } from '@/assets/grid.svg';
 import { ReactComponent as ChatSvg } from '@/assets/chat_ai.svg';
-import { isFlagEmoji } from '@/utils/emoji';
+import { getIcon, isFlagEmoji } from '@/utils/emoji';
 import DOMPurify from 'dompurify';
 import { renderColor } from '@/utils/color';
 
-function PageIcon ({
+function PageIcon({
   view,
   className,
   iconSize,
@@ -21,9 +21,10 @@ function PageIcon ({
   className?: string;
   iconSize?: number;
 }) {
+  const [iconContent, setIconContent] = React.useState<string | undefined>(undefined);
 
   const emoji = useMemo(() => {
-    if (view.icon && view.icon.ty === ViewIconType.Emoji && view.icon.value) {
+    if(view.icon && view.icon.ty === ViewIconType.Emoji && view.icon.value) {
       return view.icon.value;
     }
 
@@ -34,10 +35,26 @@ function PageIcon ({
     return emoji ? isFlagEmoji(emoji) : false;
   }, [emoji]);
 
+  useEffect(() => {
+    if(view.icon && view.icon.ty === ViewIconType.Icon && view.icon.value) {
+      try {
+        const json = JSON.parse(view.icon.value);
+        const id = `${json.groupName}/${json.iconName}`;
+
+        void getIcon(id).then((item) => {
+          setIconContent(item?.content.replaceAll('black', renderColor(json.color)).replace('<svg', '<svg width="100%" height="100%"'));
+        });
+      } catch(e) {
+        console.error(e, view.icon);
+      }
+    } else {
+      setIconContent(undefined);
+    }
+  }, [view.icon]);
+
   const icon = useMemo(() => {
-    if (view.icon && view.icon.ty === ViewIconType.Icon && view.icon.value) {
-      const json = JSON.parse(view.icon.value);
-      const cleanSvg = DOMPurify.sanitize(json.iconContent.replaceAll('black', renderColor(json.color)).replace('<svg', '<svg width="100%" height="100%"'), {
+    if(iconContent) {
+      const cleanSvg = DOMPurify.sanitize(iconContent, {
         USE_PROFILES: { svg: true, svgFilters: true },
       });
 
@@ -52,19 +69,19 @@ function PageIcon ({
         }}
       />;
     }
-  }, [view.icon, iconSize, className]);
+  }, [iconContent, iconSize, className]);
 
-  if (emoji) {
+  if(emoji) {
     return <>
       <span className={`${isFlag ? 'icon' : ''} ${className || ''}`}>{emoji}</span>
     </>;
   }
 
-  if (icon) {
+  if(icon) {
     return icon;
   }
 
-  switch (view.layout) {
+  switch(view.layout) {
     case ViewLayout.AIChat:
       return <ChatSvg className={className} />;
     case ViewLayout.Grid:

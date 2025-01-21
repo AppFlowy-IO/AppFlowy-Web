@@ -4,17 +4,18 @@ import { ViewIconType } from '@/application/types';
 import ChangeIconPopover from '@/components/_shared/view-icon/ChangeIconPopover';
 import { CalloutNode } from '@/components/editor/editor.type';
 import { renderColor } from '@/utils/color';
-import { isFlagEmoji } from '@/utils/emoji';
+import { getIcon, isFlagEmoji } from '@/utils/emoji';
 import DOMPurify from 'dompurify';
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 import { Element } from 'slate';
 
-function CalloutIcon ({ block: node }: { block: CalloutNode; className: string }) {
+function CalloutIcon({ block: node }: { block: CalloutNode; className: string }) {
   const ref = useRef<HTMLButtonElement>(null);
   const editor = useSlateStatic();
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
   const blockId = node.blockId;
+  const [iconContent, setIconContent] = React.useState<string | undefined>(undefined);
 
   const [open, setOpen] = React.useState(false);
   const handleChangeIcon = useCallback((icon: {
@@ -28,12 +29,11 @@ function CalloutIcon ({ block: node }: { block: CalloutNode; className: string }
     const iconType = icon.ty === ViewIconType.Icon ? 'icon' : 'emoji';
     let value;
 
-    if (icon.ty === ViewIconType.Icon) {
+    if(icon.ty === ViewIconType.Icon) {
       value = JSON.stringify({
         color: icon.color,
         groupName: icon.value.split('/')[0],
         iconName: icon.value.split('/')[1],
-        iconContent: icon.content,
       });
 
     } else {
@@ -51,7 +51,7 @@ function CalloutIcon ({ block: node }: { block: CalloutNode; className: string }
   const data = node.data;
 
   const emoji = useMemo(() => {
-    if (data.icon && data.icon_type !== 'icon') {
+    if(data.icon && data.icon_type !== 'icon') {
       return data.icon;
     }
 
@@ -62,10 +62,25 @@ function CalloutIcon ({ block: node }: { block: CalloutNode; className: string }
     return emoji ? isFlagEmoji(emoji) : false;
   }, [emoji]);
 
+  useEffect(() => {
+    if(data.icon && data.icon_type === 'icon') {
+      try {
+        const json = JSON.parse(data.icon);
+        const id = `${json.groupName}/${json.iconName}`;
+
+        void getIcon(id).then((item) => {
+          setIconContent(item?.content.replaceAll('black', renderColor(json.color)).replace('<svg', '<svg width="100%" height="100%"'));
+        });
+      } catch(e) {
+        console.error(e, data.icon);
+      }
+    } else {
+      setIconContent(undefined);
+    }
+  }, [data.icon, data.icon_type]);
   const icon = useMemo(() => {
-    if (data.icon && data.icon_type === 'icon') {
-      const json = JSON.parse(data.icon);
-      const cleanSvg = DOMPurify.sanitize(json.iconContent.replaceAll('black', renderColor(json.color)).replace('<svg', '<svg width="100%" height="100%"'), {
+    if(iconContent) {
+      const cleanSvg = DOMPurify.sanitize(iconContent, {
         USE_PROFILES: { svg: true, svgFilters: true },
       });
 
@@ -78,16 +93,17 @@ function CalloutIcon ({ block: node }: { block: CalloutNode; className: string }
           __html: cleanSvg,
         }}
       />;
+
     }
 
     return null;
-  }, [data.icon, data.icon_type]);
+  }, [iconContent]);
 
   return (
     <>
       <span
         onClick={() => {
-          if (readOnly) return;
+          if(readOnly) return;
           setOpen(true);
         }}
         data-testid="callout-icon-button"
