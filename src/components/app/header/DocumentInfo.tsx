@@ -1,8 +1,9 @@
 import { useAppView, useAppWordCount } from '@/components/app/app.hooks';
 import { Divider } from '@mui/material';
 import dayjs from 'dayjs';
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { getCharacters, getWords } from '@/utils/word';
 
 function DocumentInfo({ viewId }: {
   viewId: string;
@@ -18,19 +19,19 @@ function DocumentInfo({ viewId }: {
     const diffMin = now.diff(past, 'minute');
     const diffHour = now.diff(past, 'hour');
 
-    if (diffSec < 5) {
+    if(diffSec < 5) {
       return t('globalComment.showSeconds', {
         count: 0,
       });
     }
 
-    if (diffMin < 1) {
+    if(diffMin < 1) {
       return t('globalComment.showSeconds', {
         count: diffSec,
       });
     }
 
-    if (diffHour < 1) {
+    if(diffHour < 1) {
       return t('globalComment.showMinutes', {
         count: diffMin,
       });
@@ -39,19 +40,23 @@ function DocumentInfo({ viewId }: {
     return dayjs(timestamp).format('MMM D, YYYY HH:mm');
   }, [t]);
 
-  if (!view) return null;
+  const viewName = view?.name;
+  const words = useMemo(() => getWords(viewName || '') + (wordCount?.words || 0), [viewName, wordCount]);
+  const chars = useMemo(() => getCharacters(viewName || '') + (wordCount?.characters || 0), [viewName, wordCount]);
+
+  if(!view) return null;
 
   return (
     <>
-      <Divider/>
+      <Divider />
       <div className={'flex flex-col gap-1 text-text-caption text-xs '}>
         <div
           className={'px-[10px]'}
         >
-          {t('moreAction.wordCountLabel')}{wordCount?.words}
+          {t('moreAction.wordCountLabel')}{words}
         </div>
         <div className={'px-[10px]'}>
-          {t('moreAction.charCountLabel')}{wordCount?.characters}
+          {t('moreAction.charCountLabel')}{chars}
         </div>
         {view.created_at && <div className={'px-[10px]'}>
           {t('moreAction.createdAtLabel')}{formatTime(view.created_at)}
