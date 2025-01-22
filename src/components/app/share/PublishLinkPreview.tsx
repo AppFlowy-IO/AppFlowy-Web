@@ -1,3 +1,4 @@
+import { UpdatePublishConfigPayload } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { PublishManage } from '@/components/app/publish-manage';
@@ -6,22 +7,23 @@ import { copyTextToClipboard } from '@/utils/copy';
 import { CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material';
 import { ReactComponent as LinkIcon } from '@/assets/link.svg';
 import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
-import { ReactComponent as CheckIcon } from '@/assets/check.svg';
 import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function PublishLinkPreview ({
+function PublishLinkPreview({
+  viewId,
   publishInfo,
   onUnPublish,
-  onPublish,
+  updatePublishConfig,
   url,
   isOwner,
   isPublisher,
   onClose,
 }: {
+  viewId: string;
   publishInfo: { namespace: string, publishName: string };
   onUnPublish: () => Promise<void>;
-  onPublish: (publishName?: string) => Promise<void>;
+  updatePublishConfig: (payload: UpdatePublishConfigPayload) => Promise<void>;
   url: string;
   isOwner: boolean;
   isPublisher: boolean;
@@ -31,19 +33,22 @@ function PublishLinkPreview ({
   const [renameOpen, setRenameOpen] = React.useState<boolean>(false);
   const { t } = useTranslation();
   const [publishName, setPublishName] = React.useState<string>(publishInfo.publishName);
-  const [focused, setFocused] = React.useState<boolean>(false);
   const [loading, setLoading] = React.useState<boolean>(false);
 
   useEffect(() => {
     setPublishName(publishInfo.publishName);
-
   }, [publishInfo.publishName]);
-  const handlePublish = async () => {
-    if (loading) return;
-    if (publishName === publishInfo.publishName) return;
+  
+  const handleUpdatePublishName = async(newName: string) => {
+    if(loading) return;
+    if(newName === publishInfo.publishName) return;
     setLoading(true);
+    setPublishName(newName);
     try {
-      await onPublish(publishName);
+      await updatePublishConfig({
+        publish_name: newName,
+        view_id: viewId,
+      });
     } finally {
       setLoading(false);
     }
@@ -98,15 +103,12 @@ function PublishLinkPreview ({
                 inputProps={{
                   className: 'pb-0',
                 }}
-                onFocus={() => {
-                  setFocused(true);
-                }}
                 onBlur={() => {
-                  setFocused(false);
+                  void handleUpdatePublishName(publishName);
                 }}
-                onKeyDown={async (e) => {
-                  if (e.key === 'Enter') {
-                    void handlePublish();
+                onKeyDown={async(e) => {
+                  if(e.key === 'Enter') {
+                    void handleUpdatePublishName(publishName);
                   }
                 }}
                 size={'small'}
@@ -119,25 +121,20 @@ function PublishLinkPreview ({
             </Tooltip>
             {(isOwner || isPublisher) && <Tooltip
               placement={'top'}
-              title={focused ? t('button.save') : t('settings.sites.customUrl')}
+              title={t('settings.sites.customUrl')}
             >
               <IconButton
                 size={'small'}
                 onMouseDown={e => e.preventDefault()}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (focused) {
-                    void handlePublish();
-                    return;
-                  }
 
                   setRenameOpen(true);
                   onClose?.();
                 }}
               >
                 {loading ? <CircularProgress size={14} /> :
-                  focused ? <CheckIcon className={'w-4 h-4'} /> :
-                    <DownIcon className={'w-4 h-4'} />}
+                  <DownIcon className={'w-4 h-4'} />}
               </IconButton>
             </Tooltip>}
 
@@ -149,7 +146,7 @@ function PublishLinkPreview ({
             title={t('shareAction.copyLink')}
           >
             <IconButton
-              onClick={async () => {
+              onClick={async() => {
                 await copyTextToClipboard(url);
                 notify.success(t('shareAction.copyLinkSuccess'));
               }}
@@ -165,7 +162,7 @@ function PublishLinkPreview ({
           onClose={() => { setRenameOpen(false); }}
           open={renameOpen}
           onUnPublish={onUnPublish}
-          onPublish={onPublish}
+          updatePublishName={handleUpdatePublishName}
           url={url}
         />}
         <NormalModal

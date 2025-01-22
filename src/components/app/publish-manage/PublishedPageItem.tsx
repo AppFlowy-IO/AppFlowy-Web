@@ -4,12 +4,12 @@ import { Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppHandlers, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { PublishNameSetting } from '@/components/app/publish-manage/PublishNameSetting';
-import { useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUser, useService } from '@/components/main/app.hooks';
 import { copyTextToClipboard } from '@/utils/copy';
 import { openUrl } from '@/utils/url';
 import { Button, CircularProgress, IconButton, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as MoreIcon } from '@/assets/more.svg';
 import { ReactComponent as GlobalIcon } from '@/assets/publish.svg';
@@ -17,11 +17,11 @@ import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
 import { ReactComponent as TrashIcon } from '@/assets/trash.svg';
 import { ReactComponent as SettingIcon } from '@/assets/settings.svg';
 
-function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }: {
+function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
   view: View,
   onClose?: () => void;
   onUnPublish: (viewId: string) => Promise<void>;
-  onPublish: (view: View, publishName: string) => Promise<void>
+  onPublish: (view: View, publishName: string) => Promise<void>;
   namespace: string;
 }) {
   const { t } = useTranslation();
@@ -33,7 +33,9 @@ function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
+  const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
   const isPublisher = view?.publisher_email === currentUser?.email;
+  const service = useService();
 
   useEffect(() => {
     setPublishName(view.publish_name || '');
@@ -68,15 +70,15 @@ function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }
         label: t('shareAction.unPublish'),
         tooltip: !(isOwner || isPublisher) ? t('settings.sites.error.unPublishPermissionDenied') : undefined,
         IconComponent: unPublishLoading ? CircularProgress : TrashIcon,
-        onClick: async () => {
-          if (!(isOwner || isPublisher)) {
+        onClick: async() => {
+          if(!(isOwner || isPublisher)) {
             return;
           }
 
           setUnPublishLoading(true);
           try {
             await onUnPublish(view.view_id);
-          } catch (e) {
+          } catch(e) {
             console.error(e);
           } finally {
             setUnPublishLoading(false);
@@ -90,7 +92,7 @@ function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }
 
         IconComponent: SettingIcon,
         onClick: () => {
-          if (!(isOwner || isPublisher)) return;
+          if(!(isOwner || isPublisher)) return;
           setAnchorEl(null);
           setOpenSetting(true);
         },
@@ -98,6 +100,20 @@ function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }
 
     ];
   }, [t, isOwner, isPublisher, unPublishLoading, url, onUnPublish, view.view_id]);
+
+  const updatePublishName = useCallback(async(newPublishName: string) => {
+    if(!service || !workspaceId || !view) return;
+    try {
+      await service.updatePublishConfig(workspaceId, {
+        view_id: view.view_id,
+        publish_name: newPublishName,
+      });
+      // eslint-disable-next-line
+    } catch(e: any) {
+      notify.error(e.message);
+    }
+
+  }, [service, view, workspaceId]);
 
   return (
     <div
@@ -115,7 +131,7 @@ function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }
           <Button
             color={'inherit'}
             key={view.view_id}
-            onClick={async () => {
+            onClick={async() => {
               await toView(view.view_id);
               onClose?.();
             }}
@@ -200,8 +216,8 @@ function PublishedPageItem ({ namespace, onClose, view, onUnPublish, onPublish }
         onUnPublish={() => {
           return onUnPublish(view.view_id);
         }}
-        onPublish={async (publishName: string) => {
-          await onPublish(view, publishName);
+        updatePublishName={async(publishName: string) => {
+          await updatePublishName(publishName);
           setPublishName(publishName);
         }}
         onClose={() => {

@@ -5,12 +5,12 @@ import { Button, CircularProgress, InputBase } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-export function PublishNameSetting ({ defaultName, onClose, open, onUnPublish, onPublish, url }: {
+export function PublishNameSetting({ defaultName, onClose, open, onUnPublish, updatePublishName, url }: {
   onClose: () => void;
   open: boolean;
   defaultName: string;
   onUnPublish: () => Promise<void>;
-  onPublish: (publishName: string) => Promise<void>;
+  updatePublishName: (newPublishName: string) => Promise<void>;
   url: string;
 }) {
   const [value, setValue] = React.useState(defaultName);
@@ -18,23 +18,23 @@ export function PublishNameSetting ({ defaultName, onClose, open, onUnPublish, o
   const [publishLoading, setPublishLoading] = React.useState<boolean>(false);
   const [unPublishLoading, setUnPublishLoading] = React.useState<boolean>(false);
 
-  const handlePublish = async () => {
-    if (!value) {
+  const handlePublish = async() => {
+    if(!value) {
       notify.error(t('settings.sites.error.publishNameCannotBeEmpty'));
       return;
     }
 
-    if (value.length > 100) {
+    if(value.length > 100) {
       notify.error(t('settings.sites.error.publishNameTooLong'));
       return;
     }
 
-    if (value.includes(' ') || value.includes('/')) {
+    if(value.includes(' ') || value.includes('/')) {
       notify.error(t('settings.sites.error.publishNameContainsInvalidCharacters'));
       return;
     }
 
-    if (value === defaultName) {
+    if(value === defaultName) {
       notify.error(t('settings.sites.error.publishNameAlreadyInUse'));
       return;
     }
@@ -42,13 +42,13 @@ export function PublishNameSetting ({ defaultName, onClose, open, onUnPublish, o
     setPublishLoading(true);
 
     try {
-      await onPublish(value);
+      await updatePublishName(value);
     } finally {
       setPublishLoading(false);
     }
   };
 
-  const handleUnPublish = async () => {
+  const handleUnPublish = async() => {
     setUnPublishLoading(true);
     try {
       await onUnPublish();
@@ -59,11 +59,11 @@ export function PublishNameSetting ({ defaultName, onClose, open, onUnPublish, o
 
   return <NormalModal
     onKeyDown={(e) => {
-      if (e.key === 'Escape') {
+      if(e.key === 'Escape') {
         onClose?.();
       }
 
-      if (e.key === 'Enter') {
+      if(e.key === 'Enter') {
         void handlePublish();
       }
     }}
