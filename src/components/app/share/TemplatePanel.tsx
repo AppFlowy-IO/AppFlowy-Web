@@ -12,21 +12,21 @@ import { useTranslation } from 'react-i18next';
 import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
 import { ReactComponent as EditIcon } from '@/assets/edit.svg';
 
-function TemplatePanel ({ viewId }: { viewId: string }) {
+function TemplatePanel({ viewId }: { viewId: string }) {
   const view = useAppView(viewId);
   const service = useService();
   const [loading, setLoading] = React.useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
   const [template, setTemplateInfo] = React.useState<Template>();
-  const loadTemplateInfo = useCallback(async () => {
-    if (!service || !view?.view_id) return;
+  const loadTemplateInfo = useCallback(async() => {
+    if(!service || !view?.view_id) return;
     setLoading(true);
     try {
       const res = await service.getTemplateById(view?.view_id);
 
       setTemplateInfo(res);
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       // do nothing
     } finally {
       setLoading(false);
@@ -38,9 +38,9 @@ function TemplatePanel ({ viewId }: { viewId: string }) {
   } = useLoadPublishInfo(viewId);
 
   const url = useMemo(() => {
-    const origin = import.meta.env.AF_BASE_URL?.includes('test') ? 'https://test.appflowy.io' : 'https://appflowy.io';
+    const templateUrl = `${window.location.origin}/templates`;
 
-    return template ? `${origin}/templates/${slugify(template.categories[0].name)}/${template.view_id}` : '';
+    return template ? `${templateUrl}/${slugify(template.categories[0].name)}/${template.view_id}` : '';
   }, [template]);
 
   useEffect(() => {

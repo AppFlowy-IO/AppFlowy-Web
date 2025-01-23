@@ -20,7 +20,7 @@ function AppFlowyPower ({
 
       <div
         onClick={() => {
-          window.open('https://appflowy.io', '_blank');
+          window.open('https://appflowy.com', '_blank');
         }}
         style={{
           width,

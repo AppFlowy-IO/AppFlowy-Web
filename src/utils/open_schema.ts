@@ -112,8 +112,8 @@ export function openOrDownload (schema?: string) {
   const os = getOS();
 
   if (os === 'ios' || os === 'android') {
-    const universalLink = 'https://appflowy.io/download';
-    const intentUrl = `intent://appflowy.io/download#Intent;` +
+    const universalLink = 'https://appflowy.com/download';
+    const intentUrl = `intent://appflowy.com/download#Intent;` +
       'scheme=https;' +
       'package=io.appflowy.app;' +
       `S.browser_fallback_url=${encodeURIComponent(androidDownloadLink)};` +

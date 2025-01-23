@@ -28,7 +28,7 @@ export function Login ({ redirectTo }: { redirectTo: string }) {
       >
         <span>{t('web.signInAgreement')} </span>
         <a
-          href={'https://appflowy.io/terms'}
+          href={'https://appflowy.com/terms'}
           target={'_blank'}
           className={'text-fill-default underline'}
         >
@@ -36,7 +36,7 @@ export function Login ({ redirectTo }: { redirectTo: string }) {
         </a>{' '}
         {t('web.and')}{' '}
         <a
-          href={'https://appflowy.io/privacy'}
+          href={'https://appflowy.com/privacy'}
           target={'_blank'}
           className={'text-fill-default underline'}
         >

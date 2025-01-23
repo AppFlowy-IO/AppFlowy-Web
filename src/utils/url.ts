@@ -2,14 +2,14 @@ import isURL from 'validator/lib/isURL';
 import isIP from 'validator/lib/isIP';
 import isFQDN from 'validator/lib/isFQDN';
 
-export const downloadPage = 'https://appflowy.io/download';
+export const downloadPage = 'https://appflowy.com/download';
 
 export const openAppFlowySchema = 'appflowy-flutter://';
 
 export const iosDownloadLink = 'https://apps.apple.com/app/appflowy/id6457261352';
 export const androidDownloadLink = 'https://play.google.com/store/apps/details?id=io.appflowy.appflowy';
 
-export const desktopDownloadLink = 'https://appflowy.io/download/#pop';
+export const desktopDownloadLink = 'https://appflowy.com/download/#pop';
 
 export function isValidUrl(input: string) {
   return isURL(input, { require_protocol: true, require_host: false });

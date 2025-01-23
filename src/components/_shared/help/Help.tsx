@@ -72,7 +72,7 @@ export default function Help () {
             <Button
               component={'a'}
               target="_blank"
-              href={'https://www.appflowy.io/what-is-new'}
+              href={'https://www.appflowy.com/what-is-new'}
               className={'justify-start'}
               color={'inherit'}
               startIcon={<WhatsNewIcon />}
@@ -117,7 +117,7 @@ export default function Help () {
               variant={'text'}
             >{t('questionBubble.feedback')}
             </Button>
-            
+
             <Divider />
             <Button
               size={'small'}
