@@ -112,6 +112,7 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className: string })
         className={`${readOnly ? '' : 'cursor-pointer'} relative flex items-start justify-center`}
         style={{
           width: '58px',
+          minWidth: '58px',
         }}
       >
         <span
