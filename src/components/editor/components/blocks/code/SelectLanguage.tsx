@@ -3,10 +3,10 @@ import { Popover } from '@/components/_shared/popover';
 import { supportLanguages } from '@/components/editor/components/blocks/code/constants';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Button, TextField } from '@mui/material';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function SelectLanguage ({
+function SelectLanguage({
   readOnly,
   language = 'Auto',
   onChangeLanguage,
@@ -54,18 +54,18 @@ function SelectLanguage ({
   }, [language]);
 
   useEffect(() => {
-    if (!open) return;
+    if(!open) return;
     searchRef.current?.focus();
   }, [open]);
 
   useEffect(() => {
     const container = scrollRef.current;
 
-    if (!container) return;
+    if(!container) return;
 
     const el = container.querySelector(`[data-key="${selectLanguage}"]`);
 
-    if (!el) return;
+    if(!el) return;
 
     el.scrollIntoView({ block: 'nearest' });
   }, [selectLanguage]);
@@ -82,7 +82,7 @@ function SelectLanguage ({
         className={'px-4'}
         variant={'text'}
         onClick={() => {
-          if (readOnly) return;
+          if(readOnly) return;
           setOpen(true);
         }}
       >
@@ -112,19 +112,19 @@ function SelectLanguage ({
             className={'px-3 py-1 text-xs'}
             placeholder={t('search.label')}
             onKeyDown={(e) => {
-              if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
+              if(createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
                 e.preventDefault();
                 handleConfirm(selectLanguage);
               }
 
-              if (createHotkey(HOT_KEY_NAME.UP)(e.nativeEvent)) {
+              if(createHotkey(HOT_KEY_NAME.UP)(e.nativeEvent)) {
                 const index = options.findIndex((item) => item.key === selectLanguage);
                 const prevIndex = (index - 1 + options.length) % options.length;
 
                 setSelectLanguage(options[prevIndex].key);
               }
 
-              if (createHotkey(HOT_KEY_NAME.DOWN)(e.nativeEvent)) {
+              if(createHotkey(HOT_KEY_NAME.DOWN)(e.nativeEvent)) {
                 const index = options.findIndex((item) => item.key === selectLanguage);
                 const nextIndex = (index + 1) % options.length;
 
@@ -158,4 +158,4 @@ function SelectLanguage ({
   );
 }
 
-export default SelectLanguage;
+export default memo(SelectLanguage);

@@ -1,14 +1,14 @@
 import { useCodeBlock } from '@/components/editor/components/blocks/code/Code.hooks';
 import CodeToolbar from './CodeToolbar';
 import { CodeNode, EditorElementProps } from '@/components/editor/editor.type';
-import React, { forwardRef, memo, useState, lazy, Suspense } from 'react';
+import React, { forwardRef, useState, lazy, Suspense } from 'react';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 import LanguageSelect from './SelectLanguage';
 import { Element } from 'slate';
 
 const MermaidChat = lazy(() => import('./MermaidChat'));
 
-export const CodeBlock = memo(
+export const CodeBlock =
   forwardRef<HTMLDivElement, EditorElementProps<CodeNode>>(({ node, children, ...attributes }, ref) => {
     const { language, handleChangeLanguage } = useCodeBlock(node);
     const [showToolbar, setShowToolbar] = useState(false);
@@ -64,7 +64,5 @@ export const CodeBlock = memo(
         {showToolbar && <CodeToolbar node={node} />}
       </div>
     );
-  }),
-  (prevProps, nextProps) => JSON.stringify(prevProps.node) === JSON.stringify(nextProps.node),
-);
+  });
 export default CodeBlock;

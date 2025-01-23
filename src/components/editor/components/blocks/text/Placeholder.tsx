@@ -6,7 +6,7 @@ import { ReactEditor, useFocused, useSelected, useSlate } from 'slate-react';
 import { Editor, Element, Range } from 'slate';
 import { useTranslation } from 'react-i18next';
 
-function Placeholder ({ node, ...attributes }: { node: Element; className?: string; style?: CSSProperties }) {
+function Placeholder({ node, ...attributes }: { node: Element; className?: string; style?: CSSProperties }) {
   const { t } = useTranslation();
   const { readOnly } = useEditorContext();
   const editor = useSlate();
@@ -24,7 +24,7 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
       at: path,
     });
 
-    if (!match) return null;
+    if(!match) return null;
 
     return match[0] as Element;
   }, [editor, node]);
@@ -40,7 +40,7 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
   }, [attributes.className]);
 
   const unSelectedPlaceholder = useMemo(() => {
-    switch (block?.type) {
+    switch(block?.type) {
       case BlockType.Paragraph: {
         return '';
       }
@@ -48,7 +48,7 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
       case BlockType.ToggleListBlock: {
         const level = (block as ToggleListNode).data.level;
 
-        switch (level) {
+        switch(level) {
           case 1:
             return t('editor.mobileHeading1');
           case 2:
@@ -77,7 +77,7 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
       case BlockType.HeadingBlock: {
         const level = (block as HeadingNode).data.level;
 
-        switch (level) {
+        switch(level) {
           case 1:
             return t('editor.mobileHeading1');
           case 2:
@@ -104,11 +104,11 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
 
   const selectedPlaceholder = useMemo(() => {
 
-    if (block?.type === BlockType.ToggleListBlock && (block?.data as ToggleListBlockData).level) {
+    if(block?.type === BlockType.ToggleListBlock && (block?.data as ToggleListBlockData).level) {
       return unSelectedPlaceholder;
     }
 
-    switch (block?.type) {
+    switch(block?.type) {
       case BlockType.HeadingBlock:
         return unSelectedPlaceholder;
       case  BlockType.ToggleListBlock:
@@ -125,7 +125,7 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
   }, [block?.data, block?.type, t, unSelectedPlaceholder]);
 
   useEffect(() => {
-    if (!selected) return;
+    if(!selected) return;
 
     const handleCompositionStart = () => {
       setIsComposing(true);
@@ -148,7 +148,7 @@ function Placeholder ({ node, ...attributes }: { node: Element; className?: stri
     };
   }, [editor, selected]);
 
-  if (isComposing) {
+  if(isComposing) {
     return null;
   }
 

@@ -2,17 +2,17 @@ import { notify } from '@/components/_shared/notify';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { CodeNode } from '@/components/editor/editor.type';
 import { copyTextToClipboard } from '@/utils/copy';
-import React from 'react';
+import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
 
-function CodeToolbar ({ node }: {
+function CodeToolbar({ node }: {
   node: CodeNode
 }) {
   const { t } = useTranslation();
   const editor = useSlateStatic();
-  const onCopy = async () => {
+  const onCopy = async() => {
     const at = ReactEditor.findPath(editor, node);
     const text = editor.string(at);
 
@@ -34,4 +34,4 @@ function CodeToolbar ({ node }: {
   );
 }
 
-export default CodeToolbar;
+export default memo(CodeToolbar);
