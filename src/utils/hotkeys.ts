@@ -93,8 +93,8 @@ const defaultHotKeys = {
   [HOT_KEY_NAME.HIGH_LIGHT]: ['mod+shift+h'],
   [HOT_KEY_NAME.EXTEND_DOCUMENT_BACKWARD]: ['mod+shift+up'],
   [HOT_KEY_NAME.EXTEND_DOCUMENT_FORWARD]: ['mod+shift+down'],
-  [HOT_KEY_NAME.SCROLL_TO_TOP]: ['Home'],
-  [HOT_KEY_NAME.SCROLL_TO_BOTTOM]: ['end'],
+  [HOT_KEY_NAME.SCROLL_TO_TOP]: ['control+Home'],
+  [HOT_KEY_NAME.SCROLL_TO_BOTTOM]: ['control+end'],
   [HOT_KEY_NAME.TOGGLE_THEME]: ['mod+shift+l'],
   [HOT_KEY_NAME.TOGGLE_SIDEBAR]: ['mod+.'],
   [HOT_KEY_NAME.FORMAT_LINK]: ['mod+k'],
@@ -130,7 +130,6 @@ export const createHotkey = (hotkeyName: HOT_KEY_NAME, customHotKeys?: Record<HO
   const keys = customHotKeys || defaultHotKeys;
   const hotkeys = keys[hotkeyName];
 
-
   return (event: KeyboardEvent) => {
     return hotkeys.some((hotkey) => {
       return isHotkey(hotkey, event);
@@ -155,7 +154,7 @@ export const createHotKeyLabel = (hotkeyName: HOT_KEY_NAME, customHotKeys?: Reco
         .map((key) => {
           return key === ' ' ? 'Space' : key.charAt(0).toUpperCase() + key.slice(1);
         })
-        .join(' + '),
+        .join(' + ')
     )
     .join(' / ');
 };
