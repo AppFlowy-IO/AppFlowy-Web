@@ -9,6 +9,7 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 import MathEquationPopoverContent from './MathEquationPopoverContent';
+import VideoBlockPopoverContent from './VideoBlockPopoverContent';
 
 const defaultOrigins: Origins = {
   anchorOrigin: {
@@ -21,7 +22,7 @@ const defaultOrigins: Origins = {
   },
 };
 
-function BlockPopover () {
+function BlockPopover() {
   const {
     open,
     anchorEl,
@@ -35,7 +36,7 @@ function BlockPopover () {
 
   const handleClose = useCallback(() => {
     window.getSelection()?.removeAllRanges();
-    if (!blockId) return;
+    if(!blockId) return;
 
     const [, path] = findSlateEntryByBlockId(editor, blockId);
 
@@ -45,8 +46,8 @@ function BlockPopover () {
   }, [blockId, close, editor]);
 
   const content = useMemo(() => {
-    if (!blockId) return;
-    switch (type) {
+    if(!blockId) return;
+    switch(type) {
       case BlockType.FileBlock:
         return <FileBlockPopoverContent
           blockId={blockId}
@@ -62,6 +63,11 @@ function BlockPopover () {
           blockId={blockId}
           onClose={handleClose}
         />;
+      case BlockType.VideoBlock:
+        return <VideoBlockPopoverContent
+          blockId={blockId}
+          onClose={handleClose}
+        />;
       default:
         return null;
     }
@@ -70,7 +76,7 @@ function BlockPopover () {
   const paperRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (blockId) {
+    if(blockId) {
 
       setSelectedBlockIds?.([blockId]);
     } else {
@@ -79,18 +85,18 @@ function BlockPopover () {
   }, [blockId, setSelectedBlockIds]);
 
   useEffect(() => {
-    if (!open) return;
+    if(!open) return;
     editor.deselect();
   }, [open, editor]);
 
   useEffect(() => {
     const panelPosition = anchorEl?.getBoundingClientRect();
 
-    if (open && panelPosition) {
+    if(open && panelPosition) {
       const origins = calculateOptimalOrigins({
         top: panelPosition.bottom,
         left: panelPosition.left,
-      }, 560, type === BlockType.ImageBlock ? 400 : 200, defaultOrigins, 16);
+      }, 560, (type === BlockType.ImageBlock || type === BlockType.VideoBlock) ? 400 : 200, defaultOrigins, 16);
 
       setOrigins({
         transformOrigin: {

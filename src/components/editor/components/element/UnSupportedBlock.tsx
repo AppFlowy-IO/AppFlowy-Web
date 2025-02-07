@@ -2,7 +2,7 @@ import { EditorElementProps } from '@/components/editor/editor.type';
 import React, { forwardRef } from 'react';
 import { Alert } from '@mui/material';
 
-export const UnSupportedBlock = forwardRef<HTMLDivElement, EditorElementProps>(({ node }, ref) => {
+export const UnSupportedBlock = forwardRef<HTMLDivElement, EditorElementProps>(({ node, children }, ref) => {
   return (
     <div
       className={'w-full'}
@@ -25,7 +25,7 @@ export const UnSupportedBlock = forwardRef<HTMLDivElement, EditorElementProps>((
         <span className={'text-sm'}>
           <pre><code>{JSON.stringify(node, null, 2)}</code></pre>
         </span>
-
+        {children}
       </Alert>
     </div>
   );

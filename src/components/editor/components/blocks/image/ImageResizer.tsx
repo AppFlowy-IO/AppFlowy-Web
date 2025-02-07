@@ -5,11 +5,15 @@ function ImageResizer({
   width,
   onWidthChange,
   isLeft,
+  onDragStart,
+  onDragEnd,
 }: {
   isLeft?: boolean;
   minWidth: number;
   width: number;
   onWidthChange: (newWidth: number) => void;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }) {
   const originalWidth = useRef(width);
   const startX = useRef(0);
@@ -20,19 +24,20 @@ function ImageResizer({
       const diff = isLeft ? startX.current - e.clientX : e.clientX - startX.current;
       const newWidth = originalWidth.current + diff;
 
-      if (newWidth < minWidth) {
+      if(newWidth < minWidth) {
         return;
       }
 
       onWidthChange(newWidth);
     },
-    [isLeft, minWidth, onWidthChange]
+    [isLeft, minWidth, onWidthChange],
   );
 
   const onResizeEnd = useCallback(() => {
     document.removeEventListener('mousemove', onResize);
     document.removeEventListener('mouseup', onResizeEnd);
-  }, [onResize]);
+    onDragEnd?.();
+  }, [onResize, onDragEnd]);
 
   const onResizeStart = useCallback(
     (e: React.MouseEvent) => {
@@ -40,8 +45,9 @@ function ImageResizer({
       originalWidth.current = width;
       document.addEventListener('mousemove', onResize);
       document.addEventListener('mouseup', onResizeEnd);
+      onDragStart?.();
     },
-    [onResize, onResizeEnd, width]
+    [onResize, onResizeEnd, width, onDragStart],
   );
 
   return (

@@ -3063,5 +3063,11 @@
   "openInBrowser": "Open in browser",
   "openInApp": "Open in app",
   "comments": "Comments",
-  "duplicateAsTemplate": "Duplicate as template"
+  "duplicateAsTemplate": "Duplicate as template",
+  "embedVideo": "Embed video",
+  "embedAVideo": "Embed a video",
+  "embedLink": "Embed link",
+  "embedVideoLinkPlaceholder": "Paste a video link here.",
+  "videoSupported": "Supported services: YouTube, Vimeo, and more.",
+  "copiedVideoLink": "Video original link copied to clipboard"
 }

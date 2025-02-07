@@ -10,7 +10,7 @@ import {
   HeadingBlockData,
   ImageBlockData,
   SubpageNodeData,
-  ToggleListBlockData,
+  ToggleListBlockData, VideoBlockData,
   ViewLayout,
 } from '@/application/types';
 import { ReactComponent as AddDocumentIcon } from '@/assets/slash_menu_icon_add_doc.svg';
@@ -40,6 +40,8 @@ import { ReactComponent as ToggleHeading1Icon } from '@/assets/toggle_heading1.s
 import { ReactComponent as ToggleHeading2Icon } from '@/assets/toggle_heading2.svg';
 import { ReactComponent as ToggleHeading3Icon } from '@/assets/toggle_heading3.svg';
 import { ReactComponent as MathIcon } from '@/assets/slash_menu_icon_math_equation.svg';
+import { ReactComponent as VideoIcon } from '@/assets/video.svg';
+
 import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
@@ -53,7 +55,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
-export function SlashPanel ({
+export function SlashPanel({
   setEmojiPosition,
 }: {
   setEmojiPosition: (position: { top: number; left: number }) => void;
@@ -91,24 +93,24 @@ export function SlashPanel ({
     const isEmpty = !CustomEditor.getBlockTextContent(block[0], 2);
     let newBlockId: string | undefined;
 
-    if (isEmpty) {
+    if(isEmpty) {
       newBlockId = CustomEditor.turnToBlock(editor, blockId, type, data);
     } else {
       newBlockId = CustomEditor.addBelowBlock(editor, blockId, type, data);
     }
 
-    if (newBlockId && isEmbedBlockTypes(type)) {
+    if(newBlockId && isEmbedBlockTypes(type)) {
       const [, path] = findSlateEntryByBlockId(editor, newBlockId);
 
       editor.select(editor.start(path));
     }
 
-    if ([BlockType.FileBlock, BlockType.ImageBlock, BlockType.EquationBlock].includes(type)) {
+    if([BlockType.FileBlock, BlockType.ImageBlock, BlockType.EquationBlock, BlockType.VideoBlock].includes(type)) {
       setTimeout(() => {
-        if (!newBlockId) return;
+        if(!newBlockId) return;
         const entry = findSlateEntryByBlockId(editor, newBlockId);
 
-        if (!entry) return;
+        if(!entry) return;
         const [node] = entry;
         const dom = ReactEditor.toDOMNode(editor, node);
 
@@ -191,6 +193,17 @@ export function SlashPanel ({
           } as ImageBlockData);
         },
       }, {
+        label: t('embedVideo'),
+        key: 'video',
+        icon: <VideoIcon />,
+        keywords: ['video', 'youtube', 'embed'],
+        onClick: () => {
+          turnInto(BlockType.VideoBlock, {
+            url: '',
+            align: AlignType.Center,
+          } as VideoBlockData);
+        },
+      }, {
         label: t('document.slashMenu.name.bulletedList'),
         key: 'bulletedList',
         icon: <BulletedListIcon />,
@@ -238,7 +251,7 @@ export function SlashPanel ({
         onClick: () => {
           const rect = getRangeRect();
 
-          if (!rect) return;
+          if(!rect) return;
           openPanel(PanelType.PageReference, { top: rect.top, left: rect.left });
         },
       }, {
@@ -246,8 +259,8 @@ export function SlashPanel ({
         key: 'document',
         icon: <AddDocumentIcon />,
         keywords: ['document', 'doc', 'page', 'create', 'add'],
-        onClick: async () => {
-          if (!viewId || !addPage || !openPageModal) return;
+        onClick: async() => {
+          if(!viewId || !addPage || !openPageModal) return;
           try {
             const newViewId = await addPage(viewId, {
               layout: ViewLayout.Document,
@@ -259,7 +272,7 @@ export function SlashPanel ({
 
             openPageModal(newViewId);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          } catch (e: any) {
+          } catch(e: any) {
             notify.error(e.message);
           }
         },
@@ -435,7 +448,7 @@ export function SlashPanel ({
           setTimeout(() => {
             const rect = getRangeRect();
 
-            if (!rect) return;
+            if(!rect) return;
             setEmojiPosition({
               top: rect.top,
               left: rect.left,
@@ -452,7 +465,7 @@ export function SlashPanel ({
           turnInto(BlockType.FileBlock, {});
         },
       }].filter((option) => {
-      if (!searchText) return true;
+      if(!searchText) return true;
       return option.keywords.some((keyword: string) => {
         return keyword.toLowerCase().includes(searchText.toLowerCase());
       });
@@ -463,7 +476,7 @@ export function SlashPanel ({
 
   useEffect(() => {
     selectedOptionRef.current = selectedOption;
-    if (!selectedOption) return;
+    if(!selectedOption) return;
     const el = optionsRef.current?.querySelector(`[data-option-key="${selectedOption}"]`) as HTMLButtonElement | null;
 
     el?.scrollIntoView({
@@ -473,22 +486,22 @@ export function SlashPanel ({
   }, [selectedOption]);
 
   useEffect(() => {
-    if (!open || options.length === 0) return;
+    if(!open || options.length === 0) return;
     setSelectedOption(options[0].key);
   }, [open, options]);
 
   const countRef = useRef(0);
 
   useEffect(() => {
-    if (!open) return;
+    if(!open) return;
 
-    if (searchText && resultLength === 0) {
+    if(searchText && resultLength === 0) {
       countRef.current += 1;
     } else {
       countRef.current = 0;
     }
 
-    if (countRef.current > 1) {
+    if(countRef.current > 1) {
       closePanel();
       countRef.current = 0;
       return;
@@ -498,14 +511,14 @@ export function SlashPanel ({
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!open) return;
+      if(!open) return;
       const { key } = e;
 
-      switch (key) {
+      switch(key) {
         case 'Enter':
           e.stopPropagation();
           e.preventDefault();
-          if (selectedOptionRef.current) {
+          if(selectedOptionRef.current) {
             handleSelectOption(selectedOptionRef.current);
             const item = options.find((option) => option.key === selectedOptionRef.current);
 
@@ -540,12 +553,12 @@ export function SlashPanel ({
   }, [closePanel, editor, open, options, handleSelectOption]);
 
   useEffect(() => {
-    if (options.length > 0) return;
+    if(options.length > 0) return;
     setSelectedOption(null);
   }, [options.length]);
 
   useEffect(() => {
-    if (open && panelPosition) {
+    if(open && panelPosition) {
       const origins = calculateOptimalOrigins(panelPosition, 320, 400, undefined, 16);
       const isAlignBottom = origins.transformOrigin.vertical === 'bottom';
 

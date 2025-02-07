@@ -26,6 +26,7 @@ export enum BlockType {
   CalloutBlock = 'callout',
   DividerBlock = 'divider',
   ImageBlock = 'image',
+  VideoBlock = 'video',
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
@@ -122,6 +123,20 @@ export interface ImageBlockData extends BlockData {
   image_type?: ImageType;
   height?: number;
   retry_local_url?: string;
+}
+
+export enum VideoType {
+  Local = 0,
+  Internal = 1,
+  External = 2,
+}
+
+export interface VideoBlockData extends BlockData {
+  url?: string;
+  width?: number;
+  height?: number;
+  align?: AlignType;
+  video_type?: VideoType;
 }
 
 export enum GalleryLayout {

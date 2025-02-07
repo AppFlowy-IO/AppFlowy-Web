@@ -6,7 +6,7 @@ import {
   getBlockEntry,
   getSharedRoot,
 } from '@/application/slate-yjs/utils/editor';
-import { BlockType, LinkPreviewBlockData, MentionType, YjsEditorKey } from '@/application/types';
+import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, YjsEditorKey } from '@/application/types';
 import { deserializeHTML } from '@/components/editor/utils/fragment';
 import { BasePoint, Node, Transforms, Text, Element } from 'slate';
 import { ReactEditor } from 'slate-react';
@@ -18,11 +18,11 @@ import { processUrl } from '@/utils/url';
 export const withPasted = (editor: ReactEditor) => {
 
   editor.insertTextData = (data: DataTransfer) => {
-    if (!beforePasted(editor))
+    if(!beforePasted(editor))
       return false;
     const text = data.getData('text/plain');
 
-    if (text) {
+    if(text) {
 
       const lines = text.split(/\r\n|\r|\n/);
 
@@ -32,19 +32,19 @@ export const withPasted = (editor: ReactEditor) => {
       const point = editor.selection?.anchor as BasePoint;
       const [node] = getBlockEntry(editor as YjsEditor, point);
 
-      if (lineLength === 1) {
+      if(lineLength === 1) {
         const isUrl = !!processUrl(text);
 
-        if (isUrl) {
+        if(isUrl) {
           const isAppFlowyLinkUrl = isURL(text, {
             host_whitelist: [window.location.hostname],
           });
 
-          if (isAppFlowyLinkUrl) {
+          if(isAppFlowyLinkUrl) {
             const url = new URL(text);
             const blockId = url.searchParams.get('blockId');
 
-            if (blockId) {
+            if(blockId) {
               const pageId = url.pathname.split('/').pop();
               const point = editor.selection?.anchor as BasePoint;
 
@@ -60,9 +60,19 @@ export const withPasted = (editor: ReactEditor) => {
             }
           }
 
-          // const currentBlockId = node.blockId as string;
-          //
-          // CustomEditor.addBelowBlock(editor as YjsEditor, currentBlockId, BlockType.LinkPreview, { url: text } as LinkPreviewBlockData);
+          const isVideoUrl = isURL(text, {
+            host_whitelist: ['youtube.com', 'www.youtube.com', 'youtu.be', 'vimeo.com'],
+          });
+
+          if(isVideoUrl) {
+            insertFragment(editor, [{
+              type: BlockType.VideoBlock,
+              data: { url: text } as VideoBlockData,
+              children: [{ text: '' }],
+            }]);
+            return true;
+          }
+
           insertFragment(editor, [{
             type: BlockType.LinkPreview,
             data: { url: text } as LinkPreviewBlockData,
@@ -73,8 +83,8 @@ export const withPasted = (editor: ReactEditor) => {
         }
       }
 
-      if (lineLength > 1 && node.type !== BlockType.CodeBlock) {
-        if (html) {
+      if(lineLength > 1 && node.type !== BlockType.CodeBlock) {
+        if(html) {
           return insertHtmlData(editor, data);
         } else {
           const fragment = lines.map((line) => ({ type: BlockType.Paragraph, children: [{ text: line }] }));
@@ -84,10 +94,10 @@ export const withPasted = (editor: ReactEditor) => {
         }
       }
 
-      for (const line of lines) {
+      for(const line of lines) {
         const point = editor.selection?.anchor as BasePoint;
 
-        if (line) {
+        if(line) {
           Transforms.insertNodes(editor, { text: `${line}${lineLength > 1 ? `\n` : ''}` }, {
             at: point,
             select: true,
@@ -109,10 +119,10 @@ export const withPasted = (editor: ReactEditor) => {
   return editor;
 };
 
-export function insertHtmlData (editor: ReactEditor, data: DataTransfer) {
+export function insertHtmlData(editor: ReactEditor, data: DataTransfer) {
   const html = data.getData('text/html');
 
-  if (html) {
+  if(html) {
     console.log('insert HTML Data', html);
     const fragment = deserializeHTML(html) as Node[];
 
@@ -124,9 +134,9 @@ export function insertHtmlData (editor: ReactEditor, data: DataTransfer) {
   return false;
 }
 
-function insertFragment (editor: ReactEditor, fragment: Node[], options = {}) {
+function insertFragment(editor: ReactEditor, fragment: Node[], options = {}) {
   console.log('insertFragment', fragment, options);
-  if (!beforePasted(editor))
+  if(!beforePasted(editor))
     return;
 
   const point = editor.selection?.anchor as BasePoint;
@@ -140,15 +150,15 @@ function insertFragment (editor: ReactEditor, fragment: Node[], options = {}) {
   const index = parentChildren.toArray().findIndex((id) => id === block.get(YjsEditorKey.block_id));
   const doc = assertDocExists(sharedRoot);
 
-  if (fragment.length === 1) {
+  if(fragment.length === 1) {
     const firstNode = fragment[0] as Element;
 
     const findTextNodes = (node: Node): Node[] => {
-      if (Text.isText(node)) {
+      if(Text.isText(node)) {
         return [];
       }
 
-      if (Element.isElement(node) && node.textId) {
+      if(Element.isElement(node) && node.textId) {
         return [node];
       }
 
@@ -157,7 +167,7 @@ function insertFragment (editor: ReactEditor, fragment: Node[], options = {}) {
 
     const textNodes = findTextNodes(firstNode);
 
-    if (textNodes.length === 1) {
+    if(textNodes.length === 1) {
       const textNode = textNodes[0] as Element;
       const texts = textNode.children.filter((node) => Text.isText(node));
 
@@ -173,7 +183,7 @@ function insertFragment (editor: ReactEditor, fragment: Node[], options = {}) {
     const newBlockIds = slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, fragment, doc);
 
     lastBlockId = newBlockIds[newBlockIds.length - 1];
-    if (isEmptyNode) {
+    if(isEmptyNode) {
       deleteBlock(sharedRoot, blockId);
     }
   });

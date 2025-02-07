@@ -20,6 +20,7 @@ import SimpleTableCell from '@/components/editor/components/blocks/simple-table/
 import SimpleTableRow from '@/components/editor/components/blocks/simple-table/SimpleTableRow';
 import { TableBlock, TableCellBlock } from '@/components/editor/components/blocks/table';
 import { Text } from '@/components/editor/components/blocks/text';
+import { VideoBlock } from '@/components/editor/components/blocks/video';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
@@ -50,8 +51,8 @@ export const Element = ({
   const { blockId, type } = node;
   const isSelected = useSelected();
   const selected = useMemo(() => {
-    if (blockId && selectedBlockIds?.includes(blockId)) return true;
-    if ([
+    if(blockId && selectedBlockIds?.includes(blockId)) return true;
+    if([
       ...CONTAINER_BLOCK_TYPES,
       ...SOFT_BREAK_TYPES,
       BlockType.HeadingBlock,
@@ -66,15 +67,15 @@ export const Element = ({
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout>();
 
   useEffect(() => {
-    if (!jumpBlockId) return;
+    if(!jumpBlockId) return;
 
-    if (node.blockId !== jumpBlockId) {
+    if(node.blockId !== jumpBlockId) {
       return;
     }
 
     const element = ReactEditor.toDOMNode(editor, node);
 
-    void (async () => {
+    void (async() => {
       await smoothScrollIntoViewIfNeeded(element, {
         behavior: 'smooth',
         scrollMode: 'if-needed',
@@ -91,13 +92,13 @@ export const Element = ({
 
   useEffect(() => {
     return () => {
-      if (highlightTimeoutRef.current) {
+      if(highlightTimeoutRef.current) {
         clearTimeout(highlightTimeoutRef.current);
       }
     };
   }, []);
   const Component = useMemo(() => {
-    switch (type) {
+    switch(type) {
       case BlockType.HeadingBlock:
         return Heading;
       case BlockType.TodoListBlock:
@@ -148,6 +149,8 @@ export const Element = ({
         return SimpleTableRow;
       case BlockType.SimpleTableCellBlock:
         return SimpleTableCell;
+      case BlockType.VideoBlock:
+        return VideoBlock;
       default:
         return UnSupportedBlock;
     }
@@ -158,11 +161,11 @@ export const Element = ({
     const align = data.align;
     const classList = ['block-element relative flex rounded-[4px]'];
 
-    if (selected) {
+    if(selected) {
       classList.push('selected');
     }
 
-    if (align) {
+    if(align) {
       classList.push(`block-align-${align}`);
     }
 
@@ -181,12 +184,12 @@ export const Element = ({
   const fallbackRender = useMemo(() => {
     return (props: FallbackProps) => {
       return (
-        <ElementFallbackRender {...props} description={JSON.stringify(node)}/>
+        <ElementFallbackRender {...props} description={JSON.stringify(node)} />
       );
     };
   }, [node]);
 
-  if (type === YjsEditorKey.text) {
+  if(type === YjsEditorKey.text) {
     return (
       <Text {...attributes} node={node as TextNode}>
         {children}
@@ -194,7 +197,7 @@ export const Element = ({
     );
   }
 
-  if ([BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(node.type as BlockType)) {
+  if([BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(node.type as BlockType)) {
     return (
       <Component
         node={node}
