@@ -16,19 +16,16 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { processUrl } from '@/utils/url';
 
 export const withPasted = (editor: ReactEditor) => {
-
   editor.insertTextData = (data: DataTransfer) => {
-    if (!beforePasted(editor))
-      return false;
+    if (!beforePasted(editor)) return false;
     const text = data.getData('text/plain');
 
     if (text) {
-
       const lines = text.split(/\r\n|\r|\n/);
 
       const html = data.getData('text/html');
+      const lineLength = lines.length;
 
-      const lineLength = lines.filter(Boolean).length;
       const point = editor.selection?.anchor as BasePoint;
       const [node] = getBlockEntry(editor as YjsEditor, point);
 
@@ -48,13 +45,18 @@ export const withPasted = (editor: ReactEditor) => {
               const pageId = url.pathname.split('/').pop();
               const point = editor.selection?.anchor as BasePoint;
 
-              Transforms.insertNodes(editor, {
-                text: '@', mention: {
-                  type: MentionType.PageRef,
-                  page_id: pageId,
-                  block_id: blockId,
+              Transforms.insertNodes(
+                editor,
+                {
+                  text: '@',
+                  mention: {
+                    type: MentionType.PageRef,
+                    page_id: pageId,
+                    block_id: blockId,
+                  },
                 },
-              }, { at: point, select: true, voids: false });
+                { at: point, select: true, voids: false }
+              );
 
               return true;
             }
@@ -63,11 +65,13 @@ export const withPasted = (editor: ReactEditor) => {
           // const currentBlockId = node.blockId as string;
           //
           // CustomEditor.addBelowBlock(editor as YjsEditor, currentBlockId, BlockType.LinkPreview, { url: text } as LinkPreviewBlockData);
-          insertFragment(editor, [{
-            type: BlockType.LinkPreview,
-            data: { url: text } as LinkPreviewBlockData,
-            children: [{ text: '' }],
-          }]);
+          insertFragment(editor, [
+            {
+              type: BlockType.LinkPreview,
+              data: { url: text } as LinkPreviewBlockData,
+              children: [{ text: '' }],
+            },
+          ]);
 
           return true;
         }
@@ -76,24 +80,27 @@ export const withPasted = (editor: ReactEditor) => {
       if (lineLength > 1 && node.type !== BlockType.CodeBlock) {
         if (html) {
           return insertHtmlData(editor, data);
-        } else {
-          const fragment = lines.map((line) => ({ type: BlockType.Paragraph, children: [{ text: line }] }));
-
-          insertFragment(editor, fragment);
-          return true;
         }
+        // else {
+        //   const fragment = lines.map((line) => ({ type: BlockType.Paragraph, children: [{ text: line }] }));
+
+        //   insertFragment(editor, fragment);
+        //   return true;
+        // }
       }
 
-      for (const line of lines) {
+      for (const index in lines) {
         const point = editor.selection?.anchor as BasePoint;
 
-        if (line) {
-          Transforms.insertNodes(editor, { text: `${line}${lineLength > 1 ? `\n` : ''}` }, {
+        Transforms.insertNodes(
+          editor,
+          { text: `${lines[index]}${parseInt(index) < lineLength - 1 ? `\n` : ''}` },
+          {
             at: point,
             select: true,
             voids: false,
-          });
-        }
+          }
+        );
       }
 
       return true;
@@ -109,7 +116,7 @@ export const withPasted = (editor: ReactEditor) => {
   return editor;
 };
 
-export function insertHtmlData (editor: ReactEditor, data: DataTransfer) {
+export function insertHtmlData(editor: ReactEditor, data: DataTransfer) {
   const html = data.getData('text/html');
 
   if (html) {
@@ -124,10 +131,9 @@ export function insertHtmlData (editor: ReactEditor, data: DataTransfer) {
   return false;
 }
 
-function insertFragment (editor: ReactEditor, fragment: Node[], options = {}) {
+function insertFragment(editor: ReactEditor, fragment: Node[], options = {}) {
   console.log('insertFragment', fragment, options);
-  if (!beforePasted(editor))
-    return;
+  if (!beforePasted(editor)) return;
 
   const point = editor.selection?.anchor as BasePoint;
   const [node] = getBlockEntry(editor as YjsEditor, point);
@@ -164,7 +170,6 @@ function insertFragment (editor: ReactEditor, fragment: Node[], options = {}) {
       Transforms.insertNodes(editor, texts, { at: point, select: true, voids: false });
       return;
     }
-
   }
 
   let lastBlockId = blockId;
@@ -184,7 +189,6 @@ function insertFragment (editor: ReactEditor, fragment: Node[], options = {}) {
     const point = editor.end(path);
 
     editor.select(point);
-
   }, 50);
 
   return;
