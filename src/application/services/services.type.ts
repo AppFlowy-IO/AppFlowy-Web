@@ -35,9 +35,11 @@ import {
   TemplateCreator, TemplateCreatorFormValues, TemplateSummary,
   UploadTemplatePayload,
 } from '@/application/template.type';
+import { AxiosInstance } from 'axios';
 
 export type AFService = PublishService & AppService & WorkspaceService & TemplateService & QuickNoteService & {
   getClientId: () => string;
+  getAxiosInstance: () => AxiosInstance | null;
 };
 
 export interface AFServiceConfig {
@@ -163,7 +165,7 @@ export interface PublishService {
   updatePublishHomepage: (workspaceId: string, viewId: string) => Promise<void>;
   removePublishHomepage: (workspaceId: string) => Promise<void>;
 
-  getPublishOutline (namespace: string): Promise<View[]>;
+  getPublishOutline(namespace: string): Promise<View[]>;
 
   getPublishViewGlobalComments: (viewId: string) => Promise<GlobalComment[]>;
   createCommentOnPublishView: (viewId: string, content: string, replyCommentId?: string) => Promise<void>;

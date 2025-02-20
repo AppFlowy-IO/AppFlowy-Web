@@ -1,8 +1,8 @@
-import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { ReactComponent as TipIcon } from '@/assets/warning.svg';
 import Help from '@/components/_shared/help/Help';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
-import { ReactComponent as TipIcon } from '@/assets/warning.svg';
 import { AppContext, useAppHandlers, useAppOutline, useAppViewId } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import { Document } from '@/components/document';
@@ -11,10 +11,11 @@ import { getPlatform } from '@/utils/platform';
 import { desktopDownloadLink, openAppFlowySchema } from '@/utils/url';
 import { Button, Checkbox, FormControlLabel } from '@mui/material';
 import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo } from 'react';
+import { AIChat } from '@/components/ai-chat';
 
 const ViewHelmet = lazy(() => import('@/components/_shared/helmet/ViewHelmet'));
 
-function AppPage () {
+function AppPage() {
   const viewId = useAppViewId();
   const outline = useAppOutline();
   const ref = React.useRef<HTMLDivElement>(null);
@@ -35,7 +36,7 @@ function AppPage () {
     uploadFile,
   } = useAppHandlers();
   const view = useMemo(() => {
-    if (!outline || !viewId) return;
+    if(!outline || !viewId) return;
     return findView(outline, viewId);
   }, [outline, viewId]);
   const rendered = useContext(AppContext)?.rendered;
@@ -47,9 +48,10 @@ function AppPage () {
     /></Suspense> : null;
   }, [rendered, view]);
 
+  const layout = view?.layout;
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
   const [notFound, setNotFound] = React.useState(false);
-  const loadPageDoc = useCallback(async (id: string) => {
+  const loadPageDoc = useCallback(async(id: string) => {
 
     setNotFound(false);
     setDoc(undefined);
@@ -57,7 +59,7 @@ function AppPage () {
       const doc = await loadView(id);
 
       setDoc(doc);
-    } catch (e) {
+    } catch(e) {
       setNotFound(true);
       console.error(e);
     }
@@ -65,23 +67,17 @@ function AppPage () {
   }, [loadView]);
 
   useEffect(() => {
-    if (!viewId) return;
+    if(!viewId || layout === undefined || layout === ViewLayout.AIChat) return;
 
     void loadPageDoc(viewId);
-  }, [loadPageDoc, viewId]);
+  }, [loadPageDoc, viewId, layout]);
 
-  const View = useMemo(() => {
-    switch (view?.layout) {
-      case ViewLayout.Document:
-        return Document;
-      case ViewLayout.Grid:
-      case ViewLayout.Board:
-      case ViewLayout.Calendar:
-        return DatabaseView;
-      default:
-        return null;
+  useEffect(() => {
+    if(layout === ViewLayout.AIChat) {
+      setDoc(undefined);
+      setNotFound(false);
     }
-  }, [view?.layout]) as React.FC<ViewComponentProps>;
+  }, [layout]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
     return view ? {
@@ -96,7 +92,7 @@ function AppPage () {
   }, [view]);
 
   const handleUploadFile = useCallback((file: File) => {
-    if (view && uploadFile) {
+    if(view && uploadFile) {
       return uploadFile(view.view_id, file);
     }
 
@@ -105,6 +101,15 @@ function AppPage () {
 
   const viewDom = useMemo(() => {
     const isMobile = getPlatform().isMobile;
+
+    if(!doc && layout === ViewLayout.AIChat && viewId) {
+      return <Suspense><AIChat
+        chatId={viewId}
+        onRendered={onRendered}
+      /></Suspense>;
+    }
+
+    const View = layout === ViewLayout.Document ? Document : DatabaseView;
 
     return doc && viewMeta && View ? (
       <View
@@ -127,17 +132,15 @@ function AppPage () {
         variant={UIVariant.App}
       />
     ) : null;
-  }, [addPage, handleUploadFile, loadViews, setWordCount, openPageModal, deletePage, updatePage, onRendered, doc, viewMeta, View, toView, loadViewMeta, createRowDoc, appendBreadcrumb, loadView]);
+  }, [doc, layout, viewId, viewMeta, toView, loadViewMeta, createRowDoc, appendBreadcrumb, loadView, onRendered, updatePage, addPage, deletePage, openPageModal, loadViews, setWordCount, handleUploadFile]);
 
   useEffect(() => {
-    if (!View || !viewId || !doc) return;
+    if(!viewId) return;
     localStorage.setItem('last_view_id', viewId);
-  }, [View, viewId, doc]);
-
-  const layout = view?.layout;
+  }, [viewId]);
 
   useEffect(() => {
-    if (layout !== undefined && layout !== ViewLayout.Document && !localStorage.getItem('open_edit_tip')) {
+    if(layout !== undefined && [ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar].includes(layout) && !localStorage.getItem('open_edit_tip')) {
       notify.clear();
       notify.info({
         autoHideDuration: null,
@@ -157,7 +160,7 @@ function AppPage () {
               className={' max-sm:w-full'}
               value="end"
               onChange={(_e, value) => {
-                if (value) {
+                if(value) {
                   localStorage.setItem('open_edit_tip', 'true');
                 } else {
                   localStorage.removeItem('open_edit_tip');
@@ -181,7 +184,7 @@ function AppPage () {
     }
   }, [layout]);
 
-  if (!viewId) return null;
+  if(!viewId) return null;
   return (
     <div
       ref={ref}
@@ -196,7 +199,7 @@ function AppPage () {
           {viewDom}
         </div>
       )}
-      {view && doc && <Help />}
+      {view && <Help />}
     </div>
   );
 }

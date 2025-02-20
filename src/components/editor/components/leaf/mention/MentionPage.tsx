@@ -32,16 +32,16 @@ function MentionPage({ text, pageId, blockId, type }: {
   const [content, setContent] = useState<string>('');
 
   useEffect(() => {
-    void (async () => {
-      if (loadViewMeta) {
+    void (async() => {
+      if(loadViewMeta) {
         setNoAccess(false);
         try {
           const meta = await loadViewMeta(pageId, setMeta);
 
           setMeta(meta);
-        } catch (e) {
+        } catch(e) {
           setNoAccess(true);
-          if (e && (e as View).name) {
+          if(e && (e as View).name) {
             setMeta(e as View);
           }
         }
@@ -57,14 +57,14 @@ function MentionPage({ text, pageId, blockId, type }: {
 
   useEffect(() => {
     void (
-      async () => {
+      async() => {
         const pageName = meta?.name || t('menuAppHeader.defaultNewPageName');
 
-        if (blockId) {
-          if (currentViewId === pageId) {
+        if(blockId) {
+          if(currentViewId === pageId) {
             const entry = findSlateEntryByBlockId(editor as YjsEditor, blockId);
 
-            if (entry) {
+            if(entry) {
               const [node] = entry;
               const text = CustomEditor.getBlockTextContent(node, 2);
 
@@ -76,14 +76,14 @@ function MentionPage({ text, pageId, blockId, type }: {
             try {
               const otherDoc = await loadView?.(pageId);
 
-              if (!otherDoc) return;
+              if(!otherDoc) return;
 
               const sharedRoot = otherDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
               const handleBlockChange = () => {
                 const node = traverseBlock(blockId, sharedRoot);
 
-                if (!node) {
+                if(!node) {
                   setContent(pageName);
                   return;
                 }
@@ -97,7 +97,7 @@ function MentionPage({ text, pageId, blockId, type }: {
 
               return;
 
-            } catch (e) {
+            } catch(e) {
               // do nothing
             }
           }
@@ -110,20 +110,24 @@ function MentionPage({ text, pageId, blockId, type }: {
   }, [selection, blockId, currentViewId, editor, loadView, meta?.name, pageId, t]);
 
   const mentionIcon = useMemo(() => {
-    if (pageId === currentViewId && blockId) {
-      return <MarkIcon className={'text-icon-primary ml-0.5 opacity-70'}/>;
+    if(pageId === currentViewId && blockId) {
+      return <MarkIcon className={'text-icon-primary ml-0.5 opacity-70'} />;
     }
 
     return <>
-      <PageIcon view={{
-        icon: icon,
-        layout: meta?.layout || ViewLayout.Document,
-      }} className={'text-text-title ml-0.5 w-[1em] h-[1em] flex items-center'}/>
+      <PageIcon
+        view={{
+          icon: icon,
+          layout: meta?.layout || ViewLayout.Document,
+        }}
+        className={'text-text-title ml-0.5 w-[1em] h-[1em] flex items-center'}
+      />
 
       {type === MentionType.PageRef &&
         <span
-          className={`absolute ${!icon?.value ? 'right-[-0.08em] bottom-[-0.08em]' : 'right-[-0.1em] bottom-[-0.2em]'}`}>
-          <NorthEast className={'w-[0.7em] h-[0.7em] text-black'}/>
+          className={`absolute ${!icon?.value ? 'right-[-0.08em] bottom-[-0.08em]' : 'right-[-0.1em] bottom-[-0.2em]'}`}
+        >
+          <NorthEast className={'w-[0.7em] h-[0.7em] text-black'} />
         </span>
       }
     </>;
@@ -131,11 +135,11 @@ function MentionPage({ text, pageId, blockId, type }: {
 
   const readOnly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
 
-  const handleScrollToBlock = useCallback(async () => {
-    if (blockId) {
+  const handleScrollToBlock = useCallback(async() => {
+    if(blockId) {
       const entry = findSlateEntryByBlockId(editor as YjsEditor, blockId);
 
-      if (entry) {
+      if(entry) {
         const [node] = entry;
         const dom = ReactEditor.toDOMNode(editor, node);
 
@@ -156,11 +160,11 @@ function MentionPage({ text, pageId, blockId, type }: {
     <span
       onClick={(e) => {
         e.stopPropagation();
-        if (readOnly) {
+        if(readOnly || meta?.layout === ViewLayout.AIChat) {
           void navigateToView?.(pageId, blockId);
         } else {
-          if (noAccess) return;
-          if (pageId === currentViewId) {
+          if(noAccess) return;
+          if(pageId === currentViewId) {
             void handleScrollToBlock();
             return;
           }

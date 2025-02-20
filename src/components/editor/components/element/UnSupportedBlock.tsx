@@ -5,8 +5,9 @@ import { Alert } from '@mui/material';
 export const UnSupportedBlock = forwardRef<HTMLDivElement, EditorElementProps>(({ node, children }, ref) => {
   return (
     <div
-      className={'w-full'}
+      className={'w-full select-none'}
       ref={ref}
+      contentEditable={false}
     >
       <Alert
         className={'h-fit w-full'}

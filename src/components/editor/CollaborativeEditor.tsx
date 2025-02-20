@@ -13,7 +13,10 @@ import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
 
 const defaultInitialValue: Descendant[] = [];
 
-function CollaborativeEditor({ doc }: { doc: Y.Doc }) {
+function CollaborativeEditor({ doc, onEditorConnected }: {
+  doc: Y.Doc,
+  onEditorConnected?: (editor: YjsEditor) => void
+}) {
   const context = useEditorContext();
   const readSummary = context.readSummary;
   const onRendered = context.onRendered;
@@ -54,15 +57,17 @@ function CollaborativeEditor({ doc }: { doc: Y.Doc }) {
   const [, setIsConnected] = useState(false);
 
   useEffect(() => {
-    if (!editor) return;
+    if(!editor) return;
 
     editor.connect();
     setIsConnected(true);
+    onEditorConnected?.(editor);
 
     return () => {
       console.log('disconnect');
       editor.disconnect();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
   return (
@@ -70,7 +75,7 @@ function CollaborativeEditor({ doc }: { doc: Y.Doc }) {
       editor={editor}
       initialValue={defaultInitialValue}
     >
-      <EditorEditable/>
+      <EditorEditable />
     </Slate>
 
   );

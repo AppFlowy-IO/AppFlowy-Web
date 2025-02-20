@@ -1,9 +1,10 @@
+import { ViewLayout } from '@/application/types';
 import { useAppView, useAppWordCount } from '@/components/app/app.hooks';
+import { getCharacters, getWords } from '@/utils/word';
 import { Divider } from '@mui/material';
 import dayjs from 'dayjs';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getCharacters, getWords } from '@/utils/word';
 
 function DocumentInfo({ viewId }: {
   viewId: string;
@@ -50,14 +51,18 @@ function DocumentInfo({ viewId }: {
     <>
       <Divider />
       <div className={'flex flex-col gap-1 text-text-caption text-xs '}>
-        <div
-          className={'px-[10px]'}
-        >
-          {t('moreAction.wordCountLabel')}{words}
-        </div>
-        <div className={'px-[10px]'}>
-          {t('moreAction.charCountLabel')}{chars}
-        </div>
+        {view.layout === ViewLayout.Document && (<>
+            <div
+              className={'px-[10px]'}
+            >
+              {t('moreAction.wordCountLabel')}{words}
+            </div>
+            <div className={'px-[10px]'}>
+              {t('moreAction.charCountLabel')}{chars}
+            </div>
+          </>
+        )}
+
         {view.created_at && <div className={'px-[10px]'}>
           {t('moreAction.createdAtLabel')}{formatTime(view.created_at)}
         </div>}

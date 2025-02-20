@@ -1,4 +1,4 @@
-import { UIVariant, View, ViewLayout } from '@/application/types';
+import { UIVariant, View } from '@/application/types';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import PublishIcon from '@/components/_shared/view-icon/PublishIcon';
 import { Tooltip } from '@mui/material';
@@ -6,7 +6,7 @@ import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 
-function OutlineItemContent ({
+function OutlineItemContent({
   item,
   setIsExpanded,
   navigateToView,
@@ -27,25 +27,24 @@ function OutlineItemContent ({
 
   return (
     <div
-      onClick={async () => {
-        if (isSpace || (!item.is_published && variant === 'publish') || item.layout === ViewLayout.AIChat) {
+      onClick={async() => {
+        if(isSpace || (!item.is_published && variant === 'publish')) {
           setIsExpanded(prev => !prev);
           return;
         }
 
         try {
           await navigateToView?.(view_id);
-        } catch (e) {
+        } catch(e) {
           // do nothing
         }
       }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        cursor: item.layout === ViewLayout.AIChat ? 'not-allowed' : 'pointer',
         paddingLeft: variant === 'favorite' || variant === 'recent' ? '8px' : item.children?.length ? 0 : 1.125 * (level + 1) + 'em',
       }}
-      className={`flex flex-1 select-none items-center gap-1.5 overflow-hidden`}
+      className={`flex flex-1 select-none items-center pointer gap-1.5 overflow-hidden`}
     >
       {isSpace && extra ?
         <SpaceIcon

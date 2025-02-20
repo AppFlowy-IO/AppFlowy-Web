@@ -63,15 +63,15 @@ function ViewModal({
     doc: YDoc;
   } | undefined>(undefined);
   const [notFound, setNotFound] = React.useState(false);
-  const loadPageDoc = useCallback(async (id: string) => {
+  const loadPageDoc = useCallback(async(id: string) => {
 
     setNotFound(false);
     setDoc(undefined);
     try {
       const doc = await loadView(id);
-      
+
       setDoc({ doc, id });
-    } catch (e) {
+    } catch(e) {
       setNotFound(true);
       console.error(e);
     }
@@ -79,8 +79,7 @@ function ViewModal({
   }, [loadView]);
 
   useEffect(() => {
-    if (open && viewId) {
-
+    if(open && viewId) {
       void loadPageDoc(viewId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -92,7 +91,7 @@ function ViewModal({
   }, [onClose]);
 
   const view = useMemo(() => {
-    if (!outline || !viewId) return;
+    if(!outline || !viewId) return;
     return findView(outline, viewId);
   }, [outline, viewId]);
 
@@ -108,7 +107,7 @@ function ViewModal({
     } : null;
   }, [view]);
   const handleUploadFile = useCallback((file: File) => {
-    if (view && uploadFile) {
+    if(view && uploadFile) {
       return uploadFile(view.view_id, file);
     }
 
@@ -121,7 +120,7 @@ function ViewModal({
   }, []);
 
   const modalTitle = useMemo(() => {
-    if (!viewId) return null;
+    if(!viewId) return null;
     const space = findAncestors(outline || [], viewId)?.find(item => item.extra?.is_space);
 
     return (
@@ -130,12 +129,12 @@ function ViewModal({
           <Tooltip title={t('tooltip.openAsPage')}>
             <IconButton
               size={'small'}
-              onClick={async () => {
+              onClick={async() => {
                 await toView(viewId);
                 handleClose();
               }}
             >
-              <ExpandMoreIcon className={'text-text-title opacity-80 h-5 w-5'}/>
+              <ExpandMoreIcon className={'text-text-title opacity-80 h-5 w-5'} />
             </IconButton>
           </Tooltip>
           <Divider
@@ -155,13 +154,13 @@ function ViewModal({
               />}
               color={'inherit'}
               className={'justify-start px-1.5'}
-              endIcon={<ArrowRightIcon className={'transform rotate-90'}/>}
+              endIcon={<ArrowRightIcon className={'transform rotate-90'} />}
             >{space.name}</Button>
           )}
         </div>
 
         <div className={'flex items-center gap-4'}>
-          <ShareButton viewId={viewId}/>
+          <ShareButton viewId={viewId} />
           <MoreActions
             onDeleted={handleClose}
             viewId={viewId}
@@ -175,7 +174,7 @@ function ViewModal({
             size={'small'}
             onClick={handleClose}
           >
-            <CloseIcon/>
+            <CloseIcon />
           </IconButton>
         </div>
 
@@ -186,7 +185,7 @@ function ViewModal({
   const layout = view?.layout || ViewLayout.Document;
 
   const View = useMemo(() => {
-    switch (layout) {
+    switch(layout) {
       case ViewLayout.Document:
         return Document;
       case ViewLayout.Grid:
@@ -199,7 +198,7 @@ function ViewModal({
   }, [layout]) as React.FC<ViewComponentProps>;
 
   const viewDom = useMemo(() => {
-    if (!doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
+    if(!doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return <View
       doc={doc.doc}
       readOnly={false}
@@ -235,7 +234,7 @@ function ViewModal({
     >
       {modalTitle}
       {notFound ? (
-        <RecordNotFound/>
+        <RecordNotFound />
       ) : (
         <div className={'w-full h-full'}>
           {viewDom}
