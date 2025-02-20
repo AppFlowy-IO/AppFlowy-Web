@@ -51,10 +51,10 @@ import {
   updateBlockParent,
 } from '@/application/slate-yjs/utils/yjs';
 
-export function ensureBlockText (editor: YjsEditor) {
+export function ensureBlockText(editor: YjsEditor) {
   const { selection } = editor;
 
-  if (!selection) {
+  if(!selection) {
     return;
   }
 
@@ -72,17 +72,17 @@ export function ensureBlockText (editor: YjsEditor) {
   const startBlockType = startNode.type as BlockType;
   const endBlockType = endNode.type as BlockType;
 
-  if (!startBlockId || !endBlockId) {
+  if(!startBlockId || !endBlockId) {
     return;
   }
 
   const compatibleBlocks: string[] = [];
 
-  if (!isEmbedBlockTypes(startBlockType)) {
+  if(!isEmbedBlockTypes(startBlockType)) {
     compatibleBlocks.push(startBlockId);
   }
 
-  if (!isEmbedBlockTypes(endBlockType)) {
+  if(!isEmbedBlockTypes(endBlockType)) {
     compatibleBlocks.push(endBlockId);
   }
 
@@ -90,7 +90,7 @@ export function ensureBlockText (editor: YjsEditor) {
     const block = getBlock(blockId, sharedRoot);
     const textId = block.get(YjsEditorKey.block_external_id);
 
-    if (!textId || !getText(textId, sharedRoot)) {
+    if(!textId || !getText(textId, sharedRoot)) {
       const data = dataStringTOJson(block.get(YjsEditorKey.block_data)) as BlockData;
 
       compatibleDataDeltaToYText(sharedRoot, data.delta || [], blockId);
@@ -98,13 +98,13 @@ export function ensureBlockText (editor: YjsEditor) {
   });
 }
 
-export function handleCollapsedBreakWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, at: BaseRange) {
+export function handleCollapsedBreakWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, at: BaseRange) {
   const { startBlock, startOffset } = getBreakInfo(editor, sharedRoot, at);
   const [blockNode, path] = startBlock;
   const blockId = blockNode.blockId as string;
   const block = getBlock(blockId, sharedRoot);
 
-  if (!block) {
+  if(!block) {
     throw new Error('Block not found');
   }
 
@@ -112,7 +112,7 @@ export function handleCollapsedBreakWithTxn (editor: YjsEditor, sharedRoot: YSha
   const textId = block.get(YjsEditorKey.block_external_id);
   let yText = getText(textId, sharedRoot);
 
-  if (!yText && !isEmbedBlockTypes(blockType)) {
+  if(!yText && !isEmbedBlockTypes(blockType)) {
     const data = blockNode.data as BlockData;
     const delta = new Delta(data.delta || []);
 
@@ -120,14 +120,14 @@ export function handleCollapsedBreakWithTxn (editor: YjsEditor, sharedRoot: YSha
 
   }
 
-  if (yText.length === 0) {
+  if(yText.length === 0) {
     const point = Editor.start(editor, at);
 
     const parent = getParent(blockId, sharedRoot);
     const parentType = parent?.get(YjsEditorKey.block_type);
     const index = getBlockIndex(blockId, sharedRoot);
 
-    if (SOFT_BREAK_TYPES.includes(blockType) && parent) {
+    if(SOFT_BREAK_TYPES.includes(blockType) && parent) {
       addBlock(editor, {
         ty: BlockType.Paragraph,
         data: {},
@@ -136,16 +136,16 @@ export function handleCollapsedBreakWithTxn (editor: YjsEditor, sharedRoot: YSha
       return;
     }
 
-    if (blockType !== BlockType.Paragraph && parentType && [BlockType.QuoteBlock, BlockType.CalloutBlock].includes(parentType)) {
+    if(blockType !== BlockType.Paragraph && parentType && [BlockType.QuoteBlock, BlockType.CalloutBlock].includes(parentType)) {
       handleNonParagraphBlockBackspaceAndEnterWithTxn(editor, sharedRoot, block, point);
       return;
     }
 
-    if (path.length > 1 && handleLiftBlockOnBackspaceAndEnterWithTxn(editor, sharedRoot, block, point)) {
+    if(path.length > 1 && handleLiftBlockOnBackspaceAndEnterWithTxn(editor, sharedRoot, block, point)) {
       return;
     }
 
-    if (blockType !== BlockType.Paragraph) {
+    if(blockType !== BlockType.Paragraph) {
       handleNonParagraphBlockBackspaceAndEnterWithTxn(editor, sharedRoot, block, point);
       return;
     }
@@ -156,7 +156,7 @@ export function handleCollapsedBreakWithTxn (editor: YjsEditor, sharedRoot: YSha
 
   executeOperations(sharedRoot, operations, 'insertBreak');
 
-  if (select) {
+  if(select) {
     moveToNextLine(editor, block, at, blockId);
   } else {
     Transforms.select(editor, Editor.start(editor, at));
@@ -164,7 +164,7 @@ export function handleCollapsedBreakWithTxn (editor: YjsEditor, sharedRoot: YSha
 
 }
 
-export function removeRangeWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, range: Range) {
+export function removeRangeWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, range: Range) {
   const { startBlock, endBlock, middleBlocks, startRange, endRange } = getAffectedBlocks(editor, range);
   const operations: (() => void)[] = [];
   const isSameBlock = startBlock[0].blockId === endBlock[0].blockId;
@@ -172,7 +172,7 @@ export function removeRangeWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, 
   console.log('startBlock', { startBlock, startRange });
   operations.push(() => {
     deleteSlateRangeInBlock(sharedRoot, editor, startBlock[0], startRange);
-    if (!isSameBlock) {
+    if(!isSameBlock) {
       deleteSlateRangeInBlock(sharedRoot, editor, endBlock[0], endRange);
       mergeBlocks(sharedRoot, endBlock[0], startBlock[0]);
 
@@ -186,24 +186,24 @@ export function removeRangeWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, 
 
 }
 
-export function handleRangeBreak (editor: YjsEditor, sharedRoot: YSharedRoot, range: Range) {
+export function handleRangeBreak(editor: YjsEditor, sharedRoot: YSharedRoot, range: Range) {
   removeRangeWithTxn(editor, sharedRoot, range);
 
   const selection = editor.selection;
 
-  if (!selection) return;
+  if(!selection) return;
 
   handleCollapsedBreakWithTxn(editor, sharedRoot, selection);
 }
 
-function moveToNextLine (editor: Editor, block: YBlock, at: BaseRange, blockId: string) {
+function moveToNextLine(editor: Editor, block: YBlock, at: BaseRange, blockId: string) {
   const { selection } = editor;
 
-  if (!selection) return;
+  if(!selection) return;
 
   const { anchor, focus } = selection;
 
-  if (!Node.has(editor, anchor.path) || !Node.has(editor, focus.path)) {
+  if(!Node.has(editor, anchor.path) || !Node.has(editor, focus.path)) {
     Transforms.select(editor, Editor.start(editor, at));
     Transforms.move(editor, { distance: 1, unit: 'line' });
     return;
@@ -212,14 +212,14 @@ function moveToNextLine (editor: Editor, block: YBlock, at: BaseRange, blockId: 
   const blockType = block.get(YjsEditorKey.block_type);
   const isToggleListBlock = blockType === BlockType.ToggleListBlock;
 
-  if (isToggleListBlock) {
+  if(isToggleListBlock) {
     const blockData = dataStringTOJson(block.get(YjsEditorKey.block_data)) as ToggleListBlockData;
     const isCollapsed = blockData.collapsed;
 
-    if (isCollapsed) {
+    if(isCollapsed) {
       const nextBlockPath = getNextSiblingBlockPath(editor, blockId);
 
-      if (nextBlockPath) {
+      if(nextBlockPath) {
         Transforms.select(editor, Editor.start(editor, nextBlockPath));
       } else {
         Transforms.select(editor, Editor.start(editor, at));
@@ -232,12 +232,12 @@ function moveToNextLine (editor: Editor, block: YBlock, at: BaseRange, blockId: 
   Transforms.move(editor, { distance: 1, unit: 'line' });
 }
 
-export function getNextSiblingBlockPath (editor: Editor, blockId: string) {
+export function getNextSiblingBlockPath(editor: Editor, blockId: string) {
   const [blockSlateNode] = editor.nodes({
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId === blockId,
   });
 
-  if (!blockSlateNode) {
+  if(!blockSlateNode) {
     return;
   }
 
@@ -246,27 +246,27 @@ export function getNextSiblingBlockPath (editor: Editor, blockId: string) {
   const index = blockPath[blockPath.length - 1];
   const nextPath = [...blockParentPath, index + 1];
 
-  if (!nextPath || !Node.has(editor, nextPath)) {
+  if(!nextPath || !Node.has(editor, nextPath)) {
     return;
   }
 
   return nextPath;
 }
 
-export function getBlockTextRange (editor: YjsEditor, entry: NodeEntry<Element>) {
+export function getBlockTextRange(editor: YjsEditor, entry: NodeEntry<Element>) {
   const [node, path] = entry;
   const textId = TEXT_BLOCK_TYPES.includes(node.type as BlockType) ? (node.children[0] as Element)?.textId : null;
 
   const start = Editor.start(editor, path);
 
-  if (!textId) {
+  if(!textId) {
     return [start, editor.end(path)];
   }
 
   return [start, Editor.end(editor, [...path, 0])];
 }
 
-export function getAffectedBlocks (editor: YjsEditor, range: Range): {
+export function getAffectedBlocks(editor: YjsEditor, range: Range): {
   startBlock: NodeEntry<Element>;
   endBlock: NodeEntry<Element>;
   middleBlocks: NodeEntry<Element>[];
@@ -292,15 +292,15 @@ export function getAffectedBlocks (editor: YjsEditor, range: Range): {
 
   const isSameBlock = startBlock[0].blockId === endBlock[0].blockId;
 
-  if (!isSameBlock) {
-    for (const entry of Editor.nodes(editor, {
+  if(!isSameBlock) {
+    for(const entry of Editor.nodes(editor, {
       at: range,
       match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined && n.blockId !== startBlock[0].blockId && n.blockId !== endBlock[0].blockId,
     })) {
       const [, path] = entry as NodeEntry<Element>;
       const isAncestorOfStart = Path.isAncestor(path, startBlock[1]);
 
-      if (!isAncestorOfStart) {
+      if(!isAncestorOfStart) {
         middleBlocks.push(entry as NodeEntry<Element>);
       }
     }
@@ -318,11 +318,11 @@ export function getAffectedBlocks (editor: YjsEditor, range: Range): {
   return { startBlock, endBlock, middleBlocks, startRange, endRange };
 }
 
-function getTextIdFromSlateNode (node: Element) {
+function getTextIdFromSlateNode(node: Element) {
   return node.textId ?? (node.children[0] as Element).textId;
 }
 
-export function deleteSlateRangeInBlock (sharedRoot: YSharedRoot, editor: Editor, block: Element, range: BaseRange) {
+export function deleteSlateRangeInBlock(sharedRoot: YSharedRoot, editor: Editor, block: Element, range: BaseRange) {
   const [start, end] = Editor.edges(editor, range);
 
   const relativeOffset = slatePointToRelativePosition(sharedRoot, editor, start);
@@ -330,14 +330,14 @@ export function deleteSlateRangeInBlock (sharedRoot: YSharedRoot, editor: Editor
   const endRelativeOffset = slatePointToRelativePosition(sharedRoot, editor, end);
   const endPos = Y.createAbsolutePositionFromRelativePosition(endRelativeOffset.point, assertDocExists(sharedRoot));
 
-  if (!startPos || !endPos) {
+  if(!startPos || !endPos) {
     throw new Error('Unable to create absolute position');
   }
 
   deleteRangeInBlock(sharedRoot, block, startPos.index, endPos.index);
 }
 
-export function deleteRangeInBlock (
+export function deleteRangeInBlock(
   sharedRoot: YSharedRoot,
   block: Element,
   start: number,
@@ -345,14 +345,17 @@ export function deleteRangeInBlock (
 ) {
   const textId = getTextIdFromSlateNode(block);
 
-  if (textId) {
+  if(textId) {
     const yText = getText(textId, sharedRoot);
 
-    yText.delete(start, end - start);
+    if(yText) {
+      yText.delete(start, end - start);
+
+    }
   }
 }
 
-export function mergeBlocks (
+export function mergeBlocks(
   sharedRoot: YSharedRoot,
   sourceBlock: Element,
   targetBlock: Element,
@@ -360,7 +363,7 @@ export function mergeBlocks (
   const sourceTextId = getTextIdFromSlateNode(sourceBlock);
   const targetTextId = getTextIdFromSlateNode(targetBlock);
 
-  if (!sourceTextId || !targetTextId) {
+  if(!sourceTextId || !targetTextId) {
     return;
   }
 
@@ -370,7 +373,7 @@ export function mergeBlocks (
   const sourceOps = sourceYText.toDelta() as Op[];
 
   sourceOps.forEach((op) => {
-    if (op.insert && typeof op.insert === 'string') {
+    if(op.insert && typeof op.insert === 'string') {
       targetYText.insert(targetYText.length, op.insert, op.attributes);
     }
   });
@@ -382,14 +385,14 @@ export function mergeBlocks (
   deleteBlock(sharedRoot, sourceBlock.blockId as string);
 }
 
-export function getBreakInfo (editor: YjsEditor, sharedRoot: YSharedRoot, at: BaseRange) {
+export function getBreakInfo(editor: YjsEditor, sharedRoot: YSharedRoot, at: BaseRange) {
   const startPoint = Editor.start(editor, at);
   const doc = assertDocExists(sharedRoot);
 
   const startRelativeRange = slatePointToRelativePosition(sharedRoot, editor, startPoint);
   const startTextId = getTextIdFromSlateNode(startRelativeRange.entry[0]);
 
-  if (!startTextId) {
+  if(!startTextId) {
     throw new Error('Text id not found');
   }
 
@@ -398,7 +401,7 @@ export function getBreakInfo (editor: YjsEditor, sharedRoot: YSharedRoot, at: Ba
     doc,
   );
 
-  if (!startPos) {
+  if(!startPos) {
     throw new Error('Unable to create absolute position');
   }
 
@@ -407,13 +410,13 @@ export function getBreakInfo (editor: YjsEditor, sharedRoot: YSharedRoot, at: Ba
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined,
   }) as NodeEntry<Element>;
 
-  if (!startBlock) {
+  if(!startBlock) {
     throw new Error('Block not found');
   }
 
   let yText = getText(startTextId, sharedRoot);
 
-  if (!yText) {
+  if(!yText) {
     const data = startBlock[0].data as BlockData;
     const delta = new Delta(data.delta || []);
 
@@ -425,13 +428,13 @@ export function getBreakInfo (editor: YjsEditor, sharedRoot: YSharedRoot, at: Ba
   return { startBlock, startOffset };
 }
 
-export function isAtBlockStart (editor: Editor, point: Point) {
+export function isAtBlockStart(editor: Editor, point: Point) {
   const entry = Editor.above(editor, {
     at: point,
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.textId !== undefined,
   });
 
-  if (!entry) return false;
+  if(!entry) return false;
 
   const [, path] = entry;
   const start = Editor.start(editor, path);
@@ -439,13 +442,13 @@ export function isAtBlockStart (editor: Editor, point: Point) {
   return Point.equals(point, start);
 }
 
-export function isAtBlockEnd (editor: Editor, point: Point) {
+export function isAtBlockEnd(editor: Editor, point: Point) {
   const entry = Editor.above(editor, {
     at: point,
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.textId !== undefined,
   });
 
-  if (!entry) return false;
+  if(!entry) return false;
 
   const [, path] = entry;
   const end = Editor.end(editor, path);
@@ -453,29 +456,29 @@ export function isAtBlockEnd (editor: Editor, point: Point) {
   return Point.equals(point, end);
 }
 
-export function getSharedRoot (editor: YjsEditor) {
-  if (!editor.sharedRoot || !editor.sharedRoot.doc) {
+export function getSharedRoot(editor: YjsEditor) {
+  if(!editor.sharedRoot || !editor.sharedRoot.doc) {
     throw new Error('Shared root not found');
   }
 
   return editor.sharedRoot;
 }
 
-export function getSelectionOrThrow (editor: YjsEditor, at?: BaseRange) {
+export function getSelectionOrThrow(editor: YjsEditor, at?: BaseRange) {
   const newAt = at || editor.selection;
 
-  if (!newAt) {
+  if(!newAt) {
     throw new Error('Selection not found');
   }
 
   return newAt;
 }
 
-export function getBlockEntry (editor: YjsEditor, point?: Point) {
+export function getBlockEntry(editor: YjsEditor, point?: Point) {
   const { selection } = editor;
   const at = point || (selection ? Editor.start(editor, selection) : null);
 
-  if (!at) {
+  if(!at) {
     throw new Error('Point not found');
   }
 
@@ -484,18 +487,18 @@ export function getBlockEntry (editor: YjsEditor, point?: Point) {
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined,
   });
 
-  if (!blockEntry) {
+  if(!blockEntry) {
     throw new Error('Block not found');
   }
 
   return blockEntry as NodeEntry<Element>;
 }
 
-export function handleNonParagraphBlockBackspaceAndEnterWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: BasePoint) {
+export function handleNonParagraphBlockBackspaceAndEnterWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: BasePoint) {
   const data = dataStringTOJson(block.get(YjsEditorKey.block_data));
   const blockType = block.get(YjsEditorKey.block_type);
 
-  if (blockType === BlockType.ToggleListBlock && (data as ToggleListBlockData).level) {
+  if(blockType === BlockType.ToggleListBlock && (data as ToggleListBlockData).level) {
     const [, path] = getBlockEntry(editor, point);
 
     Transforms.setNodes(editor, {
@@ -515,7 +518,7 @@ export function handleNonParagraphBlockBackspaceAndEnterWithTxn (editor: YjsEdit
   executeOperations(sharedRoot, operations, 'turnToBlock');
 }
 
-export function handleLiftBlockOnBackspaceAndEnterWithTxn (editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: Point) {
+export function handleLiftBlockOnBackspaceAndEnterWithTxn(editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: Point) {
   const operations: (() => void)[] = [];
   const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
   const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
@@ -525,18 +528,18 @@ export function handleLiftBlockOnBackspaceAndEnterWithTxn (editor: YjsEditor, sh
   const hasNextSibling = index < parentChildren.length - 1;
   const hasChildren = getChildrenArray(block.get(YjsEditorKey.block_children), sharedRoot).length > 0;
 
-  if (preventLiftNode(editor, block.get(YjsEditorKey.block_id))) {
+  if(preventLiftNode(editor, block.get(YjsEditorKey.block_id))) {
     return false;
   }
 
-  if (!hasChildren && !hasNextSibling) {
+  if(!hasChildren && !hasNextSibling) {
     let newPath: number[] | undefined;
 
     operations.push(() => {
       newPath = liftEditorNode(editor, sharedRoot, block, point);
     });
     executeOperations(sharedRoot, operations, 'liftBlock');
-    if (!newPath) return false;
+    if(!newPath) return false;
 
     const newPoint = {
       path: [...newPath, ...point.path.slice(path.length)],
@@ -551,7 +554,7 @@ export function handleLiftBlockOnBackspaceAndEnterWithTxn (editor: YjsEditor, sh
   return false;
 }
 
-export function handleMergeBlockBackwardWithTxn (editor: YjsEditor, node: Element, point: Point) {
+export function handleMergeBlockBackwardWithTxn(editor: YjsEditor, node: Element, point: Point) {
   const operations: (() => void)[] = [];
   const sharedRoot = getSharedRoot(editor);
 
@@ -564,14 +567,14 @@ export function handleMergeBlockBackwardWithTxn (editor: YjsEditor, node: Elemen
       voids: true,
     });
 
-    if (!prevText) {
+    if(!prevText) {
       return;
     }
 
     const [, prevPath] = prevText as NodeEntry<Element>;
     const prevPoint = Editor.end(editor, prevPath);
 
-    if (!prevPoint) {
+    if(!prevPoint) {
       throw new Error('prevPoint not found');
     }
 
@@ -580,7 +583,7 @@ export function handleMergeBlockBackwardWithTxn (editor: YjsEditor, node: Elemen
       match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined,
     });
 
-    if (!target) {
+    if(!target) {
       throw new Error('target not found');
     }
 
@@ -591,7 +594,7 @@ export function handleMergeBlockBackwardWithTxn (editor: YjsEditor, node: Elemen
     operations.push(() => {
       mergeBlocks(sharedRoot, node, targetNode);
     });
-  } catch (e) {
+  } catch(e) {
     // at the beginning of the document
     console.info('at the beginning of the document');
   }
@@ -599,14 +602,14 @@ export function handleMergeBlockBackwardWithTxn (editor: YjsEditor, node: Elemen
   executeOperations(sharedRoot, operations, 'deleteBlockBackward');
 }
 
-export function handleMergeBlockForwardWithTxn (editor: YjsEditor, node: Element, point: Point) {
+export function handleMergeBlockForwardWithTxn(editor: YjsEditor, node: Element, point: Point) {
   const operations: (() => void)[] = [];
   const sharedRoot = getSharedRoot(editor);
 
   try {
     const nextPoint = Editor.after(editor, point);
 
-    if (!nextPoint) {
+    if(!nextPoint) {
       throw new Error('nextPoint not found');
     }
 
@@ -615,7 +618,7 @@ export function handleMergeBlockForwardWithTxn (editor: YjsEditor, node: Element
       match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined,
     });
 
-    if (!source) {
+    if(!source) {
       throw new Error('source not found');
     }
 
@@ -624,7 +627,7 @@ export function handleMergeBlockForwardWithTxn (editor: YjsEditor, node: Element
     operations.push(() => {
       mergeBlocks(sharedRoot, sourceNode, node);
     });
-  } catch (e) {
+  } catch(e) {
     // at the end of the document
     console.info('at the end of the document');
   }
@@ -632,14 +635,14 @@ export function handleMergeBlockForwardWithTxn (editor: YjsEditor, node: Element
   executeOperations(sharedRoot, operations, 'deleteBlockForward');
 }
 
-export function preventIndentNode (editor: YjsEditor, blockId: string) {
+export function preventIndentNode(editor: YjsEditor, blockId: string) {
   const sharedRoot = getSharedRoot(editor);
   const block = getBlock(blockId, sharedRoot);
   const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
   const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
   const index = parentChildren.toArray().findIndex((id) => id === block.get(YjsEditorKey.block_id));
 
-  if (index === 0) {
+  if(index === 0) {
     return true;
   }
 
@@ -647,19 +650,19 @@ export function preventIndentNode (editor: YjsEditor, blockId: string) {
   const previousSiblingId = parentChildren.get(index - 1);
   const previousSibling = getBlock(previousSiblingId, sharedRoot);
 
-  if (!previousSibling) {
+  if(!previousSibling) {
     return true;
   }
 
   // Check if the parent block is a container block
-  if (!CONTAINER_BLOCK_TYPES.includes(previousSibling.get(YjsEditorKey.block_type))) {
+  if(!CONTAINER_BLOCK_TYPES.includes(previousSibling.get(YjsEditorKey.block_type))) {
     return true;
   }
 
   return false;
 }
 
-export function findSlateEntryByBlockId (editor: Editor, blockId: string) {
+export function findSlateEntryByBlockId(editor: Editor, blockId: string) {
   const [node] = Editor.nodes(editor, {
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId === blockId,
     at: [],
@@ -670,14 +673,14 @@ export function findSlateEntryByBlockId (editor: Editor, blockId: string) {
   return node as NodeEntry<Element>;
 }
 
-export function beforePasted (editor: ReactEditor) {
+export function beforePasted(editor: ReactEditor) {
   const { selection } = editor;
 
-  if (!selection) {
+  if(!selection) {
     return false;
   }
 
-  if (Range.isExpanded(selection)) {
+  if(Range.isExpanded(selection)) {
     Transforms.collapse(editor, { edge: 'start' });
 
     editor.delete({
@@ -688,10 +691,10 @@ export function beforePasted (editor: ReactEditor) {
   return true;
 }
 
-export function getSelectedPaths (editor: ReactEditor) {
+export function getSelectedPaths(editor: ReactEditor) {
   const { selection } = editor;
 
-  if (!selection) {
+  if(!selection) {
     return null;
   }
 
@@ -718,13 +721,13 @@ export function getSelectedPaths (editor: ReactEditor) {
           Element.isElement(n) &&
           n.blockId !== undefined;
 
-        if (!isBlockElement) return false;
+        if(!isBlockElement) return false;
 
         // Get the range of the block element
         const nodeRange = Editor.range(editor, path);
         const [anchor, focus] = editor.edges(nodeRange);
 
-        if (n.blockId === startBlockId || n.blockId === endBlockId) {
+        if(n.blockId === startBlockId || n.blockId === endBlockId) {
           return true;
         }
 
@@ -734,13 +737,13 @@ export function getSelectedPaths (editor: ReactEditor) {
         };
 
         // Check if the block element is fully within the selection
-        if (isIntersecting(anchor, focus)) {
+        if(isIntersecting(anchor, focus)) {
           return true;
         } else {
           // Check if the block element contains a text node that is within the selection
           const textNode = (n.children[0] as Element)?.textId !== undefined ? n.children[0] : null;
 
-          if (textNode) {
+          if(textNode) {
             const [anchor, focus] = editor.edges([...path, 0]);
 
             return isIntersecting(anchor, focus);
@@ -756,7 +759,7 @@ export function getSelectedPaths (editor: ReactEditor) {
   return blockEntries.map(([, path]) => path);
 }
 
-export function filterValidNodes (editor: ReactEditor, selectedPaths: Path[]): [
+export function filterValidNodes(editor: ReactEditor, selectedPaths: Path[]): [
   Element,
   Path,
 ][] {
@@ -781,7 +784,7 @@ export function filterValidNodes (editor: ReactEditor, selectedPaths: Path[]): [
   });
 }
 
-export function sortNodesByDepth (editor: Editor, selectedPaths: Path[]) {
+export function sortNodesByDepth(editor: Editor, selectedPaths: Path[]) {
   const pathsWithDepth = selectedPaths.map(path => ({
     path,
     depth: path.length,
@@ -790,7 +793,7 @@ export function sortNodesByDepth (editor: Editor, selectedPaths: Path[]) {
 
   return pathsWithDepth.sort((a, b) => {
     // use depth to sort
-    if (b.depth !== a.depth) {
+    if(b.depth !== a.depth) {
       return b.depth - a.depth;
     }
 
@@ -799,19 +802,21 @@ export function sortNodesByDepth (editor: Editor, selectedPaths: Path[]) {
   });
 }
 
-export function preventLiftNode (editor: YjsEditor, blockId: string) {
+export function preventLiftNode(editor: YjsEditor, blockId: string) {
   const [, path] = findSlateEntryByBlockId(editor, blockId);
   const level = path.length;
 
-  if (level < 2) {
+  const parent = getParent(blockId, getSharedRoot(editor));
+
+  if(level < 2 || (parent && [BlockType.ColumnsBlock, BlockType.ColumnBlock].includes(parent.get(YjsEditorKey.block_type)))) {
     return true;
   }
 
   return false;
 }
 
-export function liftEditorNode (editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: Point) {
-  if (preventLiftNode(editor, block.get(YjsEditorKey.block_id))) {
+export function liftEditorNode(editor: YjsEditor, sharedRoot: YSharedRoot, block: YBlock, point: Point) {
+  if(preventLiftNode(editor, block.get(YjsEditorKey.block_id))) {
     return;
   }
 
@@ -831,7 +836,7 @@ export function liftEditorNode (editor: YjsEditor, sharedRoot: YSharedRoot, bloc
 
 }
 
-export function isEntireDocumentSelected (editor: YjsEditor) {
+export function isEntireDocumentSelected(editor: YjsEditor) {
   const selection = getSelectionOrThrow(editor);
   const [start, end] = Editor.edges(editor, selection);
   const startEdge = Editor.start(editor, []);
@@ -840,7 +845,7 @@ export function isEntireDocumentSelected (editor: YjsEditor) {
   return Point.equals(start, startEdge) && Point.equals(end, endEdge);
 }
 
-export function handleDeleteEntireDocumentWithTxn (editor: YjsEditor) {
+export function handleDeleteEntireDocumentWithTxn(editor: YjsEditor) {
   const sharedRoot = getSharedRoot(editor);
   const operations = [() => {
     editor.deselect();
@@ -850,7 +855,7 @@ export function handleDeleteEntireDocumentWithTxn (editor: YjsEditor) {
     const blockId = appendEmptyParagraph(sharedRoot);
 
     blocks.forEach((_, k) => {
-      if (k !== pageId && k !== blockId) {
+      if(k !== pageId && k !== blockId) {
         deleteBlock(sharedRoot, k);
       }
     });
@@ -861,23 +866,23 @@ export function handleDeleteEntireDocumentWithTxn (editor: YjsEditor) {
   Transforms.select(editor, Editor.start(editor, [0]));
 }
 
-export function getNodeAtPath (children: Descendant[], path: Path): Descendant | null {
+export function getNodeAtPath(children: Descendant[], path: Path): Descendant | null {
   let currentNode: Descendant | null = null;
   let currentChildren = children;
 
-  for (let i = 0; i < path.length; i++) {
+  for(let i = 0; i < path.length; i++) {
     const index = path[i];
 
-    if (index >= currentChildren.length) {
+    if(index >= currentChildren.length) {
       return null;
     }
 
     currentNode = currentChildren[index];
-    if (i === path.length - 1) {
+    if(i === path.length - 1) {
       return currentNode;
     }
 
-    if (!Element.isElement(currentNode) || !currentNode.children) {
+    if(!Element.isElement(currentNode) || !currentNode.children) {
       return null;
     }
 
@@ -887,16 +892,16 @@ export function getNodeAtPath (children: Descendant[], path: Path): Descendant |
   return currentNode;
 }
 
-export function getSelectionTexts (editor: ReactEditor) {
+export function getSelectionTexts(editor: ReactEditor) {
   const selection = editor.selection;
 
-  if (!selection) return [];
+  if(!selection) return [];
 
   const texts: Text[] = [];
 
   const isExpanded = Range.isExpanded(selection);
 
-  if (isExpanded) {
+  if(isExpanded) {
     const start = Range.start(selection);
     const end = Range.end(selection);
 
@@ -912,7 +917,7 @@ export function getSelectionTexts (editor: ReactEditor) {
     ).forEach((match) => {
       const node = match[0] as Element;
 
-      if (Text.isText(node)) {
+      if(Text.isText(node)) {
         texts.push(node);
       }
     });
@@ -921,14 +926,14 @@ export function getSelectionTexts (editor: ReactEditor) {
   return texts;
 }
 
-export function getOffsetPointFromSlateRange (editor: YjsEditor, point: BasePoint): { offset: number; textId: string } {
+export function getOffsetPointFromSlateRange(editor: YjsEditor, point: BasePoint): { offset: number; textId: string } {
 
   const [node] = editor.nodes({
     at: point,
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.textId !== undefined,
   });
 
-  if (!node) {
+  if(!node) {
     throw new Error('Node not found');
   }
 
@@ -940,12 +945,12 @@ export function getOffsetPointFromSlateRange (editor: YjsEditor, point: BasePoin
   };
 }
 
-export function getSlatePointFromOffset (editor: YjsEditor, range: { offset: number; textId: string }): BasePoint {
+export function getSlatePointFromOffset(editor: YjsEditor, range: { offset: number; textId: string }): BasePoint {
   const [node] = editor.nodes({
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.textId === range.textId,
   });
 
-  if (!node) {
+  if(!node) {
     throw new Error('Node not found');
   }
 
@@ -956,7 +961,7 @@ export function getSlatePointFromOffset (editor: YjsEditor, range: { offset: num
   return start;
 }
 
-export function addBlock (editor: YjsEditor, {
+export function addBlock(editor: YjsEditor, {
   ty,
   data,
 }: {

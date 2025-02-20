@@ -1,14 +1,20 @@
+import { ViewLayout } from '@/application/types';
 import { Popover } from '@/components/_shared/popover';
+import { useAppView } from '@/components/app/app.hooks';
 import ShareTabs from '@/components/app/share/ShareTabs';
 import { Button } from '@mui/material';
 import React, { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-export function ShareButton ({ viewId }: { viewId: string }) {
+export function ShareButton({ viewId }: { viewId: string }) {
   const { t } = useTranslation();
 
+  const view = useAppView(viewId);
+  const layout = view?.layout;
   const [opened, setOpened] = React.useState(false);
   const ref = useRef<HTMLButtonElement>(null);
+
+  if(layout === ViewLayout.AIChat) return null;
 
   return (
     <>

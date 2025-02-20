@@ -8,7 +8,7 @@ import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/duplicate.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/move_to.svg';
 
-function MoreActionsContent ({ itemClicked, viewId, movePopoverOrigins, onDeleted }: {
+function MoreActionsContent({ itemClicked, viewId, movePopoverOrigins, onDeleted }: {
   itemClicked?: () => void;
   onDeleted?: () => void;
   viewId: string;
@@ -19,7 +19,7 @@ function MoreActionsContent ({ itemClicked, viewId, movePopoverOrigins, onDelete
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
 
   return (
-    <div className={'flex flex-col gap-2'}>
+    <div className={'flex flex-col gap-2 more-actions'}>
       <Button
         size={'small'}
         className={'px-3 hidden py-1 justify-start '}

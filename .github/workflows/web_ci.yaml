@@ -42,19 +42,14 @@ jobs:
         uses: pnpm/action-setup@v2
         with:
           version: ${{ env.PNPM_VERSION }}
-      - name: Node_modules cache
-        uses: actions/cache@v2
-        with:
-          path: node_modules
-          key: node-modules-${{ runner.os }}
-
+     
       - name: install frontend dependencies
         run: |
           pnpm install
       - name: Run lint check
         run: |
           pnpm run lint
-      
+
       - name: build and analyze
         run: |
           pnpm run analyze >> analyze-size.txt

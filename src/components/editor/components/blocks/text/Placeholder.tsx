@@ -34,7 +34,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
   const className = useMemo(() => {
     const classList = attributes.className?.split(' ') ?? [];
 
-    classList.push('text-placeholder select-none');
+    classList.push('text-placeholder select-none w-full');
 
     return classList.join(' ');
   }, [attributes.className]);

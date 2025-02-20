@@ -1,10 +1,12 @@
 import { CONTAINER_BLOCK_TYPES, SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
-import { BlockData, BlockType, YjsEditorKey } from '@/application/types';
+import { BlockData, BlockType, ColumnNodeData, YjsEditorKey } from '@/application/types';
 import { BulletedList } from '@/components/editor/components/blocks/bulleted-list';
 import { Callout } from '@/components/editor/components/blocks/callout';
 import { CodeBlock } from '@/components/editor/components/blocks/code';
+import { Column, Columns } from '@/components/editor/components/blocks/columns';
 import { DatabaseBlock } from '@/components/editor/components/blocks/database';
 import { DividerNode } from '@/components/editor/components/blocks/divider';
+import { FileBlock } from '@/components/editor/components/blocks/file';
 import { GalleryBlock } from '@/components/editor/components/blocks/gallery';
 import { Heading } from '@/components/editor/components/blocks/heading';
 import { ImageBlock } from '@/components/editor/components/blocks/image';
@@ -21,19 +23,18 @@ import SimpleTableRow from '@/components/editor/components/blocks/simple-table/S
 import { TableBlock, TableCellBlock } from '@/components/editor/components/blocks/table';
 import { Text } from '@/components/editor/components/blocks/text';
 import { VideoBlock } from '@/components/editor/components/blocks/video';
+import { UnSupportedBlock } from '@/components/editor/components/element/UnSupportedBlock';
+import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
+import { renderColor } from '@/utils/color';
+import React, { FC, useEffect, useMemo } from 'react';
 import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
+import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'slate-react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 import SubPage from 'src/components/editor/components/blocks/sub-page/SubPage';
 import { TodoList } from 'src/components/editor/components/blocks/todo-list';
 import { ToggleList } from 'src/components/editor/components/blocks/toggle-list';
-import { UnSupportedBlock } from '@/components/editor/components/element/UnSupportedBlock';
-import { FileBlock } from '@/components/editor/components/blocks/file';
-import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
-import { renderColor } from '@/utils/color';
-import React, { FC, useEffect, useMemo } from 'react';
-import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'slate-react';
 
 export const Element = ({
   element: node,
@@ -151,6 +152,10 @@ export const Element = ({
         return SimpleTableCell;
       case BlockType.VideoBlock:
         return VideoBlock;
+      case BlockType.ColumnsBlock:
+        return Columns;
+      case BlockType.ColumnBlock:
+        return Column;
       default:
         return UnSupportedBlock;
     }
@@ -160,6 +165,7 @@ export const Element = ({
     const data = (node.data as BlockData) || {};
     const align = data.align;
     const classList = ['block-element relative flex rounded-[4px]'];
+    const type = node.type as BlockType;
 
     if(selected) {
       classList.push('selected');
@@ -169,16 +175,25 @@ export const Element = ({
       classList.push(`block-align-${align}`);
     }
 
+    if(type === BlockType.ColumnBlock) {
+      const width = (data as ColumnNodeData).width;
+
+      if(!width) {
+        classList.push('flex-1');
+      }
+    }
+
     return classList.join(' ');
-  }, [node.data, selected]);
+  }, [node.data, selected, node.type]);
 
   const style = useMemo(() => {
     const data = (node.data as BlockData) || {};
-
-    return {
+    const properties = {
       backgroundColor: !selected && data.bgColor ? renderColor(data.bgColor) : undefined,
       color: data.font_color ? renderColor(data.font_color) : undefined,
     };
+
+    return properties;
   }, [node.data, selected]);
 
   const fallbackRender = useMemo(() => {

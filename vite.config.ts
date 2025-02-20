@@ -115,41 +115,41 @@ export default defineConfig({
     pure: !isDev ? ['console.log', 'console.debug', 'console.info', 'console.trace'] : [],
   },
   build: {
-      target: `esnext`,
-      reportCompressedSize: true,
-      sourcemap: isDev,
-      rollupOptions: isProd
-        ? {
+    target: `esnext`,
+    reportCompressedSize: true,
+    sourcemap: isDev,
+    rollupOptions: isProd
+      ? {
 
-          output: {
-            chunkFileNames: 'static/js/[name]-[hash].js',
-            entryFileNames: 'static/js/[name]-[hash].js',
-            assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
-            manualChunks(id) {
-              if (
-                // id.includes('/react@') ||
-                // id.includes('/react-dom@') ||
-                id.includes('/react-is@') ||
-                id.includes('/yjs@') ||
-                id.includes('/y-indexeddb@') ||
-                id.includes('/dexie') ||
-                id.includes('/redux') ||
-                id.includes('/react-custom-scrollbars') ||
-                id.includes('/dayjs') ||
-                id.includes('/smooth-scroll-into-view-if-needed') ||
-                id.includes('/react-virtualized-auto-sizer') ||
-                id.includes('/react-window')
-                || id.includes('/@popperjs')
-                || id.includes('/@mui/material/Dialog') ||
-                id.includes('/quill-delta')
-              ) {
-                return 'common';
-              }
-            },
+        output: {
+          chunkFileNames: 'static/js/[name]-[hash].js',
+          entryFileNames: 'static/js/[name]-[hash].js',
+          assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
+          manualChunks(id) {
+            if(
+              // id.includes('/react@') ||
+              // id.includes('/react-dom@') ||
+              id.includes('/react-is@') ||
+              id.includes('/yjs@') ||
+              id.includes('/y-indexeddb@') ||
+              id.includes('/dexie') ||
+              id.includes('/redux') ||
+              id.includes('/react-custom-scrollbars') ||
+              id.includes('/dayjs') ||
+              id.includes('/smooth-scroll-into-view-if-needed') ||
+              id.includes('/react-virtualized-auto-sizer') ||
+              id.includes('/react-window')
+              || id.includes('/@popperjs')
+              || id.includes('/@mui/material/Dialog') ||
+              id.includes('/quill-delta')
+            ) {
+              return 'common';
+            }
           },
-        }
-        : {},
-    },
+        },
+      }
+      : {},
+  },
   resolve: {
     alias: [
       { find: 'src/', replacement: `${__dirname}/src/` },
@@ -159,6 +159,6 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-katex', '@appflowyinc/editor'],
+    include: ['react', 'react-dom', 'react-katex', '@appflowyinc/editor', '@appflowyinc/ai-chat'],
   },
 });

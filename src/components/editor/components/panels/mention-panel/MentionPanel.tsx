@@ -34,7 +34,7 @@ interface Option {
   index: number;
 }
 
-function createMentionOptions ({
+function createMentionOptions({
   showMore,
   viewsLength,
   dateLength,
@@ -45,7 +45,6 @@ function createMentionOptions ({
   dateLength: number;
   newPageLength: number;
 }) {
-  console.log('viewsLength', viewsLength);
   const options = [
     ...Array(viewsLength).fill(0).map((_, index) => ({
       category: MentionTag.Page,
@@ -68,7 +67,7 @@ function createMentionOptions ({
   return options;
 }
 
-export function MentionPanel () {
+export function MentionPanel() {
   const {
     isPanelOpen,
     panelPosition,
@@ -96,7 +95,7 @@ export function MentionPanel () {
   const [views, setViews] = useState<View[]>([]);
 
   useEffect(() => {
-    if (!open) {
+    if(!open) {
       selectedOptionRef.current = null;
       setSelectedOption(null);
       setMoreCount(5);
@@ -104,15 +103,15 @@ export function MentionPanel () {
   }, [open]);
 
   useEffect(() => {
-    if (!open || !loadViews) return;
+    if(!open || !loadViews) return;
 
-    void (async () => {
+    void (async() => {
       try {
         const views = await loadViews();
         const result = sortBy(uniqBy(flattenViews(views || []).filter(view => !view.extra?.is_space), 'view_id'), 'last_edited_time').reverse();
 
         setViews(result);
-      } catch (e) {
+      } catch(e) {
         console.error(e);
       }
 
@@ -121,7 +120,7 @@ export function MentionPanel () {
 
   const filteredViews = useMemo(() => {
     return views.filter(view => {
-      if (!searchText) return true;
+      if(!searchText) return true;
       return view.name.toLowerCase().includes(searchText.toLowerCase());
     });
   }, [searchText, views]);
@@ -134,7 +133,7 @@ export function MentionPanel () {
 
   useEffect(() => {
     selectedOptionRef.current = selectedOption;
-    if (!selectedOption) return;
+    if(!selectedOption) return;
     const {
       category,
       index,
@@ -157,7 +156,7 @@ export function MentionPanel () {
 
     const newSelection = editor.selection;
 
-    if (!newSelection) {
+    if(!newSelection) {
       console.error('newSelection is undefined');
       return;
     }
@@ -188,23 +187,23 @@ export function MentionPanel () {
     });
   }, [handleAddMention]);
 
-  const handleAddPage = useCallback(async (type = MentionType.PageRef) => {
-    if (!addPage || !viewId) return;
+  const handleAddPage = useCallback(async(type = MentionType.PageRef) => {
+    if(!addPage || !viewId) return;
     try {
       const newViewId = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
 
       handleSelectedPage(newViewId, type);
       openPageModal?.(newViewId);
-    } catch (e) {
+    } catch(e) {
       console.error(e);
     }
   }, [addPage, searchText, handleSelectedPage, viewId, openPageModal]);
   const dateOptions = useMemo(() => {
-    if (!showDate) return [];
+    if(!showDate) return [];
     const onClick = (value: string) => {
       let date: string | undefined;
 
-      switch (value) {
+      switch(value) {
         case 'today':
           date = dayjs().toISOString();
           break;
@@ -218,7 +217,7 @@ export function MentionPanel () {
           break;
       }
 
-      if (!date) return;
+      if(!date) return;
 
       handleAddMention({
         date,
@@ -250,7 +249,7 @@ export function MentionPanel () {
     setMoreCount(moreCount + 5);
 
     setSelectedOption(prev => {
-      if (!prev) return null;
+      if(!prev) return null;
       return {
         category: MentionTag.Page,
         index: moreCount,
@@ -260,25 +259,25 @@ export function MentionPanel () {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (!open) return;
+      if(!open) return;
       const { key } = e;
 
-      switch (key) {
+      switch(key) {
         case 'Enter':
           e.preventDefault();
-          if (selectedOptionRef.current) {
+          if(selectedOptionRef.current) {
             const index = selectedOptionRef.current.index;
 
-            if (selectedOptionRef.current.category === MentionTag.NewPage) {
+            if(selectedOptionRef.current.category === MentionTag.NewPage) {
               void handleAddPage(index === 0 ? MentionType.childPage : MentionType.PageRef);
-            } else if (selectedOptionRef.current.category === MentionTag.Page) {
+            } else if(selectedOptionRef.current.category === MentionTag.Page) {
               const viewId = splicedViews[index].view_id;
 
               handleSelectedPage(viewId, MentionType.PageRef);
-            } else if (selectedOptionRef.current.category === MentionTag.Date) {
+            } else if(selectedOptionRef.current.category === MentionTag.Date) {
 
               dateOptions[index].onClick();
-            } else if (selectedOptionRef.current.category === MentionTag.LoadMore) {
+            } else if(selectedOptionRef.current.category === MentionTag.LoadMore) {
               handleClickMore();
             }
           }
@@ -295,8 +294,8 @@ export function MentionPanel () {
             showMore,
           });
 
-          if (!selectedOptionRef.current) {
-            if (e.key === 'ArrowDown') {
+          if(!selectedOptionRef.current) {
+            if(e.key === 'ArrowDown') {
               setSelectedOption(options[0]);
             } else {
               setSelectedOption(options[options.length - 1]);
@@ -331,7 +330,7 @@ export function MentionPanel () {
   const [transformOrigin, setTransformOrigin] = React.useState<PopoverOrigin | undefined>(undefined);
 
   useEffect(() => {
-    if (open && panelPosition) {
+    if(open && panelPosition) {
       const origins = calculateOptimalOrigins(panelPosition, 320, 560, undefined, 16);
       const isAlignBottom = origins.transformOrigin.vertical === 'bottom';
 

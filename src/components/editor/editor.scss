@@ -61,6 +61,10 @@
       @apply bg-content-blue-50;
     }
   }
+
+  &[data-block-type="simple_columns"], &[data-block-type="simple_column"] {
+    background-color: transparent !important;
+  }
 }
 
 .block-element .block-element:not([data-block-type="table/cell"]) {
@@ -73,7 +77,21 @@
   .border-l-4 > .block-element {
     margin-left: 0 !important;
   }
+}
 
+.block-element[data-block-type="simple_columns"] {
+  margin-bottom: 0 !important;
+  margin-top: 0 !important;
+}
+
+.block-element[data-block-type="simple_columns"] .block-element[data-block-type="simple_column"] {
+  margin-left: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+
+  > div > .block-element {
+    margin-left: 0 !important;
+  }
 }
 
 .block-element[data-block-type="code"] {
@@ -220,6 +238,8 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 .text-content, [data-dark-mode="true"] .text-content {
   @apply min-w-[1px];
   &.empty-text {
+    width: 100%;
+
     span {
       &::selection {
         @apply bg-transparent;
@@ -235,10 +255,13 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 }
 
 .text-placeholder {
-  @apply absolute left-0 transform -translate-y-1/2 pointer-events-none select-none whitespace-nowrap;
+  @apply absolute left-0 w-full transform -translate-y-1/2 pointer-events-none select-none whitespace-nowrap;
   &:after {
     @apply text-text-placeholder absolute top-0;
     content: (attr(data-placeholder));
+    text-overflow: ellipsis;
+    width: 100%;
+    overflow: hidden;
   }
 }
 

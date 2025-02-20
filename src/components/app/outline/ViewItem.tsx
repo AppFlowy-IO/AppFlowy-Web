@@ -59,19 +59,17 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
 
   const renderItem = useMemo(() => {
     if(!view) return null;
-    const { layout } = view;
 
     return (
       <div
         style={{
           backgroundColor: selected ? 'var(--fill-list-hover)' : undefined,
-          cursor: view.layout === ViewLayout.AIChat ? 'not-allowed' : 'pointer',
+          cursor: 'pointer',
           paddingLeft: view.children?.length ? ((level * 16) + 'px') : ((level * 16) + 24) + 'px',
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={() => {
-          if(layout === ViewLayout.AIChat) return;
           onClickView?.(viewId);
         }}
         className={

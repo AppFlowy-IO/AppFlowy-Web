@@ -191,11 +191,16 @@ function insertFragment(editor: ReactEditor, fragment: Node[], options = {}) {
   });
 
   setTimeout(() => {
-    const [, path] = findSlateEntryByBlockId(editor as YjsEditor, lastBlockId);
+    try {
+      const [, path] = findSlateEntryByBlockId(editor as YjsEditor, lastBlockId);
 
-    const point = editor.end(path);
+      const point = editor.end(path);
 
-    editor.select(point);
+      editor.select(point);
+
+    } catch(e) {
+      console.error(e);
+    }
 
   }, 50);
 

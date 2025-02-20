@@ -102,23 +102,23 @@ export function withYjs<T extends Editor>(
   const initializeDocumentContent = () => {
     const content = yDocToSlateContent(doc);
 
-    if (!content) {
+    if(!content) {
       return;
     }
 
     const selection = e.selection;
 
-    if (readSummary) {
+    if(readSummary) {
       e.children = content.children.slice(0, 10);
     } else {
       e.children = content.children;
     }
 
-    if (selection && !ReactEditor.hasRange(editor, selection)) {
+    if(selection && !ReactEditor.hasRange(editor, selection)) {
       try {
         Transforms.select(e, Editor.start(editor, [0]));
 
-      } catch (e) {
+      } catch(e) {
         console.error(e);
         editor.deselect();
       }
@@ -130,7 +130,7 @@ export function withYjs<T extends Editor>(
   };
 
   const applyIntercept = (op: Operation) => {
-    if (YjsEditor.connected(e) && !e.interceptLocalChange) {
+    if(YjsEditor.connected(e) && !e.interceptLocalChange) {
       YjsEditor.storeLocalChange(e, op);
     }
 
@@ -145,7 +145,7 @@ export function withYjs<T extends Editor>(
     e.interceptLocalChange = true;
 
     // Initialize or update the document content to ensure it is in the correct state before applying remote events
-    if (transaction.origin === CollabOrigin.Remote) {
+    if(transaction.origin === CollabOrigin.Remote) {
 
       initializeDocumentContent();
     } else {
@@ -154,8 +154,8 @@ export function withYjs<T extends Editor>(
       Editor.withoutNormalizing(e, () => {
         translateYEvents(e, events);
       });
-      if (selection) {
-        if (!ReactEditor.hasRange(editor, selection)) {
+      if(selection) {
+        if(!ReactEditor.hasRange(editor, selection)) {
           editor.deselect();
         } else {
           e.select(selection);
@@ -169,13 +169,13 @@ export function withYjs<T extends Editor>(
   };
 
   const handleYEvents = (events: Array<YEvent>, transaction: Transaction) => {
-    if (transaction.origin === CollabOrigin.Local) return;
+    if(transaction.origin === CollabOrigin.Local) return;
     YjsEditor.applyRemoteEvents(e, events, transaction);
 
   };
 
   e.connect = () => {
-    if (YjsEditor.connected(e)) {
+    if(YjsEditor.connected(e)) {
       throw new Error('Already connected');
     }
 
@@ -186,7 +186,7 @@ export function withYjs<T extends Editor>(
   };
 
   e.disconnect = () => {
-    if (!YjsEditor.connected(e)) {
+    if(!YjsEditor.connected(e)) {
       throw new Error('Not connected');
     }
 
@@ -215,7 +215,7 @@ export function withYjs<T extends Editor>(
   e.apply = applyIntercept;
 
   e.onChange = () => {
-    if (YjsEditor.connected(e)) {
+    if(YjsEditor.connected(e)) {
       YjsEditor.flushLocalChanges(e);
     }
 

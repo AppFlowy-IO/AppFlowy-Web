@@ -40,6 +40,8 @@ export enum BlockType {
   SimpleTableBlock = 'simple_table',
   SimpleTableRowBlock = 'simple_table_row',
   SimpleTableCellBlock = 'simple_table_cell',
+  ColumnsBlock = 'simple_columns',
+  ColumnBlock = 'simple_column',
 }
 
 export enum InlineBlockType {
@@ -196,6 +198,10 @@ export interface DatabaseNodeData extends BlockData {
 
 export interface SubpageNodeData extends BlockData {
   view_id: string;
+}
+
+export interface ColumnNodeData extends BlockData {
+  width?: number;
 }
 
 export enum MentionType {

@@ -15,27 +15,33 @@ function AddPageActions({ view, onClose }: {
   const {
     addPage,
     openPageModal,
+    toView,
   } = useAppHandlers();
 
-  const handleAddPage = useCallback(async (layout: ViewLayout, name?: string) => {
-    if (!addPage || !openPageModal) return;
+  const handleAddPage = useCallback(async(layout: ViewLayout, name?: string) => {
+    if(!addPage) return;
     notify.default(
       <span>
-        <CircularProgress size={20}/>
+        <CircularProgress size={20} />
         <span className={'ml-2'}>{t('document.creating')}</span>
       </span>,
     );
     try {
       const viewId = await addPage(view.view_id, { layout, name });
 
-      openPageModal(viewId);
+      if(layout === ViewLayout.AIChat) {
+        void toView(viewId);
+      } else {
+        void openPageModal?.(viewId);
+      }
+
       notify.clear();
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       notify.clear();
       notify.error(e.message);
     }
-  }, [addPage, openPageModal, t, view.view_id]);
+  }, [addPage, openPageModal, t, toView, view.view_id]);
 
   const actions: {
     label: string;
@@ -53,37 +59,47 @@ function AddPageActions({ view, onClose }: {
         void handleAddPage(ViewLayout.Document);
       },
     },
+    // {
+    //   label: t('grid.menuName'),
+    //   disabled: true,
+    //   icon: <ViewIcon
+    //     layout={ViewLayout.Grid}
+    //     size={'medium'}
+    //   />,
+    //   onClick: () => {
+    //     void handleAddPage(ViewLayout.Grid, 'Table');
+    //   },
+    // },
+    // {
+    //   label: t('board.menuName'),
+    //   disabled: true,
+    //   icon: <ViewIcon
+    //     layout={ViewLayout.Board}
+    //     size={'medium'}
+    //   />,
+    //   onClick: () => {
+    //     void handleAddPage(ViewLayout.Board, 'Board');
+    //   },
+    // },
+    // {
+    //   label: t('calendar.menuName'),
+    //   disabled: true,
+    //   icon: <ViewIcon
+    //     layout={ViewLayout.Calendar}
+    //     size={'medium'}
+    //   />,
+    //   onClick: () => {
+    //     void handleAddPage(ViewLayout.Calendar, 'Calendar');
+    //   },
+    // },
     {
-      label: t('grid.menuName'),
-      disabled: true,
+      label: t('chat.newChat'),
       icon: <ViewIcon
-        layout={ViewLayout.Grid}
+        layout={ViewLayout.AIChat}
         size={'medium'}
       />,
       onClick: () => {
-        void handleAddPage(ViewLayout.Grid, 'Table');
-      },
-    },
-    {
-      label: t('board.menuName'),
-      disabled: true,
-      icon: <ViewIcon
-        layout={ViewLayout.Board}
-        size={'medium'}
-      />,
-      onClick: () => {
-        void handleAddPage(ViewLayout.Board, 'Board');
-      },
-    },
-    {
-      label: t('calendar.menuName'),
-      disabled: true,
-      icon: <ViewIcon
-        layout={ViewLayout.Calendar}
-        size={'medium'}
-      />,
-      onClick: () => {
-        void handleAddPage(ViewLayout.Calendar, 'Calendar');
+        void handleAddPage(ViewLayout.AIChat);
       },
     },
   ], [handleAddPage, t]);

@@ -3,7 +3,7 @@ import { HeadingNode } from '@/components/editor/editor.type';
 import { ReactEditor } from 'slate-react';
 import { Element } from 'slate';
 
-export function getBlockActionsPosition (editor: ReactEditor, blockElement: HTMLElement) {
+export function getBlockActionsPosition(editor: ReactEditor, blockElement: HTMLElement) {
   const editorDom = ReactEditor.toDOMNode(editor, editor);
   const editorDomRect = editorDom.getBoundingClientRect();
   const blockDomRect = blockElement.getBoundingClientRect();
@@ -12,7 +12,7 @@ export function getBlockActionsPosition (editor: ReactEditor, blockElement: HTML
   const relativeTop = blockDomRect.top - editorDomRect.top;
   let relativeLeft = blockDomRect.left - editorDomRect.left;
 
-  if (parentBlockDom?.getAttribute('data-block-type') === BlockType.QuoteBlock) {
+  if(parentBlockDom?.getAttribute('data-block-type') === BlockType.QuoteBlock) {
     relativeLeft -= 16;
   }
 
@@ -23,12 +23,12 @@ export function getBlockActionsPosition (editor: ReactEditor, blockElement: HTML
   };
 }
 
-export function getBlockCssProperty (node: Element) {
-  if ((node as HeadingNode).data.level) {
+export function getBlockCssProperty(node: Element) {
+  if((node as HeadingNode).data.level) {
     return `level-${(node as HeadingNode).data.level} mt-[3px]`;
   }
 
-  switch (node.type) {
+  switch(node.type) {
     case BlockType.Paragraph:
     case BlockType.NumberedListBlock:
     case BlockType.BulletedListBlock:
@@ -52,7 +52,7 @@ export function getBlockCssProperty (node: Element) {
   }
 }
 
-export function findEventNode (
+export function findEventNode(
   editor: ReactEditor,
   {
     x,
@@ -65,7 +65,22 @@ export function findEventNode (
   const element = document.elementFromPoint(x, y);
   const nodeDom = element?.closest('[data-block-type]');
 
-  if (nodeDom) {
+  if(nodeDom) {
+    const type = nodeDom.getAttribute('data-block-type') as BlockType;
+
+    if([BlockType.ColumnBlock, BlockType.ColumnsBlock].includes(type)) {
+      const firstDom = element?.closest(`[data-block-type]:not([data-block-type="${BlockType.ColumnBlock}"]):not([data-block-type="${BlockType.ColumnsBlock}"])`);
+
+      if(firstDom) {
+        // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+        // @ts-ignore
+        return ReactEditor.toSlateNode(editor, firstDom);
+      } else {
+        return null;
+      }
+
+    }
+
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore
     return ReactEditor.toSlateNode(editor, nodeDom);

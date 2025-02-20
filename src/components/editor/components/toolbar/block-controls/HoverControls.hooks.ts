@@ -54,15 +54,7 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
           throw new Error('No range found');
         }
       } catch {
-        const editorDom = ReactEditor.toDOMNode(editor, editor);
-        const rect = editorDom.getBoundingClientRect();
-        const isOverLeftBoundary = e.clientX > rect.left;
-        const isOverRightBoundary = e.clientX > rect.right - 96 && e.clientX < rect.right;
-        let newX = e.clientX;
-
-        if(isOverLeftBoundary || isOverRightBoundary) {
-          newX = rect.left + editorDom.clientWidth / 2;
-        }
+        const newX = e.clientX + 64;
 
         node = findEventNode(editor, {
           x: newX,
@@ -98,9 +90,9 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
       const blockElement = ReactEditor.toDOMNode(editor, node);
 
       if(!blockElement) return;
-      const shouldSkipTypes = [BlockType.TableBlock, BlockType.GridBlock, BlockType.CalendarBlock, BlockType.BoardBlock, BlockType.SimpleTableBlock];
+      const shouldSkipParentTypes = [BlockType.TableBlock, BlockType.GridBlock, BlockType.CalendarBlock, BlockType.BoardBlock, BlockType.SimpleTableBlock];
 
-      if(shouldSkipTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
+      if(shouldSkipParentTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
         close();
         return;
 

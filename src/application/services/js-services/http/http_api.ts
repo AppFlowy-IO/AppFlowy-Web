@@ -51,6 +51,10 @@ export * from './gotrue';
 
 let axiosInstance: AxiosInstance | null = null;
 
+export function getAxiosInstance() {
+  return axiosInstance;
+}
+
 export function initAPIService(config: AFCloudConfig) {
   if(axiosInstance) {
     return;
