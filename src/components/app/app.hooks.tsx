@@ -1,13 +1,18 @@
 import { invalidToken } from '@/application/session/token';
 import {
-  AppendBreadcrumb, CreatePagePayload,
-  CreateRowDoc, CreateSpacePayload,
+  AppendBreadcrumb,
+  CreatePagePayload,
+  CreateRowDoc,
+  CreateSpacePayload,
   DatabaseRelations,
   LoadView,
-  LoadViewMeta, Subscription, TextCount,
+  LoadViewMeta,
+  Subscription,
+  TextCount,
   Types,
   UIVariant,
-  UpdatePagePayload, UpdateSpacePayload,
+  UpdatePagePayload,
+  UpdateSpacePayload,
   UserWorkspaceInfo,
   View,
   ViewLayout,
@@ -16,6 +21,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { findAncestors, findView, findViewByLayout } from '@/components/_shared/outline/utils';
+import { AIChatProvider } from '@/components/ai-chat/AIChatProvider';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { AFConfigContext, useService } from '@/components/main/app.hooks';
 import { sortBy, uniqBy } from 'lodash-es';
@@ -64,6 +70,7 @@ export interface AppContextType {
   getSubscriptions?: () => Promise<Subscription[]>;
   publish?: (view: View, publishName?: string, visibleViewIds?: string[]) => Promise<void>;
   unpublish?: (viewId: string) => Promise<void>;
+  refreshOutline?: () => Promise<void>;
 }
 
 const USER_NO_ACCESS_CODE = [1024, 1012];
@@ -87,6 +94,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const currentWorkspaceId = useMemo(() => params.workspaceId || userWorkspaceInfo?.selectedWorkspace.id, [params.workspaceId, userWorkspaceInfo?.selectedWorkspace.id]);
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
   const [outline, setOutline] = useState<View[]>();
+  const outlineRef = useRef<View[]>();
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = React.useState<View[]>();
@@ -168,7 +176,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const loadViewMeta = useCallback(async(viewId: string, callback?: (meta: View) => void) => {
-    const view = findView(outline || [], viewId);
+    const view = findView(outlineRef.current || [], viewId);
     const deletedView = trashList?.find((v) => v.view_id === viewId);
 
     if(deletedView) {
@@ -190,7 +198,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       ...view,
       database_relations: workspaceDatabases,
     };
-  }, [trashList, outline, workspaceDatabases]);
+  }, [trashList, workspaceDatabases]);
 
   const toView = useCallback(async(viewId: string, blockId?: string, keepSearch?: boolean) => {
     let url = `/app/${currentWorkspaceId}/${viewId}`;
@@ -327,6 +335,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       }
 
       setOutline(res);
+      outlineRef.current = res;
       if(!force) return;
 
       const firstView = findViewByLayout(res, [ViewLayout.Document, ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar]);
@@ -461,6 +470,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     await loadUserWorkspaceInfo();
     localStorage.removeItem('last_view_id');
     setOutline(undefined);
+    outlineRef.current = undefined;
     navigate(`/app/${workspaceId}`);
 
   }, [navigate, service, userWorkspaceInfo, loadUserWorkspaceInfo]);
@@ -473,7 +483,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const viewId = await service.addAppPage(currentWorkspaceId, parentViewId, payload);
 
-      void loadOutline(currentWorkspaceId, false);
+      await loadOutline(currentWorkspaceId, false);
 
       return viewId;
     } catch(e) {
@@ -662,6 +672,11 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline, service]);
 
+  const refreshOutline = useCallback(async() => {
+    if(!currentWorkspaceId) return;
+    await loadOutline(currentWorkspaceId, false);
+  }, [currentWorkspaceId, loadOutline]);
+
   return <AppContext.Provider
     value={{
       currentWorkspaceId,
@@ -702,18 +717,21 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       getSubscriptions,
       publish,
       unpublish,
+      refreshOutline,
     }}
   >
-    {requestAccessOpened ? <RequestAccess /> : children}
-    {<Suspense>
-      <ViewModal
-        open={!!openModalViewId}
-        viewId={openModalViewId}
-        onClose={() => {
-          setOpenModalViewId(undefined);
-        }}
-      />
-    </Suspense>}
+    <AIChatProvider>
+      {requestAccessOpened ? <RequestAccess /> : children}
+      {<Suspense>
+        <ViewModal
+          open={!!openModalViewId}
+          viewId={openModalViewId}
+          onClose={() => {
+            setOpenModalViewId(undefined);
+          }}
+        />
+      </Suspense>}
+    </AIChatProvider>
   </AppContext.Provider>;
 };
 
@@ -844,6 +862,7 @@ export function useAppHandlers() {
     getSubscriptions: context.getSubscriptions,
     publish: context.publish,
     unpublish: context.unpublish,
+    refreshOutline: context.refreshOutline,
   };
 }
 

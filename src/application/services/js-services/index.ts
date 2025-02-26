@@ -72,6 +72,10 @@ export class AFClientService implements AFService {
     APIService.initAPIService(config.cloudConfig);
   }
 
+  getAxiosInstance() {
+    return APIService.getAxiosInstance();
+  }
+
   getClientId() {
     return this.clientId;
   }

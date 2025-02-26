@@ -2695,7 +2695,8 @@
     "error": {
       "pageNameIsEmpty": "The page name is empty, please try another one"
     },
-    "visitOurWebsite": "Visit our official website"
+    "visitOurWebsite": "Visit our official website",
+    "addMessagesToPage": "Add messages to page"
   },
   "globalComment": {
     "comments": "Comments",

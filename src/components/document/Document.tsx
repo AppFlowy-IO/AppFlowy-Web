@@ -1,3 +1,4 @@
+import { YjsEditor } from '@/application/slate-yjs';
 import {
   ViewComponentProps,
   YjsEditorKey, YSharedRoot,
@@ -9,7 +10,9 @@ import ViewMetaPreview from '@/components/view-meta/ViewMetaPreview';
 import { useSearchParams } from 'react-router-dom';
 import { appendFirstEmptyParagraph } from '@/application/slate-yjs/utils/yjs';
 
-export type DocumentProps = ViewComponentProps;
+export type DocumentProps = ViewComponentProps & {
+  onEditorConnected?: (editor: YjsEditor) => void;
+};
 
 export const Document = (props: DocumentProps) => {
   const [search, setSearch] = useSearchParams();
@@ -20,6 +23,7 @@ export const Document = (props: DocumentProps) => {
     isTemplateThumb,
     updatePage,
     onRendered,
+    onEditorConnected,
   } = props;
   const blockId = search.get('blockId') || undefined;
 
@@ -32,7 +36,7 @@ export const Document = (props: DocumentProps) => {
   const document = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
 
   const handleEnter = useCallback((text: string) => {
-    if (!doc) return;
+    if(!doc) return;
     const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
     appendFirstEmptyParagraph(sharedRoot, text);
@@ -41,17 +45,17 @@ export const Document = (props: DocumentProps) => {
   const ref = useRef<HTMLDivElement>(null);
 
   const handleRendered = useCallback(() => {
-    if (onRendered) {
+    if(onRendered) {
       onRendered();
     }
 
     const el = ref.current;
 
-    if (!el) return;
+    if(!el) return;
 
     const scrollElement = el.closest('.MuiPaper-root');
 
-    if (!scrollElement) {
+    if(!scrollElement) {
       el.style.minHeight = `calc(100vh - 48px)`;
       return;
     }
@@ -59,7 +63,7 @@ export const Document = (props: DocumentProps) => {
     el.style.minHeight = `${scrollElement?.clientHeight - 64}px`;
   }, [onRendered]);
 
-  if (!document || !viewMeta.viewId) return null;
+  if(!document || !viewMeta.viewId) return null;
 
   return (
     <div
@@ -73,7 +77,7 @@ export const Document = (props: DocumentProps) => {
         onEnter={readOnly ? undefined : handleEnter}
         maxWidth={988}
       />
-      <Suspense fallback={<EditorSkeleton/>}>
+      <Suspense fallback={<EditorSkeleton />}>
         <div className={'flex justify-center w-full'}>
           <Editor
             viewId={viewMeta.viewId}
@@ -81,6 +85,7 @@ export const Document = (props: DocumentProps) => {
             jumpBlockId={blockId}
             onJumpedBlockId={onJumpedBlockId}
             onRendered={handleRendered}
+            onEditorConnected={onEditorConnected}
             {...props}
           />
         </div>

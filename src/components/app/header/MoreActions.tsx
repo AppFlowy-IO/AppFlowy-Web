@@ -1,18 +1,28 @@
-import DocumentInfo from '@/components/app/header/DocumentInfo';
-import MoreActionsContent from './MoreActionsContent';
-import React from 'react';
-import { Popover } from '@/components/_shared/popover';
-import { IconButton } from '@mui/material';
+import { ViewLayout } from '@/application/types';
 import { ReactComponent as MoreIcon } from '@/assets/more.svg';
+import { Popover } from '@/components/_shared/popover';
+import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
+import { useAppView } from '@/components/app/app.hooks';
+import DocumentInfo from '@/components/app/header/DocumentInfo';
+import { Button, Divider, IconButton } from '@mui/material';
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+import MoreActionsContent from './MoreActionsContent';
+import { ReactComponent as DocForwardIcon } from '@/assets/doc-forward.svg';
 
-function MoreActions ({
+function MoreActions({
   viewId,
   onDeleted,
 }: {
   viewId: string;
   onDeleted?: () => void;
 }) {
+  const {
+    selectionMode,
+    onOpenSelectionMode,
+  } = useAIChatContext();
 
+  const view = useAppView(viewId);
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
     setAnchorEl(event.currentTarget);
@@ -23,6 +33,12 @@ function MoreActions ({
   };
 
   const open = Boolean(anchorEl);
+
+  const { t } = useTranslation();
+
+  if(view?.layout === ViewLayout.AIChat && selectionMode) {
+    return null;
+  }
 
   return (
     <>
@@ -54,6 +70,19 @@ function MoreActions ({
             },
           }}
         >
+          {view?.layout === ViewLayout.AIChat ? <>
+            <Button
+              size={'small'}
+              className={'px-3 py-1 justify-start '}
+              color={'inherit'}
+              onClick={() => {
+                onOpenSelectionMode();
+                handleClose();
+              }}
+              startIcon={<DocForwardIcon />}
+            >{t('web.addMessagesToPage')}</Button>
+            <Divider />
+          </> : null}
           <MoreActionsContent
             itemClicked={() => {
               handleClose();
