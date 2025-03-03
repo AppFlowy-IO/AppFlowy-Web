@@ -68,7 +68,9 @@ export const withPasted = (editor: ReactEditor) => {
             insertFragment(editor, [{
               type: BlockType.VideoBlock,
               data: { url: text } as VideoBlockData,
-              children: [{ text: '' }],
+              children: [{
+                text: '',
+              }],
             }]);
             return true;
           }

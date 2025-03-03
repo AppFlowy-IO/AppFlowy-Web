@@ -31,6 +31,18 @@ function PageIcon({
     return null;
   }, [view]);
 
+  const img = useMemo(() => {
+    if(view.icon && view.icon.ty === ViewIconType.URL && view.icon.value) {
+      return <img
+        className={className}
+        src={view.icon.value}
+        alt="icon"
+      />;
+    }
+
+    return null;
+  }, [className, view.icon]);
+
   const isFlag = useMemo(() => {
     return emoji ? isFlagEmoji(emoji) : false;
   }, [emoji]);
@@ -75,6 +87,10 @@ function PageIcon({
     return <>
       <span className={`${isFlag ? 'icon' : ''} ${className || ''}`}>{emoji}</span>
     </>;
+  }
+
+  if(img) {
+    return img;
   }
 
   if(icon) {

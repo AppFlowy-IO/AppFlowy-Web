@@ -19,7 +19,7 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
 
       const slateEditorDom = ReactEditor.toDOMNode(editor, editor);
 
-      if (!ref.current) return;
+      if(!ref.current) return;
 
       ref.current.style.top = `${top + slateEditorDom.offsetTop}px`;
       ref.current.style.left = `${left + slateEditorDom.offsetLeft - 64}px`;
@@ -30,7 +30,7 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
   const close = useCallback(() => {
     const el = ref.current;
 
-    if (!el) return;
+    if(!el) return;
 
     el.style.opacity = '0';
     el.style.pointerEvents = 'none';
@@ -40,17 +40,17 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      if (disabled) return;
+      if(disabled) return;
       const el = ref.current;
 
-      if (!el) return;
+      if(!el) return;
 
       let range: Range | null = null;
       let node: Element | null = null;
 
       try {
         range = ReactEditor.findEventRange(editor, e);
-        if (!range) {
+        if(!range) {
           throw new Error('No range found');
         }
       } catch {
@@ -60,7 +60,7 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
         const isOverRightBoundary = e.clientX > rect.right - 96 && e.clientX < rect.right;
         let newX = e.clientX;
 
-        if (isOverLeftBoundary || isOverRightBoundary) {
+        if(isOverLeftBoundary || isOverRightBoundary) {
           newX = rect.left + editorDom.clientWidth / 2;
         }
 
@@ -71,10 +71,10 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
 
       }
 
-      if (!range && !node) {
+      if(!range && !node) {
         console.warn('No range and node found');
         return;
-      } else if (range) {
+      } else if(range) {
         const match = editor.above({
           match: (n) => {
             return !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined;
@@ -82,7 +82,7 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
           at: range,
         });
 
-        if (!match) {
+        if(!match) {
           close();
           return;
         }
@@ -90,17 +90,17 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
         node = match[0];
       }
 
-      if (!node) {
+      if(!node) {
         close();
         return;
       }
 
       const blockElement = ReactEditor.toDOMNode(editor, node);
 
-      if (!blockElement) return;
+      if(!blockElement) return;
       const shouldSkipTypes = [BlockType.TableBlock, BlockType.GridBlock, BlockType.CalendarBlock, BlockType.BoardBlock, BlockType.SimpleTableBlock];
 
-      if (shouldSkipTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
+      if(shouldSkipTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
         close();
         return;
 
@@ -117,7 +117,7 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
 
     const dom = ReactEditor.toDOMNode(editor, editor);
 
-    if (!disabled) {
+    if(!disabled) {
       dom.addEventListener('mousemove', handleMouseMove);
       dom.parentElement?.addEventListener('mouseleave', close);
       getScrollParent(dom)?.addEventListener('scroll', close);
@@ -133,16 +133,23 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
   useEffect(() => {
     let observer: MutationObserver | null = null;
 
-    if (hoveredBlockId) {
-      const [node] = findSlateEntryByBlockId(editor, hoveredBlockId);
-      const dom = ReactEditor.toDOMNode(editor, node);
+    if(hoveredBlockId) {
+      try {
+        const [node] = findSlateEntryByBlockId(editor, hoveredBlockId);
 
-      if (dom.parentElement) {
-        observer = new MutationObserver(close);
+        if(!node) return;
 
-        observer.observe(dom.parentElement, {
-          childList: true,
-        });
+        const dom = ReactEditor.toDOMNode(editor, node);
+
+        if(dom.parentElement) {
+          observer = new MutationObserver(close);
+
+          observer.observe(dom.parentElement, {
+            childList: true,
+          });
+        }
+      } catch(e) {
+        console.error(e);
       }
     }
 

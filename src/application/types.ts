@@ -822,6 +822,7 @@ export interface DuplicatePublishView {
 
 export enum ViewIconType {
   Emoji = 0,
+  URL = 1,
   Icon = 2,
 }
 
@@ -967,11 +968,11 @@ export type Subscriptions = Subscription[];
 
 export interface UpdatePagePayload {
   name: string;
-  icon: {
+  icon?: {
     ty: ViewIconType,
     value: string,
   };
-  extra: Partial<ViewExtra>;
+  extra?: Partial<ViewExtra>;
 }
 
 export interface ViewMetaCover {

@@ -1,19 +1,21 @@
+import { processUrl } from '@/utils/url';
 import React, { useCallback, useState } from 'react';
 import TextField from '@mui/material/TextField';
 import { useTranslation } from 'react-i18next';
 import Button from '@mui/material/Button';
-import isURL from 'validator/lib/isURL';
 
-export function EmbedLink ({
+export function EmbedLink({
   onDone,
   onEscape,
   defaultLink,
   placeholder,
+  validator,
 }: {
   defaultLink?: string;
   onDone?: (value: string) => void;
   onEscape?: () => void;
   placeholder?: string;
+  validator?: (url: string) => boolean;
 }) {
   const { t } = useTranslation();
 
@@ -25,20 +27,23 @@ export function EmbedLink ({
       const value = e.target.value;
 
       setValue(value);
-      setError(!isURL(value, { require_protocol: true }));
+      const urlValid = !!processUrl(value);
+      const customValid = validator ? validator(value) : true;
+
+      setError(!urlValid || !customValid);
     },
-    [setValue, setError],
+    [setValue, setError, validator],
   );
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (e.key === 'Enter' && !error && value) {
+      if(e.key === 'Enter' && !error && value) {
         e.preventDefault();
         e.stopPropagation();
         onDone?.(value);
       }
 
-      if (e.key === 'Escape') {
+      if(e.key === 'Escape') {
         onEscape?.();
       }
     },

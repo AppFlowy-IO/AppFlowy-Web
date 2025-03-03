@@ -11,8 +11,10 @@ import ReactPlayer from 'react-player';
 
 function VideoRender({
   node,
+  onError,
 }: {
-  node: VideoBlockNode
+  node: VideoBlockNode;
+  onError?: (e: string) => void;
 }) {
   const editor = useSlateStatic() as YjsEditor;
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
@@ -53,6 +55,7 @@ function VideoRender({
       style={{
         width: node.data.width ? `${node.data.width}px` : '100%',
       }}
+      contentEditable={false}
       onMouseEnter={() => setShowToolbar(true)}
       onMouseLeave={() => setShowToolbar(false)}
       className={`image-render w-full h-full relative min-h-[100px]`}
@@ -68,7 +71,10 @@ function VideoRender({
           ref={ref}
           className={'w-full absolute left-0 top-0 h-full'}
         >
-          <ReactPlayer {...playerProps} />
+          <ReactPlayer {...playerProps} onError={() => {
+            if(onError) onError('The video embed couldn\'t be loaded');
+          }}
+          />
         </div>
       </div>
 
