@@ -996,6 +996,7 @@ export interface ViewMetaProps {
   extra?: ViewExtra | null;
   readOnly?: boolean;
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
+  uploadFile?: (file: File) => Promise<string>;
   onEnter?: (text: string) => void;
   maxWidth?: number;
 }

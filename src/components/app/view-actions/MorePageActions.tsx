@@ -38,20 +38,35 @@ function MorePageActions({ view, onClose }: {
 
   const {
     updatePage,
+    uploadFile,
   } = useAppHandlers();
   const { t } = useTranslation();
 
-  const handleChangeIcon = useCallback(async (icon: { ty: ViewIconType, value: string }) => {
+  const viewId = view.view_id;
+
+  const onUploadFile = useCallback(async(file: File) => {
+    if(!uploadFile) return Promise.reject();
+    return uploadFile(viewId, file);
+  }, [uploadFile, viewId]);
+
+  const handleChangeIcon = useCallback(async(icon: { ty: ViewIconType, value: string, color?: string }) => {
     try {
       await updatePage?.(view.view_id, {
-        icon: icon,
+        icon: icon.ty === ViewIconType.Icon ? {
+          ty: ViewIconType.Icon,
+          value: JSON.stringify({
+            color: icon.color,
+            groupName: icon.value.split('/')[0],
+            iconName: icon.value.split('/')[1],
+          }),
+        } : icon,
         name: view.name,
         extra: view.extra || {},
       });
       setIconPopoverAnchorEl(null);
       onClose?.();
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       notify.error(e);
     }
   }, [onClose, updatePage, view.extra, view.name, view.view_id]);
@@ -63,14 +78,14 @@ function MorePageActions({ view, onClose }: {
   const actions = useMemo(() => {
     return [{
       label: t('button.rename'),
-      icon: <EditIcon/>,
+      icon: <EditIcon />,
       onClick: () => {
         setRenameModalOpen(true);
         onClose?.();
       },
     }, {
       label: t('disclosureAction.changeIcon'),
-      icon: <ChangeIcon/>,
+      icon: <ChangeIcon />,
       onClick: (e: React.MouseEvent<HTMLButtonElement>) => {
         setIconPopoverAnchorEl(e.currentTarget);
       },
@@ -96,25 +111,25 @@ function MorePageActions({ view, onClose }: {
         viewId={view.view_id}
         movePopoverOrigins={popoverProps}
       />
-      <Divider className={'w-full'}/>
+      <Divider className={'w-full'} />
       <Button
         size={'small'}
 
         className={'px-3 py-1 justify-start'}
         color={'inherit'}
         onClick={() => {
-          if (!currentWorkspaceId) return;
+          if(!currentWorkspaceId) return;
           onClose?.();
           window.open(`/app/${currentWorkspaceId}/${view.view_id}`, '_blank');
 
         }}
-        startIcon={<OpenInBrowserIcon className={'w-4 h-4'}/>}
+        startIcon={<OpenInBrowserIcon className={'w-4 h-4'} />}
       >
         {t('disclosureAction.openNewTab')}
       </Button>
       <Suspense fallback={null}>
         <ChangeIconPopover
-          iconEnabled={false}
+          iconEnabled
           defaultType={'emoji'}
           open={openIconPopover}
           anchorEl={iconPopoverAnchorEl}
@@ -122,6 +137,8 @@ function MorePageActions({ view, onClose }: {
             onClose?.();
             setIconPopoverAnchorEl(null);
           }}
+          onUploadFile={onUploadFile}
+          uploadEnabled
           popoverProps={popoverProps}
           onSelectIcon={handleChangeIcon}
           removeIcon={handleRemoveIcon}

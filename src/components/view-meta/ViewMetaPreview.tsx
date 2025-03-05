@@ -2,13 +2,13 @@ import { CoverType, ViewIconType, ViewLayout, ViewMetaCover, ViewMetaIcon, ViewM
 import { notify } from '@/components/_shared/notify';
 import TitleEditable from '@/components/view-meta/TitleEditable';
 import ViewCover from '@/components/view-meta/ViewCover';
-import React, { lazy, Suspense, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 
 const AddIconCover = lazy(() => import('@/components/view-meta/AddIconCover'));
 
-export function ViewMetaPreview ({
+export function ViewMetaPreview({
   icon: iconProp,
   cover: coverProp,
   name,
@@ -18,6 +18,7 @@ export function ViewMetaPreview ({
   updatePage,
   onEnter,
   maxWidth,
+  uploadFile,
 }: ViewMetaProps) {
   const [iconAnchorEl, setIconAnchorEl] = React.useState<null | HTMLElement>(null);
   const [cover, setCover] = React.useState<ViewMetaCover | null>(coverProp || null);
@@ -32,21 +33,21 @@ export function ViewMetaPreview ({
   }, [iconProp]);
 
   const coverType = useMemo(() => {
-    if (cover && [CoverType.NormalColor, CoverType.GradientColor].includes(cover.type)) {
+    if(cover && [CoverType.NormalColor, CoverType.GradientColor].includes(cover.type)) {
       return 'color';
     }
 
-    if (CoverType.BuildInImage === cover?.type) {
+    if(CoverType.BuildInImage === cover?.type) {
       return 'built_in';
     }
 
-    if (cover && [CoverType.CustomImage, CoverType.UpsplashImage].includes(cover.type)) {
+    if(cover && [CoverType.CustomImage, CoverType.UpsplashImage].includes(cover.type)) {
       return 'custom';
     }
   }, [cover]);
 
   const coverValue = useMemo(() => {
-    if (coverType === CoverType.BuildInImage) {
+    if(coverType === CoverType.BuildInImage) {
       return {
         1: '/covers/m_cover_image_1.png',
         2: '/covers/m_cover_image_2.png',
@@ -63,8 +64,8 @@ export function ViewMetaPreview ({
 
   const [isHover, setIsHover] = React.useState(false);
 
-  const handleUpdateIcon = React.useCallback(async (icon: { ty: ViewIconType, value: string }) => {
-    if (!updatePage || !viewId) return;
+  const handleUpdateIcon = React.useCallback(async(icon: { ty: ViewIconType, value: string }) => {
+    if(!updatePage || !viewId) return;
     setIcon(icon);
     try {
       await updatePage(viewId, {
@@ -73,15 +74,15 @@ export function ViewMetaPreview ({
         extra: extra || {},
       });
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       notify.error(e.message);
     }
   }, [updatePage, viewId, name, extra]);
 
-  const handleUpdateName = React.useCallback(async (newName: string) => {
-    if (!updatePage || !viewId) return;
+  const handleUpdateName = React.useCallback(async(newName: string) => {
+    if(!updatePage || !viewId) return;
     try {
-      if (name === newName) return;
+      if(name === newName) return;
       await updatePage(viewId, {
         icon: icon || {
           ty: ViewIconType.Emoji,
@@ -91,16 +92,16 @@ export function ViewMetaPreview ({
         extra: extra || {},
       });
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       notify.error(e.message);
     }
   }, [name, updatePage, viewId, icon, extra]);
 
-  const handleUpdateCover = React.useCallback(async (cover?: {
+  const handleUpdateCover = React.useCallback(async(cover?: {
     type: CoverType;
     value: string;
   }) => {
-    if (!updatePage || !viewId) return;
+    if(!updatePage || !viewId) return;
     setCover(cover ? cover : null);
 
     try {
@@ -116,10 +117,15 @@ export function ViewMetaPreview ({
         },
       });
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       notify.error(e.message);
     }
   }, [extra, icon, name, updatePage, viewId]);
+
+  const onUploadFile = useCallback(async(file: File) => {
+    if(!uploadFile) return Promise.reject();
+    return uploadFile(file);
+  }, [uploadFile]);
 
   const ref = React.useRef<HTMLDivElement>(null);
 
@@ -133,13 +139,13 @@ export function ViewMetaPreview ({
       setIsHover(false);
     };
 
-    if (el) {
+    if(el) {
       el.addEventListener('mouseenter', handleMouseEnter);
       el.addEventListener('mouseleave', handleMouseLeave);
     }
 
     return () => {
-      if (el) {
+      if(el) {
         el.removeEventListener('mouseenter', handleMouseEnter);
         el.removeEventListener('mouseleave', handleMouseLeave);
       }
@@ -174,7 +180,9 @@ export function ViewMetaPreview ({
             maxWidth={maxWidth}
             iconAnchorEl={iconAnchorEl}
             setIconAnchorEl={setIconAnchorEl}
+            onUploadFile={onUploadFile}
           /></Suspense>}
+
 
         </div>
         <div
@@ -192,7 +200,7 @@ export function ViewMetaPreview ({
             {icon?.value ?
               <div
                 onClick={e => {
-                  if (readOnly) return;
+                  if(readOnly) return;
                   setIconAnchorEl(e.currentTarget);
                 }}
                 className={`view-icon flex h-[1.25em] px-1.5 items-center justify-center ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-fill-list-hover '}`}

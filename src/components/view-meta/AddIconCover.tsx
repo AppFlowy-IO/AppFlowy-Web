@@ -15,6 +15,7 @@ function AddIconCover({
   setIconAnchorEl,
   maxWidth,
   visible,
+  onUploadFile,
 }: {
   visible: boolean;
   hasIcon: boolean;
@@ -24,6 +25,7 @@ function AddIconCover({
   iconAnchorEl: HTMLElement | null;
   setIconAnchorEl: (el: HTMLElement | null) => void;
   maxWidth?: number;
+  onUploadFile: (file: File) => Promise<string>;
 }) {
   const { t } = useTranslation();
 
@@ -80,6 +82,8 @@ function AddIconCover({
           setIconAnchorEl(null);
           onUpdateIcon?.({ ty: ViewIconType.Emoji, value: '' });
         }}
+        uploadEnabled
+        onUploadFile={onUploadFile}
       />
     </>
 

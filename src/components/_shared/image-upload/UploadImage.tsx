@@ -1,4 +1,5 @@
 import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
+import LoadingDots from '@/components/_shared/LoadingDots';
 import { notify } from '@/components/_shared/notify';
 import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -10,24 +11,28 @@ export function UploadImage({ onDone, uploadAction }: {
   uploadAction?: (file: File) => Promise<string>
 }) {
   const { t } = useTranslation();
-  const handleFileChange = useCallback(async (files: File[]) => {
+  const [loading, setLoading] = React.useState(false);
+  const handleFileChange = useCallback(async(files: File[]) => {
+    setLoading(true);
     const file = files[0];
 
-    if (!file) return;
+    if(!file) return;
 
     try {
       const url = await uploadAction?.(file);
 
-      if (!url) {
+      if(!url) {
         onDone?.(URL.createObjectURL(file));
         return;
       }
 
       onDone?.(url);
       // eslint-disable-next-line
-    } catch (e: any) {
+    } catch(e: any) {
       notify.error(e.message);
       onDone?.(URL.createObjectURL(file));
+    } finally {
+      setLoading(false);
     }
 
   }, [onDone, uploadAction]);
@@ -39,6 +44,10 @@ export function UploadImage({ onDone, uploadAction }: {
         onChange={handleFileChange}
         accept={ALLOWED_IMAGE_EXTENSIONS.join(',')}
       />
+      {loading &&
+        <div className={'absolute bg-bg-body z-10 opacity-90 flex items-center inset-0 justify-center w-full h-full'}>
+          <LoadingDots />
+        </div>}
     </div>
 
   );

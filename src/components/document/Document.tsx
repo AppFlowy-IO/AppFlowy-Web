@@ -24,6 +24,7 @@ export const Document = (props: DocumentProps) => {
     updatePage,
     onRendered,
     onEditorConnected,
+    uploadFile,
   } = props;
   const blockId = search.get('blockId') || undefined;
 
@@ -76,6 +77,7 @@ export const Document = (props: DocumentProps) => {
         updatePage={updatePage}
         onEnter={readOnly ? undefined : handleEnter}
         maxWidth={988}
+        uploadFile={uploadFile}
       />
       <Suspense fallback={<EditorSkeleton />}>
         <div className={'flex justify-center w-full'}>
