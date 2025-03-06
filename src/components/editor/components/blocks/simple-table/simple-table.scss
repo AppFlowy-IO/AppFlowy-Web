@@ -27,7 +27,7 @@
     @apply border-r border-b border-line-divider overflow-hidden whitespace-pre-wrap;
     .cell-children {
       .block-element {
-        @apply m-0;
+        margin: 0 !important;
       }
     }
   }

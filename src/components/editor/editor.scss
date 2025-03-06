@@ -4,6 +4,7 @@
   @apply my-[4px];
 }
 
+
 .block-element {
   &:has(.embed-block) {
     //@apply mx-1;
