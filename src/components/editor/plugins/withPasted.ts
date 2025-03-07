@@ -89,7 +89,12 @@ export const withPasted = (editor: ReactEditor) => {
         if(html) {
           return insertHtmlData(editor, data);
         } else {
-          const fragment = lines.map((line) => ({ type: BlockType.Paragraph, children: [{ text: line }] }));
+          const fragment = lines.map((line) => ({
+            type: BlockType.Paragraph, children: [{
+              type: 'text',
+              children: [{ text: line }],
+            }],
+          }));
 
           insertFragment(editor, fragment);
           return true;
