@@ -8,7 +8,7 @@ export const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'we
 
 export function UploadImage({ onDone, uploadAction }: {
   onDone?: (url: string) => void;
-  uploadAction?: (file: File) => Promise<string>
+  uploadAction?: (file: File) => Promise<string>;
 }) {
   const { t } = useTranslation();
   const [loading, setLoading] = React.useState(false);
@@ -38,7 +38,9 @@ export function UploadImage({ onDone, uploadAction }: {
   }, [onDone, uploadAction]);
 
   return (
-    <div className={'px-4 pb-4'}>
+    <div
+      className={'px-4 pb-4 h-full'}
+    >
       <FileDropzone
         placeholder={t('fileDropzone.dropFile')}
         onChange={handleFileChange}

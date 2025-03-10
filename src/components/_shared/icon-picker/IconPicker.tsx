@@ -15,12 +15,14 @@ const ICONS_PER_ROW = 9;
 const ROW_HEIGHT = 42;
 const CATEGORY_HEIGHT = 42;
 
-function IconPicker ({
+function IconPicker({
   onSelect,
   onEscape,
+  size,
 }: {
   onSelect: (icon: { value: string, color: string, content: string }) => void;
   onEscape?: () => void;
+  size?: [number, number];
 }) {
   const { t } = useTranslation();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
@@ -36,8 +38,8 @@ function IconPicker ({
   > | undefined>(undefined);
   const [searchValue, setSearchValue] = React.useState('');
   const filteredIcons = React.useMemo(() => {
-    if (!icons) return {};
-    if (!searchValue) return icons;
+    if(!icons) return {};
+    if(!searchValue) return icons;
     const filtered = Object.fromEntries(
       Object.entries(icons).map(([category, icons]) => [
         category,
@@ -54,7 +56,7 @@ function IconPicker ({
   }, [icons, searchValue]);
 
   const rowData = React.useMemo(() => {
-    if (!filteredIcons) return [];
+    if(!filteredIcons) return [];
 
     const rows: Array<{
       type: 'category' | 'icons';
@@ -69,14 +71,14 @@ function IconPicker ({
     }> = [];
 
     Object.entries(filteredIcons).forEach(([category, icons]) => {
-      if (icons.length === 0) return;
+      if(icons.length === 0) return;
 
       rows.push({
         type: 'category',
         category: category.replaceAll('_', ' '),
       });
 
-      for (let i = 0; i < icons.length; i += ICONS_PER_ROW) {
+      for(let i = 0; i < icons.length; i += ICONS_PER_ROW) {
         rows.push({
           type: 'icons',
           icons: icons.slice(i, i + ICONS_PER_ROW).map((icon) => ({
@@ -108,7 +110,7 @@ function IconPicker ({
   }) => {
     const row = data[index];
 
-    if (row.type === 'category') {
+    if(row.type === 'category') {
       return (
         <div
           style={style}
@@ -119,7 +121,7 @@ function IconPicker ({
       );
     }
 
-    if (!row.icons) return null;
+    if(!row.icons) return null;
 
     return (
       <div
@@ -152,7 +154,13 @@ function IconPicker ({
   }, []);
 
   return (
-    <div className={'flex h-[360px] max-h-[70vh] flex-col p-4 pt-2'}>
+    <div
+      style={{
+        width: size ? size[0] : undefined,
+        height: size ? size[1] : undefined,
+      }}
+      className={'flex h-[360px] max-h-[70vh] flex-col p-4 pt-2'}
+    >
       <div className={'px-0.5 py-2'}>
         <div className={'search-input flex items-end justify-between gap-2'}>
           <OutlinedInput
@@ -162,7 +170,7 @@ function IconPicker ({
               setSearchValue(e.target.value);
             }}
             onKeyUp={(e) => {
-              if (e.key === 'Escape' && onEscape) {
+              if(e.key === 'Escape' && onEscape) {
                 onEscape();
               }
             }}
@@ -185,7 +193,7 @@ function IconPicker ({
                 variant={'outlined'}
                 color={'inherit'}
                 className={'h-9 w-9 min-w-[36px] px-0 py-0'}
-                onClick={async () => {
+                onClick={async() => {
                   const icon = await randomIcon();
                   const color = randomColor(IconColors);
 
@@ -242,7 +250,7 @@ function IconPicker ({
         anchorEl={anchorEl}
         onClose={() => setAnchorEl(null)}
         onKeyDown={(e) => {
-          if (e.key === 'Escape') {
+          if(e.key === 'Escape') {
             setAnchorEl(null);
           }
         }}
@@ -255,12 +263,12 @@ function IconPicker ({
               color={'inherit'}
               className={'h-9 w-9 min-w-[36px] px-0 py-0'}
               onClick={() => {
-                if (!selectIcon) return;
+                if(!selectIcon) return;
                 const [groupName, iconName] = selectIcon.split('/');
 
                 const category = icons?.[groupName as ICON_CATEGORY];
 
-                if (!category) return;
+                if(!category) return;
 
                 const content = category.find((icon) => icon.name === iconName)?.content;
 

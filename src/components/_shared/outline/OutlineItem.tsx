@@ -33,7 +33,7 @@ function OutlineItem({ view, level = 0, width, navigateToView, selectedViewId, v
   const renderItem = useCallback((item: View) => {
     return (
       <div
-        className={`flex ${variant === UIVariant.App ? 'folder-view-item' : ''} h-fit my-0.5 w-full justify-between gap-2`}
+        className={`flex ${variant === UIVariant.App ? 'folder-view-item' : ''} h-fit my-0.5 w-full justify-between`}
       >
         <div
           style={{
@@ -42,7 +42,7 @@ function OutlineItem({ view, level = 0, width, navigateToView, selectedViewId, v
           }}
           id={`${variant}-view-${item.view_id}`}
           className={
-            'flex items-center min-h-[34px] w-full gap-0.5 rounded-[8px] py-1.5 px-0.5 text-sm hover:bg-content-blue-50 focus:bg-content-blue-50 focus:outline-none'
+            'flex items-center min-h-[30px] w-full gap-0.5 rounded-[8px] px-0.5 text-sm hover:bg-content-blue-50 focus:bg-content-blue-50 focus:outline-none'
           }
         >
           {item.children?.length ? getIcon() : null}
@@ -54,7 +54,7 @@ function OutlineItem({ view, level = 0, width, navigateToView, selectedViewId, v
             level={level}
             setIsExpanded={setIsExpanded}
           />
-          {item.is_private && <PrivateIcon className={'h-4 w-4 text-text-caption'}/>}
+          {item.is_private && <PrivateIcon className={'h-4 w-4 text-text-caption'} />}
         </div>
       </div>
     );
@@ -64,7 +64,7 @@ function OutlineItem({ view, level = 0, width, navigateToView, selectedViewId, v
 
   const renderChildren = useMemo(() => {
     return <div
-      className={'flex transform flex-col gap-2 transition-all'}
+      className={'flex transform flex-col transition-all'}
       style={{
         display: isExpanded ? 'block' : 'none',
       }}

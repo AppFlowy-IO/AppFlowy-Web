@@ -78,11 +78,7 @@ export const CustomEditor = {
   },
 
   setBlockData<T = BlockData>(editor: YjsEditor, blockId: string, updateData: T, select?: boolean) {
-
-    if(editor.readOnly) {
-      return;
-    }
-
+    
     const block = getBlock(blockId, editor.sharedRoot);
     const oldData = dataStringTOJson(block.get(YjsEditorKey.block_data));
     const newData = {

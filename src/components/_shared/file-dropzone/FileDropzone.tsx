@@ -12,7 +12,7 @@ interface FileDropzoneProps {
   placeholder?: string | React.ReactNode;
 }
 
-function FileDropzone ({
+function FileDropzone({
   onChange,
   accept,
   multiple,
@@ -26,8 +26,8 @@ function FileDropzone ({
   const handleFiles = (files: FileList) => {
     const fileArray = Array.from(files);
 
-    if (onChange) {
-      if (!multiple && fileArray.length > 1) {
+    if(onChange) {
+      if(!multiple && fileArray.length > 1) {
         onChange(fileArray.slice(0, 1));
       } else {
         onChange(fileArray);
@@ -41,7 +41,7 @@ function FileDropzone ({
     event.stopPropagation();
     setDragging(false);
 
-    if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+    if(event.dataTransfer.files && event.dataTransfer.files.length > 0) {
       handleFiles(event.dataTransfer.files);
       event.dataTransfer.clearData();
     }
@@ -64,7 +64,7 @@ function FileDropzone ({
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files) {
+    if(event.target.files) {
       handleFiles(event.target.files);
       event.target.value = '';
     }
@@ -72,7 +72,7 @@ function FileDropzone ({
 
   return (
     <div
-      className={'w-full cursor-pointer hover:border-fill-active px-4 hover:bg-bg-body h-[160px] rounded-xl border border-dashed border-line-border flex flex-col bg-bg-base'}
+      className={'w-full cursor-pointer hover:border-fill-active px-4 hover:bg-bg-body min-h-[160px] h-full rounded-xl border border-dashed border-line-border flex flex-col justify-center bg-bg-base'}
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}

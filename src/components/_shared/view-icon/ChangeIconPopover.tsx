@@ -116,6 +116,7 @@ function ChangeIconPopover({
         value={value}
       >
         <IconPicker
+          size={[400, 360]}
           onEscape={handleClose}
           onSelect={(icon) => {
             onSelectIcon?.({
@@ -131,6 +132,7 @@ function ChangeIconPopover({
         value={value}
       >
         <EmojiPicker
+          size={[400, 360]}
           onEmojiSelect={(emoji: string) => {
             onSelectIcon?.({
               ty: ViewIconType.Emoji,
@@ -145,7 +147,13 @@ function ChangeIconPopover({
         index={'upload'}
         value={value}
       >
-        <div className={'pt-4 relative pb-2'}>
+        <div
+          style={{
+            width: 400,
+            height: 360,
+          }}
+          className={'relative pt-4 pb-2'}
+        >
           <UploadImage
             onDone={(url) => {
               onSelectIcon?.({

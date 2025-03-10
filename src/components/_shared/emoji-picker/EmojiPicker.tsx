@@ -11,14 +11,22 @@ interface Props {
   onEscape?: () => void;
   defaultEmoji?: string;
   hideRemove?: boolean;
+  size?: [number, number];
 }
 
-export function EmojiPicker ({ defaultEmoji, onEscape, ...props }: Props) {
+export function EmojiPicker({ defaultEmoji, onEscape, size, ...props }: Props) {
   const { skin, onSkinChange, emojiCategories, setSearchValue, searchValue, onSelect, loading, isEmpty } =
     useLoadEmojiData(props);
 
   return (
-    <div tabIndex={0} className={'emoji-picker flex h-[360px] max-h-[70vh] flex-col p-4 pt-2'}>
+    <div
+      style={{
+        width: size ? size[0] : undefined,
+        height: size ? size[1] : undefined,
+      }}
+      tabIndex={0}
+      className={'emoji-picker flex h-[360px] max-h-[70vh] flex-col p-4 pt-2'}
+    >
       <EmojiPickerHeader
         onEmojiSelect={onSelect}
         skin={skin}
@@ -32,7 +40,11 @@ export function EmojiPicker ({ defaultEmoji, onEscape, ...props }: Props) {
           <CircularProgress />
         </div>
       ) : isEmpty ? (
-        <img src={emptyImageSrc} alt={'No data found'} className={'mx-auto h-[200px]'} />
+        <img
+          src={emptyImageSrc}
+          alt={'No data found'}
+          className={'mx-auto h-[200px]'}
+        />
       ) : (
         <EmojiPickerCategories
           defaultEmoji={defaultEmoji}

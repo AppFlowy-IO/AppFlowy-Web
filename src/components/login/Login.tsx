@@ -51,7 +51,12 @@ export function Login({ redirectTo }: { redirectTo: string }) {
         .
       </div>
       <Divider className={'w-[300px] max-w-full border-line-divider'} />
-      <div className={'text-text-title text-xs font-medium cursor-pointer opacity-60 hover:opacity-100 w-full gap-2 flex items-center justify-center'}>
+      <div
+        onClick={() => {
+          window.location.href = 'https://appflowy.com';
+        }}
+        className={'text-text-title text-xs font-medium cursor-pointer opacity-60 hover:opacity-100 w-full gap-2 flex items-center justify-center'}
+      >
         <span>{t('web.visitOurWebsite')}</span>
         <ArrowRight className={'w-4 h-4'} />
       </div>
