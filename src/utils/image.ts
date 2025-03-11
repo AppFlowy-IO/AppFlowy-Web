@@ -42,9 +42,7 @@ export const checkImage = async(url: string) => {
       });
     };
 
-    const cacheBuster = `?cb=${Date.now()}`;
-
-    img.src = url + cacheBuster;
+    img.src = url;
 
   });
 };

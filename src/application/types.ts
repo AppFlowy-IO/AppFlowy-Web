@@ -201,7 +201,7 @@ export interface SubpageNodeData extends BlockData {
 }
 
 export interface ColumnNodeData extends BlockData {
-  width?: number;
+  ratio?: number;
 }
 
 export enum MentionType {

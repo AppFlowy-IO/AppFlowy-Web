@@ -11,7 +11,6 @@ function Img({ onLoad, imgRef, url, width }: {
   width: number | string;
 }) {
   const { t } = useTranslation();
-  const [localUrl, setLocalUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [imgError, setImgError] = useState<{
     ok: boolean;
@@ -32,18 +31,18 @@ function Img({ onLoad, imgRef, url, width }: {
 
     const attemptCheck: () => Promise<boolean> = async() => {
       try {
+        console.log(`Checking ${pollingInterval}ms`);
         const result = await checkImage(url);
 
         // Success case
         if(result.ok) {
           setImgError(null);
           setLoading(false);
-          setLocalUrl(result.validatedUrl || url);
           setTimeout(() => {
             if(onLoad) {
               onLoad();
             }
-          }, 500);
+          }, 200);
 
           return true;
         }
@@ -92,7 +91,7 @@ function Img({ onLoad, imgRef, url, width }: {
     <>
       <img
         ref={imgRef}
-        src={localUrl || url}
+        src={url}
         alt={''}
         onLoad={() => {
           setLoading(false);
@@ -112,7 +111,7 @@ function Img({ onLoad, imgRef, url, width }: {
       ) : imgError ? (
         <div
           className={
-            'flex h-[48px] top-0 absolute bg-bg-body w-full items-center justify-center gap-2 rounded border border-function-error bg-red-50'
+            'flex h-[48px] w-full items-center justify-center gap-2 rounded border border-function-error bg-red-50'
           }
         >
           <ErrorOutline className={'text-function-error'} />

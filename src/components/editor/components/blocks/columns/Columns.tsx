@@ -3,6 +3,7 @@ import React, { forwardRef, memo } from 'react';
 
 export const Columns = memo(
   forwardRef<HTMLDivElement, EditorElementProps<ColumnsNode>>(({ node: _node, children, ...attributes }, ref) => {
+
     return (
       <div
         ref={ref}

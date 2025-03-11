@@ -161,11 +161,27 @@ export const Element = ({
     }
   }, [type]) as FC<EditorElementProps>;
 
+  const blockStyle = useMemo(() => {
+    const type = node.type as BlockType;
+    const style = {};
+
+    if(type === BlockType.ColumnBlock) {
+      const ratio = (node.data as ColumnNodeData)?.ratio;
+
+      Object.assign(style, {
+        flexGrow: ratio ? ratio * 1000 : 500,
+        flexBasis: 0,
+        flexShrink: 0,
+      });
+    }
+
+    return style;
+  }, [node.data, node.type]);
+
   const className = useMemo(() => {
     const data = (node.data as BlockData) || {};
     const align = data.align;
     const classList = ['block-element relative flex rounded-[4px]'];
-    const type = node.type as BlockType;
 
     if(selected) {
       classList.push('selected');
@@ -175,16 +191,8 @@ export const Element = ({
       classList.push(`block-align-${align}`);
     }
 
-    if(type === BlockType.ColumnBlock) {
-      const width = (data as ColumnNodeData).width;
-
-      if(!width) {
-        classList.push('flex-1');
-      }
-    }
-
     return classList.join(' ');
-  }, [node.data, selected, node.type]);
+  }, [node.data, selected]);
 
   const style = useMemo(() => {
     const data = (node.data as BlockData) || {};
@@ -193,8 +201,17 @@ export const Element = ({
       color: data.font_color ? renderColor(data.font_color) : undefined,
     };
 
+    const type = node.type as BlockType;
+
+    if(type === BlockType.ColumnsBlock) {
+      Object.assign(properties, {
+        display: 'flex',
+        width: '100%',
+      });
+    }
+
     return properties;
-  }, [node.data, selected]);
+  }, [node.data, node.type, selected]);
 
   const fallbackRender = useMemo(() => {
     return (props: FallbackProps) => {
@@ -229,6 +246,7 @@ export const Element = ({
         {...attributes}
         data-block-type={type}
         className={className}
+        style={blockStyle}
       >
         <Component
           style={style}
