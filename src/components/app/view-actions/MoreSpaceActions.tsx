@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/duplicate.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/settings.svg';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
+import { ReactComponent as AddIcon } from '@/assets/plus.svg';
 
 function MoreSpaceActions({
   view,
@@ -61,7 +61,7 @@ function MoreSpaceActions({
         onClick={() => {
           setCreateSpaceModalOpen(true);
         }}
-        startIcon={<AddIcon className={'w-4 h-4'}/>}
+        startIcon={<AddIcon/>}
       >
         {t('space.createNewSpace')}
       </Button>
@@ -73,7 +73,7 @@ function MoreSpaceActions({
         onClick={() => {
           setDeleteModalOpen(true);
         }}
-        startIcon={<DeleteIcon className={'w-4 h-4'}/>}
+        startIcon={<DeleteIcon/>}
       >
         {t('button.delete')}
       </Button>
