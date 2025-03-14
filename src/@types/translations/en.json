@@ -2696,7 +2696,8 @@
       "pageNameIsEmpty": "The page name is empty, please try another one"
     },
     "visitOurWebsite": "Visit our official website",
-    "addMessagesToPage": "Add messages to page"
+    "addMessagesToPage": "Add messages to page",
+    "addMessagesToPageDisabled": "No messages available"
   },
   "globalComment": {
     "comments": "Comments",

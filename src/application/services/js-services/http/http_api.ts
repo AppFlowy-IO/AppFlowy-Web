@@ -46,6 +46,7 @@ import dayjs from 'dayjs';
 import { omit } from 'lodash-es';
 import { nanoid } from 'nanoid';
 import { notify } from '@/components/_shared/notify';
+import { RepeatedChatMessage } from '@appflowyinc/ai-chat/dist/types';
 
 export * from './gotrue';
 
@@ -1844,4 +1845,24 @@ export async function searchWorkspace(workspaceId: string, query: string) {
   }
 
   return Promise.reject(res?.data);
+}
+
+export async function getChatMessages(workspaceId: string, chatId: string, limit?: number | undefined) {
+  const url = `/api/chat/${workspaceId}/${chatId}/message`;
+
+  const response = await axiosInstance?.get<{
+    code: number;
+    data?: RepeatedChatMessage;
+    message: string;
+  }>(url, {
+    params: { limit: limit},
+  });
+
+  const data = response?.data;
+
+  if(data?.code === 0 && data.data) {
+    return data.data;
+  }
+
+  return Promise.reject(data);
 }
