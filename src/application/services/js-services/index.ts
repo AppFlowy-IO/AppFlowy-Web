@@ -48,6 +48,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { RepeatedChatMessage } from '@appflowyinc/ai-chat/dist/types';
 import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
 
@@ -638,5 +639,13 @@ export class AFClientService implements AFService {
 
   searchWorkspace(workspaceId: string, query: string) {
     return APIService.searchWorkspace(workspaceId, query);
+  }
+
+  async getChatMessages(
+    workspaceId: string,
+    chatId: string,
+    limit?: number | undefined,
+  ): Promise<RepeatedChatMessage> {
+    return APIService.getChatMessages(workspaceId, chatId, limit);
   }
 }
