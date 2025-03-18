@@ -1687,7 +1687,9 @@
         "aiWriter": "AI Writer",
         "dateOrReminder": "Date or Reminder",
         "photoGallery": "Photo Gallery",
-        "file": "File"
+        "file": "File",
+        "continueWriting": "Continue Writing",
+        "askAIAnything": "Ask AI Anything"
       },
       "subPage": {
         "name": "Document",
@@ -2446,7 +2448,9 @@
     "toggleListShortForm": "Toggle",
     "quoteListShortForm": "Quote",
     "mathEquationShortForm": "Formula",
-    "codeBlockShortForm": "Code"
+    "codeBlockShortForm": "Code",
+    "improveWriting": "Improve writing",
+    "askAI": "Ask AI Anything"
   },
   "favorite": {
     "noFavorite": "No favorite page",

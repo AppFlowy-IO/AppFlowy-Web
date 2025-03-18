@@ -6,7 +6,7 @@ import {
 } from '@/application/types';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
-import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
+import { useAppHandlers, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
@@ -43,6 +43,8 @@ function ViewModal({
   open: boolean;
   onClose: () => void;
 }) {
+  const workspaceId = useCurrentWorkspaceId();
+
   const { t } = useTranslation();
   const {
     toView,
@@ -104,8 +106,9 @@ function ViewModal({
       visibleViewIds: [],
       viewId: view.view_id,
       extra: view.extra,
+      workspaceId,
     } : null;
-  }, [view]);
+  }, [view, workspaceId]);
   const handleUploadFile = useCallback((file: File) => {
     if(view && uploadFile) {
       return uploadFile(view.view_id, file);
@@ -200,6 +203,7 @@ function ViewModal({
   const viewDom = useMemo(() => {
     if(!doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return <View
+      workspaceId={workspaceId || ''}
       doc={doc.doc}
       readOnly={false}
       viewMeta={viewMeta}
@@ -216,7 +220,7 @@ function ViewModal({
       uploadFile={handleUploadFile}
       variant={UIVariant.App}
     />;
-  }, [openPageModal, handleUploadFile, setWordCount, loadViews, doc, viewMeta, View, toView, loadViewMeta, createRowDoc, loadView, updatePage, addPage, deletePage]);
+  }, [openPageModal, workspaceId, handleUploadFile, setWordCount, loadViews, doc, viewMeta, View, toView, loadViewMeta, createRowDoc, loadView, updatePage, addPage, deletePage]);
 
   return (
     <Dialog

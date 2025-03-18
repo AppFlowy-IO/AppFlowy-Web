@@ -41,7 +41,8 @@ import { ReactComponent as ToggleHeading2Icon } from '@/assets/toggle_heading2.s
 import { ReactComponent as ToggleHeading3Icon } from '@/assets/toggle_heading3.svg';
 import { ReactComponent as MathIcon } from '@/assets/slash_menu_icon_math_equation.svg';
 import { ReactComponent as VideoIcon } from '@/assets/video.svg';
-
+import { ReactComponent as AskAIIcon } from '@/assets/ai.svg';
+import { ReactComponent as ContinueWritingIcon } from '@/assets/continue_writing.svg';
 import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
@@ -49,9 +50,11 @@ import { usePanelContext } from '@/components/editor/components/panels/Panels.ho
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { getCharacters } from '@/utils/word';
+import { useAIWriter } from '@appflowyinc/ai-chat';
 import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
@@ -67,9 +70,18 @@ export function SlashPanel({
     searchText,
     removeContent,
   } = usePanelContext();
+  const {
+    addPage,
+    openPageModal,
+    viewId,
+    loadViewMeta,
+  } = useEditorContext();
+  const [viewName, setViewName] = useState('');
+
+  const editor = useSlateStatic() as YjsEditor;
+
   const { t } = useTranslation();
   const optionsRef = useRef<HTMLDivElement>(null);
-  const editor = useSlateStatic() as YjsEditor;
   const [selectedOption, setSelectedOption] = React.useState<string | null>(null);
   const [transformOrigin, setTransformOrigin] = React.useState<PopoverOrigin | undefined>(undefined);
   const selectedOptionRef = React.useRef<string | null>(null);
@@ -79,6 +91,21 @@ export function SlashPanel({
   const open = useMemo(() => {
     return isPanelOpen(PanelType.Slash);
   }, [isPanelOpen]);
+
+  useEffect(() => {
+    if(viewId && open) {
+      void loadViewMeta?.(viewId).then((view) => {
+        setViewName(view.name);
+      });
+    }
+  }, [viewId, loadViewMeta, open]);
+
+  const chars = useMemo(() => {
+    if(!open) return 0;
+    const content = CustomEditor.getEditorContent(editor);
+
+    return getCharacters(viewName || '') + getCharacters(content);
+  }, [editor, viewName, open]);
 
   const handleSelectOption = useCallback((option: string) => {
     setSelectedOption(option);
@@ -121,13 +148,13 @@ export function SlashPanel({
 
   }, [editor, openPopover]);
 
-  const {
-    addPage,
-    openPageModal,
-    viewId,
-  } = useEditorContext();
-
   const { openPanel } = usePanelContext();
+
+  const {
+    askAIAnything,
+    continueWriting,
+    setInputContext,
+  } = useAIWriter();
 
   const options: {
     label: string;
@@ -137,12 +164,33 @@ export function SlashPanel({
     onClick?: () => void;
   }[] = useMemo(() => {
     return [
-      //   {
-      //   label: t('document.slashMenu.name.aiWriter'),
-      //   key: 'aiWriter',
-      //   icon: <AIWriterIcon />,
-      //   keywords: ['ai', 'writer'],
-      // },
+      {
+        label: t('document.slashMenu.name.askAIAnything'),
+        key: 'askAIAnything',
+        icon: <AskAIIcon />,
+        keywords: ['ai', 'writer'],
+        onClick: () => {
+          const content = CustomEditor.getEditorContent(editor);
+
+          setInputContext(content);
+
+          askAIAnything(content);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.continueWriting'),
+        key: 'continueWriting',
+        disabled: chars < 2,
+        icon: <ContinueWritingIcon />,
+        keywords: ['ai', 'writing', 'continue'],
+        onClick: () => {
+          const content = CustomEditor.getEditorContent(editor);
+
+          setInputContext(content);
+
+          void continueWriting(content);
+        },
+      },
       {
         label: t('document.slashMenu.name.text'),
         key: 'text',
@@ -465,12 +513,13 @@ export function SlashPanel({
           turnInto(BlockType.FileBlock, {});
         },
       }].filter((option) => {
+      if(option.disabled) return false;
       if(!searchText) return true;
       return option.keywords.some((keyword: string) => {
         return keyword.toLowerCase().includes(searchText.toLowerCase());
       });
     });
-  }, [t, turnInto, openPanel, viewId, addPage, openPageModal, setEmojiPosition, searchText]);
+  }, [t, chars, editor, askAIAnything, setInputContext, continueWriting, turnInto, openPanel, viewId, addPage, openPageModal, setEmojiPosition, searchText]);
 
   const resultLength = options.length;
 

@@ -991,6 +991,7 @@ export interface ViewMetaProps {
   cover?: ViewMetaCover;
   name?: string;
   viewId?: string;
+  workspaceId?: string;
   layout?: ViewLayout;
   visibleViewIds?: string[];
   extra?: ViewExtra | null;
@@ -1008,6 +1009,7 @@ export interface TextCount {
 
 export interface ViewComponentProps {
   doc: YDoc;
+  workspaceId: string;
   readOnly: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;

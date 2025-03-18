@@ -15,6 +15,7 @@ export const DatabaseBlock = memo(
     const { t } = useTranslation();
     const viewId = node.data.view_id;
     const context = useEditorContext();
+    const workspaceId = context.workspaceId;
     const navigateToView = context?.navigateToView;
     const loadView = context?.loadView;
     const createRowDoc = context?.createRowDoc;
@@ -175,6 +176,7 @@ export const DatabaseBlock = memo(
               {selectedViewId && doc ? (
                 <>
                   <Database
+                    workspaceId={workspaceId}
                     doc={doc}
                     iidIndex={viewId}
                     viewId={selectedViewId}

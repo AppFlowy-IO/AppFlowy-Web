@@ -13,7 +13,7 @@ export function mountEditor(props: EditorProps) {
     );
   });
 
-  cy.mount(<AppWrapper/>);
+  cy.mount(<AppWrapper />);
 }
 
 export const moveToEnd = () => {
@@ -35,7 +35,7 @@ export const moveToLineStart = (lineIndex: number) => {
 
   cy.get(selector).as('targetBlock');
 
-  if (lineIndex === 0) {
+  if(lineIndex === 0) {
     cy.get('@targetBlock').invoke('on', 'click', (e: MouseEvent) => {
       e.stopPropagation();
     }).type('{movetostart}').wait(50);
@@ -54,7 +54,7 @@ export const moveCursor = (lineIndex: number, charIndex: number) => {
   const batchSize = 1;
   const batches = Math.ceil(charIndex / batchSize);
 
-  for (let i = 0; i < batches; i++) {
+  for(let i = 0; i < batches; i++) {
     const remainingMoves = Math.min(batchSize, charIndex - i * batchSize);
 
     cy.get('@targetBlock').invoke('on', 'click', (e: MouseEvent) => {
@@ -79,7 +79,7 @@ export const initialEditorTest = () => {
   const initializeEditor = (data: FromBlockJSON[]) => {
     documentTest = new DocumentTest();
     documentTest.fromJSON(data);
-    mountEditor({ readOnly: false, doc: documentTest.doc, viewId: 'test' });
+    mountEditor({ readOnly: false, doc: documentTest.doc, viewId: 'test', workspaceId: 'test' });
     cy.get('[role="textbox"]').should('exist');
   };
 
@@ -104,7 +104,7 @@ export const initialEditorTest = () => {
 };
 
 export const getModKey = () => {
-  if (Cypress.platform === 'darwin') {
+  if(Cypress.platform === 'darwin') {
     return 'Meta';
   } else {
     return 'Control';

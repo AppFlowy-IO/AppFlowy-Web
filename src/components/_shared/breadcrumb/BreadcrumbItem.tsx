@@ -20,8 +20,8 @@ function BreadcrumbItem({ crumb, disableClick = false, toView, variant }: {
   const className = useMemo(() => {
     const classList = ['flex', 'items-center', 'gap-1.5', 'text-sm', 'overflow-hidden', 'max-sm:text-base'];
 
-    if (!disableClick && !extra?.is_space) {
-      if ((is_published && variant === 'publish') || variant === 'app') {
+    if(!disableClick && !extra?.is_space) {
+      if((is_published && variant === 'publish') || variant === 'app') {
         classList.push('cursor-pointer hover:text-text-title hover:underline');
       } else {
         classList.push('flex-1');
@@ -35,12 +35,12 @@ function BreadcrumbItem({ crumb, disableClick = false, toView, variant }: {
 
     <div
       className={className}
-      onClick={async () => {
-        if (disableClick || extra?.is_space || (!is_published && variant === 'publish')) return;
+      onClick={async() => {
+        if(disableClick || extra?.is_space || (!is_published && variant === 'publish')) return;
         try {
           await toView?.(view_id);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        } catch (e: any) {
+        } catch(e: any) {
           notify.error(e.message);
         }
       }}
@@ -53,7 +53,10 @@ function BreadcrumbItem({ crumb, disableClick = false, toView, variant }: {
           char={extra.space_icon ? undefined : name.slice(0, 1)}
         />
       ) : (
-        <PageIcon view={crumb} className={'flex h-5 w-5 min-w-5 items-center justify-center'}/>
+        <PageIcon
+          view={crumb}
+          className={'flex h-4 w-4 min-w-4 items-center justify-center'}
+        />
       )}
       <Tooltip
         title={name}

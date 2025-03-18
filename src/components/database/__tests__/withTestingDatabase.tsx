@@ -6,7 +6,7 @@ import DatabaseViews from '@/components/database/DatabaseViews';
 import { useState } from 'react';
 import * as Y from 'yjs';
 
-export function renderDatabase (
+export function renderDatabase(
   {
     databaseId,
     viewId,
@@ -54,7 +54,7 @@ export function renderDatabase (
   });
 }
 
-export function TestDatabase ({
+export function TestDatabase({
   databaseDoc,
   rows,
   iidIndex,
@@ -82,6 +82,7 @@ export function TestDatabase ({
       readOnly={true}
       iidIndex={iidIndex}
       showActions={true}
+      workspaceId={''}
     >
       <DatabaseViews
         iidIndex={iidIndex}

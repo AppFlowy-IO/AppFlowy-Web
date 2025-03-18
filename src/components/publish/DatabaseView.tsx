@@ -21,6 +21,7 @@ import { useSearchParams } from 'react-router-dom';
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
 export interface DatabaseProps {
+  workspaceId: string;
   doc: YDoc;
   createRowDoc?: CreateRowDoc;
   loadView?: LoadView;
@@ -31,7 +32,7 @@ export interface DatabaseProps {
   onRendered?: () => void;
 }
 
-function DatabaseView ({ viewMeta, ...props }: DatabaseProps) {
+function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
   const [search, setSearch] = useSearchParams();
   const visibleViewIds = useMemo(() => viewMeta.visibleViewIds || [], [viewMeta]);
 
@@ -66,11 +67,11 @@ function DatabaseView ({ viewMeta, ...props }: DatabaseProps) {
   const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
 
   const skeleton = useMemo(() => {
-    if (rowId) {
+    if(rowId) {
       return <DocumentSkeleton />;
     }
 
-    switch (viewMeta.layout) {
+    switch(viewMeta.layout) {
       case ViewLayout.Grid:
         return <GridSkeleton includeTitle={false} />;
       case ViewLayout.Board:
@@ -82,7 +83,7 @@ function DatabaseView ({ viewMeta, ...props }: DatabaseProps) {
     }
   }, [rowId, viewMeta.layout]);
 
-  if (!viewId || !database) return null;
+  if(!viewId || !database) return null;
 
   return (
     <div

@@ -64,9 +64,10 @@ export const Document = (props: DocumentProps) => {
     el.style.minHeight = `${scrollElement?.clientHeight - 64}px`;
   }, [onRendered]);
 
-  if(!document || !viewMeta.viewId) return null;
+  if(!document || !viewMeta.viewId || !viewMeta.workspaceId) return null;
 
   return (
+
     <div
       ref={ref}
       className={'flex h-full w-full flex-col items-center'}
