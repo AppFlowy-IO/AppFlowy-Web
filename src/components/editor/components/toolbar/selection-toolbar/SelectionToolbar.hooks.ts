@@ -3,8 +3,9 @@ import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { getSelectionPosition } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { Decorate, useEditorContext } from '@/components/editor/EditorContext';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { useAIWriter } from '@appflowyinc/ai-chat';
 import { debounce } from 'lodash-es';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Range } from 'slate';
 import { ReactEditor, useFocused, useSlate, useSlateStatic } from 'slate-react';
 
@@ -20,24 +21,44 @@ export function useVisible() {
   const isExpanded = selection ? Range.isExpanded(selection) : false;
 
   const selectedText = useMemo(() => {
-    if (!selection) return 0;
+    if(!selection) return 0;
 
     return CustomEditor.getTextNodes(editor).length;
   }, [editor, selection]);
+  const [visible, setVisible] = useState<boolean>(false);
 
-  const visible = useMemo(() => {
-    if (forceShow) return true;
-    if (!focus) return false;
+  const {
+    assistantType,
+  } = useAIWriter();
 
-    if (document.getSelection()?.isCollapsed) return false;
-
-    const show = Boolean(selectedText && isExpanded && !isDragging);
-
-    return show;
-  }, [forceShow, focus, selectedText, isExpanded, isDragging]);
+  const assistantTypeRef = useRef(assistantType);
 
   useEffect(() => {
-    if (!visible) {
+    assistantTypeRef.current = assistantType;
+  }, [assistantType]);
+
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      setVisible(() => {
+        if(forceShow) return true;
+        if(!focus) return false;
+
+        if(document.getSelection()?.isCollapsed || assistantTypeRef.current !== undefined) return false;
+
+        return Boolean(selectedText && isExpanded && !isDragging);
+      });
+    };
+
+    handleSelectionChange();
+    document.addEventListener('selectionchange', handleSelectionChange);
+
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+    };
+  }, [focus, forceShow, isDragging, isExpanded, selectedText]);
+
+  useEffect(() => {
+    if(!visible) {
       removeDecorate?.('selection-toolbar');
       return;
     }
@@ -47,9 +68,10 @@ export function useVisible() {
   useEffect(() => {
 
     const handleMouseDown = () => {
+
       const { selection } = editor;
 
-      if (selection && Range.isExpanded(selection)) {
+      if(selection && Range.isExpanded(selection)) {
         window.getSelection()?.removeAllRanges();
       }
 
@@ -75,7 +97,7 @@ export function useVisible() {
   }, [editor, removeDecorate]);
 
   const handleForceShow = useCallback((show: boolean) => {
-    if (show && editor.selection) {
+    if(show && editor.selection) {
       setForceShow(true);
       addDecorate?.(editor.selection, 'bg-content-blue-100', 'selection-toolbar');
     } else {
@@ -88,12 +110,12 @@ export function useVisible() {
   }, [decorateState]);
 
   useEffect(() => {
-    if (!visible) return;
+    if(!visible) return;
     const handleKeyDown = (event: KeyboardEvent) => {
 
-      switch (true) {
+      switch(true) {
         case createHotkey(HOT_KEY_NAME.ESCAPE)(event): {
-          if (!editor.selection) break;
+          if(!editor.selection) break;
           event.preventDefault();
           event.stopPropagation();
           const start = editor.start(editor.selection);
@@ -196,7 +218,7 @@ export function useToolbarPosition() {
     const left = position.left + slateEditorDom.offsetLeft;
 
     // If toolbar is out of editor, move it to the left edge of the editor
-    if (left <= 0) {
+    if(left <= 0) {
       toolbarEl.style.left = '0px';
       return;
     }
@@ -205,7 +227,7 @@ export function useToolbarPosition() {
     const rightBound = slateEditorDom.offsetWidth + slateEditorDom.offsetLeft;
 
     // If toolbar is out of editor, move the right edge to the right edge of the editor
-    if (right > rightBound) {
+    if(right > rightBound) {
       toolbarEl.style.left = `${rightBound - toolbarEl.offsetWidth}px`;
       return;
     }
@@ -216,7 +238,7 @@ export function useToolbarPosition() {
   const showToolbar = useCallback((toolbarEl: HTMLDivElement) => {
     const position = getSelectionPosition(editor);
 
-    if (position) {
+    if(position) {
       toolbarEl.style.opacity = '1';
       toolbarEl.style.pointerEvents = 'auto';
       setPosition(toolbarEl, position);

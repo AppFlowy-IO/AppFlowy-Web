@@ -67,19 +67,24 @@ export function useHoverControls({ disabled }: { disabled: boolean; }) {
         console.warn('No range and node found');
         return;
       } else if(range) {
-        const match = editor.above({
-          match: (n) => {
-            return !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined;
-          },
-          at: range,
-        });
+        try {
+          const match = editor.above({
+            match: (n) => {
+              return !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined;
+            },
+            at: range,
+          });
 
-        if(!match) {
-          close();
-          return;
+          if(!match) {
+            close();
+            return;
+          }
+
+          node = match[0];
+        } catch {
+          // do nothing
         }
 
-        node = match[0];
       }
 
       if(!node) {

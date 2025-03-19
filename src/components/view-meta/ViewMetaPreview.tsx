@@ -203,14 +203,14 @@ export function ViewMetaPreview({
                   if(readOnly) return;
                   setIconAnchorEl(e.currentTarget);
                 }}
-                className={`view-icon flex h-[1.25em] px-1.5 items-center justify-center ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-fill-list-hover '}`}
+                className={`view-icon flex h-[1.25em] w-[1.25em] px-1.5 items-center justify-center ${readOnly ? 'cursor-default' : 'cursor-pointer hover:bg-fill-list-hover '}`}
               >
                 <PageIcon
                   view={{
                     icon,
                     layout: ViewLayout.Document,
                   }}
-                  className={'h-[90%] w-[80%] flex items-center justify-center'}
+                  className={'h-[90%] w-[90%] flex items-center justify-center'}
                 />
               </div>
               : null

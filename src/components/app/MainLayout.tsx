@@ -57,7 +57,7 @@ function MainLayout() {
           width,
           transition: 'width 0.2s ease-in-out, transform 0.2s ease-in-out',
         }}
-        className={'appflowy-layout flex flex-col appflowy-scroll-container h-full'}
+        className={'appflowy-layout transform flex flex-col appflowy-scroll-container h-full'}
       >
         <AppHeader
           onOpenDrawer={() => {

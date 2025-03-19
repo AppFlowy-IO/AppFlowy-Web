@@ -7,7 +7,7 @@ import emptyImageSrc from '@/assets/images/empty.png';
 export const LinkPreview = memo(
   forwardRef<HTMLDivElement, EditorElementProps<LinkPreviewNode>>(({ node, children, ...attributes }, ref) => {
     const [data, setData] = useState<{
-      image: { url: string };
+      image?: { url: string };
       title: string;
       description: string;
     } | null>(null);
@@ -15,15 +15,15 @@ export const LinkPreview = memo(
     const url = node.data.url;
 
     useEffect(() => {
-      if (!url) return;
+      if(!url) return;
 
       setData(null);
-      void (async () => {
+      void (async() => {
         try {
           setNotFound(false);
           const response = await axios.get(`https://api.microlink.io/?url=${url}`);
 
-          if (response.data.statusCode !== 200) {
+          if(response.data.statusCode !== 200) {
             setNotFound(true);
             return;
           }
@@ -31,7 +31,7 @@ export const LinkPreview = memo(
           const data = response.data.data;
 
           setData(data);
-        } catch (_) {
+        } catch(_) {
           setNotFound(true);
         }
       })();
@@ -57,8 +57,13 @@ export const LinkPreview = memo(
           {notFound ? (
             <div className={'flex w-full items-center'}>
               <div
-                className={'text-text-title min-w-[80px] w-[120px] flex items-center justify-center mr-2 h-[80px] border rounded'}>
-                <img src={emptyImageSrc} alt={'Empty state'} className={'h-full object-center object-cover'}/>
+                className={'text-text-title min-w-[80px] w-[120px] flex items-center justify-center mr-2 h-[80px] border rounded'}
+              >
+                <img
+                  src={emptyImageSrc}
+                  alt={'Empty state'}
+                  className={'h-full object-center object-cover'}
+                />
               </div>
               <div className={'flex-1 flex flex-col'}>
                 <div className={'text-function-error'}>
@@ -73,7 +78,7 @@ export const LinkPreview = memo(
           ) : (
             <>
               <img
-                src={data?.image.url}
+                src={data?.image?.url}
                 alt={data?.title}
                 className={'container h-full min-h-[48px] w-[25%] rounded bg-cover bg-center'}
               />

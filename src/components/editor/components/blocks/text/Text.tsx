@@ -1,4 +1,5 @@
 import Placeholder from '@/components/editor/components/blocks/text/Placeholder';
+import { ErrorBoundary } from 'react-error-boundary';
 import { useSlateStatic } from 'slate-react';
 import { useStartIcon } from './StartIcon.hooks';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
@@ -12,14 +13,16 @@ export const Text = forwardRef<HTMLSpanElement, EditorElementProps<TextNode>>(
     const className = useMemo(() => {
       const classList = ['text-element', 'relative', 'flex', 'w-full', 'whitespace-pre-wrap', 'break-word'];
 
-      if (classNameProp) classList.push(classNameProp);
-      if (hasStartIcon) classList.push('has-start-icon');
+      if(classNameProp) classList.push(classNameProp);
+      if(hasStartIcon) classList.push('has-start-icon');
       return classList.join(' ');
     }, [classNameProp, hasStartIcon]);
 
     const placeholder = useMemo(() => {
-      if (!isEmpty) return null;
-      return <Placeholder node={node}/>;
+      if(!isEmpty) return null;
+      return <ErrorBoundary fallback={null}>
+        <Placeholder node={node} />
+      </ErrorBoundary>;
     }, [isEmpty, node]);
 
     const content = useMemo(() => {

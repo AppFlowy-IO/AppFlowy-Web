@@ -8,7 +8,7 @@ import { ReactComponent as SelectedIcon } from '@/assets/selected.svg';
 import { useTranslation } from 'react-i18next';
 import { SpacePermission } from '@/application/types';
 
-function SpacePermissionButton ({
+function SpacePermissionButton({
   onSelected,
   value,
 }: {
@@ -30,7 +30,7 @@ function SpacePermissionButton ({
         onClick={e => setAnchorEl(e.currentTarget)}
       >
         <div className={'flex w-full items-start flex-col'}>
-          <div className={'text-base font-normal'}>{
+          <div className={'text-text-title font-normal'}>{
             SpacePermission.Private === value ? t('space.privatePermission') : t('space.publicPermission')
           }</div>
           <div className={'text-text-caption'}>{

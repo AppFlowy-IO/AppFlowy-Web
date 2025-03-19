@@ -236,14 +236,9 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
     deleteBlock(sharedRoot, id);
   });
 
-  blocks.delete(blockId);
-
   const meta = document.get(YjsEditorKey.meta) as YMeta;
   const childrenMap = meta.get(YjsEditorKey.children_map) as YChildrenMap;
   const textMap = meta.get(YjsEditorKey.text_map) as YTextMap;
-
-  childrenMap.delete(blockId);
-  textMap.delete(blockId);
 
   const parent = getBlock(parentId, sharedRoot);
 
@@ -256,7 +251,13 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
 
   if(index !== -1) {
     parentChildren.delete(index, 1);
+  } else {
+    console.info('Block not found in parent\'s children');
   }
+
+  blocks.delete(blockId);
+  childrenMap.delete(blockId);
+  textMap.delete(blockId);
 
   // delete parent if it's empty column block
   if(parentType === BlockType.ColumnBlock && afterDeletedLength === 0) {

@@ -22,13 +22,13 @@ export const checkImage = async(url: string) => {
       clearTimeout(timeoutId);
       // Add cache-busting parameter to prevent browser caching
       // which can sometimes hide image loading issues
-      const cacheBuster = `?cb=${Date.now()}`;
+      // const cacheBuster = `?cb=${Date.now()}`;
 
       resolve({
         ok: true,
         status: 200,
         statusText: 'OK',
-        validatedUrl: url + cacheBuster,
+        validatedUrl: url,
       });
     };
 

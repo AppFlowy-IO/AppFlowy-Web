@@ -1,3 +1,4 @@
+import { AxiosInstance } from 'axios';
 import * as Y from 'yjs';
 
 export type BlockId = string;
@@ -956,6 +957,7 @@ export enum SubscriptionPlan {
   Free = 'free',
   Pro = 'pro',
   Team = 'team',
+  AIMax = 'ai_max'
 }
 
 export enum SubscriptionInterval {
@@ -1027,6 +1029,7 @@ export interface ViewComponentProps {
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   onWordCountChange?: (viewId: string, props: TextCount) => void;
   uploadFile?: (file: File) => Promise<string>;
+  requestInstance?: AxiosInstance | null;
 }
 
 export interface CreatePagePayload {

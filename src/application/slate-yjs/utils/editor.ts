@@ -990,4 +990,3 @@ export function addBlock(editor: YjsEditor, {
 
   return newBlockId;
 }
-

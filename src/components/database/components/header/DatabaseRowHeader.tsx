@@ -6,7 +6,7 @@ import React, { useCallback, useEffect } from 'react';
 import { renderColor } from '@/utils/color';
 import ImageRender from '@/components/_shared/image-render/ImageRender';
 
-function DatabaseRowHeader ({ rowId, appendBreadcrumb }: { rowId: string; appendBreadcrumb?: AppendBreadcrumb }) {
+function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendBreadcrumb?: AppendBreadcrumb }) {
   const fieldId = usePrimaryFieldId() || '';
 
   const ref = React.useRef<HTMLDivElement>(null);
@@ -16,9 +16,9 @@ function DatabaseRowHeader ({ rowId, appendBreadcrumb }: { rowId: string; append
   const cover = meta?.cover;
 
   const renderCoverImage = useCallback((cover: RowMeta['cover']) => {
-    if (!cover) return null;
+    if(!cover) return null;
 
-    if (cover.cover_type === RowCoverType.GradientCover || cover.cover_type === RowCoverType.ColorCover) {
+    if(cover.cover_type === RowCoverType.GradientCover || cover.cover_type === RowCoverType.ColorCover) {
       return <div
         style={{
           background: renderColor(cover.data),
@@ -29,7 +29,7 @@ function DatabaseRowHeader ({ rowId, appendBreadcrumb }: { rowId: string; append
 
     let url: string | undefined = cover.data;
 
-    if (cover.cover_type === RowCoverType.AssetCover) {
+    if(cover.cover_type === RowCoverType.AssetCover) {
       url = {
         1: '/covers/m_cover_image_1.png',
         2: '/covers/m_cover_image_2.png',
@@ -40,7 +40,7 @@ function DatabaseRowHeader ({ rowId, appendBreadcrumb }: { rowId: string; append
       }[Number(cover.data)];
     }
 
-    if (!url) return null;
+    if(!url) return null;
 
     return (
       <>
@@ -81,11 +81,11 @@ function DatabaseRowHeader ({ rowId, appendBreadcrumb }: { rowId: string; append
   useEffect(() => {
     const el = ref.current;
 
-    if (!el) return;
+    if(!el) return;
 
-    const container = document.querySelector('.appflowy-scroll-container') || getScrollParent(el);
+    const container = el.closest('.appflowy-scroll-container') || getScrollParent(el);
 
-    if (!container) return;
+    if(!container) return;
 
     const handleResize = () => {
       setOffsetLeft(container.getBoundingClientRect().left - el.getBoundingClientRect().left);

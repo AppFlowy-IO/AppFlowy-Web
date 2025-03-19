@@ -53,11 +53,12 @@ export const CustomEditor = {
     }).join('\n');
   },
 
-  getSelectionContent(editor: YjsEditor) {
-    const range = editor.selection;
+  getSelectionContent(editor: YjsEditor, range?: Range) {
+    const at = range || editor.selection;
 
-    if(!range) return '';
-    return editor.string(range);
+    if(!at) return '';
+
+    return editor.string(at);
   },
   // Get the text content of a block node, including the text content of its children and formula nodes
   getBlockTextContent(node: Node, depth: number = Infinity): string {

@@ -13,11 +13,11 @@ export function applyYDoc(doc: Y.Doc, state: Uint8Array) {
     () => {
       try {
         Y.applyUpdate(doc, state, CollabOrigin.Remote);
-      } catch (e) {
+      } catch(e) {
         console.error('Error applying', doc, e);
         throw e;
       }
     },
-    CollabOrigin.Remote
+    CollabOrigin.Remote,
   );
 }

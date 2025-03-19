@@ -17,17 +17,17 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
 
   events.forEach((event) => {
     console.log(event.path);
-    if (isEqual(event.path, ['document', 'blocks'])) {
+    if(isEqual(event.path, ['document', 'blocks'])) {
       applyBlocksYEvent(editor, event as BlockMapEvent);
     }
 
-    if (isEqual((event.path), ['document', 'blocks', event.path[2]])) {
+    if(isEqual((event.path), ['document', 'blocks', event.path[2]])) {
       const blockId = event.path[2] as string;
 
       applyUpdateBlockYEvent(editor, blockId, event as YMapEvent<unknown>);
     }
 
-    if (isEqual(event.path, ['document', 'meta', 'text_map', event.path[3]])) {
+    if(isEqual(event.path, ['document', 'meta', 'text_map', event.path[3]])) {
       const textId = event.path[3] as string;
 
       applyTextYEvent(editor, textId, event as YTextEvent);
@@ -42,7 +42,7 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
   const newData = dataStringTOJson(block.get(YjsEditorKey.block_data));
   const entry = findSlateEntryByBlockId(editor, blockId);
 
-  if (!entry) {
+  if(!entry) {
     console.error('Block node not found', blockId);
     return [];
   }
@@ -75,7 +75,7 @@ function applyTextYEvent(editor: YjsEditor, textId: string, event: YTextEvent) {
   });
 
   console.log('=== Applying text Yjs event ===', entry);
-  if (!entry) {
+  if(!entry) {
     console.error('Text node not found', textId);
     return [];
   }
@@ -107,14 +107,14 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
   keysChanged.forEach((key: string) => {
     const value = keys.get(key);
 
-    if (!value) return;
+    if(!value) return;
 
-    if (value.action === 'add') {
+    if(value.action === 'add') {
       handleNewBlock(editor, key, keyPath);
 
-    } else if (value.action === 'delete') {
+    } else if(value.action === 'delete') {
       handleDeleteNode(editor, key);
-    } else if (value.action === 'update') {
+    } else if(value.action === 'update') {
       console.log('=== Applying block update Yjs event ===', key);
     }
   });
@@ -127,7 +127,7 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
   const pageId = getPageId(editor.sharedRoot);
   const parent = getBlock(parentId, editor.sharedRoot);
 
-  if (!parent) {
+  if(!parent) {
     console.error('Parent block not found', parentId, block.toJSON());
     return;
   }
@@ -139,11 +139,11 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
   const yText = getText(textId, editor.sharedRoot);
   let textNode: Element | undefined;
 
-  if (yText) {
+  if(yText) {
     const delta = yText?.toDelta();
     const slateDelta = delta.flatMap(deltaInsertToSlateNode);
 
-    if (slateDelta.length === 0) {
+    if(slateDelta.length === 0) {
       slateDelta.push({
         text: '',
       });
@@ -158,15 +158,15 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
 
   let path = [index];
 
-  if (parentId !== pageId) {
+  if(parentId !== pageId) {
     const [parentEntry] = editor.nodes({
       match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId === parentId,
       mode: 'all',
       at: [],
     });
 
-    if (!parentEntry) {
-      if (keyPath[parentId]) {
+    if(!parentEntry) {
+      if(keyPath[parentId]) {
         path = [...keyPath[parentId], index + 1];
       } else {
         console.error('Parent block not found', parentId);
@@ -198,7 +198,7 @@ function handleDeleteNode(editor: YjsEditor, key: string) {
     match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId === key,
   });
 
-  if (!entry) {
+  if(!entry) {
     console.error('Block not found');
     return [];
   }

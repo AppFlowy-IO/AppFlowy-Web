@@ -27,6 +27,7 @@
     --content-blue-300: #52d1f4;
     --content-blue-600: #009fd1;
     --content-blue-100: #005174;
+    --content-blue-200: #49CFF480;
     --content-blue-50: #024562;
     --content-blue-700: #0079a5;
     --content-blue-800: #00597a;
@@ -83,4 +84,6 @@
     --billing-primary: #601DAA;
     --billing-primary-hover: #7A2EBF;
     --ai-primary: #D08EED;
+    --writer-placeholder: #49CFF4;
+
 }

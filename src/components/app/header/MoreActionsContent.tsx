@@ -1,15 +1,16 @@
+import { ViewLayout } from '@/application/types';
+import { ReactComponent as DuplicateIcon } from '@/assets/duplicate.svg';
+import { ReactComponent as MoveToIcon } from '@/assets/move_to.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
 import { notify } from '@/components/_shared/notify';
 import { Origins } from '@/components/_shared/popover';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import DeletePageConfirm from '@/components/app/view-actions/DeletePageConfirm';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { useService } from '@/components/main/app.hooks';
 import { Button, CircularProgress } from '@mui/material';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
-import { ReactComponent as DuplicateIcon } from '@/assets/duplicate.svg';
-import { ReactComponent as MoveToIcon } from '@/assets/move_to.svg';
 
 function MoreActionsContent({ itemClicked, viewId, movePopoverOrigins, onDeleted }: {
   itemClicked?: () => void;
@@ -22,6 +23,8 @@ function MoreActionsContent({ itemClicked, viewId, movePopoverOrigins, onDeleted
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const service = useService();
   const workspaceId = useCurrentWorkspaceId();
+  const view = useAppView(viewId);
+  const layout = view?.layout;
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const {
     refreshOutline,
@@ -47,7 +50,7 @@ function MoreActionsContent({ itemClicked, viewId, movePopoverOrigins, onDeleted
     <div className={'flex flex-col gap-2 more-actions'}>
       <Button
         size={'small'}
-        className={'px-3 py-1 justify-start '}
+        className={`px-3 py-1 ${layout === ViewLayout.AIChat ? 'hidden' : ''} justify-start `}
         color={'inherit'}
         onClick={handleDuplicateClick}
         disabled={duplicateLoading}

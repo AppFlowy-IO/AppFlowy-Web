@@ -12,6 +12,7 @@ function Img({ onLoad, imgRef, url, width }: {
 }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
+  const [localUrl, setLocalUrl] = useState('');
   const [imgError, setImgError] = useState<{
     ok: boolean;
     status: number;
@@ -31,13 +32,13 @@ function Img({ onLoad, imgRef, url, width }: {
 
     const attemptCheck: () => Promise<boolean> = async() => {
       try {
-        console.log(`Checking ${pollingInterval}ms`);
         const result = await checkImage(url);
 
         // Success case
         if(result.ok) {
           setImgError(null);
           setLoading(false);
+          setLocalUrl(result.validatedUrl || '');
           setTimeout(() => {
             if(onLoad) {
               onLoad();
@@ -56,6 +57,7 @@ function Img({ onLoad, imgRef, url, width }: {
 
         if(attempts >= maxAttempts || elapsedTime >= timeoutDuration) {
           setLoading(false); // Stop loading after max attempts or timeout
+          setImgError({ ok: false, status: 404, statusText: 'Image Not Found' });
           return false;
         }
 
@@ -91,7 +93,7 @@ function Img({ onLoad, imgRef, url, width }: {
     <>
       <img
         ref={imgRef}
-        src={url}
+        src={localUrl}
         alt={''}
         onLoad={() => {
           setLoading(false);

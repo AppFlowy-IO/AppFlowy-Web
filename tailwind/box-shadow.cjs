@@ -1,7 +1,7 @@
 
 /**
 * Do not edit directly
-* Generated on Tue, 18 Mar 2025 08:47:40 GMT
+* Generated on Thu, 27 Mar 2025 11:44:33 GMT
 * Generated from $pnpm css:variables 
 */
 

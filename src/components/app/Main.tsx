@@ -1,7 +1,7 @@
 import React, { memo } from 'react';
 import { Outlet } from 'react-router-dom';
 
-function Main () {
+function Main() {
   return (
     <main className={'flex-1'}>
       <Outlet />

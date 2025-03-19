@@ -1,7 +1,7 @@
 
 /**
 * Do not edit directly
-* Generated on Tue, 18 Mar 2025 08:47:40 GMT
+* Generated on Thu, 27 Mar 2025 11:44:33 GMT
 * Generated from $pnpm css:variables 
 */
 
@@ -57,6 +57,7 @@ module.exports = {
     "blue-800": "var(--content-blue-800)",
     "blue-900": "var(--content-blue-900)",
     "blue-100": "var(--content-blue-100)",
+    "blue-200": "var(--content-blue-200)",
     "blue-50": "var(--content-blue-50)",
     "on-fill-hover": "var(--content-on-fill-hover)",
     "on-fill": "var(--content-on-fill)",
@@ -106,5 +107,8 @@ module.exports = {
   },
   "ai": {
     "primary": "var(--ai-primary)"
+  },
+  "writer": {
+    "placeholder": "var(--writer-placeholder)"
   }
 };

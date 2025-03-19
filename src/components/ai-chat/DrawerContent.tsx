@@ -5,6 +5,7 @@ import { insertDataToDoc } from '@/components/ai-chat/utils';
 import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
+import { useService } from '@/components/main/app.hooks';
 import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
@@ -37,7 +38,8 @@ function DrawerContent({
     id: string;
     doc: YDoc;
   } | undefined>(undefined);
-
+  const service = useService();
+  const requestInstance = service?.getAxiosInstance();
   const initialScrolling = React.useRef(false);
   const [notFound, setNotFound] = React.useState(false);
   const [editor, setEditor] = useState<YjsEditor | undefined>(undefined);
@@ -174,6 +176,7 @@ function DrawerContent({
       {
         doc && viewMeta && (
           <Document
+            requestInstance={requestInstance}
             workspaceId={workspaceId || ''}
             doc={doc.doc}
             readOnly={false}

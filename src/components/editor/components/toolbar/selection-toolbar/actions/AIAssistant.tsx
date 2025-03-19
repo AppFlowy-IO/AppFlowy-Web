@@ -1,9 +1,12 @@
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
+import {
+  useSelectionToolbarContext,
+} from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useAIWriter, AIWriterMenu, AIAssistantType } from '@appflowyinc/ai-chat';
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { ReactComponent as AskAIIcon } from '@/assets/ai.svg';
 import { ReactComponent as ImproveWritingIcon } from '@/assets/improve-writing.svg';
 import { useTranslation } from 'react-i18next';
@@ -14,13 +17,17 @@ function AIAssistant() {
   const { t } = useTranslation();
   const editor = useSlate() as YjsEditor;
 
+  const [open, setOpen] = React.useState(false);
   const {
     addDecorate,
   } = useEditorContext();
   const {
+    visible: toolbarVisible,
+  } = useSelectionToolbarContext();
+  const {
     improveWriting,
-    setInputContext,
   } = useAIWriter();
+  const [content, setContent] = React.useState('');
 
   const addReplaceStyle = useCallback(() => {
     const range = editor.selection;
@@ -41,17 +48,8 @@ function AIAssistant() {
     addReplaceStyle();
     const content = CustomEditor.getSelectionContent(editor);
 
-    setInputContext(content);
     void improveWriting(content);
-  }, [addReplaceStyle, editor, improveWriting, setInputContext]);
-
-  const onOpenChange = useCallback((open: boolean) => {
-    if(open) {
-      const content = CustomEditor.getSelectionContent(editor);
-
-      setInputContext(content);
-    }
-  }, [editor, setInputContext]);
+  }, [addReplaceStyle, editor, improveWriting]);
 
   const isFilterOut = useCallback((type: AIAssistantType) => {
     return type === AIAssistantType.ContinueWriting;
@@ -67,6 +65,12 @@ function AIAssistant() {
     ReactEditor.blur(editor);
   }, [addHighLightStyle, addReplaceStyle, editor]);
 
+  useEffect(() => {
+    if(!toolbarVisible) {
+      setOpen(false);
+    }
+  }, [toolbarVisible]);
+
   return (
     <>
       <ActionButton
@@ -77,11 +81,17 @@ function AIAssistant() {
         <ImproveWritingIcon />
       </ActionButton>
       <AIWriterMenu
-        onOpenChange={onOpenChange}
+        input={content}
+        open={open}
         isFilterOut={isFilterOut}
         onItemClicked={onItemClicked}
       >
         <ActionButton
+          onClick={e => {
+            e.stopPropagation();
+            setContent(CustomEditor.getSelectionContent(editor));
+            setOpen(prev => !prev);
+          }}
           className={'!text-ai-primary !hover:text-billing-primary'}
           tooltip={t('editor.askAI')}
         >

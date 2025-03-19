@@ -18,8 +18,8 @@
     "coverage": "pnpm run test:unit && pnpm run test:components"
   },
   "dependencies": {
-    "@appflowyinc/ai-chat": "0.0.18",
-    "@appflowyinc/editor": "^0.1.6",
+    "@appflowyinc/ai-chat": "0.1.24",
+    "@appflowyinc/editor": "^0.1.10",
     "@atlaskit/primitives": "^5.5.3",
     "@emoji-mart/data": "^1.1.2",
     "@emoji-mart/react": "^1.1.1",

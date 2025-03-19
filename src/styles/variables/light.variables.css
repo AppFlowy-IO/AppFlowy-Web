@@ -32,6 +32,7 @@
     --content-blue-800: #00597a;
     --content-blue-900: #003d4d;
     --content-blue-100: #e0f8ff;
+    --content-blue-200: #00729680;
     --content-blue-50: #f2fcff;
     --content-on-fill-hover: #00bcf0;
     --content-on-fill: #ffffff;
@@ -85,4 +86,5 @@
     --billing-primary: #8427e0;
     --billing-primary-hover: #9f3ae6;
     --ai-primary: #D08EED;
+    --writer-placeholder: #007296;
 }

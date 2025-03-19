@@ -1,9 +1,5 @@
 @use "src/styles/mixin.scss";
 
-.block-element:not([data-block-type="table/cell"]) {
-  @apply my-[4px];
-}
-
 
 .block-element {
   &:has(.embed-block) {
@@ -11,7 +7,7 @@
   }
 
   .embed-block {
-    @apply z-[1] hover:bg-content-blue-50 flex relative w-full gap-4 overflow-hidden rounded-[8px] border border-line-divider bg-fill-list-active;
+    @apply z-[1] my-1 hover:bg-content-blue-50 flex relative w-full gap-4 overflow-hidden rounded-[8px] border border-line-divider bg-fill-list-active;
   }
 
   .math-equation-block, .gallery-block {
@@ -508,8 +504,15 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
 }
 
 #appflowy-ai-writer {
+  @apply bg-bg-body;
   #appflowy-editor > div {
     padding: 0 !important;
-    @apply underline text-content-blue-600;
+    @apply underline text-writer-placeholder;
+
+    div[data-block-type="image"] {
+      @apply border-[4px] border-content-blue-200 p-0;
+    }
+
   }
+
 }

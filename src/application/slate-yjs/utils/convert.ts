@@ -26,7 +26,13 @@ export function traverseBlock(id: string, sharedRoot: YSharedRoot): Element | un
 
   if(!block) {
     console.error('Block not found', id);
-    return;
+    return {
+      blockId: id,
+      type: 'block_not_found',
+      data: {},
+      relationId: id,
+      children: [{ type: 'text', textId: id, children: [{ text: '' }] }],
+    };
   }
 
   const childrenId = block.children as string;

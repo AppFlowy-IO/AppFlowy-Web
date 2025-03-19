@@ -12,6 +12,7 @@ import MoreActions from '@/components/app/header/MoreActions';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
+import { useService } from '@/components/main/app.hooks';
 import { Button, Dialog, Divider, IconButton, Tooltip, Zoom } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -65,6 +66,8 @@ function ViewModal({
     doc: YDoc;
   } | undefined>(undefined);
   const [notFound, setNotFound] = React.useState(false);
+  const service = useService();
+  const requestInstance = service?.getAxiosInstance();
   const loadPageDoc = useCallback(async(id: string) => {
 
     setNotFound(false);
@@ -203,6 +206,7 @@ function ViewModal({
   const viewDom = useMemo(() => {
     if(!doc || !viewMeta || doc.id !== viewMeta.viewId) return null;
     return <View
+      requestInstance={requestInstance}
       workspaceId={workspaceId || ''}
       doc={doc.doc}
       readOnly={false}
@@ -220,7 +224,7 @@ function ViewModal({
       uploadFile={handleUploadFile}
       variant={UIVariant.App}
     />;
-  }, [openPageModal, workspaceId, handleUploadFile, setWordCount, loadViews, doc, viewMeta, View, toView, loadViewMeta, createRowDoc, loadView, updatePage, addPage, deletePage]);
+  }, [requestInstance, openPageModal, workspaceId, handleUploadFile, setWordCount, loadViews, doc, viewMeta, View, toView, loadViewMeta, createRowDoc, loadView, updatePage, addPage, deletePage]);
 
   return (
     <Dialog
@@ -233,7 +237,7 @@ function ViewModal({
       disableRestoreFocus={true}
       TransitionComponent={Transition}
       PaperProps={{
-        className: `max-w-[70vw] w-[1188px] flex flex-col h-[80vh] appflowy-scroller`,
+        className: `max-w-[70vw] appflowy-scroll-container transform relative w-[1188px] flex flex-col h-[80vh] appflowy-scroller`,
       }}
     >
       {modalTitle}

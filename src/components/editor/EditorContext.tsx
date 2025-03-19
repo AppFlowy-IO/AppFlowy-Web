@@ -5,6 +5,7 @@ import {
   LoadView,
   LoadViewMeta, UIVariant, View, CreatePagePayload, TextCount,
 } from '@/application/types';
+import { AxiosInstance } from 'axios';
 import { createContext, useCallback, useContext, useState } from 'react';
 import { BaseRange, Range } from 'slate';
 
@@ -44,7 +45,6 @@ export interface EditorContextState {
   decorateState?: Record<string, Decorate>;
   addDecorate?: (range: BaseRange, class_name: string, type: string) => void;
   removeDecorate?: (type: string) => void;
-
   selectedBlockIds?: string[];
   setSelectedBlockIds?: React.Dispatch<React.SetStateAction<string[]>>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<string>;
@@ -53,6 +53,7 @@ export interface EditorContextState {
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   onWordCountChange?: (viewId: string, props: TextCount) => void;
   uploadFile?: (file: File) => Promise<string>;
+  requestInstance?: AxiosInstance | null;
 }
 
 export const EditorContext = createContext<EditorContextState>({

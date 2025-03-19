@@ -36,7 +36,7 @@ const InfoSnackbar = forwardRef<HTMLDivElement, InfoSnackbarProps>(
         className={'flex items-center justify-center'}
       >
         <Paper className={`relative flex flex-col gap-4 border p-5 ${getBorderColor(type)}`}>
-          <div className={'flex w-full items-center justify-between text-base font-medium'}>
+          <div className={'flex w-full items-center justify-between text-title font-medium'}>
             <div className={'flex flex-1 items-center gap-2 text-left font-semibold'}>
               {getIcon(type)}
               <div>{title}</div>
@@ -77,8 +77,8 @@ const InfoSnackbar = forwardRef<HTMLDivElement, InfoSnackbarProps>(
 
 export default InfoSnackbar;
 
-function getIcon (type: 'success' | 'info' | 'warning' | 'error') {
-  switch (type) {
+function getIcon(type: 'success' | 'info' | 'warning' | 'error') {
+  switch(type) {
     case 'success':
       return <CheckCircle className={'h-6 w-6 text-[var(--function-success)]'} />;
     case 'info':
@@ -90,8 +90,8 @@ function getIcon (type: 'success' | 'info' | 'warning' | 'error') {
   }
 }
 
-function getButtonBgColor (type: 'success' | 'info' | 'warning' | 'error') {
-  switch (type) {
+function getButtonBgColor(type: 'success' | 'info' | 'warning' | 'error') {
+  switch(type) {
     case 'success':
       return 'bg-[var(--function-success)]';
     case 'info':
@@ -103,8 +103,8 @@ function getButtonBgColor (type: 'success' | 'info' | 'warning' | 'error') {
   }
 }
 
-function getButtonHoverBgColor (type: 'success' | 'info' | 'warning' | 'error') {
-  switch (type) {
+function getButtonHoverBgColor(type: 'success' | 'info' | 'warning' | 'error') {
+  switch(type) {
     case 'success':
       return 'hover:bg-[var(--function-success-hover)]';
     case 'info':
@@ -116,8 +116,8 @@ function getButtonHoverBgColor (type: 'success' | 'info' | 'warning' | 'error') 
   }
 }
 
-function getBorderColor (type: 'success' | 'info' | 'warning' | 'error') {
-  switch (type) {
+function getBorderColor(type: 'success' | 'info' | 'warning' | 'error') {
+  switch(type) {
     case 'success':
       return 'border-[var(--function-success)]';
     case 'info':

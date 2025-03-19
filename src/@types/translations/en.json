@@ -2983,6 +2983,21 @@
     "priceIn": "Price in ",
     "free": "Free",
     "pro": "Pro",
+    "getAIMax": "Get AI Max",
+    "upgradeAIMax": "Upgrade to AI Max",
+    "unlock": "Unlock",
+    "AIMax": {
+      "label": "AI Max",
+      "removeTitle": "Remove AI Max",
+      "removeDescription": "Are you sure you want to remove AI Max? You will lose access to the features and benefits of AI Max immediately.",
+      "description": "Access the most advanced AI models including GPT-4o, GPT-o3-mini, DeepSeek R1, and Claude 3.5 Sonnet",
+      "pricing": "per member per month\nbilled annually",
+      "points": {
+        "first": "Unlimited AI responses",
+        "second": "Unlimited file uploads",
+        "third": "50 AI images per month"
+      }
+    },
     "freeDescription": "For individuals up to 2 members to organize everything",
     "proDescription": "For small teams to manage projects and team knowledge",
     "proDuration": {
@@ -3000,15 +3015,17 @@
       "three": "5 GB storage",
       "four": "Intelligent search",
       "five": "10 AI responses",
-      "six": "Mobile app",
-      "seven": "Real-time collaboration"
+      "six": "2 AI images",
+      "seven": "Mobile app",
+      "eight": "Real-time collaboration"
     },
     "proPoints": {
       "first": "Unlimited storage",
       "second": "Up to 10 workspace members",
       "three": "Unlimited AI responses",
-      "four": "Unlimited file uploads",
-      "five": "Custom namespace"
+      "four": "10 AI images per month",
+      "five": "Unlimited file uploads",
+      "six": "Custom namespace"
     },
     "cancelPlan": {
       "title": "Sorry to see you go",

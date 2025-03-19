@@ -100,12 +100,29 @@ export function SlashPanel({
     }
   }, [viewId, loadViewMeta, open]);
 
+  const getBeforeContent = useCallback(() => {
+    const { selection } = editor;
+
+    if(!selection) return '';
+
+    const start = {
+      path: [0],
+      offset: 0,
+    };
+
+    const end = editor.end(selection);
+
+    return viewName + '\n' + CustomEditor.getSelectionContent(editor, {
+      anchor: start,
+      focus: end,
+    });
+  }, [editor, viewName]);
+
   const chars = useMemo(() => {
     if(!open) return 0;
-    const content = CustomEditor.getEditorContent(editor);
 
-    return getCharacters(viewName || '') + getCharacters(content);
-  }, [editor, viewName, open]);
+    return getCharacters(getBeforeContent());
+  }, [open, getBeforeContent]);
 
   const handleSelectOption = useCallback((option: string) => {
     setSelectedOption(option);
@@ -153,7 +170,6 @@ export function SlashPanel({
   const {
     askAIAnything,
     continueWriting,
-    setInputContext,
   } = useAIWriter();
 
   const options: {
@@ -168,11 +184,9 @@ export function SlashPanel({
         label: t('document.slashMenu.name.askAIAnything'),
         key: 'askAIAnything',
         icon: <AskAIIcon />,
-        keywords: ['ai', 'writer'],
+        keywords: ['ai', 'writer', 'ask', 'anything', 'askAIAnything', 'askai'],
         onClick: () => {
-          const content = CustomEditor.getEditorContent(editor);
-
-          setInputContext(content);
+          const content = getBeforeContent();
 
           askAIAnything(content);
         },
@@ -184,9 +198,7 @@ export function SlashPanel({
         icon: <ContinueWritingIcon />,
         keywords: ['ai', 'writing', 'continue'],
         onClick: () => {
-          const content = CustomEditor.getEditorContent(editor);
-
-          setInputContext(content);
+          const content = getBeforeContent();
 
           void continueWriting(content);
         },
@@ -519,7 +531,7 @@ export function SlashPanel({
         return keyword.toLowerCase().includes(searchText.toLowerCase());
       });
     });
-  }, [t, chars, editor, askAIAnything, setInputContext, continueWriting, turnInto, openPanel, viewId, addPage, openPageModal, setEmojiPosition, searchText]);
+  }, [t, chars, getBeforeContent, askAIAnything, continueWriting, turnInto, openPanel, viewId, addPage, openPageModal, setEmojiPosition, searchText]);
 
   const resultLength = options.length;
 

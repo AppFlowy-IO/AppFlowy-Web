@@ -17,10 +17,10 @@ import { getBlock, getText } from '@/application/slate-yjs/utils/yjs';
 
 // transform slate op to yjs op and apply it to ydoc
 export function applyToYjs(ydoc: Y.Doc, editor: Editor, op: Operation, slateContent: Descendant[]) {
-  if (op.type === 'set_selection') return;
+  if(op.type === 'set_selection') return;
   console.log('applySlateOp', op, slateContent);
 
-  switch (op.type) {
+  switch(op.type) {
     case 'insert_text':
       return applyInsertText(ydoc, editor, op, slateContent);
     case 'remove_text':
@@ -38,11 +38,11 @@ function getAttributesAtOffset(ytext: Y.Text, offset: number): object | null {
   const delta = ytext.toDelta();
   let currentOffset = 0;
 
-  for (const op of delta) {
-    if ('insert' in op) {
+  for(const op of delta) {
+    if('insert' in op) {
       const length = op.insert.length;
 
-      if (currentOffset <= offset && offset < currentOffset + length) {
+      if(currentOffset <= offset && offset < currentOffset + length) {
         return op.attributes || null;
       }
 
@@ -63,25 +63,25 @@ function insertText(ydoc: Y.Doc, editor: Editor, { path, offset, text, attribute
   const sharedRoot = ydoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
   const yText = getText(textId, sharedRoot);
 
-  if (!yText) return;
+  if(!yText) return;
   const point = { path, offset };
 
   const relativeOffset = Math.min(calculateOffsetRelativeToParent(node, point), yText.toJSON().length);
 
   const beforeAttributes = getAttributesAtOffset(yText, relativeOffset - 1);
 
-  if (beforeAttributes && ('formula' in beforeAttributes || 'mention' in beforeAttributes)) {
+  if(beforeAttributes && ('formula' in beforeAttributes || 'mention' in beforeAttributes)) {
     const newAttributes = {
       ...attributes,
     };
 
-    if ('formula' in beforeAttributes) {
+    if('formula' in beforeAttributes) {
       Object.assign({
         formula: null,
       });
     }
 
-    if ('mention' in beforeAttributes) {
+    if('mention' in beforeAttributes) {
       Object.assign({
         mention: null,
       });
@@ -105,7 +105,7 @@ function applyInsertText(ydoc: Y.Doc, editor: Editor, op: InsertTextOperation, s
 function applyInsertNode(ydoc: Y.Doc, editor: Editor, op: InsertNodeOperation, slateContent: Descendant[]) {
   const { path, node } = op;
 
-  if (!Text.isText(node)) return;
+  if(!Text.isText(node)) return;
   const { text, ...attributes } = node;
   const offset = 0;
 
@@ -121,7 +121,7 @@ function applyRemoveText(ydoc: Y.Doc, editor: Editor, op: RemoveTextOperation, s
 
   const textId = node.textId;
 
-  if (!textId) {
+  if(!textId) {
     console.error('textId not found', node);
     return;
   }
@@ -129,8 +129,8 @@ function applyRemoveText(ydoc: Y.Doc, editor: Editor, op: RemoveTextOperation, s
   const sharedRoot = ydoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
   const yText = getText(textId, sharedRoot);
 
-  if (!yText) {
-    console.error('yText not found', textId, sharedRoot.toJSON());
+  if(!yText) {
+    console.error('yText not found', textId);
     return;
   }
 
@@ -152,11 +152,11 @@ function applySetNode(ydoc: Y.Doc, editor: Editor, op: SetNodeOperation, slateCo
   const sharedRoot = ydoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
   console.log('applySetNode isLeaf', isLeaf, op);
-  if (isLeaf) {
+  if(isLeaf) {
     const node = getNodeAtPath(slateContent, path.slice(0, -1)) as Element;
     const textId = node.textId;
 
-    if (!textId) return;
+    if(!textId) return;
 
     const yText = getText(textId, sharedRoot);
     const start = {
@@ -179,7 +179,7 @@ function applySetNode(ydoc: Y.Doc, editor: Editor, op: SetNodeOperation, slateCo
     };
 
     Object.entries(properties).forEach(([key, val]) => {
-      if (val && !(key in newProperties)) {
+      if(val && !(key in newProperties)) {
         formats[key] = null;
       }
     });
@@ -188,18 +188,18 @@ function applySetNode(ydoc: Y.Doc, editor: Editor, op: SetNodeOperation, slateCo
     return;
   }
 
-  if (isData) {
+  if(isData) {
     const node = getNodeAtPath(slateContent, path) as Element;
     const blockId = node.blockId as string;
 
-    if (!blockId) {
+    if(!blockId) {
       console.error('blockId is not found in node', node, newProperties);
       return;
     }
 
     const block = getBlock(blockId, sharedRoot);
 
-    if (
+    if(
       'data' in newProperties
     ) {
       block.set(YjsEditorKey.block_data, JSON.stringify(newProperties.data));

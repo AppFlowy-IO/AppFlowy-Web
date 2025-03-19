@@ -23,6 +23,7 @@ import SimpleTableRow from '@/components/editor/components/blocks/simple-table/S
 import { TableBlock, TableCellBlock } from '@/components/editor/components/blocks/table';
 import { Text } from '@/components/editor/components/blocks/text';
 import { VideoBlock } from '@/components/editor/components/blocks/video';
+import { BlockNotFound } from '@/components/editor/components/element/BlockNotFound';
 import { UnSupportedBlock } from '@/components/editor/components/element/UnSupportedBlock';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -156,6 +157,8 @@ export const Element = ({
         return Columns;
       case BlockType.ColumnBlock:
         return Column;
+      case 'block_not_found':
+        return BlockNotFound;
       default:
         return UnSupportedBlock;
     }

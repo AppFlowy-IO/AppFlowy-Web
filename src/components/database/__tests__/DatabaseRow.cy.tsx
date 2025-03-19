@@ -58,7 +58,7 @@ describe('<DatabaseRow />', () => {
   });
 });
 
-function TestDatabaseRow ({
+function TestDatabaseRow({
   rowId,
   databaseDoc,
   rows,
@@ -73,6 +73,7 @@ function TestDatabaseRow ({
 }) {
   return (
     <DatabaseContextProvider
+      workspaceId={'test'}
       iidIndex={viewId}
       viewId={viewId}
       readOnly={true}

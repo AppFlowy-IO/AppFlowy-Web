@@ -121,7 +121,7 @@ export default function Help() {
             <Button
               component={'a'}
               target="_blank"
-              href={'https://github.com/AppFlowy-IO/AppFlowy/issues/new/choose'}
+              href={'https://github.com/AppFlowy-IO/AppFlowy-Web/issues/new/choose'}
               className={'justify-start'}
               color={'inherit'}
               startIcon={<FeedbackIcon />}

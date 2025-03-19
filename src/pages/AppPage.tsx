@@ -13,6 +13,7 @@ import {
 import DatabaseView from '@/components/app/DatabaseView';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
+import { useService } from '@/components/main/app.hooks';
 import { getPlatform } from '@/utils/platform';
 import { desktopDownloadLink, openAppFlowySchema } from '@/utils/url';
 import { Button, Checkbox, FormControlLabel } from '@mui/material';
@@ -106,6 +107,9 @@ function AppPage() {
     return Promise.reject();
   }, [uploadFile, view]);
 
+  const service = useService();
+  const requestInstance = service?.getAxiosInstance();
+
   const viewDom = useMemo(() => {
     const isMobile = getPlatform().isMobile;
 
@@ -120,6 +124,7 @@ function AppPage() {
 
     return doc && viewMeta && workspaceId && View ? (
       <View
+        requestInstance={requestInstance}
         workspaceId={workspaceId}
         doc={doc}
         readOnly={Boolean(isMobile)}
@@ -140,7 +145,7 @@ function AppPage() {
         variant={UIVariant.App}
       />
     ) : null;
-  }, [workspaceId, doc, layout, viewId, viewMeta, toView, loadViewMeta, createRowDoc, appendBreadcrumb, loadView, onRendered, updatePage, addPage, deletePage, openPageModal, loadViews, setWordCount, handleUploadFile]);
+  }, [requestInstance, workspaceId, doc, layout, viewId, viewMeta, toView, loadViewMeta, createRowDoc, appendBreadcrumb, loadView, onRendered, updatePage, addPage, deletePage, openPageModal, loadViews, setWordCount, handleUploadFile]);
 
   useEffect(() => {
     if(!viewId) return;
