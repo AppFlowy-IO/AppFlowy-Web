@@ -956,6 +956,7 @@ export enum SubscriptionPlan {
   Free = 'free',
   Pro = 'pro',
   Team = 'team',
+  AIMax = 'ai_max'
 }
 
 export enum SubscriptionInterval {

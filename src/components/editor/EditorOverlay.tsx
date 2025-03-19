@@ -16,7 +16,7 @@ import { ReactEditor, useSlate } from 'slate-react';
 import Toolbars from './components/toolbar';
 import Panels from './components/panels';
 import BlockPopover from './components/block-popover';
-import { Element, NodeEntry, Path, Transforms, Text, Range } from 'slate';
+import { Element, NodeEntry, Transforms, Text, Range } from 'slate';
 
 function EditorOverlay({
   viewId,
@@ -56,17 +56,17 @@ function EditorOverlay({
 
   const handleInsertBelow = useCallback((data: EditorData) => {
     if(!endBlock) return;
-    const [node, path] = endBlock as NodeEntry<Element>;
+    const [node] = endBlock as NodeEntry<Element>;
 
     if(!node) return;
 
-    insertDataAfterBlock(editor.sharedRoot, data, node.blockId as string);
+    const blockId = insertDataAfterBlock(editor.sharedRoot, data, node.blockId as string);
 
     try {
-      const nextPath = Path.next(path);
-
       ReactEditor.focus(editor);
-      editor.select(editor.start(nextPath));
+      const [, path] = findSlateEntryByBlockId(editor, blockId);
+
+      editor.select(editor.end(path));
     } catch(e) {
       //
     }
@@ -112,11 +112,13 @@ function EditorOverlay({
 
   const handleExit = useCallback(() => {
     removeDecorate?.('ai-writer');
-  }, [removeDecorate]);
+    if(!ReactEditor.isFocused(editor)) {
+      ReactEditor.focus(editor);
+    }
+  }, [removeDecorate, editor]);
 
   return (
     <ErrorBoundary fallbackRender={() => null}>
-
       <AIAssistantProvider
         isGlobalDocument={!isRange}
         onInsertBelow={handleInsertBelow}
