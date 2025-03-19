@@ -581,6 +581,10 @@ export class AFClientService implements AFService {
     return APIService.updatePage(workspaceId, viewId, data);
   }
 
+  async duplicateAppPage(workspaceId: string, viewId: string) {
+    return APIService.duplicatePage(workspaceId, viewId);
+  }
+
   async deleteTrash(workspaceId: string, viewId?: string) {
     return APIService.deleteTrash(workspaceId, viewId);
   }

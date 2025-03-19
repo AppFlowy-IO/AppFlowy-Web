@@ -15,6 +15,7 @@ import { ReactComponent as DebugIcon } from '@/assets/debug.svg';
 import { ReactComponent as FeedbackIcon } from '@/assets/report.svg';
 import { ReactComponent as MoonIcon } from '@/assets/moon.svg';
 import { ReactComponent as SunIcon } from '@/assets/sun.svg';
+import { ReactComponent as DocumentationIcon } from '@/assets/help_documentation.svg';
 
 const popoverProps: Partial<PopoverProps> = {
   anchorOrigin: {
@@ -27,7 +28,7 @@ const popoverProps: Partial<PopoverProps> = {
   },
 };
 
-export default function Help () {
+export default function Help() {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = React.useState(false);
   const { t } = useTranslation();
@@ -78,6 +79,16 @@ export default function Help () {
               startIcon={<WhatsNewIcon />}
               variant={'text'}
             >{t('questionBubble.whatsNew')}
+            </Button>
+            <Button
+              component={'a'}
+              href={'https://appflowy.com/guide/getting-started-with-appflowy'}
+              className={'justify-start'}
+              target="_blank"
+              color={'inherit'}
+              startIcon={<DocumentationIcon />}
+              variant={'text'}
+            >{t('questionBubble.documentation')}
             </Button>
             <Button
               component={'a'}

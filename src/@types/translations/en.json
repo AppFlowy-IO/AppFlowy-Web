@@ -264,7 +264,8 @@
   "questionBubble": {
     "shortcuts": "Shortcuts",
     "whatsNew": "What's new?",
-    "help": "Help & Support",
+    "documentation": "Help & documentation",
+    "help": "Get support",
     "markdown": "Markdown",
     "debug": {
       "name": "Debug Info",
