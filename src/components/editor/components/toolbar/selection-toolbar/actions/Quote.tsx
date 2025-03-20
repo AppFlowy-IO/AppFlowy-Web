@@ -6,7 +6,7 @@ import React, { useCallback } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as QuoteSvg } from '@/assets/quote.svg';
+import { ReactComponent as QuoteSvg } from '@/assets/icons/quote.svg';
 
 export function Quote() {
   const { t } = useTranslation();
@@ -25,16 +25,14 @@ export function Quote() {
       }
 
       CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.QuoteBlock, {});
-
     } catch (e) {
       return;
     }
-
   }, [editor]);
 
   return (
     <ActionButton active={isActivated} onClick={onClick} tooltip={t('editor.quote')}>
-      <QuoteSvg/>
+      <QuoteSvg />
     </ActionButton>
   );
 }

@@ -19,7 +19,7 @@ import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
 import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
 import { ReactComponent as TodoListIcon } from '@/assets/icons/todo.svg';
-import { ReactComponent as CodeIcon } from '@/assets/inline_code.svg';
+import { ReactComponent as CodeIcon } from '@/assets/icons/inline_code.svg';
 import { ReactComponent as DividerIcon } from '@/assets/slash_menu_icon_divider.svg';
 import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/slash_menu_icon_emoji.svg';
@@ -39,9 +39,9 @@ import { ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg
 import { ReactComponent as ToggleHeading1Icon } from '@/assets/icons/toggle_h1.svg';
 import { ReactComponent as ToggleHeading2Icon } from '@/assets/icons/toggle_h2.svg';
 import { ReactComponent as ToggleHeading3Icon } from '@/assets/icons/toggle_h3.svg';
-import { ReactComponent as MathIcon } from '@/assets/slash_menu_icon_math_equation.svg';
-import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
-import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
+import { ReactComponent as AskAIIcon } from '@/assets/icons/icons/ai.svg';
+import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/icons/continue_writing.svg';
+import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
 import { ReactComponent as VideoIcon } from '@/assets/icons/video.svg';
 
 import { notify } from '@/components/_shared/notify';
@@ -444,7 +444,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.mathEquation'),
         key: 'math',
-        icon: <MathIcon />,
+        icon: <FormulaIcon />,
         keywords: ['math', 'equation', 'formula'],
         onClick: () => {
           turnInto(BlockType.EquationBlock, {});

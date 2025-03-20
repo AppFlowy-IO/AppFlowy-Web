@@ -9,9 +9,9 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as Heading1Svg } from '@/assets/h1.svg';
-import { ReactComponent as Heading2Svg } from '@/assets/h2.svg';
-import { ReactComponent as Heading3Svg } from '@/assets/h3.svg';
+import { ReactComponent as Heading1 } from '@/assets/icons/h1.svg';
+import { ReactComponent as Heading2 } from '@/assets/icons/h2.svg';
+import { ReactComponent as Heading3 } from '@/assets/icons/h3.svg';
 import { ReactComponent as DownArrow } from '@/assets/icons/alt_arrow_down.svg';
 
 const popoverProps: Partial<PopoverProps> = {
@@ -73,18 +73,18 @@ export function Heading() {
 
   const getActiveButton = useCallback(() => {
     if (isActivated(1)) {
-      return <Heading1Svg className={'text-fill-default'} />;
+      return <Heading1 className={'text-fill-default'} />;
     }
 
     if (isActivated(2)) {
-      return <Heading2Svg className={'text-fill-default'} />;
+      return <Heading2 className={'text-fill-default'} />;
     }
 
     if (isActivated(3)) {
-      return <Heading3Svg className={'text-fill-default'} />;
+      return <Heading3 className={'text-fill-default'} />;
     }
 
-    return <Heading3Svg />;
+    return <Heading3 />;
   }, [isActivated]);
 
   const [open, setOpen] = useState(false);
@@ -126,13 +126,13 @@ export function Heading() {
         >
           <div className={'flex h-[32px] items-center justify-center px-2'}>
             <ActionButton active={isActivated(1)} tooltip={t('editor.heading1')} onClick={toHeading(1)}>
-              <Heading1Svg />
+              <Heading1 />
             </ActionButton>
             <ActionButton active={isActivated(2)} tooltip={t('editor.heading2')} onClick={toHeading(2)}>
-              <Heading2Svg />
+              <Heading2 />
             </ActionButton>
             <ActionButton active={isActivated(3)} tooltip={t('editor.heading3')} onClick={toHeading(3)}>
-              <Heading3Svg />
+              <Heading3 />
             </ActionButton>
           </div>
         </Popover>
