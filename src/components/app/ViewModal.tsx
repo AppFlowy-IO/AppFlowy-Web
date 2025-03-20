@@ -145,7 +145,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
               }
               color={'inherit'}
               className={'justify-start px-1.5'}
-              endIcon={<ArrowDownIcon className={'h-5 w-5'} />}
+              endIcon={<ArrowDownIcon />}
             >
               {space.name}
             </Button>
