@@ -115,7 +115,7 @@ function GalleryPreview({ images, open, onClose, previewIndex }: GalleryPreviewP
                   <div className={'flex w-fit items-center gap-2 rounded-[8px] bg-bg-mask p-2'}>
                     <Tooltip title={t('gallery.prev')}>
                       <IconButton size={'small'} onClick={handleToPrev} className={buttonClassName}>
-                        <RightIcon className={'h-5 w-5 rotate-180 transform'} />
+                        <RightIcon className={'rotate-180 transform'} />
                       </IconButton>
                     </Tooltip>
                     <span className={'text-text-caption'}>
@@ -123,7 +123,7 @@ function GalleryPreview({ images, open, onClose, previewIndex }: GalleryPreviewP
                     </span>
                     <Tooltip title={t('gallery.next')}>
                       <IconButton size={'small'} onClick={handleToNext} className={buttonClassName}>
-                        <RightIcon className={'h-5 w-5'} />
+                        <RightIcon />
                       </IconButton>
                     </Tooltip>
                   </div>

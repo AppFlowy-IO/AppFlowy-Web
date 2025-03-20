@@ -24,7 +24,7 @@ export function Sorts() {
       >
         <SortSvg />
         {t('grid.settings.sort')}
-        <ArrowDown className={'h-5 w-5'} />
+        <ArrowDown />
       </div>
       {open && (
         <Popover

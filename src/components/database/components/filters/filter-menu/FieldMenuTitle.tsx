@@ -16,7 +16,7 @@ function FieldMenuTitle({ fieldId, selectedConditionText }: { fieldId: string; s
           >
             {selectedConditionText}
           </div>
-          <ArrowDownSvg className={'h-5 w-5'} />
+          <ArrowDownSvg />
         </div>
       </div>
     </div>
