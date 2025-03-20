@@ -10,39 +10,40 @@ import {
   HeadingBlockData,
   ImageBlockData,
   SubpageNodeData,
-  ToggleListBlockData, VideoBlockData,
+  ToggleListBlockData,
+  VideoBlockData,
   ViewLayout,
 } from '@/application/types';
-import { ReactComponent as AddDocumentIcon } from '@/assets/slash_menu_icon_add_doc.svg';
+import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 // import { ReactComponent as AIWriterIcon } from '@/assets/slash_menu_icon_ai_writer.svg';
-import { ReactComponent as BulletedListIcon } from '@/assets/slash_menu_icon_bulleted_list.svg';
-import { ReactComponent as CalloutIcon } from '@/assets/slash_menu_icon_callout.svg';
-import { ReactComponent as TodoListIcon } from '@/assets/slash_menu_icon_checkbox.svg';
-import { ReactComponent as CodeIcon } from '@/assets/slash_menu_icon_code.svg';
+import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
+import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
+import { ReactComponent as TodoListIcon } from '@/assets/icons/todo.svg';
+import { ReactComponent as CodeIcon } from '@/assets/inline_code.svg';
 import { ReactComponent as DividerIcon } from '@/assets/slash_menu_icon_divider.svg';
-import { ReactComponent as DocumentIcon } from '@/assets/slash_menu_icon_doc.svg';
-
+import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/slash_menu_icon_emoji.svg';
 import { ReactComponent as FileIcon } from '@/assets/slash_menu_icon_file.svg';
 // import { ReactComponent as GridIcon } from '@/assets/slash_menu_icon_grid.svg';
 // import { ReactComponent as BoardIcon } from '@/assets/slash_menu_icon_kanban.svg';
 // import { ReactComponent as CalendarIcon } from '@/assets/slash_menu_icon_calendar.svg';
-import { ReactComponent as Heading1Icon } from '@/assets/slash_menu_icon_h1.svg';
-import { ReactComponent as Heading2Icon } from '@/assets/slash_menu_icon_h2.svg';
-import { ReactComponent as Heading3Icon } from '@/assets/slash_menu_icon_h3.svg';
-import { ReactComponent as ImageIcon } from '@/assets/slash_menu_icon_image.svg';
-import { ReactComponent as NumberedListIcon } from '@/assets/slash_menu_icon_numbered_list.svg';
-import { ReactComponent as OutlineIcon } from '@/assets/slash_menu_icon_outline.svg';
-import { ReactComponent as QuoteIcon } from '@/assets/slash_menu_icon_quote.svg';
-import { ReactComponent as TextIcon } from '@/assets/slash_menu_icon_text.svg';
-import { ReactComponent as ToggleListIcon } from '@/assets/slash_menu_icon_toggle.svg';
-import { ReactComponent as ToggleHeading1Icon } from '@/assets/toggle_heading1.svg';
-import { ReactComponent as ToggleHeading2Icon } from '@/assets/toggle_heading2.svg';
-import { ReactComponent as ToggleHeading3Icon } from '@/assets/toggle_heading3.svg';
+import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
+import { ReactComponent as Heading2Icon } from '@/assets/icons/h2.svg';
+import { ReactComponent as Heading3Icon } from '@/assets/icons/h3.svg';
+import { ReactComponent as ImageIcon } from '@/assets/icons/image.svg';
+import { ReactComponent as NumberedListIcon } from '@/assets/icons/numbered_list.svg';
+import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
+import { ReactComponent as QuoteIcon } from '@/assets/icons/quote.svg';
+import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
+import { ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg';
+import { ReactComponent as ToggleHeading1Icon } from '@/assets/icons/toggle_h1.svg';
+import { ReactComponent as ToggleHeading2Icon } from '@/assets/icons/toggle_h2.svg';
+import { ReactComponent as ToggleHeading3Icon } from '@/assets/icons/toggle_h3.svg';
 import { ReactComponent as MathIcon } from '@/assets/slash_menu_icon_math_equation.svg';
-import { ReactComponent as VideoIcon } from '@/assets/video.svg';
-import { ReactComponent as AskAIIcon } from '@/assets/ai.svg';
-import { ReactComponent as ContinueWritingIcon } from '@/assets/continue_writing.svg';
+import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as ContinueWritingIcon } from '@/assets/icons/continue_writing.svg';
+import { ReactComponent as VideoIcon } from '@/assets/icons/video.svg';
+
 import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
@@ -306,7 +307,7 @@ export function SlashPanel({
       }, {
         label: t('document.slashMenu.name.linkedDoc'),
         key: 'linkedDoc',
-        icon: <DocumentIcon />,
+        icon: <RefDocumentIcon />,
         keywords: ['linked', 'doc', 'page', 'document'],
         onClick: () => {
           const rect = getRangeRect();
@@ -317,7 +318,7 @@ export function SlashPanel({
       }, {
         label: t('document.menuName'),
         key: 'document',
-        icon: <AddDocumentIcon />,
+        icon: <DocumentIcon />,
         keywords: ['document', 'doc', 'page', 'create', 'add'],
         onClick: async() => {
           if(!viewId || !addPage || !openPageModal) return;

@@ -2,13 +2,11 @@ import { ThemeModeContext, useAppThemeMode } from '@/components/main/useAppTheme
 import React, { useMemo } from 'react';
 import createTheme from '@mui/material/styles/createTheme';
 import ThemeProvider from '@mui/material/styles/ThemeProvider';
-import {
-  i18nInstance,
-} from '@/i18n/config';
+import { i18nInstance } from '@/i18n/config';
 
 import { I18nextProvider } from 'react-i18next';
 
-function AppTheme ({ children }: { children: React.ReactNode; }) {
+function AppTheme({ children }: { children: React.ReactNode }) {
   const { isDark, setIsDark } = useAppThemeMode();
 
   const theme = useMemo(
@@ -30,7 +28,6 @@ function AppTheme ({ children }: { children: React.ReactNode; }) {
               notchedOutline: {
                 borderColor: 'var(--line-divider)',
               },
-
             },
           },
           MuiMenuItem: {
@@ -122,7 +119,13 @@ function AppTheme ({ children }: { children: React.ReactNode; }) {
                   },
                 },
               },
-
+              iconSizeSmall: {
+                '&.MuiButton-iconSizeSmall': {
+                  '& > *:first-child': {
+                    fontSize: 20,
+                  },
+                },
+              },
             },
           },
 
@@ -261,7 +264,7 @@ function AppTheme ({ children }: { children: React.ReactNode; }) {
           },
         },
       }),
-    [isDark],
+    [isDark]
   );
 
   return (
