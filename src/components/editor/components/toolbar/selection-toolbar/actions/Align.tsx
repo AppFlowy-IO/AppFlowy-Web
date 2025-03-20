@@ -2,9 +2,9 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId, getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { AlignType, BlockData } from '@/application/types';
-import { ReactComponent as AlignCenterSvg } from '@/assets/toolbar_align_center.svg';
-import { ReactComponent as AlignLeftSvg } from '@/assets/toolbar_align_left.svg';
-import { ReactComponent as AlignRightSvg } from '@/assets/toolbar_align_right.svg';
+import { ReactComponent as AlignCenterSvg } from '@/assets/icons/align_center.svg';
+import { ReactComponent as AlignLeftSvg } from '@/assets/icons/align_left.svg';
+import { ReactComponent as AlignRightSvg } from '@/assets/icons/align_right.svg';
 import { Popover } from '@/components/_shared/popover';
 import {
   useSelectionToolbarContext,

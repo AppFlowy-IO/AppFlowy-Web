@@ -5,9 +5,9 @@ import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as UnderlineSvg } from '@/assets/underline.svg';
+import { ReactComponent as UnderlineSvg } from '@/assets/icons/underline.svg';
 
-export function Underline () {
+export function Underline() {
   const { t } = useTranslation();
   const editor = useSlateStatic();
   const isActivated = CustomEditor.isMarkActive(editor, EditorMarkFormat.Underline);

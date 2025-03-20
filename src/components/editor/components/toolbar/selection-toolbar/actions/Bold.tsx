@@ -6,9 +6,9 @@ import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as BoldSvg } from '@/assets/bold.svg';
+import { ReactComponent as BoldSvg } from '@/assets/icons/bold.svg';
 
-export function Bold () {
+export function Bold() {
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
   const isActivated = CustomEditor.isMarkActive(editor, EditorMarkFormat.Bold);

@@ -11,7 +11,7 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as ColorSvg } from '@/assets/color_theme.svg';
+import { ReactComponent as ColorSvg } from '@/assets/icons/text_color.svg';
 import { ReactComponent as TextSvg } from '@/assets/format_text.svg';
 
 function Color () {

@@ -5,9 +5,9 @@ import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as CodeSvg } from '@/assets/inline_code.svg';
+import { ReactComponent as CodeSvg } from '@/assets/icons/inline_code.svg';
 
-export function InlineCode () {
+export function InlineCode() {
   const { t } = useTranslation();
   const editor = useSlateStatic();
   const isActivated = CustomEditor.isMarkActive(editor, EditorMarkFormat.Code);
