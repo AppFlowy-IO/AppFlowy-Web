@@ -1,7 +1,7 @@
 import { Sort } from '@/application/database-yjs';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_left.svg';
+import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 
 function SortCondition({ sort }: { sort: Sort }) {
   const condition = sort.condition;
@@ -22,7 +22,7 @@ function SortCondition({ sort }: { sort: Sort }) {
       }
     >
       <span className={'text-xs'}>{conditionText}</span>
-      <ArrowDownSvg className={'h-5 w-5 text-text-caption'} />
+      <ArrowDownSvg className={'text-text-caption'} />
     </div>
   );
 }

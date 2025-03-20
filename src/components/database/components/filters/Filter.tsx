@@ -31,7 +31,7 @@ function Filter({ filterId }: { filterId: string }) {
         <div className={'whitespace-nowrap text-xs font-medium'}>
           <FilterContentOverview filter={filter} />
         </div>
-        <ArrowDown className={'h-5 w-5'} />
+        <ArrowDown />
       </div>
       {open && (
         <Popover

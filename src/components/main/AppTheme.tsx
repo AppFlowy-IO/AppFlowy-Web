@@ -65,6 +65,9 @@ function AppTheme({ children }: { children: React.ReactNode }) {
                   color: 'var(--billing-primary-hover)',
                 },
               },
+              sizeSmall: {
+                '& > *:first-child': { fontSize: 20 },
+              },
             },
           },
 
@@ -121,12 +124,9 @@ function AppTheme({ children }: { children: React.ReactNode }) {
                   },
                 },
               },
-              iconSizeSmall: {
-                '&.MuiButton-iconSizeSmall': {
-                  '& > *:first-child': {
-                    fontSize: 20,
-                  },
-                },
+              sizeSmall: {
+                '& .MuiButton-startIcon > *:first-child': { fontSize: 20 },
+                '& .MuiButton-endIcon > *:first-child': { fontSize: 20 },
               },
             },
           },
