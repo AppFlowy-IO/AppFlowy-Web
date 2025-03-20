@@ -35,6 +35,7 @@ const wrapperCreator =
           databaseDoc={doc}
           rowDocMap={rowDocMap}
           readOnly={true}
+          workspaceId={''}
         >
           {children}
         </DatabaseContextProvider>

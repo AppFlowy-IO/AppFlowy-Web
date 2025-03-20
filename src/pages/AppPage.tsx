@@ -3,7 +3,13 @@ import { ReactComponent as TipIcon } from '@/assets/warning.svg';
 import Help from '@/components/_shared/help/Help';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
-import { AppContext, useAppHandlers, useAppOutline, useAppViewId } from '@/components/app/app.hooks';
+import {
+  AppContext,
+  useAppHandlers,
+  useAppOutline,
+  useAppViewId,
+  useCurrentWorkspaceId,
+} from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -19,7 +25,7 @@ function AppPage() {
   const viewId = useAppViewId();
   const outline = useAppOutline();
   const ref = React.useRef<HTMLDivElement>(null);
-
+  const workspaceId = useCurrentWorkspaceId();
   const {
     toView,
     loadViewMeta,
@@ -88,8 +94,9 @@ function AppPage() {
       visibleViewIds: [],
       viewId: view.view_id,
       extra: view.extra,
+      workspaceId,
     } : null;
-  }, [view]);
+  }, [view, workspaceId]);
 
   const handleUploadFile = useCallback((file: File) => {
     if(view && uploadFile) {
@@ -111,8 +118,9 @@ function AppPage() {
 
     const View = layout === ViewLayout.Document ? Document : DatabaseView;
 
-    return doc && viewMeta && View ? (
+    return doc && viewMeta && workspaceId && View ? (
       <View
+        workspaceId={workspaceId}
         doc={doc}
         readOnly={Boolean(isMobile)}
         viewMeta={viewMeta}
@@ -132,7 +140,7 @@ function AppPage() {
         variant={UIVariant.App}
       />
     ) : null;
-  }, [doc, layout, viewId, viewMeta, toView, loadViewMeta, createRowDoc, appendBreadcrumb, loadView, onRendered, updatePage, addPage, deletePage, openPageModal, loadViews, setWordCount, handleUploadFile]);
+  }, [workspaceId, doc, layout, viewId, viewMeta, toView, loadViewMeta, createRowDoc, appendBreadcrumb, loadView, onRendered, updatePage, addPage, deletePage, openPageModal, loadViews, setWordCount, handleUploadFile]);
 
   useEffect(() => {
     if(!viewId) return;

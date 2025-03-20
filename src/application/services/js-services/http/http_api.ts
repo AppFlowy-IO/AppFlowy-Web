@@ -1855,7 +1855,7 @@ export async function getChatMessages(workspaceId: string, chatId: string, limit
     data?: RepeatedChatMessage;
     message: string;
   }>(url, {
-    params: { limit: limit},
+    params: { limit: limit },
   });
 
   const data = response?.data;
@@ -1865,4 +1865,18 @@ export async function getChatMessages(workspaceId: string, chatId: string, limit
   }
 
   return Promise.reject(data);
+}
+
+export async function duplicatePage(workspaceId: string, viewId: string) {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/duplicate`;
+  const response = await axiosInstance?.post<{
+    code: number;
+    message: string;
+  }>(url, {});
+
+  if(response?.data.code === 0) {
+    return;
+  }
+
+  return Promise.reject(response?.data);
 }

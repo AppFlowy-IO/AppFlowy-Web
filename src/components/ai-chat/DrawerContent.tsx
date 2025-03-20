@@ -2,7 +2,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { UIVariant, ViewMetaProps, YDoc } from '@/application/types';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { insertDataToDoc } from '@/components/ai-chat/utils';
-import { useAppHandlers, useAppView } from '@/components/app/app.hooks';
+import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { debounce } from 'lodash-es';
@@ -141,6 +141,7 @@ function DrawerContent({
     };
   }, []);
 
+  const workspaceId = useCurrentWorkspaceId();
   const viewMeta: ViewMetaProps | null = useMemo(() => {
     return view ? {
       name: view.name,
@@ -150,8 +151,9 @@ function DrawerContent({
       visibleViewIds: [],
       viewId: view.view_id,
       extra: view.extra,
+      workspaceId,
     } : null;
-  }, [view]);
+  }, [view, workspaceId]);
 
   const handleUploadFile = useCallback((file: File) => {
     if(view && uploadFile) {
@@ -172,6 +174,7 @@ function DrawerContent({
       {
         doc && viewMeta && (
           <Document
+            workspaceId={workspaceId || ''}
             doc={doc.doc}
             readOnly={false}
             viewMeta={viewMeta}

@@ -506,3 +506,10 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
     }
   }
 }
+
+#appflowy-ai-writer {
+  #appflowy-editor > div {
+    padding: 0 !important;
+    @apply underline text-content-blue-600;
+  }
+}

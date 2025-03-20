@@ -21,7 +21,7 @@ import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 const EditorOverlay = lazy(() => import('@/components/editor/EditorOverlay'));
 
 const EditorEditable = () => {
-  const { readOnly, decorateState, onWordCountChange, viewId } = useEditorContext();
+  const { readOnly, decorateState, onWordCountChange, viewId, workspaceId } = useEditorContext();
   const editor = useSlate();
 
   const codeDecorate = useDecorate(editor);
@@ -32,12 +32,12 @@ const EditorEditable = () => {
         class_name: string;
       })[] = [];
 
-      if (!decorateState) return [];
+      if(!decorateState) return [];
 
       Object.values(decorateState).forEach((state) => {
         const intersection = Range.intersection(state.range, Editor.range(editor, path));
 
-        if (intersection) {
+        if(intersection) {
           highlightRanges.push({
             ...intersection,
             class_name: state.class_name,
@@ -69,8 +69,8 @@ const EditorEditable = () => {
   const onCompositionStart = useCallback(() => {
     const { selection } = editor;
 
-    if (!selection) return;
-    if (Range.isExpanded(selection)) {
+    if(!selection) return;
+    if(Range.isExpanded(selection)) {
       editor.delete();
     }
   }, [editor]);
@@ -84,7 +84,7 @@ const EditorEditable = () => {
   }, [onWordCountChange, viewId, editor]);
 
   useEffect(() => {
-    if (readOnly) return;
+    if(readOnly) return;
     const { onChange } = editor;
 
     editor.onChange = () => {
@@ -104,13 +104,13 @@ const EditorEditable = () => {
     const currentTarget = e.currentTarget as HTMLElement;
     const bottomArea = currentTarget.getBoundingClientRect().bottom - 56 * 4;
 
-    if (e.clientY > bottomArea && e.clientY < (bottomArea + 56)) {
+    if(e.clientY > bottomArea && e.clientY < (bottomArea + 56)) {
       const lastBlock = editor.children[editor.children.length - 1] as SlateElement;
       const isEmptyLine = CustomEditor.getBlockTextContent(lastBlock) === '';
       const type = lastBlock.type;
 
-      if (!lastBlock) return;
-      if (isEmptyLine && type === BlockType.Paragraph) {
+      if(!lastBlock) return;
+      if(isEmptyLine && type === BlockType.Paragraph) {
         editor.select(editor.end([editor.children.length - 1]));
         return;
       }
@@ -123,7 +123,7 @@ const EditorEditable = () => {
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     const detail = e.detail;
 
-    if (detail >= 3) {
+    if(detail >= 3) {
       e.stopPropagation();
       e.preventDefault();
     }
@@ -141,11 +141,13 @@ const EditorEditable = () => {
   return (
     <PanelProvider editor={editor}>
       <BlockPopoverProvider editor={editor}>
-        <LeafContext.Provider value={{
-          linkOpen,
-          openLinkPopover: handleOpenLinkPopover,
-          closeLinkPopover: handleCloseLinkPopover,
-        }}>
+        <LeafContext.Provider
+          value={{
+            linkOpen,
+            openLinkPopover: handleOpenLinkPopover,
+            closeLinkPopover: handleCloseLinkPopover,
+          }}
+        >
           <Editable
             role={'textbox'}
             decorate={(entry: NodeEntry) => {
@@ -169,7 +171,10 @@ const EditorEditable = () => {
           />
           {!readOnly &&
             <Suspense>
-              <EditorOverlay/>
+              <EditorOverlay
+                workspaceId={workspaceId}
+                viewId={viewId}
+              />
               <HrefPopover
                 open={!!linkOpen}
                 onClose={handleCloseLinkPopover}

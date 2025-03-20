@@ -26,6 +26,7 @@ export interface Decorate {
 }
 
 export interface EditorContextState {
+  workspaceId: string;
   viewId: string;
   readOnly: boolean;
   layoutStyle?: EditorLayoutStyle;
@@ -59,6 +60,7 @@ export const EditorContext = createContext<EditorContextState>({
   layoutStyle: defaultLayoutStyle,
   codeGrammars: {},
   viewId: '',
+  workspaceId: '',
 });
 
 export const EditorContextProvider = ({ children, ...props }: EditorContextState & { children: React.ReactNode }) => {
@@ -69,7 +71,7 @@ export const EditorContextProvider = ({ children, ...props }: EditorContextState
     setDecorateState((prev) => {
       const oldValue = prev[type];
 
-      if (oldValue && Range.equals(oldValue.range, range) && oldValue.class_name === class_name) {
+      if(oldValue && Range.equals(oldValue.range, range) && oldValue.class_name === class_name) {
         return prev;
       }
 
@@ -85,7 +87,7 @@ export const EditorContextProvider = ({ children, ...props }: EditorContextState
 
   const removeDecorate = useCallback((type: string) => {
     setDecorateState((prev) => {
-      if (prev[type] === undefined) {
+      if(prev[type] === undefined) {
         return prev;
       }
 

@@ -1,6 +1,7 @@
 import { YjsEditor } from '@/application/slate-yjs';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
+import AIAssistant from '@/components/editor/components/toolbar/selection-toolbar/actions/AIAssistant';
 import Align from '@/components/editor/components/toolbar/selection-toolbar/actions/Align';
 import Bold from '@/components/editor/components/toolbar/selection-toolbar/actions/Bold';
 import BulletedList from '@/components/editor/components/toolbar/selection-toolbar/actions/BulletedList';
@@ -34,29 +35,29 @@ function ToolbarActions() {
   const end = useMemo(() => selection ? editor.end(selection) : null, [editor, selection]);
 
   const startBlock = useMemo(() => {
-    if (!start) return null;
+    if(!start) return null;
     try {
       return getBlockEntry(editor, start);
-    } catch (e) {
+    } catch(e) {
       return null;
     }
   }, [editor, start]);
   const endBlock = useMemo(() => {
-    if (!end) return null;
+    if(!end) return null;
     try {
       return getBlockEntry(editor, end);
-    } catch (e) {
+    } catch(e) {
       return null;
     }
   }, [editor, end]);
 
   const isAcrossBlock = useMemo(() => {
-    if (startBlock && endBlock && Path.equals(startBlock[1], endBlock[1])) return false;
+    if(startBlock && endBlock && Path.equals(startBlock[1], endBlock[1])) return false;
     return startBlock?.[0].blockId !== endBlock?.[0].blockId;
   }, [endBlock, startBlock]);
 
   const isCodeBlock = useMemo(() => {
-    if (!start || !end) return false;
+    if(!start || !end) return false;
     const range = { anchor: start, focus: end };
 
     const [codeBlock] = editor.nodes({
@@ -67,57 +68,50 @@ function ToolbarActions() {
     return !!codeBlock;
   }, [editor, end, start]);
 
-  const groupTwo = <>
-    <Underline/>
-    <Bold/>
-    <Italic/>
-    <StrikeThrough/>
-  </>;
-
-  const groupOne = <>
-    <Paragraph/>
-    <Heading/>
-    <Divider
-      className={'my-1.5 bg-line-on-toolbar'}
-      orientation={'vertical'}
-      flexItem={true}
-    />
-  </>;
-
-  const groupThree = <>
-    <Divider
-      className={'my-1.5 bg-line-on-toolbar'}
-      orientation={'vertical'}
-      flexItem={true}
-    />
-    <Quote/>
-    <BulletedList/>
-    <NumberedList/>
-    <Divider
-      className={'my-1.5 bg-line-on-toolbar'}
-      orientation={'vertical'}
-      flexItem={true}
-    />
-    <Href/>
-  </>;
-
-  const groupFour = <><Align enabled={toolbarVisible}/></>;
-
   return (
     <div
       className={'flex w-fit flex-grow items-center gap-1'}
     >
+      {!isCodeBlock && <AIAssistant />}
       {
-        !isAcrossBlock && !isCodeBlock && groupOne
+        !isAcrossBlock && !isCodeBlock && <>
+          <Paragraph />
+          <Heading />
+          <Divider
+            className={'my-1.5 bg-line-on-toolbar'}
+            orientation={'vertical'}
+            flexItem={true}
+          />
+        </>
       }
-      {groupTwo}
-      {!isCodeBlock && <InlineCode/>}
-      {!isCodeBlock && !isAcrossBlock && <Formula/>}
+      <>
+        <Underline />
+        <Bold />
+        <Italic />
+        <StrikeThrough />
+      </>
+      {!isCodeBlock && <InlineCode />}
+      {!isCodeBlock && !isAcrossBlock && <Formula />}
       {
-        !isAcrossBlock && !isCodeBlock && groupThree
+        !isAcrossBlock && !isCodeBlock && <>
+          <Divider
+            className={'my-1.5 bg-line-on-toolbar'}
+            orientation={'vertical'}
+            flexItem={true}
+          />
+          <Quote />
+          <BulletedList />
+          <NumberedList />
+          <Divider
+            className={'my-1.5 bg-line-on-toolbar'}
+            orientation={'vertical'}
+            flexItem={true}
+          />
+          <Href />
+        </>
       }
-      {!isCodeBlock && groupFour}
-      <Color/>
+      {!isCodeBlock && <Align enabled={toolbarVisible} />}
+      <Color />
     </div>
   );
 }

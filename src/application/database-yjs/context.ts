@@ -26,6 +26,7 @@ export interface DatabaseContextState {
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   onRendered?: (height: number) => void;
   showActions?: boolean;
+  workspaceId: string;
 }
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);
@@ -33,7 +34,7 @@ export const DatabaseContext = createContext<DatabaseContextState | null>(null);
 export const useDatabaseContext = () => {
   const context = useContext(DatabaseContext);
 
-  if (!context) {
+  if(!context) {
     throw new Error('DatabaseContext is not provided');
   }
 
@@ -89,7 +90,7 @@ export const useDatabaseView = () => {
   return viewId ? database?.get(YjsDatabaseKey.views)?.get(viewId) : undefined;
 };
 
-export function useDatabaseFields () {
+export function useDatabaseFields() {
   const database = useDatabase();
 
   return database.get(YjsDatabaseKey.fields);

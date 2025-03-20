@@ -19,11 +19,11 @@ export interface CollabViewProps {
   doc?: YDoc;
 }
 
-function CollabView ({ doc }: CollabViewProps) {
+function CollabView({ doc }: CollabViewProps) {
   const visibleViewIds = usePublishContext()?.viewMeta?.visible_view_ids;
   const { viewId, layout, icon, cover, layoutClassName, style, name } = useViewMeta();
   const View = useMemo(() => {
-    switch (layout) {
+    switch(layout) {
       case ViewLayout.Document:
         return Document;
       case ViewLayout.Grid:
@@ -47,11 +47,11 @@ function CollabView ({ doc }: CollabViewProps) {
   const className = useMemo(() => {
     const classList = ['relative w-full flex-1'];
 
-    if (isTemplateThumb && layout !== ViewLayout.Document) {
+    if(isTemplateThumb && layout !== ViewLayout.Document) {
       classList.push('flex justify-center h-full');
     }
 
-    if (layoutClassName) {
+    if(layoutClassName) {
       classList.push(layoutClassName);
     }
 
@@ -59,7 +59,7 @@ function CollabView ({ doc }: CollabViewProps) {
   }, [isTemplateThumb, layout, layoutClassName]);
 
   const skeleton = useMemo(() => {
-    switch (layout) {
+    switch(layout) {
       case ViewLayout.Grid:
         return <GridSkeleton />;
       case ViewLayout.Board:
@@ -73,9 +73,9 @@ function CollabView ({ doc }: CollabViewProps) {
     }
   }, [layout]);
 
-  if (!View) return null;
+  if(!View) return null;
 
-  if (!doc) {
+  if(!doc) {
     return skeleton;
   }
 
@@ -93,6 +93,7 @@ function CollabView ({ doc }: CollabViewProps) {
         className={className}
       >
         <View
+          workspaceId={''}
           doc={doc}
           readOnly={true}
           loadViewMeta={loadViewMeta}

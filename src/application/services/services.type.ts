@@ -38,7 +38,14 @@ import {
 import { AxiosInstance } from 'axios';
 import { RepeatedChatMessage } from '@appflowyinc/ai-chat/dist/types';
 
-export type AFService = PublishService & AppService & WorkspaceService & TemplateService & QuickNoteService & AIChatService & {
+export type AFService =
+  PublishService
+  & AppService
+  & WorkspaceService
+  & TemplateService
+  & QuickNoteService
+  & AIChatService
+  & {
   getClientId: () => string;
   getAxiosInstance: () => AxiosInstance | null;
 };
@@ -110,7 +117,7 @@ export interface AppService {
   restoreFromTrash: (workspaceId: string, viewId?: string) => Promise<void>;
   movePage: (workspaceId: string, viewId: string, parentId: string, prevViewId?: string) => Promise<void>;
   uploadFile: (workspaceId: string, viewId: string, file: File, onProgress?: (progress: number) => void) => Promise<string>;
-  
+  duplicateAppPage: (workspaceId: string, viewId: string) => Promise<void>;
 }
 
 export interface QuickNoteService {
@@ -179,7 +186,7 @@ export interface PublishService {
 
 }
 
-export interface AIChatService{
+export interface AIChatService {
   getChatMessages: (
     workspaceId: string,
     chatId: string,
