@@ -9,9 +9,9 @@ import { copyTextToClipboard } from '@/utils/copy';
 import { Divider } from '@mui/material';
 import React, { Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
-import { ReactComponent as PreviewIcon } from '@/assets/full_view.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { ReactComponent as PreviewIcon } from '@/assets/icons/expand.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 import { Element } from 'slate';
 

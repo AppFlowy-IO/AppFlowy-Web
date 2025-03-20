@@ -1,5 +1,5 @@
 import { BlockType, FieldURLType, FileBlockData } from '@/application/types';
-import { ReactComponent as FileIcon } from '@/assets/file_upload.svg';
+import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as ReloadIcon } from '@/assets/reload.svg';
 
 import { notify } from '@/components/_shared/notify';

@@ -6,11 +6,11 @@ import { useTranslation } from 'react-i18next';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchContentRef } from 'react-zoom-pan-pinch';
 import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as ReloadIcon } from '@/assets/reload.svg';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as MinusIcon } from '@/assets/minus.svg';
-import { ReactComponent as LinkIcon } from '@/assets/link.svg';
-import { ReactComponent as DownloadIcon } from '@/assets/download.svg';
-import { ReactComponent as CloseIcon } from '@/assets/close.svg';
+import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
+import { ReactComponent as DownloadIcon } from '@/assets/icons/save_as.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 
 export interface GalleryImage {
   src: string;
@@ -166,7 +166,7 @@ function GalleryPreview({ images, open, onClose, previewIndex }: GalleryPreviewP
                     onClick={onClose}
                     className={'rounded-[8px] bg-bg-mask px-3.5 text-white hover:text-content-blue-400'}
                   >
-                    <CloseIcon className={'h-3.5 w-3.5'} />
+                    <CloseIcon />
                   </IconButton>
                 </Tooltip>
               </div>

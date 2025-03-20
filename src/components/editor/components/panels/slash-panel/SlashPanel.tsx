@@ -23,7 +23,7 @@ import { ReactComponent as CodeIcon } from '@/assets/icons/inline_code.svg';
 import { ReactComponent as DividerIcon } from '@/assets/slash_menu_icon_divider.svg';
 import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/slash_menu_icon_emoji.svg';
-import { ReactComponent as FileIcon } from '@/assets/slash_menu_icon_file.svg';
+import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 // import { ReactComponent as GridIcon } from '@/assets/slash_menu_icon_grid.svg';
 // import { ReactComponent as BoardIcon } from '@/assets/slash_menu_icon_kanban.svg';
 // import { ReactComponent as CalendarIcon } from '@/assets/slash_menu_icon_calendar.svg';

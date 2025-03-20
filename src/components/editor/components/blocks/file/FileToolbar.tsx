@@ -9,10 +9,10 @@ import { downloadFile } from '@/utils/download';
 import { OutlinedInput } from '@mui/material';
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
-import { ReactComponent as DownloadIcon } from '@/assets/download.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
-import { ReactComponent as EditIcon } from '@/assets/edit.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { ReactComponent as DownloadIcon } from '@/assets/icons/save_as.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 
 import { useReadOnly, useSlateStatic } from 'slate-react';
 import { Element } from 'slate';

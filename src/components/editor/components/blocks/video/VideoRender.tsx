@@ -78,7 +78,6 @@ function VideoRender({
         </div>
       </div>
 
-
       {!readOnly ? (
         <>
           <ImageResizer
@@ -98,6 +97,7 @@ function VideoRender({
           />
         </>
       ) : null}
+
       {showToolbar && <VideoToolbar node={node} />}
     </div>
   );

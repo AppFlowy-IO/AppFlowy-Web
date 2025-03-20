@@ -1,5 +1,5 @@
 import { BlockType } from '@/application/types';
-import { ReactComponent as MathSvg } from '@/assets/math.svg';
+import { ReactComponent as MathSvg } from '@/assets/icons/formula.svg';
 import { KatexMath } from '@/components/_shared/katex-math';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import MathEquationToolbar from '@/components/editor/components/blocks/math-equation/MathEquationToolbar';
