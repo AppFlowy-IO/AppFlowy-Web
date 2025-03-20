@@ -4,7 +4,7 @@ import SortList from '@/components/database/components/sorts/SortList';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as SortSvg } from '@/assets/sort_ascending.svg';
-import { ReactComponent as ArrowDownSvg } from '@/assets/arrow_down.svg';
+import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 
 export function Sorts() {
   const { t } = useTranslation();
@@ -24,7 +24,7 @@ export function Sorts() {
       >
         <SortSvg />
         {t('grid.settings.sort')}
-        <ArrowDownSvg />
+        <ArrowDown className={'h-5 w-5'} />
       </div>
       {open && (
         <Popover

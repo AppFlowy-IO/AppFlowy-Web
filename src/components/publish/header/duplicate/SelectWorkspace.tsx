@@ -3,7 +3,7 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Avatar, Button, CircularProgress, Divider, Tooltip } from '@mui/material';
-import { ReactComponent as RightIcon } from '@/assets/arrow_right.svg';
+import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as CheckIcon } from '@/assets/selected.svg';
 import { Popover } from '@/components/_shared/popover';
 import { stringToColor } from '@/utils/color';
@@ -15,7 +15,7 @@ export interface SelectWorkspaceProps {
   loading?: boolean;
 }
 
-function stringAvatar (name: string) {
+function stringAvatar(name: string) {
   return {
     sx: {
       bgcolor: stringToColor(name),
@@ -24,7 +24,7 @@ function stringAvatar (name: string) {
   };
 }
 
-function SelectWorkspace ({ loading, value, onChange, workspaceList }: SelectWorkspaceProps) {
+function SelectWorkspace({ loading, value, onChange, workspaceList }: SelectWorkspaceProps) {
   const { t } = useTranslation();
   const email = useContext(AFConfigContext)?.currentUser?.email || '';
   const selectedWorkspace = useMemo(() => {
@@ -58,7 +58,7 @@ function SelectWorkspace ({ loading, value, onChange, workspaceList }: SelectWor
         </div>
       );
     },
-    [t],
+    [t]
   );
 
   return (
@@ -83,7 +83,7 @@ function SelectWorkspace ({ loading, value, onChange, workspaceList }: SelectWor
               <div className={'flex-1 overflow-hidden'}>
                 {selectedWorkspace ? renderWorkspace(selectedWorkspace) : null}
               </div>
-              <span className={`h-4 w-4 ${selectOpen ? '-rotate-90' : 'rotate-90'} transform`}>
+              <span className={`h-5 w-5 ${selectOpen ? '-rotate-90' : 'rotate-90'} transform`}>
                 <RightIcon className={'h-full w-full'} />
               </span>
             </>

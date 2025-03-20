@@ -1,9 +1,4 @@
-import {
-  ViewComponentProps,
-  ViewLayout,
-  YDoc,
-  ViewMetaProps, UIVariant,
-} from '@/application/types';
+import { ViewComponentProps, ViewLayout, YDoc, ViewMetaProps, UIVariant } from '@/application/types';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { useAppHandlers, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
@@ -19,20 +14,16 @@ import { useTranslation } from 'react-i18next';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/full_view.svg';
 import ShareButton from 'src/components/app/share/ShareButton';
 import { ReactComponent as CloseIcon } from '@/assets/close.svg';
-import { ReactComponent as ArrowRightIcon } from '@/assets/arrow_right.svg';
+import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { TransitionProps } from '@mui/material/transitions';
 
 const Transition = React.forwardRef(function Transition(
   props: TransitionProps & {
     children: React.ReactElement;
   },
-  ref: React.Ref<unknown>,
+  ref: React.Ref<unknown>
 ) {
-  return <Zoom
-
-    ref={ref}
-    {...props}
-  />;
+  return <Zoom ref={ref} {...props} />;
 });
 
 function ViewModal({
@@ -61,30 +52,33 @@ function ViewModal({
     uploadFile,
   } = useAppHandlers();
   const outline = useAppOutline();
-  const [doc, setDoc] = React.useState<{
-    id: string;
-    doc: YDoc;
-  } | undefined>(undefined);
+  const [doc, setDoc] = React.useState<
+    | {
+        id: string;
+        doc: YDoc;
+      }
+    | undefined
+  >(undefined);
   const [notFound, setNotFound] = React.useState(false);
   const service = useService();
   const requestInstance = service?.getAxiosInstance();
   const loadPageDoc = useCallback(async(id: string) => {
+      setNotFound(false);
+      setDoc(undefined);
+      try {
+        const doc = await loadView(id);
 
-    setNotFound(false);
-    setDoc(undefined);
-    try {
-      const doc = await loadView(id);
-
-      setDoc({ doc, id });
-    } catch(e) {
-      setNotFound(true);
-      console.error(e);
-    }
-
-  }, [loadView]);
+        setDoc({ doc, id });
+      } catch (e) {
+        setNotFound(true);
+        console.error(e);
+      }
+    },
+    [loadView]
+  );
 
   useEffect(() => {
-    if(open && viewId) {
+    if (open && viewId) {
       void loadPageDoc(viewId);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -96,7 +90,7 @@ function ViewModal({
   }, [onClose]);
 
   const view = useMemo(() => {
-    if(!outline || !viewId) return;
+    if (!outline || !viewId) return;
     return findView(outline, viewId);
   }, [outline, viewId]);
 
@@ -112,13 +106,16 @@ function ViewModal({
       workspaceId,
     } : null;
   }, [view, workspaceId]);
+
   const handleUploadFile = useCallback((file: File) => {
     if(view && uploadFile) {
       return uploadFile(view.view_id, file);
     }
 
-    return Promise.reject();
-  }, [uploadFile, view]);
+      return Promise.reject();
+    },
+    [uploadFile, view]
+  );
   const [movePopoverAnchorEl, setMovePopoverAnchorEl] = React.useState<null | HTMLElement>(null);
 
   const onMoved = useCallback(() => {
@@ -126,64 +123,55 @@ function ViewModal({
   }, []);
 
   const modalTitle = useMemo(() => {
-    if(!viewId) return null;
-    const space = findAncestors(outline || [], viewId)?.find(item => item.extra?.is_space);
+    if (!viewId) return null;
+    const space = findAncestors(outline || [], viewId)?.find((item) => item.extra?.is_space);
 
     return (
-      <div className={'w-full bg-bg-body z-[10] px-4 py-4 sticky top-0 flex items-center justify-between gap-2'}>
+      <div className={'sticky top-0 z-[10] flex w-full items-center justify-between gap-2 bg-bg-body px-4 py-4'}>
         <div className={'flex items-center gap-4'}>
           <Tooltip title={t('tooltip.openAsPage')}>
             <IconButton
               size={'small'}
-              onClick={async() => {
+              onClick={async () => {
                 await toView(viewId);
                 handleClose();
               }}
             >
-              <ExpandMoreIcon className={'text-text-title opacity-80 h-5 w-5'} />
+              <ExpandMoreIcon className={'h-5 w-5 text-text-title opacity-80'} />
             </IconButton>
           </Tooltip>
-          <Divider
-            orientation={'vertical'}
-            className={'h-4'}
-          />
+          <Divider orientation={'vertical'} className={'h-4'} />
           {space && (
             <Button
               onClick={(e) => {
                 setMovePopoverAnchorEl(e.currentTarget);
               }}
               size={'small'}
-              startIcon={<SpaceIcon
-                bgColor={space.extra?.space_icon_color}
-                value={space.extra?.space_icon || ''}
-                char={space.extra?.space_icon ? undefined : space.name.slice(0, 1)}
-              />}
+              startIcon={
+                <SpaceIcon
+                  bgColor={space.extra?.space_icon_color}
+                  value={space.extra?.space_icon || ''}
+                  char={space.extra?.space_icon ? undefined : space.name.slice(0, 1)}
+                />
+              }
               color={'inherit'}
               className={'justify-start px-1.5'}
-              endIcon={<ArrowRightIcon className={'transform rotate-90'} />}
-            >{space.name}</Button>
+              endIcon={<ArrowDownIcon className={'h-5 w-5'} />}
+            >
+              {space.name}
+            </Button>
           )}
         </div>
 
         <div className={'flex items-center gap-4'}>
           <ShareButton viewId={viewId} />
-          <MoreActions
-            onDeleted={handleClose}
-            viewId={viewId}
-          />
+          <MoreActions onDeleted={handleClose} viewId={viewId} />
 
-          <Divider
-            orientation={'vertical'}
-            className={'h-4'}
-          />
-          <IconButton
-            size={'small'}
-            onClick={handleClose}
-          >
+          <Divider orientation={'vertical'} className={'h-4'} />
+          <IconButton size={'small'} onClick={handleClose}>
             <CloseIcon />
           </IconButton>
         </div>
-
       </div>
     );
   }, [handleClose, outline, t, toView, viewId]);
@@ -191,7 +179,7 @@ function ViewModal({
   const layout = view?.layout || ViewLayout.Document;
 
   const View = useMemo(() => {
-    switch(layout) {
+    switch (layout) {
       case ViewLayout.Document:
         return Document;
       case ViewLayout.Grid:
@@ -241,21 +229,16 @@ function ViewModal({
       }}
     >
       {modalTitle}
-      {notFound ? (
-        <RecordNotFound />
-      ) : (
-        <div className={'w-full h-full'}>
-          {viewDom}
-        </div>
+      {notFound ? <RecordNotFound /> : <div className={'h-full w-full'}>{viewDom}</div>}
+      {viewId && (
+        <MovePagePopover
+          viewId={viewId}
+          open={Boolean(movePopoverAnchorEl)}
+          anchorEl={movePopoverAnchorEl}
+          onClose={() => setMovePopoverAnchorEl(null)}
+          onMoved={onMoved}
+        />
       )}
-      {viewId && <MovePagePopover
-        viewId={viewId}
-        open={Boolean(movePopoverAnchorEl)}
-        anchorEl={movePopoverAnchorEl}
-        onClose={() => setMovePopoverAnchorEl(null)}
-        onMoved={onMoved}
-      />}
-
     </Dialog>
   );
 }
