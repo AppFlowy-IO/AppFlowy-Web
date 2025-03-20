@@ -1,9 +1,9 @@
 import { IconButton, Tooltip } from '@mui/material';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CopyIcon } from '@/assets/link.svg';
-import { ReactComponent as DownloadIcon } from '@/assets/download.svg';
-import { ReactComponent as PreviewIcon } from '@/assets/full_view.svg';
+import { ReactComponent as CopyLinkIcon } from '@/assets/icons/link.svg';
+import { ReactComponent as DownloadIcon } from '@/assets/icons/save_as.svg';
+import { ReactComponent as PreviewIcon } from '@/assets/icons/expand.svg';
 
 function GalleryToolbar ({
   onOpenPreview,
@@ -17,7 +17,7 @@ function GalleryToolbar ({
   const { t } = useTranslation();
   const buttons = useMemo(() => [
     { label: t('gallery.preview'), onClick: onOpenPreview, Icon: PreviewIcon },
-    { label: t('gallery.copy'), onClick: onCopy, Icon: CopyIcon },
+    { label: t('gallery.copy'), onClick: onCopy, Icon: CopyLinkIcon },
     { label: t('gallery.download'), onClick: onDownload, Icon: DownloadIcon },
   ], [t, onOpenPreview, onDownload, onCopy]);
 
@@ -30,7 +30,7 @@ function GalleryToolbar ({
               size={'small'} onClick={onClick}
               className={'p-1 hover:bg-transparent hover:text-content-blue-400'}
             >
-              <Icon className={'h-5 w-5'} />
+              <Icon />
             </IconButton>
           </Tooltip>
         ))}

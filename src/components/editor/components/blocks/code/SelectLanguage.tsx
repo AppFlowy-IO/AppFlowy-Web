@@ -1,4 +1,4 @@
-import { ReactComponent as SelectedIcon } from '@/assets/selected.svg';
+import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
 import { Popover } from '@/components/_shared/popover';
 import { supportLanguages } from '@/components/editor/components/blocks/code/constants';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
@@ -147,7 +147,7 @@ function SelectLanguage({
                 <div className={'flex-1'}>{item.content}</div>
 
                 {item.key === language && (
-                  <SelectedIcon className={'w-4 h-4 ml-1 text-function-success'} />
+                  <TickIcon className='h-5 w-5 text-content-on-fill-hover'/>
                 )}
               </div>
             ))}
