@@ -3,7 +3,7 @@ import { Popover } from '@/components/_shared/popover';
 import { FilterContentOverview } from './overview';
 import React, { useState } from 'react';
 import { FieldDisplay } from '@/components/database/components/field';
-import { ReactComponent as ArrowDownSvg } from '@/assets/arrow_down.svg';
+import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_left.svg';
 import { FilterMenu } from './filter-menu';
 
 function Filter({ filterId }: { filterId: string }) {
@@ -31,7 +31,7 @@ function Filter({ filterId }: { filterId: string }) {
         <div className={'whitespace-nowrap text-xs font-medium'}>
           <FilterContentOverview filter={filter} />
         </div>
-        <ArrowDownSvg />
+        <ArrowDown className={'h-5 w-5'} />
       </div>
       {open && (
         <Popover
