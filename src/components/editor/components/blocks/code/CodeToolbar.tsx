@@ -5,7 +5,7 @@ import { copyTextToClipboard } from '@/utils/copy';
 import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlateStatic } from 'slate-react';
-import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 
 function CodeToolbar({ node }: {
   node: CodeNode

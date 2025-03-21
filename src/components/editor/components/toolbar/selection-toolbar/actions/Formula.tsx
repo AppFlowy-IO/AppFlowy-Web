@@ -9,7 +9,7 @@ import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Transforms, Text, Editor } from 'slate';
 import { useSlate } from 'slate-react';
-import { ReactComponent as MathSvg } from '@/assets/math.svg';
+import { ReactComponent as MathSvg } from '@/assets/icons/formula.svg';
 
 function Formula() {
   const { t } = useTranslation();

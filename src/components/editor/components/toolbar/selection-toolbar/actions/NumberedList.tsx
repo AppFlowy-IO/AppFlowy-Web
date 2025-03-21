@@ -6,7 +6,7 @@ import React, { useCallback } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as NumberedListSvg } from '@/assets/numbered_list.svg';
+import { ReactComponent as NumberedListSvg } from '@/assets/icons/numbered_list.svg';
 
 export function NumberedList() {
   const { t } = useTranslation();
@@ -25,7 +25,6 @@ export function NumberedList() {
       }
 
       CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.NumberedListBlock, {});
-
     } catch (e) {
       return;
     }
@@ -33,7 +32,7 @@ export function NumberedList() {
 
   return (
     <ActionButton active={isActivated} onClick={onClick} tooltip={t('document.plugins.numberedList')}>
-      <NumberedListSvg/>
+      <NumberedListSvg />
     </ActionButton>
   );
 }

@@ -1,15 +1,13 @@
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import {
-  useSelectionToolbarContext,
-} from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
+import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { createHotkey, getModifier, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlate } from 'slate-react';
-import { ReactComponent as LinkSvg } from '@/assets/link.svg';
+import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
 import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 
 export function Href() {
@@ -18,9 +16,7 @@ export function Href() {
 
   const editor = useSlate() as YjsEditor;
 
-  const {
-    visible,
-  } = useSelectionToolbarContext();
+  const { visible } = useSelectionToolbarContext();
   const [state, setState] = React.useState({
     isActivated: false,
     hasFormulaActivated: false,
@@ -47,12 +43,15 @@ export function Href() {
     setState(getState());
   }, [visible, getState, editor.selection]);
 
-  const onClick = useCallback((e: React.MouseEvent) => {
-    e.stopPropagation();
-    e.preventDefault();
-    setOpen(true);
-    forceShow(true);
-  }, [forceShow]);
+  const onClick = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      setOpen(true);
+      forceShow(true);
+    },
+    [forceShow]
+  );
 
   const tooltip = useMemo(() => {
     const modifier = getModifier();
@@ -93,13 +92,8 @@ export function Href() {
 
   return (
     <>
-      <ActionButton
-        disabled={disabled}
-        onClick={onClick}
-        active={isActivated}
-        tooltip={tooltip}
-      >
-        <LinkSvg/>
+      <ActionButton disabled={disabled} onClick={onClick} active={isActivated} tooltip={tooltip}>
+        <LinkSvg />
       </ActionButton>
 
       <HrefPopover

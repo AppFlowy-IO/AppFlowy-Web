@@ -37,7 +37,7 @@ function SpaceActions({
           <MoreIcon/>
         </IconButton>
       </Tooltip>
-      {loading ? <CircularProgress size={16}/> : <Tooltip
+      {loading ? <CircularProgress size={20}/> : <Tooltip
         disableInteractive={true}
         disableFocusListener
         title={t('sideBar.addAPage')}

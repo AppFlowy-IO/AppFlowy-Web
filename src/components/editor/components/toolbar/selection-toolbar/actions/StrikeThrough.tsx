@@ -5,7 +5,7 @@ import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as StrikeThroughSvg } from '@/assets/strikethrough.svg';
+import { ReactComponent as StrikeThroughSvg } from '@/assets/icons/strikethrough.svg';
 
 export function StrikeThrough () {
   const { t } = useTranslation();

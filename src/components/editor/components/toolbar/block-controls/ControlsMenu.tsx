@@ -1,9 +1,9 @@
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
-import { ReactComponent as DuplicateIcon } from '@/assets/duplicate.svg';
-import { ReactComponent as CopyLinkIcon } from '@/assets/link.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
+import { ReactComponent as CopyLinkIcon } from '@/assets/icons/link.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
 import Depth from '@/components/editor/components/toolbar/block-controls/Depth';

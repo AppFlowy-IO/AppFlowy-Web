@@ -1,4 +1,4 @@
-import { ReactComponent as ArrowDownSvg } from '@/assets/arrow_down.svg';
+import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_left.svg';
 import { FieldDisplay } from '@/components/database/components/field';
 import React from 'react';
 

@@ -6,7 +6,7 @@ import React, { useCallback } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as BulletedListSvg } from '@/assets/bulleted_list.svg';
+import { ReactComponent as BulletedListSvg } from '@/assets/icons/bulleted_list.svg';
 
 export function BulletedList() {
   const { t } = useTranslation();
@@ -25,7 +25,6 @@ export function BulletedList() {
       }
 
       CustomEditor.turnToBlock(editor, node.blockId as string, BlockType.BulletedListBlock, {});
-
     } catch (e) {
       return;
     }
@@ -33,7 +32,7 @@ export function BulletedList() {
 
   return (
     <ActionButton active={isActivated} onClick={onClick} tooltip={t('document.plugins.bulletedList')}>
-      <BulletedListSvg/>
+      <BulletedListSvg />
     </ActionButton>
   );
 }

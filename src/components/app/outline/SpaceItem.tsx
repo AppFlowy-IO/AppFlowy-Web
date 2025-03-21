@@ -48,11 +48,11 @@ function SpaceItem({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={
-          'flex items-center select-none px-1 truncate cursor-pointer min-h-[34px] w-full gap-0.5 rounded-[8px] py-1.5  text-sm hover:bg-fill-list-hover focus:bg-content-blue-50 focus:outline-none'
+          'flex items-center select-none px-1 truncate cursor-pointer min-h-[30px] w-full gap-0.5 rounded-[8px] py-0.5  text-sm hover:bg-fill-list-hover focus:bg-content-blue-50 focus:outline-none'
         }
       >
         <SpaceIcon
-          className={'icon !rounded-[8px] !h-[22px] mr-1.5 !w-[22px] p-[0.15em]'}
+          className={'icon !rounded-[8px] !h-5 mr-1.5 !w-5 p-[0.15em]'}
           bgColor={extra?.space_icon_color}
           value={extra?.space_icon || ''}
           char={extra?.space_icon ? undefined : name.slice(0, 1)}

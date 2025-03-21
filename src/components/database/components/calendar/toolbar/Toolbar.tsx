@@ -5,13 +5,13 @@ import Button from '@mui/material/Button';
 import dayjs from 'dayjs';
 import React, { useMemo } from 'react';
 import { ToolbarProps } from 'react-big-calendar';
-import { ReactComponent as LeftArrow } from '@/assets/arrow_left.svg';
-import { ReactComponent as RightArrow } from '@/assets/arrow_right.svg';
-import { ReactComponent as DownArrow } from '@/assets/arrow_down.svg';
+import { ReactComponent as LeftArrow } from '@/assets/icons/alt_arrow_left.svg';
+import { ReactComponent as RightArrow } from '@/assets/icons/alt_arrow_right.svg';
+import { ReactComponent as DownArrow } from '@/assets/icons/alt_arrow_down.svg';
 
 import { useTranslation } from 'react-i18next';
 
-export function Toolbar ({
+export function Toolbar({
   onNavigate,
   date,
   emptyEvents,

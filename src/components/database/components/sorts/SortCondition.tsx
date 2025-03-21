@@ -1,7 +1,7 @@
 import { Sort } from '@/application/database-yjs';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ArrowDownSvg } from '@/assets/arrow_down.svg';
+import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 
 function SortCondition({ sort }: { sort: Sort }) {
   const condition = sort.condition;

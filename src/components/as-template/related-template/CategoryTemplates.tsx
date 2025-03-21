@@ -5,12 +5,12 @@ import CategoryTemplateItem from '@/components/as-template/related-template/Cate
 import { debounce } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
 import { Button, Collapse, OutlinedInput, Skeleton } from '@mui/material';
-import { ReactComponent as RightIcon } from '@/assets/arrow_right.svg';
+import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as SearchIcon } from '@/assets/search.svg';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
-function CategoryTemplates ({
+function CategoryTemplates({
   category,
   selectedTemplateIds,
   onChange,
@@ -24,11 +24,7 @@ function CategoryTemplates ({
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [searchText, setSearchText] = React.useState('');
-  const {
-    templates,
-    loading,
-    loadCategoryTemplates,
-  } = useLoadCategoryTemplates();
+  const { templates, loading, loadCategoryTemplates } = useLoadCategoryTemplates();
   const [searchParams] = useSearchParams();
 
   const filteredTemplates = useMemo(() => {
@@ -36,17 +32,15 @@ function CategoryTemplates ({
 
     return templates.filter((template) => template.view_id !== currentTemplateViewId);
   }, [templates, searchParams]);
-  
-  const handleClick = () => {
 
-    setOpen(prev => {
+  const handleClick = () => {
+    setOpen((prev) => {
       if (!prev) {
         void loadCategoryTemplates(category.id);
       }
 
       return !prev;
     });
-
   };
 
   const debounceSearch = useMemo(() => {
@@ -69,17 +63,17 @@ function CategoryTemplates ({
 
   return (
     <div className={'flex flex-col gap-2'}>
-      <Button onClick={handleClick} className={'text-text-caption font-medium justify-between flex items-center gap-2'}>
+      <Button onClick={handleClick} className={'flex items-center justify-between gap-2 font-medium text-text-caption'}>
         <CategoryIcon icon={category.icon} />
         <div className={'flex-1 text-left'}>{category.name}</div>
-        {open ? <RightIcon className={'w-4 h-4 transform rotate-90'} /> : <RightIcon className={'w-4 h-4'} />}
+        <RightIcon className={`h-5 w-5 ${open ? 'rotate-90 transform' : ''}`} />
       </Button>
-      <Collapse in={open} timeout="auto" unmountOnExit>
+      <Collapse in={open} timeout='auto' unmountOnExit>
         <OutlinedInput
           size={'small'}
           fullWidth
           value={searchText}
-          className={'gap-2 mb-2'}
+          className={'mb-2 gap-2'}
           startAdornment={<SearchIcon />}
           placeholder={t('template.searchInCategory', {
             category: category.name,
@@ -89,13 +83,14 @@ function CategoryTemplates ({
             debounceSearch(category.id, e.target.value);
           }}
         />
-        {loading ? (<div className={'flex gap-2 flex-col w-full'}>
-          <Skeleton variant={'rectangular'} height={40} />
-          <Skeleton variant={'rectangular'} height={40} />
-          <Skeleton variant={'rectangular'} height={40} />
-        </div>) : (
+        {loading ? (
+          <div className={'flex w-full flex-col gap-2'}>
+            <Skeleton variant={'rectangular'} height={40} />
+            <Skeleton variant={'rectangular'} height={40} />
+            <Skeleton variant={'rectangular'} height={40} />
+          </div>
+        ) : (
           <div className={'flex flex-col'}>
-
             {filteredTemplates.map((template) => {
               const isSelected = selectedTemplateIds.includes(template.view_id);
 

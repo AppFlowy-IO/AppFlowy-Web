@@ -1,7 +1,7 @@
 import { YjsEditor } from '@/application/slate-yjs';
 import { VideoBlockNode } from '@/components/editor/editor.type';
 import React from 'react';
-import { ReactComponent as ImageIcon } from '@/assets/video.svg';
+import { ReactComponent as ImageIcon } from '@/assets/icons/video.svg';
 import { useTranslation } from 'react-i18next';
 import { Element } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';

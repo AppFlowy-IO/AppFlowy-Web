@@ -4,7 +4,7 @@ import { MathEquationNode } from '@/components/editor/editor.type';
 import { copyTextToClipboard } from '@/utils/copy';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 
 function MathEquationToolbar ({
   node,
