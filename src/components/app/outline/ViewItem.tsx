@@ -87,11 +87,10 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
             e.stopPropagation();
             setIconPopoverAnchorEl(e.currentTarget);
           }}
-          className={`text-[18px] mr-1 `}
         >
           <PageIcon
             view={view}
-            className={'flex h-4 w-4 text-text-caption min-w-4 items-center justify-center'}
+            className={'text-text-caption w-5 h-5 mr-1 text-[20px] flex items-center justify-center'}
           />
 
         </div>

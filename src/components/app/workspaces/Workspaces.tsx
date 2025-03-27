@@ -12,11 +12,12 @@ import { openUrl } from '@/utils/url';
 import { Button, Divider, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
-import { ReactComponent as ImportIcon } from '@/assets/import.svg';
-import { ReactComponent as TipIcon } from '@/assets/warning.svg';
+import { ReactComponent as ImportIcon } from '@/assets/icons/save_as.svg';
+import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as SignOutIcon } from '@/assets/sign_out.svg';
-import { ReactComponent as UpgradeAIMaxIcon } from '@/assets/upgrade_ai_max.svg';
+import { ReactComponent as LogoutIcon } from '@/assets/icons/logout.svg';
+import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
+import { ReactComponent as UpgradeAIMaxIcon } from '@/assets/icons/ai.svg';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import InviteMember from '@/components/app/workspaces/InviteMember';
 import UpgradePlan from '@/components/billing/UpgradePlan';
@@ -96,7 +97,9 @@ export function Workspaces() {
       anchorEl={ref.current}
       onClose={() => setOpen(false)}
     >
-      <div className={'flex text-[14px] w-[288px] flex-col gap-2 p-2 min-h-[303px] overflow-hidden'}>
+      <div
+        className={'flex text-[14px] w-[288px] flex-col gap-2 p-2 min-h-[303px] overflow-hidden'}
+      >
         <div className={'flex p-2 text-text-caption items-center justify-between'}>
           <span className={'font-medium flex-1 text-sm'}>{currentUser?.email}</span>
         </div>
@@ -147,7 +150,7 @@ export function Workspaces() {
               size={'small'}
               className={'mx-2'}
             >
-              <TipIcon className={'text-text-placeholder'} />
+              <TipIcon />
             </IconButton>
           </Tooltip>
         </Button>
@@ -157,7 +160,7 @@ export function Workspaces() {
           className={'justify-start px-2'}
           color={'inherit'}
           onClick={handleSignOut}
-          startIcon={<SignOutIcon />}
+          startIcon={<LogoutIcon />}
         >{t('button.logout')}</Button>
 
 
@@ -165,34 +168,15 @@ export function Workspaces() {
           <Divider className={'w-full'} />
           <Button
             size={'small'}
-            component={'div'}
-            startIcon={<ImportIcon />}
+            startIcon={<UpgradeIcon />}
             color={'inherit'}
+            onClick={() => {
+              setOpenUpgradePlan(true);
+              setOpen(false);
+            }}
             className={'justify-start px-2'}
-            onClick={handleOpenImport}
           >
-            <div className={'flex-1 text-left'}>{t('web.importNotion')}</div>
-            <Tooltip title={t('workspace.learnMore')} enterDelay={1000} enterNextDelay={1000}>
-              <IconButton
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void openUrl('https://docs.appflowy.io/docs/guides/import-from-notion', '_blank');
-                }}
-                size={'small'}
-                className={'mx-2'}
-              >
-                <TipIcon className={'text-text-placeholder'} />
-              </IconButton>
-            </Tooltip>
-          </Button>
-          <Button
-            size={'small'}
-            className={'justify-start px-2'}
-            color={'inherit'}
-            onClick={handleSignOut}
-            startIcon={<SignOutIcon />}
-          >
-            {t('button.logout')}
+            {t('subscribe.changePlan')}
           </Button>
           <Button
             size={'small'}

@@ -1,5 +1,5 @@
 import { UIVariant, View } from '@/application/types';
-import { ReactComponent as PrivateIcon } from '@/assets/lock.svg';
+import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import OutlineItemContent from '@/components/_shared/outline/OutlineItemContent';
 import { getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
@@ -54,7 +54,7 @@ function OutlineItem({ view, level = 0, width, navigateToView, selectedViewId, v
             level={level}
             setIsExpanded={setIsExpanded}
           />
-          {item.is_private && <PrivateIcon className={'h-4 w-4 text-text-caption'} />}
+          {item.is_private && <PrivateIcon className={'h-5 w-5 text-text-caption'} />}
         </div>
       </div>
     );

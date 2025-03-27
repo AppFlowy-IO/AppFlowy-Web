@@ -3,7 +3,7 @@ import ViewItem from '@/components/app/outline/ViewItem';
 import { Tooltip } from '@mui/material';
 import React, { useMemo } from 'react';
 import { View } from '@/application/types';
-import { ReactComponent as PrivateIcon } from '@/assets/lock.svg';
+import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 
 function SpaceItem({
   view,
@@ -61,18 +61,19 @@ function SpaceItem({
           title={name}
           disableInteractive={true}
         >
-          <div className={'items-center gap-1 text-sm flex-1 justify-start flex overflow-hidden'}>
-            <div className={'truncate w-auto font-medium'}>{name}</div>
+          <div className={'gap-1 text-sm justify-start flex flex-1 items-center overflow-hidden'}>
+            <div className={'truncate font-medium'}>{name}</div>
 
             {isPrivate &&
-              <div className={'h-4 w-4 text-base min-w-4 text-text-title opacity-80'}>
-                <PrivateIcon/>
+              <div className={'min-w-5 min-h-5 text-base text-text-title opacity-80'}>
+                <PrivateIcon className='h-5 w-5'/>
               </div>
             }
           </div>
         </Tooltip>
         {
-          renderExtra && renderExtra({ hovered, view })}
+          renderExtra && renderExtra({ hovered, view })
+        }
       </div>
     );
   }, [hovered, isExpanded, isPrivate, onClickSpace, renderExtra, toggleExpand, view, width]);

@@ -1,6 +1,6 @@
 import { View, ViewLayout } from '@/application/types';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
-import { ReactComponent as MoreIcon } from '@/assets/more.svg';
+import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
@@ -37,7 +37,7 @@ function PageActions({
           <MoreIcon/>
         </IconButton>
       </Tooltip>
-      {loading ? <CircularProgress size={16}/> : view.layout === ViewLayout.Document && <Tooltip
+      {loading ? <CircularProgress size={20}/> : view.layout === ViewLayout.Document && <Tooltip
         disableFocusListener
         disableInteractive={true}
         title={t('menuAppHeader.addPageTooltip')}
@@ -53,7 +53,7 @@ function PageActions({
           }}
           size={'small'}
         >
-          <AddIcon/>
+          <PlusIcon/>
         </IconButton>
       </Tooltip>}
 

@@ -1,7 +1,7 @@
 import { View, ViewIconType } from '@/application/types';
-import { ReactComponent as EditIcon } from '@/assets/edit.svg';
-import { ReactComponent as ChangeIcon } from '@/assets/change_icon.svg';
-import { ReactComponent as OpenInBrowserIcon } from '@/assets/open_in_browser.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
+import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
+import { ReactComponent as OpenIcon } from '@/assets/icons/open.svg';
 import { notify } from '@/components/_shared/notify';
 import { Origins } from '@/components/_shared/popover';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
@@ -85,7 +85,7 @@ function MorePageActions({ view, onClose }: {
       },
     }, {
       label: t('disclosureAction.changeIcon'),
-      icon: <ChangeIcon />,
+      icon: <EmojiIcon />,
       onClick: (e: React.MouseEvent<HTMLButtonElement>) => {
         setIconPopoverAnchorEl(e.currentTarget);
       },
@@ -123,7 +123,7 @@ function MorePageActions({ view, onClose }: {
           window.open(`/app/${currentWorkspaceId}/${view.view_id}`, '_blank');
 
         }}
-        startIcon={<OpenInBrowserIcon className={'w-4 h-4'} />}
+        startIcon={<OpenIcon />}
       >
         {t('disclosureAction.openNewTab')}
       </Button>

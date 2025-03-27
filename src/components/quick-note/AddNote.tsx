@@ -1,5 +1,5 @@
 import React from 'react';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { useAddNode } from '@/components/quick-note/QuickNote.hooks';
 import { QuickNote } from '@/application/types';
 import { Button, CircularProgress } from '@mui/material';
@@ -27,7 +27,7 @@ function AddNote ({
       <Button
         size={'small'}
         color={'inherit'}
-        startIcon={loading ? <CircularProgress size={16} /> : <AddIcon className={'w-4 h-4'} />}
+        startIcon={loading ? <CircularProgress size={20} /> : <AddIcon />}
         onClick={handleAdd}
         className={'justify-start w-full'}
       >

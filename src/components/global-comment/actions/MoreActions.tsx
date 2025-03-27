@@ -8,7 +8,7 @@ import { useGlobalCommentContext } from '@/components/global-comment/GlobalComme
 import { Button, IconButton, Tooltip, TooltipProps } from '@mui/material';
 import React, { memo, useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as MoreIcon } from '@/assets/more.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as TrashIcon } from '@/assets/trash.svg';
 
 interface Item {

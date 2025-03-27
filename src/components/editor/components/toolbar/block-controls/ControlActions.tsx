@@ -11,7 +11,7 @@ import { isMac } from '@/utils/hotkeys';
 import { IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddSvg } from '@/assets/add.svg';
+import { ReactComponent as AddSvg } from '@/assets/icons/plus.svg';
 import { ReactComponent as DragSvg } from '@/assets/drag_element.svg';
 import { Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';

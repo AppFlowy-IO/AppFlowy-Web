@@ -1,5 +1,5 @@
 import { ViewLayout } from '@/application/types';
-import { ReactComponent as MoreIcon } from '@/assets/more.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { Popover } from '@/components/_shared/popover';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
@@ -8,7 +8,7 @@ import { Button, Divider, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MoreActionsContent from './MoreActionsContent';
-import { ReactComponent as DocForwardIcon } from '@/assets/doc-forward.svg';
+import { ReactComponent as AddToPageIcon } from '@/assets/icons/add_to_page.svg';
 import { useService } from '@/components/main/app.hooks';
 
 function MoreActions({ viewId, onDeleted }: { viewId: string; onDeleted?: () => void }) {
@@ -56,14 +56,14 @@ function MoreActions({ viewId, onDeleted }: { viewId: string; onDeleted?: () => 
           <div>
             <Button
               size={'small'}
-              className={'justify-start px-3 py-1'}
+              className={'justify-start px-3 py-1 w-full'}
               color={'inherit'}
               disabled={!hasMessages}
               onClick={() => {
                 onOpenSelectionMode();
                 handleClose();
               }}
-              startIcon={<DocForwardIcon />}
+              startIcon={<AddToPageIcon />}
             >
               {t('web.addMessagesToPage')}
             </Button>
@@ -80,7 +80,7 @@ function MoreActions({ viewId, onDeleted }: { viewId: string; onDeleted?: () => 
 
   return (
     <>
-      <IconButton onClick={handleClick}>
+      <IconButton onClick={handleClick} size={'small'}>
         <MoreIcon className={'text-text-caption'} />
       </IconButton>
       {open && (

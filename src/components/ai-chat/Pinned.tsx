@@ -1,7 +1,7 @@
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { Button } from '@mui/material';
 import React from 'react';
-import { ReactComponent as EditIcon } from '@/assets/edit.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 
 function Pinned() {
   const {

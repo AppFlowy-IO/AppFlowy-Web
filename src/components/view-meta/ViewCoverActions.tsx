@@ -3,7 +3,7 @@ import { PopoverProps } from '@mui/material/Popover';
 import React, { forwardRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import CoverPopover from '@/components/view-meta/CoverPopover';
 
 function ViewCoverActions(
@@ -49,6 +49,9 @@ function ViewCoverActions(
               sx={{
                 '.MuiButton-startIcon': {
                   marginRight: '0px',
+                  marginLeft: '0px',
+                  marginTop: '0px',
+                  marginBottom: '0px',
                 },
               }}
               onClick={() => {
@@ -56,7 +59,7 @@ function ViewCoverActions(
                 setAnchorPosition(undefined);
               }}
               color={'inherit'}
-              startIcon={<DeleteIcon/>}
+              startIcon={<DeleteIcon />}
             />
           </div>
         </div>

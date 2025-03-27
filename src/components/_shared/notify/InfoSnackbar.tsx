@@ -2,7 +2,7 @@ import { notify } from '@/components/_shared/notify/index';
 import React, { forwardRef } from 'react';
 import { Button, IconButton, Paper } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CloseIcon } from '@/assets/close.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { CustomContentProps, SnackbarContent } from 'notistack';
 import { ReactComponent as CheckCircle } from '@/assets/check_circle.svg';
 import { ReactComponent as ErrorOutline } from '@/assets/error_outline.svg';
@@ -48,7 +48,7 @@ const InfoSnackbar = forwardRef<HTMLDivElement, InfoSnackbarProps>(
                 className={'h-6 w-6'}
                 onClick={handleClose}
               >
-                <CloseIcon className={'h-4 w-4'} />
+                <CloseIcon />
               </IconButton>
             </div>
           </div>

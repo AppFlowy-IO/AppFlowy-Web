@@ -54,8 +54,8 @@ function OutlineItemContent({
         /> :
         <PageIcon
           view={item}
-          iconSize={16}
-          className={'flex w-4 h-4 text-sm items-center justify-center'}
+          iconSize={20}
+          className={'flex !w-5 !h-5 min-w-5 text-sm items-center justify-center'}
         />
       }
 

@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, ButtonProps, CircularProgress, Dialog, DialogProps, IconButton } from '@mui/material';
-import { ReactComponent as CloseIcon } from '@/assets/close.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore
@@ -68,7 +68,7 @@ export function NormalModal ({
               className={'h-6 w-6'}
               onClick={onClose || onCancel}
             >
-              <CloseIcon className={'h-4 w-4'} />
+              <CloseIcon />
             </IconButton>
           </div>}
 

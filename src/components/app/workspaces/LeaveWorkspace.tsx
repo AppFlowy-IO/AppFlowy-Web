@@ -1,7 +1,7 @@
 import React from 'react';
 import { Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as LeaveSvg } from '@/assets/leave.svg';
+import { ReactComponent as LeaveSvg } from '@/assets/icons/logout.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useService } from '@/components/main/app.hooks';

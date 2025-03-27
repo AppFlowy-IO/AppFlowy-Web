@@ -6,7 +6,7 @@ import { Chip, IconButton, Tooltip } from '@mui/material';
 import MenuItem from '@mui/material/MenuItem';
 import React, { useState } from 'react';
 import { ReactComponent as CheckIcon } from '@/assets/selected.svg';
-import { ReactComponent as EditIcon } from '@/assets/edit.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
 import { useTranslation } from 'react-i18next';
 

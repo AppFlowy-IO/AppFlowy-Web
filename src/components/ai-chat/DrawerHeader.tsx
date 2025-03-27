@@ -2,10 +2,9 @@ import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { useAppHandlers } from '@/components/app/app.hooks';
 import MoreActions from '@/components/app/header/MoreActions';
 import { IconButton, Tooltip } from '@mui/material';
-import React from 'react';
-import { ReactComponent as SideOutlined } from '@/assets/side_outlined.svg';
+import { ReactComponent as DoubleArrowRight } from '@/assets/icons/double_arrow_right.svg';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ExpandMoreIcon } from '@/assets/full_view.svg';
+import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
 import ShareButton from 'src/components/app/share/ShareButton';
 
 function DrawerHeader() {
@@ -34,7 +33,7 @@ function DrawerHeader() {
               setDrawerOpen(false);
             }}
           >
-            <SideOutlined className={'text-text-title opacity-80 h-4 w-4'} />
+            <DoubleArrowRight className={'text-text-title opacity-80'} />
           </IconButton>
         </Tooltip>
         <Tooltip title={t('tooltip.openAsPage')}>
@@ -46,7 +45,7 @@ function DrawerHeader() {
               onCloseView();
             }}
           >
-            <ExpandMoreIcon className={'text-text-title opacity-80 h-4 w-4'} />
+            <ExpandIcon className={'text-text-title opacity-80'} />
           </IconButton>
         </Tooltip>
       </div>

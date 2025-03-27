@@ -6,7 +6,7 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ViewTabs, ViewTab, TabPanel } from 'src/components/_shared/tabs/ViewTabs';
-import { ReactComponent as Templates } from '@/assets/template.svg';
+import { ReactComponent as Templates } from '@/assets/icons/template.svg';
 
 import { ReactComponent as PublishedWithChanges } from '@/assets/published_with_changes.svg';
 

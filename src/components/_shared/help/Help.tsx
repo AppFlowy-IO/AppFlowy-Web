@@ -9,13 +9,14 @@ import * as React from 'react';
 import Box from '@mui/material/Box';
 import { ReactComponent as SpeedDialIcon } from '@/assets/help.svg';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as WhatsNewIcon } from '@/assets/star.svg';
-import { ReactComponent as SupportIcon } from '@/assets/message_support.svg';
-import { ReactComponent as DebugIcon } from '@/assets/debug.svg';
-import { ReactComponent as FeedbackIcon } from '@/assets/report.svg';
-import { ReactComponent as MoonIcon } from '@/assets/moon.svg';
-import { ReactComponent as SunIcon } from '@/assets/sun.svg';
-import { ReactComponent as DocumentationIcon } from '@/assets/help_documentation.svg';
+import { ReactComponent as WhatsNewIcon } from '@/assets/icons/star.svg';
+import { ReactComponent as SupportIcon } from '@/assets/icons/help.svg';
+import { ReactComponent as BugIcon } from '@/assets/icons/bug.svg';
+import { ReactComponent as FeedbackIcon } from '@/assets/icons/feedback.svg';
+import { ReactComponent as MoonIcon } from '@/assets/icons/moon.svg';
+import { ReactComponent as SunIcon } from '@/assets/icons/sun.svg';
+import { ReactComponent as DocumentationIcon } from '@/assets/icons/help_&_documentation.svg';
+
 
 const popoverProps: Partial<PopoverProps> = {
   anchorOrigin: {
@@ -114,7 +115,7 @@ export default function Help() {
               }}
               className={'justify-start'}
               color={'inherit'}
-              startIcon={<DebugIcon />}
+              startIcon={<BugIcon />}
               variant={'text'}
             >{t('questionBubble.debug.name')}
             </Button>

@@ -5,7 +5,7 @@ import { useService } from '@/components/main/app.hooks';
 import { Button, OutlinedInput } from '@mui/material';
 import React, { useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as EditIcon } from '@/assets/edit.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 
 function RenameWorkspace ({ workspace, onUpdated }: {
   workspace: Workspace;

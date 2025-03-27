@@ -11,7 +11,7 @@ import { openUrl } from '@/utils/url';
 import { Button, CircularProgress, Divider, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as EditIcon } from '@/assets/edit.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 
 export function PublishManage ({
   onClose,

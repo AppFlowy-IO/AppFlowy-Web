@@ -53,7 +53,7 @@ function AddPageActions({ view, onClose }: {
       label: t('document.menuName'),
       icon: <ViewIcon
         layout={ViewLayout.Document}
-        size={'medium'}
+        size={'small'}
       />,
       onClick: () => {
         void handleAddPage(ViewLayout.Document);
@@ -96,7 +96,7 @@ function AddPageActions({ view, onClose }: {
       label: t('chat.newChat'),
       icon: <ViewIcon
         layout={ViewLayout.AIChat}
-        size={'medium'}
+        size={'small'}
       />,
       onClick: () => {
         void handleAddPage(ViewLayout.AIChat);

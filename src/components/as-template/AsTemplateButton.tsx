@@ -4,7 +4,7 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@mui/material';
 import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as TemplateIcon } from '@/assets/template.svg';
+import { ReactComponent as TemplateIcon } from '@/assets/icons/template.svg';
 
 function AsTemplateButton ({ viewId }: { viewId: string }) {
   const { t } = useTranslation();

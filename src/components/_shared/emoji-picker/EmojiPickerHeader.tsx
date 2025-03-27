@@ -7,8 +7,8 @@ import { randomEmoji } from '@/utils/emoji';
 import { ReactComponent as ShuffleIcon } from '@/assets/shuffle.svg';
 import Popover from '@mui/material/Popover';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteOutlineRounded } from '@/assets/trash.svg';
-import { ReactComponent as SearchOutlined } from '@/assets/search.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 
 const skinTones = [
   {
@@ -84,7 +84,7 @@ function EmojiPickerHeader ({ hideRemove, onEmojiSelect, onSkinSelect, searchVal
     <div className={'px-0.5 py-2'}>
       <div className={'search-input flex items-end justify-between gap-2'}>
         <OutlinedInput
-          startAdornment={<SearchOutlined className={'h-5 w-5'} />}
+          startAdornment={<SearchIcon className={'h-5 w-5'} />}
           value={searchValue}
           onChange={(e) => {
             onSearchChange(e.target.value);
@@ -126,7 +126,7 @@ function EmojiPickerHeader ({ hideRemove, onEmojiSelect, onSkinSelect, searchVal
                 onEmojiSelect('');
               },
               tooltip: t('emoji.remove'),
-              children: <DeleteOutlineRounded className={'h-5 w-5'} />,
+              children: <DeleteIcon className={'h-5 w-5'} />,
             })}
         </div>
       </div>

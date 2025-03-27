@@ -11,7 +11,7 @@ import { Button, CircularProgress, IconButton, Tooltip } from '@mui/material';
 import dayjs from 'dayjs';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as MoreIcon } from '@/assets/more.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as GlobalIcon } from '@/assets/publish.svg';
 import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
 import { ReactComponent as TrashIcon } from '@/assets/trash.svg';
@@ -138,7 +138,7 @@ function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
             size={'small'}
             startIcon={<PageIcon
               iconSize={16}
-              className={'text-sm w-4 h-4 flex items-center justify-center'}
+              className={'text-sm w-5 h-5 flex items-center justify-center'}
               view={view}
             />}
             className={'w-full p-1 px-2 justify-start overflow-hidden'}

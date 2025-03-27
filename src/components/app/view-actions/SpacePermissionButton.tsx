@@ -1,10 +1,10 @@
 import { Popover } from '@/components/_shared/popover';
 import { Button, Divider } from '@mui/material';
 import React from 'react';
-import { ReactComponent as LockIcon } from '@/assets/space_permission_private.svg';
-import { ReactComponent as PublicIcon } from '@/assets/space_permission_public.svg';
-import { ReactComponent as DropdownIcon } from '@/assets/space_permission_dropdown.svg';
-import { ReactComponent as SelectedIcon } from '@/assets/selected.svg';
+import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
+import { ReactComponent as PublicIcon } from '@/assets/icons/public.svg';
+import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
 import { useTranslation } from 'react-i18next';
 import { SpacePermission } from '@/application/types';
 
@@ -24,7 +24,7 @@ function SpacePermissionButton({
         size={'large'}
         className={'justify-start gap-4 py-3'}
         startIcon={SpacePermission.Private === value ? <LockIcon /> : <PublicIcon />}
-        endIcon={<DropdownIcon />}
+        endIcon={<ArrowDownIcon />}
         color={'inherit'}
         variant={'outlined'}
         onClick={e => setAnchorEl(e.currentTarget)}
@@ -63,7 +63,7 @@ function SpacePermissionButton({
               <div className={'text-text-caption'}>{t('space.privatePermissionDescription')}</div>
             </div>
             {SpacePermission.Private === value &&
-              <SelectedIcon className={'w-6 h-6 text-function-success'} />}
+              <TickIcon className={'w-6 h-6 text-function-success'} />}
 
           </Button>
           <Divider />
@@ -81,7 +81,7 @@ function SpacePermissionButton({
               <div className={'text-text-caption'}>{t('space.publicPermissionDescription')}</div>
             </div>
             {SpacePermission.Public === value &&
-              <SelectedIcon className={'w-6 h-6 text-function-success'} />}
+              <TickIcon className={'w-6 h-6 text-function-success'} />}
 
           </Button>
         </div>

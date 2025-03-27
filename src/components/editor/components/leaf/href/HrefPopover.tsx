@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, Divider, OutlinedInput, PopoverPosition } from '@mui/material';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import { ReactComponent as RemoveIcon } from '@/assets/trash.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { Popover } from '@/components/_shared/popover';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 import { useTranslation } from 'react-i18next';
@@ -256,7 +256,7 @@ function HrefPopover({
         </div>
         <Divider/>
         <Button
-          ref={buttonRef} onClick={removeLink} startIcon={<RemoveIcon/>} size={'small'}
+          ref={buttonRef} onClick={removeLink} startIcon={<DeleteIcon/>} size={'small'}
           className={'w-full hover:text-function-error justify-start'}
           color={'inherit'}>
           {t('document.inlineLink.removeLink')}

@@ -1,7 +1,7 @@
 import CircularProgress from '@mui/material/CircularProgress';
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { IconButton, Tooltip, Zoom, Snackbar, Portal } from '@mui/material';
-import { ReactComponent as EditIcon } from '@/assets/edit.svg';
+import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { useTranslation } from 'react-i18next';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import Popover from '@mui/material/Popover';

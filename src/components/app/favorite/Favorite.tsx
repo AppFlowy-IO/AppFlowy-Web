@@ -10,7 +10,7 @@ import { groupBy, sortBy } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
 import { ReactComponent as FavoritedIcon } from '@/assets/favorited.svg';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as MoreIcon } from '@/assets/more.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 
 const popoverOrigin: Partial<PopoverProps> = {
   transformOrigin: {

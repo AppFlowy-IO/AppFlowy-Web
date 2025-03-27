@@ -5,7 +5,7 @@ import { Button, OutlinedInput } from '@mui/material';
 import Tooltip from '@mui/material/Tooltip';
 import React, { useCallback, useEffect } from 'react';
 import { ReactComponent as ShuffleIcon } from '@/assets/shuffle.svg';
-import { ReactComponent as SearchOutlined } from '@/assets/search.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useTranslation } from 'react-i18next';
 import { VariableSizeList } from 'react-window';
 import AutoSizer from 'react-virtualized-auto-sizer';
@@ -164,7 +164,7 @@ function IconPicker({
       <div className={'px-0.5 py-2'}>
         <div className={'search-input flex items-end justify-between gap-2'}>
           <OutlinedInput
-            startAdornment={<SearchOutlined className={'w-5 h-5'} />}
+            startAdornment={<SearchIcon className={'w-5 h-5'} />}
             value={searchValue}
             onChange={(e) => {
               setSearchValue(e.target.value);

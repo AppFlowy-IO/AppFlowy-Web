@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { ReactComponent as SearchIcon } from '@/assets/search.svg';
-import { ReactComponent as CloseIcon } from '@/assets/close.svg';
-import { ReactComponent as OpenIcon } from '@/assets/full_view.svg';
-import { ReactComponent as CollapseIcon } from '@/assets/collapse_all_page.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
+import { ReactComponent as CollapseIcon } from '@/assets/icons/shrink.svg';
 
 import { IconButton, InputBase, Tooltip } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -83,7 +83,7 @@ function NoteListHeader ({
         }}
         size={'small'}
       >
-        {expand ? <CollapseIcon className={'transform rotate-45'} /> : <OpenIcon />}
+        {expand ? <CollapseIcon /> : <ExpandIcon />}
       </IconButton>
 
       <IconButton

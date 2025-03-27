@@ -1,7 +1,7 @@
 import React, { useCallback, useContext, useEffect, useMemo } from 'react';
 import { Editor, EditorData, EditorProvider, useEditor, FixedToolbar } from '@appflowyinc/editor';
 import '@appflowyinc/editor/style';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 
 import { useTranslation } from 'react-i18next';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';

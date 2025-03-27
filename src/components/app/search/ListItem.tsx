@@ -6,8 +6,8 @@ import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
 import { IconButton, Paper, Tooltip } from '@mui/material';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as MoreIcon } from '@/assets/more.svg';
-import { ReactComponent as PrivateIcon } from '@/assets/lock.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 
 function ListItem ({
   selectedView,
@@ -48,12 +48,12 @@ function ListItem ({
           void toView(view.view_id);
           onClose();
         }}
-        className={`text-text-caption max-w-[250px] overflow-hidden ${view.extra?.is_space ? '' : 'hover:underline'} flex items-center gap-2`}
+        className={`text-text-caption max-w-[250px] overflow-hidden ${view.extra?.is_space ? '' : 'hover:underline'} flex items-center gap-1`}
       >
         <span className={'truncate'}>{view.name || t('menuAppHeader.defaultNewPageName')}</span>
         {isPrivate &&
-          <div className={'h-4 w-4 text-base min-w-4 text-text-title opacity-80'}>
-            <PrivateIcon />
+          <div className={'text-base min-w-5 min-h-5 text-text-title opacity-80'}>
+            <PrivateIcon className='h-5 w-5'/>
           </div>
         }
       </div>
@@ -128,7 +128,7 @@ function ListItem ({
         <div className={'w-7 h-7 border flex items-center justify-center rounded border-line-border'}>
           <PageIcon
             view={view}
-            className={'w-4 h-4 flex items-center justify-center'}
+            className={'w-5 h-5 flex items-center justify-center'}
           />
 
         </div>

@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
 import { ReactComponent as LeftIcon } from '@/assets/icons/alt_arrow_left.svg';
-import { ReactComponent as OpenIcon } from '@/assets/full_view.svg';
-import { ReactComponent as CollapseIcon } from '@/assets/collapse_all_page.svg';
-import { ReactComponent as CloseIcon } from '@/assets/close.svg';
+import { ReactComponent as OpenIcon } from '@/assets/icons/expand.svg';
+import { ReactComponent as CollapseIcon } from '@/assets/icons/shrink.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 
 import { IconButton } from '@mui/material';
 import { useTranslation } from 'react-i18next';
@@ -31,7 +31,7 @@ function NoteHeader({
   return (
     <div className={'flex w-full items-center gap-4 overflow-hidden'}>
       <IconButton onClick={onBack} size={'small'}>
-        <LeftIcon className={'h-5 w-5'} />
+        <LeftIcon />
       </IconButton>
       <div className={'flex-1 truncate pl-[24px] text-center font-medium'}>{title}</div>
       <IconButton
@@ -42,7 +42,7 @@ function NoteHeader({
         }}
         size={'small'}
       >
-        {expand ? <CollapseIcon className={'rotate-45 transform'} /> : <OpenIcon />}
+        {expand ? <CollapseIcon /> : <OpenIcon />}
       </IconButton>
       <IconButton onClick={onClose} size={'small'}>
         <CloseIcon />

@@ -1,5 +1,5 @@
 import { ReactComponent as AppFlowyLogo } from '@/assets/appflowy.svg';
-import { ReactComponent as SideOutlined } from '@/assets/side_outlined.svg';
+import { ReactComponent as DoubleArrowLeft } from '@/assets/icons/double_arrow_left.svg';
 import Resizer from '@/components/_shared/outline/Resizer';
 import { useNavigate } from 'react-router-dom';
 import AppFlowyPower from '../appflowy-power/AppFlowyPower';
@@ -85,7 +85,7 @@ export function OutlineDrawer({ onScroll, header, variant, open, width, onClose,
               className={'m-4'}
               size={'small'}
             >
-              <SideOutlined className={'text-text-caption w-4 h-4 rotate-180 transform'}/>
+              <DoubleArrowLeft className={'text-text-caption'}/>
             </IconButton>
           </Tooltip>}
 

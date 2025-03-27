@@ -6,12 +6,12 @@ import TitleMatch from '@/components/app/search/TitleMatch';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Button, Dialog, Divider, InputBase, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
-import { ReactComponent as SearchIcon } from '@/assets/search.svg';
-import { ReactComponent as CheckIcon } from '@/assets/check.svg';
-import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
+import { ReactComponent as DownIcon } from '@/assets/icons/alt_arrow_down.svg';
 
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CloseIcon } from '@/assets/close.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 
 enum SEARCH_TYPE {
   AI_SUGGESTION = 'AI_SUGGESTION',
@@ -77,7 +77,7 @@ export function Search () {
             e.currentTarget.blur();
             setOpen(true);
           }}
-          startIcon={<SearchIcon className={'w-5 opacity-60 h-5 mr-[1px]'} />}
+          startIcon={<SearchIcon className={'w-5 h-5 opacity-60 mr-[1px]'} />}
           size={'small'}
           className={'text-sm font-normal py-1.5 justify-start w-full hover:bg-fill-list-hover'}
           color={'inherit'}
@@ -97,7 +97,7 @@ export function Search () {
       >
         <div className={'flex gap-2 border-b border-line-default w-full p-4'}>
           <div className={'w-full flex gap-4 items-center'}>
-            <SearchIcon className={'w-5 opacity-60 h-5 mr-[1px]'} />
+            <SearchIcon className={'w-5 h-5 opacity-60 mr-[1px]'} />
 
             <InputBase
               value={searchValue}
@@ -131,7 +131,7 @@ export function Search () {
             className={'rounded-[8px] p-2 gap-2 border text-sm overflow-hidden cursor-pointer hover:border-text-title border-line-divider flex items-center'}
           >
             <span className={' max-w-[100px] truncate'}>{searchType === SEARCH_TYPE.TITLE_MATCH ? t('titleOnly') : t('AIsearch')}</span>
-            <DownIcon className={'w-4 h-4'} />
+            <DownIcon className={'w-5 h-5'} />
           </div>
         </div>
         <Divider className={'border-line-default'} />

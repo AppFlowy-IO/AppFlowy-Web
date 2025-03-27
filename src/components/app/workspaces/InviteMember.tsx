@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, OutlinedInput } from '@mui/material';
-import { ReactComponent as AddUserIcon } from '@/assets/add_user.svg';
+import { ReactComponent as AddUserIcon } from '@/assets/icons/invite_user.svg';
 import { useTranslation } from 'react-i18next';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';

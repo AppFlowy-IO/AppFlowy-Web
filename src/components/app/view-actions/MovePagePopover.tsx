@@ -7,10 +7,10 @@ import SpaceItem from '@/components/app/outline/SpaceItem';
 import { Button, Divider, OutlinedInput } from '@mui/material';
 import { PopoverProps } from '@mui/material/Popover';
 import React, { useMemo } from 'react';
-import { ReactComponent as SearchOutlined } from '@/assets/search.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useTranslation } from 'react-i18next';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
-import { ReactComponent as SelectedIcon } from '@/assets/selected.svg';
+import { ReactComponent as SelectedIcon } from '@/assets/icons/tick.svg';
 
 function MovePagePopover({
   viewId,
@@ -58,14 +58,14 @@ function MovePagePopover({
 
   const renderExtra = React.useCallback(({ view }: { view: View }) => {
     if (view.view_id !== selectedViewId) return null;
-    return <SelectedIcon className={'w-5 h-5 text-fill-default mx-2'}/>;
+    return <SelectedIcon className={'text-fill-default mx-2'}/>;
   }, [selectedViewId]);
 
   return (
     <Popover {...props} onClose={onClose}>
       <div className={'flex folder-views w-[320px] flex-1 flex-col gap-1 py-[10px] px-[10px]'}>
         <OutlinedInput
-          startAdornment={<SearchOutlined className={'h-4 w-4'}/>}
+          startAdornment={<SearchIcon className={'h-5 w-5'}/>}
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);

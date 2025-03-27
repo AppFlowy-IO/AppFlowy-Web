@@ -6,7 +6,7 @@ import { debounce } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
 import { Button, Collapse, OutlinedInput, Skeleton } from '@mui/material';
 import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
-import { ReactComponent as SearchIcon } from '@/assets/search.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -74,7 +74,7 @@ function CategoryTemplates({
           fullWidth
           value={searchText}
           className={'mb-2 gap-2'}
-          startAdornment={<SearchIcon />}
+          startAdornment={<SearchIcon className={'h-5 w-5'}/>}
           placeholder={t('template.searchInCategory', {
             category: category.name,
           })}

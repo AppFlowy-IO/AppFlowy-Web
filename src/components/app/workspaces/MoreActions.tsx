@@ -1,5 +1,5 @@
 import React from 'react';
-import { ReactComponent as MoreSvg } from '@/assets/more.svg';
+import { ReactComponent as MoreSvg } from '@/assets/icons/more.svg';
 import { IconButton } from '@mui/material';
 import { Workspace } from '@/application/types';
 import { Popover } from '@/components/_shared/popover';

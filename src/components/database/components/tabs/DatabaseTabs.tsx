@@ -122,7 +122,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
                       view={folderView || {
                         layout: databaseLayout === DatabaseViewLayout.Board ? ViewLayout.Board : databaseLayout === DatabaseViewLayout.Calendar ? ViewLayout.Calendar : ViewLayout.Grid,
                       }}
-                      className={'h-4 w-4'}
+                      className={'h-5 w-5'}
                     />}
                     iconPosition="start"
                     color="inherit"

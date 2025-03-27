@@ -2,7 +2,7 @@ import { UIVariant, View } from '@/application/types';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import OutlineItemContent from '@/components/_shared/outline/OutlineItemContent';
 import React, { useCallback, useMemo } from 'react';
-import { ReactComponent as PrivateIcon } from '@/assets/lock.svg';
+import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 
 function OutlineItem ({
   view,
@@ -46,7 +46,7 @@ function OutlineItem ({
             level={level}
             setIsExpanded={setIsExpanded}
           />
-          {item.is_private && <PrivateIcon className={'h-4 w-4 text-text-caption'} />}
+          {item.is_private && <PrivateIcon className={'h-5 w-5 text-text-caption'} />}
         </div>
       </div>
     );

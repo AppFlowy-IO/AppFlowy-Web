@@ -4,9 +4,9 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { Button, CircularProgress, IconButton, OutlinedInput, Tooltip } from '@mui/material';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as SearchIcon } from '@/assets/search.svg';
-import { ReactComponent as RemoveIcon } from '@/assets/close.svg';
-import { ReactComponent as UpgradeIcon } from '@/assets/icon_upgrade.svg';
+import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
+import { ReactComponent as RemoveIcon } from '@/assets/icons/close.svg';
+import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 
 import { useSearchParams } from 'react-router-dom';
 
@@ -81,7 +81,7 @@ function HomePageSetting ({
                 iconSize={18}
                 className={'text-sm'}
                 view={homePage}
-              /> : <SearchIcon className={'w-4 h-4 opacity-60'} />
+              /> : <SearchIcon className={'opacity-60'} />
           }
           size={'small'}
         >
@@ -128,7 +128,7 @@ function HomePageSetting ({
             onChange={(e) => setSearchText(e.target.value)}
             size={'small'}
             autoFocus={true}
-            startAdornment={<SearchIcon className={'h-4 w-4'} />}
+            startAdornment={<SearchIcon className={'h-5 w-5'} />}
             inputProps={{
               className: 'px-2 py-1.5 text-sm',
             }}

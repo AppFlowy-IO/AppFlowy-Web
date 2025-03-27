@@ -1,7 +1,7 @@
 import { ViewLayout } from '@/application/types';
-import { ReactComponent as DuplicateIcon } from '@/assets/duplicate.svg';
-import { ReactComponent as MoveToIcon } from '@/assets/move_to.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
+import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { notify } from '@/components/_shared/notify';
 import { Origins } from '@/components/_shared/popover';
 import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
