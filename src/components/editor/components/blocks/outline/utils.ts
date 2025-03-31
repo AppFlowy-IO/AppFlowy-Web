@@ -11,7 +11,11 @@ export function extractHeadings (editor: ReactEditor, maxDepth: number): Heading
   function traverse (children: (Element | Text)[]) {
     for (const block of children) {
       if (Text.isText(block)) continue;
-      if (block.type === BlockType.HeadingBlock && (block as HeadingNode).data?.level <= maxDepth) {
+      // Include only heading and toggle list heading blocks
+      if (([
+        BlockType.HeadingBlock,
+        BlockType.ToggleListBlock,
+      ].includes(block.type as BlockType)) && 'level' in (block as HeadingNode).data && (block as HeadingNode).data?.level <= maxDepth) {
         headings.push({
           ...block,
           data: {
