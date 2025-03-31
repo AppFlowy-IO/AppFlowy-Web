@@ -1,0 +1,18 @@
+@import "./tailwind.css";
+@import "tw-animate-css";
+
+@import "./variables/semantic.light.css";
+@import "./variables/semantic.dark.css";
+@import "./template.css";
+
+:root {
+    /* new shadow */
+    --custom-shadow-sm: 0px 4px 20px 0px rgba(31, 35, 41, 0.10);
+    --custom-shadow-md: 0px 4px 32px 0px rgba(31, 34, 37, 0.12);
+}
+
+:root[data-dark-mode=true] {
+    /* new shadow */
+    --custom-shadow-sm: 0px 2px 16px 0px rgba(0, 0, 0, 0.48);
+    --custom-shadow-md: 0px 4px 32px 0px rgba(0, 0, 0, 0.48);
+}

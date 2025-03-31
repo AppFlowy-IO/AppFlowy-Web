@@ -6,7 +6,7 @@ import dayjs from 'dayjs';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function DocumentInfo({ viewId }: {
+function DocumentInfo ({ viewId }: {
   viewId: string;
 }) {
   const view = useAppView(viewId);
@@ -20,19 +20,19 @@ function DocumentInfo({ viewId }: {
     const diffMin = now.diff(past, 'minute');
     const diffHour = now.diff(past, 'hour');
 
-    if(diffSec < 5) {
+    if (diffSec < 5) {
       return t('globalComment.showSeconds', {
         count: 0,
       });
     }
 
-    if(diffMin < 1) {
+    if (diffMin < 1) {
       return t('globalComment.showSeconds', {
         count: diffSec,
       });
     }
 
-    if(diffHour < 1) {
+    if (diffHour < 1) {
       return t('globalComment.showMinutes', {
         count: diffMin,
       });
@@ -45,7 +45,7 @@ function DocumentInfo({ viewId }: {
   const words = useMemo(() => getWords(viewName || '') + (wordCount?.words || 0), [viewName, wordCount]);
   const chars = useMemo(() => getCharacters(viewName || '') + (wordCount?.characters || 0), [viewName, wordCount]);
 
-  if(!view) return null;
+  if (!view) return null;
 
   return (
     <>

@@ -6,8 +6,6 @@ import {
   i18nInstance,
 } from '@/i18n/config';
 
-import 'src/styles/tailwind.css';
-import 'src/styles/template.css';
 import { I18nextProvider } from 'react-i18next';
 
 function AppTheme ({ children }: { children: React.ReactNode; }) {
