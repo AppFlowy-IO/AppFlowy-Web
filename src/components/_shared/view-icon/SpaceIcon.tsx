@@ -105,7 +105,7 @@ function SpaceIcon({ value, char, bgColor, className: classNameProp }: {
   }, [IconComponent, char, customIcon]);
 
   const className = useMemo(() => {
-    const classList = ['icon', 'h-[1.2em]', 'w-[1.2em]', 'shrink-0', 'rounded-[4px]'];
+    const classList = ['icon', 'h-[1.2em]', 'w-[1.2em]', 'shrink-0', 'rounded-[4px]', 'p-[0.1em]'];
 
     if (classNameProp) {
       classList.push(classNameProp);

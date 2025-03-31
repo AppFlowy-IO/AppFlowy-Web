@@ -20,7 +20,7 @@ function OutlineItem ({
   const selected = selectedViewId === view.view_id;
   const [isExpanded, setIsExpanded] = React.useState(false);
   const getIcon = useCallback(() => {
-    return <span className={'text-[1em] pt-1.5'}><OutlineIcon
+    return <span className={'text-[1em]'}><OutlineIcon
       level={level}
       isExpanded={isExpanded}
       setIsExpanded={setIsExpanded}

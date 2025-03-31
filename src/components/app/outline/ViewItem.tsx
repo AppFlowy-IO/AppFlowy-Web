@@ -90,7 +90,7 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
         >
           <PageIcon
             view={view}
-            className={'text-text-caption w-5 h-5 mr-1 text-[20px] flex items-center justify-center'}
+            className={'text-text-caption w-5 h-5 mr-1 max-md:text-[20px] flex items-center justify-center'}
           />
 
         </div>

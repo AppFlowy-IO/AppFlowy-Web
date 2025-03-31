@@ -111,7 +111,6 @@ function PageIcon({
     default:
       return null;
   }
-
 }
 
 export default PageIcon;

@@ -52,7 +52,7 @@ function SpaceItem({
         }
       >
         <SpaceIcon
-          className={'icon !rounded-[8px] !h-5 mr-1.5 !w-5 p-[0.15em]'}
+          className={'icon !h-5 mr-1.5 !w-5 !min-w-5'}
           bgColor={extra?.space_icon_color}
           value={extra?.space_icon || ''}
           char={extra?.space_icon ? undefined : name.slice(0, 1)}

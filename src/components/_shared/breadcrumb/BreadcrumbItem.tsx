@@ -32,7 +32,6 @@ function BreadcrumbItem({ crumb, disableClick = false, toView, variant }: {
   }, [disableClick, extra?.is_space, is_published, variant]);
 
   return (
-
     <div
       className={className}
       onClick={async() => {
@@ -47,7 +46,7 @@ function BreadcrumbItem({ crumb, disableClick = false, toView, variant }: {
     >
       {extra && extra.is_space ? (
         <SpaceIcon
-          className={'icon h-4 w-4 shrink-0'}
+          className={'!h-5 !w-5'}
           bgColor={extra.space_icon_color}
           value={extra.space_icon || ''}
           char={extra.space_icon ? undefined : name.slice(0, 1)}
@@ -55,20 +54,11 @@ function BreadcrumbItem({ crumb, disableClick = false, toView, variant }: {
       ) : (
         <PageIcon
           view={crumb}
-          className={'flex h-4 w-4 min-w-4 items-center justify-center'}
+          className={'min-w-5 flex h-5 w-5 items-center justify-center !max-md:text-[20px]'}
         />
       )}
-      <Tooltip
-        title={name}
-        placement={'bottom'}
-        enterDelay={1000}
-        enterNextDelay={1000}
-      >
-        <span
-          className={
-            'max-w-[250px] min-w-[2.5rem] flex-1 overflow-hidden truncate '
-          }
-        >
+      <Tooltip title={name} placement={'bottom'} enterDelay={1000} enterNextDelay={1000}>
+        <span className={'min-w-[2.5rem] max-w-[250px] flex-1 overflow-hidden truncate '}>
           {name || t('menuAppHeader.defaultNewPageName')}
         </span>
       </Tooltip>

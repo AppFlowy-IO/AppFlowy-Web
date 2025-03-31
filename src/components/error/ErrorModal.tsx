@@ -1,5 +1,5 @@
 import { ReactComponent as InformationSvg } from '@/assets/information.svg';
-import { ReactComponent as CloseSvg } from '@/assets/close.svg';
+import { ReactComponent as CloseSvg } from '@/assets/icons/close.svg';
 import { Button } from '@mui/material';
 
 export const ErrorModal = ({ message, onClose }: { message: string; onClose: () => void }) => {
@@ -14,7 +14,7 @@ export const ErrorModal = ({ message, onClose }: { message: string; onClose: () 
           onClick={() => onClose()}
           className={'absolute right-0 top-0 z-10 px-2 py-2 text-text-caption hover:text-text-title'}
         >
-          <CloseSvg className={'h-8 w-8'} />
+          <CloseSvg className={'h-5 w-5'} />
         </button>
         <div className={'text-main-alert'}>
           <InformationSvg className={'h-24 w-24'} />
