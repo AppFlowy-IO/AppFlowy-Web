@@ -41,6 +41,7 @@ export const ToggleList = memo(
           {...attributes}
           ref={ref}
           className={className}
+          id={level ? `heading-${blockId}` : undefined}
         >
           {children}
           {!readOnly && !collapsed && node.children.slice(1).length === 0 &&

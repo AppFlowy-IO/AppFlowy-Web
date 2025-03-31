@@ -26,6 +26,12 @@ export const Outline = memo(
 
       if (element) {
         void (async () => {
+          const search = new URLSearchParams(window.location.search);
+
+          search.set('blockId', heading.blockId);
+
+          window.history.replaceState(null, '', `${window.location.pathname}?${search.toString()}`);
+
           await smoothScrollIntoViewIfNeeded(element, {
             behavior: 'smooth',
             block: 'start',
