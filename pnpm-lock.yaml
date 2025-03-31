@@ -2,8 +2,8 @@ lockfileVersion: '6.0'
 
 dependencies:
   '@appflowyinc/ai-chat':
-    specifier: 0.1.24
-    version: 0.1.24(@appflowyinc/editor@0.1.10)(@types/react-dom@18.2.22)(@types/react@18.2.66)(axios@1.7.2)(dompurify@3.1.7)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0)
+    specifier: 0.1.25
+    version: 0.1.25(@appflowyinc/editor@0.1.10)(@types/react-dom@18.2.22)(@types/react@18.2.66)(axios@1.7.2)(dompurify@3.1.7)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0)
   '@appflowyinc/editor':
     specifier: ^0.1.10
     version: 0.1.10(@types/react-dom@18.2.22)(@types/react@18.2.66)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0)(slate-history@0.100.0)(slate-react@0.101.6)(slate@0.101.5)
@@ -535,8 +535,8 @@ packages:
     resolution: {integrity: sha512-+562v9k4aI80m1+VuMHehNJWLOFjBnXn3tdOitzD0il5b7smkSBal4+a3oKiQTbrwMmN/TBUMDvbdoWDehgOww==}
     dev: false
 
-  /@appflowyinc/ai-chat@0.1.24(@appflowyinc/editor@0.1.10)(@types/react-dom@18.2.22)(@types/react@18.2.66)(axios@1.7.2)(dompurify@3.1.7)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0):
-    resolution: {integrity: sha512-A8NtOFMlI0jzJ+vC0GfLdRoD8WMVGUV3ypLNBm+8fnG5r8Z8aSe0Zu9Y3BRowyV+IvT3vZFbH/K1jUiIUxgFLw==}
+  /@appflowyinc/ai-chat@0.1.25(@appflowyinc/editor@0.1.10)(@types/react-dom@18.2.22)(@types/react@18.2.66)(axios@1.7.2)(dompurify@3.1.7)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0):
+    resolution: {integrity: sha512-MtKeGqYVj50e3MVzjLum5Oczcb6obImiaEo/Y18tzVpza/5Z0oxC6351PD1rapx0Nwf02EzysjasnIxBpjTdFQ==}
     peerDependencies:
       '@appflowyinc/editor': ^0.1.7
       axios: ^1.7.9
