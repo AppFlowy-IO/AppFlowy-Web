@@ -16,3 +16,18 @@
     --custom-shadow-sm: 0px 2px 16px 0px rgba(0, 0, 0, 0.48);
     --custom-shadow-md: 0px 4px 32px 0px rgba(0, 0, 0, 0.48);
 }
+
+@layer base {
+    @keyframes progress-container {
+        0% {
+            transform: rotate(0deg);
+        }
+        100% {
+            transform: rotate(360deg);
+        }
+    }
+
+    .animate-progress-container {
+        animation: progress-container 1s linear infinite;
+    }
+}
