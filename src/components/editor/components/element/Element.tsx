@@ -29,7 +29,7 @@ import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { renderColor } from '@/utils/color';
-import React, { FC, useEffect, useMemo } from 'react';
+import React, { FC, useCallback, useEffect, useMemo } from 'react';
 import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
 import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'slate-react';
 import SubPage from 'src/components/editor/components/blocks/sub-page/SubPage';
@@ -52,7 +52,10 @@ export const Element = ({
   const { blockId, type } = node;
   const isSelected = useSelected();
   const selected = useMemo(() => {
-    if (blockId && selectedBlockIds?.includes(blockId)) return true;
+    if (blockId && selectedBlockIds?.includes(blockId)) {
+      return true;
+    }
+
     if ([
       ...CONTAINER_BLOCK_TYPES,
       ...SOFT_BREAK_TYPES,
@@ -60,37 +63,35 @@ export const Element = ({
       BlockType.TableBlock,
       BlockType.TableCell,
       BlockType.SimpleTableBlock,
-    ].includes(type as BlockType)) return false;
+    ].includes(type as BlockType)) {
+      return false;
+    }
+
     return isSelected;
   }, [blockId, selectedBlockIds, type, isSelected]);
 
   const editor = useSlateStatic();
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout>();
 
+  const scrollAndHighlight = useCallback(async (element: HTMLElement) => {
+    element.scrollIntoView({ block: 'start' });
+    element.className += ' highlight-block';
+    highlightTimeoutRef.current = setTimeout(() => {
+      element.className = element.className.replace('highlight-block', '');
+    }, 5000);
+    onJumpedBlockId?.();
+  }, [onJumpedBlockId]);
+
   useEffect(() => {
-    if (!jumpBlockId) return;
-
-    if (node.blockId !== jumpBlockId) {
-      return;
-    }
-
+    if (!jumpBlockId || node.blockId !== jumpBlockId) return;
     const element = ReactEditor.toDOMNode(editor, node);
 
-    setTimeout(() => {
-      void (async () => {
-        element.scrollIntoView({
-          block: 'start',
-        });
-        element.className += ' highlight-block';
-        highlightTimeoutRef.current = setTimeout(() => {
-          element.className = element.className.replace('highlight-block', '');
-        }, 5000);
-
-        onJumpedBlockId?.();
-      })();
+    const delayTimer = setTimeout(() => {
+      void scrollAndHighlight(element);
     }, 1000);
 
-  }, [editor, jumpBlockId, node, onJumpedBlockId]);
+    return () => clearTimeout(delayTimer);
+  }, [editor, jumpBlockId, node, onJumpedBlockId, scrollAndHighlight]);
 
   useEffect(() => {
     return () => {
