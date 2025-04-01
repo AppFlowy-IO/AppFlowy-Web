@@ -67,7 +67,6 @@ function DocumentInfo ({ viewId }: {
           {t('moreAction.createdAtLabel')}{formatTime(view.created_at)}
         </div>}
 
-
       </div>
     </>
   );
