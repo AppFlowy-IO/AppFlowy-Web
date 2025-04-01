@@ -2,7 +2,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { MentionType, UIVariant, View, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
-import { ReactComponent as NorthEast } from '@/assets/north_east.svg';
+import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
 import { ReactComponent as MarkIcon } from '@/assets/paragraph_mark.svg';
 
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -13,6 +13,8 @@ import { Element, Text } from 'slate';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
+
+import './style.css';
 
 function MentionPage({ text, pageId, blockId, type }: {
   text: Text | Element;
@@ -120,14 +122,14 @@ function MentionPage({ text, pageId, blockId, type }: {
           icon: icon,
           layout: meta?.layout || ViewLayout.Document,
         }}
-        className={'text-text-title ml-0.5 w-[1em] h-[1em] flex items-center'}
+        className={'text-text-title ml-0.5 w-5 h-5 flex items-center'}
       />
 
       {type === MentionType.PageRef &&
         <span
-          className={`absolute ${!icon?.value ? 'right-[-0.08em] bottom-[-0.08em]' : 'right-[-0.1em] bottom-[-0.2em]'}`}
+          className={`absolute ml-0.5 top-0 left-0`}
         >
-          <NorthEast className={'w-[0.7em] h-[0.7em] text-black'} />
+          <LinkArrowOverlay className={'link-arrow-overlay h-5 w-5'} />
         </span>
       }
     </>;

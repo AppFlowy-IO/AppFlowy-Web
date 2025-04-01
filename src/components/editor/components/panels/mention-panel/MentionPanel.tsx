@@ -13,8 +13,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next';
 import { Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
-import { ReactComponent as AddIcon } from '@/assets/plus.svg';
-import { ReactComponent as ArrowIcon } from '@/assets/north_east.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { ReactComponent as ArrowIcon } from '@/assets/icons/forward_arrow.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import dayjs from 'dayjs';
@@ -458,7 +458,7 @@ export function MentionPanel() {
 
           <Button
             color={'inherit'}
-            startIcon={<ArrowIcon className={' text-content-blue-900 w-[0.75em] h-[0.75em] mx-0.5'} />}
+            startIcon={<ArrowIcon className={'mx-0.5'} />}
             size={'small'}
             data-option-index={1}
             className={`justify-start scroll-m-2 min-h-[32px] hover:bg-fill-list-hover ${selectedOption?.index === 1 && selectedOption?.category === MentionTag.NewPage ? 'bg-fill-list-hover' : ''}`}

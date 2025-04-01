@@ -12,7 +12,7 @@ import { IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as AddSvg } from '@/assets/icons/plus.svg';
-import { ReactComponent as DragSvg } from '@/assets/drag_element.svg';
+import { ReactComponent as DragSvg } from '@/assets/icons/drag.svg';
 import { Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 import { filterValidNodes, findSlateEntryByBlockId, getSelectedPaths } from '@/application/slate-yjs/utils/editor';

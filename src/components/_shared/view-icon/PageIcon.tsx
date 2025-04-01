@@ -1,9 +1,9 @@
 import React, { useEffect, useMemo } from 'react';
 import { ViewIcon, ViewIconType, ViewLayout } from '@/application/types';
-import { ReactComponent as BoardSvg } from '@/assets/board.svg';
-import { ReactComponent as CalendarSvg } from '@/assets/calendar.svg';
+import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
+import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
-import { ReactComponent as GridSvg } from '@/assets/grid.svg';
+import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as ChatSvg } from '@/assets/icons/ai_chat.svg';
 import { getIcon, isFlagEmoji } from '@/utils/emoji';
 import DOMPurify from 'dompurify';

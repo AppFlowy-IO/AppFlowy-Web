@@ -2,7 +2,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { ToggleListNode } from '@/components/editor/editor.type';
 import React, { useCallback } from 'react';
-import { ReactComponent as ExpandSvg } from '@/assets/drop_menu_show.svg';
+import { ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg';
 import { useSlateStatic } from 'slate-react';
 
 function ToggleIcon({ block, className }: { block: ToggleListNode; className: string }) {
@@ -27,7 +27,7 @@ function ToggleIcon({ block, className }: { block: ToggleListNode; className: st
       }}
       className={`${className} cursor-pointer hover:text-fill-default pr-1 toggle-icon`}
     >
-      {collapsed ? <ExpandSvg className={'-rotate-90 transform'} /> : <ExpandSvg />}
+      {collapsed ? <ToggleListIcon  /> : <ToggleListIcon className={'rotate-90 transform'}/>}
     </span>
   );
 }

@@ -1,5 +1,4 @@
-import React from 'react';
-import { ReactComponent as ChevronDownIcon } from '@/assets/chevron_down.svg';
+import { ReactComponent as ChevronDownIcon } from '@/assets/icons/toggle_list.svg';
 
 function OutlineIcon ({ isExpanded, setIsExpanded, level }: {
   isExpanded: boolean;
@@ -18,7 +17,7 @@ function OutlineIcon ({ isExpanded, setIsExpanded, level }: {
         }}
         className={'opacity-50 hover:opacity-100'}
       >
-        <ChevronDownIcon className={'h-[1em] w-[1em]  hover:bg-fill-list-hover rounded-[2px]'} />
+        <ChevronDownIcon className={'hover:bg-fill-list-hover rounded-[2px] rotate-90 transform'} />
       </button>
     );
   }
@@ -34,7 +33,7 @@ function OutlineIcon ({ isExpanded, setIsExpanded, level }: {
         setIsExpanded(true);
       }}
     >
-      <ChevronDownIcon className={'h-[1em] w-[1em] -rotate-90 transform  hover:bg-fill-list-hover rounded-[2px]'} />
+      <ChevronDownIcon className={'hover:bg-fill-list-hover rounded-[2px]'} />
     </button>
   );
 }
