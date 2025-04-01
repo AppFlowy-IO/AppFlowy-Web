@@ -12,10 +12,10 @@ import dayjs from 'dayjs';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { ReactComponent as GlobalIcon } from '@/assets/publish.svg';
-import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
-import { ReactComponent as TrashIcon } from '@/assets/trash.svg';
-import { ReactComponent as SettingIcon } from '@/assets/settings.svg';
+import { ReactComponent as GlobalIcon } from '@/assets/icons/earth.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as SettingIcon } from '@/assets/icons/settings.svg';
 
 function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
   view: View,
@@ -202,10 +202,7 @@ function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
                 onClick={action.onClick}
                 size={'small'}
                 className={'justify-start'}
-                startIcon={<action.IconComponent
-                  size={14}
-                  className={'w-4 h-4'}
-                />}
+                startIcon={<action.IconComponent />}
                 color={'inherit'}
               >{action.label}</Button>
             </Tooltip>;

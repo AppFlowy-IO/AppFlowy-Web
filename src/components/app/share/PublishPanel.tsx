@@ -7,7 +7,7 @@ import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
 import { Button, CircularProgress, Divider, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as PublishIcon } from '@/assets/publish.svg';
+import { ReactComponent as PublishIcon } from '@/assets/icons/earth.svg';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/check_filled.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/uncheck.svg';
 import { Switch } from '@/components/_shared/switch';
@@ -232,7 +232,7 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
         className={'flex items-center gap-1.5'}
         variant={'body2'}
       >
-        <PublishIcon className={'w-4 h-4'} />
+        <PublishIcon className={'w-5 h-5'} />
         {t('shareAction.publishToTheWeb')}
       </Typography>
       <Typography

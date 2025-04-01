@@ -1,6 +1,6 @@
 import React from 'react';
-import { ReactComponent as ShareIcon } from '@/assets/share_tab_icon.svg';
-import { ReactComponent as LinkIcon } from '@/assets/share.svg';
+import { ReactComponent as ShareIcon } from '@/assets/icons/users.svg';
+import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 
 import { useTranslation } from 'react-i18next';
 import { Button, OutlinedInput } from '@mui/material';
@@ -18,7 +18,7 @@ function SharePanel() {
   return (
     <div className={'flex flex-col w-full pb-2 px-1'}>
       <div className={'text-sm flex w-full items-center gap-2'}>
-        <ShareIcon className={'w-4 h-4'}/>
+        <ShareIcon className={'w-5 h-5'} />
         <span>{t('shareAction.shareTabTitle')}</span>
       </div>
       <div className={'text-sm w-full text-text-caption flex items-center gap-2'}>
@@ -39,7 +39,7 @@ function SharePanel() {
           color={'primary'}
           className={'flex-nowrap h-[40px] rounded-[12px]'}
           onClick={handleCopy}
-          startIcon={<LinkIcon className={'w-4 h-4'}/>}
+          startIcon={<LinkIcon />}
         >
           <span className={'whitespace-nowrap'}> {t('shareAction.copyLink')}</span>
         </Button>

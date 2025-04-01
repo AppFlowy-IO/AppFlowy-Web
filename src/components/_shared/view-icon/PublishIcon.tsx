@@ -1,7 +1,7 @@
 import { UIVariant, View } from '@/application/types';
 import { Tooltip } from '@mui/material';
 import React from 'react';
-import { ReactComponent as PublishSvg } from '@/assets/publish.svg';
+import { ReactComponent as PublishSvg } from '@/assets/icons/earth.svg';
 import { useTranslation } from 'react-i18next';
 
 function PublishIcon ({
@@ -30,7 +30,7 @@ function PublishIcon ({
         <div
           className={'text-text-caption cursor-pointer hover:bg-fill-list-hover rounded h-5 w-5 flex items-center justify-center'}
         >
-          <PublishSvg className={`h-4 w-4`} />
+          <PublishSvg className={`h-5 w-5`} />
         </div>
       </Tooltip>
     );
