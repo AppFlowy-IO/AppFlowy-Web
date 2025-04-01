@@ -1,4 +1,4 @@
-import { ReactComponent as ChevronDownIcon } from '@/assets/icons/toggle_list.svg';
+import { ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg';
 
 function OutlineIcon ({ isExpanded, setIsExpanded, level }: {
   isExpanded: boolean;
@@ -17,7 +17,7 @@ function OutlineIcon ({ isExpanded, setIsExpanded, level }: {
         }}
         className={'opacity-50 hover:opacity-100'}
       >
-        <ChevronDownIcon className={'hover:bg-fill-list-hover rounded-[2px] rotate-90 transform'} />
+        <ToggleListIcon className={'hover:bg-fill-list-hover rounded-[2px] rotate-90 transform'} />
       </button>
     );
   }
@@ -33,7 +33,7 @@ function OutlineIcon ({ isExpanded, setIsExpanded, level }: {
         setIsExpanded(true);
       }}
     >
-      <ChevronDownIcon className={'hover:bg-fill-list-hover rounded-[2px]'} />
+      <ToggleListIcon className={'hover:bg-fill-list-hover rounded-[2px]'} />
     </button>
   );
 }
