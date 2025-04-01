@@ -34,7 +34,7 @@ function AsTemplateButton ({ viewId }: { viewId: string }) {
         onClick={handleClick}
         className={'text-left justify-start w-full'}
         variant={'contained'}
-        startIcon={<TemplateIcon className={'w-4 h-4'} />}
+        startIcon={<TemplateIcon />}
       >
         {t('template.asTemplate')}
       </Button>

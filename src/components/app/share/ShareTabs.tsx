@@ -38,7 +38,7 @@ function ShareTabs ({ opened, viewId, onClose }: { opened: boolean, viewId: stri
       currentUser?.email?.endsWith('appflowy.io') && view?.is_published && {
         value: TabKey.TEMPLATE,
         label: t('template.asTemplate'),
-        icon: <Templates className={'w-4 h-4 mb-0'} />,
+        icon: <Templates className={'mb-0'} />,
         Panel: TemplatePanel,
       }].filter(Boolean) as {
       value: TabKey;

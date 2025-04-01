@@ -2,11 +2,11 @@ import { View, ViewLayout } from '@/application/types';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import MobileRecentViewCover from '@/components/app/recent/MobileRecentViewCover';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
-import { isFlagEmoji } from '@/utils/emoji';
 import { Divider } from '@mui/material';
 import dayjs from 'dayjs';
 import React, { useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import PageIcon from '@/components/_shared/view-icon/PageIcon';
 
 function MobileOutlineWithCover ({ view, navigateToView, timePrefix, time }: {
   view: View;
@@ -83,8 +83,8 @@ function MobileOutlineWithCover ({ view, navigateToView, timePrefix, time }: {
         }}
       >
         <div className={'flex flex-col flex-1 gap-4'}>
-          <div className={'flex gap-2 text-base '}>
-            {view.icon && <span className={`${isFlagEmoji(view.icon.value) ? 'icon' : ''}`}>{view.icon.value}</span>}
+          <div className={'flex gap-2 text-base items-center'}>
+            {view.icon && <PageIcon view={view} className={'!w-5 !h-5 flex items-center justify-center'} iconSize={20} />}
             <div className={'font-medium'}>
               {view.name}
             </div>
