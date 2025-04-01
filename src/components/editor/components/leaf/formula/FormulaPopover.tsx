@@ -2,8 +2,8 @@ import { Popover } from '@/components/_shared/popover';
 import { IconButton, PopoverPosition, TextField, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as SelectCheck } from '@/assets/selected.svg';
-import { ReactComponent as Clear } from '@/assets/trash.svg';
+import { ReactComponent as SelectCheck } from '@/assets/icons/tick.svg';
+import { ReactComponent as Clear } from '@/assets/icons/delete.svg';
 
 function FormulaPopover({
   open,
@@ -66,7 +66,6 @@ function FormulaPopover({
             title={t('button.done')}
           >
             <IconButton
-              className={'h-[20px] w-[20px]'}
               size={'small'}
               onClick={() => {
 
@@ -81,7 +80,6 @@ function FormulaPopover({
             title={t('button.clear')}
           >
             <IconButton
-              className={'h-[20px] w-[20px]'}
               size={'small'}
               color={'error'}
               onClick={onClear}
