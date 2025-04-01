@@ -29,7 +29,7 @@ import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { renderColor } from '@/utils/color';
-import React, { FC, useCallback, useEffect, useMemo } from 'react';
+import React, { FC, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
 import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'slate-react';
 import SubPage from 'src/components/editor/components/blocks/sub-page/SubPage';
@@ -82,8 +82,11 @@ export const Element = ({
     onJumpedBlockId?.();
   }, [onJumpedBlockId]);
 
-  useEffect(() => {
-    if (!jumpBlockId || node.blockId !== jumpBlockId) return;
+  useLayoutEffect(() => {
+    if (!jumpBlockId || node.blockId !== jumpBlockId) {
+      return;
+    }
+
     const element = ReactEditor.toDOMNode(editor, node);
 
     const delayTimer = setTimeout(() => {
