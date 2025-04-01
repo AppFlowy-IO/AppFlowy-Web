@@ -52,7 +52,9 @@ export function AppHeader ({
       }}
       className={'appflowy-top-bar transform-gpu sticky top-0 z-10 flex px-5'}
     >
+
       <div className={'flex w-full items-center justify-between gap-4 overflow-hidden'}>
+
         {displayMenuButton && (
           <OutlinePopover
             {...{
@@ -92,7 +94,6 @@ export function AppHeader ({
         {rendered && <Suspense fallback={null}>
           <RightMenu />
         </Suspense>}
-
       </div>
 
     </div>
