@@ -37,7 +37,7 @@ export const Document = (props: DocumentProps) => {
   const document = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
 
   const handleEnter = useCallback((text: string) => {
-    if(!doc) return;
+    if (!doc) return;
     const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
     appendFirstEmptyParagraph(sharedRoot, text);
@@ -46,17 +46,17 @@ export const Document = (props: DocumentProps) => {
   const ref = useRef<HTMLDivElement>(null);
 
   const handleRendered = useCallback(() => {
-    if(onRendered) {
+    if (onRendered) {
       onRendered();
     }
 
     const el = ref.current;
 
-    if(!el) return;
+    if (!el) return;
 
     const scrollElement = el.closest('.MuiPaper-root');
 
-    if(!scrollElement) {
+    if (!scrollElement) {
       el.style.minHeight = `calc(100vh - 48px)`;
       return;
     }
@@ -64,7 +64,7 @@ export const Document = (props: DocumentProps) => {
     el.style.minHeight = `${scrollElement?.clientHeight - 64}px`;
   }, [onRendered]);
 
-  if(!document || !viewMeta.viewId || !viewMeta.workspaceId) return null;
+  if (!document || !viewMeta.viewId) return null;
 
   return (
 
