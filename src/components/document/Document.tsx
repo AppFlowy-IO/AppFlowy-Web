@@ -15,7 +15,7 @@ export type DocumentProps = ViewComponentProps & {
 };
 
 export const Document = (props: DocumentProps) => {
-  const [search, setSearch] = useSearchParams();
+  const [search] = useSearchParams();
   const {
     doc,
     readOnly,
@@ -29,11 +29,8 @@ export const Document = (props: DocumentProps) => {
   const blockId = search.get('blockId') || undefined;
 
   const onJumpedBlockId = useCallback(() => {
-    setSearch(prev => {
-      prev.delete('blockId');
-      return prev;
-    });
-  }, [setSearch]);
+    // do nothing
+  }, []);
   const document = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
 
   const handleEnter = useCallback((text: string) => {

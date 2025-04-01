@@ -3,7 +3,6 @@ import { EditorElementProps, HeadingNode, OutlineNode } from '@/components/edito
 import React, { forwardRef, memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useReadOnly, useSlate } from 'slate-react';
-import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 import { Element } from 'slate';
 
 export const Outline = memo(
@@ -32,8 +31,7 @@ export const Outline = memo(
 
           window.history.replaceState(null, '', `${window.location.pathname}?${search.toString()}`);
 
-          await smoothScrollIntoViewIfNeeded(element, {
-            behavior: 'smooth',
+          element.scrollIntoView({
             block: 'start',
           });
         })();
