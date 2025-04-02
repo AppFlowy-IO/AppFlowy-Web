@@ -42,7 +42,7 @@ function OutlineItem({ view, level = 0, width, navigateToView, selectedViewId, v
           }}
           id={`${variant}-view-${item.view_id}`}
           className={
-            'flex items-center min-h-[30px] w-full gap-0.5 rounded-[8px] px-0.5 text-sm hover:bg-content-blue-50 focus:bg-content-blue-50 focus:outline-none'
+            'flex items-center min-h-[30px] w-full gap-0.5 rounded-[8px] text-sm hover:bg-content-blue-50 focus:bg-content-blue-50 focus:outline-none'
           }
         >
           {item.children?.length ? getIcon() : null}

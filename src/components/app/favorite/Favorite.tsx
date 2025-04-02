@@ -143,7 +143,7 @@ export function Favorite() {
           ref={moreButtonRef}
           className={'flex items-center w-full gap-2 rounded-[8px] px-2 py-1.5 text-sm cursor-pointer hover:bg-content-blue-50 focus:bg-content-blue-50 focus:outline-none'}
         >
-          <MoreIcon className={'h-4 w-4 text-text-caption'}/>
+          <MoreIcon className={'w-5 h-5 text-text-caption'}/>
           <div>{t('button.more')}</div>
 
         </div>}
