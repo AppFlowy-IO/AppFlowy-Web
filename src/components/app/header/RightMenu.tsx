@@ -26,7 +26,6 @@ function RightMenu () {
           <Logo className={'h-6 w-6'} />
         </button>
       </Tooltip>
-
     </div>
   );
 }
