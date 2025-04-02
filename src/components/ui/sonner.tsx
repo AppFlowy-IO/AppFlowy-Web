@@ -16,7 +16,7 @@ const Toaster = ({ ...props }: ToasterProps) => {
       visibleToasts={1}
       toastOptions={{
         className:
-          'shadow-toast px-4 py-2 gap-2 bg-fill-primary border-none text-text-quaternary w-fit max-w-[360px] rounded-400',
+          '!shadow-toast px-4 py-2 gap-2 bg-fill-primary border-none text-text-quaternary w-fit max-w-[360px] rounded-400',
       }}
       icons={{
         success: <ToastSuccess className='h-5 w-5 text-fill-success-thick' />,
