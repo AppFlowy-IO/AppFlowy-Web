@@ -3,7 +3,7 @@ import ImporterDialogContent from '@/components/_shared/more-actions/importer/Im
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { NormalModal } from '@/components/_shared/modal';
-import { ReactComponent as ImportIcon } from '@/assets/import.svg';
+import { ReactComponent as ImportIcon } from '@/assets/icons/save_as.svg';
 
 export function ImporterModal ({
   open,
@@ -25,7 +25,7 @@ export function ImporterModal ({
       onCancel={onClose}
       title={
         <div className={'flex items-center gap-2 justify-center font-semibold'}>
-          <ImportIcon className={'w-6 h-6'} />
+          <ImportIcon className={'w-5 h-5'} />
           {t('web.import')}
         </div>
       }

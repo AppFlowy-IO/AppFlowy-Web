@@ -5,7 +5,7 @@ import { Avatar, Tooltip } from '@mui/material';
 import CircularProgress from '@mui/material/CircularProgress';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as SelectedSvg } from '@/assets/selected.svg';
+import { ReactComponent as SelectedSvg } from '@/assets/icons/tick.svg';
 import MoreActions from '@/components/app/workspaces/MoreActions';
 
 function WorkspaceList ({
@@ -46,7 +46,7 @@ function WorkspaceList ({
     if (changeLoading === workspace.id) return <CircularProgress size={16} />;
     const hovered = hoveredWorkspaceId === workspace.id;
 
-    if (workspace.id === currentWorkspaceId && !(hovered && showActions)) return <SelectedSvg className={'w-6 text-fill-default h-6'} />;
+    if (workspace.id === currentWorkspaceId && !(hovered && showActions)) return <SelectedSvg className={'w-5 h-5 text-fill-default'} />;
 
     if (showActions) {
       return <div

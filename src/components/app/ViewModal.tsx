@@ -11,7 +11,7 @@ import { useService } from '@/components/main/app.hooks';
 import { Button, Dialog, Divider, IconButton, Tooltip, Zoom } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ExpandMoreIcon } from '@/assets/full_view.svg';
+import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
 import ShareButton from 'src/components/app/share/ShareButton';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
@@ -137,7 +137,7 @@ function ViewModal({
                 handleClose();
               }}
             >
-              <ExpandMoreIcon className={'h-5 w-5 text-text-title opacity-80'} />
+              <ExpandIcon className={'h-5 w-5 text-text-title opacity-80'} />
             </IconButton>
           </Tooltip>
           <Divider orientation={'vertical'} className={'h-4'} />

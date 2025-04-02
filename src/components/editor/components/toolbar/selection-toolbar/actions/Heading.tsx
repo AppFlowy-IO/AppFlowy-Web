@@ -12,7 +12,7 @@ import { useSlateStatic } from 'slate-react';
 import { ReactComponent as Heading1 } from '@/assets/icons/h1.svg';
 import { ReactComponent as Heading2 } from '@/assets/icons/h2.svg';
 import { ReactComponent as Heading3 } from '@/assets/icons/h3.svg';
-import { ReactComponent as DownArrow } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as DownArrow } from '@/assets/icons/triangle_down.svg';
 
 const popoverProps: Partial<PopoverProps> = {
   anchorOrigin: {
@@ -109,7 +109,7 @@ export function Heading() {
       >
         <div className={'flex items-center justify-center'}>
           {getActiveButton()}
-          <DownArrow className={'h-3 w-3 text-icon-on-toolbar opacity-80'} />
+          <DownArrow className={'w-3 h-5 text-icon-on-toolbar'} />
         </div>
       </ActionButton>
       {toolbarVisible && (

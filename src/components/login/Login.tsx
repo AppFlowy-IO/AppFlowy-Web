@@ -4,7 +4,7 @@ import { Divider } from '@mui/material';
 import React from 'react';
 import { ReactComponent as Logo } from '@/assets/logo.svg';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ArrowRight } from '@/assets/right.svg';
+import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
 
 export function Login({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
@@ -58,7 +58,7 @@ export function Login({ redirectTo }: { redirectTo: string }) {
         className={'text-text-title text-xs font-medium cursor-pointer opacity-60 hover:opacity-100 w-full gap-2 flex items-center justify-center'}
       >
         <span>{t('web.visitOurWebsite')}</span>
-        <ArrowRight className={'w-4 h-4'} />
+        <ArrowRight className={'w-5 h-5'} />
       </div>
     </div>
   );

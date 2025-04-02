@@ -7,7 +7,7 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import { Divider, IconButton } from '@mui/material';
 import React, { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CloseIcon } from '@/assets/close.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 
 function MobileWorkspaces ({
   onClose,

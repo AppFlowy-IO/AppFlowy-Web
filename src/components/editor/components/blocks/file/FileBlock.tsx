@@ -1,6 +1,6 @@
 import { BlockType, FieldURLType, FileBlockData } from '@/application/types';
 import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
-import { ReactComponent as ReloadIcon } from '@/assets/reload.svg';
+import { ReactComponent as ReloadIcon } from '@/assets/icons/regenerate.svg';
 
 import { notify } from '@/components/_shared/notify';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';

@@ -1,7 +1,7 @@
 import { HEADER_HEIGHT } from '@/application/constants';
 import { usePublishContext } from '@/application/publish';
 import { UIVariant } from '@/application/types';
-import { ReactComponent as SideOutlined } from '@/assets/side_outlined.svg';
+import { ReactComponent as DoubleRightIcon } from '@/assets/icons/double_arrow_right.svg';
 import { Breadcrumb } from '@/components/_shared/breadcrumb';
 import { OutlinePopover } from '@/components/_shared/outline';
 import Outline from '@/components/_shared/outline/Outline';
@@ -75,7 +75,7 @@ export function PublishViewHeader ({
               }}
 
             >
-              <SideOutlined className={'h-4 w-4 text-text-caption'} />
+              <DoubleRightIcon className={'text-text-caption'} />
             </IconButton>
           </OutlinePopover>
         )}

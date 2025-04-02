@@ -7,11 +7,11 @@ import {
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useAIWriter, AIWriterMenu, AIAssistantType } from '@appflowyinc/ai-chat';
 import React, { useCallback, useEffect } from 'react';
-import { ReactComponent as AskAIIcon } from '@/assets/ai.svg';
-import { ReactComponent as ImproveWritingIcon } from '@/assets/improve-writing.svg';
+import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as ImproveWritingIcon } from '@/assets/icons/ai_improve_writing.svg';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlate } from 'slate-react';
-import { ReactComponent as RightIcon } from '@/assets/arrow_right.svg';
+import { ReactComponent as TriangleDownIcon } from '@/assets/icons/triangle_down.svg';
 
 function AIAssistant() {
   const { t } = useTranslation();
@@ -96,9 +96,8 @@ function AIAssistant() {
           tooltip={t('editor.askAI')}
         >
           <div className={'flex items-center justify-center'}>
-            <AskAIIcon />
-
-            <RightIcon className={'transform h-3 w-3 rotate-90 text-icon-on-toolbar opacity-80'} />
+            <AskAIIcon className='w-5 h-5'/>
+            <TriangleDownIcon className={'text-icon-on-toolbar w-3 h-5'} />
           </div>
 
         </ActionButton>

@@ -2,7 +2,7 @@ import { notify } from '@/components/_shared/notify';
 import { copyTextToClipboard } from '@/utils/copy';
 import { Button, OutlinedInput, Tooltip } from '@mui/material';
 import React from 'react';
-import { ReactComponent as CopyIcon } from '@/assets/link.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as CheckIcon } from '@/assets/check_circle.svg';
 import { useTranslation } from 'react-i18next';
 
@@ -56,8 +56,8 @@ function LinkPreview ({
             }
           }}
         >
-          {clickCopy ? <CheckIcon className={'w-6 h-6 text-function-success'} /> :
-            <CopyIcon className={'w-6 h-6'} />}
+          {clickCopy ? <CheckIcon className={'w-5 h-5 text-function-success'} /> :
+            <CopyIcon className={'w-5 h-5'} />}
         </Button>
       </Tooltip>
     </div>
