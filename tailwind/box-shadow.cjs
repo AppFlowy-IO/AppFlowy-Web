@@ -5,4 +5,5 @@ module.exports = {
   'toolbar': 'var(--custom-shadow-sm)',
   'dialog': 'var(--custom-shadow-md)',
   'toast': 'var(--custom-shadow-md)',
+  'tooltip': 'var(--custom-shadow-md)',
 };
