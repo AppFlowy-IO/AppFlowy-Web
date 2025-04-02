@@ -21,11 +21,6 @@ module.exports = {
         400: '12px',
         500: '16px',
         600: '20px',
-        xs: '4px',
-        sm: '6px',
-        md: '12px',
-        lg: '16px',
-        xl: '20px',
       },
       padding: {
         100: '4px',
