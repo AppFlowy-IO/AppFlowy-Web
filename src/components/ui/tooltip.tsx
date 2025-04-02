@@ -42,4 +42,10 @@ function TooltipContent({
   );
 }
 
-export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider };
+function TooltipShortcut({ className, ...props }: React.ComponentProps<'span'>) {
+  return (
+    <span data-slot='tooltip-shortcut' className={cn('ml-auto text-sm text-text-secondary', className)} {...props} />
+  );
+}
+
+export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, TooltipShortcut };
