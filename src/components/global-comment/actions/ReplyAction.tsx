@@ -1,6 +1,6 @@
 import { GlobalComment } from '@/application/comment.type';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
-import { ReactComponent as ReplyOutlined } from '@/assets/reply.svg';
+import { ReactComponent as ReplyOutlined } from '@/assets/icons/reply.svg';
 import { Tooltip } from '@mui/material';
 import React, { memo } from 'react';
 import { useTranslation } from 'react-i18next';

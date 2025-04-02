@@ -1,5 +1,5 @@
 import { Invitation } from '@/application/types';
-import { ReactComponent as AppflowyLogo } from '@/assets/appflowy.svg';
+import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
 import ChangeAccount from '@/components/_shared/modal/ChangeAccount';
 import { notify } from '@/components/_shared/notify';
 import { getAvatar } from '@/components/_shared/view-icon/utils';
@@ -22,34 +22,37 @@ function AcceptInvitationPage() {
   const { t } = useTranslation();
 
   useEffect(() => {
-    if(!isAuthenticated) {
+    if (!isAuthenticated) {
       navigate('/login?redirectTo=' + encodeURIComponent(window.location.href));
     }
   }, [isAuthenticated, navigate]);
 
-  const loadInvitation = useCallback(async(invitationId: string) => {
-    if(!service) return;
-    try {
-      const res = await service.getInvitation(invitationId);
+  const loadInvitation = useCallback(
+    async (invitationId: string) => {
+      if (!service) return;
+      try {
+        const res = await service.getInvitation(invitationId);
 
-      if(res.status === 'Accepted') {
-        notify.warning(t('invitation.alreadyAccepted'));
+        if (res.status === 'Accepted') {
+          notify.warning(t('invitation.alreadyAccepted'));
+        }
+
+        setInvitation(res);
+        // eslint-disable-next-line
+      } catch (e: any) {
+        setModalOpened(true);
       }
-
-      setInvitation(res);
-      // eslint-disable-next-line
-    } catch(e: any) {
-      setModalOpened(true);
-    }
-  }, [service, t]);
+    },
+    [service, t]
+  );
 
   useEffect(() => {
-    if(!invitationId) return;
+    if (!invitationId) return;
     void loadInvitation(invitationId);
   }, [loadInvitation, invitationId]);
 
   const workspaceIconProps = useMemo(() => {
-    if(!invitation) return {};
+    if (!invitation) return {};
 
     return getAvatar({
       icon: invitation.workspace_icon,
@@ -61,7 +64,7 @@ function AcceptInvitationPage() {
   }, []);
 
   const inviterIconProps = useMemo(() => {
-    if(!invitation) return {};
+    if (!invitation) return {};
 
     return getAvatar({
       icon: invitation.inviter_icon,
@@ -71,52 +74,54 @@ function AcceptInvitationPage() {
 
   return (
     <div
-      className={'text-text-title px-6 max-md:gap-4 flex flex-col gap-12 h-screen appflowy-scroller w-screen overflow-x-hidden overflow-y-auto items-center bg-bg-base'}
+      className={
+        'appflowy-scroller flex h-screen w-screen flex-col items-center gap-12 overflow-y-auto overflow-x-hidden bg-bg-base px-6 text-text-title max-md:gap-4'
+      }
     >
       <div
         onClick={() => {
           navigate('/app');
         }}
-        className={'flex w-full cursor-pointer max-md:justify-center max-md:h-32 h-20 items-center justify-between sticky'}
+        className={
+          'sticky flex h-20 w-full cursor-pointer items-center justify-between max-md:h-32 max-md:justify-center'
+        }
       >
-        <AppflowyLogo className={'w-32 h-12 max-md:w-52'} />
+        <AppflowyLogo className={'h-12 w-32 max-md:w-52'} />
       </div>
       <div className={'flex w-full max-w-[560px] flex-col items-center gap-6 text-center'}>
         <Avatar
-          className={'h-20 w-20 text-[40px] border border-text-title rounded-[16px]'} {...workspaceIconProps}
-          variant="rounded"
+          className={'h-20 w-20 rounded-[16px] border border-text-title text-[40px]'}
+          {...workspaceIconProps}
+          variant='rounded'
         />
         <div
-          className={'text-[40px] max-sm:text-[24px] px-4 whitespace-pre-wrap break-words leading-[107%] text-center'}
+          className={'whitespace-pre-wrap break-words px-4 text-center text-[40px] leading-[107%] max-sm:text-[24px]'}
         >
-          {t('invitation.join')}
-          {' '}
-          <span className={'font-semibold'}>{invitation?.workspace_name}</span>
-          {' '}
-          {t('invitation.on')}
-          {' '}
-          <span className={'whitespace-nowrap'}>AppFlowy</span>
-
+          {t('invitation.join')} <span className={'font-semibold'}>{invitation?.workspace_name}</span>{' '}
+          {t('invitation.on')} <span className={'whitespace-nowrap'}>AppFlowy</span>
         </div>
-        <Divider className={'max-w-full w-[400px]'} />
-        <div className={'flex items-center justify-center py-1 gap-4'}>
+        <Divider className={'w-[400px] max-w-full'} />
+        <div className={'flex items-center justify-center gap-4 py-1'}>
           <Avatar
-            className={'h-20 w-20 border border-line-divider text-[40px]'} {...inviterIconProps}
-            variant="circular"
+            className={'h-20 w-20 border border-line-divider text-[40px]'}
+            {...inviterIconProps}
+            variant='circular'
           />
-          <div className={'flex gap-1 flex-col items-start'}>
+          <div className={'flex flex-col items-start gap-1'}>
             <div className={'text-text-title'}>{t('invitation.invitedBy')}</div>
-            <div className={'text-text-title font-semibold'}>{invitation?.inviter_name}</div>
-            <div className={'text-sm text-text-caption'}>{t('invitation.membersCount', {
-              count: invitation?.member_count || 0,
-            })}</div>
+            <div className={'font-semibold text-text-title'}>{invitation?.inviter_name}</div>
+            <div className={'text-sm text-text-caption'}>
+              {t('invitation.membersCount', {
+                count: invitation?.member_count || 0,
+              })}
+            </div>
           </div>
         </div>
-        <div className={'text-sm max-w-full w-[400px] text-text-title'}>
-          {t('invitation.tip')}
-        </div>
+        <div className={'w-[400px] max-w-full text-sm text-text-title'}>{t('invitation.tip')}</div>
         <div
-          className={'border-b max-sm:border max-sm:rounded-[8px] border-line-border flex items-center gap-2 max-w-full py-2 px-4 w-[400px] bg-bg-body'}
+          className={
+            'flex w-[400px] max-w-full items-center gap-2 border-b border-line-border bg-bg-body py-2 px-4 max-sm:rounded-[8px] max-sm:border'
+          }
         >
           <EmailOutlined />
           {currentUser?.email}
@@ -126,10 +131,10 @@ function AcceptInvitationPage() {
           variant={'contained'}
           color={'primary'}
           size={'large'}
-          className={'max-w-full w-[400px] rounded-[16px] text-[24px] py-5 px-10'}
-          onClick={async() => {
-            if(!invitationId) return;
-            if(invitation?.status === 'Accepted') {
+          className={'w-[400px] max-w-full rounded-[16px] py-5 px-10 text-[24px]'}
+          onClick={async () => {
+            if (!invitationId) return;
+            if (invitation?.status === 'Accepted') {
               notify.warning(t('invitation.alreadyAccepted'));
               return;
             }
@@ -148,8 +153,7 @@ function AcceptInvitationPage() {
                   window.open(`${origin}/app/${invitation?.workspace_id}`, '_current');
                 },
               });
-
-            } catch(e) {
+            } catch (e) {
               notify.error('Failed to join workspace');
             }
           }}
@@ -157,11 +161,7 @@ function AcceptInvitationPage() {
           {t('invitation.joinWorkspace')}
         </Button>
       </div>
-      {isAuthenticated && <ChangeAccount
-        redirectTo={url}
-        setModalOpened={setModalOpened}
-        modalOpened={modalOpened}
-      />}
+      {isAuthenticated && <ChangeAccount redirectTo={url} setModalOpened={setModalOpened} modalOpened={modalOpened} />}
     </div>
   );
 }

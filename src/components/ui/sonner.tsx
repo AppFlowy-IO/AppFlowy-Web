@@ -1,8 +1,8 @@
 import { useTheme } from 'next-themes';
 import { Toaster as Sonner, ToasterProps } from 'sonner';
-import { ReactComponent as ToastSuccess } from '@/assets/toast_success.svg';
-import { ReactComponent as ToastWarning } from '@/assets/toast_warning.svg';
-import { ReactComponent as ToastError } from '@/assets/toast_error.svg';
+import { ReactComponent as ToastSuccess } from '@/assets/icons/success.svg';
+import { ReactComponent as ToastWarning } from '@/assets/icons/warning.svg';
+import { ReactComponent as ToastError } from '@/assets/icons/error.svg';
 
 const Toaster = ({ ...props }: ToasterProps) => {
   const { theme = 'system' } = useTheme();

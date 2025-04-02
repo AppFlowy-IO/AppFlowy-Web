@@ -1,8 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import {
-  ReactComponent as Inbox,
-} from '@/assets/inbox.svg';
+import { ReactComponent as Inbox } from '@/assets/icons/inbox.svg';
 
 interface FileDropzoneProps {
   onChange?: (files: File[]) => void;
@@ -12,13 +10,7 @@ interface FileDropzoneProps {
   placeholder?: string | React.ReactNode;
 }
 
-function FileDropzone({
-  onChange,
-  accept,
-  multiple,
-  disabled,
-  placeholder,
-}: FileDropzoneProps) {
+function FileDropzone({ onChange, accept, multiple, disabled, placeholder }: FileDropzoneProps) {
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -26,12 +18,11 @@ function FileDropzone({
   const handleFiles = (files: FileList) => {
     const fileArray = Array.from(files);
 
-    if(onChange) {
-      if(!multiple && fileArray.length > 1) {
+    if (onChange) {
+      if (!multiple && fileArray.length > 1) {
         onChange(fileArray.slice(0, 1));
       } else {
         onChange(fileArray);
-
       }
     }
   };
@@ -41,7 +32,7 @@ function FileDropzone({
     event.stopPropagation();
     setDragging(false);
 
-    if(event.dataTransfer.files && event.dataTransfer.files.length > 0) {
+    if (event.dataTransfer.files && event.dataTransfer.files.length > 0) {
       handleFiles(event.dataTransfer.files);
       event.dataTransfer.clearData();
     }
@@ -64,7 +55,7 @@ function FileDropzone({
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if(event.target.files) {
+    if (event.target.files) {
       handleFiles(event.target.files);
       event.target.value = '';
     }
@@ -72,7 +63,9 @@ function FileDropzone({
 
   return (
     <div
-      className={'w-full cursor-pointer hover:border-fill-active px-4 hover:bg-bg-body min-h-[160px] h-full rounded-xl border border-dashed border-line-border flex flex-col justify-center bg-bg-base'}
+      className={
+        'flex h-full min-h-[160px] w-full cursor-pointer flex-col justify-center rounded-xl border border-dashed border-line-border bg-bg-base px-4 hover:border-fill-active hover:bg-bg-body'
+      }
       onDrop={handleDrop}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
@@ -84,14 +77,14 @@ function FileDropzone({
         cursor: disabled ? 'not-allowed' : undefined,
       }}
     >
-      <div className={'flex flex-col items-center w-full overflow-hidden justify-center gap-4 h-full'}>
-        <Inbox className={'w-12 h-12 text-fill-default'} />
-        <div className={'text-base text-center text-text-title break-words whitespace-pre-wrap'}>
+      <div className={'flex h-full w-full flex-col items-center justify-center gap-4 overflow-hidden'}>
+        <Inbox className={'h-12 w-12 text-fill-default'} />
+        <div className={'whitespace-pre-wrap break-words text-center text-base text-text-title'}>
           {placeholder || t('fileDropzone.dropFile')}
         </div>
       </div>
       <input
-        type="file"
+        type='file'
         disabled={disabled}
         ref={fileInputRef}
         style={{ display: 'none' }}
@@ -101,7 +94,6 @@ function FileDropzone({
       />
     </div>
   );
-
 }
 
 export default FileDropzone;

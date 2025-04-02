@@ -4,7 +4,7 @@ import { ICON_CATEGORY, loadIcons, randomIcon } from '@/utils/emoji';
 import { Button, OutlinedInput } from '@mui/material';
 import Tooltip from '@mui/material/Tooltip';
 import React, { useCallback, useEffect } from 'react';
-import { ReactComponent as ShuffleIcon } from '@/assets/shuffle.svg';
+import { ReactComponent as ShuffleIcon } from '@/assets/icons/shuffle.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { useTranslation } from 'react-i18next';
 import { VariableSizeList } from 'react-window';
@@ -20,43 +20,45 @@ function IconPicker({
   onEscape,
   size,
 }: {
-  onSelect: (icon: { value: string, color: string, content: string }) => void;
+  onSelect: (icon: { value: string; color: string; content: string }) => void;
   onEscape?: () => void;
   size?: [number, number];
 }) {
   const { t } = useTranslation();
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [selectIcon, setSelectIcon] = React.useState<null | string>(null);
-  const [icons, setIcons] = React.useState<Record<
-    ICON_CATEGORY,
-    {
-      id: string;
-      name: string;
-      content: string;
-      keywords: string[];
-    }[]
-  > | undefined>(undefined);
+  const [icons, setIcons] = React.useState<
+    | Record<
+        ICON_CATEGORY,
+        {
+          id: string;
+          name: string;
+          content: string;
+          keywords: string[];
+        }[]
+      >
+    | undefined
+  >(undefined);
   const [searchValue, setSearchValue] = React.useState('');
   const filteredIcons = React.useMemo(() => {
-    if(!icons) return {};
-    if(!searchValue) return icons;
+    if (!icons) return {};
+    if (!searchValue) return icons;
     const filtered = Object.fromEntries(
       Object.entries(icons).map(([category, icons]) => [
         category,
-        icons.filter((icon) => icon.name.toLowerCase().includes(searchValue.toLowerCase()) ||
-          icon.keywords.some((keyword) =>
-            keyword.toLowerCase().includes(searchValue.toLowerCase()),
-          ),
+        icons.filter(
+          (icon) =>
+            icon.name.toLowerCase().includes(searchValue.toLowerCase()) ||
+            icon.keywords.some((keyword) => keyword.toLowerCase().includes(searchValue.toLowerCase()))
         ),
-      ]),
+      ])
     );
 
     return filtered;
-
   }, [icons, searchValue]);
 
   const rowData = React.useMemo(() => {
-    if(!filteredIcons) return [];
+    if (!filteredIcons) return [];
 
     const rows: Array<{
       type: 'category' | 'icons';
@@ -71,21 +73,24 @@ function IconPicker({
     }> = [];
 
     Object.entries(filteredIcons).forEach(([category, icons]) => {
-      if(icons.length === 0) return;
+      if (icons.length === 0) return;
 
       rows.push({
         type: 'category',
         category: category.replaceAll('_', ' '),
       });
 
-      for(let i = 0; i < icons.length; i += ICONS_PER_ROW) {
+      for (let i = 0; i < icons.length; i += ICONS_PER_ROW) {
         rows.push({
           type: 'icons',
           icons: icons.slice(i, i + ICONS_PER_ROW).map((icon) => ({
             ...icon,
-            cleanSvg: DOMPurify.sanitize(icon.content.replaceAll('black', 'currentColor').replace('<svg', '<svg width="100%" height="100%"'), {
-              USE_PROFILES: { svg: true, svgFilters: true },
-            }),
+            cleanSvg: DOMPurify.sanitize(
+              icon.content.replaceAll('black', 'currentColor').replace('<svg', '<svg width="100%" height="100%"'),
+              {
+                USE_PROFILES: { svg: true, svgFilters: true },
+              }
+            ),
           })),
         });
       }
@@ -104,54 +109,42 @@ function IconPicker({
     void loadIcons().then(setIcons);
   }, []);
 
-  const Row = useCallback(({ data, index, style }: {
-    data: typeof rowData;
-    index: number; style: React.CSSProperties
-  }) => {
-    const row = data[index];
+  const Row = useCallback(
+    ({ data, index, style }: { data: typeof rowData; index: number; style: React.CSSProperties }) => {
+      const row = data[index];
 
-    if(row.type === 'category') {
+      if (row.type === 'category') {
+        return (
+          <div style={style} className='mt-2 px-2 text-text-caption'>
+            {row.category}
+          </div>
+        );
+      }
+
+      if (!row.icons) return null;
+
       return (
-        <div
-          style={style}
-          className="text-text-caption mt-2 px-2"
-        >
-          {row.category}
+        <div style={style} className='flex items-center gap-2 px-2'>
+          {row.icons.map((icon) => (
+            <Tooltip key={icon.id} title={icon.name.replaceAll('-', ' ')}>
+              <Button
+                size='small'
+                color='inherit'
+                className='h-8 w-8 min-w-[32px] items-center p-[7px]'
+                onClick={(e) => {
+                  setSelectIcon(icon.id);
+                  setAnchorEl(e.currentTarget);
+                }}
+              >
+                <div className={'h-5 w-5 text-text-title'} dangerouslySetInnerHTML={{ __html: icon.cleanSvg }} />
+              </Button>
+            </Tooltip>
+          ))}
         </div>
       );
-    }
-
-    if(!row.icons) return null;
-
-    return (
-      <div
-        style={style}
-        className="flex items-center gap-2 px-2"
-      >
-        {row.icons.map((icon) => (
-          <Tooltip
-            key={icon.id}
-            title={icon.name.replaceAll('-', ' ')}
-          >
-            <Button
-              size="small"
-              color="inherit"
-              className="h-8 w-8 min-w-[32px] items-center p-[7px]"
-              onClick={(e) => {
-                setSelectIcon(icon.id);
-                setAnchorEl(e.currentTarget);
-              }}
-            >
-              <div
-                className={'w-5 h-5 text-text-title'}
-                dangerouslySetInnerHTML={{ __html: icon.cleanSvg }}
-              />
-            </Button>
-          </Tooltip>
-        ))}
-      </div>
-    );
-  }, []);
+    },
+    []
+  );
 
   return (
     <div
@@ -164,13 +157,13 @@ function IconPicker({
       <div className={'px-0.5 py-2'}>
         <div className={'search-input flex items-end justify-between gap-2'}>
           <OutlinedInput
-            startAdornment={<SearchIcon className={'w-5 h-5'} />}
+            startAdornment={<SearchIcon className={'h-5 w-5'} />}
             value={searchValue}
             onChange={(e) => {
               setSearchValue(e.target.value);
             }}
             onKeyUp={(e) => {
-              if(e.key === 'Escape' && onEscape) {
+              if (e.key === 'Escape' && onEscape) {
                 onEscape();
               }
             }}
@@ -193,7 +186,7 @@ function IconPicker({
                 variant={'outlined'}
                 color={'inherit'}
                 className={'h-9 w-9 min-w-[36px] px-0 py-0'}
-                onClick={async() => {
+                onClick={async () => {
                   const icon = await randomIcon();
                   const color = randomColor(IconColors);
 
@@ -203,14 +196,13 @@ function IconPicker({
                 <ShuffleIcon className={'h-5 w-5'} />
               </Button>
             </Tooltip>
-
           </div>
         </div>
       </div>
 
-      <div className={'flex-1 mt-2 flex flex-col gap-2'}>
+      <div className={'mt-2 flex flex-1 flex-col gap-2'}>
         <div
-          className="flex-1"
+          className='flex-1'
           style={{
             width: ICONS_PER_ROW * 40 + 10,
           }}
@@ -224,21 +216,20 @@ function IconPicker({
                 itemSize={getRowHeight}
                 itemData={rowData}
                 overscanCount={5}
-                className="appflowy-scroller"
+                className='appflowy-scroller'
               >
                 {Row}
               </VariableSizeList>
             )}
           </AutoSizer>
         </div>
-        <div className={'text-text-caption pt-2 text-xs'}>{
-          t('emoji.openSourceIconsFrom')
-        }
+        <div className={'pt-2 text-xs text-text-caption'}>
+          {t('emoji.openSourceIconsFrom')}
           <a
             href={'https://www.streamlinehq.com/'}
             target={'_blank'}
             rel={'noreferrer'}
-            className={'ml-1 underline text-content-blue-400'}
+            className={'ml-1 text-content-blue-400 underline'}
           >
             Streamline
           </a>
@@ -250,7 +241,7 @@ function IconPicker({
         anchorEl={anchorEl}
         onClose={() => setAnchorEl(null)}
         onKeyDown={(e) => {
-          if(e.key === 'Escape') {
+          if (e.key === 'Escape') {
             setAnchorEl(null);
           }
         }}
@@ -263,12 +254,12 @@ function IconPicker({
               color={'inherit'}
               className={'h-9 w-9 min-w-[36px] px-0 py-0'}
               onClick={() => {
-                if(!selectIcon) return;
+                if (!selectIcon) return;
                 const [groupName, iconName] = selectIcon.split('/');
 
                 const category = icons?.[groupName as ICON_CATEGORY];
 
-                if(!category) return;
+                if (!category) return;
 
                 const content = category.find((icon) => icon.name === iconName)?.content;
 
@@ -276,15 +267,10 @@ function IconPicker({
                 setAnchorEl(null);
               }}
             >
-              <div
-                style={{ backgroundColor: renderColor(color) }}
-                className={'w-7 h-7 rounded-[8px]'}
-              />
+              <div style={{ backgroundColor: renderColor(color) }} className={'h-7 w-7 rounded-[8px]'} />
             </Button>
           ))}
-
         </div>
-
       </Popover>
     </div>
   );

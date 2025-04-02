@@ -3,7 +3,7 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { MentionType, UIVariant, View, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
-import { ReactComponent as MarkIcon } from '@/assets/paragraph_mark.svg';
+import { ReactComponent as MarkIcon } from '@/assets/icons/paragraph_mark.svg';
 
 import { useEditorContext } from '@/components/editor/EditorContext';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -16,11 +16,16 @@ import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 import './style.css';
 
-function MentionPage({ text, pageId, blockId, type }: {
+function MentionPage({
+  text,
+  pageId,
+  blockId,
+  type,
+}: {
   text: Text | Element;
   pageId: string;
   blockId?: string;
-  type?: MentionType
+  type?: MentionType;
 }) {
   const context = useEditorContext();
   const editor = useSlate();
@@ -34,16 +39,16 @@ function MentionPage({ text, pageId, blockId, type }: {
   const [content, setContent] = useState<string>('');
 
   useEffect(() => {
-    void (async() => {
-      if(loadViewMeta) {
+    void (async () => {
+      if (loadViewMeta) {
         setNoAccess(false);
         try {
           const meta = await loadViewMeta(pageId, setMeta);
 
           setMeta(meta);
-        } catch(e) {
+        } catch (e) {
           setNoAccess(true);
-          if(e && (e as View).name) {
+          if (e && (e as View).name) {
             setMeta(e as View);
           }
         }
@@ -58,90 +63,85 @@ function MentionPage({ text, pageId, blockId, type }: {
   const { t } = useTranslation();
 
   useEffect(() => {
-    void (
-      async() => {
-        const pageName = meta?.name || t('menuAppHeader.defaultNewPageName');
+    void (async () => {
+      const pageName = meta?.name || t('menuAppHeader.defaultNewPageName');
 
-        if(blockId) {
-          if(currentViewId === pageId) {
-            const entry = findSlateEntryByBlockId(editor as YjsEditor, blockId);
+      if (blockId) {
+        if (currentViewId === pageId) {
+          const entry = findSlateEntryByBlockId(editor as YjsEditor, blockId);
 
-            if(entry) {
-              const [node] = entry;
+          if (entry) {
+            const [node] = entry;
+            const text = CustomEditor.getBlockTextContent(node, 2);
+
+            setContent(text || pageName);
+            return;
+          }
+        } else {
+          try {
+            const otherDoc = await loadView?.(pageId);
+
+            if (!otherDoc) return;
+
+            const sharedRoot = otherDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+
+            const handleBlockChange = () => {
+              const node = traverseBlock(blockId, sharedRoot);
+
+              if (!node) {
+                setContent(pageName);
+                return;
+              }
+
               const text = CustomEditor.getBlockTextContent(node, 2);
 
-              setContent(text || pageName);
-              return;
-            }
+              setContent(`${pageName}${text ? ` - ${text}` : ''}`);
+            };
 
-          } else {
-            try {
-              const otherDoc = await loadView?.(pageId);
+            handleBlockChange();
 
-              if(!otherDoc) return;
-
-              const sharedRoot = otherDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-
-              const handleBlockChange = () => {
-                const node = traverseBlock(blockId, sharedRoot);
-
-                if(!node) {
-                  setContent(pageName);
-                  return;
-                }
-
-                const text = CustomEditor.getBlockTextContent(node, 2);
-
-                setContent(`${pageName}${text ? ` - ${text}` : ''}`);
-              };
-
-              handleBlockChange();
-
-              return;
-
-            } catch(e) {
-              // do nothing
-            }
+            return;
+          } catch (e) {
+            // do nothing
           }
-
         }
-
-        setContent(pageName);
       }
-    )();
+
+      setContent(pageName);
+    })();
   }, [selection, blockId, currentViewId, editor, loadView, meta?.name, pageId, t]);
 
   const mentionIcon = useMemo(() => {
-    if(pageId === currentViewId && blockId) {
-      return <MarkIcon className={'text-icon-primary ml-0.5 opacity-70'} />;
+    if (pageId === currentViewId && blockId) {
+      return <MarkIcon className={'ml-0.5 text-icon-primary opacity-70'} />;
     }
 
-    return <>
-      <PageIcon
-        view={{
-          icon: icon,
-          layout: meta?.layout || ViewLayout.Document,
-        }}
-        className={'text-text-title ml-0.5 w-5 h-5 flex items-center'}
-      />
+    return (
+      <>
+        <PageIcon
+          view={{
+            icon: icon,
+            layout: meta?.layout || ViewLayout.Document,
+          }}
+          className={'ml-0.5 flex h-5 w-5 items-center text-text-title'}
+        />
 
-      {type === MentionType.PageRef &&
-        <span
-          className={`absolute ml-0.5 top-0 left-0`}
-        >
-          <LinkArrowOverlay className={'link-arrow-overlay h-5 w-5'} />
-        </span>
-      }
-    </>;
+        {type === MentionType.PageRef && (
+          <span className={`absolute top-0 left-0 ml-0.5`}>
+            <LinkArrowOverlay className={'link-arrow-overlay h-5 w-5'} />
+          </span>
+        )}
+      </>
+    );
   }, [blockId, currentViewId, icon, meta?.layout, pageId, type]);
 
   const readOnly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
 
-  const handleScrollToBlock = useCallback(async() => {
-    if(blockId) {
+  const handleScrollToBlock = useCallback(async () => {
+    if (blockId) {
       const entry = findSlateEntryByBlockId(editor as YjsEditor, blockId);
 
-      if(entry) {
+      if (entry) {
         const [node] = entry;
         const dom = ReactEditor.toDOMNode(editor, node);
 
@@ -162,11 +162,11 @@ function MentionPage({ text, pageId, blockId, type }: {
     <span
       onClick={(e) => {
         e.stopPropagation();
-        if(readOnly || meta?.layout === ViewLayout.AIChat) {
+        if (readOnly || meta?.layout === ViewLayout.AIChat) {
           void navigateToView?.(pageId, blockId);
         } else {
-          if(noAccess) return;
-          if(pageId === currentViewId) {
+          if (noAccess) return;
+          if (pageId === currentViewId) {
             void handleScrollToBlock();
             return;
           }
@@ -182,18 +182,14 @@ function MentionPage({ text, pageId, blockId, type }: {
       data-mention-id={pageId}
     >
       {noAccess ? (
-        <span className={'mention-unpublished font-semibold text-text-caption'}>{
-          variant === UIVariant.App ? `${content}${t('document.mention.trashHint')}` : t('document.mention.noAccess')
-        }</span>
+        <span className={'mention-unpublished font-semibold text-text-caption'}>
+          {variant === UIVariant.App ? `${content}${t('document.mention.trashHint')}` : t('document.mention.noAccess')}
+        </span>
       ) : (
         <>
-          <span className={`mention-icon w-[1em] h-[1em]`}>
-            {mentionIcon}
-          </span>
+          <span className={`mention-icon h-[1em] w-[1em]`}>{mentionIcon}</span>
 
-          <span className={'mention-content max-w-[330px] truncate opacity-80'}>
-            {content}
-          </span>
+          <span className={'mention-content max-w-[330px] truncate opacity-80'}>{content}</span>
         </>
       )}
     </span>

@@ -5,13 +5,9 @@ import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { ReactComponent as CheckIcon } from '@/assets/check_circle.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/check_circle.svg';
 
-function UploadAvatar ({
-  onChange,
-}: {
-  onChange: (url: string) => void;
-}) {
+function UploadAvatar({ onChange }: { onChange: (url: string) => void }) {
   const { t } = useTranslation();
 
   const [file, setFile] = React.useState<File | null>(null);
@@ -29,45 +25,41 @@ function UploadAvatar ({
         return t('fileDropzone.uploading');
     }
   }, [uploadStatus, t]);
-  const handleUpload = useCallback(async (file: File) => {
-    setUploadStatus('loading');
+  const handleUpload = useCallback(
+    async (file: File) => {
+      setUploadStatus('loading');
 
-    try {
-      const url = await service?.uploadTemplateAvatar(file);
+      try {
+        const url = await service?.uploadTemplateAvatar(file);
 
-      if (!url) throw new Error('Failed to upload file');
-      onChange(url);
-      setUploadStatus('success');
-    } catch (error) {
-      onChange('');
-      setUploadStatus('error');
-    }
-
-  }, [service, onChange]);
+        if (!url) throw new Error('Failed to upload file');
+        onChange(url);
+        setUploadStatus('success');
+      } catch (error) {
+        onChange('');
+        setUploadStatus('error');
+      }
+    },
+    [service, onChange]
+  );
 
   return (
     <>
       <FileDropzone
         accept={'image/*'}
-        onChange={files => {
+        onChange={(files) => {
           setFile(files[0]);
           void handleUpload(files[0]);
         }}
       />
       {file && (
-        <div className={'flex gap-2 items-center'}>
-          <div
-            className={'w-[80px] aspect-square rounded-xl border border-line-divider'}
-          >
-            <img
-              src={URL.createObjectURL(file)}
-              alt={file.name}
-              className={'w-full h-full'}
-            />
+        <div className={'flex items-center gap-2'}>
+          <div className={'aspect-square w-[80px] rounded-xl border border-line-divider'}>
+            <img src={URL.createObjectURL(file)} alt={file.name} className={'h-full w-full'} />
           </div>
 
           <div
-            className={'flex items-center gap-2 overflow-hidden w-full hover:bg-fill-list-hover rounded-lg p-1'}
+            className={'flex w-full items-center gap-2 overflow-hidden rounded-lg p-1 hover:bg-fill-list-hover'}
             onMouseLeave={() => setHovered(false)}
             onMouseEnter={() => setHovered(true)}
             style={{
@@ -76,31 +68,24 @@ function UploadAvatar ({
           >
             {uploadStatus === 'loading' ? <CircularProgress size={20} /> : <LinkIcon />}
 
-            <Tooltip
-              title={uploadStatusText}
-              placement={'bottom-start'}
-            >
-              <div className={'flex-1 truncate cursor-pointer'}>{file.name}</div>
+            <Tooltip title={uploadStatusText} placement={'bottom-start'}>
+              <div className={'flex-1 cursor-pointer truncate'}>{file.name}</div>
             </Tooltip>
-            {
-              uploadStatus === 'success' && !hovered && <CheckIcon className={'w-5 h-5 text-function-success'} />
-            }
-            {hovered && <Tooltip
-              title={t('button.remove')}
-              arrow
-            >
-              <IconButton
-                onClick={() => {
-                  setFile(null);
-                  onChange('');
-                }}
-                size={'small'}
-                color={'error'}
-              >
-                <DeleteIcon />
-              </IconButton>
-            </Tooltip>}
-
+            {uploadStatus === 'success' && !hovered && <CheckIcon className={'h-5 w-5 text-function-success'} />}
+            {hovered && (
+              <Tooltip title={t('button.remove')} arrow>
+                <IconButton
+                  onClick={() => {
+                    setFile(null);
+                    onChange('');
+                  }}
+                  size={'small'}
+                  color={'error'}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </Tooltip>
+            )}
           </div>
         </div>
       )}

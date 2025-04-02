@@ -4,11 +4,13 @@ import { TextCell } from '@/components/database/components/cell/text';
 import OpenAction from '@/components/database/components/database-row/OpenAction';
 import { getPlatform } from '@/utils/platform';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ReactComponent as DocumentSvg } from '@/assets/notes.svg';
+import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
 
-export function PrimaryCell (props: CellProps<CellType> & {
-  showDocumentIcon?: boolean;
-}) {
+export function PrimaryCell(
+  props: CellProps<CellType> & {
+    showDocumentIcon?: boolean;
+  }
+) {
   const { rowId, showDocumentIcon } = props;
   const meta = useRowMetaSelector(rowId);
   const navigateToRow = useDatabaseContext().navigateToRow;
@@ -60,11 +62,11 @@ export function PrimaryCell (props: CellProps<CellType> & {
       }}
       className={'primary-cell relative flex min-h-full w-full gap-2'}
     >
-      {icon ? <div
-        className={'h-5 w-5 flex items-center justify-center text-base'}
-      >{icon}</div> : hasDocument && showDocumentIcon ? <DocumentSvg
-        className={'h-5 w-5'}
-      /> : null}
+      {icon ? (
+        <div className={'flex h-5 w-5 items-center justify-center text-base'}>{icon}</div>
+      ) : hasDocument && showDocumentIcon ? (
+        <DocumentSvg className={'h-5 w-5'} />
+      ) : null}
       <div className={'flex-1 overflow-x-hidden'}>
         <TextCell {...props} />
       </div>

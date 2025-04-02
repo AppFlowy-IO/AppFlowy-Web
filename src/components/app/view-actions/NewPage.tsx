@@ -1,5 +1,5 @@
 import { ViewLayout } from '@/application/types';
-import { ReactComponent as Add } from '@/assets/add_circle.svg';
+import { ReactComponent as Add } from '@/assets/icons/add_circle.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
@@ -18,7 +18,7 @@ function NewPage() {
   const spaceList = useMemo(() => {
     if (!outline) return [];
 
-    return outline.map(view => {
+    return outline.map((view) => {
       return {
         id: view.view_id,
         extra: JSON.stringify(view.extra),
@@ -32,40 +32,38 @@ function NewPage() {
     setOpen(false);
   }, []);
 
-  const {
-    addPage,
-    openPageModal,
-  } = useAppHandlers();
+  const { addPage, openPageModal } = useAppHandlers();
 
   const [createSpaceOpen, setCreateSpaceOpen] = React.useState(false);
 
-  const handleAddPage = useCallback(async (parentId: string) => {
-    if (!addPage || !openPageModal) return;
-    setLoading(true);
-    try {
-      const viewId = await addPage(parentId, {
-        layout: ViewLayout.Document,
-      });
+  const handleAddPage = useCallback(
+    async (parentId: string) => {
+      if (!addPage || !openPageModal) return;
+      setLoading(true);
+      try {
+        const viewId = await addPage(parentId, {
+          layout: ViewLayout.Document,
+        });
 
-      openPageModal(viewId);
-      onClose();
-      // eslint-disable-next-line
-    } catch (e: any) {
-
-      notify.error(e.message);
-    } finally {
-      setLoading(false);
-
-    }
-  }, [addPage, openPageModal, onClose]);
+        openPageModal(viewId);
+        onClose();
+        // eslint-disable-next-line
+      } catch (e: any) {
+        notify.error(e.message);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [addPage, openPageModal, onClose]
+  );
 
   return (
     <>
       <Button
         onClick={() => setOpen(true)}
-        startIcon={<Add className={'w-5 h-5 mr-[1px]'}/>}
+        startIcon={<Add className={'mr-[1px] h-5 w-5'} />}
         size={'small'}
-        className={'text-sm font-normal  py-1.5 justify-start w-full hover:bg-fill-list-hover'}
+        className={'w-full justify-start  py-1.5 text-sm font-normal hover:bg-fill-list-hover'}
         color={'inherit'}
       >
         {t('newPageText')}
@@ -89,17 +87,21 @@ function NewPage() {
           spaceList={spaceList}
           value={selectedSpaceId}
           onChange={setSelectedSpaceId}
-          title={<div className={'flex items-center text-sm text-text-caption'}>
-            {t('publish.addTo')}
-            {` ${t('web.or')} `}
-            <Button
-              onClick={() => {
-                setCreateSpaceOpen(true);
-              }}
-              size={'small'}
-              className={'text-sm mx-1'}
-            >{t('space.createNewSpace')}</Button>
-          </div>}
+          title={
+            <div className={'flex items-center text-sm text-text-caption'}>
+              {t('publish.addTo')}
+              {` ${t('web.or')} `}
+              <Button
+                onClick={() => {
+                  setCreateSpaceOpen(true);
+                }}
+                size={'small'}
+                className={'mx-1 text-sm'}
+              >
+                {t('space.createNewSpace')}
+              </Button>
+            </div>
+          }
         />
       </NormalModal>
       <CreateSpaceModal

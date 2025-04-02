@@ -2,9 +2,9 @@ import { NormalModal } from '@/components/_shared/modal';
 import { IconButton, OutlinedInput, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as TipIcon } from '@/assets/warning.svg';
+import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
 
-function UpdateNamespace ({
+function UpdateNamespace({
   namespace,
   open,
   onClose,
@@ -43,18 +43,20 @@ function UpdateNamespace ({
         paper: 'max-w-[450px]',
       }}
       onOk={handleOk}
-      title={<div className={'flex gap-1 items-center justify-start'}>
-        <div className={'font-medium text-left'}>{t('settings.sites.namespace.updateExistingNamespace')}</div>
-        <Tooltip
-          title={t('settings.sites.namespace.tooltip')}
-        >
-          <IconButton>
-            <TipIcon className={'w-4 cursor-pointer h-4 text-text-placeholder'} />
-          </IconButton>
-        </Tooltip>
-      </div>}
+      title={
+        <div className={'flex items-center justify-start gap-1'}>
+          <div className={'text-left font-medium'}>{t('settings.sites.namespace.updateExistingNamespace')}</div>
+          <Tooltip title={t('settings.sites.namespace.tooltip')}>
+            <IconButton>
+              <TipIcon className={'h-5 w-5 cursor-pointer text-text-placeholder'} />
+            </IconButton>
+          </Tooltip>
+        </div>
+      }
     >
-      <div className={'text-sm overflow-hidden whitespace-pre-wrap break-words w-full mb-4 text-text-title opacity-60'}>{t('settings.sites.namespace.description')}</div>
+      <div className={'mb-4 w-full overflow-hidden whitespace-pre-wrap break-words text-sm text-text-title opacity-60'}>
+        {t('settings.sites.namespace.description')}
+      </div>
       <OutlinedInput
         value={value}
         fullWidth
@@ -65,7 +67,9 @@ function UpdateNamespace ({
           className: 'px-2 py-1.5 text-sm',
         }}
       />
-      <div className={'text-sm mt-2 text-text-title opacity-80'}>{window.location.host}/{value}</div>
+      <div className={'mt-2 text-sm text-text-title opacity-80'}>
+        {window.location.host}/{value}
+      </div>
     </NormalModal>
   );
 }

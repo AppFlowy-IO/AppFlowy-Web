@@ -11,13 +11,13 @@ import { openOrDownload } from '@/utils/open_schema';
 import { IconButton } from '@mui/material';
 import React, { useCallback } from 'react';
 import { ReactComponent as MenuIcon } from '@/assets/icons/double_arrow_right.svg';
-import { ReactComponent as Logo } from '@/assets/logo.svg';
+import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 
 const PublishBreadcrumb = withPublishBreadcrumb(Breadcrumb);
 const AppBreadcrumb = withAppBreadcrumb(Breadcrumb);
 
-function MobileTopBar ({ variant }: { variant?: UIVariant }) {
+function MobileTopBar({ variant }: { variant?: UIVariant }) {
   const [openFolder, setOpenFolder] = React.useState(false);
   const [openMore, setOpenMore] = React.useState(false);
 
@@ -44,7 +44,9 @@ function MobileTopBar ({ variant }: { variant?: UIVariant }) {
         height: HEADER_HEIGHT,
         minHeight: HEADER_HEIGHT,
       }}
-      className={'flex appflowy-top-bar transform-gpu sticky top-0 z-10 items-center justify-between w-full h-[48px] min-h-[48px] px-4 gap-2'}
+      className={
+        'appflowy-top-bar sticky top-0 z-10 flex h-[48px] min-h-[48px] w-full transform-gpu items-center justify-between gap-2 px-4'
+      }
     >
       <MobileDrawer
         swipeAreaWidth={window.innerWidth - 56}
@@ -53,30 +55,37 @@ function MobileTopBar ({ variant }: { variant?: UIVariant }) {
         open={openFolder}
         anchor={'left'}
         showPuller={false}
-        triggerNode={<IconButton><MenuIcon /></IconButton>}
+        triggerNode={
+          <IconButton>
+            <MenuIcon />
+          </IconButton>
+        }
       >
-        {variant === UIVariant.App ? <MobileFolder onClose={handleCloseFolder} /> :
-          <PublishMobileFolder onClose={handleCloseFolder} />}
-
+        {variant === UIVariant.App ? (
+          <MobileFolder onClose={handleCloseFolder} />
+        ) : (
+          <PublishMobileFolder onClose={handleCloseFolder} />
+        )}
       </MobileDrawer>
 
       {variant === UIVariant.Publish ? <PublishBreadcrumb /> : <AppBreadcrumb />}
       <div className={'flex items-center gap-4'}>
-        <button
-          onClick={() => openOrDownload()}
-        >
-          <Logo className={'h-6 w-6'} />
+        <button onClick={() => openOrDownload()}>
+          <Logo className={'h-5 w-5'} />
         </button>
         <MobileDrawer
           onOpen={handleOpenMore}
           onClose={handleCloseMore}
           open={openMore}
           anchor={'bottom'}
-          triggerNode={<IconButton className={'opacity-70'}><MoreIcon /></IconButton>}
+          triggerNode={
+            <IconButton className={'opacity-70'}>
+              <MoreIcon />
+            </IconButton>
+          }
         >
-          <div className={'h-full w-full pt-10 px-2'}>
+          <div className={'h-full w-full px-2 pt-10'}>
             <MoreActionsContent itemClicked={handleCloseMore} />
-
           </div>
         </MobileDrawer>
       </div>

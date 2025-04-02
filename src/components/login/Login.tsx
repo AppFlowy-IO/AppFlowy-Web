@@ -2,7 +2,7 @@ import LoginProvider from '@/components/login/LoginProvider';
 import MagicLink from '@/components/login/MagicLink';
 import { Divider } from '@mui/material';
 import React from 'react';
-import { ReactComponent as Logo } from '@/assets/logo.svg';
+import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
 
@@ -33,19 +33,11 @@ export function Login({ redirectTo }: { redirectTo: string }) {
         }
       >
         <span>{t('web.signInAgreement')} </span>
-        <a
-          href={'https://appflowy.com/terms'}
-          target={'_blank'}
-          className={'text-fill-default underline'}
-        >
+        <a href={'https://appflowy.com/terms'} target={'_blank'} className={'text-fill-default underline'}>
           {t('web.termOfUse')}
         </a>{' '}
         {t('web.and')}{' '}
-        <a
-          href={'https://appflowy.com/privacy'}
-          target={'_blank'}
-          className={'text-fill-default underline'}
-        >
+        <a href={'https://appflowy.com/privacy'} target={'_blank'} className={'text-fill-default underline'}>
           {t('web.privacyPolicy')}
         </a>
         .
@@ -55,10 +47,12 @@ export function Login({ redirectTo }: { redirectTo: string }) {
         onClick={() => {
           window.location.href = 'https://appflowy.com';
         }}
-        className={'text-text-title text-xs font-medium cursor-pointer opacity-60 hover:opacity-100 w-full gap-2 flex items-center justify-center'}
+        className={
+          'flex w-full cursor-pointer items-center justify-center gap-2 text-xs font-medium text-text-title opacity-60 hover:opacity-100'
+        }
       >
         <span>{t('web.visitOurWebsite')}</span>
-        <ArrowRight className={'w-5 h-5'} />
+        <ArrowRight className={'h-5 w-5'} />
       </div>
     </div>
   );

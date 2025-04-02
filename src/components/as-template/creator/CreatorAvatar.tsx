@@ -4,11 +4,17 @@ import UploadAvatar from '@/components/as-template/creator/UploadAvatar';
 import { stringAvatar } from '@/utils/color';
 import { Avatar, Button, OutlinedInput, Tooltip } from '@mui/material';
 import React, { useEffect, useMemo } from 'react';
-import { ReactComponent as CloudUploadIcon } from '@/assets/cloud_add.svg';
+import { ReactComponent as CloudUploadIcon } from '@/assets/icons/cloud_add.svg';
 
 import { useTranslation } from 'react-i18next';
 
-function CreatorAvatar ({ src, name, enableUpload, onChange, size }: {
+function CreatorAvatar({
+  src,
+  name,
+  enableUpload,
+  onChange,
+  size,
+}: {
   src: string;
   name: string;
   enableUpload?: boolean;
@@ -37,7 +43,7 @@ function CreatorAvatar ({ src, name, enableUpload, onChange, size }: {
           width: size || undefined,
           height: size || undefined,
         }}
-        className={'relative w-full h-full cursor-pointer'}
+        className={'relative h-full w-full cursor-pointer'}
         onMouseLeave={() => setShowUpload(false)}
         onMouseEnter={() => {
           setShowUpload(true);
@@ -48,7 +54,8 @@ function CreatorAvatar ({ src, name, enableUpload, onChange, size }: {
       >
         <Avatar
           src={src}
-          className={'w-full h-full object-cover p-2'} {...avatarProps}
+          className={'h-full w-full object-cover p-2'}
+          {...avatarProps}
           sx={{
             ...avatarProps?.sx,
             bgcolor: imageUrl ? 'var(--bg-body)' : avatarProps?.sx.bgcolor,
@@ -57,30 +64,28 @@ function CreatorAvatar ({ src, name, enableUpload, onChange, size }: {
           }}
         />
         {enableUpload && showUpload && (
-          <Tooltip
-            title={t('template.creator.uploadAvatar')}
-            arrow
-          >
+          <Tooltip title={t('template.creator.uploadAvatar')} arrow>
             <Button
-              component="label"
+              component='label'
               role={undefined}
-              variant="contained"
-              className={'absolute left-0 top-0 min-w-full p-0 flex items-center justify-center w-full h-full rounded-full bg-black bg-opacity-50'}
+              variant='contained'
+              className={
+                'absolute left-0 top-0 flex h-full w-full min-w-full items-center justify-center rounded-full bg-black bg-opacity-50 p-0'
+              }
               tabIndex={-1}
               onClick={(e) => {
                 e.stopPropagation();
                 setOpenModal(true);
               }}
             >
-              <CloudUploadIcon className={'w-[60%] h-[60%]'} />
+              <CloudUploadIcon className={'h-[60%] w-[60%]'} />
             </Button>
           </Tooltip>
         )}
-
       </div>
-      {openModal &&
+      {openModal && (
         <NormalModal
-          onClick={e => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
           okButtonProps={{
             disabled: !imageUrl,
           }}
@@ -94,7 +99,7 @@ function CreatorAvatar ({ src, name, enableUpload, onChange, size }: {
           onClose={() => setOpenModal(false)}
           open={openModal}
         >
-          <div className={'min-w-[400px] flex flex-col gap-4'}>
+          <div className={'flex min-w-[400px] flex-col gap-4'}>
             <ViewTabs
               value={tab}
               onChange={(_, newValue) => {
@@ -102,46 +107,27 @@ function CreatorAvatar ({ src, name, enableUpload, onChange, size }: {
                 setImageUrl(src);
               }}
             >
-              <ViewTab
-                value={0}
-                label={t('document.imageBlock.embedLink.label')}
-              />
-              <ViewTab
-                value={1}
-                label={t('button.upload')}
-              />
-
+              <ViewTab value={0} label={t('document.imageBlock.embedLink.label')} />
+              <ViewTab value={1} label={t('button.upload')} />
             </ViewTabs>
-            <TabPanel
-              className={'w-full'}
-              value={tab}
-              index={0}
-            >
+            <TabPanel className={'w-full'} value={tab} index={0}>
               <OutlinedInput
                 size={'small'}
                 value={imageUrl}
                 fullWidth
-                onChange={
-                  (e) => {
-                    setImageUrl(e.target.value);
-                  }
-                }
+                onChange={(e) => {
+                  setImageUrl(e.target.value);
+                }}
                 placeholder={t('document.imageBlock.embedLink.placeholder')}
               />
             </TabPanel>
-            <TabPanel
-              className={'w-full flex flex-col gap-2'}
-              value={tab}
-              index={1}
-            >
+            <TabPanel className={'flex w-full flex-col gap-2'} value={tab} index={1}>
               <UploadAvatar onChange={setImageUrl} />
             </TabPanel>
-
           </div>
-
-        </NormalModal>}
+        </NormalModal>
+      )}
     </>
-
   );
 }
 

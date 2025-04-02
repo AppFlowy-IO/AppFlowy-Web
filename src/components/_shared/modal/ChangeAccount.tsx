@@ -3,7 +3,7 @@ import { AFConfigContext, useCurrentUser } from '@/components/main/app.hooks';
 import React, { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ReactComponent as ErrorIcon } from '@/assets/error.svg';
+import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 
 function ChangeAccount({
   setModalOpened,
@@ -31,13 +31,15 @@ function ChangeAccount({
         openLoginModal?.(redirectTo);
       }}
       okText={t('invitation.errorModal.changeAccount')}
-      title={<div className={'text-left font-bold flex gap-2 items-center'}>
-        <ErrorIcon className={'w-5 h-5 text-function-error'}/>
-        {t('invitation.errorModal.title')}
-      </div>}
+      title={
+        <div className={'flex items-center gap-2 text-left font-bold'}>
+          <ErrorIcon className={'h-5 w-5 text-function-error'} />
+          {t('invitation.errorModal.title')}
+        </div>
+      }
       open={modalOpened}
     >
-      <div className={'text-text-title flex flex-col text-sm gap-1 whitespace-pre-wrap break-words'}>
+      <div className={'flex flex-col gap-1 whitespace-pre-wrap break-words text-sm text-text-title'}>
         {t('invitation.errorModal.description', {
           email: currentUser?.email,
         })}

@@ -11,16 +11,12 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { FileHandler } from '@/utils/file';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ErrorIcon } from '@/assets/error.svg';
+import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import { CircularProgress } from '@mui/material';
 import { Element } from 'slate';
 
 export const ImageBlock = memo(
-  forwardRef<HTMLDivElement, EditorElementProps<ImageBlockNode>>(({
-    node,
-    children,
-    ...attributes
-  }, ref) => {
+  forwardRef<HTMLDivElement, EditorElementProps<ImageBlockNode>>(({ node, children, ...attributes }, ref) => {
     const { t } = useTranslation();
 
     const { blockId, data } = node;
@@ -63,9 +59,7 @@ export const ImageBlock = memo(
       return align === AlignType.Center ? 'justify-center' : align === AlignType.Right ? 'justify-end' : 'justify-start';
     }, [align]);
     const [showToolbar, setShowToolbar] = useState(false);
-    const {
-      openPopover,
-    } = usePopoverContext();
+    const { openPopover } = usePopoverContext();
 
     const handleClick = useCallback(async () => {
       try {
@@ -97,46 +91,51 @@ export const ImageBlock = memo(
       })();
     }, [readOnly, retry_local_url, fileHandler]);
 
-    const uploadFileRemote = useCallback(async (file: File) => {
-
-      try {
-        if (uploadFile) {
-          return await uploadFile(file);
+    const uploadFileRemote = useCallback(
+      async (file: File) => {
+        try {
+          if (uploadFile) {
+            return await uploadFile(file);
+          }
+          // eslint-disable-next-line
+        } catch (e: any) {
+          return;
         }
-        // eslint-disable-next-line
-      } catch (e: any) {
-        return;
-      }
-    }, [uploadFile]);
+      },
+      [uploadFile]
+    );
 
-    const handleRetry = useCallback(async (e: React.MouseEvent) => {
-      e.stopPropagation();
-      if (!retry_local_url) return;
-      const fileData = await fileHandler.getStoredFile(retry_local_url);
-      const file = fileData?.file;
+    const handleRetry = useCallback(
+      async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!retry_local_url) return;
+        const fileData = await fileHandler.getStoredFile(retry_local_url);
+        const file = fileData?.file;
 
-      if (!file) return;
+        if (!file) return;
 
-      const url = await uploadFileRemote(file);
+        const url = await uploadFileRemote(file);
 
-      if (!url) {
-        return;
-      }
+        if (!url) {
+          return;
+        }
 
-      setLoading(true);
-      try {
-        await fileHandler.cleanup(retry_local_url);
-        CustomEditor.setBlockData(editor, blockId, {
-          url,
-          image_type: ImageType.External,
-          retry_local_url: '',
-        } as ImageBlockData);
-      } catch (e) {
-        // do noting
-      } finally {
-        setLoading(false);
-      }
-    }, [blockId, editor, fileHandler, retry_local_url, uploadFileRemote]);
+        setLoading(true);
+        try {
+          await fileHandler.cleanup(retry_local_url);
+          CustomEditor.setBlockData(editor, blockId, {
+            url,
+            image_type: ImageType.External,
+            retry_local_url: '',
+          } as ImageBlockData);
+        } catch (e) {
+          // do noting
+        } finally {
+          setLoading(false);
+        }
+      },
+      [blockId, editor, fileHandler, retry_local_url, uploadFileRemote]
+    );
 
     return (
       <div
@@ -151,43 +150,37 @@ export const ImageBlock = memo(
         className={className}
         onClick={handleClick}
       >
-
         <div
           contentEditable={false}
-          className={`embed-block relative ${alignCss} ${(url || needRetry) ? '!bg-transparent !border-none !rounded-none' : 'p-4'}`}
+          className={`embed-block relative ${alignCss} ${
+            url || needRetry ? '!rounded-none !border-none !bg-transparent' : 'p-4'
+          }`}
         >
           {url || needRetry ? (
-            <ImageRender
-              showToolbar={showToolbar}
-              selected={selected}
-              node={node}
-              localUrl={localUrl}
-            />
+            <ImageRender showToolbar={showToolbar} selected={selected} node={node} localUrl={localUrl} />
           ) : (
-            <ImageEmpty
-              node={node}
-              onEscape={onFocusNode}
-              containerRef={containerRef}
-            />
+            <ImageEmpty node={node} onEscape={onFocusNode} containerRef={containerRef} />
           )}
-          {needRetry && <div className={'absolute right-4 bottom-2 flex items-center gap-2'}>
-            <ErrorIcon className={'w-4 h-4 text-function-error'}/>
-            <div className={'font-normal'}>{t('button.uploadFailed')}</div>
-            {loading ? <CircularProgress size={16}/> :
-              <button onClick={handleRetry} className={'hover:underline text-fill-default'}>
-                {t('button.retry')}
-              </button>}
-          </div>}
+          {needRetry && (
+            <div className={'absolute right-4 bottom-2 flex items-center gap-2'}>
+              <ErrorIcon className={'h-5 w-5 text-function-error'} />
+              <div className={'font-normal'}>{t('button.uploadFailed')}</div>
+              {loading ? (
+                <CircularProgress size={16} />
+              ) : (
+                <button onClick={handleRetry} className={'text-fill-default hover:underline'}>
+                  {t('button.retry')}
+                </button>
+              )}
+            </div>
+          )}
         </div>
-        <div
-          ref={ref}
-          className={'absolute left-0 top-0 h-full w-full select-none caret-transparent'}
-        >
+        <div ref={ref} className={'absolute left-0 top-0 h-full w-full select-none caret-transparent'}>
           {children}
         </div>
       </div>
     );
-  }),
+  })
 );
 
 export default ImageBlock;

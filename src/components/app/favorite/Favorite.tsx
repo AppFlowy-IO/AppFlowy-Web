@@ -8,7 +8,7 @@ import { PopoverProps } from '@mui/material/Popover';
 import dayjs from 'dayjs';
 import { groupBy, sortBy } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
-import { ReactComponent as FavoritedIcon } from '@/assets/favorited.svg';
+import { ReactComponent as FavoritedIcon } from '@/assets/icons/favorited.svg';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 
@@ -31,10 +31,7 @@ enum FavoriteGroup {
 }
 
 export function Favorite() {
-  const {
-    favoriteViews,
-    loadFavoriteViews,
-  } = useAppFavorites();
+  const { favoriteViews, loadFavoriteViews } = useAppFavorites();
   const navigateToView = useAppHandlers().toView;
   const viewId = useAppViewId();
   const { t } = useTranslation();
@@ -54,7 +51,7 @@ export function Favorite() {
   };
 
   const { pinViews, unpinViews } = useMemo(() => {
-    return groupBy(favoriteViews, (view) => view.extra?.is_pinned ? 'pinViews' : 'unpinViews');
+    return groupBy(favoriteViews, (view) => (view.extra?.is_pinned ? 'pinViews' : 'unpinViews'));
   }, [favoriteViews]);
 
   const groupByViewsWithDay = useMemo(() => {
@@ -73,7 +70,13 @@ export function Favorite() {
 
   const groupByViews = useMemo(() => {
     return sortBy(Object.entries(groupByViewsWithDay), ([key]) => {
-      return key === FavoriteGroup.today ? 0 : key === FavoriteGroup.yesterday ? 1 : key === FavoriteGroup.thisWeek ? 2 : 3;
+      return key === FavoriteGroup.today
+        ? 0
+        : key === FavoriteGroup.yesterday
+        ? 1
+        : key === FavoriteGroup.thisWeek
+        ? 2
+        : 3;
     }).map(([key, value]) => {
       const timeLabel: Record<string, string> = {
         [FavoriteGroup.today]: t('calendar.navigation.today'),
@@ -82,23 +85,16 @@ export function Favorite() {
         [FavoriteGroup.Others]: t('sideBar.others'),
       };
 
-      return <div
-        className={'flex flex-col gap-2'}
-        key={key}
-      >
-        <div className={'text-xs text-text-caption py-1 px-1'}>{timeLabel[key]}</div>
-        <div className={'px-1'}>
-          {value.map((view) =>
-            <OutlineItem
-              variant={UIVariant.Favorite}
-              key={view.view_id}
-              view={view}
-              navigateToView={navigateToView}
-            />,
-          )}
+      return (
+        <div className={'flex flex-col gap-2'} key={key}>
+          <div className={'py-1 px-1 text-xs text-text-caption'}>{timeLabel[key]}</div>
+          <div className={'px-1'}>
+            {value.map((view) => (
+              <OutlineItem variant={UIVariant.Favorite} key={view.view_id} view={view} navigateToView={navigateToView} />
+            ))}
+          </div>
         </div>
-
-      </div>;
+      );
     });
   }, [groupByViewsWithDay, navigateToView, t]);
 
@@ -107,48 +103,46 @@ export function Favorite() {
   }
 
   return (
-    <div className={'flex w-full flex-col mb-3'}>
-      <div
-        onClick={handleToggleExpand}
-        className={'flex h-fit my-0.5 w-full flex-col gap-2 cursor-pointer'}
-      >
+    <div className={'mb-3 flex w-full flex-col'}>
+      <div onClick={handleToggleExpand} className={'my-0.5 flex h-fit w-full cursor-pointer flex-col gap-2'}>
         <div
           className={
-            'flex items-center w-full gap-2 rounded-[8px] p-1 hover:bg-fill-list-hover text-sm focus:outline-none'
+            'flex w-full items-center gap-2 rounded-[8px] p-1 text-sm hover:bg-fill-list-hover focus:outline-none'
           }
         >
-          <FavoritedIcon className={'h-5 w-5 mr-[1px]'}/>
+          <FavoritedIcon className={'mr-[1px] h-5 w-5'} />
           <div className={'flex-1 truncate'}>{t('sideBar.favorites')}</div>
         </div>
       </div>
-      {!favoriteViews ? <RecentListSkeleton rows={3}/> : <Collapse
-        in={isExpanded}
-        className={'flex px-1 transform flex-col gap-2 transition-all'}
-      >
-        {
-          pinViews?.map((view) =>
+      {!favoriteViews ? (
+        <RecentListSkeleton rows={3} />
+      ) : (
+        <Collapse in={isExpanded} className={'flex transform flex-col gap-2 px-1 transition-all'}>
+          {pinViews?.map((view) => (
             <OutlineItem
               variant={UIVariant.Favorite}
               key={view.view_id}
               selectedViewId={viewId}
               view={view}
               navigateToView={navigateToView}
-            />,
-          )
-        }
-        {unpinViews?.length > 0 && <div
-          onClick={() => {
-            setMoreOpened(true);
-          }}
-          ref={moreButtonRef}
-          className={'flex items-center w-full gap-2 rounded-[8px] px-2 py-1.5 text-sm cursor-pointer hover:bg-content-blue-50 focus:bg-content-blue-50 focus:outline-none'}
-        >
-          <MoreIcon className={'w-5 h-5 text-text-caption'}/>
-          <div>{t('button.more')}</div>
-
-        </div>}
-      </Collapse>
-      }
+            />
+          ))}
+          {unpinViews?.length > 0 && (
+            <div
+              onClick={() => {
+                setMoreOpened(true);
+              }}
+              ref={moreButtonRef}
+              className={
+                'flex w-full cursor-pointer items-center gap-2 rounded-[8px] px-2 py-1.5 text-sm hover:bg-content-blue-50 focus:bg-content-blue-50 focus:outline-none'
+              }
+            >
+              <MoreIcon className={'h-5 w-5 text-text-caption'} />
+              <div>{t('button.more')}</div>
+            </div>
+          )}
+        </Collapse>
+      )}
       <Popover
         {...popoverOrigin}
         className={'appflowy-scroller'}
@@ -159,11 +153,8 @@ export function Favorite() {
         anchorEl={moreButtonRef.current}
         onClose={() => setMoreOpened(false)}
       >
-        <div className={'flex w-[240px] flex-col gap-2 px-2 py-2'}>
-          {groupByViews}
-        </div>
+        <div className={'flex w-[240px] flex-col gap-2 px-2 py-2'}>{groupByViews}</div>
       </Popover>
-
     </div>
   );
 }

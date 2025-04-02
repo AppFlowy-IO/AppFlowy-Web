@@ -4,8 +4,8 @@ import { Reactions } from '@/components/global-comment/reactions';
 import { Avatar, Divider, Tooltip } from '@mui/material';
 import React, { memo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as BulletedListIcon } from '@/assets/bulleted_list_icon_1.svg';
-import { ReactComponent as DoubleArrow } from '@/assets/double_arrow.svg';
+import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list_icon_1.svg';
+import { ReactComponent as DoubleArrow } from '@/assets/icons/double_arrow.svg';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 interface CommentProps {
@@ -14,7 +14,7 @@ interface CommentProps {
 
 const MAX_HEIGHT = 320;
 
-function Comment ({ comment }: CommentProps) {
+function Comment({ comment }: CommentProps) {
   const { avatar, time, timeFormat } = useCommentRender(comment);
   const { t } = useTranslation();
   const ref = React.useRef<HTMLDivElement>(null);
@@ -43,13 +43,13 @@ function Comment ({ comment }: CommentProps) {
         <div className={'flex items-center gap-4'}>
           <Avatar {...avatar} className={`h-8 w-8`} />
           <Tooltip title={comment.user?.name} enterNextDelay={500} enterDelay={1000} placement={'top-start'}>
-            <div className={'font-semibold max-w-[200px] truncate'}>{comment.user?.name}</div>
+            <div className={'max-w-[200px] truncate font-semibold'}>{comment.user?.name}</div>
           </Tooltip>
         </div>
         <Tooltip title={timeFormat} enterNextDelay={500} enterDelay={1000} placement={'top-start'}>
           <div className={'flex items-center gap-2 text-text-caption'}>
             <BulletedListIcon className={'h-3 w-3'} />
-            <div className={'text-sm whitespace-nowrap'}>{time}</div>
+            <div className={'whitespace-nowrap text-sm'}>{time}</div>
           </div>
         </Tooltip>
       </div>

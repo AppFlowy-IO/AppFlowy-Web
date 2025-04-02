@@ -1,4 +1,4 @@
-import { ReactComponent as AppFlowyLogo } from '@/assets/appflowy.svg';
+import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
 import { ReactComponent as DoubleArrowLeft } from '@/assets/icons/double_arrow_left.svg';
 import Resizer from '@/components/_shared/outline/Resizer';
 import { useNavigate } from 'react-router-dom';
@@ -10,7 +10,16 @@ import { UIVariant } from '@/application/types';
 import { useState } from 'react';
 import { AFScroller } from '@/components/_shared/scroller';
 
-export function OutlineDrawer({ onScroll, header, variant, open, width, onClose, children, onResizeWidth }: {
+export function OutlineDrawer({
+  onScroll,
+  header,
+  variant,
+  open,
+  width,
+  onClose,
+  children,
+  onResizeWidth,
+}: {
   open: boolean;
   width: number;
   onClose: () => void;
@@ -38,8 +47,8 @@ export function OutlineDrawer({ onScroll, header, variant, open, width, onClose,
           boxShadow: 'none',
         },
       }}
-      variant="persistent"
-      anchor="left"
+      variant='persistent'
+      anchor='left'
       open={open}
       tabIndex={0}
       autoFocus
@@ -50,10 +59,13 @@ export function OutlineDrawer({ onScroll, header, variant, open, width, onClose,
         },
       }}
     >
-
-      <AFScroller overflowXHidden onScroll={e => {
-        onScroll?.((e.target as HTMLDivElement).scrollTop);
-      }} className={'flex h-full relative min-h-full w-full flex-col'}>
+      <AFScroller
+        overflowXHidden
+        onScroll={(e) => {
+          onScroll?.((e.target as HTMLDivElement).scrollTop);
+        }}
+        className={'relative flex h-full min-h-full w-full flex-col'}
+      >
         <div
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
@@ -61,47 +73,40 @@ export function OutlineDrawer({ onScroll, header, variant, open, width, onClose,
             backdropFilter: variant === UIVariant.Publish ? 'blur(4px)' : undefined,
             backgroundColor: variant === UIVariant.App ? 'var(--bg-base)' : undefined,
           }}
-          className={'flex transform-gpu z-10 min-h-[48px] h-[48px] sticky top-0 items-center justify-between'}
+          className={'sticky top-0 z-10 flex h-[48px] min-h-[48px] transform-gpu items-center justify-between'}
         >
-          {header ? header : <div
-            className={'flex p-4 cursor-pointer items-center gap-1 text-text-title'}
-            onClick={() => {
-              navigate('/app');
-            }}
-          >
-            <AppFlowyLogo className={'w-[88px]'}/>
-          </div>}
-
-          {hovered && <Tooltip
-            title={
-              <div className={'flex flex-col'}>
-                <span>{t('sideBar.closeSidebar')}</span>
-                <span className={'text-xs text-text-caption'}>{createHotKeyLabel(HOT_KEY_NAME.TOGGLE_SIDEBAR)}</span>
-              </div>
-            }
-          >
-            <IconButton
-              onClick={onClose}
-              className={'m-4'}
-              size={'small'}
+          {header ? (
+            header
+          ) : (
+            <div
+              className={'flex cursor-pointer items-center gap-1 p-4 text-text-title'}
+              onClick={() => {
+                navigate('/app');
+              }}
             >
-              <DoubleArrowLeft className={'text-text-caption'}/>
-            </IconButton>
-          </Tooltip>}
+              <AppFlowyLogo className={'w-[88px]'} />
+            </div>
+          )}
 
+          {hovered && (
+            <Tooltip
+              title={
+                <div className={'flex flex-col'}>
+                  <span>{t('sideBar.closeSidebar')}</span>
+                  <span className={'text-xs text-text-caption'}>{createHotKeyLabel(HOT_KEY_NAME.TOGGLE_SIDEBAR)}</span>
+                </div>
+              }
+            >
+              <IconButton onClick={onClose} className={'m-4'} size={'small'}>
+                <DoubleArrowLeft className={'text-text-caption'} />
+              </IconButton>
+            </Tooltip>
+          )}
         </div>
-        <div className={'flex h-fit flex-1 flex-col'}>
-          {children}
-        </div>
-        {variant === 'publish' && <AppFlowyPower width={width}/>}
-
-
+        <div className={'flex h-fit flex-1 flex-col'}>{children}</div>
+        {variant === 'publish' && <AppFlowyPower width={width} />}
       </AFScroller>
-      <Resizer
-        drawerWidth={width}
-        onResize={onResizeWidth}
-      />
-
+      <Resizer drawerWidth={width} onResize={onResizeWidth} />
     </Drawer>
   );
 }

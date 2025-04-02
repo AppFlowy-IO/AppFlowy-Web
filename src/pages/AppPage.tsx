@@ -1,5 +1,5 @@
 import { UIVariant, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
-import { ReactComponent as TipIcon } from '@/assets/warning.svg';
+import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
 import Help from '@/components/_shared/help/Help';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
@@ -43,69 +43,76 @@ function AppPage() {
     uploadFile,
   } = useAppHandlers();
   const view = useMemo(() => {
-    if(!outline || !viewId) return;
+    if (!outline || !viewId) return;
     return findView(outline, viewId);
   }, [outline, viewId]);
   const rendered = useContext(AppContext)?.rendered;
 
   const helmet = useMemo(() => {
-    return view && rendered ? <Suspense><ViewHelmet
-      name={view.name}
-      icon={view.icon || undefined}
-    /></Suspense> : null;
+    return view && rendered ? (
+      <Suspense>
+        <ViewHelmet name={view.name} icon={view.icon || undefined} />
+      </Suspense>
+    ) : null;
   }, [rendered, view]);
 
   const layout = view?.layout;
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
   const [notFound, setNotFound] = React.useState(false);
-  const loadPageDoc = useCallback(async(id: string) => {
+  const loadPageDoc = useCallback(
+    async (id: string) => {
+      setNotFound(false);
+      setDoc(undefined);
+      try {
+        const doc = await loadView(id);
 
-    setNotFound(false);
-    setDoc(undefined);
-    try {
-      const doc = await loadView(id);
-
-      setDoc(doc);
-    } catch(e) {
-      setNotFound(true);
-      console.error(e);
-    }
-
-  }, [loadView]);
+        setDoc(doc);
+      } catch (e) {
+        setNotFound(true);
+        console.error(e);
+      }
+    },
+    [loadView]
+  );
 
   useEffect(() => {
-    if(!viewId || layout === undefined || layout === ViewLayout.AIChat) return;
+    if (!viewId || layout === undefined || layout === ViewLayout.AIChat) return;
 
     void loadPageDoc(viewId);
   }, [loadPageDoc, viewId, layout]);
 
   useEffect(() => {
-    if(layout === ViewLayout.AIChat) {
+    if (layout === ViewLayout.AIChat) {
       setDoc(undefined);
       setNotFound(false);
     }
   }, [layout]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
-    return view ? {
-      name: view.name,
-      icon: view.icon || undefined,
-      cover: view.extra?.cover || undefined,
-      layout: view.layout,
-      visibleViewIds: [],
-      viewId: view.view_id,
-      extra: view.extra,
-      workspaceId,
-    } : null;
+    return view
+      ? {
+          name: view.name,
+          icon: view.icon || undefined,
+          cover: view.extra?.cover || undefined,
+          layout: view.layout,
+          visibleViewIds: [],
+          viewId: view.view_id,
+          extra: view.extra,
+          workspaceId,
+        }
+      : null;
   }, [view, workspaceId]);
 
-  const handleUploadFile = useCallback((file: File) => {
-    if(view && uploadFile) {
-      return uploadFile(view.view_id, file);
-    }
+  const handleUploadFile = useCallback(
+    (file: File) => {
+      if (view && uploadFile) {
+        return uploadFile(view.view_id, file);
+      }
 
-    return Promise.reject();
-  }, [uploadFile, view]);
+      return Promise.reject();
+    },
+    [uploadFile, view]
+  );
 
   const service = useService();
   const requestInstance = service?.getAxiosInstance();
@@ -113,11 +120,12 @@ function AppPage() {
   const viewDom = useMemo(() => {
     const isMobile = getPlatform().isMobile;
 
-    if(!doc && layout === ViewLayout.AIChat && viewId) {
-      return <Suspense><AIChat
-        chatId={viewId}
-        onRendered={onRendered}
-      /></Suspense>;
+    if (!doc && layout === ViewLayout.AIChat && viewId) {
+      return (
+        <Suspense>
+          <AIChat chatId={viewId} onRendered={onRendered} />
+        </Suspense>
+      );
     }
 
     const View = layout === ViewLayout.Document ? Document : DatabaseView;
@@ -145,73 +153,90 @@ function AppPage() {
         variant={UIVariant.App}
       />
     ) : null;
-  }, [requestInstance, workspaceId, doc, layout, viewId, viewMeta, toView, loadViewMeta, createRowDoc, appendBreadcrumb, loadView, onRendered, updatePage, addPage, deletePage, openPageModal, loadViews, setWordCount, handleUploadFile]);
+  }, [
+    requestInstance,
+    workspaceId,
+    doc,
+    layout,
+    viewId,
+    viewMeta,
+    toView,
+    loadViewMeta,
+    createRowDoc,
+    appendBreadcrumb,
+    loadView,
+    onRendered,
+    updatePage,
+    addPage,
+    deletePage,
+    openPageModal,
+    loadViews,
+    setWordCount,
+    handleUploadFile,
+  ]);
 
   useEffect(() => {
-    if(!viewId) return;
+    if (!viewId) return;
     localStorage.setItem('last_view_id', viewId);
   }, [viewId]);
 
   useEffect(() => {
-    if(layout !== undefined && [ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar].includes(layout) && !localStorage.getItem('open_edit_tip')) {
+    if (
+      layout !== undefined &&
+      [ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar].includes(layout) &&
+      !localStorage.getItem('open_edit_tip')
+    ) {
       notify.clear();
       notify.info({
         autoHideDuration: null,
         type: 'info',
         title: 'Edit in app',
-        message: <div className={'w-full gap-2 flex flex-col items-start'}>
-          <div>{`Editing databases is supported in AppFlowy's desktop and mobile apps`}
+        message: (
+          <div className={'flex w-full flex-col items-start gap-2'}>
+            <div>{`Editing databases is supported in AppFlowy's desktop and mobile apps`}</div>
+            <div className={'flex items-center gap-2 text-sm text-text-caption'}>
+              <TipIcon className={'h-5 w-5 text-function-warning'} />
+              Don't have AppFlowy?{' '}
+              <a className={'text-fill-default hover:underline'} href={desktopDownloadLink}>
+                Download
+              </a>
+            </div>
+            <div className={'mt-2 flex w-full items-center justify-between max-sm:my-4 max-sm:flex-col'}>
+              <FormControlLabel
+                className={' max-sm:w-full'}
+                value='end'
+                onChange={(_e, value) => {
+                  if (value) {
+                    localStorage.setItem('open_edit_tip', 'true');
+                  } else {
+                    localStorage.removeItem('open_edit_tip');
+                  }
+                }}
+                control={<Checkbox />}
+                label="Don't remind me again"
+              />
+              <Button
+                color={'primary'}
+                className={'max-sm:w-full max-sm:py-4 max-sm:text-base'}
+                onClick={() => window.open(openAppFlowySchema, '_current')}
+                variant={'contained'}
+              >
+                Open in AppFlowy
+              </Button>
+            </div>
           </div>
-          <div className={'text-sm flex items-center gap-2 text-text-caption'}>
-            <TipIcon className={'h-4 w-4 text-function-warning'} />
-            Don't have AppFlowy? <a
-            className={'text-fill-default hover:underline'}
-            href={desktopDownloadLink}
-          >Download</a></div>
-          <div className={'flex items-center max-sm:my-4 max-sm:flex-col mt-2 w-full justify-between'}>
-            <FormControlLabel
-              className={' max-sm:w-full'}
-              value="end"
-              onChange={(_e, value) => {
-                if(value) {
-                  localStorage.setItem('open_edit_tip', 'true');
-                } else {
-                  localStorage.removeItem('open_edit_tip');
-                }
-              }}
-              control={<Checkbox />}
-              label="Don't remind me again"
-            />
-            <Button
-              color={'primary'}
-              className={'max-sm:w-full max-sm:py-4 max-sm:text-base'}
-              onClick={() => window.open(openAppFlowySchema, '_current')}
-              variant={'contained'}
-            >
-              Open in AppFlowy
-            </Button>
-          </div>
-        </div>,
+        ),
         showActions: false,
       });
     }
   }, [layout]);
 
-  if(!viewId) return null;
+  if (!viewId) return null;
   return (
-    <div
-      ref={ref}
-      className={'relative w-full h-full'}
-    >
+    <div ref={ref} className={'relative h-full w-full'}>
       {helmet}
 
-      {notFound ? (
-        <RecordNotFound />
-      ) : (
-        <div className={'w-full h-full'}>
-          {viewDom}
-        </div>
-      )}
+      {notFound ? <RecordNotFound /> : <div className={'h-full w-full'}>{viewDom}</div>}
       {view && <Help />}
     </div>
   );

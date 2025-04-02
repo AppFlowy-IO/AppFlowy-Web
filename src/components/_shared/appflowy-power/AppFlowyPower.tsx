@@ -1,22 +1,18 @@
 import { Divider } from '@mui/material';
 import React from 'react';
-import { ReactComponent as AppFlowyLogo } from '@/assets/appflowy.svg';
+import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
 
-function AppFlowyPower ({
-  divider,
-  width,
-}: {
-  divider?: boolean;
-  width?: number;
-}) {
+function AppFlowyPower({ divider, width }: { divider?: boolean; width?: number }) {
   return (
     <div
       style={{
         width,
       }}
-      className={'flex rounded-[16px] transform-gpu bg-bg-body sticky bottom-[-0.5px] w-full flex-col items-center justify-center'}
+      className={
+        'sticky bottom-[-0.5px] flex w-full transform-gpu flex-col items-center justify-center rounded-[16px] bg-bg-body'
+      }
     >
-      {divider && <Divider className={'w-full my-0'} />}
+      {divider && <Divider className={'my-0 w-full'} />}
 
       <div
         onClick={() => {
@@ -26,7 +22,7 @@ function AppFlowyPower ({
           width,
         }}
         className={
-          'flex  w-full cursor-pointer gap-2 items-center justify-center py-4 text-sm text-text-title opacity-50'
+          'flex  w-full cursor-pointer items-center justify-center gap-2 py-4 text-sm text-text-title opacity-50'
         }
       >
         Powered by

@@ -1,5 +1,5 @@
 import { FC, useMemo } from 'react';
-import { ReactComponent as CircleIcon } from '@/assets/bulleted_list_icon_1.svg';
+import { ReactComponent as CircleIcon } from '@/assets/iconsbulleted_list_icon_1.svg';
 
 export interface TagProps {
   color?: string;
@@ -26,16 +26,15 @@ export const Tag: FC<TagProps> = ({ color, size = 'small', label, badge }) => {
       }}
       className={className}
     >
-      {badge &&
+      {badge && (
         <CircleIcon
           style={{
             color: `var(${badge})`,
           }}
-          className={`w-5 h-5`}
+          className={`h-5 w-5`}
         />
-      }
+      )}
       <div className={'truncate'}>{label}</div>
-
     </div>
   );
 };

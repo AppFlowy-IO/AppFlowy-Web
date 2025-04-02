@@ -1,6 +1,6 @@
 import { Popover } from '@/components/_shared/popover';
 import React, { useMemo } from 'react';
-import { ReactComponent as MoreIcon } from '@/assets/settings_more.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/settings_more.svg';
 import { Button, Divider, IconButton } from '@mui/material';
 import { ReactComponent as TemplateIcon } from '@/assets/icons/template.svg';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
@@ -8,11 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ReactComponent as SupportIcon } from '@/assets/icons/help.svg';
 
-function MobileMore ({
-  onClose,
-}: {
-  onClose: () => void;
-}) {
+function MobileMore({ onClose }: { onClose: () => void }) {
   const [openMore, setOpenMore] = React.useState(false);
   const ref = React.useRef<HTMLButtonElement | null>(null);
   const { t } = useTranslation();
@@ -32,7 +28,8 @@ function MobileMore ({
         onClick: () => {
           navigate('/app/trash');
         },
-      }, {
+      },
+      {
         label: t('questionBubble.help'),
         onClick: () => {
           window.open('https://discord.gg/9Q2xaN37tV', '_blank');
@@ -44,12 +41,7 @@ function MobileMore ({
 
   return (
     <>
-      <IconButton
-        ref={ref}
-        onClick={() => setOpenMore(true)}
-        size={'large'}
-        className={'p-2'}
-      >
+      <IconButton ref={ref} onClick={() => setOpenMore(true)} size={'large'} className={'p-2'}>
         <MoreIcon className={'h-5 w-5 text-text-title'} />
       </IconButton>
       <Popover
@@ -59,11 +51,9 @@ function MobileMore ({
         anchorEl={ref.current}
         onClose={() => setOpenMore(false)}
       >
-        <div className={'flex flex-col w-[200px] justify-start gap-3 py-3'}>
+        <div className={'flex w-[200px] flex-col justify-start gap-3 py-3'}>
           {actions.map((action, index) => (
-            <div
-              key={index}
-            >
+            <div key={index}>
               <div className='mx-3'>
                 <Button
                   startIcon={action.icon}
@@ -73,16 +63,15 @@ function MobileMore ({
                     onClose();
                   }}
                   variant={'text'}
-                  className={'flex justify-start w-full font-normal py-1 text-base'}
+                  className={'flex w-full justify-start py-1 text-base font-normal'}
                   color={'inherit'}
                 >
                   {action.label}
                 </Button>
               </div>
-             
-              {index !== actions.length - 1 && <Divider className={'w-full mt-2 opacity-50'} />}
-            </div>
 
+              {index !== actions.length - 1 && <Divider className={'mt-2 w-full opacity-50'} />}
+            </div>
           ))}
         </div>
       </Popover>

@@ -7,16 +7,11 @@ import { notify } from '@/components/_shared/notify';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
 import { SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
 import { useAppHandlers } from '@/components/app/app.hooks';
-import { ReactComponent as TipIcon } from '@/assets/warning.svg';
+import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
 import { useSearchParams } from 'react-router-dom';
 
-function InviteMember ({ workspace, onClick }: {
-  workspace: Workspace;
-  onClick?: () => void;
-}) {
-  const {
-    getSubscriptions,
-  } = useAppHandlers();
+function InviteMember({ workspace, onClick }: { workspace: Workspace; onClick?: () => void }) {
+  const { getSubscriptions } = useAppHandlers();
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
   const [value, setValue] = React.useState('');
@@ -62,7 +57,6 @@ function InviteMember ({ workspace, onClick }: {
   }, [getSubscriptions]);
 
   const isExceed = useMemo(() => {
-
     if (activeSubscriptionPlan === null) return false;
     if (activeSubscriptionPlan === SubscriptionPlan.Free) {
       return memberCount >= 2;
@@ -79,9 +73,9 @@ function InviteMember ({ workspace, onClick }: {
     if (!service || !currentWorkspaceId) return;
     try {
       setLoading(true);
-      const emails = value.split(',').map(e => e.trim());
+      const emails = value.split(',').map((e) => e.trim());
 
-      const hadInvited = emails.filter(e => memberListRef.current.find(m => m.email === e));
+      const hadInvited = emails.filter((e) => memberListRef.current.find((m) => m.email === e));
 
       if (hadInvited.length > 0) {
         notify.warning(t('inviteMember.inviteAlready', { email: hadInvited[0] }));
@@ -110,7 +104,7 @@ function InviteMember ({ workspace, onClick }: {
   }, [open, loadMembers, loadSubscription]);
 
   const handleUpgrade = useCallback(async () => {
-    setSearch(prev => {
+    setSearch((prev) => {
       prev.set('action', 'change_plan');
       return prev;
     });
@@ -129,7 +123,8 @@ function InviteMember ({ workspace, onClick }: {
           onClick?.();
         }}
         startIcon={<AddUserIcon />}
-      >{t('settings.appearance.members.inviteMembers')}
+      >
+        {t('settings.appearance.members.inviteMembers')}
       </Button>
       <NormalModal
         classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[10%] ', paper: 'w-[500px]' }}
@@ -142,9 +137,7 @@ function InviteMember ({ workspace, onClick }: {
           className: 'hidden',
         }}
         onClose={() => setOpen(false)}
-        title={<div className={'flex items-center font-medium w-[320px]'}>
-          {t('inviteMember.requestInviteMembers')}
-        </div>}
+        title={<div className={'flex w-[320px] items-center font-medium'}>{t('inviteMember.requestInviteMembers')}</div>}
         okText={t('inviteMember.requestInvites')}
         onOk={handleOk}
       >
@@ -152,22 +145,21 @@ function InviteMember ({ workspace, onClick }: {
           style={{
             display: isExceed ? 'flex' : 'none',
           }}
-          className={'text-text-caption overflow-hidden flex-wrap w-full gap-1 items-center flex mb-8'}
+          className={'mb-8 flex w-full flex-wrap items-center gap-1 overflow-hidden text-text-caption'}
         >
-          <TipIcon className={'w-4 h-4 text-function-warning'} />
+          <TipIcon className={'h-4 w-4 text-function-warning'} />
           {t('inviteMember.inviteFailedMemberLimit')}
-          <span
-            onClick={handleUpgrade}
-            className={'hover:underline cursor-pointer text-fill-default'}
-          >{t('inviteMember.upgrade')}</span>
+          <span onClick={handleUpgrade} className={'cursor-pointer text-fill-default hover:underline'}>
+            {t('inviteMember.upgrade')}
+          </span>
         </div>
-        <div className={'text-text-caption text-xs mb-1'}>{t('inviteMember.emails')}</div>
+        <div className={'mb-1 text-xs text-text-caption'}>{t('inviteMember.emails')}</div>
         <OutlinedInput
           readOnly={isExceed}
           fullWidth={true}
           size={'small'}
           value={value}
-          onChange={e => setValue(e.target.value)}
+          onChange={(e) => setValue(e.target.value)}
           placeholder={t('inviteMember.addEmail')}
         />
       </NormalModal>

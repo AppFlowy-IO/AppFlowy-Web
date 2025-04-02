@@ -5,10 +5,10 @@ import { SelectOptionBadgeColorMap, SelectOptionColorMap } from '@/components/da
 import { Tooltip } from '@mui/material';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CheckboxCheckSvg } from '@/assets/check_filled.svg';
-import { ReactComponent as CheckboxUncheckSvg } from '@/assets/uncheck.svg';
+import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
+import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 
-export function useRenderColumn (id: string, fieldId: string) {
+export function useRenderColumn(id: string, fieldId: string) {
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const fieldName = field?.get(YjsDatabaseKey.name) || '';
@@ -20,13 +20,13 @@ export function useRenderColumn (id: string, fieldId: string) {
         <div className={'flex items-center gap-2'}>
           {id === 'Yes' ? (
             <>
-              <CheckboxCheckSvg className={'h-4 w-4'} />
+              <CheckboxCheckSvg className={'h-5 w-5'} />
               {t('button.yes')}
             </>
           ) : (
             <>
               {' '}
-              <CheckboxUncheckSvg className={'h-4 w-4'} />
+              <CheckboxUncheckSvg className={'h-5 w-5'} />
               {t('button.no')}
             </>
           )}
@@ -46,7 +46,6 @@ export function useRenderColumn (id: string, fieldId: string) {
               badge={option?.color ? SelectOptionBadgeColorMap[option?.color] : undefined}
             />
           </span>
-
         </Tooltip>
       );
     }

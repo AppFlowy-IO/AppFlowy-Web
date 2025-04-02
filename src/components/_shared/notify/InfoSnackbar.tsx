@@ -4,9 +4,9 @@ import { Button, IconButton, Paper } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { CustomContentProps, SnackbarContent } from 'notistack';
-import { ReactComponent as CheckCircle } from '@/assets/check_circle.svg';
-import { ReactComponent as ErrorOutline } from '@/assets/error_outline.svg';
-import { ReactComponent as WarningAmber } from '@/assets/warning_amber.svg';
+import { ReactComponent as CheckCircle } from '@/assets/icons/check_circle.svg';
+import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import { ReactComponent as WarningAmber } from '@/assets/icons/warning.svg';
 
 export interface InfoProps {
   onOk?: () => void;
@@ -31,23 +31,15 @@ const InfoSnackbar = forwardRef<HTMLDivElement, InfoSnackbarProps>(
     };
 
     return (
-      <SnackbarContent
-        ref={ref}
-        className={'flex items-center justify-center'}
-      >
+      <SnackbarContent ref={ref} className={'flex items-center justify-center'}>
         <Paper className={`relative flex flex-col gap-4 border p-5 ${getBorderColor(type)}`}>
-          <div className={'flex w-full items-center justify-between text-title font-medium'}>
+          <div className={'text-title flex w-full items-center justify-between font-medium'}>
             <div className={'flex flex-1 items-center gap-2 text-left font-semibold'}>
               {getIcon(type)}
               <div>{title}</div>
             </div>
             <div className={'relative -right-1.5'}>
-              <IconButton
-                size={'small'}
-                color={'inherit'}
-                className={'h-6 w-6'}
-                onClick={handleClose}
-              >
+              <IconButton size={'small'} color={'inherit'} className={'h-6 w-6'} onClick={handleClose}>
                 <CloseIcon />
               </IconButton>
             </div>
@@ -72,13 +64,13 @@ const InfoSnackbar = forwardRef<HTMLDivElement, InfoSnackbarProps>(
         </Paper>
       </SnackbarContent>
     );
-  },
+  }
 );
 
 export default InfoSnackbar;
 
 function getIcon(type: 'success' | 'info' | 'warning' | 'error') {
-  switch(type) {
+  switch (type) {
     case 'success':
       return <CheckCircle className={'h-6 w-6 text-[var(--function-success)]'} />;
     case 'info':
@@ -86,12 +78,12 @@ function getIcon(type: 'success' | 'info' | 'warning' | 'error') {
     case 'warning':
       return <WarningAmber className={'h-6 w-6 text-[var(--function-warning)]'} />;
     case 'error':
-      return <ErrorOutline className={'h-6 w-6 text-[var(--function-error)]'} />;
+      return <ErrorIcon className={'w-5text-[var(--function-error)] h-5'} />;
   }
 }
 
 function getButtonBgColor(type: 'success' | 'info' | 'warning' | 'error') {
-  switch(type) {
+  switch (type) {
     case 'success':
       return 'bg-[var(--function-success)]';
     case 'info':
@@ -104,7 +96,7 @@ function getButtonBgColor(type: 'success' | 'info' | 'warning' | 'error') {
 }
 
 function getButtonHoverBgColor(type: 'success' | 'info' | 'warning' | 'error') {
-  switch(type) {
+  switch (type) {
     case 'success':
       return 'hover:bg-[var(--function-success-hover)]';
     case 'info':
@@ -117,7 +109,7 @@ function getButtonHoverBgColor(type: 'success' | 'info' | 'warning' | 'error') {
 }
 
 function getBorderColor(type: 'success' | 'info' | 'warning' | 'error') {
-  switch(type) {
+  switch (type) {
     case 'success':
       return 'border-[var(--function-success)]';
     case 'info':

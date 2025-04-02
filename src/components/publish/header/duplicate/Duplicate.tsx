@@ -6,14 +6,14 @@ import { LoginModal } from '@/components/login';
 import { useSearchParams } from 'react-router-dom';
 import { useDuplicate } from '@/components/publish/header/duplicate/useDuplicate';
 import DuplicateModal from '@/components/publish/header/duplicate/DuplicateModal';
-import { ReactComponent as CopyIcon } from '@/assets/copy.svg';
+import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 
-export function Duplicate () {
+export function Duplicate() {
   const { t } = useTranslation();
   const { loginOpen, duplicateOpen, handleDuplicateClose, handleLoginClose, url } = useDuplicate();
   const [, setSearch] = useSearchParams();
   const handleClick = useCallback(() => {
-    setSearch(prev => {
+    setSearch((prev) => {
       prev.set('action', 'duplicate');
       return prev;
     });
@@ -27,32 +27,18 @@ export function Duplicate () {
     <>
       {isMobile ? (
         <Tooltip title={t('publish.saveThisPage')}>
-          <IconButton
-            onClick={handleClick}
-            size={'small'}
-            color={'inherit'}
-          >
-            <CopyIcon className={'w-5 h-5'} />
+          <IconButton onClick={handleClick} size={'small'} color={'inherit'}>
+            <CopyIcon />
           </IconButton>
         </Tooltip>
-      ) : <Button
-        onClick={handleClick}
-        size={'small'}
-        variant={'contained'}
-        color={'primary'}
-      >
-        {t('publish.saveThisPage')}
-      </Button>}
+      ) : (
+        <Button onClick={handleClick} size={'small'} variant={'contained'} color={'primary'}>
+          {t('publish.saveThisPage')}
+        </Button>
+      )}
 
-      <LoginModal
-        redirectTo={url}
-        open={loginOpen}
-        onClose={handleLoginClose}
-      />
-      <DuplicateModal
-        open={duplicateOpen}
-        onClose={handleDuplicateClose}
-      />
+      <LoginModal redirectTo={url} open={loginOpen} onClose={handleLoginClose} />
+      <DuplicateModal open={duplicateOpen} onClose={handleDuplicateClose} />
     </>
   );
 }

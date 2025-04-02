@@ -1,4 +1,4 @@
-import { ReactComponent as InformationSvg } from '@/assets/information.svg';
+import { ReactComponent as InformationSvg } from '@/assets/icons/help.svg';
 import { ReactComponent as CloseSvg } from '@/assets/icons/close.svg';
 import { Button } from '@mui/material';
 

@@ -2,11 +2,16 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { checkImage } from '@/utils/image';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ErrorOutline } from '@/assets/error.svg';
+import { ReactComponent as ErrorOutline } from '@/assets/icons/error.svg';
 
-function Img({ onLoad, imgRef, url, width }: {
-  url: string,
-  imgRef?: React.RefObject<HTMLImageElement>,
+function Img({
+  onLoad,
+  imgRef,
+  url,
+  width,
+}: {
+  url: string;
+  imgRef?: React.RefObject<HTMLImageElement>;
   onLoad?: () => void;
   width: number | string;
 }) {
@@ -19,28 +24,28 @@ function Img({ onLoad, imgRef, url, width }: {
     statusText: string;
   } | null>(null);
 
-  const handleCheckImage = useCallback(async(url: string) => {
+  const handleCheckImage = useCallback(async (url: string) => {
     setLoading(true);
 
     // Configuration for polling
-    const maxAttempts = 5;         // Maximum number of polling attempts
-    const pollingInterval = 6000;  // Time between attempts in milliseconds (6 seconds)
+    const maxAttempts = 5; // Maximum number of polling attempts
+    const pollingInterval = 6000; // Time between attempts in milliseconds (6 seconds)
     const timeoutDuration = 30000; // Maximum time to poll in milliseconds (30 seconds)
 
     let attempts = 0;
     const startTime = Date.now();
 
-    const attemptCheck: () => Promise<boolean> = async() => {
+    const attemptCheck: () => Promise<boolean> = async () => {
       try {
         const result = await checkImage(url);
 
         // Success case
-        if(result.ok) {
+        if (result.ok) {
           setImgError(null);
           setLoading(false);
           setLocalUrl(result.validatedUrl || '');
           setTimeout(() => {
-            if(onLoad) {
+            if (onLoad) {
               onLoad();
             }
           }, 200);
@@ -55,28 +60,28 @@ function Img({ onLoad, imgRef, url, width }: {
         attempts++;
         const elapsedTime = Date.now() - startTime;
 
-        if(attempts >= maxAttempts || elapsedTime >= timeoutDuration) {
+        if (attempts >= maxAttempts || elapsedTime >= timeoutDuration) {
           setLoading(false); // Stop loading after max attempts or timeout
           setImgError({ ok: false, status: 404, statusText: 'Image Not Found' });
           return false;
         }
 
-        await new Promise(resolve => setTimeout(resolve, pollingInterval));
+        await new Promise((resolve) => setTimeout(resolve, pollingInterval));
         return await attemptCheck();
         // eslint-disable-next-line
-      } catch(e) {
+      } catch (e) {
         setImgError({ ok: false, status: 404, statusText: 'Image Not Found' });
         // Check if we should stop trying
         attempts++;
         const elapsedTime = Date.now() - startTime;
 
-        if(attempts >= maxAttempts || elapsedTime >= timeoutDuration) {
+        if (attempts >= maxAttempts || elapsedTime >= timeoutDuration) {
           setLoading(false);
           return false;
         }
 
         // Continue polling after interval
-        await new Promise(resolve => setTimeout(resolve, pollingInterval));
+        await new Promise((resolve) => setTimeout(resolve, pollingInterval));
         return await attemptCheck();
       }
     };
@@ -104,10 +109,10 @@ function Img({ onLoad, imgRef, url, width }: {
           visibility: imgError ? 'hidden' : 'visible',
           width,
         }}
-        className={'object-cover h-full bg-cover bg-center'}
+        className={'h-full bg-cover bg-center object-cover'}
       />
       {loading ? (
-        <div className={'absolute bg-bg-body flex items-center inset-0 justify-center w-full h-full'}>
+        <div className={'absolute inset-0 flex h-full w-full items-center justify-center bg-bg-body'}>
           <LoadingDots />
         </div>
       ) : imgError ? (

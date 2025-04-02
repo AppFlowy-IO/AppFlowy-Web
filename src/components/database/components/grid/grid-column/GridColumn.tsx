@@ -6,9 +6,9 @@ import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { getIconBase64 } from '@/utils/emoji';
 import { Tooltip } from '@mui/material';
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { ReactComponent as AIIndicatorSvg } from '@/assets/ai_indicator.svg';
+import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/ai_indicator.svg';
 
-export function GridColumn ({ column, index }: { column: Column; index: number }) {
+export function GridColumn({ column, index }: { column: Column; index: number }) {
   const { field } = useFieldSelector(column.fieldId);
   const [iconEncodeContent, setIconEncodeContent] = useState<string | null>(null);
 
@@ -34,32 +34,24 @@ export function GridColumn ({ column, index }: { column: Column; index: number }
   const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(type);
 
   return (
-    <Tooltip
-      title={name}
-      enterNextDelay={1000}
-      placement={'right'}
-    >
+    <Tooltip title={name} enterNextDelay={1000} placement={'right'}>
       <div
         style={{
           borderLeftWidth: index === 1 ? 0 : 1,
         }}
         className={
-          'flex h-full select-none w-full items-center gap-1 overflow-hidden whitespace-nowrap border-t border-b border-l border-line-divider px-2 text-sm font-medium hover:bg-fill-list-active'
+          'flex h-full w-full select-none items-center gap-1 overflow-hidden whitespace-nowrap border-t border-b border-l border-line-divider px-2 text-sm font-medium hover:bg-fill-list-active'
         }
       >
         <div>
-          {iconEncodeContent ? <img
-            src={iconEncodeContent}
-            className={'h-full w-full p-1 opacity-40'}
-            alt={icon}
-          /> : <FieldTypeIcon
-            type={type}
-            className={'mr-1 w-4 h-4 icon'}
-          />}
-
+          {iconEncodeContent ? (
+            <img src={iconEncodeContent} className={'h-full w-full p-1 opacity-40'} alt={icon} />
+          ) : (
+            <FieldTypeIcon type={type} className={'icon mr-1 h-4 w-4'} />
+          )}
         </div>
         <div className={'flex-1'}>{name}</div>
-        {isAIField && <AIIndicatorSvg className={'text-xl w-4 h-4'} />}
+        {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-xl'} />}
       </div>
     </Tooltip>
   );

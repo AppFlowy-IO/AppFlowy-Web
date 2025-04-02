@@ -1,5 +1,5 @@
-import { ReactComponent as CheckboxCheckSvg } from '@/assets/check_filled.svg';
-import { ReactComponent as CheckboxUncheckSvg } from '@/assets/uncheck.svg';
+import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
+import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { FieldType } from '@/application/database-yjs';
 import { CellProps, CheckboxCell as CheckboxCellType } from '@/application/database-yjs/cell.type';
 
