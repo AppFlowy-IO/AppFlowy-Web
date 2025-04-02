@@ -14,6 +14,7 @@ const AfterPaymentPage = lazy(() => import('@/pages/AfterPaymentPage'));
 const ImportPage = lazy(() => import('@/pages/ImportPage'));
 
 import '@/styles/app.scss';
+import { Toaster } from '../ui/sonner';
 
 const AppMain = withAppWrapper(() => {
   return (
@@ -78,6 +79,7 @@ function App () {
   return (
     <BrowserRouter>
       <AppMain />
+      <Toaster />
     </BrowserRouter>
   );
 }
