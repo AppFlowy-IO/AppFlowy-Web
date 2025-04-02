@@ -17,7 +17,7 @@ import { ReactComponent as ChatCircleText } from '@/assets/icons/chat_circle_tex
 import { ReactComponent as MegaphoneSimple } from '@/assets/icons/megaphone_simple.svg';
 import { ReactComponent as UserIcon } from '@/assets/icons/user.svg';
 import { ReactComponent as CurrencyCircleDollar } from '@/assets/icons/currency_circle_dollar.svg';
-import { ReactComponent as Sparkle } from '@/assets/sparkle.svg';
+import { ReactComponent as Sparkle } from '@/assets/icons/ai.svg';
 import { ReactComponent as Notepad } from '@/assets/icons/notepad.svg';
 import { ReactComponent as Book } from '@/assets/icons/book.svg';
 

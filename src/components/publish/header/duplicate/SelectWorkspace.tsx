@@ -4,7 +4,7 @@ import React, { useCallback, useContext, useMemo, useRef, useState } from 'react
 import { useTranslation } from 'react-i18next';
 import { Avatar, Button, CircularProgress, Divider, Tooltip } from '@mui/material';
 import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
-import { ReactComponent as CheckIcon } from '@/assets/selected.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { Popover } from '@/components/_shared/popover';
 import { stringToColor } from '@/utils/color';
 

@@ -2,7 +2,7 @@ import { parseSelectOptionTypeOptions, SelectOption, useFieldSelector } from '@/
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap } from '@/components/database/components/cell/cell.const';
 import React, { useCallback, useMemo } from 'react';
-import { ReactComponent as CheckIcon } from '@/assets/check.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 
 export function SelectOptionList({ fieldId, selectedIds }: { fieldId: string; selectedIds: string[] }) {
   const { field } = useFieldSelector(fieldId);

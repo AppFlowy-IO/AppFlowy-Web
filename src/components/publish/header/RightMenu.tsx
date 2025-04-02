@@ -2,7 +2,7 @@ import MoreActions from '@/components/_shared/more-actions/MoreActions';
 import { openOrDownload } from '@/utils/open_schema';
 import { Divider, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useContext } from 'react';
-import { ReactComponent as Logo } from '@/assets/icons/ogo.svg';
+import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { Duplicate } from '@/components/publish/header/duplicate';
 import { useTranslation } from 'react-i18next';
 import { PublishContext, usePublishContext } from '@/application/publish';

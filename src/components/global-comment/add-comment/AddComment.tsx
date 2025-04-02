@@ -8,7 +8,7 @@ import { Button, TextareaAutosize } from '@mui/material';
 import CircularProgress from '@mui/material/CircularProgress';
 import React, { memo, useCallback, useContext, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CloseIcon } from '@/assets/close.svg';
+import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 interface AddCommentProps {

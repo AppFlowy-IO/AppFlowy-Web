@@ -1,4 +1,4 @@
-import { ReactComponent as ImageIcon } from '@/assets/gallery.svg';
+import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { GalleryLayout } from '@/application/types';
 import { GalleryPreview } from '@/components/_shared/gallery-preview';
 import { notify } from '@/components/_shared/notify';
@@ -12,11 +12,7 @@ import { useTranslation } from 'react-i18next';
 import { useReadOnly } from 'slate-react';
 
 const GalleryBlock = memo(
-  forwardRef<HTMLDivElement, EditorElementProps<GalleryBlockNode>>(({
-    node,
-    children,
-    ...attributes
-  }, ref) => {
+  forwardRef<HTMLDivElement, EditorElementProps<GalleryBlockNode>>(({ node, children, ...attributes }, ref) => {
     const { t } = useTranslation();
     const { images, layout } = useMemo(() => node.data || {}, [node.data]);
     const [openPreview, setOpenPreview] = React.useState(false);
@@ -30,7 +26,7 @@ const GalleryBlock = memo(
     }, [attributes.className]);
 
     const photos = useMemo(() => {
-      return images.map(image => {
+      return images.map((image) => {
         const url = new URL(image.url);
 
         url.searchParams.set('auto', 'format');
@@ -38,10 +34,7 @@ const GalleryBlock = memo(
         return {
           src: image.url,
           thumb: url.toString() + '&w=240&q=80',
-          responsive: [
-            url.toString() + '&w=480&q=80 480',
-            url.toString() + '&w=800&q=80 800',
-          ].join(', '),
+          responsive: [url.toString() + '&w=480&q=80 480', url.toString() + '&w=800&q=80 800'].join(', '),
         };
       });
     }, [images]);
@@ -87,58 +80,50 @@ const GalleryBlock = memo(
         }}
         onMouseLeave={() => setHovered(false)}
       >
-        <div
-          ref={ref}
-          className={'absolute left-0 top-0 h-full w-full caret-transparent'}
-        >
+        <div ref={ref} className={'absolute left-0 top-0 h-full w-full caret-transparent'}>
           {children}
         </div>
         <div
           contentEditable={false}
-          className={`embed-block p-4 ${photos.length > 0 ? '!bg-transparent !border-none !rounded-none' : ''}`}
+          className={`embed-block p-4 ${photos.length > 0 ? '!rounded-none !border-none !bg-transparent' : ''}`}
         >
-          {photos.length > 0 ?
-            (layout === GalleryLayout.Carousel ?
-                <Carousel
-                  onPreview={handlePreviewIndex}
-                  images={photos}
-                  autoplay={!openPreview}
-                /> :
-                <ImageGallery
-                  onPreview={(index) => {
-                    previewIndexRef.current = index;
-                    handleOpenPreview();
-                  }}
-                  images={photos}
-                />
-            ) : <div
-              className={
-                'flex w-full select-none items-center gap-4 text-text-caption'
-              }
-            >
-              <ImageIcon />
+          {photos.length > 0 ? (
+            layout === GalleryLayout.Carousel ? (
+              <Carousel onPreview={handlePreviewIndex} images={photos} autoplay={!openPreview} />
+            ) : (
+              <ImageGallery
+                onPreview={(index) => {
+                  previewIndexRef.current = index;
+                  handleOpenPreview();
+                }}
+                images={photos}
+              />
+            )
+          ) : (
+            <div className={'flex w-full select-none items-center gap-4 text-text-caption'}>
+              <GalleryIcon />
               {t('document.plugins.image.addAnImageMobile')}
-            </div>}
+            </div>
+          )}
         </div>
 
-        {hovered &&
-          <GalleryToolbar
-            onCopy={handleCopy}
-            onDownload={handleDownload}
-            onOpenPreview={handleOpenPreview}
-          />}
+        {hovered && <GalleryToolbar onCopy={handleCopy} onDownload={handleDownload} onOpenPreview={handleOpenPreview} />}
 
-        {openPreview && <Suspense><GalleryPreview
-          images={photos}
-          previewIndex={previewIndexRef.current}
-          open={openPreview}
-          onClose={() => {
-            setOpenPreview(false);
-          }}
-        /></Suspense>}
-
+        {openPreview && (
+          <Suspense>
+            <GalleryPreview
+              images={photos}
+              previewIndex={previewIndexRef.current}
+              open={openPreview}
+              onClose={() => {
+                setOpenPreview(false);
+              }}
+            />
+          </Suspense>
+        )}
       </div>
     );
-  }));
+  })
+);
 
 export default GalleryBlock;
