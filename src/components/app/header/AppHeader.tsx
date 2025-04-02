@@ -54,7 +54,6 @@ export function AppHeader ({
     >
 
       <div className={'flex w-full items-center justify-between gap-4 overflow-hidden'}>
-
         {displayMenuButton && (
           <OutlinePopover
             {...{
@@ -94,6 +93,7 @@ export function AppHeader ({
         {rendered && <Suspense fallback={null}>
           <RightMenu />
         </Suspense>}
+
       </div>
 
     </div>
