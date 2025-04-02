@@ -5,7 +5,7 @@ import CategoryTemplates from '@/components/as-template/related-template/Categor
 import { Button, CircularProgress } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 
 function AddRelatedTemplates ({
   selectedTemplateIds,

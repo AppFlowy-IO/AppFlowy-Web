@@ -3,8 +3,8 @@ import { useService } from '@/components/main/app.hooks';
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as LinkIcon } from '@/assets/link.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as CheckIcon } from '@/assets/check_circle.svg';
 
 function UploadAvatar ({
@@ -74,7 +74,7 @@ function UploadAvatar ({
               color: uploadStatus === 'error' ? 'var(--function-error)' : undefined,
             }}
           >
-            {uploadStatus === 'loading' ? <CircularProgress size={20} /> : <LinkIcon className={'w-5 h-5'} />}
+            {uploadStatus === 'loading' ? <CircularProgress size={20} /> : <LinkIcon />}
 
             <Tooltip
               title={uploadStatusText}
@@ -97,7 +97,7 @@ function UploadAvatar ({
                 size={'small'}
                 color={'error'}
               >
-                <DeleteIcon className={'w-5 h-5'} />
+                <DeleteIcon />
               </IconButton>
             </Tooltip>}
 

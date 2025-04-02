@@ -5,9 +5,9 @@ import CreatorAvatar from '@/components/as-template/creator/CreatorAvatar';
 import EditCreator from '@/components/as-template/creator/EditCreator';
 import { IconButton, Tooltip } from '@mui/material';
 import MenuItem from '@mui/material/MenuItem';
-import { ReactComponent as CheckIcon } from '@/assets/selected.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { useTranslation } from 'react-i18next';
 
 function CreatorItem ({
@@ -49,7 +49,7 @@ function CreatorItem ({
             setEditModalOpen(true);
           }}
           >
-            <EditIcon className={'w-4 h-4'} />
+            <EditIcon />
           </IconButton>
         </Tooltip>
         <Tooltip title={t('button.delete')}>
@@ -58,11 +58,11 @@ function CreatorItem ({
             setDeleteModalOpen(true);
           }}
           >
-            <DeleteIcon className={'w-4 h-4 text-function-error'} />
+            <DeleteIcon className={'text-function-error'} />
           </IconButton>
         </Tooltip>
       </div>
-      {selected && !hovered && <CheckIcon className={'w-4 h-4 text-fill-default'} />}
+      {selected && !hovered && <CheckIcon className={'w-5 h-5 text-fill-default'} />}
       {
         editModalOpen &&
         <EditCreator

@@ -3,7 +3,7 @@ import Filter from '@/components/database/components/filters/Filter';
 import Button from '@mui/material/Button';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddFilterSvg } from '@/assets/add.svg';
+import { ReactComponent as AddFilterSvg } from '@/assets/icons/plus.svg';
 
 export function Filters() {
   const filters = useFiltersSelector();

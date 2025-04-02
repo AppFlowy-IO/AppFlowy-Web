@@ -5,8 +5,8 @@ import { PublishManage } from '@/components/app/publish-manage';
 import { PublishNameSetting } from '@/components/app/publish-manage/PublishNameSetting';
 import { copyTextToClipboard } from '@/utils/copy';
 import { CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material';
-import { ReactComponent as LinkIcon } from '@/assets/link.svg';
-import { ReactComponent as DownIcon } from '@/assets/chevron_down.svg';
+import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
+import { ReactComponent as DownIcon } from '@/assets/icons/toggle_list.svg';
 import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -83,7 +83,7 @@ function PublishLinkPreview({
                   onClose?.();
                 }}
               >
-                <DownIcon className={'w-4 h-4'} />
+                <DownIcon className={'transform rotate-90'} />
               </IconButton>
             </Tooltip>
 
@@ -134,7 +134,7 @@ function PublishLinkPreview({
                 }}
               >
                 {loading ? <CircularProgress size={14} /> :
-                  <DownIcon className={'w-4 h-4'} />}
+                  <DownIcon className={'transform rotate-90'} />}
               </IconButton>
             </Tooltip>}
 
@@ -153,7 +153,7 @@ function PublishLinkPreview({
               color={'inherit'}
               size={'small'}
             >
-              <LinkIcon className={'w-4 h-4'} />
+              <LinkIcon />
             </IconButton>
           </Tooltip>
         </div>

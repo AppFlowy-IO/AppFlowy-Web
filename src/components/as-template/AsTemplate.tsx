@@ -10,7 +10,7 @@ import { useLoadTemplate } from '@/components/as-template/hooks';
 import { Button, CircularProgress, InputLabel, Paper, Switch } from '@mui/material';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import './template.scss';
 import { slugify } from '@/components/as-template/utils';
 import { ReactComponent as WebsiteIcon } from '@/assets/website.svg';

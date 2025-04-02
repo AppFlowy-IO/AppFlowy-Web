@@ -9,7 +9,7 @@ import { useService } from '@/components/main/app.hooks';
 import CategoryForm from '@/components/as-template/category/CategoryForm';
 import MenuItem from '@mui/material/MenuItem';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { useTranslation } from 'react-i18next';
 
 function AddCategory ({ searchText, onCreated }: {
@@ -44,7 +44,7 @@ function AddCategory ({ searchText, onCreated }: {
         setOpenModal(true);
       }} key={'add'} className={'flex gap-2 items-center'}
       >
-        <AddIcon className={'w-6 h-6'} />
+        <AddIcon className={'w-5 h-5'} />
         {searchText ? searchText : <span className={'text-text-caption'}>{t('template.addNewCategory')}</span>}
       </MenuItem>
       {openModal && <NormalModal

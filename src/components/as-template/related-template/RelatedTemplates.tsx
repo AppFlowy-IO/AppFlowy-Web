@@ -4,7 +4,7 @@ import TemplateItem from '@/components/as-template/related-template/TemplateItem
 import { InputLabel, Grid, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect, useMemo, useRef, forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 
 function RelatedTemplates ({ value = [], onChange, defaultRelatedTemplates }: {
   value?: string[];
@@ -41,7 +41,7 @@ function RelatedTemplates ({ value = [], onChange, defaultRelatedTemplates }: {
                 className={'delete-icon absolute right-2 top-2 bg-bg-body hover:text-function-error'}
                 onClick={() => onChange(value.filter((v) => v !== id))}
               >
-                <DeleteIcon className={'w-5 h-5'} />
+                <DeleteIcon />
               </IconButton>
             </Tooltip>
           </div>

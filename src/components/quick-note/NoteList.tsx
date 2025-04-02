@@ -3,7 +3,7 @@ import { QuickNote, QuickNote as QuickNoteType } from '@/application/types';
 import { useTranslation } from 'react-i18next';
 import { Divider, IconButton, Tooltip } from '@mui/material';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import DeleteNoteModal from '@/components/quick-note/DeleteNoteModal';
 import { getSummary, getTitle, getUpdateTime } from '@/components/quick-note/utils';
 import AddNote from '@/components/quick-note/AddNote';

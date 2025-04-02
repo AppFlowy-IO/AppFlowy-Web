@@ -9,7 +9,7 @@ import { Button, IconButton, Tooltip, TooltipProps } from '@mui/material';
 import React, { memo, useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { ReactComponent as TrashIcon } from '@/assets/trash.svg';
+import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
 
 interface Item {
   Icon: React.FC<React.SVGProps<SVGSVGElement>>;
@@ -81,7 +81,7 @@ function MoreActions ({ comment }: { comment: GlobalComment }) {
         onClick={action.onClick}
         className={`w-full items-center justify-start gap-2 p-1 ${action.danger ? 'hover:text-function-error' : ''}`}
       >
-        <action.Icon className={'h-4 w-4'} />
+        <action.Icon className={'h-5 w-5'} />
         <div>{action.label}</div>
       </Button>
     );

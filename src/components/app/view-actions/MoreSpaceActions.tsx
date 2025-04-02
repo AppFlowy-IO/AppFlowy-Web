@@ -8,10 +8,10 @@ import { useService } from '@/components/main/app.hooks';
 import { Button, CircularProgress, Divider } from '@mui/material';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/trash.svg';
-import { ReactComponent as DuplicateIcon } from '@/assets/duplicate.svg';
-import { ReactComponent as SettingsIcon } from '@/assets/settings.svg';
-import { ReactComponent as AddIcon } from '@/assets/plus.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
+import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 
 function MoreSpaceActions({
   view,

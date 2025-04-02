@@ -196,12 +196,11 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
                 key={id}
                 className={'flex justify-start items-center'}
                 size={'small'}
-                startIcon={selected ? <CheckboxCheckSvg className={'w-5 h-5'} /> :
-                  <CheckboxUncheckSvg className={'w-5 h-5'} />}
+                startIcon={selected ? <CheckboxCheckSvg /> : <CheckboxUncheckSvg />}
                 color={'inherit'}
               >
                 <div className={'flex items-center gap-2'}>
-                  <PageIcon view={item} />
+                  <PageIcon view={item} className={'w-5 h-5'} />
                   {item.name || t('untitled')}
                 </div>
 

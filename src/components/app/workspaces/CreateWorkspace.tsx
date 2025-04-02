@@ -5,7 +5,7 @@ import { useService } from '@/components/main/app.hooks';
 import { Button, OutlinedInput } from '@mui/material';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 
 function CreateWorkspace () {
   const { t } = useTranslation();
@@ -51,7 +51,7 @@ function CreateWorkspace () {
         onClick={() => setOpen(true)}
         startIcon={
           <div className={'w-[33px] flex items-center justify-center h-[33px] rounded-[8px] border border-line-divider'}>
-            <AddIcon />
+            <AddIcon className={'w-5 h-5'} />
           </div>
         }
       >

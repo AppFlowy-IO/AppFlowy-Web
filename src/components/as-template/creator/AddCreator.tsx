@@ -7,7 +7,7 @@ import { useService } from '@/components/main/app.hooks';
 import CreatorForm from '@/components/as-template/creator/CreatorForm';
 import MenuItem from '@mui/material/MenuItem';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ReactComponent as AddIcon } from '@/assets/add.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { useTranslation } from 'react-i18next';
 
 function AddCreator ({ searchText, onCreated }: {
@@ -43,7 +43,7 @@ function AddCreator ({ searchText, onCreated }: {
   return (
     <>
       <MenuItem key={'add'} className={'flex gap-2 items-center'} onClick={() => setOpenModal(true)}>
-        <AddIcon className={'w-6 h-6'} />
+        <AddIcon className={'w-5 h-5'} />
         {searchText ? searchText : <span className={'text-text-caption'}>{t('template.addNewCreator')}</span>}
       </MenuItem>
       {openModal && <NormalModal
