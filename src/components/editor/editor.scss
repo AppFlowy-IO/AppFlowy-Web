@@ -36,11 +36,23 @@
 
 .block-element.selected {
   &:not([data-block-type="table"]):not([data-block-type="simple_table"]):not([data-block-type="grid"]):not([data-block-type="board"]):not([data-block-type="calendar"]) {
-    @apply bg-content-blue-100;
+    &[data-block-type="paragraph"],
+    &[data-block-type="todo_list"],
+    &[data-block-type="heading"],
+    &[data-block-type="toggle_list"],
+    &[data-block-type="quote"],
+    &[data-block-type="bulleted_list"],
+    &[data-block-type="numbered_list"],
+    &[data-block-type="divider"],
+    {
+      @apply bg-content-blue-100;
+    }
+
     .embed-block {
       @apply bg-content-blue-50;
     }
   }
+
 
   .block-element[data-block-type="table/cell"] {
     @apply bg-content-blue-50;

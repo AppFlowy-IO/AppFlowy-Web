@@ -1,6 +1,8 @@
-import { notify } from '@/components/_shared/notify';
+import { toast } from 'sonner';
 import { AFConfigContext } from '@/components/main/app.hooks';
-import { Button, CircularProgress, OutlinedInput } from '@mui/material';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import React, { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import isEmail from 'validator/lib/isEmail';
@@ -14,7 +16,7 @@ function MagicLink ({ redirectTo }: { redirectTo: string }) {
     const isValidEmail = isEmail(email);
 
     if (!isValidEmail) {
-      notify.error(t('signIn.invalidEmail'));
+      toast.error(t('signIn.invalidEmail'));
       return;
     }
 
@@ -25,39 +27,39 @@ function MagicLink ({ redirectTo }: { redirectTo: string }) {
         email,
         redirectTo,
       });
-      notify.success(t('signIn.magicLinkSent'));
+
+      window.location.href = `/login?action=checkEmail&email=${email}&redirectTo=${redirectTo}`;
     } catch (e) {
-      notify.error(t('web.signInError'));
+      toast.error(t('web.signInError'));
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className={'flex w-full flex-col items-center justify-center gap-[12px]'}>
-      <OutlinedInput
-        value={email}
+    <div className={'flex w-full flex-col items-center justify-center gap-3'}>
+      <Input
+        size={'md'}
         type={'email'}
-        className={'h-[46px] w-[380px] rounded-[12px] py-[15px] px-[20px] text-base max-sm:w-full'}
-        placeholder={t('signIn.pleaseInputYourEmail')}
-        inputProps={{
-          className: 'px-0 py-0',
-        }}
+        className={'w-[320px]'}
         onChange={(e) => setEmail(e.target.value)}
+        value={email}
+        placeholder={t('signIn.pleaseInputYourEmail')}
       />
+
       <Button
         onClick={handleSubmit}
         disabled={loading}
-        variant={'contained'}
-        className={'flex h-[46px] w-[380px] items-center justify-center gap-2 rounded-[12px] text-base max-sm:w-full'}
+        size={'lg'}
+        className={'w-[320px]'}
       >
         {loading ? (
           <>
-            <CircularProgress size={'small'} />
+            <Progress />
             {t('editor.loading')}...
           </>
         ) : (
-          t('web.continue')
+          t('signIn.signInWithEmail')
         )}
       </Button>
     </div>

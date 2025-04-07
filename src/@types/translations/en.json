@@ -3094,5 +3094,11 @@
   "embedLink": "Embed link",
   "embedVideoLinkPlaceholder": "Paste a video link here.",
   "videoSupported": "Supported services: YouTube, Vimeo, and more.",
-  "copiedVideoLink": "Video original link copied to clipboard"
+  "copiedVideoLink": "Video original link copied to clipboard",
+  "checkYourEmail": "Check your email",
+  "checkEmailTip": "A temporary verification link has been sent. Please check your inbox at",
+  "enterCodeManually": "Enter code manually",
+  "backToLogin": "Back to login",
+  "enterCode": "Enter code",
+  "continueToSignIn": "Continue to sign in"
 }

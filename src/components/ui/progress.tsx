@@ -55,7 +55,7 @@ const progressCircleVariants = cva(
   {
     variants: {
       variant: {
-        default: 'stroke-fill-secondary',
+        default: 'stroke-text-on-fill',
         theme: 'stroke-fill-theme-thick',
         success: 'stroke-fill-success-thick',
         warning: 'stroke-warning-thick',
@@ -75,8 +75,6 @@ export interface ProgressProps
   value?: number;
   /** Line ending style */
   strokeLinecap?: 'round' | 'square';
-  /** Custom stroke width in pixels */
-  strokeWidth?: number;
 }
 
 export function Progress ({
@@ -84,7 +82,6 @@ export function Progress ({
   size = 'md',
   variant = 'default',
   strokeLinecap = 'round',
-  strokeWidth = 3.5,
   className,
   ...props
 }: ProgressProps) {
@@ -96,6 +93,8 @@ export function Progress ({
     xl: 40,
   }[size as string] || 24;
 
+  const strokeWidth = Math.ceil(dimensions * 0.125); // 12.5% of dimensions
+  
   const radius = dimensions / 2 - strokeWidth;
   const circumference = Math.ceil(2 * Math.PI * radius);
   const isIndeterminate = value === undefined;

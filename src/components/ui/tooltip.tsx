@@ -3,23 +3,25 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 
 import { cn } from '@/lib/utils';
 
-function TooltipProvider({ delayDuration = 0, ...props }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
-  return <TooltipPrimitive.Provider data-slot='tooltip-provider' delayDuration={delayDuration} {...props} />;
+function TooltipProvider ({ delayDuration = 0, ...props }: React.ComponentProps<typeof TooltipPrimitive.Provider>) {
+  return <TooltipPrimitive.Provider
+    data-slot="tooltip-provider"
+    delayDuration={delayDuration} {...props} />;
 }
 
-function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+function Tooltip ({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   return (
     <TooltipProvider>
-      <TooltipPrimitive.Root data-slot='tooltip' {...props} />
+      <TooltipPrimitive.Root data-slot="tooltip" {...props} />
     </TooltipProvider>
   );
 }
 
-function TooltipTrigger({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot='tooltip-trigger' {...props} />;
+function TooltipTrigger ({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
+  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />;
 }
 
-function TooltipContent({
+function TooltipContent ({
   className,
   sideOffset = 0,
   children,
@@ -28,7 +30,7 @@ function TooltipContent({
   return (
     <TooltipPrimitive.Portal>
       <TooltipPrimitive.Content
-        data-slot='tooltip-content'
+        data-slot="tooltip-content"
         sideOffset={sideOffset}
         className={cn(
           // Animation behavior
@@ -43,10 +45,10 @@ function TooltipContent({
 
           // Styling and layout
           'text-balance shadow-tooltip z-50 origin-[--radix-tooltip-content-transform-origin]',
-          'w-fit rounded-400 bg-fill-primary px-3 py-2 text-sm text-text-quaternary',
+          'w-fit rounded-400 bg-surface-secondary px-3 py-2 text-sm text-text-on-fill',
           'flex flex-col',
 
-          className
+          className,
         )}
         {...props}
       >
@@ -56,8 +58,10 @@ function TooltipContent({
   );
 }
 
-function TooltipShortcut({ className, ...props }: React.ComponentProps<'span'>) {
-  return <span data-slot='tooltip-shortcut' className={cn('text-text-secondary', className)} {...props} />;
+function TooltipShortcut ({ className, ...props }: React.ComponentProps<'span'>) {
+  return <span
+    data-slot="tooltip-shortcut"
+    className={cn('text-text-secondary', className)} {...props} />;
 }
 
 export { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider, TooltipShortcut };

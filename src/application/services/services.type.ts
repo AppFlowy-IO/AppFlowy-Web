@@ -85,6 +85,7 @@ export interface AppService {
   getAppTrash: (workspaceId: string) => Promise<View[]>;
   loginAuth: (url: string) => Promise<void>;
   signInMagicLink: (params: { email: string; redirectTo: string }) => Promise<void>;
+  signInOTP: (params: { email: string; code: string; redirectTo: string }) => Promise<void>;
   signInGoogle: (params: { redirectTo: string }) => Promise<void>;
   signInGithub: (params: { redirectTo: string }) => Promise<void>;
   signInDiscord: (params: { redirectTo: string }) => Promise<void>;
@@ -174,7 +175,7 @@ export interface PublishService {
   updatePublishHomepage: (workspaceId: string, viewId: string) => Promise<void>;
   removePublishHomepage: (workspaceId: string) => Promise<void>;
 
-  getPublishOutline(namespace: string): Promise<View[]>;
+  getPublishOutline (namespace: string): Promise<View[]>;
 
   getPublishViewGlobalComments: (viewId: string) => Promise<GlobalComment[]>;
   createCommentOnPublishView: (viewId: string, content: string, replyCommentId?: string) => Promise<void>;

@@ -1,9 +1,11 @@
+import { emit, EventType } from '@/application/session';
+import { afterAuth } from '@/application/session/sign_in';
 import { refreshToken as refreshSessionToken } from '@/application/session/token';
 import axios, { AxiosInstance } from 'axios';
 
 let axiosInstance: AxiosInstance | null = null;
 
-export function initGrantService(baseURL: string) {
+export function initGrantService (baseURL: string) {
   if (axiosInstance) {
     return;
   }
@@ -21,7 +23,7 @@ export function initGrantService(baseURL: string) {
   });
 }
 
-export async function refreshToken(refresh_token: string) {
+export async function refreshToken (refresh_token: string) {
   const response = await axiosInstance?.post<{
     access_token: string;
     expires_at: number;
@@ -41,7 +43,48 @@ export async function refreshToken(refresh_token: string) {
   return newToken;
 }
 
-export async function signInWithMagicLink(email: string, authUrl: string) {
+export async function signInOTP ({
+  email,
+  code,
+}: {
+  email: string;
+  code: string;
+  redirectTo: string;
+}) {
+  try {
+    const response = await axiosInstance?.post<{
+      access_token: string;
+      expires_at: number;
+      refresh_token: string;
+    }>('/verify', {
+      email,
+      token: code,
+      type: 'recovery',
+    });
+
+    const newToken = response?.data;
+
+    if (newToken) {
+      refreshSessionToken(JSON.stringify(newToken));
+      emit(EventType.SESSION_VALID);
+      afterAuth();
+    } else {
+      emit(EventType.SESSION_INVALID);
+      return Promise.reject('Failed to sign in otp');
+    }
+    // eslint-disable-next-line
+  } catch (e: any) {
+    emit(EventType.SESSION_INVALID);
+    return Promise.reject({
+      code: e.code,
+      message: e.msg,
+    });
+  }
+
+  return;
+}
+
+export async function signInWithMagicLink (email: string, authUrl: string) {
   const res = await axiosInstance?.post(
     '/magiclink',
     {
@@ -60,13 +103,13 @@ export async function signInWithMagicLink(email: string, authUrl: string) {
   return res?.data;
 }
 
-export async function settings() {
+export async function settings () {
   const res = await axiosInstance?.get('/settings');
 
   return res?.data;
 }
 
-export function signInGoogle(authUrl: string) {
+export function signInGoogle (authUrl: string) {
   const provider = 'google';
   const redirectTo = encodeURIComponent(authUrl);
   const accessType = 'offline';
@@ -77,7 +120,7 @@ export function signInGoogle(authUrl: string) {
   window.open(url, '_current');
 }
 
-export function signInApple(authUrl: string) {
+export function signInApple (authUrl: string) {
   const provider = 'apple';
   const redirectTo = encodeURIComponent(authUrl);
   const baseURL = axiosInstance?.defaults.baseURL;
@@ -86,7 +129,7 @@ export function signInApple(authUrl: string) {
   window.open(url, '_current');
 }
 
-export function signInGithub(authUrl: string) {
+export function signInGithub (authUrl: string) {
   const provider = 'github';
   const redirectTo = encodeURIComponent(authUrl);
   const baseURL = axiosInstance?.defaults.baseURL;
@@ -95,7 +138,7 @@ export function signInGithub(authUrl: string) {
   window.open(url, '_current');
 }
 
-export function signInDiscord(authUrl: string) {
+export function signInDiscord (authUrl: string) {
   const provider = 'discord';
   const redirectTo = encodeURIComponent(authUrl);
   const baseURL = axiosInstance?.defaults.baseURL;
@@ -103,3 +146,4 @@ export function signInDiscord(authUrl: string) {
 
   window.open(url, '_current');
 }
+

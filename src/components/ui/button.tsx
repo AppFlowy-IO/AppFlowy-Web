@@ -5,7 +5,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg:not([class*=\'size-\'])]:size-4 shrink-0 [&_svg]:shrink-0 [&_svg]:h-5 [&_svg]:w-5 outline-none focus-visible:border-border-theme-thick focus-visible:ring-border-theme-thick-hover focus-visible:ring-[0.5px] aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick-hover',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-border-theme-thick focus-visible:ring-border-theme-thick-hover focus-visible:ring-[0.5px] aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick-hover',
   {
     variants: {
       variant: {
@@ -14,9 +14,9 @@ const buttonVariants = cva(
         destructive:
           'bg-fill-error-thick text-text-on-fill hover:bg-fill-error-thick-hover focus-visible:ring-border-error-thick disabled:bg-fill-primary-alpha-5 disabled:text-text-tertiary',
         outline:
-          'border border-border-grey-tertiary bg-background-primary text-text-primary hover:bg-fill-primary-alpha-5 hover:border-border-grey-tertiary-hover disabled:text-text-tertiary',
+          'border border-border-grey-tertiary bg-transparent text-text-primary hover:bg-fill-primary-alpha-5 hover:border-border-grey-tertiary-hover disabled:text-text-tertiary',
         'destructive-outline':
-          'bg-background-primary text-text-error hover:bg-fill-error-select hover:text-text-error-hover border border-border-error-thick hover:border-border-error-thick-hover disabled:text-text-tertiary disabled:border-border-grey-tertiary',
+          'bg-transparent text-text-error hover:bg-fill-error-select hover:text-text-error-hover border border-border-error-thick hover:border-border-error-thick-hover disabled:text-text-tertiary disabled:border-border-grey-tertiary',
         ghost:
           'hover:bg-fill-primary-alpha-5 text-text-primary disabled:bg-fill-transparent disabled:text-text-tertiary',
       },
