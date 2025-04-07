@@ -20,7 +20,7 @@ export function extractHeadings (editor: ReactEditor, maxDepth: number): Heading
           ...block,
           data: {
             level: (block as HeadingNode).data.level,
-            text: CustomEditor.getBlockTextContent(block),
+            text: CustomEditor.getBlockTextContent(block, 2),
           },
           children: [],
         } as HeadingNode);
