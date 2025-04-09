@@ -32,7 +32,7 @@ export function Quote() {
 
   return (
     <ActionButton active={isActivated} onClick={onClick} tooltip={t('editor.quote')}>
-      <QuoteSvg />
+      <QuoteSvg className='h-4 w-4' />
     </ActionButton>
   );
 }

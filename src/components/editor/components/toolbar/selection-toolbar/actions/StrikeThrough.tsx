@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
 import { ReactComponent as StrikeThroughSvg } from '@/assets/icons/strikethrough.svg';
 
-export function StrikeThrough () {
+export function StrikeThrough() {
   const { t } = useTranslation();
   const editor = useSlateStatic();
   const isActivated = CustomEditor.isMarkActive(editor, EditorMarkFormat.StrikeThrough);
@@ -31,7 +31,7 @@ export function StrikeThrough () {
         </>
       }
     >
-      <StrikeThroughSvg />
+      <StrikeThroughSvg className='h-4 w-4' />
     </ActionButton>
   );
 }

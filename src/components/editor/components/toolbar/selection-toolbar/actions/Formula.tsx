@@ -2,9 +2,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
-import {
-  useSelectionToolbarContext,
-} from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
+import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Transforms, Text, Editor } from 'slate';
@@ -14,9 +12,7 @@ import { ReactComponent as MathSvg } from '@/assets/icons/formula.svg';
 function Formula() {
   const { t } = useTranslation();
   const editor = useSlate() as YjsEditor;
-  const {
-    visible,
-  } = useSelectionToolbarContext();
+  const { visible } = useSelectionToolbarContext();
   const [state, setState] = React.useState({
     isActivated: false,
     hasFormulaActivated: false,
@@ -78,7 +74,7 @@ function Formula() {
     } else {
       const [entry] = editor.nodes({
         at: selection,
-        match: n => !Editor.isEditor(n) && Text.isText(n) && n.formula !== undefined,
+        match: (n) => !Editor.isEditor(n) && Text.isText(n) && n.formula !== undefined,
       });
 
       if (!entry) return;
@@ -103,7 +99,7 @@ function Formula() {
       disabled={!isActivated && (hasFormulaActivated || hasMentionActivated)}
       tooltip={t('document.plugins.createInlineMathEquation')}
     >
-      <MathSvg/>
+      <MathSvg className='h-4 w-4' />
     </ActionButton>
   );
 }

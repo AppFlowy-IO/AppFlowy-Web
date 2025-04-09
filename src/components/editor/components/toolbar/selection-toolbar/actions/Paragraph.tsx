@@ -24,7 +24,7 @@ export function Paragraph() {
 
   return (
     <ActionButton active={isActive} onClick={onClick} tooltip={t('editor.text')}>
-      <ParagraphSvg />
+      <ParagraphSvg className='h-4 w-4' />
     </ActionButton>
   );
 }

@@ -73,18 +73,18 @@ export function Heading() {
 
   const getActiveButton = useCallback(() => {
     if (isActivated(1)) {
-      return <Heading1 className={'text-fill-default'} />;
+      return <Heading1 className={'h-4 w-4 text-fill-default'} />;
     }
 
     if (isActivated(2)) {
-      return <Heading2 className={'text-fill-default'} />;
+      return <Heading2 className={'h-4 w-4 text-fill-default'} />;
     }
 
     if (isActivated(3)) {
-      return <Heading3 className={'text-fill-default'} />;
+      return <Heading3 className={'h-4 w-4 text-fill-default'} />;
     }
 
-    return <Heading3 />;
+    return <Heading3 className='h-4 w-4 text-fill-default' />;
   }, [isActivated]);
 
   const [open, setOpen] = useState(false);
@@ -109,7 +109,7 @@ export function Heading() {
       >
         <div className={'flex items-center justify-center'}>
           {getActiveButton()}
-          <DownArrow className={'w-3 h-5 text-icon-on-toolbar'} />
+          <DownArrow className={'h-5 w-3 text-icon-on-toolbar'} />
         </div>
       </ActionButton>
       {toolbarVisible && (
@@ -126,13 +126,13 @@ export function Heading() {
         >
           <div className={'flex h-[32px] items-center justify-center px-2'}>
             <ActionButton active={isActivated(1)} tooltip={t('editor.heading1')} onClick={toHeading(1)}>
-              <Heading1 />
+              <Heading1 className='h-4 w-4' />
             </ActionButton>
             <ActionButton active={isActivated(2)} tooltip={t('editor.heading2')} onClick={toHeading(2)}>
-              <Heading2 />
+              <Heading2 className='h-4 w-4' />
             </ActionButton>
             <ActionButton active={isActivated(3)} tooltip={t('editor.heading3')} onClick={toHeading(3)}>
-              <Heading3 />
+              <Heading3 className='h-4 w-4' />
             </ActionButton>
           </div>
         </Popover>

@@ -78,7 +78,7 @@ function AIAssistant() {
         onClick={onClickImproveWriting}
         tooltip={t('editor.improveWriting')}
       >
-        <ImproveWritingIcon />
+        <ImproveWritingIcon className='w-4 h-4' />
       </ActionButton>
       <AIWriterMenu
         input={content}
@@ -92,11 +92,11 @@ function AIAssistant() {
             setContent(CustomEditor.getSelectionContent(editor));
             setOpen(prev => !prev);
           }}
-          className={'!text-ai-primary !hover:text-billing-primary'}
+          className={'!text-ai-primary !hover:text-billing-primary '}
           tooltip={t('editor.askAI')}
         >
           <div className={'flex items-center justify-center'}>
-            <AskAIIcon className='w-5 h-5'/>
+            <AskAIIcon className='w-4 h-4'/>
             <TriangleDownIcon className={'text-icon-on-toolbar w-3 h-5'} />
           </div>
 

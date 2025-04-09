@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
 import { ReactComponent as ItalicSvg } from '@/assets/icons/italic.svg';
 
-export function Italic () {
+export function Italic() {
   const { t } = useTranslation();
   const editor = useSlateStatic();
   const isActivated = CustomEditor.isMarkActive(editor, EditorMarkFormat.Italic);
@@ -31,7 +31,7 @@ export function Italic () {
         </>
       }
     >
-      <ItalicSvg />
+      <ItalicSvg className='h-4 w-4' />
     </ActionButton>
   );
 }

@@ -6,9 +6,7 @@ import { ReactComponent as AlignCenterSvg } from '@/assets/icons/align_center.sv
 import { ReactComponent as AlignLeftSvg } from '@/assets/icons/align_left.svg';
 import { ReactComponent as AlignRightSvg } from '@/assets/icons/align_right.svg';
 import { Popover } from '@/components/_shared/popover';
-import {
-  useSelectionToolbarContext,
-} from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
+import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 import { PopoverProps } from '@mui/material/Popover';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -32,13 +30,7 @@ const popoverProps: Partial<PopoverProps> = {
   },
 };
 
-export function Align({
-  blockId,
-  enabled = true,
-}: {
-  blockId?: string;
-  enabled?: boolean;
-}) {
+export function Align({ blockId, enabled = true }: { blockId?: string; enabled?: boolean }) {
   const [open, setOpen] = useState(false);
 
   const ref = useRef<HTMLButtonElement | null>(null);
@@ -62,11 +54,9 @@ export function Align({
       const node = getNode();
 
       return (node.data as BlockData).align;
-
     } catch (e) {
       return;
     }
-
   }, [getNode]);
 
   const handleClose = useCallback(() => {
@@ -82,13 +72,13 @@ export function Align({
 
     switch (align) {
       case AlignType.Left:
-        return <AlignLeftSvg className={'text-fill-default'}/>;
+        return <AlignLeftSvg className={'h-4 w-4 text-fill-default'} />;
       case 'center':
-        return <AlignCenterSvg className={'text-fill-default'}/>;
+        return <AlignCenterSvg className={'h-4 w-4 text-fill-default'} />;
       case 'right':
-        return <AlignRightSvg className={'text-fill-default'}/>;
+        return <AlignRightSvg className={'h-4 w-4 text-fill-default'} />;
       default:
-        return <AlignLeftSvg/>;
+        return <AlignLeftSvg className={'h-4 w-4'} />;
     }
   }, [getAlign]);
 
@@ -109,10 +99,9 @@ export function Align({
         } catch (e) {
           return;
         }
-
       };
     },
-    [getNode, editor, handleClose, rePosition],
+    [getNode, editor, handleClose, rePosition]
   );
 
   useEffect(() => {
@@ -147,32 +136,31 @@ export function Align({
         anchorEl={ref.current}
         {...popoverProps}
       >
-        <div className={'flex items-center px-2 h-[32px] justify-center'}>
+        <div className={'flex h-[32px] items-center justify-center px-2'}>
           <ActionButton
             active={getAlign() === AlignType.Left}
             tooltip={t('document.plugins.optionAction.left')}
             onClick={toggleAlign(AlignType.Left)}
           >
-            <AlignLeftSvg/>
+            <AlignLeftSvg className='h-4 w-4' />
           </ActionButton>
           <ActionButton
             active={getAlign() === AlignType.Center}
             tooltip={t('document.plugins.optionAction.center')}
             onClick={toggleAlign(AlignType.Center)}
           >
-            <AlignCenterSvg/>
+            <AlignCenterSvg className='h-4 w-4' />
           </ActionButton>
           <ActionButton
             active={getAlign() === AlignType.Right}
             tooltip={t('document.plugins.optionAction.right')}
             onClick={toggleAlign(AlignType.Right)}
           >
-            <AlignRightSvg/>
+            <AlignRightSvg className='h-4 w-4' />
           </ActionButton>
         </div>
       </Popover>
     </>
-
   );
 }
 
