@@ -12,16 +12,20 @@ function CheckEmail ({ email, redirectTo }: {
   redirectTo: string;
 }) {
   const { t } = useTranslation();
+  const [loading, setLoading] = useState(false);
+
   const [error, setError] = useState<string>('');
   const [isEnter, setEnter] = useState<boolean>(false);
   const [code, setCode] = useState<string>('');
   const service = useContext(AFConfigContext)?.service;
   const handleSubmit = async () => {
+    if (loading) return;
     if (!code) {
       setError(t('requireCode'));
       return;
     }
 
+    setLoading(true);
     const id = toast.loading(t('signing'));
 
     try {
@@ -32,15 +36,19 @@ function CheckEmail ({ email, redirectTo }: {
       });
       // eslint-disable-next-line
     } catch (e: any) {
-      console.log(e);
-      setError(e.message);
+      if (e.code === 403) {
+        setError(t('invalidOTPCode'));
+      } else {
+        setError(e.message);
+      }
     } finally {
+      setLoading(false);
       toast.dismiss(id);
     }
   };
 
   return (
-    <div className={'flex flex-col gap-5 items-center justify-center w-full px-4'}>
+    <div className={'flex text-text-primary flex-col gap-5 items-center justify-center w-full px-4'}>
       <div
         onClick={() => {
           window.location.href = '/';
@@ -50,10 +58,10 @@ function CheckEmail ({ email, redirectTo }: {
         <Logo className={'h-10 w-10'} />
       </div>
       <div className={'text-xl text-text-primary font-semibold'}>
-        {t('checkYourEmail')}
+        {isEnter ? t('enterCode') : t('checkYourEmail')}
       </div>
       <div className={'flex text-sm w-[320px] text-center items-center flex-col justify-center'}>
-        <div className={'font-normal'}>{t('checkEmailTip')}</div>
+        <div className={'font-normal'}>{isEnter ? t('checkCodeTip') : t('checkEmailTip')}</div>
         <div className={'font-semibold'}>
           {email}
         </div>
@@ -96,12 +104,11 @@ function CheckEmail ({ email, redirectTo }: {
       </Button>}
 
       <Button
-        size={'lg'}
-        variant={'ghost'}
+        variant={'link'}
         onClick={() => {
           window.location.href = `/login?redirectTo=${redirectTo}`;
         }}
-        className={'w-[320px] hover:bg-transparent text-text-theme hover:text-text-theme-hover h-5'}
+        className={'w-[320px]'}
       >
         {t('backToLogin')}
       </Button>

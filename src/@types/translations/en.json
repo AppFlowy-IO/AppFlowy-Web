@@ -3097,10 +3097,12 @@
   "copiedVideoLink": "Video original link copied to clipboard",
   "checkYourEmail": "Check your email",
   "checkEmailTip": "A temporary verification link has been sent. Please check your inbox at",
+  "checkCodeTip": "A temporary verification code has been sent. Please check your inbox at",
   "enterCodeManually": "Enter code manually",
   "backToLogin": "Back to login",
   "enterCode": "Enter code",
   "continueToSignIn": "Continue to sign in",
   "requireCode": "Please enter a valid verification code.",
-  "signing": "Signing in..."
+  "signing": "Signing in...",
+  "invalidOTPCode": "The code is invalid or has expired. Please try again."
 }

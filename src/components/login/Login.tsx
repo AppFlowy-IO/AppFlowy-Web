@@ -10,7 +10,7 @@ export function Login ({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
 
   return (
-    <div className={'py-10 flex flex-col h-full items-center justify-between gap-5 px-4'}>
+    <div className={'py-10  text-text-primary flex flex-col h-full items-center justify-between gap-5 px-4'}>
       <div className={'flex flex-1 flex-col items-center justify-center w-full gap-5'}>
         <div
           onClick={() => {
@@ -37,7 +37,7 @@ export function Login ({ redirectTo }: { redirectTo: string }) {
           <a
             href={'https://appflowy.com/terms'}
             target={'_blank'}
-            className={'text-text-theme underline'}
+            className={'text-text-secondary underline'}
           >
             {t('web.termOfUse')}
           </a>{' '}
@@ -45,7 +45,7 @@ export function Login ({ redirectTo }: { redirectTo: string }) {
           <a
             href={'https://appflowy.com/privacy'}
             target={'_blank'}
-            className={'text-text-theme underline'}
+            className={'text-text-secondary underline'}
           >
             {t('web.privacyPolicy')}
           </a>
@@ -60,7 +60,7 @@ export function Login ({ redirectTo }: { redirectTo: string }) {
             window.location.href = 'https://appflowy.com';
           }}
           className={
-            'flex w-full cursor-pointer items-center justify-center gap-2 text-xs font-medium text-text-title opacity-60 hover:opacity-100'
+            'flex w-full cursor-pointer text-text-secondary items-center justify-center gap-2 text-xs font-medium'
           }
         >
           <span>{t('web.visitOurWebsite')}</span>

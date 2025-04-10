@@ -19,6 +19,7 @@ const buttonVariants = cva(
           'bg-transparent text-text-error hover:bg-fill-error-select hover:text-text-error-hover border border-border-error-thick hover:border-border-error-thick-hover disabled:text-text-tertiary disabled:border-border-grey-tertiary',
         ghost:
           'hover:bg-fill-primary-alpha-5 text-text-primary disabled:bg-fill-transparent disabled:text-text-tertiary',
+        link: 'hover:bg-transparent text-text-theme hover:text-text-theme-hover !h-fit',
       },
       size: {
         sm: 'h-7 text-sm px-4 rounded-300 gap-2 font-normal',
