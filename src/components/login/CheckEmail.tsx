@@ -1,11 +1,11 @@
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useContext, useState } from 'react';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
 function CheckEmail ({ email, redirectTo }: {
   email: string;
@@ -15,10 +15,14 @@ function CheckEmail ({ email, redirectTo }: {
   const [error, setError] = useState<string>('');
   const [isEnter, setEnter] = useState<boolean>(false);
   const [code, setCode] = useState<string>('');
-  const [loading, setLoading] = React.useState<boolean>(false);
   const service = useContext(AFConfigContext)?.service;
   const handleSubmit = async () => {
-    setLoading(true);
+    if (!code) {
+      setError(t('requireCode'));
+      return;
+    }
+
+    const id = toast.loading(t('signing'));
 
     try {
       await service?.signInOTP({
@@ -31,7 +35,7 @@ function CheckEmail ({ email, redirectTo }: {
       console.log(e);
       setError(e.message);
     } finally {
-      setLoading(false);
+      toast.dismiss(id);
     }
   };
 
@@ -77,21 +81,10 @@ function CheckEmail ({ email, redirectTo }: {
 
           <Button
             onClick={handleSubmit}
-            disabled={loading}
             size={'lg'}
             className={'w-[320px]'}
           >
-            {loading ? (
-              <>
-                <Progress
-                  size={'sm'}
-                  variant={'theme'}
-                />
-                {t('editor.loading')}...
-              </>
-            ) : (
-              t('continueToSignIn')
-            )}
+            {t('continueToSignIn')}
           </Button>
         </div>
       ) : <Button

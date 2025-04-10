@@ -3100,5 +3100,7 @@
   "enterCodeManually": "Enter code manually",
   "backToLogin": "Back to login",
   "enterCode": "Enter code",
-  "continueToSignIn": "Continue to sign in"
+  "continueToSignIn": "Continue to sign in",
+  "requireCode": "Please enter a valid verification code.",
+  "signing": "Signing in..."
 }
