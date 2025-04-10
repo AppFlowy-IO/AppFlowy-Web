@@ -3104,5 +3104,6 @@
   "continueToSignIn": "Continue to sign in",
   "requireCode": "Please enter a valid verification code.",
   "signing": "Signing in...",
-  "invalidOTPCode": "The code is invalid or has expired. Please try again."
+  "invalidOTPCode": "The code is invalid or has expired. Please try again.",
+  "verifying": "Verifying..."
 }

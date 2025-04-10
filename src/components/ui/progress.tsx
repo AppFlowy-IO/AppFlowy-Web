@@ -6,12 +6,6 @@ const progressVariants = cva(
   'relative block',
   {
     variants: {
-      size: {
-        sm: 'h-4 w-4',
-        md: 'h-6 w-6',
-        lg: 'h-8 w-8',
-        xl: 'h-10 w-10',
-      },
       variant: {
         default: '',
         success: '',
@@ -25,7 +19,6 @@ const progressVariants = cva(
       },
     },
     defaultVariants: {
-      size: 'md',
       variant: 'default',
       isIndeterminate: false,
     },
@@ -33,7 +26,7 @@ const progressVariants = cva(
 );
 
 const circleVariants = cva(
-  'fill-fill-transparent ',
+  'fill-fill-transparent h-5 w-5',
   {
     variants: {
       variant: {
@@ -51,7 +44,7 @@ const circleVariants = cva(
 );
 
 const progressCircleVariants = cva(
-  'fill-fill-transparent transition-all',
+  'fill-fill-transparent transition-all h-5 w-5',
   {
     variants: {
       variant: {
@@ -79,22 +72,16 @@ export interface ProgressProps
 
 export function Progress ({
   value,
-  size = 'md',
   variant = 'default',
   strokeLinecap = 'round',
   className,
   ...props
 }: ProgressProps) {
   // Calculate dimensions based on size variant
-  const dimensions: number = {
-    sm: 16,
-    md: 24,
-    lg: 32,
-    xl: 40,
-  }[size as string] || 24;
+  const dimensions: number = 20;
 
-  const strokeWidth = Math.ceil(dimensions * 0.125); // 12.5% of dimensions
-  
+  const strokeWidth = 2.5;
+
   const radius = dimensions / 2 - strokeWidth;
   const circumference = Math.ceil(2 * Math.PI * radius);
   const isIndeterminate = value === undefined;
@@ -111,7 +98,7 @@ export function Progress ({
 
   return (
     <div
-      className={cn(progressVariants({ size, variant, isIndeterminate, className }))}
+      className={cn(progressVariants({ variant, isIndeterminate, className }))}
       {...props}
     >
       <svg

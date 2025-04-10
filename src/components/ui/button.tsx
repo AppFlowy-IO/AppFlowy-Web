@@ -1,3 +1,4 @@
+import { Progress } from '@/components/ui/progress';
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
@@ -20,6 +21,7 @@ const buttonVariants = cva(
         ghost:
           'hover:bg-fill-primary-alpha-5 text-text-primary disabled:bg-fill-transparent disabled:text-text-tertiary',
         link: 'hover:bg-transparent text-text-theme hover:text-text-theme-hover !h-fit',
+        loading: 'opacity-50 cursor-not-allowed',
       },
       size: {
         sm: 'h-7 text-sm px-4 rounded-300 gap-2 font-normal',
@@ -29,22 +31,29 @@ const buttonVariants = cva(
         icon: 'size-7 p-1 text-icon-primary disabled:text-icon-tertiary',
         'icon-lg': 'size-10 p-[10px] text-icon-primary disabled:text-icon-tertiary',
       },
+      loading: {
+        true: 'opacity-70 cursor-not-allowed hover:bg-fill-theme-thick',
+        false: '',
+      },
     },
     defaultVariants: {
       variant: 'default',
       size: 'default',
+      loading: false,
     },
   },
 );
 
 const Button = React.forwardRef<HTMLButtonElement, React.ComponentProps<'button'> &
   VariantProps<typeof buttonVariants> & {
-  asChild?: boolean
+  asChild?: boolean;
 }>(({
   className,
   variant,
   size,
+  loading,
   asChild = false,
+  children,
   ...props
 }, ref) => {
   const Comp = asChild ? Slot : 'button';
@@ -53,9 +62,22 @@ const Button = React.forwardRef<HTMLButtonElement, React.ComponentProps<'button'
     <Comp
       ref={ref}
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant, size, className, loading }))}
+      onClick={e => {
+        if (loading) return;
+        if (props.onClick) {
+          props.onClick(e);
+        }
+      }}
       {...props}
-    />
+    >
+      {loading && (
+        // eslint-disable-next-line
+        // @ts-ignore
+        <Progress variant={variant} />
+      )}
+      {children}
+    </Comp>
   );
 });
 

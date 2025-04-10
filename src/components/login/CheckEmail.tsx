@@ -5,7 +5,6 @@ import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useContext, useState } from 'react';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 
 function CheckEmail ({ email, redirectTo }: {
   email: string;
@@ -26,7 +25,6 @@ function CheckEmail ({ email, redirectTo }: {
     }
 
     setLoading(true);
-    const id = toast.loading(t('signing'));
 
     try {
       await service?.signInOTP({
@@ -43,7 +41,6 @@ function CheckEmail ({ email, redirectTo }: {
       }
     } finally {
       setLoading(false);
-      toast.dismiss(id);
     }
   };
 
@@ -88,11 +85,12 @@ function CheckEmail ({ email, redirectTo }: {
           />
 
           <Button
+            loading={loading}
             onClick={handleSubmit}
             size={'lg'}
             className={'w-[320px]'}
           >
-            {t('continueToSignIn')}
+            {loading ? t('verifying') : t('continueToSignIn')}
           </Button>
         </div>
       ) : <Button
