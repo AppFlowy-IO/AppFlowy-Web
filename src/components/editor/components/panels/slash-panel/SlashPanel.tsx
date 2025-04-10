@@ -20,7 +20,7 @@ import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list
 import { ReactComponent as CalloutIcon } from '@/assets/icons/callout.svg';
 import { ReactComponent as TodoListIcon } from '@/assets/icons/todo.svg';
 import { ReactComponent as CodeIcon } from '@/assets/icons/inline_code.svg';
-import { ReactComponent as DividerIcon } from '@/assets/icons/slash_menu_icon_divider.svg';
+import { ReactComponent as DividerIcon } from '@/assets/icons/divider.svg';
 import { ReactComponent as RefDocumentIcon } from '@/assets/icons/ref_page.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';

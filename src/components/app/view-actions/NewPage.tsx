@@ -1,5 +1,5 @@
 import { ViewLayout } from '@/application/types';
-import { ReactComponent as Add } from '@/assets/icons/add_circle.svg';
+import { ReactComponent as Add } from '@/assets/icons/add_new_page.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
@@ -61,7 +61,7 @@ function NewPage() {
     <>
       <Button
         onClick={() => setOpen(true)}
-        startIcon={<Add className={'mr-[1px] h-5 w-5'} />}
+        startIcon={<Add className={'mr-[1px]'} />}
         size={'small'}
         className={'w-full justify-start  py-1.5 text-sm font-normal hover:bg-fill-list-hover'}
         color={'inherit'}

@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { ViewTabs, ViewTab, TabPanel } from 'src/components/_shared/tabs/ViewTabs';
 import { ReactComponent as Templates } from '@/assets/icons/template.svg';
 
-import { ReactComponent as PublishedWithChanges } from '@/assets/icons/check_filled_circle.svg';
+import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
 
 enum TabKey {
   SHARE = 'share',
@@ -32,7 +32,7 @@ function ShareTabs({ opened, viewId, onClose }: { opened: boolean; viewId: strin
       {
         value: TabKey.PUBLISH,
         label: t('shareAction.publish'),
-        icon: view?.is_published ? <PublishedWithChanges className={'mb-0 h-5 w-5 text-function-success'} /> : undefined,
+        icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-fill-default'} /> : undefined,
         Panel: PublishPanel,
       },
       currentUser?.email?.endsWith('appflowy.io') &&

@@ -4,7 +4,7 @@ import { Origins, Popover } from '@/components/_shared/popover';
 import { OutlineNode } from '@/components/editor/editor.type';
 import { Button, Divider, IconButton } from '@mui/material';
 import React, { useCallback, useRef } from 'react';
-import { ReactComponent as HashtagIcon } from '@/assets/icons/sign-hashtag.svg';
+import { ReactComponent as HashtagIcon } from '@/assets/icons/hashtag.svg';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
 

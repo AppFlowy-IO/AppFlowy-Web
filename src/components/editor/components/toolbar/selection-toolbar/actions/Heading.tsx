@@ -84,7 +84,7 @@ export function Heading() {
       return <Heading3 className={'h-4 w-4 text-fill-default'} />;
     }
 
-    return <Heading3 className='h-4 w-4 text-fill-default' />;
+    return <Heading3 className='h-4 w-4' />;
   }, [isActivated]);
 
   const [open, setOpen] = useState(false);
