@@ -59,27 +59,36 @@ const inputVariants = cva(
 
 export interface InputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size' | 'variant'>,
-    VariantProps<typeof inputVariants> {}
+    VariantProps<typeof inputVariants> {
+  helpText?: string;
+}
 
 function Input ({
   className,
   type,
   variant,
   size,
+  helpText,
   ...props
 }: InputProps) {
   return (
-    <input
-      type={type}
-      data-slot="input"
-      className={cn(
-        inputVariants({ variant, size }),
-        // Invalid state styling (applied via aria-invalid attribute)
-        'aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick',
-        className,
-      )}
-      {...props}
-    />
+    <div className={'flex flex-col gap-1'}>
+      <input
+        type={type}
+        data-slot="input"
+        className={cn(
+          inputVariants({ variant, size }),
+          // Invalid state styling (applied via aria-invalid attribute)
+          'aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick',
+          className,
+        )}
+        {...props}
+      />
+      <div className={cn('help-text text-xs', variant === 'destructive' && 'text-text-error')}>
+        {helpText}
+      </div>
+    </div>
+
   );
 }
 

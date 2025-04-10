@@ -1,16 +1,16 @@
-import { toast } from 'sonner';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Progress } from '@/components/ui/progress';
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import isEmail from 'validator/lib/isEmail';
 
 function MagicLink ({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
   const [email, setEmail] = React.useState<string>('');
-  const [loading, setLoading] = React.useState<boolean>(false);
+  const [, setLoading] = React.useState<boolean>(false);
   const service = useContext(AFConfigContext)?.service;
   const handleSubmit = async () => {
     const isValidEmail = isEmail(email);
@@ -23,7 +23,7 @@ function MagicLink ({ redirectTo }: { redirectTo: string }) {
     setLoading(true);
 
     try {
-      await service?.signInMagicLink({
+      void service?.signInMagicLink({
         email,
         redirectTo,
       });
@@ -45,22 +45,19 @@ function MagicLink ({ redirectTo }: { redirectTo: string }) {
         onChange={(e) => setEmail(e.target.value)}
         value={email}
         placeholder={t('signIn.pleaseInputYourEmail')}
+        onKeyDown={e => {
+          if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
+            void handleSubmit();
+          }
+        }}
       />
 
       <Button
         onClick={handleSubmit}
-        disabled={loading}
         size={'lg'}
         className={'w-[320px]'}
       >
-        {loading ? (
-          <>
-            <Progress />
-            {t('editor.loading')}...
-          </>
-        ) : (
-          t('signIn.signInWithEmail')
-        )}
+        {t('signIn.signInWithEmail')}
       </Button>
     </div>
   );

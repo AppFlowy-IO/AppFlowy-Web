@@ -56,28 +56,42 @@ export async function signInOTP ({
       access_token: string;
       expires_at: number;
       refresh_token: string;
+      code?: number;
+      msg?: string;
     }>('/verify', {
       email,
       token: code,
       type: 'recovery',
     });
 
-    const newToken = response?.data;
+    const data = response?.data;
 
-    if (newToken) {
-      refreshSessionToken(JSON.stringify(newToken));
+    if (data) {
+      if (data.code !== 0) {
+        emit(EventType.SESSION_INVALID);
+        return Promise.reject({
+          code: data.code,
+          message: data.msg,
+        });
+      }
+
+      refreshSessionToken(JSON.stringify(data));
       emit(EventType.SESSION_VALID);
       afterAuth();
     } else {
       emit(EventType.SESSION_INVALID);
-      return Promise.reject('Failed to sign in otp');
+      return Promise.reject({
+        code: 'invalid_token',
+        message: 'Invalid token',
+      });
     }
     // eslint-disable-next-line
   } catch (e: any) {
+
     emit(EventType.SESSION_INVALID);
     return Promise.reject({
       code: e.code,
-      message: e.msg,
+      message: e.message,
     });
   }
 

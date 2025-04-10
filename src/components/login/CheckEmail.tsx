@@ -1,8 +1,8 @@
-import { notify } from '@/components/_shared/notify';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
+import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useContext, useState } from 'react';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { useTranslation } from 'react-i18next';
@@ -12,6 +12,7 @@ function CheckEmail ({ email, redirectTo }: {
   redirectTo: string;
 }) {
   const { t } = useTranslation();
+  const [error, setError] = useState<string>('');
   const [isEnter, setEnter] = useState<boolean>(false);
   const [code, setCode] = useState<string>('');
   const [loading, setLoading] = React.useState<boolean>(false);
@@ -25,8 +26,10 @@ function CheckEmail ({ email, redirectTo }: {
         redirectTo,
         code,
       });
-    } catch (e) {
-      notify.error(t('web.signInError'));
+      // eslint-disable-next-line
+    } catch (e: any) {
+      console.log(e);
+      setError(e.message);
     } finally {
       setLoading(false);
     }
@@ -57,9 +60,19 @@ function CheckEmail ({ email, redirectTo }: {
             autoFocus
             size={'md'}
             className={'w-[320px]'}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => {
+              setError('');
+              setCode(e.target.value);
+            }}
             value={code}
             placeholder={t('enterCode')}
+            helpText={error}
+            variant={error ? 'destructive' : 'default'}
+            onKeyDown={e => {
+              if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
+                void handleSubmit();
+              }
+            }}
           />
 
           <Button
@@ -70,7 +83,10 @@ function CheckEmail ({ email, redirectTo }: {
           >
             {loading ? (
               <>
-                <Progress size={'sm'} />
+                <Progress
+                  size={'sm'}
+                  variant={'theme'}
+                />
                 {t('editor.loading')}...
               </>
             ) : (
