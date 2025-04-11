@@ -1,10 +1,10 @@
 import { Popover } from '@/components/_shared/popover';
 import { Button, Divider } from '@mui/material';
 import React from 'react';
-import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
-import { ReactComponent as PublicIcon } from '@/assets/icons/public.svg';
-import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
-import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
+import LockIcon from '@/assets/icons/lock.svg?react';
+import PublicIcon from '@/assets/icons/public.svg?react';
+import ArrowDownIcon from '@/assets/icons/alt_arrow_down.svg?react';
+import TickIcon from '@/assets/icons/tick.svg?react';
 import { useTranslation } from 'react-i18next';
 import { SpacePermission } from '@/application/types';
 

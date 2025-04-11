@@ -6,7 +6,7 @@ import { TaskAltRounded } from '@mui/icons-material';
 import { Button, Divider, Typography } from '@mui/material';
 import React, { useContext } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
-import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
+import AppflowyLogo from '@/assets/icons/appflowy.svg?react';
 import { useNavigate } from 'react-router-dom';
 
 const REPEAT_REQUEST_CODE = 1043;

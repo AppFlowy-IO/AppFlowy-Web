@@ -1,5 +1,5 @@
 import { FC, useMemo } from 'react';
-import { ReactComponent as CircleIcon } from '@/assets/icons/bulleted_list_icon_1.svg';
+import CircleIcon from '@/assets/icons/bulleted_list_icon_1.svg?react';
 
 export interface TagProps {
   color?: string;

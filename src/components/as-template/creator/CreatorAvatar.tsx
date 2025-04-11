@@ -4,7 +4,7 @@ import UploadAvatar from '@/components/as-template/creator/UploadAvatar';
 import { stringAvatar } from '@/utils/color';
 import { Avatar, Button, OutlinedInput, Tooltip } from '@mui/material';
 import React, { useEffect, useMemo } from 'react';
-import { ReactComponent as CloudUploadIcon } from '@/assets/icons/cloud_add.svg';
+import CloudUploadIcon from '@/assets/icons/cloud_add.svg?react';
 
 import { useTranslation } from 'react-i18next';
 

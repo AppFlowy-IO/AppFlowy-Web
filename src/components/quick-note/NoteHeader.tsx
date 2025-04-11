@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
-import { ReactComponent as LeftIcon } from '@/assets/icons/alt_arrow_left.svg';
-import { ReactComponent as OpenIcon } from '@/assets/icons/expand.svg';
-import { ReactComponent as CollapseIcon } from '@/assets/icons/shrink.svg';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import LeftIcon from '@/assets/icons/alt_arrow_left.svg?react';
+import OpenIcon from '@/assets/icons/expand.svg?react';
+import CollapseIcon from '@/assets/icons/shrink.svg?react';
+import CloseIcon from '@/assets/icons/close.svg?react';
 
 import { IconButton } from '@mui/material';
 import { useTranslation } from 'react-i18next';

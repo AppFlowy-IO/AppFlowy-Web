@@ -1,6 +1,6 @@
 import { Divider } from '@mui/material';
 import React from 'react';
-import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
+import AppFlowyLogo from '@/assets/icons/appflowy.svg?react';
 
 function AppFlowyPower({ divider, width }: { divider?: boolean; width?: number }) {
   return (

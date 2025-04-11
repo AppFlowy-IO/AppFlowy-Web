@@ -1,5 +1,5 @@
 import React from 'react';
-import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
+import RightIcon from '@/assets/icons/alt_arrow_right.svg?react';
 
 export const BreadcrumbsSkeleton = () => {
   return (

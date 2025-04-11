@@ -3,8 +3,8 @@ import { Popover } from '@/components/_shared/popover';
 import SortList from '@/components/database/components/sorts/SortList';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as SortSvg } from '@/assets/icons/sort_ascending.svg';
-import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
+import SortSvg from '@/assets/icons/sort_ascending.svg?react';
+import ArrowDown from '@/assets/icons/alt_arrow_down.svg?react';
 
 export function Sorts() {
   const { t } = useTranslation();

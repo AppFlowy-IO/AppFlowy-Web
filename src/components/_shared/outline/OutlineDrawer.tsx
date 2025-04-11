@@ -1,5 +1,5 @@
-import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
-import { ReactComponent as DoubleArrowLeft } from '@/assets/icons/double_arrow_left.svg';
+import AppFlowyLogo from '@/assets/icons/appflowy.svg?react';
+import DoubleArrowLeft from '@/assets/icons/double_arrow_left.svg?react';
 import Resizer from '@/components/_shared/outline/Resizer';
 import { useNavigate } from 'react-router-dom';
 import AppFlowyPower from '../appflowy-power/AppFlowyPower';

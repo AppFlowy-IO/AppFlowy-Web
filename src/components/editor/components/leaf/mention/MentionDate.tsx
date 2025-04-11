@@ -1,7 +1,7 @@
 import { renderDate } from '@/utils/time';
 import React, { useMemo } from 'react';
-import { ReactComponent as DateSvg } from '@/assets/icons/date.svg';
-import { ReactComponent as ReminderSvg } from '@/assets/icons/reminder_clock.svg';
+import DateSvg from '@/assets/icons/date.svg?react';
+import ReminderSvg from '@/assets/icons/reminder_clock.svg?react';
 
 function MentionDate({ date, reminder }: { date: string; reminder?: { id: string; option: string } }) {
   const dateFormat = useMemo(() => {

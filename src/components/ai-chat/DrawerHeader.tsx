@@ -2,9 +2,9 @@ import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { useAppHandlers } from '@/components/app/app.hooks';
 import MoreActions from '@/components/app/header/MoreActions';
 import { IconButton, Tooltip } from '@mui/material';
-import { ReactComponent as DoubleArrowRight } from '@/assets/icons/double_arrow_right.svg';
+import DoubleArrowRight from '@/assets/icons/double_arrow_right.svg?react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
+import ExpandIcon from '@/assets/icons/expand.svg?react';
 import ShareButton from 'src/components/app/share/ShareButton';
 
 function DrawerHeader() {

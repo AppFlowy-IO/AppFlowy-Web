@@ -6,8 +6,8 @@ import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
 import { IconButton, Paper, Tooltip } from '@mui/material';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
+import MoreIcon from '@/assets/icons/more.svg?react';
+import PrivateIcon from '@/assets/icons/lock.svg?react';
 
 function ListItem ({
   selectedView,

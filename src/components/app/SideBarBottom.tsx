@@ -1,8 +1,8 @@
 import { IconButton, Tooltip } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as TemplateIcon } from '@/assets/icons/template.svg';
+import TemplateIcon from '@/assets/icons/template.svg?react';
 import { useNavigate } from 'react-router-dom';
-import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
+import TrashIcon from '@/assets/icons/delete.svg?react';
 import { QuickNote } from '@/components/quick-note';
 
 function SideBarBottom() {

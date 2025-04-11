@@ -4,11 +4,11 @@ import { Button, OutlinedInput } from '@mui/material';
 
 import Tooltip from '@mui/material/Tooltip';
 import { randomEmoji } from '@/utils/emoji';
-import { ReactComponent as ShuffleIcon } from '@/assets/icons/shuffle.svg';
+import ShuffleIcon from '@/assets/icons/shuffle.svg?react';
 import Popover from '@mui/material/Popover';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
+import DeleteIcon from '@/assets/icons/delete.svg?react';
+import SearchIcon from '@/assets/icons/search.svg?react';
 
 const skinTones = [
   {

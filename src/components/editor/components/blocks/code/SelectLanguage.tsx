@@ -1,4 +1,4 @@
-import { ReactComponent as TickIcon } from '@/assets/icons/tick.svg';
+import TickIcon from '@/assets/icons/tick.svg?react';
 import { Popover } from '@/components/_shared/popover';
 import { supportLanguages } from '@/components/editor/components/blocks/code/constants';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';

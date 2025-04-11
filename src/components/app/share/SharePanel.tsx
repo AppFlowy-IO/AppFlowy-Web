@@ -1,6 +1,6 @@
 import React from 'react';
-import { ReactComponent as ShareIcon } from '@/assets/icons/users.svg';
-import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
+import ShareIcon from '@/assets/icons/users.svg?react';
+import LinkIcon from '@/assets/icons/link.svg?react';
 
 import { useTranslation } from 'react-i18next';
 import { Button, OutlinedInput } from '@mui/material';

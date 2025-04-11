@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, Divider, OutlinedInput, PopoverPosition } from '@mui/material';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import DeleteIcon from '@/assets/icons/delete.svg?react';
 import { Popover } from '@/components/_shared/popover';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 import { useTranslation } from 'react-i18next';

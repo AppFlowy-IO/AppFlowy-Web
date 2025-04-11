@@ -3,7 +3,7 @@ import { Popover } from '@/components/_shared/popover';
 import { FilterContentOverview } from './overview';
 import React, { useState } from 'react';
 import { FieldDisplay } from '@/components/database/components/field';
-import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_left.svg';
+import ArrowDown from '@/assets/icons/alt_arrow_left.svg?react';
 import { FilterMenu } from './filter-menu';
 
 function Filter({ filterId }: { filterId: string }) {

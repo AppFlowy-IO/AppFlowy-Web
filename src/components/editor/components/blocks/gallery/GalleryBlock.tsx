@@ -1,4 +1,4 @@
-import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
+import GalleryIcon from '@/assets/icons/gallery.svg?react';
 import { GalleryLayout } from '@/application/types';
 import { GalleryPreview } from '@/components/_shared/gallery-preview';
 import { notify } from '@/components/_shared/notify';

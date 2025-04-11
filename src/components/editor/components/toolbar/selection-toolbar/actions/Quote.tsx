@@ -6,7 +6,7 @@ import React, { useCallback } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as QuoteSvg } from '@/assets/icons/quote.svg';
+import QuoteSvg from '@/assets/icons/quote.svg?react';
 
 export function Quote() {
   const { t } = useTranslation();

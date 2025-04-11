@@ -3,8 +3,8 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 import React, { useCallback, useContext, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Avatar, Button, CircularProgress, Divider, Tooltip } from '@mui/material';
-import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
-import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
+import RightIcon from '@/assets/icons/alt_arrow_right.svg?react';
+import CheckIcon from '@/assets/icons/tick.svg?react';
 import { Popover } from '@/components/_shared/popover';
 import { stringToColor } from '@/utils/color';
 

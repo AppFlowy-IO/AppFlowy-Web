@@ -2,8 +2,8 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { TodoListNode } from '@/components/editor/editor.type';
 import React, { useCallback } from 'react';
-import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
-import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
+import CheckboxCheckSvg from '@/assets/icons/check_filled.svg?react';
+import CheckboxUncheckSvg from '@/assets/icons/uncheck.svg?react';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 import { Element } from 'slate';
 

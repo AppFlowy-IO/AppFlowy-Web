@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { checkImage } from '@/utils/image';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ErrorOutline } from '@/assets/icons/error.svg';
+import ErrorOutline from '@/assets/icons/error.svg?react';
 
 function Img({
   onLoad,

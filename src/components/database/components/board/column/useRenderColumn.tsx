@@ -5,8 +5,8 @@ import { SelectOptionBadgeColorMap, SelectOptionColorMap } from '@/components/da
 import { Tooltip } from '@mui/material';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
-import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
+import CheckboxCheckSvg from '@/assets/icons/check_filled.svg?react';
+import CheckboxUncheckSvg from '@/assets/icons/uncheck.svg?react';
 
 export function useRenderColumn(id: string, fieldId: string) {
   const { field } = useFieldSelector(fieldId);

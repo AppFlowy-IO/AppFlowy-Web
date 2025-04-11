@@ -1,4 +1,4 @@
-import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/expand.svg';
+import ExpandMoreIcon from '@/assets/icons/expand.svg?react';
 import { useDatabaseContext } from '@/application/database-yjs';
 import { IconButton, Tooltip } from '@mui/material';
 import React from 'react';

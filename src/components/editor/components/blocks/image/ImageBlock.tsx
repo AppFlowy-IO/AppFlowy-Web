@@ -11,7 +11,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { FileHandler } from '@/utils/file';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import ErrorIcon from '@/assets/icons/error.svg?react';
 import { CircularProgress } from '@mui/material';
 import { Element } from 'slate';
 

@@ -4,7 +4,7 @@ import { TextCell } from '@/components/database/components/cell/text';
 import OpenAction from '@/components/database/components/database-row/OpenAction';
 import { getPlatform } from '@/utils/platform';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
+import DocumentSvg from '@/assets/icons/doc.svg?react';
 
 export function PrimaryCell(
   props: CellProps<CellType> & {

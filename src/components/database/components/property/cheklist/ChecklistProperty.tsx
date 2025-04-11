@@ -2,8 +2,8 @@ import { parseChecklistData } from '@/application/database-yjs';
 import { CellProps, ChecklistCell as CellType } from '@/application/database-yjs/cell.type';
 import { ChecklistCell } from '@/components/database/components/cell/checklist';
 import React, { useMemo } from 'react';
-import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
-import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
+import CheckboxCheckSvg from '@/assets/icons/check_filled.svg?react';
+import CheckboxUncheckSvg from '@/assets/icons/uncheck.svg?react';
 
 export function ChecklistProperty(props: CellProps<CellType>) {
   const { cell } = props;

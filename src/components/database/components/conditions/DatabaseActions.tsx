@@ -3,8 +3,8 @@ import { useConditionsContext } from '@/components/database/components/condition
 import { IconButton, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
-import { ReactComponent as SortIcon } from '@/assets/icons/sort.svg';
+import FilterIcon from '@/assets/icons/filter.svg?react';
+import SortIcon from '@/assets/icons/sort.svg?react';
 
 export function DatabaseActions() {
   const { t } = useTranslation();

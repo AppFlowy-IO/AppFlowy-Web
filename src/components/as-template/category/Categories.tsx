@@ -6,7 +6,7 @@ import { CategoryIcon } from '@/components/as-template/icons';
 import { Chip, CircularProgress, OutlinedInput, Typography } from '@mui/material';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ArrowRight } from '@/assets/icons/alt_arrow_right.svg';
+import ArrowRight from '@/assets/icons/alt_arrow_right.svg?react';
 
 const ITEM_HEIGHT = 48;
 const ITEM_PADDING_TOP = 8;

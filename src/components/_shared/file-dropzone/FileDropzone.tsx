@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as Inbox } from '@/assets/icons/inbox.svg';
+import Inbox from '@/assets/icons/inbox.svg?react';
 
 interface FileDropzoneProps {
   onChange?: (files: File[]) => void;

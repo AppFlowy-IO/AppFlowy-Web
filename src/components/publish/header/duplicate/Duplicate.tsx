@@ -6,7 +6,7 @@ import { LoginModal } from '@/components/login';
 import { useSearchParams } from 'react-router-dom';
 import { useDuplicate } from '@/components/publish/header/duplicate/useDuplicate';
 import DuplicateModal from '@/components/publish/header/duplicate/DuplicateModal';
-import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import CopyIcon from '@/assets/icons/copy.svg?react';
 
 export function Duplicate() {
   const { t } = useTranslation();

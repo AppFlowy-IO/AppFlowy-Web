@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, OutlinedInput } from '@mui/material';
-import { ReactComponent as AddUserIcon } from '@/assets/icons/invite_user.svg';
+import AddUserIcon from '@/assets/icons/invite_user.svg?react';
 import { useTranslation } from 'react-i18next';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
 import { SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
 import { useAppHandlers } from '@/components/app/app.hooks';
-import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
+import TipIcon from '@/assets/icons/warning.svg?react';
 import { useSearchParams } from 'react-router-dom';
 
 function InviteMember({ workspace, onClick }: { workspace: Workspace; onClick?: () => void }) {

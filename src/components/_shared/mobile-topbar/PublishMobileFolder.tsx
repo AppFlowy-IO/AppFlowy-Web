@@ -1,7 +1,7 @@
 import { usePublishContext } from '@/application/publish';
 import { AFScroller } from '@/components/_shared/scroller';
 import React from 'react';
-import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
+import AppFlowyLogo from '@/assets/icons/appflowy.svg?react';
 import { useNavigate } from 'react-router-dom';
 import MobileOutline from 'src/components/_shared/mobile-outline/MobileOutline';
 

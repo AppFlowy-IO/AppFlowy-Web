@@ -1,4 +1,4 @@
-import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/expand.svg';
+import ExpandMoreIcon from '@/assets/icons/expand.svg?react';
 
 import { useTranslation } from 'react-i18next';
 import { useNavigateToRow } from '@/application/database-yjs';

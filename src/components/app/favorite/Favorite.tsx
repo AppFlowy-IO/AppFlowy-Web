@@ -8,9 +8,9 @@ import { PopoverProps } from '@mui/material/Popover';
 import dayjs from 'dayjs';
 import { groupBy, sortBy } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
-import { ReactComponent as FavoritedIcon } from '@/assets/icons/favorited.svg';
+import FavoritedIcon from '@/assets/icons/favorited.svg?react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import MoreIcon from '@/assets/icons/more.svg?react';
 
 const popoverOrigin: Partial<PopoverProps> = {
   transformOrigin: {

@@ -5,9 +5,9 @@ import CreatorAvatar from '@/components/as-template/creator/CreatorAvatar';
 import EditCreator from '@/components/as-template/creator/EditCreator';
 import { IconButton, Tooltip } from '@mui/material';
 import MenuItem from '@mui/material/MenuItem';
-import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
-import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import CheckIcon from '@/assets/icons/tick.svg?react';
+import EditIcon from '@/assets/icons/edit.svg?react';
+import DeleteIcon from '@/assets/icons/delete.svg?react';
 import { useTranslation } from 'react-i18next';
 
 function CreatorItem ({

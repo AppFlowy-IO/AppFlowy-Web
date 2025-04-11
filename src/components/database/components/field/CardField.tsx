@@ -5,7 +5,7 @@ import Cell from '@/components/database/components/cell/Cell';
 import { PrimaryCell } from '@/components/database/components/cell/primary';
 import React, { CSSProperties, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as FileMediaSvg } from '@/assets/icons/attachment.svg';
+import FileMediaSvg from '@/assets/icons/attachment.svg?react';
 
 export function CardField({ rowId, fieldId }: { rowId: string; fieldId: string; index: number }) {
   const { t } = useTranslation();

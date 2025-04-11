@@ -1,7 +1,7 @@
 import { Skeleton } from '@mui/material';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ErrorOutline } from '@/assets/icons/error.svg';
+import ErrorOutline from '@/assets/icons/error.svg?react';
 
 interface ImageRenderProps extends React.HTMLAttributes<HTMLImageElement> {
   src: string;

@@ -1,8 +1,8 @@
 import { FileMediaCellDataItem, FileMediaType } from '@/application/database-yjs/cell.type';
-import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
-import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
-import { ReactComponent as CheckedSvg } from '@/assets/icons/tick.svg';
-import { ReactComponent as VideoSvg } from '@/assets/icons/video.svg';
+import DocumentSvg from '@/assets/icons/doc.svg?react';
+import LinkSvg from '@/assets/icons/link.svg?react';
+import CheckedSvg from '@/assets/icons/tick.svg?react';
+import VideoSvg from '@/assets/icons/video.svg?react';
 import { notify } from '@/components/_shared/notify';
 import { copyTextToClipboard } from '@/utils/copy';
 import { IconButton, Tooltip } from '@mui/material';

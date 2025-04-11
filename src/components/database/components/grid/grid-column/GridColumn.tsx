@@ -6,7 +6,7 @@ import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { getIconBase64 } from '@/utils/emoji';
 import { Tooltip } from '@mui/material';
 import React, { useContext, useEffect, useMemo, useState } from 'react';
-import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/ai_indicator.svg';
+import AIIndicatorSvg from '@/assets/icons/ai_indicator.svg?react';
 
 export function GridColumn({ column, index }: { column: Column; index: number }) {
   const { field } = useFieldSelector(column.fieldId);

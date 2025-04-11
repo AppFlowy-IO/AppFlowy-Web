@@ -3,7 +3,7 @@ import React, { useContext } from 'react';
 import { Typography, Button } from '@mui/material';
 import { Trans, useTranslation } from 'react-i18next';
 import { Link, useNavigate } from 'react-router-dom';
-import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
+import AppflowyLogo from '@/assets/icons/appflowy.svg?react';
 
 const NotFound = () => {
   const { t } = useTranslation();

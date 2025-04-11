@@ -5,7 +5,7 @@ import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as CodeSvg } from '@/assets/icons/inline_code.svg';
+import CodeSvg from '@/assets/icons/inline_code.svg?react';
 
 export function InlineCode() {
   const { t } = useTranslation();

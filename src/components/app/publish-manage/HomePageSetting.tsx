@@ -4,9 +4,9 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { Button, CircularProgress, IconButton, OutlinedInput, Tooltip } from '@mui/material';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
-import { ReactComponent as RemoveIcon } from '@/assets/icons/close.svg';
-import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
+import SearchIcon from '@/assets/icons/search.svg?react';
+import RemoveIcon from '@/assets/icons/close.svg?react';
+import UpgradeIcon from '@/assets/icons/upgrade.svg?react';
 
 import { useSearchParams } from 'react-router-dom';
 

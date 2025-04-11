@@ -2,8 +2,8 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { MentionType, UIVariant, View, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
-import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
-import { ReactComponent as MarkIcon } from '@/assets/icons/paragraph_mark.svg';
+import LinkArrowOverlay from '@/assets/icons/link_arrow.svg?react';
+import MarkIcon from '@/assets/icons/paragraph_mark.svg?react';
 
 import { useEditorContext } from '@/components/editor/EditorContext';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';

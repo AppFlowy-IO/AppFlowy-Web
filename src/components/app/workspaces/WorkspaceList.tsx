@@ -5,7 +5,7 @@ import { Avatar, Tooltip } from '@mui/material';
 import CircularProgress from '@mui/material/CircularProgress';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as SelectedSvg } from '@/assets/icons/tick.svg';
+import SelectedSvg from '@/assets/icons/tick.svg?react';
 import MoreActions from '@/components/app/workspaces/MoreActions';
 
 function WorkspaceList ({

@@ -4,7 +4,7 @@ import TemplateItem from '@/components/as-template/related-template/TemplateItem
 import { InputLabel, Grid, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect, useMemo, useRef, forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import DeleteIcon from '@/assets/icons/delete.svg?react';
 
 function RelatedTemplates ({ value = [], onChange, defaultRelatedTemplates }: {
   value?: string[];

@@ -5,8 +5,8 @@ import { PublishManage } from '@/components/app/publish-manage';
 import { PublishNameSetting } from '@/components/app/publish-manage/PublishNameSetting';
 import { copyTextToClipboard } from '@/utils/copy';
 import { CircularProgress, IconButton, InputBase, Tooltip } from '@mui/material';
-import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
-import { ReactComponent as DownIcon } from '@/assets/icons/toggle_list.svg';
+import LinkIcon from '@/assets/icons/link.svg?react';
+import DownIcon from '@/assets/icons/toggle_list.svg?react';
 import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 

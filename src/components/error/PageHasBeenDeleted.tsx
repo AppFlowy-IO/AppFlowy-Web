@@ -1,5 +1,5 @@
 import React from 'react';
-import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
+import TrashIcon from '@/assets/icons/delete.svg?react';
 import emptyImageSrc from '@/assets/images/empty.png';
 
 const DeletedPageComponent = () => {

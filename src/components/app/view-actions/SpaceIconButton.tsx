@@ -3,7 +3,7 @@ import ChangeIconPopover from '@/components/_shared/view-icon/ChangeIconPopover'
 import { Avatar } from '@mui/material';
 import { PopoverProps } from '@mui/material/Popover';
 import React from 'react';
-import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
+import EditIcon from '@/assets/icons/edit.svg?react';
 
 const popoverProps: Partial<PopoverProps> = {
   transformOrigin: {

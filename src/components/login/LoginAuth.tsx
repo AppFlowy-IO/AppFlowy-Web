@@ -5,7 +5,7 @@ import LinearBuffer from '@/components/login/LinearBuffer';
 import React, { useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import ErrorIcon from '@/assets/icons/error.svg?react';
 
 function LoginAuth() {
   const service = useContext(AFConfigContext)?.service;

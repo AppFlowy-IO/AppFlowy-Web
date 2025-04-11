@@ -4,8 +4,8 @@ import { Reactions } from '@/components/global-comment/reactions';
 import { Avatar, Divider, Tooltip } from '@mui/material';
 import React, { memo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list_icon_1.svg';
-import { ReactComponent as DoubleArrow } from '@/assets/icons/double_arrow.svg';
+import BulletedListIcon from '@/assets/icons/bulleted_list_icon_1.svg?react';
+import DoubleArrow from '@/assets/icons/double_arrow.svg?react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 interface CommentProps {

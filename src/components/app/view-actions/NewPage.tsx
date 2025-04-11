@@ -1,5 +1,5 @@
 import { ViewLayout } from '@/application/types';
-import { ReactComponent as Add } from '@/assets/icons/add_circle.svg';
+import Add from '@/assets/icons/add_circle.svg?react';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';

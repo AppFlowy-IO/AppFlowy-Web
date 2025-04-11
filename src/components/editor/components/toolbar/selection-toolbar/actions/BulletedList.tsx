@@ -6,7 +6,7 @@ import React, { useCallback } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as BulletedListSvg } from '@/assets/icons/bulleted_list.svg';
+import BulletedListSvg from '@/assets/icons/bulleted_list.svg?react';
 
 export function BulletedList() {
   const { t } = useTranslation();
