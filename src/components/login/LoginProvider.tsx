@@ -124,9 +124,9 @@ function LoginProvider ({ redirectTo }: { redirectTo: string }) {
             whileTap="tap"
           >
             <Button
-              variant={'ghost'}
+              variant={'link'}
               onClick={() => setExpand(true)}
-              className={'w-full !h-5 text-text-theme hover:bg-transparent hover:text-text-theme-hover'}
+              className={'w-full'}
             >
               {t('web.moreOptions')}
             </Button>

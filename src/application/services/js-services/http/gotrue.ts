@@ -90,8 +90,8 @@ export async function signInOTP ({
 
     emit(EventType.SESSION_INVALID);
     return Promise.reject({
-      code: e.code,
-      message: e.message,
+      code: e.response?.data?.code || e.response?.status,
+      message: e.response?.data?.msg || e.message,
     });
   }
 

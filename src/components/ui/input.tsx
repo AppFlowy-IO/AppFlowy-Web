@@ -84,9 +84,10 @@ function Input ({
         )}
         {...props}
       />
-      <div className={cn('help-text text-xs', variant === 'destructive' && 'text-text-error')}>
+      {helpText && <div className={cn('help-text text-xs', variant === 'destructive' && 'text-text-error')}>
         {helpText}
-      </div>
+      </div>}
+
     </div>
 
   );
