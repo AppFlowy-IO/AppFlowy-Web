@@ -3,7 +3,7 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { MentionType, UIVariant, View, ViewLayout, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { ReactComponent as LinkArrowOverlay } from '@/assets/icons/link_arrow.svg';
-import { ReactComponent as MarkIcon } from '@/assets/icons/paragraph_mark.svg';
+import { ReactComponent as ParagraphIcon } from '@/assets/icons/paragraph.svg';
 
 import { useEditorContext } from '@/components/editor/EditorContext';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -113,7 +113,7 @@ function MentionPage({
 
   const mentionIcon = useMemo(() => {
     if (pageId === currentViewId && blockId) {
-      return <MarkIcon className={'ml-0.5 text-icon-primary opacity-70'} />;
+      return <ParagraphIcon className={'h-[1.25em] w-[1.25em] text-icon-primary opacity-70'} />;
     }
 
     return (
@@ -123,12 +123,12 @@ function MentionPage({
             icon: icon,
             layout: meta?.layout || ViewLayout.Document,
           }}
-          className={'ml-0.5 flex h-5 w-5 items-center text-text-title'}
+          className={'ml-0.5 flex h-[1em] w-[1em] items-center text-text-title'}
         />
 
         {type === MentionType.PageRef && (
           <span className={`absolute top-0 left-0 ml-0.5`}>
-            <LinkArrowOverlay className={'link-arrow-overlay h-5 w-5'} />
+            <LinkArrowOverlay className={'link-arrow-overlay'} />
           </span>
         )}
       </>
@@ -187,7 +187,7 @@ function MentionPage({
         </span>
       ) : (
         <>
-          <span className={`mention-icon h-[1em] w-[1em]`}>{mentionIcon}</span>
+          <span className={`mention-icon`}>{mentionIcon}</span>
 
           <span className={'mention-content max-w-[330px] truncate opacity-80'}>{content}</span>
         </>

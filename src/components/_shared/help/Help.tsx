@@ -7,7 +7,6 @@ import { PopoverProps } from '@mui/material/Popover';
 import { useContext } from 'react';
 import * as React from 'react';
 import Box from '@mui/material/Box';
-import { ReactComponent as SpeedDialIcon } from '@/assets/icons/help_no_circle.svg';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as WhatsNewIcon } from '@/assets/icons/star.svg';
 import { ReactComponent as SupportIcon } from '@/assets/icons/help.svg';
@@ -44,7 +43,7 @@ export default function Help() {
                 'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-line-border bg-bg-body shadow-md hover:bg-fill-list-hover'
               }
             >
-              <SpeedDialIcon className={'h-5 w-5'} />
+              <SupportIcon className={'h-5 w-5'} />
             </div>
           </div>
         </Tooltip>

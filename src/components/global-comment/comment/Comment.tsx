@@ -4,8 +4,8 @@ import { Reactions } from '@/components/global-comment/reactions';
 import { Avatar, Divider, Tooltip } from '@mui/material';
 import React, { memo, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list_icon_1.svg';
-import { ReactComponent as DoubleArrow } from '@/assets/icons/double_arrow.svg';
+import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_1.svg';
+import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 interface CommentProps {
@@ -93,7 +93,7 @@ function Comment({ comment }: CommentProps) {
                 }
               >
                 <Divider className={'flex-1'} />
-                <DoubleArrow className={`h-5 w-5 transform ${isExpand ? '-rotate-90' : 'rotate-90'} `} />
+                <ArrowDown className={`h-5 w-5 transform ${isExpand ? 'rotate-180' : null} `} />
                 <Divider className={'flex-1'} />
               </div>
             </Tooltip>

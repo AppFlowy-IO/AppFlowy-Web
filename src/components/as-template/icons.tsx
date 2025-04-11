@@ -6,36 +6,36 @@ import { ReactComponent as Facebook } from '@/assets/icons/facebook.svg';
 import { ReactComponent as Tiktok } from '@/assets/icons/tiktok.svg';
 import { ReactComponent as Website } from '@/assets/icons/earth.svg';
 import { ReactComponent as LinkedInIcon } from '@/assets/icons/linkedin.svg';
-import { ReactComponent as LightningIcon } from '@/assets/icons/lightning.svg';
-import { ReactComponent as MonitorIcon } from '@/assets/icons/monitor.svg';
-import { ReactComponent as Lightbulb } from '@/assets/icons/lightbulb.svg';
+import { ReactComponent as Controller } from '@/assets/icons/controller.svg';
+import { ReactComponent as Engineering } from '@/assets/icons/engineering.svg';
+import { ReactComponent as Startup } from '@/assets/icons/startup.svg';
 import { ReactComponent as GraduationCap } from '@/assets/icons/graduation_cap.svg';
 import { ReactComponent as Database } from '@/assets/icons/database.svg';
-import { ReactComponent as Columns } from '@/assets/icons/columns.svg';
+import { ReactComponent as Kanban } from '@/assets/icons/board.svg';
 import { ReactComponent as UsersThree } from '@/assets/icons/users.svg';
-import { ReactComponent as ChatCircleText } from '@/assets/icons/chat_circle_text.svg';
-import { ReactComponent as MegaphoneSimple } from '@/assets/icons/megaphone_simple.svg';
-import { ReactComponent as UserIcon } from '@/assets/icons/user.svg';
-import { ReactComponent as CurrencyCircleDollar } from '@/assets/icons/currency_circle_dollar.svg';
+import { ReactComponent as Management } from '@/assets/icons/management.svg';
+import { ReactComponent as Marketing } from '@/assets/icons/marketing.svg';
+import { ReactComponent as User } from '@/assets/icons/user.svg';
+import { ReactComponent as Sales } from '@/assets/icons/sales.svg';
 import { ReactComponent as Sparkle } from '@/assets/icons/ai.svg';
-import { ReactComponent as Notepad } from '@/assets/icons/notepad.svg';
-import { ReactComponent as Book } from '@/assets/icons/book.svg';
+import { ReactComponent as Doc } from '@/assets/icons/page.svg';
+import { ReactComponent as Wiki } from '@/assets/icons/wiki.svg';
 
 const categoryIcons: Record<string, React.ReactElement> = {
-  [TemplateIcon.project]: <LightningIcon />,
-  [TemplateIcon.engineering]: <MonitorIcon />,
-  [TemplateIcon.startups]: <Lightbulb />,
-  [TemplateIcon.schools]: <GraduationCap />,
-  [TemplateIcon.marketing]: <MegaphoneSimple />,
-  [TemplateIcon.management]: <ChatCircleText />,
-  [TemplateIcon.humanResources]: <UserIcon />,
-  [TemplateIcon.sales]: <CurrencyCircleDollar />,
-  [TemplateIcon.teamMeetings]: <UsersThree />,
-  [TemplateIcon.ai]: <Sparkle />,
-  [TemplateIcon.docs]: <Notepad />,
-  [TemplateIcon.wiki]: <Book />,
-  [TemplateIcon.database]: <Database />,
-  [TemplateIcon.kanban]: <Columns />,
+  [TemplateIcon.project]: <Controller className='h-5 w-5' />,
+  [TemplateIcon.engineering]: <Engineering className='h-5 w-5' />,
+  [TemplateIcon.startups]: <Startup className='h-5 w-5' />,
+  [TemplateIcon.schools]: <GraduationCap className='h-5 w-5' />,
+  [TemplateIcon.marketing]: <Marketing className='h-5 w-5' />,
+  [TemplateIcon.management]: <Management />,
+  [TemplateIcon.humanResources]: <User className='h-5 w-5' />,
+  [TemplateIcon.sales]: <Sales className='h-5 w-5' />,
+  [TemplateIcon.teamMeetings]: <UsersThree className='h-5 w-5' />,
+  [TemplateIcon.ai]: <Sparkle className='h-5 w-5' />,
+  [TemplateIcon.docs]: <Doc className='h-5 w-5' />,
+  [TemplateIcon.wiki]: <Wiki className='h-5 w-5' />,
+  [TemplateIcon.database]: <Database className='h-5 w-5' />,
+  [TemplateIcon.kanban]: <Kanban className='h-5 w-5' />,
 };
 
 export function CategoryIcon({ icon }: { icon: TemplateIcon }) {

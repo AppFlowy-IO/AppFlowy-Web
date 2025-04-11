@@ -8,7 +8,7 @@ import { PopoverProps } from '@mui/material/Popover';
 import dayjs from 'dayjs';
 import { groupBy, sortBy } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
-import { ReactComponent as FavoritedIcon } from '@/assets/icons/favorited.svg';
+import { ReactComponent as FavoritedIcon } from '@/assets/icons/filled_star.svg';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 
@@ -110,7 +110,7 @@ export function Favorite() {
             'flex w-full items-center gap-2 rounded-[8px] p-1 text-sm hover:bg-fill-list-hover focus:outline-none'
           }
         >
-          <FavoritedIcon className={'mr-[1px] h-5 w-5'} />
+          <FavoritedIcon className={'h-5 w-5'} />
           <div className={'flex-1 truncate'}>{t('sideBar.favorites')}</div>
         </div>
       </div>
