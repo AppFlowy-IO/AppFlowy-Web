@@ -3,11 +3,10 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 import { motion, AnimatePresence } from 'framer-motion';
 import React, { useCallback, useContext, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as GoogleSvg } from '@/assets/login/google.svg';
-import { ReactComponent as GithubSvg } from '@/assets/login/github.svg';
-import { ReactComponent as DiscordSvg } from '@/assets/login/discord.svg';
-import { ReactComponent as AppleSvg } from '@/assets/login/apple.svg';
-import { Button } from '@/components/ui/button';
+import GoogleSvg from '@/assets/login/google.svg?react';
+import GithubSvg from '@/assets/login/github.svg?react';
+import DiscordSvg from '@/assets/login/discord.svg?react';
+import AppleSvg from '@/assets/login/apple.svg?react';
 
 const moreOptionsVariants = {
   hidden: {

@@ -1,6 +1,6 @@
 import { Button, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
-import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
+import AppflowyLogo from '@/assets/icons/appflowy.svg?react';
 
 function AfterPaymentPage() {
   const openAppFlowy = useCallback(() => {

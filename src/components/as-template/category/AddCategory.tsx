@@ -9,7 +9,7 @@ import { useService } from '@/components/main/app.hooks';
 import CategoryForm from '@/components/as-template/category/CategoryForm';
 import MenuItem from '@mui/material/MenuItem';
 import React, { useCallback, useMemo, useState } from 'react';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import AddIcon from '@/assets/icons/plus.svg?react';
 import { useTranslation } from 'react-i18next';
 
 function AddCategory ({ searchText, onCreated }: {

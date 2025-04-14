@@ -3,9 +3,9 @@ import { useService } from '@/components/main/app.hooks';
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { ReactComponent as CheckIcon } from '@/assets/icons/check_circle.svg';
+import LinkIcon from '@/assets/icons/link.svg?react';
+import DeleteIcon from '@/assets/icons/delete.svg?react';
+import CheckIcon from '@/assets/icons/check_circle.svg?react';
 
 function UploadAvatar({ onChange }: { onChange: (url: string) => void }) {
   const { t } = useTranslation();

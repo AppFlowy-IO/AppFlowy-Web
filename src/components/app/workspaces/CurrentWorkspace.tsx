@@ -2,7 +2,7 @@ import { UserWorkspaceInfo, Workspace } from '@/application/types';
 import { getAvatarProps } from '@/components/app/workspaces/utils';
 import { Avatar } from '@mui/material';
 import React from 'react';
-import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
+import AppFlowyLogo from '@/assets/icons/appflowy.svg?react';
 
 function CurrentWorkspace({
   userWorkspaceInfo,

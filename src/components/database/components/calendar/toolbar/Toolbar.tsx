@@ -5,9 +5,9 @@ import Button from '@mui/material/Button';
 import dayjs from 'dayjs';
 import React, { useMemo } from 'react';
 import { ToolbarProps } from 'react-big-calendar';
-import { ReactComponent as LeftArrow } from '@/assets/icons/alt_arrow_left.svg';
-import { ReactComponent as RightArrow } from '@/assets/icons/alt_arrow_right.svg';
-import { ReactComponent as DownArrow } from '@/assets/icons/alt_arrow_down.svg';
+import LeftArrow from '@/assets/icons/alt_arrow_left.svg?react';
+import RightArrow from '@/assets/icons/alt_arrow_right.svg?react';
+import DownArrow from '@/assets/icons/alt_arrow_down.svg?react';
 
 import { useTranslation } from 'react-i18next';
 

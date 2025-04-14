@@ -5,7 +5,7 @@ import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as ItalicSvg } from '@/assets/icons/italic.svg';
+import ItalicSvg from '@/assets/icons/italic.svg?react';
 
 export function Italic() {
   const { t } = useTranslation();

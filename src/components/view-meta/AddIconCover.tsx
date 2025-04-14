@@ -2,8 +2,8 @@ import { ViewIconType } from '@/application/types';
 import ChangeIconPopover from '@/components/_shared/view-icon/ChangeIconPopover';
 import { Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddIcon } from '@/assets/icons/emoji.svg';
-import { ReactComponent as AddCover } from '@/assets/icons/image.svg';
+import AddIcon from '@/assets/icons/emoji.svg?react';
+import AddCover from '@/assets/icons/image.svg?react';
 
 function AddIconCover({
   hasIcon,

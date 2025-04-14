@@ -6,9 +6,9 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ViewTabs, ViewTab, TabPanel } from 'src/components/_shared/tabs/ViewTabs';
-import { ReactComponent as Templates } from '@/assets/icons/template.svg';
+import Templates from '@/assets/icons/template.svg?react';
 
-import { ReactComponent as PublishedWithChanges } from '@/assets/icons/check_filled_circle.svg';
+import PublishedWithChanges from '@/assets/icons/check_filled_circle.svg?react';
 
 enum TabKey {
   SHARE = 'share',

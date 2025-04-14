@@ -9,10 +9,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as Heading1 } from '@/assets/icons/h1.svg';
-import { ReactComponent as Heading2 } from '@/assets/icons/h2.svg';
-import { ReactComponent as Heading3 } from '@/assets/icons/h3.svg';
-import { ReactComponent as DownArrow } from '@/assets/icons/triangle_down.svg';
+import Heading1 from '@/assets/icons/h1.svg?react';
+import Heading2 from '@/assets/icons/h2.svg?react';
+import Heading3 from '@/assets/icons/h3.svg?react';
+import DownArrow from '@/assets/icons/triangle_down.svg?react';
 
 const popoverProps: Partial<PopoverProps> = {
   anchorOrigin: {

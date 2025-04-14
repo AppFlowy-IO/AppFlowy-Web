@@ -7,7 +7,7 @@ import {
 import { IconButton } from '@mui/material';
 import React from 'react';
 import { useSnackbar, SnackbarContent, CustomContentProps } from 'notistack';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import CloseIcon from '@/assets/icons/close.svg?react';
 
 const CustomSnackbar = React.forwardRef<HTMLDivElement, CustomContentProps>((props, ref) => {
   const { id, message, variant } = props;

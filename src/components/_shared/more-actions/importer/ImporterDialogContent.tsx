@@ -5,7 +5,7 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 import LinearProgress from '@mui/material/LinearProgress';
 import React, { useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as NotionIcon } from '@/assets/icons/notion.svg';
+import NotionIcon from '@/assets/icons/notion.svg?react';
 
 function ImporterDialogContent({ source, onSuccess }: { source?: string; onSuccess: () => void }) {
   const { t } = useTranslation();

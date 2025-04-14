@@ -2,9 +2,9 @@ import LoginProvider from '@/components/login/LoginProvider';
 import MagicLink from '@/components/login/MagicLink';
 import { Separator } from '@/components/ui/separator';
 import React from 'react';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import Logo from '@/assets/icons/logo.svg?react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
+import ArrowRight from '@/assets/icons/arrow_right.svg?react';
 
 export function Login ({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();

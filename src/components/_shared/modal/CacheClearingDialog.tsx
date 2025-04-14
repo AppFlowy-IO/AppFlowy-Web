@@ -3,7 +3,7 @@ import NormalModal from '@/components/_shared/modal/NormalModal';
 import React from 'react';
 import { DialogContent, DialogContentText, List, ListItem, ListItemText } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import ErrorIcon from '@/assets/icons/error.svg?react';
 
 const CacheClearingDialog = ({ open, onClose }: { open: boolean; onClose: () => void }) => {
   const { t } = useTranslation();

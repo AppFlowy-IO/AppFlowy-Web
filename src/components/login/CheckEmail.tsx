@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useContext, useState } from 'react';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import Logo from '@/assets/icons/logo.svg';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 

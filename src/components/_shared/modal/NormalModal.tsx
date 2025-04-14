@@ -1,7 +1,7 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button, ButtonProps, CircularProgress, Dialog, DialogProps, IconButton } from '@mui/material';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import CloseIcon from '@/assets/icons/close.svg';
 
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-ignore

@@ -1,7 +1,7 @@
 import { View, ViewIconType } from '@/application/types';
-import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
-import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
-import { ReactComponent as OpenIcon } from '@/assets/icons/open.svg';
+import EditIcon from '@/assets/icons/edit.svg?react';
+import EmojiIcon from '@/assets/icons/emoji.svg?react';
+import OpenIcon from '@/assets/icons/open.svg?react';
 import { notify } from '@/components/_shared/notify';
 import { Origins } from '@/components/_shared/popover';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';

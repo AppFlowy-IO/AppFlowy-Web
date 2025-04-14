@@ -11,10 +11,10 @@ import { useService } from '@/components/main/app.hooks';
 import { Button, Dialog, Divider, IconButton, Tooltip, Zoom } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
+import ExpandIcon from '@/assets/icons/expand.svg?react';
 import ShareButton from 'src/components/app/share/ShareButton';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
-import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import CloseIcon from '@/assets/icons/close.svg?react';
+import ArrowDownIcon from '@/assets/icons/alt_arrow_down.svg?react';
 import { TransitionProps } from '@mui/material/transitions';
 
 const Transition = React.forwardRef(function Transition(

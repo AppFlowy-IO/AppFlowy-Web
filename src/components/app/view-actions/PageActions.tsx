@@ -1,6 +1,6 @@
 import { View, ViewLayout } from '@/application/types';
-import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import PlusIcon from '@/assets/icons/plus.svg?react';
+import MoreIcon from '@/assets/icons/more.svg?react';
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';

@@ -5,7 +5,7 @@ import { Divider, Tooltip } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 import ShareButton from 'src/components/app/share/ShareButton';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import Logo from '@/assets/icons/logo.svg?react';
 
 function RightMenu() {
   const { t } = useTranslation();

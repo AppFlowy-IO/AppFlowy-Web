@@ -1,4 +1,4 @@
-import { ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg';
+import ToggleListIcon from '@/assets/icons/toggle_list.svg?react';
 
 function OutlineIcon ({ isExpanded, setIsExpanded, level }: {
   isExpanded: boolean;

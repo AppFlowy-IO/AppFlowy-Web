@@ -1,7 +1,7 @@
 import { HEADER_HEIGHT } from '@/application/constants';
 import { usePublishContext } from '@/application/publish';
 import { UIVariant } from '@/application/types';
-import { ReactComponent as DoubleRightIcon } from '@/assets/icons/double_arrow_right.svg';
+import DoubleRightIcon from '@/assets/icons/double_arrow_right.svg?react';
 import { Breadcrumb } from '@/components/_shared/breadcrumb';
 import { OutlinePopover } from '@/components/_shared/outline';
 import Outline from '@/components/_shared/outline/Outline';

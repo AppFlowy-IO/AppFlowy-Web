@@ -5,8 +5,8 @@ import { copyTextToClipboard } from '@/utils/copy';
 import { openUrl, processUrl } from '@/utils/url';
 import { IconButton, Tooltip } from '@mui/material';
 import React, { useMemo } from 'react';
-import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
-import { ReactComponent as CopySvg } from '@/assets/icons/copy.svg';
+import LinkSvg from '@/assets/icons/link.svg?react';
+import CopySvg from '@/assets/icons/copy.svg?react';
 import { useTranslation } from 'react-i18next';
 
 export function UrlCell({ cell, style, placeholder }: CellProps<UrlCellType>) {

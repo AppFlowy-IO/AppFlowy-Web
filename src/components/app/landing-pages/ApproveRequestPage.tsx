@@ -4,8 +4,8 @@ import {
   SubscriptionInterval,
   SubscriptionPlan,
 } from '@/application/types';
-import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
-import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
+import AppflowyLogo from '@/assets/icons/appflowy.svg?react';
+import WarningIcon from '@/assets/icons/warning.svg?react';
 import { NormalModal } from '@/components/_shared/modal';
 import ChangeAccount from '@/components/_shared/modal/ChangeAccount';
 import { notify } from '@/components/_shared/notify';

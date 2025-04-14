@@ -1,5 +1,5 @@
 import React from 'react';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import AddIcon from '@/assets/icons/plus.svg?react';
 import { useAddNode } from '@/components/quick-note/QuickNote.hooks';
 import { QuickNote } from '@/application/types';
 import { Button, CircularProgress } from '@mui/material';

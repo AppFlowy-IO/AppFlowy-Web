@@ -1,5 +1,5 @@
 import { SettingMenuItem } from '@/application/types';
-import { ReactComponent as PersonIcon } from '@/assets/icons/user.svg';
+import PersonIcon from '@/assets/icons/user.svg?react';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 

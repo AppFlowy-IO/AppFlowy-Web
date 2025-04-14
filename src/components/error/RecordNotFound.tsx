@@ -1,6 +1,6 @@
 import emptyImageSrc from '@/assets/images/empty.png';
 import React from 'react';
-import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
+import WarningIcon from '@/assets/icons/warning.svg?react';
 
 function RecordNotFound({ noContent, isViewNotFound }: { noContent?: boolean; isViewNotFound?: boolean }) {
   return (

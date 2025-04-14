@@ -3,7 +3,7 @@ import ViewItem from '@/components/app/outline/ViewItem';
 import { Tooltip } from '@mui/material';
 import React, { useMemo } from 'react';
 import { View } from '@/application/types';
-import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
+import PrivateIcon from '@/assets/icons/lock.svg?react';
 
 function SpaceItem({
   view,

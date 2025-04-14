@@ -10,9 +10,9 @@ import MoreActionsContent from '@/components/_shared/more-actions/MoreActionsCon
 import { openOrDownload } from '@/utils/open_schema';
 import { IconButton } from '@mui/material';
 import React, { useCallback } from 'react';
-import { ReactComponent as MenuIcon } from '@/assets/icons/double_arrow_right.svg';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import MenuIcon from '@/assets/icons/double_arrow_right.svg?react';
+import Logo from '@/assets/icons/logo.svg?react';
+import MoreIcon from '@/assets/icons/more.svg?react';
 
 const PublishBreadcrumb = withPublishBreadcrumb(Breadcrumb);
 const AppBreadcrumb = withAppBreadcrumb(Breadcrumb);

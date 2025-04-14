@@ -5,7 +5,7 @@ import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as UnderlineSvg } from '@/assets/icons/underline.svg';
+import UnderlineSvg from '@/assets/icons/underline.svg?react';
 
 export function Underline() {
   const { t } = useTranslation();

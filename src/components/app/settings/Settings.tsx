@@ -1,5 +1,5 @@
 import { SettingMenuItem } from '@/application/types';
-import { ReactComponent as SettingsIcon } from '@/assets/settings.svg';
+import SettingsIcon from '@/assets/settings.svg?react';
 import SettingMenu from '@/components/app/settings/SettingMenu';
 import { Button, Dialog } from '@mui/material';
 import React, { useEffect } from 'react';

@@ -6,7 +6,7 @@ import React, { useCallback } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as NumberedListSvg } from '@/assets/icons/numbered_list.svg';
+import NumberedListSvg from '@/assets/icons/numbered_list.svg?react';
 
 export function NumberedList() {
   const { t } = useTranslation();

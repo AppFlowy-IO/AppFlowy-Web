@@ -4,11 +4,11 @@ import { AFConfigContext } from '@/components/main/app.hooks';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { openUrl } from '@/utils/url';
 import React, { useCallback, useContext, useMemo } from 'react';
-import { ReactComponent as MoonIcon } from '@/assets/icons/moon.svg';
-import { ReactComponent as SunIcon } from '@/assets/icons/sun.svg';
-import { ReactComponent as LoginIcon } from '@/assets/icons/logout.svg';
-import { ReactComponent as ReportIcon } from '@/assets/icons/feedback.svg';
-import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
+import MoonIcon from '@/assets/icons/moon.svg?react';
+import SunIcon from '@/assets/icons/sun.svg?react';
+import LoginIcon from '@/assets/icons/logout.svg?react';
+import ReportIcon from '@/assets/icons/feedback.svg?react';
+import TrashIcon from '@/assets/icons/delete.svg?react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 

@@ -4,7 +4,7 @@ import { useOutlinePopover } from '@/components/_shared/outline/outline.hooks';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
 import { AppContext, useAppHandlers, useBreadcrumb } from '@/components/app/app.hooks';
 import { IconButton } from '@mui/material';
-import { ReactComponent as DoubleArrowRight } from '@/assets/icons/double_arrow_right.svg';
+import DoubleArrowRight from '@/assets/icons/double_arrow_right.svg?react';
 
 import React, { memo, lazy, Suspense, useContext, useMemo } from 'react';
 import Recent from '@/components/app/recent/Recent';

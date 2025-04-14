@@ -12,8 +12,8 @@ import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
-import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
-import { ReactComponent as RestoreIcon } from '@/assets/icons/restore.svg';
+import TrashIcon from '@/assets/icons/delete.svg?react';
+import RestoreIcon from '@/assets/icons/restore.svg?react';
 
 function TrashPage() {
   const { t } = useTranslation();

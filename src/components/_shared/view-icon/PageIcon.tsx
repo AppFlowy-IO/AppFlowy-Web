@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo } from 'react';
 import { ViewIcon, ViewIconType, ViewLayout } from '@/application/types';
-import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
-import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
-import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
-import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
-import { ReactComponent as ChatSvg } from '@/assets/icons/ai_chat.svg';
+import BoardSvg from '@/assets/icons/board.svg?react';
+import CalendarSvg from '@/assets/icons/calendar.svg?react';
+import DocumentSvg from '@/assets/icons/page.svg?react';
+import GridSvg from '@/assets/icons/grid.svg?react';
+import ChatSvg from '@/assets/icons/ai_chat.svg?react';
 import { getIcon, isFlagEmoji } from '@/utils/emoji';
 import DOMPurify from 'dompurify';
 import { renderColor } from '@/utils/color';

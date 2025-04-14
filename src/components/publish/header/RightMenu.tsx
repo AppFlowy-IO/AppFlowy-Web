@@ -2,12 +2,12 @@ import MoreActions from '@/components/_shared/more-actions/MoreActions';
 import { openOrDownload } from '@/utils/open_schema';
 import { Divider, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useContext } from 'react';
-import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import Logo from '@/assets/icons/logo.svg?react';
 import { Duplicate } from '@/components/publish/header/duplicate';
 import { useTranslation } from 'react-i18next';
 import { PublishContext, usePublishContext } from '@/application/publish';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { ReactComponent as TemplateIcon } from '@/assets/icons/template.svg';
+import TemplateIcon from '@/assets/icons/template.svg?react';
 
 function RightMenu() {
   const { t } = useTranslation();

@@ -7,10 +7,10 @@ import SpaceItem from '@/components/app/outline/SpaceItem';
 import { Button, Divider, OutlinedInput } from '@mui/material';
 import { PopoverProps } from '@mui/material/Popover';
 import React, { useMemo } from 'react';
-import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
+import SearchIcon from '@/assets/icons/search.svg?react';
 import { useTranslation } from 'react-i18next';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
-import { ReactComponent as SelectedIcon } from '@/assets/icons/tick.svg';
+import SelectedIcon from '@/assets/icons/tick.svg?react';
 
 function MovePagePopover({
   viewId,

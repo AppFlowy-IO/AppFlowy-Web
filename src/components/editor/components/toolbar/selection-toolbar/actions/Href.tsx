@@ -7,7 +7,7 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import ActionButton from './ActionButton';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlate } from 'slate-react';
-import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
+import LinkSvg from '@/assets/icons/link.svg?react';
 import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 
 export function Href() {

@@ -1,5 +1,5 @@
 import { UIVariant, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
-import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
+import TipIcon from '@/assets/icons/warning.svg?react';
 import Help from '@/components/_shared/help/Help';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';

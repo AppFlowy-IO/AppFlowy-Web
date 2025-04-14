@@ -5,7 +5,7 @@ import { useService } from '@/components/main/app.hooks';
 import { Button, OutlinedInput } from '@mui/material';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import AddIcon from '@/assets/icons/plus.svg?react';
 
 function CreateWorkspace () {
   const { t } = useTranslation();

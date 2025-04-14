@@ -6,7 +6,7 @@ import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
-import { ReactComponent as BoldSvg } from '@/assets/icons/bold.svg';
+import BoldSvg from '@/assets/icons/bold.svg?react';
 
 export function Bold() {
   const { t } = useTranslation();

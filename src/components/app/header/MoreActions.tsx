@@ -1,5 +1,5 @@
 import { ViewLayout } from '@/application/types';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import MoreIcon from '@/assets/icons/more.svg?react';
 import { Popover } from '@/components/_shared/popover';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
@@ -8,7 +8,7 @@ import { Button, Divider, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MoreActionsContent from './MoreActionsContent';
-import { ReactComponent as AddToPageIcon } from '@/assets/icons/add_to_page.svg';
+import AddToPageIcon from '@/assets/icons/add_to_page.svg?react';
 import { useService } from '@/components/main/app.hooks';
 
 function MoreActions({ viewId, onDeleted }: { viewId: string; onDeleted?: () => void }) {

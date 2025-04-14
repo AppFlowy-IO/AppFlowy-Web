@@ -2,11 +2,11 @@ import { notify } from '@/components/_shared/notify/index';
 import React, { forwardRef } from 'react';
 import { Button, IconButton, Paper } from '@mui/material';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import CloseIcon from '@/assets/icons/close.svg?react';
 import { CustomContentProps, SnackbarContent } from 'notistack';
-import { ReactComponent as CheckCircle } from '@/assets/icons/check_circle.svg';
-import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
-import { ReactComponent as WarningAmber } from '@/assets/icons/warning.svg';
+import CheckCircle from '@/assets/icons/check_circle.svg?react';
+import ErrorIcon from '@/assets/icons/error.svg?react';
+import WarningAmber from '@/assets/icons/warning.svg?react';
 
 export interface InfoProps {
   onOk?: () => void;

@@ -2,7 +2,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { ToggleListNode } from '@/components/editor/editor.type';
 import React, { useCallback } from 'react';
-import { ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg';
+import ToggleListIcon from '@/assets/icons/toggle_list.svg?react';
 import { useSlateStatic } from 'slate-react';
 
 function ToggleIcon({ block, className }: { block: ToggleListNode; className: string }) {

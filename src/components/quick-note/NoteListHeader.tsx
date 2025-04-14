@@ -1,8 +1,8 @@
 import React, { useMemo } from 'react';
-import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
-import { ReactComponent as ExpandIcon } from '@/assets/icons/expand.svg';
-import { ReactComponent as CollapseIcon } from '@/assets/icons/shrink.svg';
+import SearchIcon from '@/assets/icons/search.svg?react';
+import CloseIcon from '@/assets/icons/close.svg?react';
+import ExpandIcon from '@/assets/icons/expand.svg?react';
+import CollapseIcon from '@/assets/icons/shrink.svg?react';
 
 import { IconButton, InputBase, Tooltip } from '@mui/material';
 import { useTranslation } from 'react-i18next';

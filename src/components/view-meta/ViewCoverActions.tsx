@@ -3,7 +3,7 @@ import { PopoverProps } from '@mui/material/Popover';
 import React, { forwardRef, useState } from 'react';
 import Button from '@mui/material/Button';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import DeleteIcon from '@/assets/icons/delete.svg?react';
 import CoverPopover from '@/components/view-meta/CoverPopover';
 
 function ViewCoverActions(

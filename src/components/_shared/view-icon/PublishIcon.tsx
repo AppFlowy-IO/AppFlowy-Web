@@ -1,7 +1,7 @@
 import { UIVariant, View } from '@/application/types';
 import { Tooltip } from '@mui/material';
 import React from 'react';
-import { ReactComponent as PublishSvg } from '@/assets/icons/earth.svg';
+import PublishSvg from '@/assets/icons/earth.svg?react';
 import { useTranslation } from 'react-i18next';
 
 function PublishIcon ({

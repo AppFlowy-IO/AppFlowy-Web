@@ -5,8 +5,8 @@ import CategoryTemplateItem from '@/components/as-template/related-template/Cate
 import { debounce } from 'lodash-es';
 import React, { useEffect, useMemo } from 'react';
 import { Button, Collapse, OutlinedInput, Skeleton } from '@mui/material';
-import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
-import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
+import RightIcon from '@/assets/icons/alt_arrow_right.svg?react';
+import SearchIcon from '@/assets/icons/search.svg?react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 

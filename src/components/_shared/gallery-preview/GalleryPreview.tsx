@@ -4,13 +4,13 @@ import { IconButton, Portal, Tooltip } from '@mui/material';
 import React, { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { TransformWrapper, TransformComponent, ReactZoomPanPinchContentRef } from 'react-zoom-pan-pinch';
-import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
-import { ReactComponent as ReloadIcon } from '@/assets/icons/reset.svg';
-import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
-import { ReactComponent as MinusIcon } from '@/assets/icons/minus.svg';
-import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
-import { ReactComponent as DownloadIcon } from '@/assets/icons/save_as.svg';
-import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
+import RightIcon from '@/assets/icons/alt_arrow_right.svg?react';
+import ReloadIcon from '@/assets/icons/reset.svg?react';
+import AddIcon from '@/assets/icons/plus.svg?react';
+import MinusIcon from '@/assets/icons/minus.svg?react';
+import LinkIcon from '@/assets/icons/link.svg?react';
+import DownloadIcon from '@/assets/icons/save_as.svg?react';
+import CloseIcon from '@/assets/icons/close.svg?react';
 
 export interface GalleryImage {
   src: string;

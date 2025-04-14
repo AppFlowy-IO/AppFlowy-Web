@@ -3,7 +3,7 @@ import { AFConfigContext, useCurrentUser } from '@/components/main/app.hooks';
 import React, { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
+import ErrorIcon from '@/assets/icons/error.svg?react';
 
 function ChangeAccount({
   setModalOpened,

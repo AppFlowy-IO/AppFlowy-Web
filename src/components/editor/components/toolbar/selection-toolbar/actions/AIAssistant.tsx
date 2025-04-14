@@ -7,11 +7,11 @@ import {
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useAIWriter, AIWriterMenu, AIAssistantType } from '@appflowyinc/ai-chat';
 import React, { useCallback, useEffect } from 'react';
-import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
-import { ReactComponent as ImproveWritingIcon } from '@/assets/icons/ai_improve_writing.svg';
+import AskAIIcon from '@/assets/icons/ai.svg?react';
+import ImproveWritingIcon from '@/assets/icons/ai_improve_writing.svg?react';
 import { useTranslation } from 'react-i18next';
 import { ReactEditor, useSlate } from 'slate-react';
-import { ReactComponent as TriangleDownIcon } from '@/assets/icons/triangle_down.svg';
+import TriangleDownIcon from '@/assets/icons/triangle_down.svg?react';
 
 function AIAssistant() {
   const { t } = useTranslation();

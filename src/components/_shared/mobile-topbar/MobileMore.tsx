@@ -1,12 +1,12 @@
 import { Popover } from '@/components/_shared/popover';
 import React, { useMemo } from 'react';
-import { ReactComponent as MoreIcon } from '@/assets/icons/settings_more.svg';
+import MoreIcon from '@/assets/icons/settings_more.svg?react';
 import { Button, Divider, IconButton } from '@mui/material';
-import { ReactComponent as TemplateIcon } from '@/assets/icons/template.svg';
-import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
+import TemplateIcon from '@/assets/icons/template.svg?react';
+import TrashIcon from '@/assets/icons/delete.svg?react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ReactComponent as SupportIcon } from '@/assets/icons/help.svg';
+import SupportIcon from '@/assets/icons/help.svg?react';
 
 function MobileMore({ onClose }: { onClose: () => void }) {
   const [openMore, setOpenMore] = React.useState(false);

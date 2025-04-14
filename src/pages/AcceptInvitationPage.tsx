@@ -1,5 +1,5 @@
 import { Invitation } from '@/application/types';
-import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';
+import AppflowyLogo from '@/assets/icons/appflowy.svg?react';
 import ChangeAccount from '@/components/_shared/modal/ChangeAccount';
 import { notify } from '@/components/_shared/notify';
 import { getAvatar } from '@/components/_shared/view-icon/utils';

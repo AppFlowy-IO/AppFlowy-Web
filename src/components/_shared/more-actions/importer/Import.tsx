@@ -4,7 +4,7 @@ import { useImport } from '@/components/_shared/more-actions/importer/useImport.
 import { LoginModal } from '@/components/login';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as CheckedIcon } from '@/assets/icons/check_circle.svg';
+import CheckedIcon from '@/assets/icons/check_circle.svg?react';
 
 function Import({ disableClose, onSuccessfulImport }: { disableClose?: boolean; onSuccessfulImport?: () => void }) {
   const { open, handleImportClose, handleLoginClose, loginOpen, url, source } = useImport();

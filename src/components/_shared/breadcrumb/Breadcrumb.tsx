@@ -4,8 +4,8 @@ import BreadcrumbMoreModal from '@/components/_shared/breadcrumb/BreadcrumbMoreM
 import { getPlatform } from '@/utils/platform';
 import { IconButton } from '@mui/material';
 import React, { memo, useMemo } from 'react';
-import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
-import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
+import RightIcon from '@/assets/icons/alt_arrow_right.svg?react';
+import MoreIcon from '@/assets/icons/more.svg?react';
 
 export interface BreadcrumbProps {
   crumbs: View[];

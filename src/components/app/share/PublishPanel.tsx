@@ -7,9 +7,9 @@ import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
 import { Button, CircularProgress, Divider, Typography } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as PublishIcon } from '@/assets/icons/earth.svg';
-import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
-import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
+import PublishIcon from '@/assets/icons/earth.svg?react';
+import CheckboxCheckSvg from '@/assets/icons/check_filled.svg?react';
+import CheckboxUncheckSvg from '@/assets/icons/uncheck.svg?react';
 import { Switch } from '@/components/_shared/switch';
 
 function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: () => void; opened: boolean }) {
