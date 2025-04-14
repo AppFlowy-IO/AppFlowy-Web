@@ -3105,5 +3105,7 @@
   "requireCode": "Please enter a valid verification code.",
   "signing": "Signing in...",
   "invalidOTPCode": "The code is invalid or has expired. Please try again.",
-  "verifying": "Verifying..."
+  "verifying": "Verifying...",
+  "loading": "Loading...",
+  "tooManyRequests": "Too many requests, please try again later."
 }

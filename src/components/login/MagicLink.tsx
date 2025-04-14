@@ -4,15 +4,19 @@ import { Input } from '@/components/ui/input';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import isEmail from 'validator/lib/isEmail';
 
 function MagicLink ({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
   const [email, setEmail] = React.useState<string>('');
-  const [, setLoading] = React.useState<boolean>(false);
+  const [loading, setLoading] = React.useState<boolean>(false);
+  const [error, setError] = React.useState<string>('');
+  const [, setSearch] = useSearchParams();
   const service = useContext(AFConfigContext)?.service;
   const handleSubmit = async () => {
+    if (loading) return;
     const isValidEmail = isEmail(email);
 
     if (!isValidEmail) {
@@ -20,29 +24,47 @@ function MagicLink ({ redirectTo }: { redirectTo: string }) {
       return;
     }
 
+    setError('');
     setLoading(true);
 
-    try {
-      void service?.signInMagicLink({
-        email,
-        redirectTo,
-      });
+    void (async () => {
+      try {
+        await service?.signInMagicLink({
+          email,
+          redirectTo,
+        });
+        // eslint-disable-next-line
+      } catch (e: any) {
+        if (e.code === 429 || e.response?.status === 429) {
+          toast.error(t('tooManyRequests'));
+        } else {
+          toast.error(e.message);
+        }
+      } finally {
+        setLoading(false);
+      }
+    })();
 
-      window.location.href = `/login?action=checkEmail&email=${email}&redirectTo=${redirectTo}`;
-    } catch (e) {
-      toast.error(t('web.signInError'));
-    } finally {
-      setLoading(false);
-    }
+    setSearch(prev => {
+      prev.set('email', email);
+      prev.set('action', 'checkEmail');
+      return prev;
+    });
+
   };
 
   return (
     <div className={'flex w-full flex-col items-center justify-center gap-3'}>
       <Input
         size={'md'}
+        variant={error ? 'destructive' : 'default'}
+        helpText={error}
         type={'email'}
         className={'w-[320px]'}
-        onChange={(e) => setEmail(e.target.value)}
+        onChange={(e) => {
+          setError('');
+          setEmail(e.target.value);
+        }}
         value={email}
         placeholder={t('signIn.pleaseInputYourEmail')}
         onKeyDown={e => {
@@ -56,8 +78,9 @@ function MagicLink ({ redirectTo }: { redirectTo: string }) {
         onClick={handleSubmit}
         size={'lg'}
         className={'w-[320px]'}
+        loading={loading}
       >
-        {t('signIn.signInWithEmail')}
+        {loading ? t('loading') : t('signIn.signInWithEmail')}
       </Button>
     </div>
   );
