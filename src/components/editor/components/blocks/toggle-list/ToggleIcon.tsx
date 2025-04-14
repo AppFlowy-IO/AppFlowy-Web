@@ -27,7 +27,7 @@ function ToggleIcon({ block, className }: { block: ToggleListNode; className: st
       }}
       className={`${className} cursor-pointer hover:text-fill-default pr-1 toggle-icon`}
     >
-      {collapsed ? <ToggleListIcon className='h-5 w-5' /> : <ToggleListIcon className={'h-w w-5 rotate-90 transform'}/>}
+      {collapsed ? <ToggleListIcon className='h-5 w-5' /> : <ToggleListIcon className={'h-5 w-5 rotate-90 transform'}/>}
     </span>
   );
 }
