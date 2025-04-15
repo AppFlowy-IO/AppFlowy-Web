@@ -119,6 +119,16 @@ export interface AppService {
   movePage: (workspaceId: string, viewId: string, parentId: string, prevViewId?: string) => Promise<void>;
   uploadFile: (workspaceId: string, viewId: string, file: File, onProgress?: (progress: number) => void) => Promise<string>;
   duplicateAppPage: (workspaceId: string, viewId: string) => Promise<void>;
+  joinWorkspaceByInvitationCode: (code: string) => Promise<string>;
+  getWorkspaceInfoByInvitationCode: (code: string) => Promise<{
+    workspace_id: string;
+    workspace_name: string;
+    workspace_icon_url: string;
+    owner_name: string;
+    owner_avatar: string;
+    is_member: boolean;
+    member_count: number;
+  }>;
 }
 
 export interface QuickNoteService {
