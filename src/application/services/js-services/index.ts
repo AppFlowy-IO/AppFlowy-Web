@@ -657,4 +657,12 @@ export class AFClientService implements AFService {
   ): Promise<RepeatedChatMessage> {
     return APIService.getChatMessages(workspaceId, chatId, limit);
   }
+
+  async joinWorkspaceByInvitationCode (code: string) {
+    return APIService.joinWorkspaceByInvitationCode(code);
+  }
+
+  async getWorkspaceInfoByInvitationCode (code: string) {
+    return APIService.getWorkspaceInfoByInvitationCode(code);
+  }
 }

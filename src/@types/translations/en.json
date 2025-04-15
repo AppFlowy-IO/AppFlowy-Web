@@ -3107,5 +3107,17 @@
   "invalidOTPCode": "The code is invalid or has expired. Please try again.",
   "verifying": "Verifying...",
   "loading": "Loading...",
-  "tooManyRequests": "Too many requests, please try again later."
+  "tooManyRequests": "Too many requests, please try again later.",
+  "mightNeedToLogin": "You might need to <login/> with a different account.",
+  "alreadyHaveAccount": "You're currently logged in as {{email}}.",
+  "login": "login",
+  "inviteCode": {
+    "title": "You've been invited to join {{workspaceName}}",
+    "joinWorkspace": "Join workspace",
+    "haveBeenInvited": "You’ve been invited to Join this workspace with the contact information below.",
+    "invalid": "Invite link is not valid",
+    "backToMyContent": "Back to my content",
+    "joining": "Joining...",
+    "hasJoined": "You’ve joined to {{workspaceName}}"
+  }
 }
