@@ -67,17 +67,17 @@ export async function signInOTP ({
     const data = response?.data;
 
     if (data) {
-      if (data.code !== 0) {
+      if (!data.code) {
+        refreshSessionToken(JSON.stringify(data));
+        emit(EventType.SESSION_VALID);
+        afterAuth();
+      } else {
         emit(EventType.SESSION_INVALID);
         return Promise.reject({
           code: data.code,
           message: data.msg,
         });
       }
-
-      refreshSessionToken(JSON.stringify(data));
-      emit(EventType.SESSION_VALID);
-      afterAuth();
     } else {
       emit(EventType.SESSION_INVALID);
       return Promise.reject({
