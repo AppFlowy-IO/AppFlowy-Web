@@ -2,7 +2,7 @@ import {
   FieldId, RowCoverType,
   SortId,
   YDatabase,
-  YDatabaseField, YDatabaseMetas, YDatabaseRow,
+  YDatabaseMetas, YDatabaseRow,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
@@ -140,15 +140,11 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
 
 export function useFieldSelector (fieldId: string) {
   const database = useDatabase();
-  const [field, setField] = useState<YDatabaseField | null>(null);
   const [clock, setClock] = useState<number>(0);
+  const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
   useEffect(() => {
     if (!database) return;
-
-    const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-
-    setField(field || null);
     const observerEvent = () => setClock((prev) => prev + 1);
 
     field?.observe(observerEvent);
@@ -156,7 +152,7 @@ export function useFieldSelector (fieldId: string) {
     return () => {
       field?.unobserve(observerEvent);
     };
-  }, [database, fieldId]);
+  }, [database, field, fieldId]);
 
   return {
     field,
@@ -489,17 +485,12 @@ export function useRowOrdersSelector () {
 
 export function useRowDataSelector (rowId: string) {
   const rowMap = useRowDocMap();
-  const [row, setRow] = useState<YDatabaseRow | null>(null);
+  const rowDoc = rowMap?.[rowId];
 
-  useEffect(() => {
-    const rowDoc = rowMap?.[rowId];
+  const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
 
-    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
-    const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
-    const row = rowSharedRoot?.get(YjsEditorKey.database_row);
+  const row = rowSharedRoot?.get(YjsEditorKey.database_row);
 
-    setRow(row);
-  }, [rowId, rowMap]);
   return {
     row,
   };
@@ -508,13 +499,12 @@ export function useRowDataSelector (rowId: string) {
 export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: string }) {
   const { row } = useRowDataSelector(rowId);
   const cell = row?.get(YjsDatabaseKey.cells)?.get(fieldId);
-
-  const [cellValue, setCellValue] = useState(() => (cell ? parseYDatabaseCellToCell(cell) : undefined));
+  const [, setClock] = useState<number>(0);
+  const cellValue = cell ? parseYDatabaseCellToCell(cell) : null;
 
   useEffect(() => {
     if (!cell) return;
-    setCellValue(parseYDatabaseCellToCell(cell));
-    const observerEvent = () => setCellValue(parseYDatabaseCellToCell(cell));
+    const observerEvent = () => setClock(prev => prev + 1);
 
     cell.observeDeep(observerEvent);
 

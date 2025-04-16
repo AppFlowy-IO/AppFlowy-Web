@@ -14,9 +14,10 @@ export interface GridCellProps {
   onResize?: (rowIndex: number, columnIndex: number, size: { width: number; height: number }) => void;
 }
 
-export function GridCell({ onResize, rowId, fieldId, columnIndex, rowIndex }: GridCellProps) {
+export function GridCell ({ onResize, rowId, fieldId, columnIndex, rowIndex }: GridCellProps) {
   const ref = useRef<HTMLDivElement>(null);
   const { field } = useFieldSelector(fieldId);
+
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
   const cell = useCellSelector({
     rowId,
@@ -50,11 +51,18 @@ export function GridCell({ onResize, rowId, fieldId, columnIndex, rowIndex }: Gr
     return Cell;
   }, [isPrimary]) as React.FC<CellProps<CellType>>;
 
-  if (!field) return null;
+  if (!field || !cell) return null;
 
   return (
-    <div ref={ref} className={'grid-cell flex min-h-full w-full cursor-text items-center overflow-hidden text-sm'}>
-      <Component cell={cell} rowId={rowId} fieldId={fieldId} />
+    <div
+      ref={ref}
+      className={'grid-cell grid-row-cell flex min-h-full items-start w-full cursor-text overflow-hidden text-sm'}
+    >
+      <Component
+        cell={cell}
+        rowId={rowId}
+        fieldId={fieldId}
+      />
     </div>
   );
 }

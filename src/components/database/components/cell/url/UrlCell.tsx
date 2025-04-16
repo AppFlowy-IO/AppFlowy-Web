@@ -9,14 +9,14 @@ import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
 import { ReactComponent as CopySvg } from '@/assets/icons/copy.svg';
 import { useTranslation } from 'react-i18next';
 
-export function UrlCell({ cell, style, placeholder }: CellProps<UrlCellType>) {
+export function UrlCell ({ cell, style, placeholder }: CellProps<UrlCellType>) {
   const readOnly = useReadOnly();
 
   const isUrl = useMemo(() => (cell ? processUrl(cell.data) : false), [cell]);
 
   const [showActions, setShowActions] = React.useState(false);
   const className = useMemo(() => {
-    const classList = ['select-text', 'w-fit', 'flex', 'w-full', 'items-center'];
+    const classList = ['select-text', 'w-fit', 'flex', 'w-full'];
 
     if (isUrl) {
       classList.push('text-content-blue-400', 'underline', 'cursor-pointer');
@@ -31,7 +31,10 @@ export function UrlCell({ cell, style, placeholder }: CellProps<UrlCellType>) {
 
   if (!cell?.data)
     return placeholder ? (
-      <div style={style} className={'text-text-placeholder'}>
+      <div
+        style={style}
+        className={'text-text-placeholder'}
+      >
         {placeholder}
       </div>
     ) : null;
@@ -53,7 +56,10 @@ export function UrlCell({ cell, style, placeholder }: CellProps<UrlCellType>) {
       {cell?.data}
       {showActions && isUrl && (
         <div className={'absolute right-0 flex items-center gap-1 px-2'}>
-          <Tooltip title={t('editor.openLink')} placement={'top'}>
+          <Tooltip
+            title={t('editor.openLink')}
+            placement={'top'}
+          >
             <IconButton
               sx={{
                 border: '1px solid var(--line-divider)',
@@ -66,7 +72,10 @@ export function UrlCell({ cell, style, placeholder }: CellProps<UrlCellType>) {
               <LinkSvg />
             </IconButton>
           </Tooltip>
-          <Tooltip title={t('button.copyLink')} placement={'top'}>
+          <Tooltip
+            title={t('button.copyLink')}
+            placement={'top'}
+          >
             <IconButton
               sx={{
                 border: '1px solid var(--line-divider)',

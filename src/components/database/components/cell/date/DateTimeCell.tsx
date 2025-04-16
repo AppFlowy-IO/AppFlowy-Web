@@ -4,7 +4,7 @@ import { CellProps, DateTimeCell as DateTimeCellType } from '@/application/datab
 import React, { useMemo } from 'react';
 import { ReactComponent as ReminderSvg } from '@/assets/icons/clock_alarm.svg';
 
-export function DateTimeCell({ cell, fieldId, style, placeholder }: CellProps<DateTimeCellType>) {
+export function DateTimeCell ({ cell, fieldId, style, placeholder }: CellProps<DateTimeCellType>) {
   const { getDateTimeStr } = useDateTypeCellDispatcher(fieldId);
 
   const startDateTime = useMemo(() => {
@@ -29,12 +29,18 @@ export function DateTimeCell({ cell, fieldId, style, placeholder }: CellProps<Da
   if (cell?.fieldType !== FieldType.DateTime) return null;
   if (!cell?.data)
     return placeholder ? (
-      <div style={style} className={'text-text-placeholder'}>
+      <div
+        style={style}
+        className={'text-text-placeholder'}
+      >
         {placeholder}
       </div>
     ) : null;
   return (
-    <div style={style} className={'flex cursor-text items-center gap-1'}>
+    <div
+      style={style}
+      className={'flex cursor-text gap-1'}
+    >
       {dateStr}
       {hasReminder && <ReminderSvg className={'h-4 w-4'} />}
     </div>

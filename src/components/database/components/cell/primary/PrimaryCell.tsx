@@ -6,10 +6,10 @@ import { getPlatform } from '@/utils/platform';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
 
-export function PrimaryCell(
+export function PrimaryCell (
   props: CellProps<CellType> & {
     showDocumentIcon?: boolean;
-  }
+  },
 ) {
   const { rowId, showDocumentIcon } = props;
   const meta = useRowMetaSelector(rowId);
@@ -30,7 +30,7 @@ export function PrimaryCell(
     const onMouseMove = (e: Event) => {
       const target = e.target as HTMLElement;
 
-      if (target.closest('.grid-row-cell')?.getAttribute('data-row-id') === rowId) {
+      if (target.closest(`[data-row-id="${rowId}"]`)) {
         setHover(true);
       } else {
         setHover(false);
@@ -60,7 +60,7 @@ export function PrimaryCell(
           navigateToRow?.(rowId);
         }
       }}
-      className={'primary-cell relative flex min-h-full w-full gap-2'}
+      className={'primary-cell relative flex h-full w-full gap-2'}
     >
       {icon ? (
         <div className={'flex h-5 w-5 items-center justify-center text-base'}>{icon}</div>

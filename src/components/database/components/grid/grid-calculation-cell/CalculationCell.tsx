@@ -66,9 +66,9 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
   }, [cell?.value, format]);
 
   return (
-    <div className={'h-full w-full px-1 text-right uppercase leading-[36px] text-text-caption'}>
-      <span className={'text-xs'}>{prefix}</span>
-      <span className={'ml-2 text-sm font-medium text-text-title'}>{num}</span>
+    <div className={'h-full text-sm w-full items-center px-2 text-right flex gap-[10px] uppercase leading-[36px] text-text-secondary'}>
+      <span className={'flex-1 text-xs'}>{prefix}</span>
+      <span className={'font-medium text-text-primary'}>{num}</span>
     </div>
   );
 }

@@ -17,7 +17,7 @@ export function TextCell ({ cell, style, placeholder }: CellProps<TextCellType>)
   return (
     <div
       style={style}
-      className={`text-cell w-full leading-[1.2] ${readOnly ? 'select-auto' : ''}`}
+      className={`text-cell w-full text-sm ${readOnly ? 'select-auto' : ''}`}
     >
       {cell?.data}
     </div>

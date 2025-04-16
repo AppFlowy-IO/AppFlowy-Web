@@ -5,16 +5,19 @@ import { useNavigateToRow } from '@/application/database-yjs';
 import { Tooltip } from '@mui/material';
 import React from 'react';
 
-function OpenAction({ rowId }: { rowId: string }) {
+function OpenAction ({ rowId }: { rowId: string }) {
   const navigateToRow = useNavigateToRow();
 
   const { t } = useTranslation();
 
   return (
-    <Tooltip placement={'bottom'} title={t('tooltip.openAsPage')}>
+    <Tooltip
+      placement={'bottom'}
+      title={t('tooltip.openAsPage')}
+    >
       <button
         color={'primary'}
-        className={'rounded border border-line-divider bg-bg-body p-1 hover:bg-fill-list-hover'}
+        className={'rounded border border-line-divider w-5 h-5 flex items-center justify-center bg-bg-body p-1 hover:bg-fill-list-hover'}
         onClick={() => {
           navigateToRow?.(rowId);
         }}

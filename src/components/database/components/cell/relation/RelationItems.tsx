@@ -110,7 +110,7 @@ function RelationItems ({ style, cell, fieldId }: {
   return (
     <div
       style={style}
-      className={'relation-cell flex w-full items-center gap-2'}
+      className={'relation-cell flex w-full gap-2'}
     >
       {noAccess ? (
         <div className={'text-text-caption'}>No access</div>

@@ -1,14 +1,14 @@
 import { YjsDatabaseKey } from '@/application/types';
 import { useDatabaseView } from '@/application/database-yjs';
 import { CalculationType } from '@/application/database-yjs/database.type';
-import { CalculationCell, ICalculationCell } from '../grid-calculation-cell';
+import { CalculationCell, ICalculationCell } from '@/components/database/components/grid/grid-calculation-cell';
 import React, { useCallback, useEffect, useState } from 'react';
 
 export interface GridCalculateRowCellProps {
   fieldId: string;
 }
 
-export function GridCalculateRowCell({ fieldId }: GridCalculateRowCellProps) {
+export function GridCalculateRowCell ({ fieldId }: GridCalculateRowCellProps) {
   const databaseView = useDatabaseView();
   const [calculation, setCalculation] = useState<ICalculationCell>();
 

@@ -7,7 +7,7 @@ import React, { CSSProperties, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as FileMediaSvg } from '@/assets/icons/attachment.svg';
 
-export function CardField({ rowId, fieldId }: { rowId: string; fieldId: string; index: number }) {
+export function CardField ({ rowId, fieldId }: { rowId: string; fieldId: string; index: number }) {
   const { t } = useTranslation();
   const { field } = useFieldSelector(fieldId);
   const cell = useCellSelector({
@@ -50,13 +50,23 @@ export function CardField({ rowId, fieldId }: { rowId: string; fieldId: string; 
   if (isPrimary) {
     if (!cell?.data) {
       return (
-        <div className={'text-text-caption'} style={style}>
+        <div
+          className={'text-text-caption'}
+          style={style}
+        >
           {t('grid.row.titlePlaceholder')}
         </div>
       );
     } else {
       return (
-        <PrimaryCell showDocumentIcon readOnly cell={cell as TextCell} rowId={rowId} fieldId={fieldId} style={style} />
+        <PrimaryCell
+          showDocumentIcon
+          readOnly
+          cell={cell as TextCell}
+          rowId={rowId}
+          fieldId={fieldId}
+          style={style}
+        />
       );
     }
   }
@@ -65,7 +75,12 @@ export function CardField({ rowId, fieldId }: { rowId: string; fieldId: string; 
     return (
       <div className={'flex items-center gap-1'}>
         <span>
-          <Cell readOnly cell={cell} rowId={rowId} fieldId={fieldId} />
+          <Cell
+            readOnly
+            cell={cell}
+            rowId={rowId}
+            fieldId={fieldId}
+          />
         </span>
         <span>{field?.get(YjsDatabaseKey.name) || ''}</span>
       </div>
@@ -77,14 +92,23 @@ export function CardField({ rowId, fieldId }: { rowId: string; fieldId: string; 
 
     if (count === 0) return null;
     return (
-      <div style={style} className={'flex cursor-text items-center gap-1.5'}>
+      <div
+        style={style}
+        className={'flex cursor-text gap-1.5'}
+      >
         <FileMediaSvg className={'h-4 w-4'} />
         {count}
       </div>
     );
   }
 
-  return <Cell style={style} readOnly cell={cell} rowId={rowId} fieldId={fieldId} />;
+  return <Cell
+    style={style}
+    readOnly
+    cell={cell}
+    rowId={rowId}
+    fieldId={fieldId}
+  />;
 }
 
 export default CardField;

@@ -41,7 +41,10 @@ export function RowCreateModifiedTime ({
 
   if (!time) return null;
   return (
-    <div style={style} className={'flex w-full items-center'}>
+    <div
+      style={style}
+      className={'flex w-full'}
+    >
       {time}
     </div>
   );
