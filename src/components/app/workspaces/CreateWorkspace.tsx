@@ -7,11 +7,9 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 
-function CreateWorkspace () {
+function CreateWorkspace() {
   const { t } = useTranslation();
-  const {
-    onChangeWorkspace: handleSelectedWorkspace,
-  } = useAppHandlers();
+  const { onChangeWorkspace: handleSelectedWorkspace } = useAppHandlers();
   const service = useService();
   const [loading, setLoading] = React.useState(false);
   const [name, setName] = React.useState('');
@@ -47,11 +45,11 @@ function CreateWorkspace () {
     <>
       <Button
         color={'inherit'}
-        className={'w-full justify-start px-3 gap-0.5'}
+        className={'w-full justify-start gap-0.5 px-3'}
         onClick={() => setOpen(true)}
         startIcon={
-          <div className={'w-[33px] flex items-center justify-center h-[33px] rounded-[8px] border border-line-divider'}>
-            <AddIcon className={'w-5 h-5'} />
+          <div className={'flex h-[33px] w-[33px] items-center justify-center rounded-[8px] border border-line-divider'}>
+            <AddIcon className={'h-5 w-5'} />
           </div>
         }
       >
@@ -86,15 +84,9 @@ function CreateWorkspace () {
               }, 100);
               inputRef.current = input;
             }
-
           }}
-          onChange={e => setName(e.target.value)}
+          onChange={(e) => setName(e.target.value)}
           fullWidth
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              void handleCreate();
-            }
-          }}
         />
       </NormalModal>
     </>
