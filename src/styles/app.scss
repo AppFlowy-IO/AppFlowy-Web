@@ -3,7 +3,6 @@
 * {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
-  scroll-behavior: smooth;
 }
 
 .sketch-picker {
@@ -58,7 +57,6 @@ body {
 
 .appflowy-scroller {
   @include mixin.scrollbar-style;
-
 }
 
 
@@ -70,7 +68,6 @@ body {
 
 .appflowy-scrollbar-track-horizontal, .appflowy-scrollbar-track-vertical {
   background-color: var(--scrollbar-track);
-
 }
 
 .icon {

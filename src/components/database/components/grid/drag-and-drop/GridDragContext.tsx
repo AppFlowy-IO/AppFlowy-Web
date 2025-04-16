@@ -1,19 +1,27 @@
+import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { createContext, useContext } from 'react';
 
 type RowEntry = { rowId: string; element: HTMLElement };
+type ColumnEntry = { fieldId: string; element: HTMLElement };
 type CleanupFn = () => void;
+
+export interface ReorderPayload {
+  startIndex: number;
+  indexOfTarget: number;
+  closestEdgeOfTarget: Edge | null;
+}
 
 export type GridDragContextValue = {
   getRows: () => RenderRow[];
+  getColumns: () => RenderColumn[];
   registerRow: (entry: RowEntry) => CleanupFn;
-  reorderRow: (args: {
-    startIndex: number;
-    targetIndex: number;
-    closestEdge: Edge | null;
-  }) => void;
-  instanceId: symbol;
+  registerColumn: (entry: ColumnEntry) => CleanupFn;
+  reorderRow: (args: ReorderPayload) => void;
+  reorderColumn: (args: ReorderPayload) => void;
+  rowInstanceId: symbol;
+  columnInstanceId: symbol;
 };
 
 export const GridDragContext = createContext<GridDragContextValue | null>(null);
@@ -24,10 +32,6 @@ export function useGridDragContext () {
   if (!context) throw new Error('useGridDragContext must be used within a GridDragProvider');
 
   return context;
-}
-
-export function getColumnRegistry () {
-  
 }
 
 export function getRowRegistry () {
@@ -52,10 +56,26 @@ export function getRowRegistry () {
   return { register, getElement };
 }
 
-export interface RowData {
-  instanceId: symbol;
-  rowId: string;
-  index: number;
+export function getColumnRegistry () {
+  const registry = new Map<string, HTMLElement>();
+
+  function register ({ fieldId, element }: ColumnEntry) {
+    registry.set(fieldId, element);
+
+    return function unregister () {
+      if (registry.get(fieldId) === element) {
+        registry.delete(fieldId);
+      }
+    };
+  }
+
+  function getElement (fieldId: string): HTMLElement | null {
+    console.log(`getElement: ${fieldId}`);
+
+    return registry.get(fieldId) ?? null;
+  }
+
+  return { register, getElement };
 }
 
 export enum GridDragState {

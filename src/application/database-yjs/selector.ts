@@ -126,12 +126,12 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
 
     setColumns(getColumns());
 
-    fieldsOrder?.observe(observerEvent);
-    fieldSettings?.observe(observerEvent);
+    fieldsOrder?.observeDeep(observerEvent);
+    fieldSettings?.observeDeep(observerEvent);
 
     return () => {
-      fieldsOrder?.unobserve(observerEvent);
-      fieldSettings?.unobserve(observerEvent);
+      fieldsOrder?.unobserveDeep(observerEvent);
+      fieldSettings?.unobserveDeep(observerEvent);
     };
   }, [database, viewId, visibilitys]);
 

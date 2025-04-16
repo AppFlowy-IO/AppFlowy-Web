@@ -2,7 +2,7 @@ import { RenderColumn } from '@/components/database/components/grid/grid-column'
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { getScrollParent } from '@/components/global-comment/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
-import React from 'react';
+import React, { useCallback } from 'react';
 
 const MIN_HEIGHT = 36;
 const PADDING_INLINE = 96;
@@ -35,8 +35,8 @@ export function useGridVirtualizer ({
     paddingEnd: 360,
   });
 
-  const getColumn = (index: number) => columns[index];
-  const getColumnWidth = (index: number) => getColumn(index).width;
+  const getColumn = useCallback((index: number) => columns[index], [columns]);
+  const getColumnWidth = useCallback((index: number) => getColumn(index).width, [getColumn]);
 
   const columnVirtualizer = useVirtualizer({
     horizontal: true,

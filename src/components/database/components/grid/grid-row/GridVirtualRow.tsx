@@ -1,4 +1,4 @@
-import { DropIndicator } from '@/components/database/components/grid/drag-and-drop/DropIndicator';
+import { DropRowIndicator } from '@/components/database/components/grid/drag-and-drop/DropRowIndicator';
 import {
   GridDragState,
   ItemState,
@@ -27,14 +27,17 @@ function GridVirtualRow ({
   columns,
   columnItems,
   totalSize,
+  onResizeColumnStart,
 }: {
   columnItems: VirtualItem[];
   row: VirtualItem;
   totalSize: number;
-  data: RenderRow[]
-  columns: RenderColumn[]
+  data: RenderRow[];
+  columns: RenderColumn[];
+  onResizeColumnStart: (fieldId: string, element: HTMLElement) => void;
+
 }) {
-  const { registerRow, instanceId } = useGridDragContext();
+  const { registerRow, rowInstanceId: instanceId } = useGridDragContext();
   const rowIndex = row.index;
   const rowId = data[rowIndex].rowId as string;
 
@@ -85,7 +88,6 @@ function GridVirtualRow ({
           });
         },
         onDragStart () {
-          console.log('drag start');
           setState(draggingState);
         },
         onDrop () {
@@ -136,10 +138,11 @@ function GridVirtualRow ({
           data={data}
           row={row}
           column={column}
+          onResizeColumnStart={onResizeColumnStart}
         />
       );
     });
-  }, [columnItems, columns, data, row]);
+  }, [columnItems, columns, data, row, onResizeColumnStart]);
 
   return (
     <>
@@ -167,7 +170,7 @@ function GridVirtualRow ({
         >
           {children}
           {state.type === GridDragState.IS_OVER && state.closestEdge && (
-            <DropIndicator
+            <DropRowIndicator
               rowIndex={row.index}
               edge={state.closestEdge}
             />

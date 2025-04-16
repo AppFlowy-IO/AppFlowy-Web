@@ -18,6 +18,8 @@ export type RenderColumn = {
 
 export function useRenderFields () {
   const fields = useFieldsSelector();
+
+  console.log('useRenderFields ', fields);
   const renderColumns = useMemo(() => {
     const data = fields.map((column) => ({
       ...column,

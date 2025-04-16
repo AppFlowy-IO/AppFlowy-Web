@@ -1,6 +1,6 @@
+import GridCell from '@/components/database/components/grid/grid-cell/GridCell';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { RenderRow } from '@/components/database/components/grid/grid-row';
-import RowCell from '@/components/database/components/grid/grid-row/RowCell';
+import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
 import { cn } from '@/lib/utils';
 import { VirtualItem } from '@tanstack/react-virtual';
 import React, { memo, useMemo } from 'react';
@@ -13,18 +13,20 @@ function GridVirtualColumn ({
   columns,
   row,
   column,
+  onResizeColumnStart,
 }: {
   data: RenderRow[];
   columns: RenderColumn[];
   row: VirtualItem;
   column: VirtualItem;
+  onResizeColumnStart: (fieldId: string, element: HTMLElement) => void;
 }) {
   const rowIndex = row.index;
   const columnData = useMemo(() => columns[column.index], [columns, column.index]);
 
   return (
     <div
-      data-field-id={columnData.fieldId}
+      data-column-id={columnData.fieldId}
       key={column.key}
       className={cn(columnData.wrap ? 'wrap-cell' : 'whitespace-nowrap', 'border-t border-l border-transparent')}
       style={{
@@ -41,11 +43,12 @@ function GridVirtualColumn ({
         } : {}),
       }}
     >
-      <RowCell
+      <GridCell
         rowIndex={row.index}
         columnIndex={column.index}
         columns={columns}
         data={data}
+        onResizeColumnStart={onResizeColumnStart}
       />
 
     </div>

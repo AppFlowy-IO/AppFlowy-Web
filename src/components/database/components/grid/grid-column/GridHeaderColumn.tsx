@@ -5,9 +5,11 @@ import { getIcon } from '@/utils/emoji';
 import DOMPurify from 'dompurify';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/ai_indicator.svg';
+import { ResizeHandle } from './ResizeHandle';
 
-export function GridHeaderColumn ({ column }: {
-  column: Column
+export function GridHeaderColumn ({ column, onResizeColumnStart }: {
+  column: Column;
+  onResizeColumnStart: (fieldId: string, element: HTMLElement) => void;
 }) {
   const [iconContent, setIconContent] = useState<string | undefined>('');
   const { field } = useFieldSelector(column.fieldId);
@@ -52,7 +54,7 @@ export function GridHeaderColumn ({ column }: {
 
   return (
     <div
-      className={'rounded-none hover:bg-fill-primary-alpha-5 cursor-pointer text-sm flex items-center px-2 h-full gap-[6px] w-full justify-start'}
+      className={'rounded-none hover:bg-fill-primary-alpha-5 relative cursor-pointer text-sm flex items-center px-2 h-full gap-[6px] w-full justify-start'}
     >
       {icon || <FieldTypeIcon
         type={type}
@@ -60,6 +62,10 @@ export function GridHeaderColumn ({ column }: {
       />}
       <div className={'flex-1 truncate'}>{name}</div>
       {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-xl'} />}
+      <ResizeHandle
+        fieldId={column.fieldId}
+        onResizeStart={onResizeColumnStart}
+      />
     </div>
   );
 }

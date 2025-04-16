@@ -6,7 +6,7 @@ interface DropIndicatorProps {
   rowIndex: number;
 }
 
-export function DropIndicator ({ edge, style = {} }: DropIndicatorProps) {
+export function DropRowIndicator ({ edge, style = {} }: DropIndicatorProps) {
   if (!edge) return null;
 
   return (

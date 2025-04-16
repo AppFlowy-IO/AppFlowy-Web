@@ -1,7 +1,7 @@
 import { Scrollbars } from 'react-custom-scrollbars-2';
 import React from 'react';
 
-export interface AFScrollerProps {
+export interface AFScrollerProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
   overflowXHidden?: boolean;
   overflowYHidden?: boolean;
@@ -11,7 +11,7 @@ export interface AFScrollerProps {
 }
 
 export const AFScroller = React.forwardRef(
-  ({ onScroll, style, children, overflowXHidden, overflowYHidden, className }: AFScrollerProps, ref) => {
+  ({ onScroll, style, children, overflowXHidden, overflowYHidden, className, ...props }: AFScrollerProps, ref) => {
     return (
       <Scrollbars
         onScroll={onScroll}
@@ -29,8 +29,8 @@ export const AFScroller = React.forwardRef(
             ref.current = scrollEl;
           }
         }}
-        renderThumbHorizontal={(props) => <div {...props} className='appflowy-scrollbar-thumb-horizontal' />}
-        renderThumbVertical={(props) => <div {...props} className='appflowy-scrollbar-thumb-vertical' />}
+        renderThumbHorizontal={(props) => <div {...props} className="appflowy-scrollbar-thumb-horizontal" />}
+        renderThumbVertical={(props) => <div {...props} className="appflowy-scrollbar-thumb-vertical" />}
         {...(overflowXHidden && {
           renderTrackHorizontal: (props) => (
             <div
@@ -63,11 +63,12 @@ export const AFScroller = React.forwardRef(
               marginBottom: 0,
             }}
             className={`${className} appflowy-custom-scroller`}
+            {...props}
           />
         )}
       >
         {children}
       </Scrollbars>
     );
-  }
+  },
 );
