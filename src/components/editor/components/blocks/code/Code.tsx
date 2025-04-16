@@ -18,7 +18,7 @@ export const CodeBlock =
 
     return (
       <div
-        className={'relative w-full'}
+        className={'relative w-full my-0.5'}
         onMouseEnter={() => {
           setShowToolbar(true);
         }}
