@@ -4,7 +4,7 @@ import { SelectOptionColorMap } from '@/components/database/components/cell/cell
 import React, { useCallback, useMemo } from 'react';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 
-export function SelectOptionList({ fieldId, selectedIds }: { fieldId: string; selectedIds: string[] }) {
+export function SelectOptionList ({ fieldId, selectedIds }: { fieldId: string; selectedIds: string[] }) {
   const { field } = useFieldSelector(fieldId);
   const typeOption = useMemo(() => {
     if (!field) return null;
@@ -22,12 +22,15 @@ export function SelectOptionList({ fieldId, selectedIds }: { fieldId: string; se
           data-checked={isSelected}
           className={'flex items-center justify-between gap-2 text-xs'}
         >
-          <Tag size={'small'} label={option.name} color={SelectOptionColorMap[option.color]} />
+          <Tag
+            label={option.name}
+            color={SelectOptionColorMap[option.color]}
+          />
           {isSelected && <CheckIcon />}
         </div>
       );
     },
-    [selectedIds]
+    [selectedIds],
   );
 
   if (!field || !typeOption) return null;

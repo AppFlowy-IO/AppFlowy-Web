@@ -1,5 +1,4 @@
 import { useDatabaseContext, useRowsByGroup } from '@/application/database-yjs';
-import { AFScroller } from '@/components/_shared/scroller';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Column } from '../column';
@@ -43,32 +42,27 @@ export const Group = ({ groupId }: GroupProps) => {
 
   if (columns.length === 0 || !fieldId) return null;
   return (
-    <AFScroller
-      overflowYHidden
-      className={`relative  h-full`}
+    <div
+      ref={ref}
+      className={'max-sm:!px-6 px-24 appflowy-scroller overflow-x-auto h-full'}
+      style={{
+        paddingInline: scrollLeft === undefined ? undefined : scrollLeft,
+      }}
     >
       <div
-        ref={ref}
-        className={'max-sm:!px-6 px-24 h-full'}
-        style={{
-          paddingInline: scrollLeft === undefined ? undefined : scrollLeft,
-        }}
+        className="columns flex h-full w-fit min-w-full gap-2"
       >
-        <div
-          className="columns flex h-full w-fit min-w-full gap-4 py-[10px]"
-        >
-          {columns.map((data) => (
-            <Column
-              key={data.id}
-              id={data.id}
-              fieldId={fieldId}
-              rows={groupResult.get(data.id)}
-              onRendered={handleRendered}
-            />
-          ))}
-        </div>
+        {columns.map((data) => (
+          <Column
+            key={data.id}
+            id={data.id}
+            fieldId={fieldId}
+            rows={groupResult.get(data.id)}
+            onRendered={handleRendered}
+          />
+        ))}
       </div>
-    </AFScroller>
+    </div>
   );
 };
 

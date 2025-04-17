@@ -1,11 +1,11 @@
 
 ::-webkit-scrollbar-thumb:hover {
   border-radius: 4px;
-  background-color: var(--scrollbar-thumb);
+  background-color: var(--fill-primary-alpha-5-hover);
 }
 
 ::-webkit-scrollbar-track:hover {
-  background-color: var(--scrollbar-track);
+  background-color: var(--fill-primary-alpha-5-hover);
 }
 
 @mixin hidden-scrollbar {
@@ -17,6 +17,21 @@
   scrollbar-width: none; // For Firefox
 }
 
+@mixin hidden-scrollbar-style {
+  ::-webkit-scrollbar, &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+    background-color: transparent;
+  }
+
+  &:hover {
+
+    &::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb {
+      border-radius: 4px;
+      background-color: transparent;
+    }
+  }
+}
 
 @mixin scrollbar-style {
   ::-webkit-scrollbar, &::-webkit-scrollbar {
@@ -28,7 +43,7 @@
 
     &::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb {
       border-radius: 4px;
-      background-color: var(--scrollbar-thumb);
+      background-color: var(--fill-primary-alpha-5-hover);
     }
   }
 }

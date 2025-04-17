@@ -44,10 +44,10 @@ export const Card = memo(({ groupFieldId, rowId, onResize, isDragging }: CardPro
 
   const navigateToRow = useDatabaseContext().navigateToRow;
   const className = useMemo(() => {
-    const classList = ['relative board-card flex flex-col gap-2 overflow-hidden rounded-[6px] border border-line-card text-xs'];
+    const classList = ['relative board-card shadow-card flex flex-col gap-2 overflow-hidden rounded-[6px] text-xs'];
 
     if (navigateToRow) {
-      classList.push('cursor-pointer hover:bg-fill-list-hover');
+      classList.push('cursor-pointer hover:bg-fill-primary-alpha-5');
     }
 
     return classList.join(' ');
@@ -92,6 +92,18 @@ export const Card = memo(({ groupFieldId, rowId, onResize, isDragging }: CardPro
     );
   }, []);
 
+  const children = useMemo(() => {
+    return showFields.map((field, index) => {
+      return <CardField
+        index={index}
+        key={field.fieldId}
+        rowId={rowId}
+        fieldId={field.fieldId}
+      />;
+
+    });
+  }, [rowId, showFields]);
+
   return (
     <div
       onClick={() => {
@@ -107,19 +119,12 @@ export const Card = memo(({ groupFieldId, rowId, onResize, isDragging }: CardPro
           {renderCoverImage(cover)}
         </div>
       )}
-      <div className={'flex flex-col gap-2 py-2 px-3'}>
-        {showFields.map((field, index) => {
-          return <CardField
-            index={index}
-            key={field.fieldId}
-            rowId={rowId}
-            fieldId={field.fieldId}
-          />;
-        })}
+      <div className={'flex flex-col py-2 px-3'}>
+        {children}
       </div>
 
     </div>
   );
 });
 
-export default Card;
+export default memo(Card);

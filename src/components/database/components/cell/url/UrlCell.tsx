@@ -1,9 +1,10 @@
 import { useReadOnly } from '@/application/database-yjs';
 import { CellProps, UrlCell as UrlCellType } from '@/application/database-yjs/cell.type';
 import { notify } from '@/components/_shared/notify';
+import { Button } from '@/components/ui/button';
 import { copyTextToClipboard } from '@/utils/copy';
 import { openUrl, processUrl } from '@/utils/url';
-import { IconButton, Tooltip } from '@mui/material';
+import { Tooltip } from '@mui/material';
 import React, { useMemo } from 'react';
 import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
 import { ReactComponent as CopySvg } from '@/assets/icons/copy.svg';
@@ -12,14 +13,14 @@ import { useTranslation } from 'react-i18next';
 export function UrlCell ({ cell, style, placeholder }: CellProps<UrlCellType>) {
   const readOnly = useReadOnly();
 
-  const isUrl = useMemo(() => (cell ? processUrl(cell.data) : false), [cell]);
+  const isUrl = useMemo(() => (cell?.data ? processUrl(cell.data) : false), [cell]);
 
   const [showActions, setShowActions] = React.useState(false);
   const className = useMemo(() => {
-    const classList = ['select-text', 'w-fit', 'flex', 'w-full'];
+    const classList = ['select-text', 'w-fit', 'flex', 'w-full', 'relative'];
 
     if (isUrl) {
-      classList.push('text-content-blue-400', 'underline', 'cursor-pointer');
+      classList.push('text-text-theme', 'underline', 'cursor-pointer');
     } else {
       classList.push('cursor-text');
     }
@@ -42,7 +43,9 @@ export function UrlCell ({ cell, style, placeholder }: CellProps<UrlCellType>) {
   return (
     <div
       style={style}
-      onMouseEnter={() => setShowActions(true)}
+      onMouseEnter={() => {
+        setShowActions(true);
+      }}
       onMouseLeave={() => setShowActions(false)}
       onClick={(e) => {
         if (!isUrl || !cell) return;
@@ -60,26 +63,24 @@ export function UrlCell ({ cell, style, placeholder }: CellProps<UrlCellType>) {
             title={t('editor.openLink')}
             placement={'top'}
           >
-            <IconButton
-              sx={{
-                border: '1px solid var(--line-divider)',
-              }}
+            <Button
+              variant={'outline'}
+              className={'w-5 h-5 !px-0'}
               onClick={(e) => {
                 e.stopPropagation();
                 void openUrl(cell.data, '_blank');
               }}
             >
-              <LinkSvg />
-            </IconButton>
+              <LinkSvg className={'w-4 h-4'} />
+            </Button>
           </Tooltip>
           <Tooltip
             title={t('button.copyLink')}
             placement={'top'}
           >
-            <IconButton
-              sx={{
-                border: '1px solid var(--line-divider)',
-              }}
+            <Button
+              variant={'outline'}
+              className={'w-5 h-5 !px-0'}
               onClick={async (e) => {
                 e.stopPropagation();
                 await copyTextToClipboard(cell.data);
@@ -87,7 +88,7 @@ export function UrlCell ({ cell, style, placeholder }: CellProps<UrlCellType>) {
               }}
             >
               <CopySvg />
-            </IconButton>
+            </Button>
           </Tooltip>
         </div>
       )}

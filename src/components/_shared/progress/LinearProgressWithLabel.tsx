@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 
-function LinearProgressWithLabel({
+function LinearProgressWithLabel ({
   value,
   count,
   selectedCount,
@@ -39,7 +39,7 @@ function LinearProgressWithLabel({
           />
         ))}
       </div>
-      <div className={'min-w-[30px] text-center text-text-title'}>{result}</div>
+      <div className={'min-w-[30px] text-center text-text-secondary'}>{result}</div>
     </div>
   );
 }

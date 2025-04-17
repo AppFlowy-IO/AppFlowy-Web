@@ -2,7 +2,7 @@ import {
   FieldId, RowCoverType,
   SortId,
   YDatabase,
-  YDatabaseMetas, YDatabaseRow,
+  YDatabaseMetas,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
@@ -313,10 +313,10 @@ export function useGroupsSelector () {
 
     setGroups(getGroups());
 
-    groupOrders.observe(observerEvent);
+    groupOrders.observeDeep(observerEvent);
 
     return () => {
-      groupOrders.unobserve(observerEvent);
+      groupOrders.unobserveDeep(observerEvent);
     };
   }, [database, viewId]);
 
@@ -500,7 +500,7 @@ export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: s
   const { row } = useRowDataSelector(rowId);
   const cell = row?.get(YjsDatabaseKey.cells)?.get(fieldId);
   const [, setClock] = useState<number>(0);
-  const cellValue = cell ? parseYDatabaseCellToCell(cell) : null;
+  const cellValue = cell ? parseYDatabaseCellToCell(cell) : undefined;
 
   useEffect(() => {
     if (!cell) return;

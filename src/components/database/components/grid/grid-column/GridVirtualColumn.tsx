@@ -1,6 +1,6 @@
 import GridCell from '@/components/database/components/grid/grid-cell/GridCell';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
+import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { cn } from '@/lib/utils';
 import { VirtualItem } from '@tanstack/react-virtual';
 import React, { memo, useMemo } from 'react';

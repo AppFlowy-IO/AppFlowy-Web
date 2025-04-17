@@ -8,7 +8,6 @@ import { useGridDnd } from '@/components/database/components/grid/grid-table/use
 import { useGridVirtualizer } from '@/components/database/components/grid/grid-table/useGridVirtualizer';
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import AutoSizer from 'react-virtualized-auto-sizer';
 import { useColumnResize } from '../grid-column/useColumnResize';
 
 function GridVirtualizer ({
@@ -106,53 +105,48 @@ function GridVirtualizer ({
             );
           })}
         </div>
-        <AutoSizer>
-          {() => (
-            virtualizer.scrollElement && createPortal(<div
+        {virtualizer.scrollElement && createPortal(<div
+          style={{
+            width: '100%',
+            position: 'sticky',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            zIndex: 100,
+          }}
+        >
+          <div
+            ref={bottomScrollbarRef}
+            style={{
+              scrollBehavior: 'auto',
+              visibility: isHover && totalSize > window.innerWidth ? 'visible' : 'hidden',
+            }}
+            onMouseDown={() => {
+              setDraggingBottomScrollbar(true);
+            }}
+            onMouseUp={() => {
+              setDraggingBottomScrollbar(false);
+            }}
+            onScroll={e => {
+              if (!draggingBottomScrollbar) return;
+              const scrollLeft = e.currentTarget.scrollLeft;
+
+              parentRef.current?.scrollTo({
+                left: scrollLeft,
+                behavior: 'auto',
+              });
+            }}
+            className={'h-3 w-full opacity-30 hover:opacity-60 overflow-y-hidden overflow-x-auto'}
+          >
+            <div
               style={{
-                width: '100%',
-                position: 'sticky',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                zIndex: 100,
+                width: `${totalSize}px`,
               }}
             >
-              <div
-                ref={bottomScrollbarRef}
-                style={{
-                  scrollBehavior: 'auto',
-                  visibility: isHover && totalSize > window.innerWidth ? 'visible' : 'hidden',
-                }}
-                onMouseDown={() => {
-                  setDraggingBottomScrollbar(true);
-                }}
-                onMouseUp={() => {
-                  setDraggingBottomScrollbar(false);
-                }}
-                onScroll={e => {
-                  if (!draggingBottomScrollbar) return;
-                  const scrollLeft = e.currentTarget.scrollLeft;
-
-                  parentRef.current?.scrollTo({
-                    left: scrollLeft,
-                    behavior: 'auto',
-                  });
-                }}
-                className={'h-3 w-full opacity-30 hover:opacity-60 overflow-y-hidden overflow-x-auto'}
-              >
-                <div
-                  style={{
-                    width: `${totalSize}px`,
-                  }}
-                >
-                  &nbsp;
-                </div>
-              </div>
-            </div>, virtualizer.scrollElement)
-          )}
-        </AutoSizer>
-
+              &nbsp;
+            </div>
+          </div>
+        </div>, virtualizer.scrollElement)}
       </div>
     </GridDragContext.Provider>
   );

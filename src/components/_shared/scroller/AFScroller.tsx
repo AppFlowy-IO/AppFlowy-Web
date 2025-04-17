@@ -11,7 +11,7 @@ export interface AFScrollerProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export const AFScroller = React.forwardRef(
-  ({ onScroll, style, children, overflowXHidden, overflowYHidden, className, ...props }: AFScrollerProps, ref) => {
+  ({ onScroll, style, children, overflowXHidden, overflowYHidden, className }: AFScrollerProps, ref) => {
     return (
       <Scrollbars
         onScroll={onScroll}
@@ -63,7 +63,6 @@ export const AFScroller = React.forwardRef(
               marginBottom: 0,
             }}
             className={`${className} appflowy-custom-scroller`}
-            {...props}
           />
         )}
       >

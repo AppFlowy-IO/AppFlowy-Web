@@ -21,8 +21,6 @@ export function RowCreateModifiedTime ({
   useEffect(() => {
     if (!rowData) return;
     const observeHandler = () => {
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-expect-error
       setValue(rowData.get(attrName));
     };
 

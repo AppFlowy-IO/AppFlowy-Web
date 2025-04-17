@@ -22,6 +22,10 @@ export function CardField ({ rowId, fieldId }: { rowId: string; fieldId: string;
       overflow: 'hidden',
       width: '100%',
       textAlign: 'left',
+      minHeight: 24,
+      display: 'flex',
+      alignItems: 'center',
+      fontSize: 12,
     };
 
     if (isPrimary || [FieldType.Relation, FieldType.SingleSelect, FieldType.MultiSelect].includes(Number(type))) {
@@ -39,8 +43,9 @@ export function CardField ({ rowId, fieldId }: { rowId: string; fieldId: string;
 
     if (isPrimary) {
       Object.assign(styleProperties, {
-        fontSize: '1.25em',
+        fontSize: '14px',
         fontWeight: 500,
+        lineHeight: '20px',
       });
     }
 
@@ -77,7 +82,7 @@ export function CardField ({ rowId, fieldId }: { rowId: string; fieldId: string;
         <span>
           <Cell
             readOnly
-            cell={cell}
+            cell={cell || undefined}
             rowId={rowId}
             fieldId={fieldId}
           />
@@ -105,7 +110,7 @@ export function CardField ({ rowId, fieldId }: { rowId: string; fieldId: string;
   return <Cell
     style={style}
     readOnly
-    cell={cell}
+    cell={cell || undefined}
     rowId={rowId}
     fieldId={fieldId}
   />;

@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import React from 'react';
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
 
-export function HoverControls ({ rowId, dragHandleRef, state }: {
+export function HoverControls ({ rowId, dragHandleRef }: {
   rowId: string;
   dragHandleRef?: (node: HTMLButtonElement | null) => void;
   state: ItemState
