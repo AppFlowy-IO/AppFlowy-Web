@@ -1,4 +1,4 @@
-import { GroupColumn, Row } from '@/application/database-yjs';
+import { GroupColumn } from '@/application/database-yjs';
 import { createContext, useContext } from 'react';
 import type { CleanupFn } from '@atlaskit/pragmatic-drag-and-drop/types';
 

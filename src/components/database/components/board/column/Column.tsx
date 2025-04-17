@@ -3,9 +3,7 @@ import CardList from '@/components/database/components/board/column/CardList';
 import { StateType, useColumnDrag } from '@/components/database/components/board/column/useColumnDrag';
 import { useRenderColumn } from '@/components/database/components/board/column/useRenderColumn';
 import { DropColumnIndicator } from '@/components/database/components/board/drag-and-drop/DropColumnIndicator';
-import { GridDragState } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import React, { memo } from 'react';
-import { createPortal } from 'react-dom';
 import { ColumnContext } from '../drag-and-drop/column-context';
 
 export interface ColumnProps {
@@ -41,7 +39,7 @@ export const Column = memo(
           className="column relative flex flex-col"
         >
           <div
-            className={'flex items-center flex-col gap-2 rounded-[8px] pb-0 w-[256px] pt-2 h-full'}
+            className={'flex items-center flex-col rounded-[8px] pb-0 w-[256px] pt-2 h-full'}
             ref={columnInnerRef}
           >
             <div
@@ -55,11 +53,11 @@ export const Column = memo(
               <span className={'text-text-secondary text-xs'}>{rowCount}</span>
             </div>
 
-            <div className={'flex-1 w-[256px]'}>
+            <div className={'w-[256px] flex-1'}>
               {rows && <CardList
-                setScrollableContainer={setScrollerContainer}
                 data={rows}
                 fieldId={fieldId}
+                setScrollElement={setScrollerContainer}
               />}
             </div>
           </div>

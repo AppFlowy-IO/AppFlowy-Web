@@ -176,7 +176,7 @@ body {
 }
 
 .board-card {
-  @apply border-border-grey-tertiary border-[1.5px];
+  @apply border-border-primary border-[1.5px];
   border-radius: 6px;
   background: var(--background-primary);
 }

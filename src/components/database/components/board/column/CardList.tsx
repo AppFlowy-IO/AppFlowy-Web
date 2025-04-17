@@ -1,41 +1,54 @@
 import { Row } from '@/application/database-yjs';
-import { AFScroller } from '@/components/_shared/scroller';
+import { getScrollParent } from '@/components/global-comment/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React, {
   useRef,
   memo,
 } from 'react';
-import Card from '@/components/database/components/board/card/Card';
+import { Card } from '@/components/database/components/board/card';
 
 function CardList ({
   data,
   fieldId,
-  setScrollableContainer,
+  setScrollElement,
 }: {
   data: Row[];
   fieldId: string;
-  setScrollableContainer?: (el: HTMLDivElement | null) => void;
+  setScrollElement?: (element: HTMLDivElement | null) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
+  const parentOffsetRef = React.useRef(0);
+
+  React.useLayoutEffect(() => {
+    parentOffsetRef.current = parentRef.current?.getBoundingClientRect()?.top ?? 0;
+  }, []);
 
   const virtualizer = useVirtualizer({
     count: data.length,
-    getScrollElement: () => parentRef.current,
+    scrollMargin: parentOffsetRef.current,
+    getScrollElement: () => {
+      if (!parentRef.current) return null;
+      const el = (parentRef.current.closest('.appflowy-scroll-container') || getScrollParent(parentRef.current)) as HTMLDivElement;
+
+      if (setScrollElement) {
+        setScrollElement(el);
+      }
+
+      return el;
+    },
     estimateSize: () => 150,
     paddingStart: 0,
     paddingEnd: 320,
   });
+
   const items = virtualizer.getVirtualItems();
 
   return (
-    <AFScroller
-      overflowXHidden
-      setScrollableContainer={setScrollableContainer}
+    <div
       ref={parentRef}
-      className="w-full h-full"
+      className="w-full appflowy-custom-scroller"
       style={{
         overflowY: 'auto',
-        contain: 'strict',
       }}
     >
       <div
@@ -58,6 +71,7 @@ function CardList ({
               transform: `translateY(${
                 virtualRow.start - virtualizer.options.scrollMargin
               }px)`,
+              paddingTop: virtualRow.index === 0 ? 10 : undefined,
             }}
           >
             <Card
@@ -67,7 +81,7 @@ function CardList ({
           </div>
         ))}
       </div>
-    </AFScroller>
+    </div>
   );
 }
 

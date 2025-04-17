@@ -3,7 +3,6 @@ import { BoardContextValue } from '@/components/database/components/board/drag-a
 import { createRegistry } from '@/components/database/components/board/drag-and-drop/registry';
 import {
   autoScrollForElements,
-  autoScrollWindowForElements,
 } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
@@ -19,7 +18,7 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
   const [registry] = useState(createRegistry);
   const stableData = useRef<GroupColumn[]>(columns);
 
-  const scrollableRef = useRef<HTMLDivElement>(null);
+  const scrollableRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     stableData.current = columns;
@@ -75,7 +74,7 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
       return;
     }
 
-    console.log('reorderCard', {
+    console.log('moveCard', {
       startColumn,
       finishColumn,
       itemIndexInStartColumn,

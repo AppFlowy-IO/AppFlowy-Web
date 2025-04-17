@@ -12,11 +12,7 @@ import {
   draggable,
   dropTargetForElements,
 } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { pointerOutsideOfPreview } from '@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview';
-import { setCustomNativeDragPreview } from '@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview';
-
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 
 const idleState: ItemState = { type: GridDragState.IDLE };
 const draggingState: ItemState = { type: GridDragState.DRAGGING };
@@ -50,18 +46,8 @@ function GridDragColumn ({ columnIndex, column, children }: {
         element,
         dragHandle,
         getInitialData: () => data,
-        onGenerateDragPreview ({ nativeSetDragImage }) {
-          setCustomNativeDragPreview({
-            nativeSetDragImage,
-            getOffset: pointerOutsideOfPreview({
-              x: '16px',
-              y: '8px',
-            }),
-            render ({ container }) {
-              setState({ type: GridDragState.PREVIEW, container });
-              return () => setState(draggingState);
-            },
-          });
+        onGenerateDragPreview () {
+          setState({ type: GridDragState.PREVIEW });
         },
         onDragStart () {
           setState(draggingState);
@@ -124,12 +110,6 @@ function GridDragColumn ({ columnIndex, column, children }: {
           />
         )}
       </div>
-      {state.type === GridDragState.PREVIEW && createPortal(
-        <div className={'flex'}>
-          {children}
-        </div>,
-        state.container,
-      )}
     </div>
   );
 }

@@ -78,7 +78,7 @@ function FileDropzone ({ onChange, accept, multiple, disabled, placeholder }: Fi
       }}
     >
       <div className={'flex h-full w-full flex-col items-center justify-center gap-4 overflow-hidden'}>
-        <ImageIcon className={'h-12 w-12 text-fill-tertiary'} />
+        <ImageIcon className={'h-12 w-12 text-fill-secondary'} />
         <div className={'whitespace-pre-wrap break-words text-center text-base text-text-secondary'}>
           {placeholder || t('fileDropzone.dropFile')}
         </div>

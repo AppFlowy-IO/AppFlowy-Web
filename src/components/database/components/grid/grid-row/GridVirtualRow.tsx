@@ -11,11 +11,8 @@ import { cn } from '@/lib/utils';
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { pointerOutsideOfPreview } from '@atlaskit/pragmatic-drag-and-drop/element/pointer-outside-of-preview';
-import { setCustomNativeDragPreview } from '@atlaskit/pragmatic-drag-and-drop/element/set-custom-native-drag-preview';
 import { VirtualItem } from '@tanstack/react-virtual';
 import React, { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import HoverControls from 'src/components/database/components/grid/controls/HoverControls';
 
 const idleState: ItemState = { type: GridDragState.IDLE };
@@ -74,18 +71,9 @@ function GridVirtualRow ({
         element,
         dragHandle,
         getInitialData: () => data,
-        onGenerateDragPreview ({ nativeSetDragImage }) {
-          setCustomNativeDragPreview({
-            nativeSetDragImage,
-            getOffset: pointerOutsideOfPreview({
-              x: '16px',
-              y: '8px',
-            }),
-            render ({ container }) {
-              setState({ type: GridDragState.PREVIEW, container });
-              return () => setState(draggingState);
-            },
-          });
+        onGenerateDragPreview () {
+          setState({ type: GridDragState.PREVIEW });
+
         },
         onDragStart () {
           setState(draggingState);
@@ -180,12 +168,6 @@ function GridVirtualRow ({
         <div style={{ width: `${after}px` }} />
       </div>
 
-      {state.type === GridDragState.PREVIEW && createPortal(
-        <div className={'flex'}>
-          {children}
-        </div>,
-        state.container,
-      )}
     </>
   );
 }

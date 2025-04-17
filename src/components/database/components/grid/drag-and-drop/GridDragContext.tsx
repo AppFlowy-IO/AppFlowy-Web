@@ -87,6 +87,6 @@ export enum GridDragState {
 
 export type ItemState =
   | { type: GridDragState.IDLE }
-  | { type: GridDragState.PREVIEW; container: HTMLElement }
+  | { type: GridDragState.PREVIEW }
   | { type: GridDragState.DRAGGING }
   | { type: GridDragState.IS_OVER; closestEdge: string | null };

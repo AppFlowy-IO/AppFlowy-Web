@@ -6,7 +6,7 @@ import { VirtualItem } from '@tanstack/react-virtual';
 import React, { memo, useMemo } from 'react';
 
 const MIN_HEIGHT = 35;
-const borderStyle = '1px solid var(--border-grey-tertiary)';
+const borderStyle = '1px solid var(--border-primary)';
 
 function GridVirtualColumn ({
   data,

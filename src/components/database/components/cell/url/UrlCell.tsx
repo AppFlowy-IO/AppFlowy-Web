@@ -20,7 +20,7 @@ export function UrlCell ({ cell, style, placeholder }: CellProps<UrlCellType>) {
     const classList = ['select-text', 'w-fit', 'flex', 'w-full', 'relative'];
 
     if (isUrl) {
-      classList.push('text-text-theme', 'underline', 'cursor-pointer');
+      classList.push('text-text-action', 'underline', 'cursor-pointer');
     } else {
       classList.push('cursor-text');
     }

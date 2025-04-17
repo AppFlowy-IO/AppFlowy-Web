@@ -13,7 +13,7 @@ function KanbanSkeleton ({
   const cardsPerColumn = Math.max(Math.ceil(window.innerHeight / 300), 3);
 
   return (
-    <div className={`w-full overflow-x-auto py-${includeTitle ? '2' : '0'}  max-sm:px-6 px-24 min-w-0 max-w-full`}>
+    <div className={`w-full appflowy-custom-scroller overflow-x-auto py-${includeTitle ? '2' : '0'}  max-sm:px-6 px-24 min-w-0 max-w-full`}>
       {includeTitle && (
         <>
           <div className="w-full my-6 flex items-center h-20 mb-2">

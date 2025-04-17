@@ -1,130 +1,114 @@
+import { CardPrimitive } from '@/components/database/components/board/card/CardPrimitive';
+import { useBoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
+import { DropCardIndicator } from '@/components/database/components/board/drag-and-drop/DropCardIndicator';
+import { cn } from '@/lib/utils';
+import React, { memo, useEffect, useRef, useState } from 'react';
 import {
-  RowMeta,
-  useDatabaseContext,
-  useFieldsSelector,
-  useRowMetaSelector,
-} from '@/application/database-yjs';
-import CardField from '@/components/database/components/field/CardField';
-import React, { memo, useCallback, useEffect, useMemo } from 'react';
-import { RowCoverType } from '@/application/types';
-import { renderColor } from '@/utils/color';
-import ImageRender from '@/components/_shared/image-render/ImageRender';
+  draggable,
+  dropTargetForElements,
+} from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { dropTargetForExternal } from '@atlaskit/pragmatic-drag-and-drop/external/adapter';
+import {
+  attachClosestEdge,
+  type Edge,
+  extractClosestEdge,
+} from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 
-export interface CardProps {
+type State =
+  | { type: 'idle' }
+  | { type: 'preview' }
+  | { type: 'dragging' };
+
+const idleState: State = { type: 'idle' };
+const draggingState: State = { type: 'dragging' };
+
+export const Card = memo(({
+  groupFieldId,
+  rowId,
+}: {
   groupFieldId: string;
   rowId: string;
-  onResize?: (height: number) => void;
-  isDragging?: boolean;
-}
-
-export const Card = memo(({ groupFieldId, rowId, onResize, isDragging }: CardProps) => {
-  const fields = useFieldsSelector();
-  const meta = useRowMetaSelector(rowId);
-  const cover = meta?.cover;
-  const showFields = useMemo(() => fields.filter((field) => field.fieldId !== groupFieldId), [fields, groupFieldId]);
-
-  const ref = React.useRef<HTMLDivElement | null>(null);
+}) => {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const { instanceId, registerCard } = useBoardContext();
+  const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
+  const [state, setState] = useState<State>(idleState);
 
   useEffect(() => {
-    if (isDragging) return;
-    const el = ref.current;
+    if (!ref.current) return;
 
-    if (!el) return;
-
-    const observer = new ResizeObserver(() => {
-      onResize?.(el.offsetHeight);
+    return registerCard({
+      cardId: rowId,
+      entry: {
+        element: ref.current,
+      },
     });
+  }, [registerCard, rowId]);
 
-    observer.observe(el);
+  useEffect(() => {
+    const element = ref.current;
 
-    return () => {
-      observer.disconnect();
-    };
-  }, [onResize, isDragging]);
+    if (!element) return;
+    return combine(
+      draggable({
+        element: element,
+        getInitialData: () => ({ type: 'card', itemId: rowId, instanceId }),
+        onGenerateDragPreview: () => {
+          setState({ type: 'preview' });
+        },
 
-  const navigateToRow = useDatabaseContext().navigateToRow;
-  const className = useMemo(() => {
-    const classList = ['relative board-card shadow-card flex flex-col gap-2 overflow-hidden rounded-[6px] text-xs'];
+        onDragStart: () => setState(draggingState),
+        onDrop: () => setState(idleState),
+      }),
+      dropTargetForExternal({
+        element: element,
+      }),
+      dropTargetForElements({
+        element: element,
+        canDrop: ({ source }) => {
+          return source.data.instanceId === instanceId && source.data.type === 'card';
+        },
+        getIsSticky: () => true,
+        getData: ({ input, element }) => {
+          const data = { type: 'card', itemId: rowId };
 
-    if (navigateToRow) {
-      classList.push('cursor-pointer hover:bg-fill-primary-alpha-5');
-    }
-
-    return classList.join(' ');
-  }, [navigateToRow]);
-
-  const renderCoverImage = useCallback((cover: RowMeta['cover']) => {
-    if (!cover) return null;
-
-    if (cover.cover_type === RowCoverType.GradientCover || cover.cover_type === RowCoverType.ColorCover) {
-      return <div
-        style={{
-          background: renderColor(cover.data),
-        }}
-        className={`h-full w-full`}
-      />;
-    }
-
-    let url: string | undefined = cover.data;
-
-    if (cover.cover_type === RowCoverType.AssetCover) {
-      url = {
-        1: '/covers/m_cover_image_1.png',
-        2: '/covers/m_cover_image_2.png',
-        3: '/covers/m_cover_image_3.png',
-        4: '/covers/m_cover_image_4.png',
-        5: '/covers/m_cover_image_5.png',
-        6: '/covers/m_cover_image_6.png',
-      }[Number(cover.data)];
-    }
-
-    if (!url) return null;
-
-    return (
-      <>
-        <ImageRender
-          draggable={false}
-          src={url}
-          alt={''}
-          className={'h-full w-full object-cover'}
-        />
-      </>
+          return attachClosestEdge(data, {
+            input,
+            element,
+            allowedEdges: ['top', 'bottom'],
+          });
+        },
+        onDragEnter: (args) => {
+          if (args.source.data.itemId !== rowId) {
+            setClosestEdge(extractClosestEdge(args.self.data));
+          }
+        },
+        onDrag: (args) => {
+          if (args.source.data.itemId !== rowId) {
+            setClosestEdge(extractClosestEdge(args.self.data));
+          }
+        },
+        onDragLeave: () => {
+          setClosestEdge(null);
+        },
+        onDrop: () => {
+          setClosestEdge(null);
+        },
+      }),
     );
-  }, []);
-
-  const children = useMemo(() => {
-    return showFields.map((field, index) => {
-      return <CardField
-        index={index}
-        key={field.fieldId}
-        rowId={rowId}
-        fieldId={field.fieldId}
-      />;
-
-    });
-  }, [rowId, showFields]);
+  }, [instanceId, rowId]);
 
   return (
-    <div
-      onClick={() => {
-        navigateToRow?.(rowId);
-      }}
-      ref={ref}
-      className={className}
-    >
-      {cover && (
-        <div
-          className={'w-full h-[100px] bg-cover bg-center'}
-        >
-          {renderCoverImage(cover)}
-        </div>
-      )}
-      <div className={'flex flex-col py-2 px-3'}>
-        {children}
-      </div>
-
+    <div className={'relative w-full'}>
+      <CardPrimitive
+        groupFieldId={groupFieldId}
+        rowId={rowId}
+        ref={ref}
+        className={cn(state.type === 'dragging' && 'opacity-40')}
+      />
+      {closestEdge && <DropCardIndicator edge={closestEdge} />}
     </div>
   );
 });
 
-export default memo(Card);

@@ -1,24 +1,12 @@
-import { useDatabase, useGroupsSelector } from '@/application/database-yjs';
+import { useGroupsSelector } from '@/application/database-yjs';
 import { Group } from '@/components/database/components/board';
-import { CircularProgress } from '@mui/material';
 import React from 'react';
 
 export function Board () {
-  const database = useDatabase();
   const groups = useGroupsSelector();
 
-  if (!database) {
-    return (
-      <div className={'flex w-full flex-1 flex-col items-center justify-center'}>
-        <CircularProgress />
-      </div>
-    );
-  }
-
   return (
-    <div
-      className={'database-board flex w-full flex-1 flex-col'}
-    >
+    <div className={'database-board flex-1 flex w-full flex-col'}>
       {groups.map((groupId) => (
         <Group
           key={groupId}
