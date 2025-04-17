@@ -10,7 +10,7 @@ interface FileDropzoneProps {
   placeholder?: string | React.ReactNode;
 }
 
-function FileDropzone({ onChange, accept, multiple, disabled, placeholder }: FileDropzoneProps) {
+function FileDropzone ({ onChange, accept, multiple, disabled, placeholder }: FileDropzoneProps) {
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -79,12 +79,12 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder }: Fil
     >
       <div className={'flex h-full w-full flex-col items-center justify-center gap-4 overflow-hidden'}>
         <ImageIcon className={'h-12 w-12 text-fill-tertiary'} />
-        <div className={'whitespace-pre-wrap break-words text-center text-base text-fill-tertiary'}>
+        <div className={'whitespace-pre-wrap break-words text-center text-base text-text-secondary'}>
           {placeholder || t('fileDropzone.dropFile')}
         </div>
       </div>
       <input
-        type='file'
+        type="file"
         disabled={disabled}
         ref={fileInputRef}
         style={{ display: 'none' }}

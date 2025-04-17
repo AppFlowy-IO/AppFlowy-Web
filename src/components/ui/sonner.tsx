@@ -18,13 +18,13 @@ const Toaster = ({ ...props }: ToasterProps) => {
         className:
           '!shadow-toast px-4 py-2 max-w-[360px] w-fit gap-2 bg-surface-secondary border-none text-text-on-fill rounded-400',
         classNames: {
-          actionButton: '!text-text-theme font-semibold !px-2 hover:!text-text-theme-hover bg-transparent hover:bg-transparent',
+          actionButton: '!text-text-action font-semibold !px-2 hover:!text-text-action-hover bg-transparent hover:bg-transparent',
         },
       }}
       icons={{
-        success: <ToastSuccess className="h-5 w-5 text-fill-success-thick" />,
-        warning: <ToastWarning className="h-5 w-5 text-fill-warning-thick" />,
-        error: <ToastError className="h-5 w-5 text-fill-error-thick" />,
+        success: <ToastSuccess className="h-5 w-5 text-icon-success-thick" />,
+        warning: <ToastWarning className="h-5 w-5 text-icon-warning-thick" />,
+        error: <ToastError className="h-5 w-5 text-icon-error-thick" />,
       }}
     />
   );
