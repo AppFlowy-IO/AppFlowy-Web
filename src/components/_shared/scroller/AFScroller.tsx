@@ -8,10 +8,19 @@ export interface AFScrollerProps extends React.HTMLAttributes<HTMLDivElement> {
   className?: string;
   style?: React.CSSProperties;
   onScroll?: (e: React.UIEvent<unknown>) => void;
+  setScrollableContainer?: (el: HTMLDivElement | null) => void;
 }
 
 export const AFScroller = React.forwardRef(
-  ({ onScroll, style, children, overflowXHidden, overflowYHidden, className }: AFScrollerProps, ref) => {
+  ({
+    setScrollableContainer,
+    onScroll,
+    style,
+    children,
+    overflowXHidden,
+    overflowYHidden,
+    className,
+  }: AFScrollerProps, ref) => {
     return (
       <Scrollbars
         onScroll={onScroll}
@@ -23,6 +32,8 @@ export const AFScroller = React.forwardRef(
           const scrollEl = el.container?.firstChild as HTMLElement;
 
           if (!scrollEl) return;
+          setScrollableContainer?.(scrollEl as HTMLDivElement);
+
           if (typeof ref === 'function') {
             ref(scrollEl);
           } else if (ref) {

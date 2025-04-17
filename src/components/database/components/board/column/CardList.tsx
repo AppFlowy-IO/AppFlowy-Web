@@ -10,9 +10,11 @@ import Card from '@/components/database/components/board/card/Card';
 function CardList ({
   data,
   fieldId,
+  setScrollableContainer,
 }: {
   data: Row[];
-  fieldId: string
+  fieldId: string;
+  setScrollableContainer?: (el: HTMLDivElement | null) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
 
@@ -28,6 +30,7 @@ function CardList ({
   return (
     <AFScroller
       overflowXHidden
+      setScrollableContainer={setScrollableContainer}
       ref={parentRef}
       className="w-full h-full"
       style={{

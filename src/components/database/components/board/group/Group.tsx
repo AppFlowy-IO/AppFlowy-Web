@@ -1,4 +1,6 @@
 import { useDatabaseContext, useRowsByGroup } from '@/application/database-yjs';
+import { BoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
+import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Column } from '../column';
@@ -12,11 +14,15 @@ export const Group = ({ groupId }: GroupProps) => {
   const { t } = useTranslation();
   const context = useDatabaseContext();
   const scrollLeft = context.scrollLeft;
-  const ref = useRef<HTMLDivElement>(null);
   const maxHeightRef = useRef<number>(0);
   const onRendered = context?.onRendered;
   const isDocumentBlock = context.isDocumentBlock;
 
+  const getCards = useCallback((columnId: string) => {
+    return groupResult.get(columnId);
+  }, [groupResult]);
+
+  const { contextValue, scrollableRef: ref } = useColumnsDrag(groupId, columns, getCards);
   const handleRendered = useCallback((height: number) => {
     maxHeightRef.current = Math.max(maxHeightRef.current, height);
 
@@ -29,7 +35,7 @@ export const Group = ({ groupId }: GroupProps) => {
     if (!el || !isDocumentBlock) return;
 
     handleRendered(el.clientHeight);
-  }, [isDocumentBlock, handleRendered]);
+  }, [isDocumentBlock, handleRendered, ref]);
 
   if (notFound) {
     return (
@@ -42,27 +48,29 @@ export const Group = ({ groupId }: GroupProps) => {
 
   if (columns.length === 0 || !fieldId) return null;
   return (
-    <div
-      ref={ref}
-      className={'max-sm:!px-6 px-24 appflowy-scroller overflow-x-auto h-full'}
-      style={{
-        paddingInline: scrollLeft === undefined ? undefined : scrollLeft,
-      }}
-    >
+    <BoardContext.Provider value={contextValue}>
       <div
-        className="columns flex h-full w-fit min-w-full gap-2"
+        ref={ref}
+        className={'max-sm:!px-6 px-24 appflowy-scroller overflow-x-auto h-full'}
+        style={{
+          paddingInline: scrollLeft === undefined ? undefined : scrollLeft,
+        }}
       >
-        {columns.map((data) => (
-          <Column
-            key={data.id}
-            id={data.id}
-            fieldId={fieldId}
-            rows={groupResult.get(data.id)}
-            onRendered={handleRendered}
-          />
-        ))}
+        <div
+          className="columns flex h-full w-fit min-w-full gap-2"
+        >
+          {columns.map((data) => (
+            <Column
+              key={data.id}
+              id={data.id}
+              fieldId={fieldId}
+              rows={groupResult.get(data.id) || []}
+              onRendered={handleRendered}
+            />
+          ))}
+        </div>
       </div>
-    </div>
+    </BoardContext.Provider>
   );
 };
 
