@@ -14,7 +14,7 @@ const avatarVariants = cva(
       },
       variant: {
         default: 'bg-transparent',
-        outline: 'border-[1.5px] bg-transparent border-border-grey-tertiary',
+        outline: 'border-[1.5px] bg-transparent border-border-primary',
       },
       size: {
         sm: 'h-6 text-xs leading-[16px] text-icon-primary font-normal',
@@ -79,7 +79,7 @@ function AvatarFallback ({
       data-slot="avatar-fallback"
       className={cn(
         'flex text-icon-primary w-full h-full items-center justify-center',
-        isString ? 'bg-fill-tertiary' : '',
+        isString ? 'bg-fill-secondary' : '',
         className,
       )}
       {...props}

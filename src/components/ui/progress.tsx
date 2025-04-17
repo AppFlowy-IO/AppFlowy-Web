@@ -8,10 +8,6 @@ const progressVariants = cva(
     variants: {
       variant: {
         default: '',
-        success: '',
-        warning: '',
-        destructive: '',
-        theme: '',
       },
       isIndeterminate: {
         true: 'animate-progress-container',
@@ -26,15 +22,11 @@ const progressVariants = cva(
 );
 
 const circleVariants = cva(
-  'fill-fill-transparent h-5 w-5',
+  'fill-fill-content h-5 w-5',
   {
     variants: {
       variant: {
-        default: 'stroke-fill-tertiary',
-        theme: 'stroke-fill-tertiary',
-        success: 'stroke-fill-tertiary',
-        warning: 'stroke-fill-tertiary',
-        destructive: 'stroke-fill-tertiary',
+        default: 'stroke-fill-secondary',
       },
     },
     defaultVariants: {
@@ -44,15 +36,11 @@ const circleVariants = cva(
 );
 
 const progressCircleVariants = cva(
-  'fill-fill-transparent transition-all h-5 w-5',
+  'fill-fill-content transition-all h-5 w-5',
   {
     variants: {
       variant: {
         default: 'stroke-text-on-fill',
-        theme: 'stroke-fill-theme-thick',
-        success: 'stroke-fill-success-thick',
-        warning: 'stroke-warning-thick',
-        destructive: 'stroke-error-thick',
       },
     },
     defaultVariants: {

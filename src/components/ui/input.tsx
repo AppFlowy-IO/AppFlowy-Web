@@ -10,7 +10,7 @@ const baseInputStyles = cn(
   // Selection styling
   'selection:bg-fill-theme-thick selection:text-text-on-fill focus:caret-fill-theme-thick',
 
-  'bg-fill-transparent',
+  'bg-fill-content',
 
   // Layout
   'flex min-w-0',
@@ -22,7 +22,7 @@ const baseInputStyles = cn(
   'outline-none',
 
   // File input styling
-  'file:inline-flex file:border-0 file:bg-fill-transparent file:text-sm file:font-medium',
+  'file:inline-flex file:border-0 file:bg-fill-content file:text-sm file:font-medium',
 
   // Disabled state
   'disabled:pointer-events-none disabled:cursor-not-allowed',
@@ -34,13 +34,13 @@ const inputVariants = cva(
     variants: {
       variant: {
         // Default variant with focus styles
-        default: 'border-border-grey-tertiary border focus-visible:border-border-theme-thick focus-visible:ring-border-theme-thick focus-visible:ring-[0.5px] disabled:border-border-grey-tertiary disabled:bg-fill-primary-alpha-5 disabled:text-text-tertiary hover:border-border-grey-tertiary-hover',
+        default: 'border-border-primary border focus-visible:border-border-theme-thick focus-visible:ring-border-theme-thick focus-visible:ring-[0.5px] disabled:border-border-primary disabled:bg-fill-primary-hover disabled:text-text-tertiary hover:border-border-primary-hover',
 
         // Destructive variant for error states
-        destructive: 'border border-border-error-thick focus-visible:border-border-error-thick focus-visible:ring-border-error-thick focus-visible:ring-[0.5px] focus:caret-text-primary disabled:border-border-grey-tertiary disabled:bg-fill-primary-alpha-5 disabled:text-text-tertiary',
+        destructive: 'border border-border-error-thick focus-visible:border-border-error-thick focus-visible:ring-border-error-thick focus-visible:ring-[0.5px] focus:caret-text-primary disabled:border-border-primary disabled:bg-fill-primary-hover disabled:text-text-tertiary',
 
         // Ghost variant without visible borders
-        ghost: 'border-fill-transparent focus-visible:border-transparent focus-visible:ring-transparent disabled:border-fill-transparent disabled:bg-fill-transparent disabled:text-text-tertiary',
+        ghost: 'border-none focus-visible:border-transparent focus-visible:ring-transparent disabled:border-fill-transparent disabled:bg-fill-transparent disabled:text-text-tertiary',
       },
       size: {
         // Small size input

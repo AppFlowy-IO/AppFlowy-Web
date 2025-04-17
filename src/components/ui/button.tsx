@@ -11,16 +11,16 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'bg-fill-theme-thick text-text-on-fill hover:bg-fill-theme-thick-hover disabled:bg-fill-primary-alpha-5 disabled:text-text-tertiary',
+          'bg-fill-theme-thick text-text-on-fill hover:bg-fill-theme-thick-hover disabled:bg-fill-content-hover disabled:text-text-tertiary',
         destructive:
-          'bg-fill-error-thick text-text-on-fill hover:bg-fill-error-thick-hover focus-visible:ring-border-error-thick disabled:bg-fill-primary-alpha-5 disabled:text-text-tertiary',
+          'bg-fill-error-thick text-text-on-fill hover:bg-fill-error-thick-hover focus-visible:ring-border-error-thick disabled:bg-fill-content-hover disabled:text-text-tertiary',
         outline:
-          'border border-border-grey-tertiary bg-transparent text-text-primary hover:bg-fill-primary-alpha-5 hover:border-border-grey-tertiary-hover disabled:text-text-tertiary',
+          'border border-border-primary bg-fill-content text-text-primary hover:bg-fill-content-hover hover:border-border-primary-hover disabled:text-text-tertiary',
         'destructive-outline':
-          'bg-transparent text-text-error hover:bg-fill-error-select hover:text-text-error-hover border border-border-error-thick hover:border-border-error-thick-hover disabled:text-text-tertiary disabled:border-border-grey-tertiary',
+          'bg-fill-content text-text-error hover:bg-fill-error-select hover:text-text-error-hover border border-border-error-thick hover:border-border-error-thick-hover disabled:text-text-tertiary disabled:border-border-primary',
         ghost:
-          'hover:bg-fill-primary-alpha-5 text-text-primary disabled:bg-fill-transparent disabled:text-text-tertiary',
-        link: 'hover:bg-transparent text-text-theme hover:text-text-theme-hover !h-fit',
+          'hover:bg-fill-content-hover text-text-primary disabled:bg-fill-content disabled:text-text-tertiary',
+        link: 'hover:bg-fill-content text-text-action hover:text-text-action-hover !h-fit',
         loading: 'opacity-50 cursor-not-allowed',
       },
       size: {

@@ -101,7 +101,7 @@ function DropdownMenuItem ({
       data-variant={variant}
       className={cn(
         // Focus states
-        'focus:bg-fill-primary-alpha-5 focus-visible:outline-none focus:text-text-primary',
+        'focus:bg-fill-primary focus-visible:outline-none focus:text-text-primary',
 
         // Destructive variant styling
         'data-[variant=destructive]:text-text-error',
@@ -156,7 +156,7 @@ function DropdownMenuSeparator ({
   return (
     <DropdownMenuPrimitive.Separator
       data-slot="dropdown-menu-separator"
-      className={cn('-mx-2 my-2 border-border-grey-tertiary border-t', className)}
+      className={cn('-mx-2 my-2 border-border-primary border-t', className)}
       {...props}
     />
   );
@@ -198,8 +198,8 @@ function DropdownMenuSubTrigger ({
       data-inset={inset}
       className={cn(
         // Focus and open states
-        'focus:bg-fill-primary-alpha-5 focus-visible:outline-none focus:text-text-primary',
-        'data-[state=open]:bg-fill-primary-alpha-5 data-[state=open]:text-text-primary',
+        'focus:bg-fill-secondary focus-visible:outline-none focus:text-text-primary',
+        'data-[state=open]:bg-fill-secondary data-[state=open]:text-text-primary',
 
         // Base layout and appearance
         'flex cursor-pointer items-center rounded-300 px-2 py-1  min-h-[32px]',

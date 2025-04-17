@@ -100,7 +100,7 @@ function DialogContent ({
             'disabled:pointer-events-none disabled:text-text-tertiary',
 
             // Open state styling
-            'data-[state=open]:bg-fill-tertiary data-[state=open]:text-icon-primary',
+            'data-[state=open]:bg-fill-secondary data-[state=open]:text-icon-primary',
 
             // Transition
             'transition-opacity',
