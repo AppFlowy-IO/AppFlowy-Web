@@ -1,4 +1,4 @@
-import { Column, FieldType, useFieldSelector } from '@/application/database-yjs';
+import { Column, FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { FieldTypeIcon } from '@/components/database/components/field';
 import { getIcon } from '@/utils/emoji';
@@ -11,6 +11,7 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
   column: Column;
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
+  const readOnly = useReadOnly();
   const [iconContent, setIconContent] = useState<string | undefined>('');
   const { field } = useFieldSelector(column.fieldId);
   const iconId = field?.get(YjsDatabaseKey.icon);
@@ -54,7 +55,10 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
 
   return (
     <div
-      className={'rounded-none hover:bg-fill-primary-alpha-5 relative cursor-pointer text-sm flex items-center px-2 h-full gap-[6px] w-full justify-start'}
+      style={{
+        cursor: readOnly ? 'default' : 'pointer',
+      }}
+      className={'rounded-none hover:bg-fill-primary-alpha-5 relative text-sm flex items-center px-2 h-full gap-[6px] w-full justify-start'}
     >
       {icon || <FieldTypeIcon
         type={type}
@@ -62,7 +66,7 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
       />}
       <div className={'flex-1 truncate'}>{name}</div>
       {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-xl'} />}
-      {onResizeColumnStart && <ResizeHandle
+      {onResizeColumnStart && !readOnly && <ResizeHandle
         fieldId={column.fieldId}
         onResizeStart={onResizeColumnStart}
       />}

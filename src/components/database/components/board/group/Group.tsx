@@ -1,4 +1,4 @@
-import { useDatabaseContext, useRowsByGroup } from '@/application/database-yjs';
+import { PADDING_END, useDatabaseContext, useRowsByGroup } from '@/application/database-yjs';
 import { BoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
 import GroupHeader from '@/components/database/components/board/group/GroupHeader';
@@ -68,7 +68,8 @@ export const Group = ({ groupId }: GroupProps) => {
       const scrollMarginTop = header.getBoundingClientRect().top ?? 0;
       const bottom = columnsEl.getBoundingClientRect().bottom ?? 0;
 
-      if (scrollMarginTop <= 48 && bottom >= 48) {
+      console.log('scroll', scrollMarginTop, bottom);
+      if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
         stickyHeader.style.opacity = '1';
         stickyHeader.style.pointerEvents = 'auto';
       } else {

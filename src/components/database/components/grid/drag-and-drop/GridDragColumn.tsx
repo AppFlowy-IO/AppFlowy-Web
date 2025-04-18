@@ -1,3 +1,4 @@
+import { useReadOnly } from '@/application/database-yjs';
 import DropColumnIndicator from '@/components/database/components/grid/drag-and-drop/DropColumnIndicator';
 import {
   GridDragState,
@@ -27,12 +28,13 @@ function GridDragColumn ({ columnIndex, column, children }: {
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ItemState>(idleState);
   const { fieldId } = column;
+  const readOnly = useReadOnly();
 
   useEffect(() => {
     const element = innerRef.current;
     const dragHandle = dragHandleRef.current;
 
-    if (!element || !dragHandle || !fieldId) return;
+    if (!element || !dragHandle || !fieldId || readOnly) return;
 
     const data = {
       instanceId,
@@ -89,7 +91,7 @@ function GridDragColumn ({ columnIndex, column, children }: {
         },
       }),
     );
-  }, [columnIndex, fieldId, instanceId, registerColumn]);
+  }, [readOnly, columnIndex, fieldId, instanceId, registerColumn]);
 
   return (
     <div

@@ -34,7 +34,7 @@ export const DatabaseContext = createContext<DatabaseContextState | null>(null);
 export const useDatabaseContext = () => {
   const context = useContext(DatabaseContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('DatabaseContext is not provided');
   }
 
@@ -80,7 +80,7 @@ export const useDatabaseViewId = () => {
 export const useReadOnly = () => {
   const context = useDatabaseContext();
 
-  return context?.readOnly || true;
+  return context?.readOnly === undefined ? true : context?.readOnly;
 };
 
 export const useDatabaseView = () => {
@@ -90,7 +90,7 @@ export const useDatabaseView = () => {
   return viewId ? database?.get(YjsDatabaseKey.views)?.get(viewId) : undefined;
 };
 
-export function useDatabaseFields() {
+export function useDatabaseFields () {
   const database = useDatabase();
 
   return database.get(YjsDatabaseKey.fields);

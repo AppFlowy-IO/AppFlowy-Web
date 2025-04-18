@@ -4,6 +4,7 @@ import { v5 as uuidv5, parse as uuidParse } from 'uuid';
 
 export const DEFAULT_ROW_HEIGHT = 36;
 export const MIN_COLUMN_WIDTH = 150;
+export const PADDING_END = 220;
 
 export const getCell = (rowId: string, fieldId: string, rowMetas: Record<RowId, YDoc>) => {
   const rowMeta = rowMetas[rowId];

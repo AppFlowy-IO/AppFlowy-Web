@@ -1,3 +1,4 @@
+import { useReadOnly } from '@/application/database-yjs';
 import { CardPrimitive } from '@/components/database/components/board/card/CardPrimitive';
 import { useBoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { DropCardIndicator } from '@/components/database/components/board/drag-and-drop/DropCardIndicator';
@@ -34,9 +35,10 @@ export const Card = memo(({
   const { instanceId, registerCard } = useBoardContext();
   const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
   const [state, setState] = useState<State>(idleState);
+  const readOnly = useReadOnly();
 
   useEffect(() => {
-    if (!ref.current) return;
+    if (!ref.current || readOnly) return;
 
     return registerCard({
       cardId: rowId,
@@ -44,12 +46,12 @@ export const Card = memo(({
         element: ref.current,
       },
     });
-  }, [registerCard, rowId]);
+  }, [registerCard, rowId, readOnly]);
 
   useEffect(() => {
     const element = ref.current;
 
-    if (!element) return;
+    if (!element || readOnly) return;
     return combine(
       draggable({
         element: element,
@@ -97,7 +99,7 @@ export const Card = memo(({
         },
       }),
     );
-  }, [instanceId, rowId]);
+  }, [instanceId, rowId, readOnly]);
 
   return (
     <div className={'relative w-full'}>

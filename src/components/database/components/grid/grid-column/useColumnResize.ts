@@ -1,3 +1,4 @@
+import { useDatabaseContext } from '@/application/database-yjs';
 import { useResizeColumnWidthDispatch } from '@/application/database-yjs/dispatch';
 import { useCallback, useRef, useState } from 'react';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
@@ -8,7 +9,9 @@ export function useColumnResize (
   columns: RenderColumn[],
 ) {
   const [isResizing, setIsResizing] = useState(false);
-
+  const {
+    readOnly,
+  } = useDatabaseContext();
   const resizeColumn = useResizeColumnWidthDispatch();
   const dragStateRef = useRef<{
     fieldId: string;
@@ -62,6 +65,7 @@ export function useColumnResize (
   }, [handleResizeMove, resizeColumn]);
 
   const handleResizeStart = useCallback((fieldId: string, element: HTMLElement) => {
+    if (readOnly) return;
     const column = columns.find(col => col.fieldId === fieldId);
 
     if (!column) return;
@@ -86,7 +90,7 @@ export function useColumnResize (
     if (headerCell) {
       headerCell.classList.add('resizing');
     }
-  }, [columns, handleResizeMove, handleResizeEnd]);
+  }, [columns, readOnly, handleResizeMove, handleResizeEnd]);
 
   return {
     columns,

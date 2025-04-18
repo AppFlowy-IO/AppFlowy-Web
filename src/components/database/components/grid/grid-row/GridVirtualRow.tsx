@@ -1,3 +1,4 @@
+import { useReadOnly } from '@/application/database-yjs';
 import { DropRowIndicator } from '@/components/database/components/grid/drag-and-drop/DropRowIndicator';
 import {
   GridDragState,
@@ -115,6 +116,7 @@ function GridVirtualRow ({
       }),
     );
   }, [rowId, rowIndex, registerRow, instanceId, dragHandleRef, isRegularRow]);
+  const readOnly = useReadOnly();
 
   const children = useMemo(() => {
     return columnItems.map((column) => {
@@ -140,7 +142,7 @@ function GridVirtualRow ({
         )}
       >
         <div style={{ width: `${before}px` }}>
-          {isRegularRow && <HoverControls
+          {isRegularRow && !readOnly && <HoverControls
             state={state}
             dragHandleRef={el => {
               dragHandleRef.current = el;

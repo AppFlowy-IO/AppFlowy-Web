@@ -1,3 +1,4 @@
+import { useReadOnly } from '@/application/database-yjs';
 import { useColumnHeaderDrag, StateType } from '@/components/database/components/board/column/useColumnHeaderDrag';
 import { useRenderColumn } from '@/components/database/components/board/column/useRenderColumn';
 import { DropColumnIndicator } from '@/components/database/components/board/drag-and-drop/DropColumnIndicator';
@@ -19,6 +20,7 @@ function ColumnHeader ({
     state,
     isDragging,
   } = useColumnHeaderDrag(id);
+  const readOnly = useReadOnly();
 
   return (
     <div
@@ -33,7 +35,7 @@ function ColumnHeader ({
       <div
         ref={headerRef}
         style={{
-          cursor: isDragging ? 'grabbing' : 'grab',
+          cursor: readOnly ? 'default' : isDragging ? 'grabbing' : 'grab',
         }}
         className="column-header select-none flex overflow-hidden justify-start w-[240px] items-center gap-2 h-[26px] text-sm leading-[16px] font-medium whitespace-nowrap"
       >

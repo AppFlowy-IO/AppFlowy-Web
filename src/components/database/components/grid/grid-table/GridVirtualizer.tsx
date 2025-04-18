@@ -1,3 +1,4 @@
+import { PADDING_END } from '@/application/database-yjs';
 import {
   GridDragContext,
 } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
@@ -66,7 +67,7 @@ function GridVirtualizer ({
       const scrollTop = scrollElement.scrollTop;
       const bottom = gridElement.getBoundingClientRect().bottom ?? 0;
 
-      if (scrollTop >= scrollMarginTop && bottom >= 48) {
+      if (scrollTop >= scrollMarginTop && bottom - PADDING_END >= 48) {
         stickyHeader.style.opacity = '1';
         stickyHeader.style.pointerEvents = 'auto';
       } else {

@@ -1,4 +1,4 @@
-import { Row } from '@/application/database-yjs';
+import { Row, useReadOnly } from '@/application/database-yjs';
 import { useBoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { ColumnContextProps } from '@/components/database/components/board/drag-and-drop/column-context';
 import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
@@ -32,13 +32,14 @@ export function useCardsDrag (columnId: string, rows: Row[], scrollerContainer: 
   const columnInnerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<State>(idle);
   const stableItems = useRef(rows);
+  const readOnly = useReadOnly();
 
   useEffect(() => {
     stableItems.current = rows;
   }, [rows]);
 
   useEffect(() => {
-    if (!columnInnerRef.current || !scrollerContainer) {
+    if (!columnInnerRef.current || !scrollerContainer || readOnly) {
       return;
     }
 
@@ -62,7 +63,7 @@ export function useCardsDrag (columnId: string, rows: Row[], scrollerContainer: 
       }),
     );
 
-  }, [columnId, instanceId, registerColumn, scrollerContainer]);
+  }, [readOnly, columnId, instanceId, registerColumn, scrollerContainer]);
 
   const getCardIndex = useCallback((rowId: string) => {
     return stableItems.current.findIndex((item) => item.id === rowId);

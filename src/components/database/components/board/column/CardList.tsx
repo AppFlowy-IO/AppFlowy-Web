@@ -1,4 +1,4 @@
-import { Row } from '@/application/database-yjs';
+import { PADDING_END, Row } from '@/application/database-yjs';
 import { getScrollParent } from '@/components/global-comment/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React, {
@@ -38,7 +38,7 @@ function CardList ({
     },
     estimateSize: () => 150,
     paddingStart: 0,
-    paddingEnd: 320,
+    paddingEnd: PADDING_END,
   });
 
   const items = virtualizer.getVirtualItems();

@@ -1,3 +1,4 @@
+import { PADDING_END } from '@/application/database-yjs';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { getScrollParent } from '@/components/global-comment/utils';
@@ -33,7 +34,7 @@ export function useGridVirtualizer ({
       return parentRef.current.closest('.appflowy-scroll-container') || getScrollParent(parentRef.current);
     },
     paddingStart: 0,
-    paddingEnd: 360,
+    paddingEnd: PADDING_END,
   });
 
   const getColumn = useCallback((index: number) => columns[index], [columns]);

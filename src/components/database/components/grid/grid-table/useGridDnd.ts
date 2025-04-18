@@ -1,4 +1,4 @@
-import { useDatabaseViewId } from '@/application/database-yjs';
+import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
 import {
   getColumnRegistry,
   getRowRegistry,
@@ -32,6 +32,7 @@ export function useGridDnd (data: RenderRow[], columns: RenderColumn[], virtuali
 
 export function useGridDndRow (data: RenderRow[], virtualizer: Virtualizer<Element, Element>) {
   const viewId = useDatabaseViewId();
+  const readOnly = useReadOnly();
   const [registry] = useState(getRowRegistry);
   const [instanceId] = useState(() => Symbol(`grid-row-dnd-${viewId}`));
   const [lastRowMoved, setLastRowMoved] = useState<{
@@ -89,7 +90,7 @@ export function useGridDndRow (data: RenderRow[], virtualizer: Virtualizer<Eleme
   useEffect(() => {
     const scrollContainer = virtualizer.scrollElement;
 
-    if (!scrollContainer) return;
+    if (!scrollContainer || readOnly) return;
 
     // eslint-disable-next-line
     function canRespond ({ source }: Record<string, any>) {
@@ -132,7 +133,7 @@ export function useGridDndRow (data: RenderRow[], virtualizer: Virtualizer<Eleme
         element: scrollContainer,
       }),
     );
-  }, [instanceId, data, reorderRow, virtualizer.scrollElement]);
+  }, [readOnly, instanceId, data, reorderRow, virtualizer.scrollElement]);
 
   useEffect(() => {
     return () => {

@@ -50,7 +50,17 @@ function PublishLayout ({ isTemplateThumb, isTemplate, doc }: {
           }}
           openDrawer={drawerOpened}
         />}
-
+        <div
+          className={'sticky-header-overlay'}
+          style={{
+            width: '100%',
+            position: 'sticky',
+            top: 48,
+            left: 0,
+            right: 0,
+            zIndex: 50,
+          }}
+        />
         <PublishMain
           doc={doc}
           isTemplate={isTemplate}

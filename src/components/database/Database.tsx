@@ -39,7 +39,7 @@ export interface Database2Props {
   showActions?: boolean;
 }
 
-function Database({
+function Database ({
   workspaceId,
   doc,
   createRowDoc,
@@ -67,19 +67,19 @@ function Database({
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
   const [rowIds, setRowIds] = useState<RowId[]>([]);
   const [rowDocMap, setRowDocMap] = useState<Record<RowId, YDoc> | null>(null);
-  const dbRows = useLiveQuery(async() => {
+  const dbRows = useLiveQuery(async () => {
     const rows = await db.rows.bulkGet(rowIds.map(id => `${doc.guid}_rows_${id}`));
 
     return rows;
   }, [rowIds, variant]);
 
-  const updateRowMap = useCallback(async() => {
+  const updateRowMap = useCallback(async () => {
     const newRowMap: Record<RowId, YDoc> = {};
 
-    if(!dbRows || !createRowDoc) return;
+    if (!dbRows || !createRowDoc) return;
 
-    for(const row of dbRows) {
-      if(!row) {
+    for (const row of dbRows) {
+      if (!row) {
         continue;
       }
 
@@ -102,7 +102,7 @@ function Database({
     console.log('Database.tsx: rowDocMap', rowDocMap);
   }, [rowDocMap, database]);
 
-  const handleUpdateRowDocMap = useCallback(async() => {
+  const handleUpdateRowDocMap = useCallback(async () => {
     setRowIds(rowOrders?.toJSON().map(({ id }: { id: string }) => id) || []);
   }, [rowOrders]);
 
@@ -115,7 +115,8 @@ function Database({
     };
   }, [handleUpdateRowDocMap, rowOrders]);
 
-  if(!rowDocMap || !viewId) {
+  console.log('====readOnly', readOnly);
+  if (!rowDocMap || !viewId) {
     return null;
   }
 

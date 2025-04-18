@@ -1,3 +1,4 @@
+import { useReadOnly } from '@/application/database-yjs';
 import { useBoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
 
 import {
@@ -32,9 +33,10 @@ export function useColumnHeaderDrag (columnId: string) {
   const headerRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<State>(idle);
   const [isDragging, setIsDragging] = useState<boolean>(false);
+  const readOnly = useReadOnly();
 
   useEffect(() => {
-    if (!columnRef.current || !headerRef.current) {
+    if (!columnRef.current || !headerRef.current || readOnly) {
       return;
     }
 
@@ -107,7 +109,7 @@ export function useColumnHeaderDrag (columnId: string) {
       }),
     );
 
-  }, [columnId, instanceId, registerColumn]);
+  }, [readOnly, columnId, instanceId, registerColumn]);
 
   return {
     columnRef,
