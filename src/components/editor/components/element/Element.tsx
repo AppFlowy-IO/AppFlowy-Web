@@ -181,6 +181,7 @@ export const Element = ({
         flexGrow: ratio ? ratio * 1000 : 500,
         flexBasis: 0,
         flexShrink: 0,
+        overflowX: 'hidden',
       });
     }
 

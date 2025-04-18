@@ -70,6 +70,7 @@
     "js-md5": "^0.8.3",
     "katex": "^0.16.7",
     "lightgallery": "^2.7.2",
+    "link-preview-js": "^3.0.14",
     "lodash-es": "^4.17.21",
     "lucide-react": "^0.485.0",
     "mermaid": "^11.4.1",

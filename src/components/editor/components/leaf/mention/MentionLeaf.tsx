@@ -1,19 +1,20 @@
 import { Mention, MentionType } from '@/application/types';
 import { useLeafSelected } from '@/components/editor/components/leaf/leaf.hooks';
 import MentionDate from '@/components/editor/components/leaf/mention/MentionDate';
+import MentionExternalLink from '@/components/editor/components/leaf/mention/MentionExternalLink';
 import MentionPage from '@/components/editor/components/leaf/mention/MentionPage';
 import React, { useMemo } from 'react';
 import { Element, Text } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 
-export function MentionLeaf({ mention, text, children }: {
+export function MentionLeaf ({ mention, text, children }: {
   mention: Mention;
   text: Text;
   children: React.ReactNode;
 }) {
   const editor = useSlateStatic();
   const readonly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
-  const { type, date, page_id, reminder_id, reminder_option, block_id } = mention;
+  const { type, date, page_id, reminder_id, reminder_option, block_id, url } = mention;
 
   const reminder = useMemo(() => {
     return reminder_id ? { id: reminder_id ?? '', option: reminder_option ?? '' } : undefined;
@@ -35,7 +36,12 @@ export function MentionLeaf({ mention, text, children }: {
         reminder={reminder}
       />;
     }
-  }, [text, date, page_id, reminder, type, block_id]);
+
+    if (type === MentionType.externalLink && url) {
+      return <MentionExternalLink url={url} />;
+    }
+
+  }, [type, page_id, date, text, block_id, reminder, url]);
 
   // check if the mention is selected
   const { isSelected, select, isCursorBefore } = useLeafSelected(text);

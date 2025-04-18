@@ -8,7 +8,7 @@ export const Columns = memo(
       <div
         ref={ref}
         {...attributes}
-        className={`${attributes.className ?? ''} flex !flex-row overflow-x-auto gap-16 appflowy-scroller`}
+        className={`${attributes.className ?? ''} flex !flex-row w-full overflow-hidden gap-14`}
       >
         {children}
       </div>

@@ -15,15 +15,15 @@ export const LinkPreview = memo(
     const url = node.data.url;
 
     useEffect(() => {
-      if(!url) return;
+      if (!url) return;
 
       setData(null);
-      void (async() => {
+      void (async () => {
         try {
           setNotFound(false);
           const response = await axios.get(`https://api.microlink.io/?url=${url}`);
 
-          if(response.data.statusCode !== 200) {
+          if (response.data.statusCode !== 200) {
             setNotFound(true);
             return;
           }
@@ -31,7 +31,7 @@ export const LinkPreview = memo(
           const data = response.data.data;
 
           setData(data);
-        } catch(_) {
+        } catch (_) {
           setNotFound(true);
         }
       })();
@@ -79,20 +79,20 @@ export const LinkPreview = memo(
             <>
               <img
                 src={data?.image?.url}
-                alt={data?.title}
-                className={'container h-full min-h-[48px] w-[25%] rounded bg-cover bg-center'}
+                alt={''}
+                className={'container max-sm:w-[25%] max-w-[120px] max-h-[80px] rounded bg-cover bg-center'}
               />
-              <div className={'flex flex-col justify-center gap-2 overflow-hidden'}>
+              <div className={'flex flex-col flex-1 justify-center gap-2 overflow-hidden'}>
                 <div
                   className={
-                    'max-h-[48px] overflow-hidden whitespace-pre-wrap break-words text-base font-bold text-text-title'
+                    'max-h-[48px] overflow-hidden truncate text-base font-bold text-text-title'
                   }
                 >
                   {data?.title}
                 </div>
                 <div
                   className={
-                    'max-h-[64px] overflow-hidden truncate whitespace-pre-wrap break-words text-sm text-text-title'
+                    'max-h-[64px] overflow-hidden truncate text-sm text-text-title'
                   }
                 >
                   {data?.description}
