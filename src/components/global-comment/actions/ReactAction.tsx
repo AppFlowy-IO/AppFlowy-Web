@@ -5,7 +5,7 @@ import { Popover } from '@/components/_shared/popover';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
-import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
+import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { IconButton, Tooltip } from '@mui/material';
 import React, { memo, Suspense, useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
