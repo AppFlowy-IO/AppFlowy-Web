@@ -1,9 +1,14 @@
 import { useDatabaseContext, useRowsByGroup } from '@/application/database-yjs';
 import { BoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
+import GroupHeader from '@/components/database/components/board/group/GroupHeader';
+import GroupStickyHeader from '@/components/database/components/board/group/GroupStickyHeader';
+import DatabaseStickyHorizontalScrollbar
+  from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
+import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
+import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
 import { getScrollParent } from '@/components/global-comment/utils';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { Column } from '../column';
 
@@ -40,12 +45,45 @@ export const Group = ({ groupId }: GroupProps) => {
   }, [isDocumentBlock, handleRendered, ref]);
 
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
-  const [draggingBottomScrollbar, setDraggingBottomScrollbar] = useState(false);
   const [isHover, setIsHover] = useState(false);
   const [verticalScrollContainer, setVerticalScrollContainer] = useState<HTMLElement | null>(null);
   const getVerticalScrollContainer = useCallback((el: HTMLDivElement) => {
     return (el.closest('.appflowy-scroll-container') || getScrollParent(el)) as HTMLElement;
   }, []);
+  const [totalSize, setTotalSize] = useState<number>(0);
+  const headerRef = useRef<HTMLDivElement | null>(null);
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const header = headerRef.current;
+    const columnsEl = ref.current;
+
+    if (!verticalScrollContainer || !header || !columnsEl) return;
+
+    const stickyHeader = stickyHeaderRef.current;
+
+    if (!stickyHeader) return;
+
+    const onScroll = () => {
+      const scrollMarginTop = header.getBoundingClientRect().top ?? 0;
+      const bottom = columnsEl.getBoundingClientRect().bottom ?? 0;
+
+      if (scrollMarginTop <= 48 && bottom >= 48) {
+        stickyHeader.style.opacity = '1';
+        stickyHeader.style.pointerEvents = 'auto';
+      } else {
+        stickyHeader.style.opacity = '0';
+        stickyHeader.style.pointerEvents = 'none';
+      }
+    };
+
+    onScroll();
+    verticalScrollContainer.addEventListener('scroll', onScroll);
+    return () => {
+      verticalScrollContainer.removeEventListener('scroll', onScroll);
+    };
+
+  }, [ref, verticalScrollContainer]);
 
   if (notFound) {
     return (
@@ -60,7 +98,9 @@ export const Group = ({ groupId }: GroupProps) => {
   return (
     <BoardContext.Provider value={contextValue}>
       <div
-        onMouseEnter={() => setIsHover(true)}
+        onMouseEnter={() => {
+          setIsHover(true);
+        }}
         onMouseLeave={() => setIsHover(false)}
         ref={el => {
           ref.current = el;
@@ -76,10 +116,15 @@ export const Group = ({ groupId }: GroupProps) => {
           scrollBehavior: 'auto',
         }}
         onScroll={e => {
-          if (draggingBottomScrollbar) return;
           const scrollLeft = e.currentTarget.scrollLeft;
 
           const bottomScrollbar = bottomScrollbarRef.current;
+
+          setTotalSize(e.currentTarget.scrollWidth);
+          stickyHeaderRef.current?.scroll({
+            left: scrollLeft,
+            behavior: 'auto',
+          });
 
           if (!bottomScrollbar) return;
 
@@ -90,60 +135,53 @@ export const Group = ({ groupId }: GroupProps) => {
         }}
       >
         <div
-          className="columns flex h-full w-fit min-w-full gap-2"
+          className="flex flex-col h-full w-fit min-w-full"
         >
-          {columns.map((data) => (
-            <Column
-              key={data.id}
-              id={data.id}
-              fieldId={fieldId}
-              rows={groupResult.get(data.id) || []}
-              onRendered={handleRendered}
-            />
-          ))}
-        </div>
-        {verticalScrollContainer && createPortal(<div
-          style={{
-            width: '100%',
-            position: 'sticky',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            zIndex: 100,
-          }}
-        >
-          <div
-            ref={bottomScrollbarRef}
-            style={{
-              scrollBehavior: 'auto',
-              visibility: isHover ? 'visible' : 'hidden',
-            }}
-            onMouseDown={() => {
-              setDraggingBottomScrollbar(true);
-            }}
-            onMouseUp={() => {
-              setDraggingBottomScrollbar(false);
-            }}
-            onScroll={e => {
-              if (!draggingBottomScrollbar) return;
-              const scrollLeft = e.currentTarget.scrollLeft;
+          <GroupHeader
+            ref={headerRef}
+            groupResult={groupResult}
+            columns={columns}
+            fieldId={fieldId}
+          />
+          <div className={'columns flex flex-1 w-fit min-w-full gap-2'}>
+            {columns.map((data) => (
+              <Column
+                key={data.id}
+                id={data.id}
+                fieldId={fieldId}
+                rows={groupResult.get(data.id) || []}
+              />
+            ))}
+          </div>
 
+        </div>
+        <DatabaseStickyTopOverlay>
+          <GroupStickyHeader
+            ref={stickyHeaderRef}
+            groupResult={groupResult}
+            columns={columns}
+            fieldId={fieldId}
+            onScrollLeft={scrollLeft => {
               ref.current?.scrollTo({
                 left: scrollLeft,
                 behavior: 'auto',
               });
             }}
-            className={'h-3 w-full opacity-30 hover:opacity-60 overflow-y-hidden overflow-x-auto'}
-          >
-            <div
-              style={{
-                width: `${ref.current?.scrollWidth}px`,
-              }}
-            >
-              &nbsp;
-            </div>
-          </div>
-        </div>, verticalScrollContainer)}
+          />
+        </DatabaseStickyTopOverlay>
+        <DatabaseStickyBottomOverlay scrollElement={verticalScrollContainer}>
+          <DatabaseStickyHorizontalScrollbar
+            onScrollLeft={scrollLeft => {
+              ref.current?.scrollTo({
+                left: scrollLeft,
+                behavior: 'auto',
+              });
+            }}
+            ref={bottomScrollbarRef}
+            totalSize={totalSize}
+            visible={isHover}
+          />
+        </DatabaseStickyBottomOverlay>
       </div>
 
     </BoardContext.Provider>

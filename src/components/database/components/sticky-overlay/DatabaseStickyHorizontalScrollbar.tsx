@@ -1,6 +1,6 @@
 import React, { forwardRef } from 'react';
 
-const GridStickyHorizontalScrollbar = forwardRef<HTMLDivElement, {
+const DatabaseStickyHorizontalScrollbar = forwardRef<HTMLDivElement, {
   visible: boolean,
   totalSize: number,
   onScrollLeft: (left: number) => void,
@@ -15,7 +15,7 @@ const GridStickyHorizontalScrollbar = forwardRef<HTMLDivElement, {
     ref={ref}
     style={{
       scrollBehavior: 'auto',
-      visibility: visible && totalSize > window.innerWidth ? 'visible' : 'hidden',
+      visibility: visible ? 'visible' : 'hidden',
     }}
     onMouseDown={() => {
       setDraggingBottomScrollbar(true);
@@ -41,4 +41,4 @@ const GridStickyHorizontalScrollbar = forwardRef<HTMLDivElement, {
   </div>;
 });
 
-export default GridStickyHorizontalScrollbar;
+export default DatabaseStickyHorizontalScrollbar;

@@ -5,12 +5,11 @@ import { RenderColumn } from '@/components/database/components/grid/grid-column/
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
-import GridStickyHorizontalScrollbar
-  from '@/components/database/components/grid/grid-table/GridStickyHorizontalScrollbar';
+import DatabaseStickyHorizontalScrollbar
+  from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import { useGridDnd } from '@/components/database/components/grid/grid-table/useGridDnd';
 import {
-  PADDING_INLINE,
   useGridVirtualizer,
 } from '@/components/database/components/grid/grid-table/useGridVirtualizer';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
@@ -56,16 +55,18 @@ function GridVirtualizer ({
 
   useEffect(() => {
     const scrollElement = virtualizer.scrollElement;
+    const gridElement = parentRef.current;
 
-    if (!scrollElement) return;
+    if (!scrollElement || !gridElement) return;
     const stickyHeader = stickyHeaderRef.current;
 
     if (!stickyHeader) return;
 
     const onScroll = () => {
       const scrollTop = scrollElement.scrollTop;
+      const bottom = gridElement.getBoundingClientRect().bottom ?? 0;
 
-      if (scrollTop >= scrollMarginTop && scrollTop <= scrollElement.scrollHeight) {
+      if (scrollTop >= scrollMarginTop && bottom >= 48) {
         stickyHeader.style.opacity = '1';
         stickyHeader.style.pointerEvents = 'auto';
       } else {
@@ -80,7 +81,7 @@ function GridVirtualizer ({
       scrollElement.removeEventListener('scroll', onScroll);
     };
 
-  }, [scrollMarginTop, virtualizer.scrollElement]);
+  }, [parentRef, scrollMarginTop, virtualizer.scrollElement]);
 
   return (
     <GridDragContext.Provider value={contextValue}>
@@ -155,10 +156,16 @@ function GridVirtualizer ({
             data={data}
             totalSize={totalSize}
             columnItems={columnItems}
+            onScrollLeft={scrollLeft => {
+              parentRef.current?.scrollTo({
+                left: scrollLeft,
+                behavior: 'auto',
+              });
+            }}
           />
         </DatabaseStickyTopOverlay>
         <DatabaseStickyBottomOverlay scrollElement={virtualizer.scrollElement}>
-          <GridStickyHorizontalScrollbar
+          <DatabaseStickyHorizontalScrollbar
             onScrollLeft={scrollLeft => {
               parentRef.current?.scrollTo({
                 left: scrollLeft,

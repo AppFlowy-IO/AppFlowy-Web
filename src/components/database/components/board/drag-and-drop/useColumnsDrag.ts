@@ -256,7 +256,6 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
             }
           }
         },
-
       }),
       autoScrollForElements({
         element: scrollableRef.current,

@@ -18,19 +18,11 @@ export function DropColumnIndicator ({ edge, style = {} }: DropIndicatorProps) {
         left: edge === 'left' ? -5 : 'auto',
         right: edge === 'right' ? -5 : 'auto',
         zIndex: 1,
+        backgroundColor: 'var(--fill-theme-thick)',
+        width: '2px',
+        height: '100%',
         ...style,
       }}
-    >
-      <div className={'absolute -top-1 -left-[3px] h-2 w-2 rounded-full bg-background-primary border-2 border-fill-theme-thick'} />
-      <div
-        style={{
-          marginTop: '4px',
-          position: 'relative',
-          height: '100%',
-          backgroundColor: 'var(--fill-theme-thick)',
-          width: '2px',
-        }}
-      />
-    </div>
+    />
   );
 }

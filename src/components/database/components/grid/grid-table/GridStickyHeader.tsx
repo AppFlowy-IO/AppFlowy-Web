@@ -9,18 +9,26 @@ const GridStickyHeader = forwardRef<HTMLDivElement, {
   row: VirtualItem;
   data: RenderRow[];
   totalSize: number,
-  columnItems: VirtualItem[]
+  columnItems: VirtualItem[];
+  onScrollLeft: (left: number) => void,
+
 }>(({
   columns,
   row,
   data,
   totalSize,
   columnItems,
+  onScrollLeft,
 }, ref) => {
   return (
     <div
       ref={ref}
-      className={'flex w-full overflow-x-auto bg-background-primary appflowy-custom-scroller'}
+      onScroll={e => {
+        const scrollLeft = e.currentTarget.scrollLeft;
+
+        onScrollLeft(scrollLeft);
+      }}
+      className={'grid-sticky-header flex w-full overflow-x-auto bg-background-primary appflowy-custom-scroller'}
     >
       <GridVirtualRow
         row={row}
