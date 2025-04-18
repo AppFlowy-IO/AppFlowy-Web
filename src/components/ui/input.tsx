@@ -34,10 +34,10 @@ const inputVariants = cva(
     variants: {
       variant: {
         // Default variant with focus styles
-        default: 'border-border-grey-tertiary border focus-visible:border-border-theme-thick focus-visible:ring-border-theme-thick focus-visible:ring-[0.5px] disabled:border-border-grey-tertiary disabled:bg-fill-primary-alpha-5 disabled:text-text-tertiary hover:border-border-grey-tertiary-hover',
+        default: 'border-border-primary border focus-visible:border-border-theme-thick focus-visible:ring-border-theme-thick focus-visible:ring-[0.5px] disabled:border-border-primary disabled:bg-fill-primary-hover disabled:text-text-tertiary hover:border-border-primary-hover',
 
         // Destructive variant for error states
-        destructive: 'border border-border-error-thick focus-visible:border-border-error-thick focus-visible:ring-border-error-thick focus-visible:ring-[0.5px] focus:caret-text-primary disabled:border-border-grey-tertiary disabled:bg-fill-primary-alpha-5 disabled:text-text-tertiary',
+        destructive: 'border border-border-error-thick focus-visible:border-border-error-thick focus-visible:ring-border-error-thick focus-visible:ring-[0.5px] focus:caret-text-primary disabled:border-border-primary disabled:bg-fill-primary-hover disabled:text-text-tertiary',
 
         // Ghost variant without visible borders
         ghost: 'border-fill-transparent focus-visible:border-transparent focus-visible:ring-transparent disabled:border-fill-transparent disabled:bg-fill-transparent disabled:text-text-tertiary',
