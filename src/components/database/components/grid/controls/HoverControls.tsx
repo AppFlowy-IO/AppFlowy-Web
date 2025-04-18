@@ -24,6 +24,7 @@ export function HoverControls ({ rowId, dragHandleRef }: {
         ref={dragHandleRef}
         variant={'ghost'}
         size={'icon'}
+        className={'text-icon-secondary'}
       >
         <DragIcon />
       </Button>

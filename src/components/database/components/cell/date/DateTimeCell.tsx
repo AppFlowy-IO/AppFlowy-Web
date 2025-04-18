@@ -42,7 +42,7 @@ export function DateTimeCell ({ cell, fieldId, style, placeholder }: CellProps<D
       className={'flex cursor-text gap-1'}
     >
       {dateStr}
-      {hasReminder && <ReminderSvg className={'h-4 w-4'} />}
+      {hasReminder && <ReminderSvg className={'h-5 w-5'} />}
     </div>
   );
 }

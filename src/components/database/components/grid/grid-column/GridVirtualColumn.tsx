@@ -19,7 +19,7 @@ function GridVirtualColumn ({
   columns: RenderColumn[];
   row: VirtualItem;
   column: VirtualItem;
-  onResizeColumnStart: (fieldId: string, element: HTMLElement) => void;
+  onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const rowIndex = row.index;
   const columnData = useMemo(() => columns[column.index], [columns, column.index]);

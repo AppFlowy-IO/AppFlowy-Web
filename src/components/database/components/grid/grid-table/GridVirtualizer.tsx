@@ -4,10 +4,17 @@ import {
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
+import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
+import GridStickyHorizontalScrollbar
+  from '@/components/database/components/grid/grid-table/GridStickyHorizontalScrollbar';
+import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import { useGridDnd } from '@/components/database/components/grid/grid-table/useGridDnd';
-import { useGridVirtualizer } from '@/components/database/components/grid/grid-table/useGridVirtualizer';
+import {
+  PADDING_INLINE,
+  useGridVirtualizer,
+} from '@/components/database/components/grid/grid-table/useGridVirtualizer';
+import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
 import React, { useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useColumnResize } from '../grid-column/useColumnResize';
 
 function GridVirtualizer ({
@@ -26,6 +33,7 @@ function GridVirtualizer ({
     parentRef,
     virtualizer,
     columnVirtualizer,
+    scrollMarginTop,
   } = useGridVirtualizer({
     data,
     columns,
@@ -37,13 +45,42 @@ function GridVirtualizer ({
     }
   }, [columns, isResizing, columnVirtualizer]);
 
+  const rowItems = virtualizer.getVirtualItems();
   const columnItems = columnVirtualizer.getVirtualItems();
   const totalSize = columnVirtualizer.getTotalSize();
 
   const contextValue = useGridDnd(data, columns, virtualizer, columnVirtualizer);
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
-  const [draggingBottomScrollbar, setDraggingBottomScrollbar] = useState(false);
   const [isHover, setIsHover] = useState(false);
+  const stickyHeaderRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const scrollElement = virtualizer.scrollElement;
+
+    if (!scrollElement) return;
+    const stickyHeader = stickyHeaderRef.current;
+
+    if (!stickyHeader) return;
+
+    const onScroll = () => {
+      const scrollTop = scrollElement.scrollTop;
+
+      if (scrollTop >= scrollMarginTop && scrollTop <= scrollElement.scrollHeight) {
+        stickyHeader.style.opacity = '1';
+        stickyHeader.style.pointerEvents = 'auto';
+      } else {
+        stickyHeader.style.opacity = '0';
+        stickyHeader.style.pointerEvents = 'none';
+      }
+    };
+
+    onScroll();
+    scrollElement.addEventListener('scroll', onScroll);
+    return () => {
+      scrollElement.removeEventListener('scroll', onScroll);
+    };
+
+  }, [scrollMarginTop, virtualizer.scrollElement]);
 
   return (
     <GridDragContext.Provider value={contextValue}>
@@ -54,17 +91,18 @@ function GridVirtualizer ({
         className={'appflowy-custom-scroller'}
         style={{ overflowY: 'auto', scrollBehavior: 'auto' }}
         onScroll={e => {
-          if (draggingBottomScrollbar) return;
           const scrollLeft = e.currentTarget.scrollLeft;
 
-          const bottomScrollbar = bottomScrollbarRef.current;
-
-          if (!bottomScrollbar) return;
-
-          bottomScrollbar.scroll({
+          stickyHeaderRef.current?.scroll({
             left: scrollLeft,
             behavior: 'auto',
           });
+
+          bottomScrollbarRef.current?.scroll({
+            left: scrollLeft,
+            behavior: 'auto',
+          });
+
         }}
       >
         <div
@@ -73,7 +111,7 @@ function GridVirtualizer ({
             position: 'relative',
           }}
         >
-          {virtualizer.getVirtualItems().map((row) => {
+          {rowItems.map((row) => {
             const rowData = data[row.index];
             const rowId = rowData.rowId;
 
@@ -105,48 +143,33 @@ function GridVirtualizer ({
             );
           })}
         </div>
-        {virtualizer.scrollElement && createPortal(<div
-          style={{
-            width: '100%',
-            position: 'sticky',
-            bottom: 0,
-            left: 0,
-            right: 0,
-            zIndex: 100,
-          }}
-        >
-          <div
-            ref={bottomScrollbarRef}
-            style={{
-              scrollBehavior: 'auto',
-              visibility: isHover && totalSize > window.innerWidth ? 'visible' : 'hidden',
+        <DatabaseStickyTopOverlay>
+          <GridStickyHeader
+            // eslint-disable-next-line
+            // @ts-ignore
+            row={{
+              index: 0,
             }}
-            onMouseDown={() => {
-              setDraggingBottomScrollbar(true);
-            }}
-            onMouseUp={() => {
-              setDraggingBottomScrollbar(false);
-            }}
-            onScroll={e => {
-              if (!draggingBottomScrollbar) return;
-              const scrollLeft = e.currentTarget.scrollLeft;
-
+            ref={stickyHeaderRef}
+            columns={columns}
+            data={data}
+            totalSize={totalSize}
+            columnItems={columnItems}
+          />
+        </DatabaseStickyTopOverlay>
+        <DatabaseStickyBottomOverlay scrollElement={virtualizer.scrollElement}>
+          <GridStickyHorizontalScrollbar
+            onScrollLeft={scrollLeft => {
               parentRef.current?.scrollTo({
                 left: scrollLeft,
                 behavior: 'auto',
               });
             }}
-            className={'h-3 w-full opacity-30 hover:opacity-60 overflow-y-hidden overflow-x-auto'}
-          >
-            <div
-              style={{
-                width: `${totalSize}px`,
-              }}
-            >
-              &nbsp;
-            </div>
-          </div>
-        </div>, virtualizer.scrollElement)}
+            ref={bottomScrollbarRef}
+            totalSize={totalSize}
+            visible={Boolean(isHover && totalSize)}
+          />
+        </DatabaseStickyBottomOverlay>
       </div>
     </GridDragContext.Provider>
   );

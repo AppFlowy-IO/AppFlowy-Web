@@ -11,7 +11,7 @@ import SomethingError from '@/components/error/SomethingError';
 import React, { useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 
-function MainLayout() {
+function MainLayout () {
   const {
     drawerOpened,
     drawerWidth,
@@ -26,7 +26,7 @@ function MainLayout() {
   const { notFound, deleted } = useViewErrorStatus();
 
   const main = useMemo(() => {
-    if(deleted) {
+    if (deleted) {
       return <DeletedPageComponent />;
     }
 
@@ -36,11 +36,11 @@ function MainLayout() {
   const width = useMemo(() => {
     let diff = 0;
 
-    if(drawerOpened) {
+    if (drawerOpened) {
       diff = drawerWidth;
     }
 
-    if(chatViewDrawerOpen) {
+    if (chatViewDrawerOpen) {
       diff += openViewDrawerWidth;
     }
 
@@ -69,7 +69,17 @@ function MainLayout() {
           }}
           openDrawer={drawerOpened}
         />
-
+        <div
+          className={'sticky-header-overlay'}
+          style={{
+            width: '100%',
+            position: 'sticky',
+            top: 48,
+            left: 0,
+            right: 0,
+            zIndex: 50,
+          }}
+        />
 
         <ErrorBoundary FallbackComponent={SomethingError}>
           {main}

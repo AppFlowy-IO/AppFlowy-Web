@@ -31,8 +31,7 @@ function GridVirtualRow ({
   totalSize: number;
   data: RenderRow[];
   columns: RenderColumn[];
-  onResizeColumnStart: (fieldId: string, element: HTMLElement) => void;
-
+  onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const { registerRow, rowInstanceId: instanceId } = useGridDragContext();
   const rowIndex = row.index;

@@ -21,7 +21,7 @@ export function DropCardIndicator ({ edge, style = {} }: DropIndicatorProps) {
         ...style,
       }}
     >
-      <div className={'absolute -left-1 -top-[3px] h-2 w-2 rounded-full bg-background-primary border-2 border-fill-theme-thick'} />
+      <div className={'absolute -left-1 -top-[3px] h-2 w-2 rounded-full bg-transparent border-2 border-fill-theme-thick'} />
       <div
         style={{
           marginLeft: '4px',

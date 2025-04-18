@@ -18,7 +18,7 @@ function GridCell ({
   columnIndex: number,
   data: RenderRow[];
   columns: RenderColumn[];
-  onResizeColumnStart: (fieldId: string, element: HTMLElement) => void;
+  onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const row = data[rowIndex];
   const column = columns[columnIndex];
@@ -35,7 +35,7 @@ function GridCell ({
         column={column as unknown as Column}
       /></GridDragColumn>;
     case RenderRowType.Row:
-      return <div className={'flex px-2 py-1.5 items-center'}>
+      return <div className={'flex px-2 select-text py-1.5 items-center'}>
         <GridRowCell
           rowIndex={rowIndex}
           rowId={rowId}

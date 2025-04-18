@@ -9,7 +9,7 @@ import { ResizeHandle } from './ResizeHandle';
 
 export function GridHeaderColumn ({ column, onResizeColumnStart }: {
   column: Column;
-  onResizeColumnStart: (fieldId: string, element: HTMLElement) => void;
+  onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const [iconContent, setIconContent] = useState<string | undefined>('');
   const { field } = useFieldSelector(column.fieldId);
@@ -62,10 +62,11 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
       />}
       <div className={'flex-1 truncate'}>{name}</div>
       {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-xl'} />}
-      <ResizeHandle
+      {onResizeColumnStart && <ResizeHandle
         fieldId={column.fieldId}
         onResizeStart={onResizeColumnStart}
-      />
+      />}
+
     </div>
   );
 }

@@ -5,7 +5,8 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import React, { useCallback } from 'react';
 
 const MIN_HEIGHT = 36;
-const PADDING_INLINE = 96;
+
+export const PADDING_INLINE = 96;
 
 export function useGridVirtualizer ({
   data,
@@ -52,5 +53,6 @@ export function useGridVirtualizer ({
     parentRef,
     virtualizer,
     columnVirtualizer,
+    scrollMarginTop: parentOffsetRef.current,
   };
 }
