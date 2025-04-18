@@ -1,11 +1,11 @@
 
 ::-webkit-scrollbar-thumb:hover {
   border-radius: 4px;
-  background-color: var(--fill-primary-alpha-5-hover);
+  background-color: var(--fill-content-hover);
 }
 
 ::-webkit-scrollbar-track:hover {
-  background-color: var(--fill-primary-alpha-5-hover);
+  background-color: var(--fill-content-hover);
 }
 
 @mixin hidden-scrollbar {
@@ -43,7 +43,7 @@
 
     &::-webkit-scrollbar-thumb, & *::-webkit-scrollbar-thumb {
       border-radius: 4px;
-      background-color: var(--fill-primary-alpha-5-hover);
+      background-color: var(--fill-content-hover);
     }
   }
 }

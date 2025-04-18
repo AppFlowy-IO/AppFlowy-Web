@@ -8,6 +8,7 @@ import {
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import GridVirtualColumn from '@/components/database/components/grid/grid-column/GridVirtualColumn';
 import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row/useRenderRows';
+import { useGridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
@@ -37,7 +38,10 @@ function GridVirtualRow ({
   const { registerRow, rowInstanceId: instanceId } = useGridDragContext();
   const rowIndex = row.index;
   const rowId = data[rowIndex].rowId as string;
-
+  const rowType = data[rowIndex].type;
+  const {
+    setHoverRowId,
+  } = useGridContext();
   const rowRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
@@ -51,7 +55,7 @@ function GridVirtualRow ({
     ]
     : [0, 0], [columnItems, totalSize]);
 
-  const isRegularRow = data[row.index].type === RenderRowType.Row;
+  const isRegularRow = rowType === RenderRowType.Row;
 
   useEffect(() => {
     const element = innerRef.current;
@@ -119,6 +123,7 @@ function GridVirtualRow ({
   const readOnly = useReadOnly();
 
   const children = useMemo(() => {
+
     return columnItems.map((column) => {
       return (
         <GridVirtualColumn
@@ -136,6 +141,8 @@ function GridVirtualRow ({
   return (
     <>
       <div
+        onMouseMove={() => setHoverRowId(rowId)}
+        onMouseLeave={() => setHoverRowId(undefined)}
         ref={innerRef}
         className={cn(
           'relative flex',
@@ -158,7 +165,7 @@ function GridVirtualRow ({
           )}
         >
           {children}
-          {state.type === GridDragState.IS_OVER && state.closestEdge && (
+          {state.type === GridDragState.IS_OVER && isRegularRow && state.closestEdge && (
             <DropRowIndicator
               rowIndex={row.index}
               edge={state.closestEdge}

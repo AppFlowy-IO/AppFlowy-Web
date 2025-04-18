@@ -58,7 +58,7 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
       style={{
         cursor: readOnly ? 'default' : 'pointer',
       }}
-      className={'rounded-none hover:bg-fill-primary-alpha-5 relative text-sm flex items-center px-2 h-full gap-[6px] w-full justify-start'}
+      className={'rounded-none text-text-secondary hover:bg-fill-content-hover relative text-sm flex items-center px-2 h-full gap-[6px] w-full justify-start'}
     >
       {icon || <FieldTypeIcon
         type={type}

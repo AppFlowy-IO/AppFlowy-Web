@@ -1,7 +1,7 @@
 import { PADDING_END, useDatabaseContext, useRowsByGroup } from '@/application/database-yjs';
 import { BoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
-import GroupHeader from '@/components/database/components/board/group/GroupHeader';
+import Columns from '@/components/database/components/board/group/Columns';
 import GroupStickyHeader from '@/components/database/components/board/group/GroupStickyHeader';
 import DatabaseStickyHorizontalScrollbar
   from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
@@ -10,7 +10,6 @@ import DatabaseStickyTopOverlay from '@/components/database/components/sticky-ov
 import { getScrollParent } from '@/components/global-comment/utils';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Column } from '../column';
 
 export interface GroupProps {
   groupId: string;
@@ -20,29 +19,16 @@ export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
   const context = useDatabaseContext();
-  const scrollLeft = context.scrollLeft;
-  const maxHeightRef = useRef<number>(0);
-  const onRendered = context?.onRendered;
-  const isDocumentBlock = context.isDocumentBlock;
+  const {
+    paddingStart,
+    paddingEnd,
+  } = context;
 
   const getCards = useCallback((columnId: string) => {
     return groupResult.get(columnId);
   }, [groupResult]);
 
-  const { contextValue, scrollableRef: ref } = useColumnsDrag(groupId, columns, getCards);
-  const handleRendered = useCallback((height: number) => {
-    maxHeightRef.current = Math.max(maxHeightRef.current, height);
-
-    onRendered?.(maxHeightRef.current);
-  }, [onRendered]);
-
-  useEffect(() => {
-    const el = ref.current;
-
-    if (!el || !isDocumentBlock) return;
-
-    handleRendered(el.clientHeight);
-  }, [isDocumentBlock, handleRendered, ref]);
+  const { contextValue, scrollableRef: ref } = useColumnsDrag(groupId, columns, getCards, fieldId);
 
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
   const [isHover, setIsHover] = useState(false);
@@ -51,30 +37,27 @@ export const Group = ({ groupId }: GroupProps) => {
     return (el.closest('.appflowy-scroll-container') || getScrollParent(el)) as HTMLElement;
   }, []);
   const [totalSize, setTotalSize] = useState<number>(0);
-  const headerRef = useRef<HTMLDivElement | null>(null);
+  const innerRef = useRef<HTMLDivElement | null>(null);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const header = headerRef.current;
+    const inner = innerRef.current;
     const columnsEl = ref.current;
 
-    if (!verticalScrollContainer || !header || !columnsEl) return;
+    if (!verticalScrollContainer || !inner || !columnsEl) return;
 
     const stickyHeader = stickyHeaderRef.current;
 
     if (!stickyHeader) return;
 
     const onScroll = () => {
-      const scrollMarginTop = header.getBoundingClientRect().top ?? 0;
+      const scrollMarginTop = inner.getBoundingClientRect().top ?? 0;
       const bottom = columnsEl.getBoundingClientRect().bottom ?? 0;
 
-      console.log('scroll', scrollMarginTop, bottom);
       if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
-        stickyHeader.style.opacity = '1';
-        stickyHeader.style.pointerEvents = 'auto';
+        stickyHeader.style.display = 'flex';
       } else {
-        stickyHeader.style.opacity = '0';
-        stickyHeader.style.pointerEvents = 'none';
+        stickyHeader.style.display = 'none';
       }
     };
 
@@ -113,7 +96,8 @@ export const Group = ({ groupId }: GroupProps) => {
         }}
         className={'max-sm:!px-6 px-24 appflowy-custom-scroller overflow-x-auto h-full'}
         style={{
-          paddingInline: scrollLeft === undefined ? undefined : scrollLeft,
+          paddingLeft: paddingStart,
+          paddingRight: paddingEnd,
           scrollBehavior: 'auto',
         }}
         onScroll={e => {
@@ -138,22 +122,12 @@ export const Group = ({ groupId }: GroupProps) => {
         <div
           className="flex flex-col h-full w-fit min-w-full"
         >
-          <GroupHeader
-            ref={headerRef}
+          <Columns
+            fieldId={fieldId}
             groupResult={groupResult}
             columns={columns}
-            fieldId={fieldId}
+            ref={innerRef}
           />
-          <div className={'columns flex flex-1 w-fit min-w-full gap-2'}>
-            {columns.map((data) => (
-              <Column
-                key={data.id}
-                id={data.id}
-                fieldId={fieldId}
-                rows={groupResult.get(data.id) || []}
-              />
-            ))}
-          </div>
 
         </div>
         <DatabaseStickyTopOverlay>

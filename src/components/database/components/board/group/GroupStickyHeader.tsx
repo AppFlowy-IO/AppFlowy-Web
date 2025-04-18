@@ -1,4 +1,4 @@
-import { GroupColumn, Row } from '@/application/database-yjs';
+import { GroupColumn, Row, useDatabaseContext } from '@/application/database-yjs';
 import GroupHeader from '@/components/database/components/board/group/GroupHeader';
 import React, { forwardRef } from 'react';
 
@@ -13,9 +13,19 @@ const GroupStickyHeader = forwardRef<HTMLDivElement, {
   groupResult,
   onScrollLeft,
 }, ref) => {
+  const context = useDatabaseContext();
+  const {
+    paddingStart,
+    paddingEnd,
+  } = context;
+
   return (
     <div
       ref={ref}
+      style={{
+        paddingLeft: paddingStart,
+        paddingRight: paddingEnd,
+      }}
       onScroll={e => {
         const scrollLeft = e.currentTarget.scrollLeft;
 

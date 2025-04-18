@@ -1,4 +1,9 @@
 import { GroupColumn, Row } from '@/application/database-yjs';
+import {
+  useMoveCardDispatch,
+  useReorderRowDispatch,
+  useReorderGroupColumnDispatch,
+} from '@/application/database-yjs/dispatch';
 import { BoardContextValue } from '@/components/database/components/board/drag-and-drop/board-context';
 import { createRegistry } from '@/components/database/components/board/drag-and-drop/registry';
 import {
@@ -13,11 +18,13 @@ import {
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 
-export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCards: (columnId: string) => Row[] | undefined) {
+export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCards: (columnId: string) => Row[] | undefined, fieldId: string | null) {
   const [instanceId] = useState(() => Symbol(`board-dnd-group-${groupId}`));
   const [registry] = useState(createRegistry);
   const stableData = useRef<GroupColumn[]>(columns);
-
+  const reorderGroupColumn = useReorderGroupColumnDispatch(groupId);
+  const reorderColumnCard = useReorderRowDispatch();
+  const moveColumnCard = useMoveCardDispatch();
   const scrollableRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -36,8 +43,16 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
       startIndex: number;
       finishIndex: number;
     }) => {
-      console.log('reorderColumn', startIndex, finishIndex);
-    }, []);
+      const columnIds = stableData.current.map(item => item.id);
+      const columnId = columnIds[startIndex];
+
+      columnIds.splice(startIndex, 1);
+      columnIds.splice(finishIndex, 0, columnId);
+      const newIndex = columnIds.findIndex(id => id === columnId);
+      const beforeColumnId = columnIds[newIndex - 1];
+
+      reorderGroupColumn(columnId, beforeColumnId);
+    }, [reorderGroupColumn]);
 
   const reorderCard = useCallback(
     ({
@@ -49,8 +64,23 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
       startIndex: number;
       finishIndex: number;
     }) => {
-      console.log('reorderCard', columnId, startIndex, finishIndex);
-    }, []);
+      const cards = getCards(columnId);
+
+      if (!cards) {
+        throw new Error('No card found for column ' + columnId);
+      }
+
+      const ids = cards.map(item => item.id);
+      const cardId = ids[startIndex];
+
+      ids.splice(startIndex, 1);
+      ids.splice(finishIndex, 0, cardId);
+
+      const newIndex = ids.findIndex(id => id === cardId);
+      const beforeId = ids[newIndex - 1];
+
+      reorderColumnCard(cardId, beforeId);
+    }, [getCards, reorderColumnCard]);
 
   const moveCard = useCallback(({
     startColumnId,
@@ -63,6 +93,7 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
     itemIndexInStartColumn: number;
     itemIndexInFinishColumn?: number;
   }) => {
+    if (!fieldId) return;
     if (startColumnId === finishColumnId) {
       return;
     }
@@ -74,13 +105,25 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
       return;
     }
 
-    console.log('moveCard', {
-      startColumn,
-      finishColumn,
-      itemIndexInStartColumn,
-      itemIndexInFinishColumn,
+    const startColumnCards = getCards(startColumnId);
+    const finishColumnCards = getCards(finishColumnId);
+
+    if (!startColumnCards || !finishColumnCards || itemIndexInFinishColumn === undefined) {
+      throw new Error('No card found for column ' + startColumnId);
+    }
+
+    const rowId = startColumnCards[itemIndexInStartColumn].id;
+
+    const beforeId = itemIndexInFinishColumn > 0 ? finishColumnCards[itemIndexInFinishColumn - 1]?.id : undefined;
+
+    moveColumnCard({
+      rowId,
+      beforeRowId: beforeId,
+      fieldId,
+      startColumnId,
+      finishColumnId,
     });
-  }, []);
+  }, [fieldId, getCards, moveColumnCard]);
 
   const contextValue: BoardContextValue = useMemo(() => {
     return {

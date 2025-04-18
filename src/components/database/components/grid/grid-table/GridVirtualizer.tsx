@@ -1,18 +1,15 @@
 import { PADDING_END } from '@/application/database-yjs';
-import {
-  GridDragContext,
-} from '@/components/database/components/grid/drag-and-drop/GridDragContext';
+import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { RenderRow } from '@/components/database/components/grid/grid-row';
+import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
+import GridNewRow from '@/components/database/components/grid/grid-row/GridNewRow';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
+import { useGridDnd } from '@/components/database/components/grid/grid-table/useGridDnd';
+import { useGridVirtualizer } from '@/components/database/components/grid/grid-table/useGridVirtualizer';
+import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar
   from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
-import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
-import { useGridDnd } from '@/components/database/components/grid/grid-table/useGridDnd';
-import {
-  useGridVirtualizer,
-} from '@/components/database/components/grid/grid-table/useGridVirtualizer';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
 import React, { useEffect, useRef, useState } from 'react';
 import { useColumnResize } from '../grid-column/useColumnResize';
@@ -64,15 +61,14 @@ function GridVirtualizer ({
     if (!stickyHeader) return;
 
     const onScroll = () => {
-      const scrollTop = scrollElement.scrollTop;
+      const scrollMarginTop = gridElement.getBoundingClientRect().top ?? 0;
       const bottom = gridElement.getBoundingClientRect().bottom ?? 0;
 
-      if (scrollTop >= scrollMarginTop && bottom - PADDING_END >= 48) {
-        stickyHeader.style.opacity = '1';
-        stickyHeader.style.pointerEvents = 'auto';
+      // console.log(header, scrollMarginTop);
+      if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
+        stickyHeader.style.display = 'flex';
       } else {
-        stickyHeader.style.opacity = '0';
-        stickyHeader.style.pointerEvents = 'none';
+        stickyHeader.style.display = 'none';
       }
     };
 
@@ -133,14 +129,23 @@ function GridVirtualizer ({
                   display: 'flex',
                 }}
               >
-                <GridVirtualRow
+                {rowData.type === RenderRowType.NewRow ? <div
+                  style={{
+                    paddingLeft: columnItems[0].start,
+                    paddingRight: columnItems[0].end,
+                    width: totalSize,
+                  }}
+                >
+                  <GridNewRow />
+                </div> : <GridVirtualRow
                   row={row}
                   columns={columns}
                   data={data}
                   totalSize={totalSize}
                   columnItems={columnItems}
                   onResizeColumnStart={handleResizeStart}
-                />
+                />}
+
               </div>
             );
           })}

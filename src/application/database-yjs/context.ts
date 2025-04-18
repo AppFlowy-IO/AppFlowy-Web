@@ -17,7 +17,8 @@ export interface DatabaseContextState {
   viewId: string;
   rowDocMap: Record<RowId, YDoc> | null;
   isDatabaseRowPage?: boolean;
-  scrollLeft?: number;
+  paddingStart?: number;
+  paddingEnd?: number;
   isDocumentBlock?: boolean;
   navigateToRow?: (rowId: string) => void;
   loadView?: LoadView;
@@ -39,6 +40,10 @@ export const useDatabaseContext = () => {
   }
 
   return context;
+};
+
+export const useSharedRoot = () => {
+  return useDatabaseContext().databaseDoc?.getMap(YjsEditorKey.data_section);
 };
 
 export const useDatabase = () => {

@@ -16,17 +16,17 @@ import React, { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
-function DatabaseView({ viewMeta, uploadFile, ...props }: ViewComponentProps) {
+function DatabaseView ({ viewMeta, uploadFile, ...props }: ViewComponentProps) {
   const [search, setSearch] = useSearchParams();
   const outline = useAppOutline();
   const iidIndex = viewMeta.viewId;
   const view = useMemo(() => {
-    if(!outline || !iidIndex) return;
+    if (!outline || !iidIndex) return;
     return findView(outline || [], iidIndex);
   }, [outline, iidIndex]);
 
   const visibleViewIds = useMemo(() => {
-    if(!view) return [];
+    if (!view) return [];
     return [view.view_id, ...(view.children?.map(v => v.view_id) || [])];
   }, [view]);
 
@@ -58,11 +58,11 @@ function DatabaseView({ viewMeta, uploadFile, ...props }: ViewComponentProps) {
   const doc = props.doc;
   const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
   const skeleton = useMemo(() => {
-    if(rowId) {
+    if (rowId) {
       return <DocumentSkeleton />;
     }
 
-    switch(viewMeta.layout) {
+    switch (viewMeta.layout) {
       case ViewLayout.Grid:
         return <GridSkeleton includeTitle={false} />;
       case ViewLayout.Board:
@@ -74,7 +74,7 @@ function DatabaseView({ viewMeta, uploadFile, ...props }: ViewComponentProps) {
     }
   }, [rowId, viewMeta.layout]);
 
-  if(!viewId || !doc || !database) return null;
+  if (!viewId || !doc || !database) return null;
 
   return (
     <div
@@ -97,6 +97,7 @@ function DatabaseView({ viewMeta, uploadFile, ...props }: ViewComponentProps) {
           {...props}
           viewId={viewId}
           rowId={rowId}
+          showActions={true}
           visibleViewIds={visibleViewIds}
           onChangeView={handleChangeView}
           onOpenRow={handleNavigateToRow}

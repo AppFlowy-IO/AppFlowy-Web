@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 
-function LoginAuth() {
+function LoginAuth () {
   const service = useContext(AFConfigContext)?.service;
   const [loading, setLoading] = useState<boolean>(false);
   const [modalOpened, setModalOpened] = useState(false);
@@ -63,7 +63,7 @@ function LoginAuth() {
         }
         open={modalOpened}
       >
-        <div className={'flex flex-col gap-1 whitespace-pre-wrap break-words text-sm text-text-title'}>{error}</div>
+        <div className={'flex flex-col gap-1 whitespace-pre-wrap break-words text-sm text-text-primary'}>{error}</div>
       </NormalModal>
     </>
   );

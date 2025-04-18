@@ -1,43 +1,55 @@
 import { useDatabaseViewId } from '@/application/database-yjs';
-import { useLayoutEffect, useRef } from 'react';
+import { useGridContext } from '@/components/database/grid/useGridContext';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 export function useHoverControlsDisplay (rowId: string) {
   const ref = useRef<HTMLDivElement>(null);
-
+  const {
+    hoverRowId,
+  } = useGridContext();
   const viewId = useDatabaseViewId();
 
-  useLayoutEffect(() => {
+  const isHover = rowId === hoverRowId;
+
+  const handleMouseMove = useCallback(() => {
     const el = ref.current;
 
     if (!el) {
       return;
     }
 
-    const rowEl = document.querySelector(`[data-row-id="${rowId}"]`);
+    el.style.opacity = '1';
+    el.style.pointerEvents = 'auto';
+  }, []);
 
-    const onMouseMove = () => {
-      el.style.opacity = '1';
-      el.setAttribute('data-row-id', rowId || '');
-      el.style.pointerEvents = 'auto';
-    };
+  const handleMouseLeave = useCallback(() => {
+    const el = ref.current;
 
-    const onMouseLeave = () => {
-      el.style.opacity = '0';
-      el.style.pointerEvents = 'none';
-    };
+    if (!el) {
+      return;
+    }
 
-    onMouseLeave();
-    rowEl?.addEventListener('mousemove', onMouseMove);
-    rowEl?.addEventListener('mouseleave', onMouseLeave);
-    window.addEventListener('wheel', onMouseLeave);
+    el.style.opacity = '0';
+    el.style.pointerEvents = 'none';
+  }, []);
+
+  useLayoutEffect(() => {
+    window.addEventListener('wheel', handleMouseLeave);
     return () => {
-      rowEl?.removeEventListener('mousemove', onMouseMove);
-      rowEl?.removeEventListener('mouseleave', onMouseLeave);
-      window.removeEventListener('wheel', onMouseLeave);
+      window.removeEventListener('wheel', handleMouseLeave);
     };
-  }, [rowId, viewId]);
+  }, [handleMouseLeave, isHover, viewId]);
+
+  useEffect(() => {
+    if (isHover) {
+      handleMouseMove();
+    } else {
+      handleMouseLeave();
+    }
+  }, [handleMouseLeave, handleMouseMove, isHover]);
 
   return {
     ref,
+    isHover,
   };
 }

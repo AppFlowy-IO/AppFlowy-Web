@@ -27,20 +27,20 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const context = useDatabaseContext();
     const loadViewMeta = context.loadViewMeta;
     const [meta, setMeta] = useState<View | null>(null);
-    const scrollLeft = context.scrollLeft;
+    const scrollLeft = context.paddingStart;
     const isDocumentBlock = context.isDocumentBlock;
     const handleChange = (_: React.SyntheticEvent, newValue: string) => {
       setSelectedViewId?.(newValue);
     };
 
     useEffect(() => {
-      void (async() => {
-        if(loadViewMeta) {
+      void (async () => {
+        if (loadViewMeta) {
           try {
             const meta = await loadViewMeta(iidIndex, setMeta);
 
             setMeta(meta);
-          } catch(e) {
+          } catch (e) {
             // do nothing
           }
         }
@@ -58,7 +58,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const getSelectedTabIndicatorProps = useCallback(() => {
       const selectedTab = document.getElementById(`view-tab-${selectedViewId}`);
 
-      if(!selectedTab) return;
+      if (!selectedTab) return;
 
       return {
         style: {
@@ -73,7 +73,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     }, [selectedViewId, views]);
 
     console.log('====', viewIds, meta?.children);
-    if(viewIds.length === 0) return null;
+    if (viewIds.length === 0) return null;
     return (
       <div
         ref={ref}
@@ -106,7 +106,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
               {viewIds.map((viewId) => {
                 const view = views?.get(viewId) as YDatabaseView | null;
 
-                if(!view) return null;
+                if (!view) return null;
                 const databaseLayout = Number(view.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
                 const folderView = viewId === iidIndex ? meta : meta?.children?.find((v) => v.view_id === viewId);
 

@@ -14,12 +14,12 @@ export type RenderColumn = {
   fieldId?: FieldId;
   width: number;
   wrap?: boolean;
+  isPrimary?: boolean;
 };
 
 export function useRenderFields () {
   const fields = useFieldsSelector();
 
-  console.log('useRenderFields ', fields);
   const renderColumns = useMemo(() => {
     const data = fields.map((column) => ({
       ...column,

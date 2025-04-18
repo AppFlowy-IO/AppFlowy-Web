@@ -1,24 +1,25 @@
+import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
+import { DateTimeCell } from '@/application/database-yjs/cell.type';
+import { getCell, metaIdFromRowId, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
-  FieldId, RowCoverType,
+  useDatabase,
+  useDatabaseFields,
+  useDatabaseView,
+  useDatabaseViewId,
+  useRowDocMap,
+} from '@/application/database-yjs/context';
+import { filterBy, parseFilter } from '@/application/database-yjs/filter';
+import { groupByField } from '@/application/database-yjs/group';
+import { sortBy } from '@/application/database-yjs/sort';
+import {
+  FieldId,
+  RowCoverType,
   SortId,
   YDatabase,
   YDatabaseMetas,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
-import { getCell, metaIdFromRowId, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
-import {
-  useDatabase,
-  useDatabaseFields,
-  useDatabaseView,
-  useRowDocMap,
-  useDatabaseViewId,
-} from '@/application/database-yjs/context';
-import { filterBy, parseFilter } from '@/application/database-yjs/filter';
-import { groupByField } from '@/application/database-yjs/group';
-import { sortBy } from '@/application/database-yjs/sort';
-import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
-import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -29,6 +30,7 @@ export interface Column {
   width: number;
   visibility: FieldVisibility;
   wrap?: boolean;
+  isPrimary: boolean;
 }
 
 export interface Row {
@@ -107,9 +109,11 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
       return fieldIds
         .map((fieldId) => {
           const setting = fieldSettings.get(fieldId);
+          const field = fields.get(fieldId);
 
           return {
             fieldId,
+            isPrimary: field.get(YjsDatabaseKey.is_primary),
             width: parseInt(setting?.get(YjsDatabaseKey.width)) || MIN_COLUMN_WIDTH,
             visibility: Number(
               setting?.get(YjsDatabaseKey.visibility) || FieldVisibility.AlwaysShown,
@@ -500,12 +504,18 @@ export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: s
   const { row } = useRowDataSelector(rowId);
   const cell = row?.get(YjsDatabaseKey.cells)?.get(fieldId);
   const [, setClock] = useState<number>(0);
-  const cellValue = cell ? parseYDatabaseCellToCell(cell) : undefined;
+  const [cellValue, setCellValue] = useState(() => {
+    return cell ? parseYDatabaseCellToCell(cell) : undefined;
+  });
 
   useEffect(() => {
     if (!cell) return;
-    const observerEvent = () => setClock(prev => prev + 1);
+    const observerEvent = () => {
+      setClock(prev => prev + 1);
+      setCellValue(cell ? parseYDatabaseCellToCell(cell) : undefined);
+    };
 
+    observerEvent();
     cell.observeDeep(observerEvent);
 
     return () => {

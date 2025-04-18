@@ -17,7 +17,7 @@ export function DatabaseConditions () {
   const sorts = useSortsSelector();
   const filters = useFiltersSelector();
   const view = useDatabaseView();
-  const scrollLeft = useDatabaseContext().scrollLeft;
+  const { paddingStart, paddingEnd } = useDatabaseContext();
   const layout = Number(view?.get(YjsDatabaseKey.layout));
   const className = useMemo(() => {
     const classList = ['database-conditions min-w-0 max-w-full relative transform overflow-hidden transition-all'];
@@ -37,8 +37,8 @@ export function DatabaseConditions () {
     <div
       style={{
         height: expanded ? '40px' : '0',
-        paddingInline: scrollLeft === undefined ? '96px' : `${scrollLeft}px`,
-        paddingRight: layout === DatabaseViewLayout.Grid ? '0' : undefined,
+        paddingLeft: paddingStart === undefined ? '96px' : paddingStart,
+        paddingRight: layout === DatabaseViewLayout.Grid ? '0' : paddingEnd === undefined ? '96px' : paddingEnd,
       }}
       className={
         className

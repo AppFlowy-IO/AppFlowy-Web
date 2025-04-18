@@ -5,7 +5,7 @@ import {
   ItemState,
   useGridDragContext,
 } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
-import { RenderColumn } from '@/components/database/components/grid/grid-column';
+import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column';
 import { cn } from '@/lib/utils';
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
@@ -29,12 +29,13 @@ function GridDragColumn ({ columnIndex, column, children }: {
   const [state, setState] = useState<ItemState>(idleState);
   const { fieldId } = column;
   const readOnly = useReadOnly();
+  const isRegularColumn = column.type === GridColumnType.Field;
 
   useEffect(() => {
     const element = innerRef.current;
     const dragHandle = dragHandleRef.current;
 
-    if (!element || !dragHandle || !fieldId || readOnly) return;
+    if (!element || !dragHandle || !fieldId || readOnly || !isRegularColumn) return;
 
     const data = {
       instanceId,
@@ -91,7 +92,7 @@ function GridDragColumn ({ columnIndex, column, children }: {
         },
       }),
     );
-  }, [readOnly, columnIndex, fieldId, instanceId, registerColumn]);
+  }, [isRegularColumn, readOnly, columnIndex, fieldId, instanceId, registerColumn]);
 
   return (
     <div

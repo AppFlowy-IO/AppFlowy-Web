@@ -5,7 +5,7 @@ import OutlineItemContent from '@/components/_shared/outline/OutlineItemContent'
 import { getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
 import React, { useCallback, useEffect, useMemo } from 'react';
 
-function OutlineItem({ view, level = 0, width, navigateToView, selectedViewId, variant }: {
+function OutlineItem ({ view, level = 0, width, navigateToView, selectedViewId, variant }: {
   view: View;
   width?: number;
   level?: number;
@@ -33,7 +33,7 @@ function OutlineItem({ view, level = 0, width, navigateToView, selectedViewId, v
   const renderItem = useCallback((item: View) => {
     return (
       <div
-        className={`flex ${variant === UIVariant.App ? 'folder-view-item' : ''} h-fit my-0.5 w-full justify-between`}
+        className={`flex ${variant === UIVariant.App ? 'folder-view-item' : ''} cursor-pointer h-fit my-0.5 w-full justify-between`}
       >
         <div
           style={{

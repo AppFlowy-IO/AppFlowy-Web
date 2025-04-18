@@ -1,4 +1,4 @@
-import { PADDING_END } from '@/application/database-yjs';
+import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { getScrollParent } from '@/components/global-comment/utils';
@@ -40,14 +40,19 @@ export function useGridVirtualizer ({
   const getColumn = useCallback((index: number) => columns[index], [columns]);
   const getColumnWidth = useCallback((index: number) => getColumn(index).width, [getColumn]);
 
+  const {
+    paddingStart,
+    paddingEnd,
+  } = useDatabaseContext();
+
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
     count: columns.length,
     getScrollElement: () => parentRef.current,
     estimateSize: getColumnWidth,
     overscan: 5,
-    paddingStart: PADDING_INLINE,
-    paddingEnd: PADDING_INLINE,
+    paddingStart: paddingStart || PADDING_INLINE,
+    paddingEnd: paddingEnd || PADDING_INLINE,
   });
 
   return {

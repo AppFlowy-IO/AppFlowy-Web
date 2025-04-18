@@ -35,7 +35,8 @@ export interface Database2Props {
   variant?: UIVariant;
   onRendered?: (height: number) => void;
   isDocumentBlock?: boolean;
-  scrollLeft?: number;
+  paddingStart?: number;
+  paddingEnd?: number;
   showActions?: boolean;
 }
 
@@ -57,7 +58,8 @@ function Database ({
   onRendered,
   readOnly = true,
   variant = UIVariant.App,
-  scrollLeft,
+  paddingStart,
+  paddingEnd,
   isDocumentBlock,
   showActions,
 }: Database2Props) {
@@ -115,7 +117,6 @@ function Database ({
     };
   }, [handleUpdateRowDocMap, rowOrders]);
 
-  console.log('====readOnly', readOnly);
   if (!rowDocMap || !viewId) {
     return null;
   }
@@ -135,7 +136,8 @@ function Database ({
         navigateToView={navigateToView}
         loadViewMeta={loadViewMeta}
         createRowDoc={createRowDoc}
-        scrollLeft={scrollLeft}
+        paddingStart={paddingStart}
+        paddingEnd={paddingEnd}
         isDocumentBlock={isDocumentBlock}
         onRendered={onRendered}
         showActions={showActions}

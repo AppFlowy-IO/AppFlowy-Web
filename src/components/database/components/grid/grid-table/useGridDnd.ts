@@ -1,4 +1,5 @@
 import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
+import { useReorderColumnDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch';
 import {
   getColumnRegistry,
   getRowRegistry,
@@ -16,7 +17,7 @@ import * as liveRegion from '@atlaskit/pragmatic-drag-and-drop-live-region';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import { Virtualizer } from '@tanstack/react-virtual';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export function useGridDnd (data: RenderRow[], columns: RenderColumn[], virtualizer: Virtualizer<Element, Element>, columnVirtualizer: Virtualizer<HTMLDivElement, Element>) {
   const rowContextValue = useGridDndRow(data, virtualizer);
@@ -40,6 +41,12 @@ export function useGridDndRow (data: RenderRow[], virtualizer: Virtualizer<Eleme
     previousIndex: number;
     currentIndex: number;
   } | null>(null);
+  const stableData = useRef<RenderRow[]>(data);
+
+  useEffect(() => {
+    stableData.current = data;
+  }, [data]);
+  const reorder = useReorderRowDispatch();
 
   const reorderRow = useCallback(({
     startIndex,
@@ -57,11 +64,24 @@ export function useGridDndRow (data: RenderRow[], virtualizer: Virtualizer<Eleme
       return;
     }
 
-    console.log('reorderRow', {
-      sourceIndex: startIndex,
-      targetIndex: finishIndex,
-    });
-  }, []);
+    const rowIds = stableData.current.map(item => item.rowId);
+    const rowId = rowIds[startIndex];
+
+    if (!rowId) {
+      throw new Error('No rowId provided');
+    }
+
+    rowIds.splice(startIndex, 1);
+    rowIds.splice(finishIndex, 0, rowId);
+
+    const newIndex = rowIds.findIndex(id => id === rowId);
+    const beforeId = rowIds[newIndex - 1];
+
+    console.log('rowId', rowId, beforeId);
+
+    reorder(rowId, beforeId);
+
+  }, [reorder]);
 
   useEffect(() => {
     if (!lastRowMoved) return;
@@ -152,9 +172,15 @@ export function useGridDndRow (data: RenderRow[], virtualizer: Virtualizer<Eleme
 
 export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer<HTMLDivElement, Element>) {
   const viewId = useDatabaseViewId();
+  const reorder = useReorderColumnDispatch();
+  const stableData = useRef<RenderColumn[]>(data);
 
   const [registry] = useState(getColumnRegistry);
   const [instanceId] = useState(() => Symbol(`grid-column-dnd-${viewId}`));
+
+  useEffect(() => {
+    stableData.current = data;
+  }, [data]);
 
   const [lastColumnMoved, setLastColumnMoved] = useState<{
     fieldId: string;
@@ -178,11 +204,21 @@ export function useGridDndColumn (data: RenderColumn[], virtualizer: Virtualizer
       return;
     }
 
-    console.log('reorderColumn', {
-      sourceIndex: startIndex,
-      targetIndex: finishIndex,
-    });
-  }, []);
+    const columnIds = stableData.current.map(item => item.fieldId);
+    const columnId = columnIds[startIndex];
+
+    if (!columnId) {
+      throw new Error('No fieldId provided');
+    }
+
+    columnIds.splice(startIndex, 1);
+    columnIds.splice(finishIndex, 0, columnId);
+    const newIndex = columnIds.findIndex(id => id === columnId);
+    const beforeColumnId = columnIds[newIndex - 1];
+
+    reorder(columnId, beforeColumnId);
+
+  }, [reorder]);
 
   useEffect(() => {
     if (!lastColumnMoved) return;

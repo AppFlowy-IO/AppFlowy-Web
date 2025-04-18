@@ -30,7 +30,7 @@ function ColumnHeader ({
         opacity: isDragging ? 0.4 : 1,
         pointerEvents: isDragging ? 'none' : undefined,
       }}
-      className="flex relative items-center flex-col rounded-[8px] pb-0 w-[256px] pt-2 h-full"
+      className="flex relative items-center flex-col rounded-[8px] pb-0 min-w-[256px] w-[256px] pt-2 h-full"
     >
       <div
         ref={headerRef}
