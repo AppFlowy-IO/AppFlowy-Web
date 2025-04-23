@@ -1,6 +1,8 @@
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useContext, useState } from 'react';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
@@ -65,24 +67,28 @@ function CheckEmail ({ email, redirectTo }: {
       </div>
       {isEnter ? (
         <div className={'flex flex-col gap-3'}>
-          <Input
-            autoFocus
-            size={'md'}
-            className={'w-[320px]'}
-            onChange={(e) => {
-              setError('');
-              setCode(e.target.value);
-            }}
-            value={code}
-            placeholder={t('enterCode')}
-            helpText={error}
-            variant={error ? 'destructive' : 'default'}
-            onKeyDown={e => {
-              if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
-                void handleSubmit();
-              }
-            }}
-          />
+          <div className={'flex flex-col gap-1'}>
+            <Input
+              autoFocus
+              size={'md'}
+              className={'w-[320px]'}
+              onChange={(e) => {
+                setError('');
+                setCode(e.target.value);
+              }}
+              value={code}
+              placeholder={t('enterCode')}
+              variant={error ? 'destructive' : 'default'}
+              onKeyDown={e => {
+                if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
+                  void handleSubmit();
+                }
+              }}
+            />
+            {error && <div className={cn('help-text text-xs text-text-error')}>
+              {error}
+            </div>}
+          </div>
 
           <Button
             loading={loading}
@@ -90,7 +96,10 @@ function CheckEmail ({ email, redirectTo }: {
             size={'lg'}
             className={'w-[320px]'}
           >
-            {loading ? t('verifying') : t('continueToSignIn')}
+            {loading ? <>
+              <Progress />
+              {t('verifying')}
+            </> : t('continueToSignIn')}
           </Button>
         </div>
       ) : <Button

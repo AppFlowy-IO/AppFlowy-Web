@@ -1,6 +1,7 @@
-import { FieldId } from '@/application/types';
+import { useReadOnly } from '@/application/database-yjs';
 import { FieldVisibility } from '@/application/database-yjs/database.type';
 import { useFieldsSelector } from '@/application/database-yjs/selector';
+import { FieldId } from '@/application/types';
 import { useMemo } from 'react';
 
 export enum GridColumnType {
@@ -20,20 +21,23 @@ export type RenderColumn = {
 export function useRenderFields () {
   const fields = useFieldsSelector();
 
+  const readOnly = useReadOnly();
   const renderColumns = useMemo(() => {
-    const data = fields.map((column) => ({
+    const data: RenderColumn[] = fields.map((column) => ({
       ...column,
       type: GridColumnType.Field,
     }));
 
-    return [
-      ...data,
-      {
+    if (!readOnly) {
+      data.push({
         type: GridColumnType.NewProperty,
         width: 150,
-      },
-    ].filter(Boolean) as RenderColumn[];
-  }, [fields]);
+      });
+      return data;
+    }
+
+    return data;
+  }, [fields, readOnly]);
 
   return {
     fields: renderColumns,

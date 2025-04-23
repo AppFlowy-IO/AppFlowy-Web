@@ -1,5 +1,5 @@
 import {
-  RowId,
+  RowId, YDatabaseField,
   YDatabaseFields,
   YDatabaseFilter,
   YDatabaseFilters,
@@ -232,3 +232,115 @@ export function selectOptionFilterCheck (data: string, content: string, conditio
       return false;
   }
 }
+
+// Return the default value for the filter
+export function textFilterFillData (content: string, condition: number) {
+  switch (condition) {
+    case TextFilterCondition.TextContains:
+      return content;
+    case TextFilterCondition.TextDoesNotContain:
+      return '';
+    case TextFilterCondition.TextIs:
+      return content;
+    case TextFilterCondition.TextIsNot:
+      return '';
+    case TextFilterCondition.TextIsEmpty:
+      return '';
+    case TextFilterCondition.TextIsNotEmpty:
+      return 'Untitled';
+    default:
+      return '';
+  }
+}
+
+export function numberFilterFillData (content: string, condition: number) {
+  switch (condition) {
+    case NumberFilterCondition.Equal:
+      return content;
+    case NumberFilterCondition.NotEqual:
+      return '';
+    case NumberFilterCondition.GreaterThan:
+      return Number(content) + 1;
+    case NumberFilterCondition.GreaterThanOrEqualTo:
+      return content;
+    case NumberFilterCondition.LessThan:
+      return Number(content) - 1;
+    case NumberFilterCondition.LessThanOrEqualTo:
+      return content;
+    default:
+      return '';
+  }
+}
+
+export function checkboxFilterFillData (condition: number) {
+  switch (condition) {
+    case CheckboxFilterCondition.IsChecked:
+      return 'Yes';
+    case CheckboxFilterCondition.IsUnChecked:
+      return 'No';
+    default:
+      return '';
+  }
+}
+
+export function checklistFilterFillData (content: string, condition: number) {
+  switch (condition) {
+    case ChecklistFilterCondition.IsComplete:
+      return JSON.stringify({
+        options: [
+          {
+            id: '1',
+            name: 'Task',
+          },
+        ],
+        selected_option_ids: ['1'],
+      });
+    default:
+      return '';
+  }
+}
+
+export function selectOptionFilterFillData (content: string, condition: number) {
+  switch (condition) {
+    case SelectOptionFilterCondition.OptionIs:
+      return content;
+    case SelectOptionFilterCondition.OptionIsNot:
+      return '';
+    case SelectOptionFilterCondition.OptionContains:
+      return content;
+    case SelectOptionFilterCondition.OptionDoesNotContain:
+      return '';
+    case SelectOptionFilterCondition.OptionIsEmpty:
+      return '';
+    case SelectOptionFilterCondition.OptionIsNotEmpty:
+      return content;
+    default:
+      return '';
+  }
+}
+
+export function filterFillData (filter: YDatabaseFilter, field: YDatabaseField) {
+  const content = filter.get(YjsDatabaseKey.content);
+  const condition = Number(filter.get(YjsDatabaseKey.condition));
+
+  const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+  console.log('filterFillData', fieldType, condition, content);
+  switch (fieldType) {
+    case FieldType.URL:
+    case FieldType.RichText:
+      return textFilterFillData(content, condition);
+    case FieldType.Number:
+      return numberFilterFillData(content, condition);
+    case FieldType.Checkbox:
+      return checkboxFilterFillData(condition);
+    case FieldType.SingleSelect:
+    case FieldType.MultiSelect:
+      return selectOptionFilterFillData(content, condition);
+    case FieldType.Checklist:
+      return checklistFilterFillData(content, condition);
+    default:
+      return null;
+  }
+}
+

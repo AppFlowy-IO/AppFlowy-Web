@@ -310,7 +310,21 @@
     "viewDataBase": "View database",
     "referencePage": "This {{name}} is referenced",
     "addBlockBelow": "Add a block below",
-    "aiGenerate": "Generate"
+    "aiGenerate": "Generate",
+    "textField": "Add text that will be used to generate the content",
+    "numberField": "Accepts numbers. These can be formatted as currency, percentages, or decimals",
+    "dateField": "Accepts a date or a date range(time optional). Useful for deadlines, events, and scheduling",
+    "singleSelectField": "Select one option from a list of tags. Useful for categorizing",
+    "multiSelectField": "Select one or more options from a list of tags. Useful for tagging items across multiple categories",
+    "checkboxField": "Use a checkbox to indicate yes/no. Useful for tracking tasks",
+    "checklistField": "Add a checklist for to-do items. Useful for tracking tasks and progress",
+    "urlField": "Accepts a URL. Useful for linking to external resources",
+    "updatedAtField": "Records the timestamp of the last update. Useful for tracking changes",
+    "createdAtField": "Records the timestamp of when the item was created. Useful for tracking history",
+    "relationField": "Relate to another database. Useful for linking items across databases",
+    "AISummaryField": "Summarize the content of the record. Useful for getting a quick overview",
+    "AITranslateField": "Translate the content of the record. Useful for multilingual support",
+    "mediaField": "Add images, videos, or other media. Useful for rich content"
   },
   "sideBar": {
     "closeSidebar": "Close sidebar",

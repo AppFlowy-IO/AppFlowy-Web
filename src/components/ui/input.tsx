@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
@@ -60,37 +61,30 @@ const inputVariants = cva(
 export interface InputProps
   extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size' | 'variant'>,
     VariantProps<typeof inputVariants> {
-  helpText?: string;
 }
 
-function Input ({
+const Input = forwardRef<HTMLInputElement, InputProps>(({
   className,
   type,
   variant,
   size,
-  helpText,
   ...props
-}: InputProps) {
+}, ref) => {
   return (
-    <div className={'flex flex-col gap-1'}>
-      <input
-        type={type}
-        data-slot="input"
-        className={cn(
-          inputVariants({ variant, size }),
-          // Invalid state styling (applied via aria-invalid attribute)
-          'aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick',
-          className,
-        )}
-        {...props}
-      />
-      {helpText && <div className={cn('help-text text-xs', variant === 'destructive' && 'text-text-error')}>
-        {helpText}
-      </div>}
-
-    </div>
+    <input
+      ref={ref}
+      type={type}
+      data-slot="input"
+      className={cn(
+        inputVariants({ variant, size }),
+        // Invalid state styling (applied via aria-invalid attribute)
+        'aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick',
+        className,
+      )}
+      {...props}
+    />
 
   );
-}
+});
 
 export { Input };

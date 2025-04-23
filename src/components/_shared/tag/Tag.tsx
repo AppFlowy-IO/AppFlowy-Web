@@ -9,7 +9,7 @@ export interface TagProps {
 
 export const Tag: FC<TagProps> = ({ color, label, badge }) => {
   const className = useMemo(() => {
-    const classList = ['rounded-[6px]', 'font-medium', 'flex items-center gap-0.5 py-0.5 px-1 max-w-full'];
+    const classList = ['rounded-[6px]', 'font-medium', 'flex items-center gap-0.5 py-[1px] px-1 max-w-full'];
 
     if (color) classList.push(`text-text-primary`);
     if (badge) classList.push('px-2 gap-1');

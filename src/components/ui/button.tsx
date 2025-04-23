@@ -1,4 +1,3 @@
-import { Progress } from '@/components/ui/progress';
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
@@ -28,11 +27,12 @@ const buttonVariants = cva(
         default: 'h-8 text-sm px-4 rounded-300 gap-2 font-normal',
         lg: 'h-10 rounded-400 text-sm px-4 gap-2 font-medium',
         xl: 'h-14 rounded-500 px-4 text-xl gap-2 font-medium',
-        icon: 'size-7 rounded-300 p-1 text-icon-primary disabled:text-icon-tertiary',
+        'icon-sm': 'w-6 h-6 rounded-300 p-0.5 text-icon-primary disabled:text-icon-tertiary',
+        icon: 'w-7 h-7 rounded-300 p-1 text-icon-primary disabled:text-icon-tertiary',
         'icon-lg': 'size-10 rounded-400 p-[10px] text-icon-primary disabled:text-icon-tertiary',
       },
       loading: {
-        true: 'opacity-70 cursor-not-allowed hover:bg-fill-theme-thick',
+        true: 'opacity-70 cursor-not-allowed',
         false: '',
       },
     },
@@ -71,11 +71,6 @@ const Button = React.forwardRef<HTMLButtonElement, React.ComponentProps<'button'
       }}
       {...props}
     >
-      {loading && (
-        // eslint-disable-next-line
-        // @ts-ignore
-        <Progress variant={variant} />
-      )}
       {children}
     </Comp>
   );

@@ -1,5 +1,11 @@
 @use "src/styles/mixin.scss";
 
+:root {
+  --font-size-base: 16px;
+  --rem-base: 16;
+  font-size: var(--font-size-base);
+}
+
 * {
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;

@@ -2,12 +2,13 @@ import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { getScrollParent } from '@/components/global-comment/utils';
+import { getPlatform } from '@/utils/platform';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React, { useCallback } from 'react';
 
 const MIN_HEIGHT = 36;
 
-export const PADDING_INLINE = 96;
+export const PADDING_INLINE = getPlatform().isMobile ? 21 : 96;
 
 export function useGridVirtualizer ({
   data,
@@ -33,6 +34,7 @@ export function useGridVirtualizer ({
       if (!parentRef.current) return null;
       return parentRef.current.closest('.appflowy-scroll-container') || getScrollParent(parentRef.current);
     },
+    getItemKey: (index) => data[index].rowId || data[index].type,
     paddingStart: 0,
     paddingEnd: PADDING_END,
   });
@@ -53,6 +55,7 @@ export function useGridVirtualizer ({
     overscan: 5,
     paddingStart: paddingStart || PADDING_INLINE,
     paddingEnd: paddingEnd || PADDING_INLINE,
+    getItemKey: (index) => columns[index].fieldId || columns[index].type,
   });
 
   return {

@@ -83,7 +83,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const viewId = useMemo(() => {
     const id = params.viewId;
 
-    if(id && !uuidValidate(id)) return;
+    if (id && !uuidValidate(id)) return;
     return id;
   }, [params.viewId]);
   const [openModalViewId, setOpenModalViewId] = useState<string | undefined>(undefined);
@@ -99,11 +99,11 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = React.useState<View[]>();
   const viewHasBeenDeleted = useMemo(() => {
-    if(!viewId) return false;
+    if (!viewId) return false;
     return trashList?.some((v) => v.view_id === viewId);
   }, [trashList, viewId]);
   const viewNotFound = useMemo(() => {
-    if(!viewId || !outline) return false;
+    if (!viewId || !outline) return false;
     return !findView(outline, viewId);
   }, [outline, viewId]);
   const setWordCount = useCallback((viewId: string, count: TextCount) => {
@@ -125,7 +125,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   // If the user is not authenticated, log out the user
   useEffect(() => {
-    if(!isAuthenticated) {
+    if (!isAuthenticated) {
       logout();
     }
   }, [isAuthenticated, logout]);
@@ -134,11 +134,11 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     const rowKeys = createdRowKeys.current;
 
     createdRowKeys.current = [];
-    if(!rowKeys.length) return;
+    if (!rowKeys.length) return;
     rowKeys.forEach((rowKey) => {
       try {
         service?.deleteRowDoc(rowKey);
-      } catch(e) {
+      } catch (e) {
         console.error(e);
       }
     });
@@ -146,7 +146,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   }, [service, viewId]);
 
   const originalCrumbs = useMemo(() => {
-    if(!outline || !viewId) return [];
+    if (!outline || !viewId) return [];
 
     return findAncestors(outline, viewId) || [];
   }, [outline, viewId]);
@@ -159,13 +159,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   const appendBreadcrumb = useCallback((view?: View) => {
     setBreadcrumbs((prev) => {
-      if(!view) {
+      if (!view) {
         return prev.slice(0, -1);
       }
 
       const index = prev.findIndex((v) => v.view_id === view.view_id);
 
-      if(index === -1) {
+      if (index === -1) {
         return [...prev, view];
       }
 
@@ -175,19 +175,19 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     });
   }, []);
 
-  const loadViewMeta = useCallback(async(viewId: string, callback?: (meta: View) => void) => {
+  const loadViewMeta = useCallback(async (viewId: string, callback?: (meta: View) => void) => {
     const view = findView(outlineRef.current || [], viewId);
     const deletedView = trashList?.find((v) => v.view_id === viewId);
 
-    if(deletedView) {
+    if (deletedView) {
       return Promise.reject(deletedView);
     }
 
-    if(!view) {
+    if (!view) {
       return Promise.reject('View not found');
     }
 
-    if(callback) {
+    if (callback) {
       callback({
         ...view,
         database_relations: workspaceDatabases,
@@ -200,14 +200,14 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     };
   }, [trashList, workspaceDatabases]);
 
-  const toView = useCallback(async(viewId: string, blockId?: string, keepSearch?: boolean) => {
+  const toView = useCallback(async (viewId: string, blockId?: string, keepSearch?: boolean) => {
     let url = `/app/${currentWorkspaceId}/${viewId}`;
     const view = await loadViewMeta(viewId);
 
     const searchParams = new URLSearchParams(keepSearch ? window.location.search : undefined);
 
-    if(blockId) {
-      switch(view.layout) {
+    if (blockId) {
+      switch (view.layout) {
         case ViewLayout.Document:
           searchParams.set('blockId', blockId);
           break;
@@ -221,30 +221,30 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       }
     }
 
-    if(searchParams.toString()) {
+    if (searchParams.toString()) {
       url += `?${searchParams.toString()}`;
     }
 
     navigate(url);
   }, [currentWorkspaceId, loadViewMeta, navigate]);
 
-  const loadView = useCallback(async(id: string) => {
+  const loadView = useCallback(async (id: string) => {
     const errorCallback = (e: {
       code: number;
     }) => {
-      if(viewId === id && USER_NO_ACCESS_CODE.includes(e.code)) {
+      if (viewId === id && USER_NO_ACCESS_CODE.includes(e.code)) {
         setRequestAccessOpened(true);
       }
     };
 
     try {
-      if(!service || !currentWorkspaceId) {
+      if (!service || !currentWorkspaceId) {
         throw new Error('Service or workspace not found');
       }
 
       const res = await service?.getPageDoc(currentWorkspaceId, id, errorCallback);
 
-      if(!res) {
+      if (!res) {
         throw new Error('View not found');
       }
 
@@ -252,7 +252,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       let objectId = id;
       let collabType = Types.Document;
 
-      if(sharedRoot.has(YjsEditorKey.database)) {
+      if (sharedRoot.has(YjsEditorKey.database)) {
         const database = sharedRoot.get(YjsEditorKey.database);
 
         objectId = database?.get(YjsDatabaseKey.id);
@@ -267,7 +267,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       return res;
       // eslint-disable-next-line
-    } catch(e: any) {
+    } catch (e: any) {
       errorCallback(e);
 
       return Promise.reject(e);
@@ -275,72 +275,78 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   }, [viewId, currentWorkspaceId, service]);
 
   const createRowDoc = useCallback(
-    async(rowKey: string) => {
-      if(!currentWorkspaceId || !service) {
+    async (rowKey: string) => {
+      if (!currentWorkspaceId || !service) {
         throw new Error('Failed to create row doc');
       }
 
       try {
         const doc = await service.createRowDoc(rowKey);
 
-        if(!doc) {
+        if (!doc) {
+          throw new Error('Failed to create row doc');
+        }
+
+        const rowId = rowKey.split('_rows_')[1];
+
+        if (!rowId) {
           throw new Error('Failed to create row doc');
         }
 
         service.registerDocUpdate(doc, {
           workspaceId: currentWorkspaceId,
-          objectId: rowKey,
+          objectId: rowId,
           collabType: Types.DatabaseRow,
         });
 
         createdRowKeys.current.push(rowKey);
         return doc;
-      } catch(e) {
+      } catch (e) {
         return Promise.reject(e);
       }
     },
     [currentWorkspaceId, service],
   );
 
-  const loadUserWorkspaceInfo = useCallback(async() => {
-    if(!service) return;
+  const loadUserWorkspaceInfo = useCallback(async () => {
+    if (!service) return;
     try {
       const res = await service.getUserWorkspaceInfo();
 
       setUserWorkspaceInfo(res);
       return res;
-    } catch(e) {
+    } catch (e) {
       console.error(e);
     }
   }, [service]);
-  const loadDatabaseViewRelations = useCallback(async(workspaceId: string, databaseStorageId: string) => {
-    if(!service) return;
+  const loadDatabaseViewRelations = useCallback(async (workspaceId: string, databaseStorageId: string) => {
+    if (!service) return;
     try {
       const res = await service.getAppDatabaseViewRelations(workspaceId, databaseStorageId);
 
       setWorkspaceDatabases(res);
-    } catch(e) {
+    } catch (e) {
       console.error(e);
     }
   }, [service]);
 
-  const loadOutline = useCallback(async(workspaceId: string, force = true) => {
+  const loadOutline = useCallback(async (workspaceId: string, force = true) => {
 
-    if(!service) return;
+    if (!service) return;
     try {
       const res = await service?.getAppOutline(workspaceId);
 
-      if(!res) {
+      if (!res) {
         throw new Error('App outline not found');
       }
 
       setOutline(res);
       outlineRef.current = res;
-      if(!force) return;
+      if (!force) return;
 
       const firstView = findViewByLayout(res, [ViewLayout.Document, ViewLayout.Board, ViewLayout.Grid, ViewLayout.Calendar]);
 
-      if(!firstView) {
+      if (!firstView) {
         setRendered(true);
       }
 
@@ -352,32 +358,32 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         const search = window.location.search;
 
         // skip /app/trash and /app/*other-pages
-        if(wId && !uuidValidate(wId)) {
+        if (wId && !uuidValidate(wId)) {
           return;
         }
 
         // skip /app/:workspaceId/:pageId
-        if(pageId && uuidValidate(pageId) && wId && uuidValidate(wId) && wId === workspaceId) {
+        if (pageId && uuidValidate(pageId) && wId && uuidValidate(wId) && wId === workspaceId) {
           return;
         }
 
         const lastViewId = localStorage.getItem('last_view_id');
 
-        if(lastViewId && findView(res, lastViewId)) {
+        if (lastViewId && findView(res, lastViewId)) {
           navigate(`/app/${workspaceId}/${lastViewId}${search}`);
 
-        } else if(firstView) {
+        } else if (firstView) {
           navigate(`/app/${workspaceId}/${firstView.view_id}${search}`);
         }
 
-      } catch(e) {
+      } catch (e) {
         // do nothing
       }
 
       // eslint-disable-next-line
-    } catch(e: any) {
+    } catch (e: any) {
       console.error('App outline not found');
-      if(USER_NO_ACCESS_CODE.includes(e.code)) {
+      if (USER_NO_ACCESS_CODE.includes(e.code)) {
         setRequestAccessOpened(true);
         return;
       }
@@ -385,28 +391,28 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   }, [navigate, service]);
 
-  const loadFavoriteViews = useCallback(async() => {
-    if(!service || !currentWorkspaceId) return;
+  const loadFavoriteViews = useCallback(async () => {
+    if (!service || !currentWorkspaceId) return;
     try {
       const res = await service?.getAppFavorites(currentWorkspaceId);
 
-      if(!res) {
+      if (!res) {
         throw new Error('Favorite views not found');
       }
 
       setFavoriteViews(res);
       return res;
-    } catch(e) {
+    } catch (e) {
       console.error('Favorite views not found');
     }
   }, [currentWorkspaceId, service]);
 
-  const loadRecentViews = useCallback(async() => {
-    if(!service || !currentWorkspaceId) return;
+  const loadRecentViews = useCallback(async () => {
+    if (!service || !currentWorkspaceId) return;
     try {
       const res = await service?.getAppRecent(currentWorkspaceId);
 
-      if(!res) {
+      if (!res) {
         throw new Error('Recent views not found');
       }
 
@@ -416,34 +422,34 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
         return !item.extra?.is_space && findView(outline || [], item.view_id);
       }));
       return views;
-    } catch(e) {
+    } catch (e) {
       console.error('Recent views not found');
     }
   }, [currentWorkspaceId, service, outline]);
 
-  const loadTrash = useCallback(async(currentWorkspaceId: string) => {
+  const loadTrash = useCallback(async (currentWorkspaceId: string) => {
 
-    if(!service) return;
+    if (!service) return;
     try {
       const res = await service?.getAppTrash(currentWorkspaceId);
 
-      if(!res) {
+      if (!res) {
         throw new Error('App trash not found');
       }
 
       setTrashList(sortBy(uniqBy(res, 'view_id'), 'last_edited_time').reverse());
-    } catch(e) {
+    } catch (e) {
       return Promise.reject('App trash not found');
     }
   }, [service]);
 
   useEffect(() => {
-    if(!currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     void loadOutline(currentWorkspaceId);
-    void (async() => {
+    void (async () => {
       try {
         await loadTrash(currentWorkspaceId);
-      } catch(e) {
+      } catch (e) {
         console.error(e);
       }
     })();
@@ -453,15 +459,15 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     void loadUserWorkspaceInfo().then(res => {
       const selectedWorkspace = res?.selectedWorkspace;
 
-      if(!selectedWorkspace) return;
+      if (!selectedWorkspace) return;
 
       void loadDatabaseViewRelations(selectedWorkspace.id, selectedWorkspace.databaseStorageId);
     });
   }, [loadDatabaseViewRelations, loadUserWorkspaceInfo]);
 
-  const onChangeWorkspace = useCallback(async(workspaceId: string) => {
-    if(!service) return;
-    if(userWorkspaceInfo && !userWorkspaceInfo.workspaces.some((w) => w.id === workspaceId)) {
+  const onChangeWorkspace = useCallback(async (workspaceId: string) => {
+    if (!service) return;
+    if (userWorkspaceInfo && !userWorkspaceInfo.workspaces.some((w) => w.id === workspaceId)) {
       window.location.href = `/app/${workspaceId}`;
       return;
     }
@@ -475,8 +481,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   }, [navigate, service, userWorkspaceInfo, loadUserWorkspaceInfo]);
 
-  const addPage = useCallback(async(parentViewId: string, payload: CreatePagePayload) => {
-    if(!currentWorkspaceId || !service) {
+  const addPage = useCallback(async (parentViewId: string, payload: CreatePagePayload) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -486,7 +492,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       await loadOutline(currentWorkspaceId, false);
 
       return viewId;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service, loadOutline]);
@@ -495,8 +501,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     setOpenModalViewId(viewId);
   }, []);
 
-  const deletePage = useCallback(async(id: string) => {
-    if(!currentWorkspaceId || !service) {
+  const deletePage = useCallback(async (id: string) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -505,13 +511,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       void loadTrash(currentWorkspaceId);
       void loadOutline(currentWorkspaceId, false);
       return;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service, loadTrash, loadOutline]);
 
-  const deleteTrash = useCallback(async(viewId?: string) => {
-    if(!currentWorkspaceId || !service) {
+  const deleteTrash = useCallback(async (viewId?: string) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -520,13 +526,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       void loadOutline(currentWorkspaceId, false);
       return;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service, loadOutline]);
 
-  const restorePage = useCallback(async(viewId?: string) => {
-    if(!currentWorkspaceId || !service) {
+  const restorePage = useCallback(async (viewId?: string) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -535,13 +541,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       void loadOutline(currentWorkspaceId, false);
       return;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service, loadOutline]);
 
-  const updatePage = useCallback(async(viewId: string, payload: UpdatePagePayload) => {
-    if(!currentWorkspaceId || !service) {
+  const updatePage = useCallback(async (viewId: string, payload: UpdatePagePayload) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -550,13 +556,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       void loadOutline(currentWorkspaceId, false);
       return;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service, loadOutline]);
 
-  const movePage = useCallback(async(viewId: string, parentId: string, prevViewId?: string) => {
-    if(!currentWorkspaceId || !service) {
+  const movePage = useCallback(async (viewId: string, parentId: string, prevViewId?: string) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -568,26 +574,26 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       void loadOutline(currentWorkspaceId, false);
       return;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service, outline, loadOutline]);
 
-  const loadViews = useCallback(async(varient?: UIVariant) => {
-    if(!varient) {
+  const loadViews = useCallback(async (varient?: UIVariant) => {
+    if (!varient) {
       return outline || [];
     }
 
-    if(varient === UIVariant.Favorite) {
-      if(favoriteViews && favoriteViews.length > 0) {
+    if (varient === UIVariant.Favorite) {
+      if (favoriteViews && favoriteViews.length > 0) {
         return favoriteViews || [];
       } else {
         return loadFavoriteViews();
       }
     }
 
-    if(varient === UIVariant.Recent) {
-      if(recentViews && recentViews.length > 0) {
+    if (varient === UIVariant.Recent) {
+      if (recentViews && recentViews.length > 0) {
         return recentViews || [];
       } else {
         return loadRecentViews();
@@ -597,8 +603,8 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     return [];
   }, [favoriteViews, loadFavoriteViews, loadRecentViews, outline, recentViews]);
 
-  const createSpace = useCallback(async(payload: CreateSpacePayload) => {
-    if(!currentWorkspaceId || !service) {
+  const createSpace = useCallback(async (payload: CreateSpacePayload) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -607,13 +613,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       void loadOutline(currentWorkspaceId, false);
       return res;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service, loadOutline]);
 
-  const updateSpace = useCallback(async(payload: UpdateSpacePayload) => {
-    if(!currentWorkspaceId || !service) {
+  const updateSpace = useCallback(async (payload: UpdateSpacePayload) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -622,13 +628,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
       void loadOutline(currentWorkspaceId, false);
       return res;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service, loadOutline]);
 
-  const uploadFile = useCallback(async(viewId: string, file: File, onProgress?: (n: number) => void) => {
-    if(!currentWorkspaceId || !service) {
+  const uploadFile = useCallback(async (viewId: string, file: File, onProgress?: (n: number) => void) => {
+    if (!currentWorkspaceId || !service) {
       throw new Error('No workspace or service found');
     }
 
@@ -636,13 +642,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       const res = await service.uploadFile(currentWorkspaceId, viewId, file, onProgress);
 
       return res;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service]);
 
-  const getSubscriptions = useCallback(async() => {
-    if(!service || !currentWorkspaceId) {
+  const getSubscriptions = useCallback(async () => {
+    if (!service || !currentWorkspaceId) {
       throw new Error('No service found');
     }
 
@@ -650,13 +656,13 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       const res = await service.getWorkspaceSubscriptions(currentWorkspaceId);
 
       return res;
-    } catch(e) {
+    } catch (e) {
       return Promise.reject(e);
     }
   }, [currentWorkspaceId, service]);
 
-  const publish = useCallback(async(view: View, publishName?: string, visibleViewIds?: string[]) => {
-    if(!service || !currentWorkspaceId) return;
+  const publish = useCallback(async (view: View, publishName?: string, visibleViewIds?: string[]) => {
+    if (!service || !currentWorkspaceId) return;
     const viewId = view.view_id;
 
     await service.publishView(currentWorkspaceId, viewId, {
@@ -666,14 +672,14 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline, service]);
 
-  const unpublish = useCallback(async(viewId: string) => {
-    if(!service || !currentWorkspaceId) return;
+  const unpublish = useCallback(async (viewId: string) => {
+    if (!service || !currentWorkspaceId) return;
     await service.unpublishView(currentWorkspaceId, viewId);
     await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline, service]);
 
-  const refreshOutline = useCallback(async() => {
-    if(!currentWorkspaceId) return;
+  const refreshOutline = useCallback(async () => {
+    if (!currentWorkspaceId) return;
     await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline]);
 
@@ -735,10 +741,10 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   </AppContext.Provider>;
 };
 
-export function useViewErrorStatus() {
+export function useViewErrorStatus () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useViewErrorStatus must be used within an AppProvider');
   }
 
@@ -748,94 +754,94 @@ export function useViewErrorStatus() {
   };
 }
 
-export function useBreadcrumb() {
+export function useBreadcrumb () {
   const context = useContext(AppContext);
 
   return context?.breadcrumbs;
 }
 
-export function useUserWorkspaceInfo() {
+export function useUserWorkspaceInfo () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useUserWorkspaceInfo must be used within an AppProvider');
   }
 
   return context.userWorkspaceInfo;
 }
 
-export function useAppOutline() {
+export function useAppOutline () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useAppOutline must be used within an AppProvider');
   }
 
   return context.outline;
 }
 
-export function useAppViewId() {
+export function useAppViewId () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useAppViewId must be used within an AppProvider');
   }
 
   return context.viewId;
 }
 
-export function useAppWordCount(viewId?: string | null) {
+export function useAppWordCount (viewId?: string | null) {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useAppWordCount must be used within an AppProvider');
   }
 
-  if(!viewId) {
+  if (!viewId) {
     return;
   }
 
   return context.wordCount?.[viewId];
 }
 
-export function useOpenModalViewId() {
+export function useOpenModalViewId () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useOpenModalViewId must be used within an AppProvider');
   }
 
   return context.openPageModalViewId;
 }
 
-export function useAppView(viewId?: string) {
+export function useAppView (viewId?: string) {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useAppView must be used within an AppProvider');
   }
 
-  if(!viewId) {
+  if (!viewId) {
     return;
   }
 
   return findView(context.outline || [], viewId);
 }
 
-export function useCurrentWorkspaceId() {
+export function useCurrentWorkspaceId () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useCurrentWorkspaceId must be used within an AppProvider');
   }
 
   return context.currentWorkspaceId;
 }
 
-export function useAppHandlers() {
+export function useAppHandlers () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useAppHandlers must be used within an AppProvider');
   }
 
@@ -866,10 +872,10 @@ export function useAppHandlers() {
   };
 }
 
-export function useAppFavorites() {
+export function useAppFavorites () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useAppFavorites must be used within an AppProvider');
   }
 
@@ -879,10 +885,10 @@ export function useAppFavorites() {
   };
 }
 
-export function useAppRecent() {
+export function useAppRecent () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useAppRecent must be used within an AppProvider');
   }
 
@@ -892,10 +898,10 @@ export function useAppRecent() {
   };
 }
 
-export function useAppTrash() {
+export function useAppTrash () {
   const context = useContext(AppContext);
 
-  if(!context) {
+  if (!context) {
     throw new Error('useAppTrash must be used within an AppProvider');
   }
 

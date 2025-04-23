@@ -1,6 +1,9 @@
-import { Column, FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { FieldTypeIcon } from '@/components/database/components/field';
+import GridFieldMenu from '@/components/database/components/grid/grid-column/GridFieldMenu';
+import GridNewProperty from '@/components/database/components/grid/grid-column/GridNewProperty';
+import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { getIcon } from '@/utils/emoji';
 import DOMPurify from 'dompurify';
 import React, { useEffect, useMemo, useState } from 'react';
@@ -8,12 +11,12 @@ import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/ai_indicator.sv
 import { ResizeHandle } from './ResizeHandle';
 
 export function GridHeaderColumn ({ column, onResizeColumnStart }: {
-  column: Column;
+  column: RenderColumn;
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const readOnly = useReadOnly();
   const [iconContent, setIconContent] = useState<string | undefined>('');
-  const { field } = useFieldSelector(column.fieldId);
+  const { field } = useFieldSelector(column.fieldId || '');
   const iconId = field?.get(YjsDatabaseKey.icon);
   const name = field?.get(YjsDatabaseKey.name);
   const type = useMemo(() => {
@@ -52,26 +55,45 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
     />;
   }, [iconContent]);
   const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(type);
+  const isNewProperty = column.type === GridColumnType.NewProperty;
+  const fieldId = column.fieldId || '';
+
+  const children = useMemo(() => {
+
+    return (
+      <div
+        style={{
+          cursor: readOnly ? 'default' : 'pointer',
+        }}
+        className={'rounded-none text-text-secondary hover:bg-fill-content-hover relative text-sm flex items-center px-2 h-full gap-[10px] w-full justify-start'}
+      >
+        {icon || <FieldTypeIcon
+          type={type}
+          className={'icon h-5 w-5'}
+        />}
+        <div className={'flex-1 truncate'}>{name}</div>
+        {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-xl'} />}
+        {onResizeColumnStart && !readOnly && fieldId && <ResizeHandle
+          fieldId={fieldId}
+          onResizeStart={onResizeColumnStart}
+        />}
+
+      </div>
+    );
+  }, [fieldId, icon, isAIField, name, onResizeColumnStart, readOnly, type]);
+
+  if (isNewProperty) {
+    return (
+      <GridNewProperty />
+    );
+  }
+
+  if (readOnly) return children;
 
   return (
-    <div
-      style={{
-        cursor: readOnly ? 'default' : 'pointer',
-      }}
-      className={'rounded-none text-text-secondary hover:bg-fill-content-hover relative text-sm flex items-center px-2 h-full gap-[6px] w-full justify-start'}
-    >
-      {icon || <FieldTypeIcon
-        type={type}
-        className={'icon mr-1 h-4 w-4'}
-      />}
-      <div className={'flex-1 truncate'}>{name}</div>
-      {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-xl'} />}
-      {onResizeColumnStart && !readOnly && <ResizeHandle
-        fieldId={column.fieldId}
-        onResizeStart={onResizeColumnStart}
-      />}
-
-    </div>
+    <GridFieldMenu fieldId={fieldId}>
+      {children}
+    </GridFieldMenu>
   );
 }
 

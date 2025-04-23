@@ -1,7 +1,7 @@
 import { PADDING_END } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
+import { RenderRowType } from '@/components/database/components/grid/grid-row';
 import GridNewRow from '@/components/database/components/grid/grid-row/GridNewRow';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
@@ -11,16 +11,20 @@ import DatabaseStickyBottomOverlay from '@/components/database/components/sticky
 import DatabaseStickyHorizontalScrollbar
   from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
+import { useGridContext } from '@/components/database/grid/useGridContext';
 import React, { useEffect, useRef, useState } from 'react';
 import { useColumnResize } from '../grid-column/useColumnResize';
 
 function GridVirtualizer ({
   columns,
-  data,
 }: {
-  data: RenderRow[]
   columns: RenderColumn[];
 }) {
+  const {
+    rows: data,
+    setShowStickyHeader,
+    showStickyHeader,
+  } = useGridContext();
   const {
     handleResizeStart,
     isResizing,
@@ -46,7 +50,7 @@ function GridVirtualizer ({
   const columnItems = columnVirtualizer.getVirtualItems();
   const totalSize = columnVirtualizer.getTotalSize();
 
-  const contextValue = useGridDnd(data, columns, virtualizer, columnVirtualizer);
+  const contextValue = useGridDnd(columns, virtualizer, columnVirtualizer);
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
   const [isHover, setIsHover] = useState(false);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
@@ -56,9 +60,6 @@ function GridVirtualizer ({
     const gridElement = parentRef.current;
 
     if (!scrollElement || !gridElement) return;
-    const stickyHeader = stickyHeaderRef.current;
-
-    if (!stickyHeader) return;
 
     const onScroll = () => {
       const scrollMarginTop = gridElement.getBoundingClientRect().top ?? 0;
@@ -66,9 +67,9 @@ function GridVirtualizer ({
 
       // console.log(header, scrollMarginTop);
       if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
-        stickyHeader.style.display = 'flex';
+        setShowStickyHeader(true);
       } else {
-        stickyHeader.style.display = 'none';
+        setShowStickyHeader(false);
       }
     };
 
@@ -78,7 +79,7 @@ function GridVirtualizer ({
       scrollElement.removeEventListener('scroll', onScroll);
     };
 
-  }, [parentRef, scrollMarginTop, virtualizer.scrollElement]);
+  }, [parentRef, scrollMarginTop, setShowStickyHeader, virtualizer.scrollElement]);
 
   return (
     <GridDragContext.Provider value={contextValue}>
@@ -132,7 +133,7 @@ function GridVirtualizer ({
                 {rowData.type === RenderRowType.NewRow ? <div
                   style={{
                     paddingLeft: columnItems[0].start,
-                    paddingRight: columnItems[0].end,
+                    paddingRight: columnItems[0].start,
                     width: totalSize,
                   }}
                 >
@@ -158,6 +159,10 @@ function GridVirtualizer ({
               index: 0,
             }}
             ref={stickyHeaderRef}
+            style={{
+              opacity: showStickyHeader ? 1 : 0,
+              pointerEvents: showStickyHeader ? 'auto' : 'none',
+            }}
             columns={columns}
             data={data}
             totalSize={totalSize}
@@ -170,6 +175,7 @@ function GridVirtualizer ({
             }}
           />
         </DatabaseStickyTopOverlay>
+
         <DatabaseStickyBottomOverlay scrollElement={virtualizer.scrollElement}>
           <DatabaseStickyHorizontalScrollbar
             onScrollLeft={scrollLeft => {

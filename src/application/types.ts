@@ -364,7 +364,7 @@ export interface YDoc extends Y.Doc {
 export interface YDatabaseRow extends Y.Map<unknown> {
   get (key: YjsDatabaseKey.id): RowId;
 
-  get (key: YjsDatabaseKey.height): string;
+  get (key: YjsDatabaseKey.database_id | YjsDatabaseKey.height): string;
 
   get (key: YjsDatabaseKey.visibility): boolean;
 
@@ -410,6 +410,8 @@ export interface YSharedRoot extends Y.Map<unknown> {
   get (key: YjsEditorKey.database): YDatabase;
 
   get (key: YjsEditorKey.database_row): YDatabaseRow;
+
+  get (key: YjsEditorKey.meta): Y.Map<unknown>;
 }
 
 export interface YFolder extends Y.Map<unknown> {
@@ -547,9 +549,9 @@ export interface YDatabaseView extends Y.Map<unknown> {
   get (key: YjsDatabaseKey.calculations): YDatabaseCalculations;
 }
 
-export type YDatabaseFieldOrders = Y.Array<unknown>; // [ { id: FieldId } ]
+export type YDatabaseFieldOrders = Y.Array<{ id: FieldId }>; // [ { id: FieldId } ]
 
-export type YDatabaseRowOrders = Y.Array<YDatabaseRowOrder>; // [ { id: RowId, height: number } ]
+export type YDatabaseRowOrders = Y.Array<{ id: RowId, height: number }>; // [ { id: RowId, height: number } ]
 
 export type YDatabaseGroups = Y.Array<YDatabaseGroup>;
 
@@ -598,12 +600,6 @@ export interface YDatabaseGroupColumn extends Y.Map<unknown> {
   get (key: YjsDatabaseKey.id): string;
 
   get (key: YjsDatabaseKey.visible): boolean;
-}
-
-export interface YDatabaseRowOrder extends Y.Map<unknown> {
-  get (key: YjsDatabaseKey.id): SortId;
-
-  get (key: YjsDatabaseKey.height): number;
 }
 
 export interface YDatabaseSort extends Y.Map<unknown> {

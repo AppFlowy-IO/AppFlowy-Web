@@ -1,4 +1,5 @@
-import { useReadOnly } from '@/application/database-yjs';
+import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
+import ClearSortingConfirm from '@/components/database/components/sorts/ClearSortingConfirm';
 import { DropRowIndicator } from '@/components/database/components/grid/drag-and-drop/DropRowIndicator';
 import {
   GridDragState,
@@ -7,6 +8,7 @@ import {
 } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import GridVirtualColumn from '@/components/database/components/grid/grid-column/GridVirtualColumn';
+import { GridRowProvider } from '@/components/database/components/grid/grid-row/GridRowContext';
 import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row/useRenderRows';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
@@ -27,7 +29,9 @@ function GridVirtualRow ({
   columnItems,
   totalSize,
   onResizeColumnStart,
+  isSticky,
 }: {
+  isSticky?: boolean;
   columnItems: VirtualItem[];
   row: VirtualItem;
   totalSize: number;
@@ -46,7 +50,10 @@ function GridVirtualRow ({
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);
   const [state, setState] = useState<ItemState>(idleState);
+  const sorts = useSortsSelector();
+  const [openClearSortsConfirmed, setOpenClearSortsConfirmed] = useState(false);
 
+  const hasSorted = sorts.length > 0;
   const [before, after] = useMemo(() => columnItems.length > 0
     ? [
       columnItems[0].start,
@@ -74,10 +81,16 @@ function GridVirtualRow ({
       draggable({
         element,
         dragHandle,
+        canDrag: () => {
+          if (hasSorted) {
+            setOpenClearSortsConfirmed(true);
+          }
+
+          return !hasSorted;
+        },
         getInitialData: () => data,
         onGenerateDragPreview () {
           setState({ type: GridDragState.PREVIEW });
-
         },
         onDragStart () {
           setState(draggingState);
@@ -119,7 +132,7 @@ function GridVirtualRow ({
         },
       }),
     );
-  }, [rowId, rowIndex, registerRow, instanceId, dragHandleRef, isRegularRow]);
+  }, [hasSorted, rowId, rowIndex, registerRow, instanceId, dragHandleRef, isRegularRow]);
   const readOnly = useReadOnly();
 
   const children = useMemo(() => {
@@ -139,7 +152,11 @@ function GridVirtualRow ({
   }, [columnItems, columns, data, row, onResizeColumnStart]);
 
   return (
-    <>
+    <GridRowProvider
+      value={{
+        isSticky,
+      }}
+    >
       <div
         onMouseMove={() => setHoverRowId(rowId)}
         onMouseLeave={() => setHoverRowId(undefined)}
@@ -175,8 +192,11 @@ function GridVirtualRow ({
 
         <div style={{ width: `${after}px` }} />
       </div>
-
-    </>
+      <ClearSortingConfirm
+        onClose={() => setOpenClearSortsConfirmed(false)}
+        open={openClearSortsConfirmed}
+      />
+    </GridRowProvider>
   );
 }
 

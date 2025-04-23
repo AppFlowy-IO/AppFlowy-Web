@@ -2,7 +2,7 @@ import { NumberFilter, NumberFilterCondition } from '@/application/database-yjs'
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function NumberFilterContentOverview({ filter }: { filter: NumberFilter }) {
+function NumberFilterContentOverview ({ filter }: { filter: NumberFilter }) {
   const { t } = useTranslation();
 
   const value = useMemo(() => {
@@ -10,7 +10,7 @@ function NumberFilterContentOverview({ filter }: { filter: NumberFilter }) {
       return '';
     }
 
-    const content = parseInt(filter.content);
+    const content = filter.content;
 
     switch (filter.condition) {
       case NumberFilterCondition.Equal:

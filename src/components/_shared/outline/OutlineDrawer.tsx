@@ -10,7 +10,7 @@ import { UIVariant } from '@/application/types';
 import { useState } from 'react';
 import { AFScroller } from '@/components/_shared/scroller';
 
-export function OutlineDrawer({
+export function OutlineDrawer ({
   onScroll,
   header,
   variant,
@@ -45,10 +45,11 @@ export function OutlineDrawer({
           boxSizing: 'border-box',
           borderColor: 'var(--line-divider)',
           boxShadow: 'none',
+          zIndex: 50,
         },
       }}
-      variant='persistent'
-      anchor='left'
+      variant="persistent"
+      anchor="left"
       open={open}
       tabIndex={0}
       autoFocus
@@ -97,7 +98,11 @@ export function OutlineDrawer({
                 </div>
               }
             >
-              <IconButton onClick={onClose} className={'m-4'} size={'small'}>
+              <IconButton
+                onClick={onClose}
+                className={'m-4'}
+                size={'small'}
+              >
                 <DoubleArrowLeft className={'text-text-caption'} />
               </IconButton>
             </Tooltip>
@@ -106,7 +111,10 @@ export function OutlineDrawer({
         <div className={'flex h-fit flex-1 flex-col'}>{children}</div>
         {variant === 'publish' && <AppFlowyPower width={width} />}
       </AFScroller>
-      <Resizer drawerWidth={width} onResize={onResizeWidth} />
+      <Resizer
+        drawerWidth={width}
+        onResize={onResizeWidth}
+      />
     </Drawer>
   );
 }

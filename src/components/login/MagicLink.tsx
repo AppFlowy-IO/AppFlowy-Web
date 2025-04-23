@@ -1,6 +1,8 @@
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -55,24 +57,28 @@ function MagicLink ({ redirectTo }: { redirectTo: string }) {
 
   return (
     <div className={'flex w-full flex-col items-center justify-center gap-3'}>
-      <Input
-        size={'md'}
-        variant={error ? 'destructive' : 'default'}
-        helpText={error}
-        type={'email'}
-        className={'w-[320px]'}
-        onChange={(e) => {
-          setError('');
-          setEmail(e.target.value);
-        }}
-        value={email}
-        placeholder={t('signIn.pleaseInputYourEmail')}
-        onKeyDown={e => {
-          if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
-            void handleSubmit();
-          }
-        }}
-      />
+      <div className={'flex flex-col gap-1'}>
+        <Input
+          size={'md'}
+          variant={error ? 'destructive' : 'default'}
+          type={'email'}
+          className={'w-[320px]'}
+          onChange={(e) => {
+            setError('');
+            setEmail(e.target.value);
+          }}
+          value={email}
+          placeholder={t('signIn.pleaseInputYourEmail')}
+          onKeyDown={e => {
+            if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
+              void handleSubmit();
+            }
+          }}
+        />
+        {error && <div className={cn('help-text text-xs text-text-error')}>
+          {error}
+        </div>}
+      </div>
 
       <Button
         onClick={handleSubmit}
@@ -80,7 +86,10 @@ function MagicLink ({ redirectTo }: { redirectTo: string }) {
         className={'w-[320px]'}
         loading={loading}
       >
-        {loading ? t('loading') : t('signIn.signInWithEmail')}
+        {loading ? <>
+          <Progress />
+          {t('loading')}
+        </> : t('signIn.signInWithEmail')}
       </Button>
     </div>
   );

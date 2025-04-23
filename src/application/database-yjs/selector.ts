@@ -1,6 +1,6 @@
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
-import { getCell, metaIdFromRowId, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
+import { getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
   useDatabase,
   useDatabaseFields,
@@ -10,20 +10,21 @@ import {
 } from '@/application/database-yjs/context';
 import { filterBy, parseFilter } from '@/application/database-yjs/filter';
 import { groupByField } from '@/application/database-yjs/group';
+import { getMetaJSON } from '@/application/database-yjs/row_meta';
 import { sortBy } from '@/application/database-yjs/sort';
 import {
   FieldId,
-  RowCoverType,
   SortId,
   YDatabase,
   YDatabaseMetas,
+  YDatabaseRow,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CalendarLayoutSetting, FieldType, FieldVisibility, Filter, RowMetaKey, SortCondition } from './database.type';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CalendarLayoutSetting, FieldType, FieldVisibility, Filter, RowMeta, SortCondition } from './database.type';
 
 export interface Column {
   fieldId: string;
@@ -91,13 +92,12 @@ export function useDatabaseViewsSelector (_iidIndex: string, visibleViewIds?: st
 }
 
 export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisible) {
-  const viewId = useDatabaseViewId();
+  const view = useDatabaseView();
   const database = useDatabase();
   const [columns, setColumns] = useState<Column[]>([]);
 
   useEffect(() => {
-    if (!viewId) return;
-    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    if (!view) return;
     const fields = database?.get(YjsDatabaseKey.fields);
     const fieldsOrder = view?.get(YjsDatabaseKey.field_orders);
     const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
@@ -113,7 +113,7 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
 
           return {
             fieldId,
-            isPrimary: field.get(YjsDatabaseKey.is_primary),
+            isPrimary: field?.get(YjsDatabaseKey.is_primary),
             width: parseInt(setting?.get(YjsDatabaseKey.width)) || MIN_COLUMN_WIDTH,
             visibility: Number(
               setting?.get(YjsDatabaseKey.visibility) || FieldVisibility.AlwaysShown,
@@ -137,7 +137,7 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
       fieldsOrder?.unobserveDeep(observerEvent);
       fieldSettings?.unobserveDeep(observerEvent);
     };
-  }, [database, viewId, visibilitys]);
+  }, [database, view, visibilitys]);
 
   return columns;
 }
@@ -639,36 +639,6 @@ export function usePrimaryFieldId () {
   return primaryFieldId;
 }
 
-export interface RowMeta {
-  documentId: string;
-  cover: {
-    data: string,
-    cover_type: RowCoverType,
-  } | null;
-  icon: string;
-  isEmptyDocument: boolean;
-}
-
-const metaIdMapFromRowIdMap = new Map<string, Map<RowMetaKey, string>>();
-
-function getMetaIdMap (rowId: string) {
-  const hasMetaIdMap = metaIdMapFromRowIdMap.has(rowId);
-
-  if (!hasMetaIdMap) {
-    const parser = metaIdFromRowId(rowId);
-    const map = new Map<RowMetaKey, string>();
-
-    map.set(RowMetaKey.IconId, parser(RowMetaKey.IconId));
-    map.set(RowMetaKey.CoverId, parser(RowMetaKey.CoverId));
-    map.set(RowMetaKey.DocumentId, parser(RowMetaKey.DocumentId));
-    map.set(RowMetaKey.IsDocumentEmpty, parser(RowMetaKey.IsDocumentEmpty));
-    metaIdMapFromRowIdMap.set(rowId, map);
-    return map;
-  }
-
-  return metaIdMapFromRowIdMap.get(rowId) as Map<RowMetaKey, string>;
-}
-
 export const useRowMetaSelector = (rowId: string) => {
   const [meta, setMeta] = useState<RowMeta | null>();
   const rowMap = useRowDocMap();
@@ -685,31 +655,9 @@ export const useRowMetaSelector = (rowId: string) => {
 
     if (!yMeta) return;
 
-    const metaKeyMap = getMetaIdMap(rowId);
+    const meta = getMetaJSON(rowId, yMeta);
 
-    const iconKey = metaKeyMap.get(RowMetaKey.IconId) ?? '';
-    const coverKey = metaKeyMap.get(RowMetaKey.CoverId) ?? '';
-    const documentId = metaKeyMap.get(RowMetaKey.DocumentId) ?? '';
-    const isEmptyDocumentKey = metaKeyMap.get(RowMetaKey.IsDocumentEmpty) ?? '';
-    const metaJson = yMeta.toJSON();
-
-    const icon = metaJson[iconKey];
-    let cover = null;
-
-    try {
-      cover = metaJson[coverKey] ? JSON.parse(metaJson[coverKey]) : null;
-    } catch (e) {
-      // do nothing
-    }
-
-    const isEmptyDocument = metaJson[isEmptyDocumentKey];
-
-    setMeta({
-      icon,
-      cover,
-      documentId,
-      isEmptyDocument,
-    });
+    setMeta(meta);
   }, [rowId, rowMap]);
 
   useEffect(() => {
@@ -730,4 +678,71 @@ export const useRowMetaSelector = (rowId: string) => {
   }, [rowId, rowMap, updateMeta]);
 
   return meta;
+};
+
+export const useFieldCellsSelector = (fieldId: string) => {
+  const rows = useRowOrdersSelector();
+  const [cells, setCells] = useState<Map<string, unknown> | null>(null);
+  const rowMap = useRowDocMap();
+  const cellObserverEventsRef = useRef<(() => void)[]>([]);
+
+  useEffect(() => {
+
+    if (!rows || !rowMap) return;
+
+    setCells(null);
+
+    rows.forEach((row) => {
+      const rowDoc = rowMap?.[row.id];
+      const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
+
+      const databaseRow = rowSharedRoot?.get(YjsEditorKey.database_row) as YDatabaseRow;
+
+      if (!databaseRow) return;
+
+      const cell = databaseRow.get(YjsDatabaseKey.cells)?.get(fieldId);
+
+      if (!cell) {
+        setCells((prev) => {
+          const newMap = new Map(prev);
+
+          newMap.set(row.id, '');
+
+          return newMap;
+        });
+        return;
+      }
+
+      const observerEvent = () => {
+        if (!cell) return;
+        const cellData = cell.get(YjsDatabaseKey.data);
+
+        setCells((prev) => {
+          const newMap = new Map(prev);
+
+          newMap.set(row.id, cellData);
+
+          return newMap;
+        });
+      };
+
+      observerEvent();
+      cell?.observeDeep(observerEvent);
+
+      cellObserverEventsRef.current.push(() => {
+        cell?.unobserveDeep(observerEvent);
+      });
+    });
+
+    return () => {
+      cellObserverEventsRef.current.forEach((unobserverEvent) => {
+        unobserverEvent();
+      });
+      cellObserverEventsRef.current = [];
+    };
+  }, [rows, rowMap, fieldId]);
+
+  return {
+    cells,
+  };
 };

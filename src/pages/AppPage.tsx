@@ -115,9 +115,9 @@ function AppPage () {
 
   const service = useService();
   const requestInstance = service?.getAxiosInstance();
+  const isMobile = getPlatform().isMobile;
 
   const viewDom = useMemo(() => {
-    const isMobile = getPlatform().isMobile;
 
     if (!doc && layout === ViewLayout.AIChat && viewId) {
       return (

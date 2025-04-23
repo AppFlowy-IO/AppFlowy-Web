@@ -1,4 +1,3 @@
-import { Column } from '@/application/database-yjs';
 import GridDragColumn from '@/components/database/components/grid/drag-and-drop/GridDragColumn';
 import { GridRowCell } from '@/components/database/components/grid/grid-cell/index';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
@@ -30,10 +29,12 @@ function GridCell ({
       return <GridDragColumn
         columnIndex={columnIndex}
         column={column}
-      ><GridHeaderColumn
-        onResizeColumnStart={onResizeColumnStart}
-        column={column as unknown as Column}
-      /></GridDragColumn>;
+      >
+        <GridHeaderColumn
+          onResizeColumnStart={onResizeColumnStart}
+          column={column}
+        />
+      </GridDragColumn>;
     case RenderRowType.Row:
       return <div className={'flex px-2 select-text py-1.5 items-center'}>
         <GridRowCell

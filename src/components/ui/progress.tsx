@@ -8,6 +8,8 @@ const progressVariants = cva(
     variants: {
       variant: {
         default: '',
+        inherit: '',
+        primary: '',
       },
       isIndeterminate: {
         true: 'animate-progress-container',
@@ -41,6 +43,8 @@ const progressCircleVariants = cva(
     variants: {
       variant: {
         default: 'stroke-text-on-fill',
+        inherit: 'stroke-icon-primary',
+        primary: 'stroke-text-action',
       },
     },
     defaultVariants: {

@@ -78,6 +78,7 @@ function Database ({
   const updateRowMap = useCallback(async () => {
     const newRowMap: Record<RowId, YDoc> = {};
 
+    console.log('Database.tsx: updateRowMap', rowIds, dbRows);
     if (!dbRows || !createRowDoc) return;
 
     for (const row of dbRows) {
@@ -89,7 +90,7 @@ function Database ({
     }
 
     setRowDocMap(newRowMap);
-  }, [createRowDoc, dbRows]);
+  }, [createRowDoc, dbRows, rowIds]);
 
   const debounceUpdateRowMap = useMemo(() => {
     return debounce(updateRowMap, 200);
@@ -103,6 +104,24 @@ function Database ({
     console.log('Database.tsx: database', database.toJSON());
     console.log('Database.tsx: rowDocMap', rowDocMap);
   }, [rowDocMap, database]);
+
+  const createNewRowDoc = useCallback(async (rowKey: string) => {
+    if (!createRowDoc) {
+      throw new Error('createRowDoc function is not provided');
+    }
+
+    const rowId = rowKey.split('_rows_')[1];
+
+    const rowDoc = await createRowDoc(rowKey);
+
+    await db.rows.put({
+      row_id: rowId,
+      version: 1,
+      row_key: rowKey,
+    });
+
+    return rowDoc;
+  }, [createRowDoc]);
 
   const handleUpdateRowDocMap = useCallback(async () => {
     setRowIds(rowOrders?.toJSON().map(({ id }: { id: string }) => id) || []);
@@ -135,7 +154,7 @@ function Database ({
         loadView={loadView}
         navigateToView={navigateToView}
         loadViewMeta={loadViewMeta}
-        createRowDoc={createRowDoc}
+        createRowDoc={createNewRowDoc}
         paddingStart={paddingStart}
         paddingEnd={paddingEnd}
         isDocumentBlock={isDocumentBlock}

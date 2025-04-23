@@ -42,8 +42,18 @@ export const useDatabaseContext = () => {
   return context;
 };
 
+export const useDocGuid = () => {
+  return useDatabaseContext().databaseDoc.guid;
+};
+
 export const useSharedRoot = () => {
   return useDatabaseContext().databaseDoc?.getMap(YjsEditorKey.data_section);
+};
+
+export const useCreateRow = () => {
+  const context = useDatabaseContext();
+
+  return context.createRowDoc;
 };
 
 export const useDatabase = () => {

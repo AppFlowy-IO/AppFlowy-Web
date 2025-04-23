@@ -1,3 +1,4 @@
+import { forwardRef } from 'react';
 import * as React from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { ChevronRightIcon } from 'lucide-react';
@@ -51,7 +52,7 @@ function DropdownMenuContent ({
         className={cn(
           // Base colors and appearance
           'bg-background-primary text-text-primary',
-          'z-50 min-w-[8rem] rounded-400 p-2 shadow-menu',
+          'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
 
           // Size constraints and overflow behavior
           'max-h-(--radix-dropdown-menu-content-available-height)',
@@ -85,23 +86,25 @@ function DropdownMenuGroup ({
   );
 }
 
-function DropdownMenuItem ({
+const DropdownMenuItem = forwardRef<HTMLDivElement, React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
+  inset?: boolean;
+  variant?: 'default' | 'destructive';
+}>(({
   className,
   inset,
   variant = 'default',
+  disabled,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
-  inset?: boolean
-  variant?: 'default' | 'destructive'
-}) {
+}, ref) => {
   return (
     <DropdownMenuPrimitive.Item
+      ref={ref}
       data-slot="dropdown-menu-item"
       data-inset={inset}
       data-variant={variant}
       className={cn(
         // Focus states
-        'focus:bg-fill-primary focus-visible:outline-none focus:text-text-primary',
+        'focus:bg-fill-content-hover hover:bg-fill-content-hover focus-visible:outline-none focus:text-text-primary',
 
         // Destructive variant styling
         'data-[variant=destructive]:text-text-error',
@@ -110,7 +113,7 @@ function DropdownMenuItem ({
         'data-[variant=destructive]:*:[svg]:!text-text-error',
 
         // Base layout and appearance
-        'relative flex cursor-pointer items-center gap-2 rounded-300 px-2 py-1 min-h-[32px]',
+        'relative flex cursor-pointer items-center gap-[10px] rounded-300 px-2 py-1 min-h-[32px]',
         'text-sm text-text-primary outline-hidden select-none',
 
         // Disabled state
@@ -120,14 +123,15 @@ function DropdownMenuItem ({
         'data-[inset]:pl-8',
 
         // SVG/Icon styling
-        '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:h-5 [&_svg]:w-5 [&_svg]:text-icon-primary',
-
+        '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:h-5 [&_svg]:w-5',
+        disabled ? '[&_svg]:text-text-tertiary' : '[&_svg]:text-icon-primary',
         className,
       )}
+      disabled={disabled}
       {...props}
     />
   );
-}
+});
 
 function DropdownMenuLabel ({
   className,
@@ -198,15 +202,21 @@ function DropdownMenuSubTrigger ({
       data-inset={inset}
       className={cn(
         // Focus and open states
-        'focus:bg-fill-secondary focus-visible:outline-none focus:text-text-primary',
-        'data-[state=open]:bg-fill-secondary data-[state=open]:text-text-primary',
+        'focus:bg-fill-content-hover hover:bg-fill-content-hover focus-visible:outline-none focus:text-text-primary',
+        'data-[state=open]:bg-fill-content-hover data-[state=open]:text-text-primary',
 
         // Base layout and appearance
-        'flex cursor-pointer items-center rounded-300 px-2 py-1  min-h-[32px]',
+        'flex cursor-pointer items-center rounded-300 px-2 py-1 gap-[10px] min-h-[32px]',
         'text-sm outline-hidden select-none',
 
         // Inset variant (with left padding for icons)
         'data-[inset]:pl-8',
+
+        // SVG/Icon styling
+        '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:h-5 [&_svg]:w-5',
+
+        // Disabled state
+        'data-[disabled]:pointer-events-none data-[disabled]:text-text-tertiary',
 
         className,
       )}
@@ -218,17 +228,18 @@ function DropdownMenuSubTrigger ({
   );
 }
 
-function DropdownMenuSubContent ({
+const DropdownMenuSubContent = forwardRef<HTMLDivElement, React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>>(({
   className,
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
+}, ref) => {
   return (
     <DropdownMenuPrimitive.SubContent
+      ref={ref}
       data-slot="dropdown-menu-sub-content"
       className={cn(
         // Base colors and appearance
         'bg-background-primary text-text-primary',
-        'z-50 min-w-[8rem] rounded-400 p-2 shadow-menu',
+        'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
         'origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden',
 
         // Animation states for opening/closing
@@ -239,7 +250,7 @@ function DropdownMenuSubContent ({
         // Position-based animations
         'data-[side=bottom]:slide-in-from-top-2',
         'data-[side=left]:slide-in-from-right-2',
-        'data-[side=right]:slide-in-from-left-2',
+        'data-[side=right]:slide-in-from-left-2 data-[side=right]:ml-2',
         'data-[side=top]:slide-in-from-bottom-2',
 
         className,
@@ -247,7 +258,7 @@ function DropdownMenuSubContent ({
       {...props}
     />
   );
-}
+});
 
 export {
   DropdownMenu,

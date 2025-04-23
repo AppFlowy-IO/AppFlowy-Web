@@ -44,7 +44,7 @@ function TooltipContent ({
           'data-[side=top]:slide-in-from-bottom-2',
 
           // Styling and layout
-          'shadow-tooltip z-50 origin-[--radix-tooltip-content-transform-origin]',
+          'shadow-tooltip max-w-[360px] z-50 origin-[--radix-tooltip-content-transform-origin]',
           'w-fit rounded-400 bg-surface-secondary px-3 py-2 text-sm text-text-on-fill',
           'flex flex-col',
 
