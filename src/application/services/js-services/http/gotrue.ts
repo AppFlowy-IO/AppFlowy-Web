@@ -61,7 +61,7 @@ export async function signInOTP ({
     }>('/verify', {
       email,
       token: code,
-      type: 'recovery',
+      type: 'magiclink',
     });
 
     const data = response?.data;
@@ -160,4 +160,3 @@ export function signInDiscord (authUrl: string) {
 
   window.open(url, '_current');
 }
-
