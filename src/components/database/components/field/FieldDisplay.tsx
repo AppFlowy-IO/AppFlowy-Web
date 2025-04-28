@@ -1,18 +1,19 @@
 import { FieldId, YjsDatabaseKey } from '@/application/types';
-import { FieldType, useFieldSelector } from '@/application/database-yjs';
-import { FieldTypeIcon } from '@/components/database/components/field/FieldTypeIcon';
+import { useFieldSelector } from '@/application/database-yjs';
+import FieldCustomIcon from '@/components/database/components/field/FieldCustomIcon';
+import { cn } from '@/lib/utils';
 import React from 'react';
 
-export function FieldDisplay({ fieldId }: { fieldId: FieldId }) {
+export function FieldDisplay ({ fieldId, ...props }: { fieldId: FieldId } & React.HTMLAttributes<HTMLDivElement>) {
   const { field } = useFieldSelector(fieldId);
-  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const name = field?.get(YjsDatabaseKey.name);
 
   if (!field) return null;
 
   return (
-    <div className={'overflow flex w-full flex-nowrap items-center gap-1.5 truncate whitespace-nowrap font-medium '}>
-      <FieldTypeIcon type={fieldType} />
-      <span className={'text-xs'}>{field?.get(YjsDatabaseKey.name)}</span>
+    <div {...props} className={cn('flex items-center gap-[10px]', props.className)}>
+      <FieldCustomIcon fieldId={fieldId} />
+      <div className={'flex-1 truncate'}>{name}</div>
     </div>
   );
 }

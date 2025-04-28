@@ -594,7 +594,7 @@ export interface YDatabaseGroup extends Y.Map<unknown> {
   get (key: YjsDatabaseKey.groups): YDatabaseGroupColumns;
 }
 
-export type YDatabaseGroupColumns = Y.Array<YDatabaseGroupColumn>;
+export type YDatabaseGroupColumns = Y.Array<{ id: string, visible: boolean }>;
 
 export interface YDatabaseGroupColumn extends Y.Map<unknown> {
   get (key: YjsDatabaseKey.id): string;
@@ -1029,11 +1029,19 @@ export interface ViewComponentProps {
   onWordCountChange?: (viewId: string, props: TextCount) => void;
   uploadFile?: (file: File) => Promise<string>;
   requestInstance?: AxiosInstance | null;
+  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
 }
 
 export interface CreatePagePayload {
   layout: ViewLayout;
   name?: string;
+}
+
+export interface CreateFolderViewPayload {
+  parentViewId: string,
+  layout: ViewLayout,
+  name?: string,
+  viewId?: string
 }
 
 export interface CreateSpacePayload {

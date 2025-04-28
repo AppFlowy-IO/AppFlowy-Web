@@ -1,5 +1,5 @@
 import { useDatabaseViewId, useRowOrdersSelector } from '@/application/database-yjs';
-import { useDeleteRowDispatch, useDuplicateRowDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
+import { useDuplicateRowDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 

@@ -6,7 +6,7 @@ import { i18nInstance } from '@/i18n/config';
 
 import { I18nextProvider } from 'react-i18next';
 
-function AppTheme({ children }: { children: React.ReactNode }) {
+function AppTheme ({ children }: { children: React.ReactNode }) {
   const { isDark, setIsDark } = useAppThemeMode();
 
   const theme = useMemo(
@@ -161,6 +161,9 @@ function AppTheme({ children }: { children: React.ReactNode }) {
           },
           MuiDrawer: {
             styleOverrides: {
+              root: {
+                zIndex: 50,
+              },
               paper: {
                 borderRadius: 0,
               },
@@ -175,6 +178,9 @@ function AppTheme({ children }: { children: React.ReactNode }) {
           },
           MuiDialog: {
             styleOverrides: {
+              root: {
+                zIndex: 50,
+              },
               paper: {
                 borderRadius: '12px',
               },
@@ -190,6 +196,7 @@ function AppTheme({ children }: { children: React.ReactNode }) {
 
           MuiTooltip: {
             styleOverrides: {
+
               arrow: {
                 color: 'var(--fill-toolbar)',
               },
@@ -199,6 +206,13 @@ function AppTheme({ children }: { children: React.ReactNode }) {
                 fontSize: '0.85rem',
                 borderRadius: '8px',
                 fontWeight: 400,
+              },
+            },
+          },
+          MuiPopover: {
+            styleOverrides: {
+              root: {
+                zIndex: 50,
               },
             },
           },
@@ -264,7 +278,7 @@ function AppTheme({ children }: { children: React.ReactNode }) {
           },
         },
       }),
-    [isDark]
+    [isDark],
   );
 
   return (

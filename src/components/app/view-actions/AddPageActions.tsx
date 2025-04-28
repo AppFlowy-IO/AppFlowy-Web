@@ -1,15 +1,13 @@
 import { View, ViewLayout } from '@/application/types';
-import { notify } from '@/components/_shared/notify';
+import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { toast } from 'sonner';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { useAppHandlers } from '@/components/app/app.hooks';
-import { Button } from '@mui/material';
-import CircularProgress from '@mui/material/CircularProgress';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function AddPageActions({ view, onClose }: {
+function AddPageActions ({ view }: {
   view: View;
-  onClose: () => void;
 }) {
   const { t } = useTranslation();
   const {
@@ -18,28 +16,25 @@ function AddPageActions({ view, onClose }: {
     toView,
   } = useAppHandlers();
 
-  const handleAddPage = useCallback(async(layout: ViewLayout, name?: string) => {
-    if(!addPage) return;
-    notify.default(
-      <span>
-        <CircularProgress size={20} />
-        <span className={'ml-2'}>{t('document.creating')}</span>
-      </span>,
+  const handleAddPage = useCallback(async (layout: ViewLayout, name?: string) => {
+    if (!addPage) return;
+    toast.loading(
+      t('document.creating'),
     );
     try {
       const viewId = await addPage(view.view_id, { layout, name });
 
-      if(layout === ViewLayout.AIChat) {
-        void toView(viewId);
-      } else {
+      if (layout === ViewLayout.Document) {
         void openPageModal?.(viewId);
+
+      } else {
+        void toView(viewId);
       }
 
-      notify.clear();
+      toast.dismiss();
       // eslint-disable-next-line
-    } catch(e: any) {
-      notify.clear();
-      notify.error(e.message);
+    } catch (e: any) {
+      toast.error(e.message);
     }
   }, [addPage, openPageModal, t, toView, view.view_id]);
 
@@ -47,7 +42,7 @@ function AddPageActions({ view, onClose }: {
     label: string;
     icon: React.ReactNode;
     disabled?: boolean;
-    onClick: (e: React.MouseEvent) => void;
+    onSelect: () => void;
   }[] = useMemo(() => [
     {
       label: t('document.menuName'),
@@ -55,32 +50,30 @@ function AddPageActions({ view, onClose }: {
         layout={ViewLayout.Document}
         size={'small'}
       />,
-      onClick: () => {
+      onSelect: () => {
         void handleAddPage(ViewLayout.Document);
       },
     },
-    // {
-    //   label: t('grid.menuName'),
-    //   disabled: true,
-    //   icon: <ViewIcon
-    //     layout={ViewLayout.Grid}
-    //     size={'medium'}
-    //   />,
-    //   onClick: () => {
-    //     void handleAddPage(ViewLayout.Grid, 'Table');
-    //   },
-    // },
-    // {
-    //   label: t('board.menuName'),
-    //   disabled: true,
-    //   icon: <ViewIcon
-    //     layout={ViewLayout.Board}
-    //     size={'medium'}
-    //   />,
-    //   onClick: () => {
-    //     void handleAddPage(ViewLayout.Board, 'Board');
-    //   },
-    // },
+    {
+      label: t('grid.menuName'),
+      icon: <ViewIcon
+        layout={ViewLayout.Grid}
+        size={'small'}
+      />,
+      onSelect: () => {
+        void handleAddPage(ViewLayout.Grid, 'Table');
+      },
+    },
+    {
+      label: t('board.menuName'),
+      icon: <ViewIcon
+        layout={ViewLayout.Board}
+        size={'small'}
+      />,
+      onSelect: () => {
+        void handleAddPage(ViewLayout.Board, 'Board');
+      },
+    },
     // {
     //   label: t('calendar.menuName'),
     //   disabled: true,
@@ -98,31 +91,27 @@ function AddPageActions({ view, onClose }: {
         layout={ViewLayout.AIChat}
         size={'small'}
       />,
-      onClick: () => {
+      onSelect: () => {
         void handleAddPage(ViewLayout.AIChat);
       },
     },
   ], [handleAddPage, t]);
 
   return (
-    <div className={'flex flex-col gap-2 w-full p-1.5 min-w-[230px]'}>
+    <DropdownMenuGroup>
       {actions.map(action => (
-        <Button
+        <DropdownMenuItem
           key={action.label}
-          size={'small'}
           disabled={action.disabled}
-          onClick={(e) => {
-            action.onClick(e);
-            onClose();
+          onSelect={() => {
+            action.onSelect();
           }}
-          className={'px-3 py-1 justify-start'}
-          color={'inherit'}
-          startIcon={action.icon}
         >
+          {action.icon}
           {action.label}
-        </Button>
+        </DropdownMenuItem>
       ))}
-    </div>
+    </DropdownMenuGroup>
   );
 }
 

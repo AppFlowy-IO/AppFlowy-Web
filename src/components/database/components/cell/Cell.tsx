@@ -48,7 +48,12 @@ export function Cell (props: CellProps<CellType>) {
   if (fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime) {
     const attrName = fieldType === FieldType.CreatedTime ? YjsDatabaseKey.created_at : YjsDatabaseKey.last_modified;
 
-    return <RowCreateModifiedTime style={style} rowId={rowId} fieldId={fieldId} attrName={attrName} />;
+    return <RowCreateModifiedTime
+      style={style}
+      rowId={rowId}
+      fieldId={fieldId}
+      attrName={attrName}
+    />;
   }
 
   if (cell && cell.fieldType !== fieldType) {

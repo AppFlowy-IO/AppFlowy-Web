@@ -1,13 +1,11 @@
 import { FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
-import { FieldTypeIcon } from '@/components/database/components/field';
 import GridFieldMenu from '@/components/database/components/grid/grid-column/GridFieldMenu';
 import GridNewProperty from '@/components/database/components/grid/grid-column/GridNewProperty';
 import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { getIcon } from '@/utils/emoji';
-import DOMPurify from 'dompurify';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/ai_indicator.svg';
+import FieldDisplay from 'src/components/database/components/field/FieldDisplay';
 import { ResizeHandle } from './ResizeHandle';
 
 export function GridHeaderColumn ({ column, onResizeColumnStart }: {
@@ -15,48 +13,12 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
   const readOnly = useReadOnly();
-  const [iconContent, setIconContent] = useState<string | undefined>('');
-  const { field } = useFieldSelector(column.fieldId || '');
-  const iconId = field?.get(YjsDatabaseKey.icon);
-  const name = field?.get(YjsDatabaseKey.name);
-  const type = useMemo(() => {
-    const type = field?.get(YjsDatabaseKey.type);
+  const fieldId = column.fieldId || '';
 
-    if (!type) return FieldType.RichText;
-
-    return parseInt(type) as FieldType;
-  }, [field]);
-
-  useEffect(() => {
-    if (iconId) {
-      try {
-        void getIcon(iconId).then((item) => {
-          setIconContent(item?.content?.replace('<svg', '<svg width="100%" height="100%"'));
-        });
-      } catch (e) {
-        console.error(e, iconId);
-      }
-    } else {
-      setIconContent('');
-    }
-  }, [iconId]);
-
-  const icon = useMemo(() => {
-    if (!iconContent) return null;
-    const cleanSvg = DOMPurify.sanitize(iconContent, {
-      USE_PROFILES: { svg: true, svgFilters: true },
-    });
-
-    return <span
-      className={`h-5 w-5`}
-      dangerouslySetInnerHTML={{
-        __html: cleanSvg,
-      }}
-    />;
-  }, [iconContent]);
+  const { field } = useFieldSelector(fieldId);
+  const type = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(type);
   const isNewProperty = column.type === GridColumnType.NewProperty;
-  const fieldId = column.fieldId || '';
 
   const children = useMemo(() => {
 
@@ -67,11 +29,10 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
         }}
         className={'rounded-none text-text-secondary hover:bg-fill-content-hover relative text-sm flex items-center px-2 h-full gap-[10px] w-full justify-start'}
       >
-        {icon || <FieldTypeIcon
-          type={type}
-          className={'icon h-5 w-5'}
-        />}
-        <div className={'flex-1 truncate'}>{name}</div>
+        <FieldDisplay
+          fieldId={fieldId}
+          className={'gap-[10px] flex-1'}
+        />
         {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-xl'} />}
         {onResizeColumnStart && !readOnly && fieldId && <ResizeHandle
           fieldId={fieldId}
@@ -80,7 +41,7 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
 
       </div>
     );
-  }, [fieldId, icon, isAIField, name, onResizeColumnStart, readOnly, type]);
+  }, [fieldId, isAIField, onResizeColumnStart, readOnly]);
 
   if (isNewProperty) {
     return (

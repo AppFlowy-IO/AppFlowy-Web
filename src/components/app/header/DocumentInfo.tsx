@@ -1,7 +1,6 @@
 import { ViewLayout } from '@/application/types';
 import { useAppView, useAppWordCount } from '@/components/app/app.hooks';
 import { getCharacters, getWords } from '@/utils/word';
-import { Divider } from '@mui/material';
 import dayjs from 'dayjs';
 import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -49,7 +48,6 @@ function DocumentInfo ({ viewId }: {
 
   return (
     <>
-      <Divider />
       <div className={'flex flex-col gap-1 text-text-caption text-xs '}>
         {view.layout === ViewLayout.Document && (<>
             <div

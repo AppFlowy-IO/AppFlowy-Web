@@ -1,9 +1,7 @@
-import { useReadOnly } from '@/application/database-yjs';
 import { CellProps, TextCell as TextCellType } from '@/application/database-yjs/cell.type';
 import React from 'react';
 
-export function TextCell ({ cell, style, placeholder }: CellProps<TextCellType>) {
-  const readOnly = useReadOnly();
+export function TextCell ({ cell, style, placeholder, readOnly }: CellProps<TextCellType>) {
 
   if (!cell?.data)
     return placeholder ? (

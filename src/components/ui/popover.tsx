@@ -15,16 +15,36 @@ function PopoverContent ({
   className,
   align = 'center',
   sideOffset = 4,
+  container,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: React.ComponentProps<typeof PopoverPrimitive.Content> & {
+  container?: React.ComponentProps<typeof PopoverPrimitive.Portal>['container'];
+}) {
   return (
-    <PopoverPrimitive.Portal>
+    <PopoverPrimitive.Portal container={container}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}
         sideOffset={sideOffset}
         className={cn(
-          'bg-background-primary data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 origin-(--radix-popover-content-transform-origin) outline-hidden shadow-popover z-50 w-72 rounded-400 p-0',
+          'z-50 min-w-[240px] bg-background-primary rounded-400 p-0 shadow-popover',
+
+          'origin-(--radix-popover-content-transform-origin)',
+
+          'data-[state=open]:animate-in',
+          'data-[state=closed]:animate-out',
+
+          'data-[state=open]:fade-in-0',
+          'data-[state=closed]:fade-out-0',
+
+          'data-[state=open]:zoom-in-95',
+          'data-[state=closed]:zoom-out-95',
+
+          'data-[side=bottom]:slide-in-from-top-2',
+          'data-[side=left]:slide-in-from-right-2',
+          'data-[side=right]:slide-in-from-left-2',
+          'data-[side=top]:slide-in-from-bottom-2',
+
           className,
         )}
         {...props}

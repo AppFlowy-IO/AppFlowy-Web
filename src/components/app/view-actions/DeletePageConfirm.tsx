@@ -1,11 +1,11 @@
 import { NormalModal } from '@/components/_shared/modal';
-import { notify } from '@/components/_shared/notify';
+import { toast } from 'sonner';
 import { filterViewsByCondition } from '@/components/_shared/outline/utils';
 import { useAppHandlers, useAppView } from '@/components/app/app.hooks';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function DeletePageConfirm({ open, onClose, viewId, onDeleted }: {
+function DeletePageConfirm ({ open, onClose, viewId, onDeleted }: {
   open: boolean;
   onClose: () => void;
   viewId: string;
@@ -27,7 +27,7 @@ function DeletePageConfirm({ open, onClose, viewId, onDeleted }: {
       onDeleted?.();
       // eslint-disable-next-line
     } catch (e: any) {
-      notify.error(e.message);
+      toast.error(e.message);
     } finally {
       setLoading(false);
     }
@@ -59,9 +59,11 @@ function DeletePageConfirm({ open, onClose, viewId, onDeleted }: {
       onClose={onClose}
       title={
         <div
-          className={'flex font-semibold items-center w-full text-left'}>
+          className={'flex font-semibold items-center w-full text-left'}
+        >
           <span
-            className={'truncate w-full'}>{`${t('button.delete')}: ${view?.name}`}</span>
+            className={'truncate w-full'}
+          >{`${t('button.delete')}: ${view?.name}`}</span>
         </div>
       }
 

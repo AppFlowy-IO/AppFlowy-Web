@@ -1,6 +1,6 @@
 import { invalidToken } from '@/application/session/token';
 import {
-  AppendBreadcrumb,
+  AppendBreadcrumb, CreateFolderViewPayload,
   CreatePagePayload,
   CreateRowDoc,
   CreateSpacePayload,
@@ -22,6 +22,7 @@ import {
 } from '@/application/types';
 import { findAncestors, findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import { AIChatProvider } from '@/components/ai-chat/AIChatProvider';
+import { AppOverlayProvider } from '@/components/app/app-overlay/AppOverlayProvider';
 import RequestAccess from '@/components/app/landing-pages/RequestAccess';
 import { AFConfigContext, useService } from '@/components/main/app.hooks';
 import { sortBy, uniqBy } from 'lodash-es';
@@ -71,6 +72,7 @@ export interface AppContextType {
   publish?: (view: View, publishName?: string, visibleViewIds?: string[]) => Promise<void>;
   unpublish?: (viewId: string) => Promise<void>;
   refreshOutline?: () => Promise<void>;
+  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
 }
 
 const USER_NO_ACCESS_CODE = [1024, 1012];
@@ -554,7 +556,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       await service.updateAppPage(currentWorkspaceId, viewId, payload);
 
-      void loadOutline(currentWorkspaceId, false);
+      await loadOutline(currentWorkspaceId, false);
       return;
     } catch (e) {
       return Promise.reject(e);
@@ -683,6 +685,22 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline]);
 
+  const createFolderView = useCallback(async (payload: CreateFolderViewPayload) => {
+    if (!currentWorkspaceId || !service) {
+      throw new Error('No workspace or service found');
+    }
+
+    try {
+      const res = await service.createFolderView(currentWorkspaceId, payload);
+
+      void loadOutline(currentWorkspaceId, false);
+      return res;
+    } catch (e) {
+      return Promise.reject(e);
+    }
+
+  }, [currentWorkspaceId, loadOutline, service]);
+
   return <AppContext.Provider
     value={{
       currentWorkspaceId,
@@ -724,19 +742,22 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       publish,
       unpublish,
       refreshOutline,
+      createFolderView,
     }}
   >
     <AIChatProvider>
-      {requestAccessOpened ? <RequestAccess /> : children}
-      {<Suspense>
-        <ViewModal
-          open={!!openModalViewId}
-          viewId={openModalViewId}
-          onClose={() => {
-            setOpenModalViewId(undefined);
-          }}
-        />
-      </Suspense>}
+      <AppOverlayProvider>
+        {requestAccessOpened ? <RequestAccess /> : children}
+        {<Suspense>
+          <ViewModal
+            open={!!openModalViewId}
+            viewId={openModalViewId}
+            onClose={() => {
+              setOpenModalViewId(undefined);
+            }}
+          />
+        </Suspense>}
+      </AppOverlayProvider>
     </AIChatProvider>
   </AppContext.Provider>;
 };
@@ -869,6 +890,7 @@ export function useAppHandlers () {
     publish: context.publish,
     unpublish: context.unpublish,
     refreshOutline: context.refreshOutline,
+    createFolderView: context.createFolderView,
   };
 }
 

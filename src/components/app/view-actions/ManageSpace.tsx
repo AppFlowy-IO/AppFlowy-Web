@@ -8,7 +8,7 @@ import { OutlinedInput } from '@mui/material';
 import React from 'react';
 import { useTranslation } from 'react-i18next';
 
-function ManageSpace({ open, onClose, viewId }: {
+function ManageSpace ({ open, onClose, viewId }: {
   open: boolean;
   onClose: () => void;
   viewId: string;
@@ -44,6 +44,7 @@ function ManageSpace({ open, onClose, viewId }: {
   };
 
   const inputRef = React.useRef<HTMLInputElement | null>(null);
+  const [container, setContainer] = React.useState<HTMLDivElement | null>(null);
 
   if (!view) return null;
   return (
@@ -64,17 +65,22 @@ function ManageSpace({ open, onClose, viewId }: {
         className: 'w-[500px] max-w-[70vw]',
       }}
     >
-      <div className={'flex flex-col gap-4'}>
+      <div
+        ref={setContainer}
+        className={'flex flex-col gap-4'}
+      >
         <div className={'flex flex-col gap-2'}>
           <div className={'text-text-caption'}>{t('space.spaceName')}</div>
           <div className={'flex items-center gap-3'}>
-            <SpaceIconButton
+            {container && <SpaceIconButton
+              container={container}
               spaceIcon={spaceIcon}
               spaceIconColor={spaceIconColor}
               spaceName={spaceName}
               onSelectSpaceIcon={setSpaceIcon}
               onSelectSpaceIconColor={setSpaceIconColor}
-            />
+            />}
+
             <OutlinedInput
               value={spaceName}
               autoFocus={true}

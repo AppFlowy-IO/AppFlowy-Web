@@ -27,7 +27,14 @@ export function DeleteRowConfirm ({ open, onClose, rowId }: {
         }
       }}
     >
-      <DialogContent>
+      <DialogContent
+        onCloseAutoFocus={e => {
+          e.preventDefault();
+        }}
+        onOpenAutoFocus={e => {
+          e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>{t('grid.row.delete')}</DialogTitle>
         </DialogHeader>

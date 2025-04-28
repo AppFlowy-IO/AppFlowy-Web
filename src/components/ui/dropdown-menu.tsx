@@ -78,13 +78,13 @@ function DropdownMenuContent ({
   );
 }
 
-function DropdownMenuGroup ({
+const DropdownMenuGroup = ({
   ...props
-}: React.ComponentProps<typeof DropdownMenuPrimitive.Group>) {
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Group>) => {
   return (
     <DropdownMenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
   );
-}
+};
 
 const DropdownMenuItem = forwardRef<HTMLDivElement, React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean;

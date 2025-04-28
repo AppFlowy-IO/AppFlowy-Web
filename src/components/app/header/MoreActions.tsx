@@ -1,38 +1,44 @@
 import { ViewLayout } from '@/application/types';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
-import { Popover } from '@/components/_shared/popover';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
-import { Button, Divider, IconButton, Tooltip } from '@mui/material';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup, DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import MoreActionsContent from './MoreActionsContent';
 import { ReactComponent as AddToPageIcon } from '@/assets/icons/add_to_page.svg';
 import { useService } from '@/components/main/app.hooks';
+import { Tooltip, TooltipContent } from '@/components/ui/tooltip';
 
-function MoreActions({ viewId, onDeleted }: { viewId: string; onDeleted?: () => void }) {
+function MoreActions ({ viewId, onDeleted, menuContentProps }:
+  {
+    viewId: string;
+    onDeleted?: () => void;
+    menuContentProps?: React.ComponentProps<typeof DropdownMenuContent>
+  } & React.ComponentProps<typeof DropdownMenu>,
+) {
   const workspaceId = useCurrentWorkspaceId();
   const service = useService();
   const { selectionMode, onOpenSelectionMode } = useAIChatContext();
   const [hasMessages, setHasMessages] = useState(false);
+  const [open, setOpen] = useState(false);
 
   const view = useAppView(viewId);
-  const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
-  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    setAnchorEl(event.currentTarget);
-  };
-
-  const handleClose = () => {
-    setAnchorEl(null);
-  };
-
-  const open = Boolean(anchorEl);
-
   const { t } = useTranslation();
 
+  const handleClose = useCallback(() => {
+    setOpen(false);
+  }, [setOpen]);
+
   const handleFetchChatMessages = useCallback(async () => {
-    if(!workspaceId || !service) {
+    if (!workspaceId || !service) {
       return;
     }
 
@@ -52,84 +58,63 @@ function MoreActions({ viewId, onDeleted }: { viewId: string; onDeleted?: () => 
   const ChatOptions = useMemo(() => {
     return view?.layout === ViewLayout.AIChat ? (
       <>
-        <Tooltip title={hasMessages ? '' : t('web.addMessagesToPageDisabled')} placement='top' >
+        <Tooltip>
           <div>
             <Button
-              size={'small'}
-              className={'justify-start px-3 py-1 w-full'}
-              color={'inherit'}
               disabled={!hasMessages}
               onClick={() => {
                 onOpenSelectionMode();
                 handleClose();
               }}
-              startIcon={<AddToPageIcon />}
             >
+              <AddToPageIcon />
               {t('web.addMessagesToPage')}
             </Button>
           </div>
+          <TooltipContent>
+            {hasMessages ? '' : t('web.addMessagesToPageDisabled')}
+          </TooltipContent>
         </Tooltip>
-        <Divider />
+        <DropdownMenuSeparator />
       </>
     ) : null;
-  }, [view?.layout, hasMessages, t, onOpenSelectionMode]);
+  }, [view?.layout, hasMessages, t, onOpenSelectionMode, handleClose]);
 
   if (view?.layout === ViewLayout.AIChat && selectionMode) {
     return null;
   }
 
   return (
-    <>
-      <IconButton onClick={handleClick} size={'small'}>
-        <MoreIcon className={'text-text-caption'} />
-      </IconButton>
-      {open && (
-        <Popover
-          anchorOrigin={{
-            vertical: 'bottom',
-            horizontal: 'right',
-          }}
-          transformOrigin={{
-            vertical: 'top',
-            horizontal: 'right',
-          }}
-          open={open}
-          anchorEl={anchorEl}
-          onClose={handleClose}
-          slotProps={{ root: { className: 'text-sm' } }}
-          sx={{
-            '& .MuiPopover-paper': {
-              width: '268px',
-              margin: '10px',
-              padding: '12px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '8px',
-            },
-          }}
+    <DropdownMenu
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <DropdownMenuTrigger asChild>
+        <Button
+          size={'icon'}
+          variant={'ghost'}
+          className={'text-icon-secondary'}
         >
+          <MoreIcon />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent {...menuContentProps}>
+        <DropdownMenuGroup>
           {ChatOptions}
-          <MoreActionsContent
-            itemClicked={() => {
-              handleClose();
-            }}
-            onDeleted={onDeleted}
-            viewId={viewId}
-            movePopoverOrigins={{
-              transformOrigin: {
-                vertical: 'top',
-                horizontal: 'right',
-              },
-              anchorOrigin: {
-                vertical: 'top',
-                horizontal: -20,
-              },
-            }}
-          />
-          {open && <DocumentInfo viewId={viewId} />}
-        </Popover>
-      )}
-    </>
+        </DropdownMenuGroup>
+
+        <MoreActionsContent
+          itemClicked={() => {
+            handleClose();
+          }}
+          onDeleted={onDeleted}
+          viewId={viewId}
+        />
+        <DropdownMenuSeparator />
+        <DocumentInfo viewId={viewId} />
+      </DropdownMenuContent>
+
+    </DropdownMenu>
   );
 }
 

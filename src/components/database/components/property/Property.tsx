@@ -55,19 +55,16 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
     }
   }, [fieldType]) as FC<CellProps<CellType>>;
 
-  const style = useMemo(
-    () => ({
-      fontSize: '12px',
-    }),
-    [],
-  );
-
   if (fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime) {
     const attrName = fieldType === FieldType.CreatedTime ? YjsDatabaseKey.created_at : YjsDatabaseKey.last_modified;
 
     return (
       <PropertyWrapper fieldId={fieldId}>
-        <RowCreateModifiedTime style={style} rowId={rowId} fieldId={fieldId} attrName={attrName} />
+        <RowCreateModifiedTime
+          rowId={rowId}
+          fieldId={fieldId}
+          attrName={attrName}
+        />
       </PropertyWrapper>
     );
   }
@@ -75,7 +72,10 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
   return (
     <PropertyWrapper fieldId={fieldId}>
       <Component
-        cell={cell} style={style} placeholder={t('grid.row.textPlaceholder')} fieldId={fieldId} rowId={rowId}
+        cell={cell}
+        placeholder={t('grid.row.textPlaceholder')}
+        fieldId={fieldId}
+        rowId={rowId}
       />
     </PropertyWrapper>
   );

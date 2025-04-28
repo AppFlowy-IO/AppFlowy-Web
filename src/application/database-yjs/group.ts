@@ -19,11 +19,43 @@ export function groupByField (rows: Row[], rowMetas: Record<RowId, YDoc>, field:
   return;
 }
 
+export function getGroupColumns (field: YDatabaseField) {
+  const fieldType = Number(field.get(YjsDatabaseKey.type));
+  const isSelectOptionField = [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
+
+  if (isSelectOptionField) {
+    const typeOption = parseSelectOptionTypeOptions(field);
+
+    if (!typeOption || typeOption.options.length === 0) {
+      return [{ id: field.get(YjsDatabaseKey.id) }];
+    }
+
+    const options = typeOption.options.map((option) => ({
+      id: option.id,
+    }));
+
+    return [
+      { id: field.get(YjsDatabaseKey.id) },
+      ...options,
+    ];
+  }
+
+  if (fieldType === FieldType.Checkbox) {
+    return [{ id: 'Yes' }, { id: 'No' }];
+  }
+
+}
+
 export function groupByCheckbox (rows: Row[], rowMetas: Record<RowId, YDoc>, field: YDatabaseField) {
   const fieldId = field.get(YjsDatabaseKey.id);
   const result = new Map<string, Row[]>();
 
   rows.forEach((row) => {
+    // Skip if the row is not in the database
+    if (!rowMetas[row.id]) {
+      return;
+    }
+
     const cellData = getCellData(row.id, fieldId, rowMetas);
 
     const groupName = cellData === 'Yes' ? 'Yes' : 'No';
@@ -50,6 +82,11 @@ export function groupBySelectOption (rows: Row[], rowMetas: Record<RowId, YDoc>,
   }
 
   rows.forEach((row) => {
+    // Skip if the row is not in the database
+    if (!rowMetas[row.id]) {
+      return;
+    }
+
     const cellData = getCellData(row.id, fieldId, rowMetas);
 
     const selectedIds = (cellData as string)?.split(',') ?? [];

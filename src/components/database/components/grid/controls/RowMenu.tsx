@@ -1,5 +1,5 @@
 import { ReactComponent as UpIcon } from '@/assets/icons/arrow_up.svg';
-import { ReactComponent as DuplicateIcon } from '@/assets/icons/copy.svg';
+import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
@@ -54,7 +54,6 @@ function RowMenu ({ rowId, onClose }: { rowId: string, onClose: () => void }) {
     onSelect: () => {
       setOpenDeleteConfirmed(true);
       onClose();
-
     },
   }], [t, addAboveLoading, addBelowLoading, duplicateLoading, onDuplicateRow, showPreventDialog, onAddRowAbove, onAddRowBelow, onClose]);
 

@@ -51,7 +51,7 @@ export function GridRowCell ({ onResize, rowId, fieldId, columnIndex, rowIndex }
     return Cell;
   }, [isPrimary]) as React.FC<CellProps<CellType>>;
 
-  if (!field || !cell) return null;
+  if (!field) return null;
 
   return (
     <div

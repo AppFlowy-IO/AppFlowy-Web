@@ -1,12 +1,13 @@
-import { FieldType, useFieldSelector } from '@/application/database-yjs';
-import { useUpdatePropertyNameDispatch } from '@/application/database-yjs/dispatch';
+import { useFieldSelector } from '@/application/database-yjs';
+import { useUpdatePropertyIconDispatch, useUpdatePropertyNameDispatch } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
-import { FieldTypeIcon } from '@/components/database/components/field';
+import FieldCustomIcon from '@/components/database/components/field/FieldCustomIcon';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useRef } from 'react';
+import CustomIconPopover from 'src/components/_shared/cutsom-icon/CustomIconPopover';
 
 function PropertyProfile ({ fieldId, onNext, onEnter, ...props }: {
   fieldId: string;
@@ -14,11 +15,11 @@ function PropertyProfile ({ fieldId, onNext, onEnter, ...props }: {
   onEnter?: () => void;
 } & React.HTMLAttributes<HTMLDivElement>) {
   const { field } = useFieldSelector(fieldId);
-  const type = field?.get(YjsDatabaseKey.type) as unknown as FieldType;
   const name = field?.get(YjsDatabaseKey.name);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const ref = useRef<HTMLDivElement>(null);
   const updateDispatch = useUpdatePropertyNameDispatch(fieldId);
+  const updateIcon = useUpdatePropertyIconDispatch(fieldId);
 
   if (!field) {
     return null;
@@ -30,15 +31,28 @@ function PropertyProfile ({ fieldId, onNext, onEnter, ...props }: {
       {...props}
       className={cn('flex focus:!bg-transparent hover:!bg-transparent !p-0 w-full justify-center items-center gap-[10px]', props.className)}
     >
-      <Button
-        variant={'outline'}
-        className={'w-8 h-8'}
+      <CustomIconPopover
+        tabs={['icon']}
+        defaultActiveTab={'icon'}
+        enableColor={false}
+        removeIcon={() => {
+          updateIcon('');
+        }}
+        onSelectIcon={(icon) => {
+          console.log(icon);
+          updateIcon(icon.value);
+        }}
       >
-        <FieldTypeIcon
-          className={'h-5 w-5 text-icon-secondary'}
-          type={type}
-        />
-      </Button>
+        <Button
+          variant={'outline'}
+          className={'w-8 h-8 p-0'}
+        >
+          <FieldCustomIcon
+            fieldId={fieldId}
+            className={'text-text-secondary h-5 w-5'}
+          />
+        </Button>
+      </CustomIconPopover>
       <Input
         ref={(input: HTMLInputElement) => {
           if (!input) return;

@@ -1,6 +1,6 @@
 import { db } from '@/application/db';
 import {
-  AppendBreadcrumb,
+  AppendBreadcrumb, CreateFolderViewPayload,
   CreateRowDoc,
   LoadView,
   LoadViewMeta, RowId, UIVariant,
@@ -38,6 +38,8 @@ export interface Database2Props {
   paddingStart?: number;
   paddingEnd?: number;
   showActions?: boolean;
+  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
+
 }
 
 function Database ({
@@ -62,6 +64,8 @@ function Database ({
   paddingEnd,
   isDocumentBlock,
   showActions,
+  createFolderView,
+  ...props
 }: Database2Props) {
   const database = doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
   const view = database.get(YjsDatabaseKey.views).get(iidIndex);
@@ -159,7 +163,9 @@ function Database ({
         paddingEnd={paddingEnd}
         isDocumentBlock={isDocumentBlock}
         onRendered={onRendered}
+        createFolderView={createFolderView}
         showActions={showActions}
+        {...props}
       >
         {rowId ? (
           <DatabaseRow

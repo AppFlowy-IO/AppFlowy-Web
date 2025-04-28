@@ -1,12 +1,13 @@
 import {
+  CreateFolderViewPayload,
   CreateRowDoc,
   LoadView,
-  LoadViewMeta, RowId,
+  LoadViewMeta, RowId, UpdatePagePayload,
   YDatabase,
   YDatabaseRow,
   YDoc,
   YjsDatabaseKey,
-  YjsEditorKey,
+  YjsEditorKey, YSharedRoot,
 } from '@/application/types';
 import { createContext, useContext } from 'react';
 
@@ -28,6 +29,9 @@ export interface DatabaseContextState {
   onRendered?: (height: number) => void;
   showActions?: boolean;
   workspaceId: string;
+  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
+  updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
+  deletePage?: (viewId: string) => Promise<void>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);
@@ -47,7 +51,7 @@ export const useDocGuid = () => {
 };
 
 export const useSharedRoot = () => {
-  return useDatabaseContext().databaseDoc?.getMap(YjsEditorKey.data_section);
+  return useDatabaseContext().databaseDoc?.getMap(YjsEditorKey.data_section) as YSharedRoot;
 };
 
 export const useCreateRow = () => {

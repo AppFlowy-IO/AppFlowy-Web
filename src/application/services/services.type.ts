@@ -24,7 +24,7 @@ import {
   CreateWorkspacePayload,
   UpdateWorkspacePayload,
   PublishViewPayload,
-  UploadPublishNamespacePayload, UpdatePublishConfigPayload,
+  UploadPublishNamespacePayload, UpdatePublishConfigPayload, CreateFolderViewPayload,
 } from '@/application/types';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { ViewMeta } from '@/application/db/tables/view_metas';
@@ -112,6 +112,7 @@ export interface AppService {
   createSpace: (workspaceId: string, payload: CreateSpacePayload) => Promise<string>;
   updateSpace: (workspaceId: string, payload: UpdateSpacePayload) => Promise<void>;
   addAppPage: (workspaceId: string, parentViewId: string, payload: CreatePagePayload) => Promise<string>;
+  createFolderView: (workspaceId: string, payload: CreateFolderViewPayload) => Promise<string>;
   updateAppPage: (workspaceId: string, viewId: string, data: UpdatePagePayload) => Promise<void>;
   deleteTrash: (workspaceId: string, viewId?: string) => Promise<void>;
   moveToTrash: (workspaceId: string, viewId: string) => Promise<void>;

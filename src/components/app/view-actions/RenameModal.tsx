@@ -1,29 +1,34 @@
-import { ViewIconType } from '@/application/types';
-import { NormalModal } from '@/components/_shared/modal';
-import { notify } from '@/components/_shared/notify';
-import { useAppHandlers, useAppView } from '@/components/app/app.hooks';
-import { OutlinedInput } from '@mui/material';
+import { UpdatePagePayload, View, ViewIconType } from '@/application/types';
+import { toast } from 'sonner';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 import React, { useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function RenameModal({ open, onClose, viewId }: {
+function RenameModal ({ view, open, onClose, viewId, updatePage }: {
   open: boolean;
   onClose: () => void;
   viewId: string;
+  view?: View;
+  updatePage: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
 }) {
-  const view = useAppView(viewId);
 
   const { t } = useTranslation();
 
   const [newValue, setNewValue] = React.useState('');
   const [loading, setLoading] = React.useState(false);
 
-  const { updatePage } = useAppHandlers();
-
   const handleOk = useCallback(async () => {
     if (!view) return;
     if (!newValue) {
-      notify.warning(t('web.error.pageNameIsEmpty'));
+      toast.warning(t('web.error.pageNameIsEmpty'));
       return;
     }
 
@@ -33,7 +38,7 @@ function RenameModal({ open, onClose, viewId }: {
 
     setLoading(true);
     try {
-      await updatePage?.(viewId, {
+      await updatePage(viewId, {
         name: newValue, icon: view.icon || {
           ty: ViewIconType.Emoji,
           value: '',
@@ -42,7 +47,7 @@ function RenameModal({ open, onClose, viewId }: {
       onClose();
       // eslint-disable-next-line
     } catch (e: any) {
-      notify.error(e.message);
+      toast.error(e.message);
     } finally {
       setLoading(false);
     }
@@ -57,44 +62,61 @@ function RenameModal({ open, onClose, viewId }: {
   const inputRef = useRef<HTMLInputElement | null>(null);
 
   return (
-    <NormalModal
-      keepMounted={false}
-      okText={t('button.save')}
-      cancelText={t('button.cancel')}
+    <Dialog
       open={open}
-      okLoading={loading}
-      onClose={onClose}
-      title={t('button.rename')}
-      onOk={handleOk}
-      PaperProps={{
-        className: 'w-96 max-w-[70vw]',
+      onOpenChange={open => {
+        if (!open) {
+          onClose();
+        }
       }}
-      classes={{ container: 'items-start max-md:mt-auto max-md:items-center mt-[10%] ' }}
     >
-      <OutlinedInput
-        autoFocus
-        size={'small'}
-        placeholder={'Enter new name'}
-        value={newValue}
-        inputRef={(input: HTMLInputElement) => {
-          if (!input) return;
-          if (!inputRef.current) {
-            setTimeout(() => {
-              input.setSelectionRange(0, input.value.length);
-            }, 100);
-            inputRef.current = input;
-          }
+      <DialogContent
+        onCloseAutoFocus={e => {
+          e.preventDefault();
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>{t('button.rename')}</DialogTitle>
+        </DialogHeader>
+        <Input
+          autoFocus
+          placeholder={'Enter new name'}
+          value={newValue}
+          ref={(input: HTMLInputElement) => {
+            if (!input) return;
+            if (!inputRef.current) {
+              setTimeout(() => {
+                input.setSelectionRange(0, input.value.length);
+              }, 100);
+              inputRef.current = input;
+            }
 
-        }}
-        onChange={e => setNewValue(e.target.value)}
-        fullWidth
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            void handleOk();
-          }
-        }}
-      />
-    </NormalModal>
+          }}
+          onChange={e => setNewValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.stopPropagation();
+              void handleOk();
+            }
+          }}
+        />
+        <DialogFooter>
+          <Button
+            variant={'outline'}
+            onClick={onClose}
+          >
+            {t('button.cancel')}
+          </Button>
+          <Button
+            loading={loading}
+            onClick={() => {
+              void handleOk();
+              onClose();
+            }}
+          >{t('button.save')}</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 

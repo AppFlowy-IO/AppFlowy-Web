@@ -9,7 +9,7 @@ import { getIcon, isFlagEmoji } from '@/utils/emoji';
 import DOMPurify from 'dompurify';
 import { renderColor } from '@/utils/color';
 
-function PageIcon({
+function PageIcon ({
   view,
   className,
   iconSize,
@@ -24,7 +24,7 @@ function PageIcon({
   const [iconContent, setIconContent] = React.useState<string | undefined>(undefined);
 
   const emoji = useMemo(() => {
-    if(view.icon && view.icon.ty === ViewIconType.Emoji && view.icon.value) {
+    if (view.icon && view.icon.ty === ViewIconType.Emoji && view.icon.value) {
       return view.icon.value;
     }
 
@@ -32,7 +32,7 @@ function PageIcon({
   }, [view]);
 
   const img = useMemo(() => {
-    if(view.icon && view.icon.ty === ViewIconType.URL && view.icon.value) {
+    if (view.icon && view.icon.ty === ViewIconType.URL && view.icon.value) {
       return <img
         className={className}
         src={view.icon.value}
@@ -48,7 +48,7 @@ function PageIcon({
   }, [emoji]);
 
   useEffect(() => {
-    if(view.icon && view.icon.ty === ViewIconType.Icon && view.icon.value) {
+    if (view.icon && view.icon.ty === ViewIconType.Icon && view.icon.value) {
       try {
         const json = JSON.parse(view.icon.value);
         const id = `${json.groupName}/${json.iconName}`;
@@ -56,7 +56,7 @@ function PageIcon({
         void getIcon(id).then((item) => {
           setIconContent(item?.content.replaceAll('black', renderColor(json.color)).replace('<svg', '<svg width="100%" height="100%"'));
         });
-      } catch(e) {
+      } catch (e) {
         console.error(e, view.icon);
       }
     } else {
@@ -65,7 +65,7 @@ function PageIcon({
   }, [view.icon]);
 
   const icon = useMemo(() => {
-    if(iconContent) {
+    if (iconContent) {
       const cleanSvg = DOMPurify.sanitize(iconContent, {
         USE_PROFILES: { svg: true, svgFilters: true },
       });
@@ -75,7 +75,7 @@ function PageIcon({
           width: iconSize,
           height: iconSize,
         }}
-        className={`${className ? className : 'w-full h-full'} `}
+        className={`${className ? className : 'w-full h-full'} p-0.5`}
         dangerouslySetInnerHTML={{
           __html: cleanSvg,
         }}
@@ -83,21 +83,21 @@ function PageIcon({
     }
   }, [iconContent, iconSize, className]);
 
-  if(emoji) {
+  if (emoji) {
     return <>
       <span className={`${isFlag ? 'icon' : ''} ${className || ''}`}>{emoji}</span>
     </>;
   }
 
-  if(img) {
+  if (img) {
     return img;
   }
 
-  if(icon) {
+  if (icon) {
     return icon;
   }
 
-  switch(view.layout) {
+  switch (view.layout) {
     case ViewLayout.AIChat:
       return <ChatSvg className={className} />;
     case ViewLayout.Grid:

@@ -4,7 +4,7 @@ import EditorSkeleton from '@/components/_shared/skeleton/EditorSkeleton';
 import { Editor } from '@/components/editor';
 import React, { useCallback, useEffect, useState } from 'react';
 
-export function DatabaseRowSubDocument({ rowId }: { rowId: string }) {
+export function DatabaseRowSubDocument ({ rowId }: { rowId: string }) {
   const meta = useRowMetaSelector(rowId);
   const readOnly = useReadOnly();
   const documentId = meta?.documentId;
@@ -18,14 +18,14 @@ export function DatabaseRowSubDocument({ rowId }: { rowId: string }) {
   const [loading, setLoading] = useState(true);
   const [doc, setDoc] = useState<YDoc | null>(null);
 
-  const handleOpenDocument = useCallback(async() => {
-    if(!loadView || !documentId) return;
+  const handleOpenDocument = useCallback(async () => {
+    if (!loadView || !documentId) return;
     try {
       setDoc(null);
       const doc = await loadView(documentId, true);
 
       setDoc(doc);
-    } catch(e) {
+    } catch (e) {
       console.error(e);
       // haven't created by client, ignore error and show empty
     }
@@ -36,13 +36,13 @@ export function DatabaseRowSubDocument({ rowId }: { rowId: string }) {
     void handleOpenDocument().then(() => setLoading(false));
   }, [handleOpenDocument]);
 
-  if(loading) {
+  if (loading) {
     return (
       <EditorSkeleton />
     );
   }
 
-  if(!doc || !documentId || !workspaceId) return null;
+  if (!doc || !documentId || !workspaceId) return null;
   return (
     <Editor
       workspaceId={workspaceId}

@@ -29,6 +29,8 @@ const circleVariants = cva(
     variants: {
       variant: {
         default: 'stroke-fill-secondary',
+        inherit: 'stroke-fill-secondary',
+        primary: 'stroke-fill-secondary',
       },
     },
     defaultVariants: {

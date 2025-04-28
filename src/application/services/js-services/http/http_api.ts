@@ -27,7 +27,7 @@ import {
   CreateWorkspacePayload,
   UpdateWorkspacePayload,
   PublishViewPayload,
-  UploadPublishNamespacePayload, UpdatePublishConfigPayload,
+  UploadPublishNamespacePayload, UpdatePublishConfigPayload, CreateFolderViewPayload,
 } from '@/application/types';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
@@ -1458,6 +1458,29 @@ export async function uploadImportFile (presignedUrl: string, file: File, onProg
     code: -1,
     message: `Upload file failed. ${response.statusText}`,
   });
+}
+
+export async function createFolderView (workspaceId: string, payload: CreateFolderViewPayload) {
+  const url = `/api/workspace/${workspaceId}/folder-view`;
+
+  const res = await axiosInstance?.post<{
+    code: number;
+    data: {
+      view_id: string;
+    };
+    message: string;
+  }>(url, {
+    parent_view_id: payload.parentViewId,
+    layout: payload.layout,
+    name: payload.name,
+    view_id: payload.viewId,
+  });
+
+  if (res?.data.code === 0) {
+    return res.data.data.view_id;
+  }
+
+  return Promise.reject(res?.data);
 }
 
 export async function addAppPage (workspaceId: string, parentViewId: string, {

@@ -1,23 +1,39 @@
-import { PADDING_END, Row } from '@/application/database-yjs';
+import { PADDING_END } from '@/application/database-yjs';
+import NewCard from '@/components/database/components/board/card/NewCard';
 import { getScrollParent } from '@/components/global-comment/utils';
+import { cn } from '@/lib/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import React, {
   useRef,
-  memo,
+  memo, useState,
 } from 'react';
 import { Card } from '@/components/database/components/board/card';
+
+export enum CardType {
+
+  CARD = 'card',
+  NEW_CARD = 'new_card',
+}
+
+export interface RenderCard {
+  type: CardType;
+  id: string;
+}
 
 function CardList ({
   data,
   fieldId,
+  columnId,
   setScrollElement,
 }: {
-  data: Row[];
+  columnId: string;
+  data: RenderCard[];
   fieldId: string;
   setScrollElement?: (element: HTMLDivElement | null) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const parentOffsetRef = React.useRef(0);
+  const [isCreating, setIsCreating] = useState(false);
 
   React.useLayoutEffect(() => {
     parentOffsetRef.current = parentRef.current?.getBoundingClientRect()?.top ?? 0;
@@ -36,9 +52,10 @@ function CardList ({
 
       return el;
     },
-    estimateSize: () => 150,
+    estimateSize: () => 36,
     paddingStart: 0,
     paddingEnd: PADDING_END,
+    getItemKey: (index) => data[index].id || String(index),
   });
 
   const items = virtualizer.getVirtualItems();
@@ -58,28 +75,42 @@ function CardList ({
           position: 'relative',
         }}
       >
-        {items.map((virtualRow) => (
-          <div
-            key={virtualRow.key}
-            data-index={virtualRow.index}
-            ref={virtualizer.measureElement}
-            className={'py-[3px] px-2 w-full'}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              transform: `translateY(${
-                virtualRow.start - virtualizer.options.scrollMargin
-              }px)`,
-              paddingTop: virtualRow.index === 0 ? 10 : undefined,
-            }}
-          >
-            <Card
-              rowId={data[virtualRow.index].id}
-              groupFieldId={fieldId}
-            />
-          </div>
-        ))}
+        {items.map((virtualRow) => {
+          const row = data[virtualRow.index];
+          const { id, type } = row;
+
+          return (
+            <div
+              key={virtualRow.key}
+              data-index={virtualRow.index}
+              ref={virtualizer.measureElement}
+              className={cn('py-[3px] px-2 w-full', isCreating && 'transform transition-all duration-150 ease-in-out')}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                transform: `translateY(${
+                  virtualRow.start - virtualizer.options.scrollMargin
+                }px)`,
+                paddingTop: virtualRow.index === 0 ? 10 : undefined,
+              }}
+            >
+              {type === CardType.NEW_CARD ? (
+                <NewCard
+                  setIsCreating={setIsCreating}
+                  isCreating={isCreating}
+                  columnId={columnId}
+                  fieldId={fieldId}
+                  beforeId={data[virtualRow.index - 1]?.id}
+                />
+              ) : <Card
+                rowId={id}
+                groupFieldId={fieldId}
+              />}
+
+            </div>
+          );
+        })}
       </div>
     </div>
   );

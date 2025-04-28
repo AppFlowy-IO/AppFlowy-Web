@@ -1,11 +1,10 @@
 import { View } from '@/application/types';
-import { notify } from '@/components/_shared/notify';
+import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
+import { Progress } from '@/components/ui/progress';
+import { toast } from 'sonner';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import CreateSpaceModal from '@/components/app/view-actions/CreateSpaceModal';
-import DeleteSpaceConfirm from '@/components/app/view-actions/DeleteSpaceConfirm';
-import ManageSpace from '@/components/app/view-actions/ManageSpace';
 import { useService } from '@/components/main/app.hooks';
-import { Button, CircularProgress, Divider } from '@mui/material';
+import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
@@ -13,7 +12,7 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 
-function MoreSpaceActions({
+function MoreSpaceActions ({
   view,
   onClose,
 }: {
@@ -21,9 +20,11 @@ function MoreSpaceActions({
   onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
-  const [manageModalOpen, setManageModalOpen] = React.useState(false);
-  const [createSpaceModalOpen, setCreateSpaceModalOpen] = React.useState(false);
+  const {
+    openCreateSpaceModal,
+    openDeleteSpaceModal,
+    openManageSpaceModal,
+  } = useAppOverlayContext();
   const service = useService();
   const workspaceId = useCurrentWorkspaceId();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
@@ -31,8 +32,8 @@ function MoreSpaceActions({
     refreshOutline,
   } = useAppHandlers();
 
-  const handleDuplicateClick = useCallback(async() => {
-    if(!workspaceId || !service) return;
+  const handleDuplicateClick = useCallback(async () => {
+    if (!workspaceId || !service) return;
     setDuplicateLoading(true);
     try {
       await service.duplicateAppPage(workspaceId, view.view_id);
@@ -40,8 +41,8 @@ function MoreSpaceActions({
       void refreshOutline?.();
       onClose();
       // eslint-disable-next-line
-    } catch(e: any) {
-      notify.error(e.message);
+    } catch (e: any) {
+      toast.error(e.message);
     } finally {
       setDuplicateLoading(false);
     }
@@ -52,81 +53,54 @@ function MoreSpaceActions({
       label: t('space.manage'),
       icon: <SettingsIcon />,
       onClick: () => {
-        setManageModalOpen(true);
+        onClose();
+        openManageSpaceModal(view.view_id);
       },
     },
       {
         label: t('space.duplicate'),
-        icon: duplicateLoading ? <CircularProgress size={14} /> : <DuplicateIcon />,
+        icon: duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon />,
         disabled: duplicateLoading,
         onClick: () => {
           void handleDuplicateClick();
         },
       },
     ];
-  }, [duplicateLoading, handleDuplicateClick, t]);
+  }, [duplicateLoading, handleDuplicateClick, onClose, openManageSpaceModal, t, view.view_id]);
 
   return (
-    <div className={'flex flex-col gap-2 w-full p-1.5 min-w-[230px]'}>
+    <DropdownMenuGroup>
       {actions.map(action => (
-        <Button
+        <DropdownMenuItem
           key={action.label}
-          size={'small'}
-          onClick={action.onClick}
-          className={`px-3 py-1 justify-start `}
-          color={'inherit'}
-          startIcon={action.icon}
+          onSelect={action.onClick}
         >
+          {action.icon}
           {action.label}
-        </Button>
+        </DropdownMenuItem>
       ))}
-      <Divider className={'w-full'} />
-      <Button
-        size={'small'}
-        className={'px-3 py-1 justify-start'}
-        color={'inherit'}
-        onClick={() => {
-          setCreateSpaceModalOpen(true);
+      <DropdownMenuSeparator className={'w-full'} />
+      <DropdownMenuItem
+        onSelect={() => {
+          onClose();
+          openCreateSpaceModal();
         }}
-        startIcon={<AddIcon />}
       >
+        <AddIcon />
         {t('space.createNewSpace')}
-      </Button>
-      <Divider className={'w-full'} />
-      <Button
-        size={'small'}
-        className={'px-3 py-1 hover:text-function-error justify-start'}
-        color={'inherit'}
-        onClick={() => {
-          setDeleteModalOpen(true);
+      </DropdownMenuItem>
+      <DropdownMenuSeparator className={'w-full'} />
+      <DropdownMenuItem
+        onSelect={() => {
+          onClose();
+          openDeleteSpaceModal(view.view_id);
         }}
-        startIcon={<DeleteIcon />}
       >
+        <DeleteIcon />
         {t('button.delete')}
-      </Button>
-      {manageModalOpen && <ManageSpace
-        open={manageModalOpen}
-        onClose={() => {
-          setManageModalOpen(false);
-          onClose();
-        }}
-        viewId={view.view_id}
-      />}
-      {createSpaceModalOpen && <CreateSpaceModal
-        onCreated={onClose}
-        open={createSpaceModalOpen}
-        onClose={() => setCreateSpaceModalOpen(false)}
-      />}
-      {deleteModalOpen && <DeleteSpaceConfirm
-        viewId={view.view_id}
-        open={deleteModalOpen}
-        onClose={() => {
-          setDeleteModalOpen(false);
-          onClose();
-        }}
-      />}
+      </DropdownMenuItem>
 
-    </div>
+    </DropdownMenuGroup>
   );
 }
 

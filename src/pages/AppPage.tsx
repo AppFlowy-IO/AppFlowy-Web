@@ -37,6 +37,7 @@ function AppPage () {
     loadViews,
     setWordCount,
     uploadFile,
+    ...handlers
   } = useAppHandlers();
   const view = useMemo(() => {
     if (!outline || !viewId) return;
@@ -153,29 +154,10 @@ function AppPage () {
         onWordCountChange={setWordCount}
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
+        {...handlers}
       />
     ) : null;
-  }, [
-    requestInstance,
-    workspaceId,
-    doc,
-    layout,
-    viewId,
-    viewMeta,
-    toView,
-    loadViewMeta,
-    createRowDoc,
-    appendBreadcrumb,
-    loadView,
-    onRendered,
-    updatePage,
-    addPage,
-    deletePage,
-    openPageModal,
-    loadViews,
-    setWordCount,
-    handleUploadFile,
-  ]);
+  }, [doc, layout, handlers, viewId, viewMeta, workspaceId, requestInstance, isMobile, toView, loadViewMeta, createRowDoc, appendBreadcrumb, loadView, onRendered, updatePage, addPage, deletePage, openPageModal, loadViews, setWordCount, handleUploadFile]);
 
   useEffect(() => {
     if (!viewId) return;

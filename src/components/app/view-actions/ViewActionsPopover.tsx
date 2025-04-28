@@ -1,48 +1,34 @@
-import React, { useMemo } from 'react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import React, { useCallback, useMemo } from 'react';
 import AddPageActions from '@/components/app/view-actions/AddPageActions';
 import MoreSpaceActions from '@/components/app/view-actions/MoreSpaceActions';
 import MorePageActions from '@/components/app/view-actions/MorePageActions';
-import { Popover } from '@/components/_shared/popover';
-import { PopoverProps } from '@mui/material/Popover';
 import { View } from '@/application/types';
 
-const popoverProps: Partial<PopoverProps> = {
-  transformOrigin: {
-    vertical: 'top',
-    horizontal: 'left',
-  },
-  anchorOrigin: {
-    vertical: 'bottom',
-    horizontal: 'left',
-  },
-};
-
-function ViewActionsPopover({
+function ViewActionsPopover ({
   popoverType,
-  anchorPosition,
   view,
-  onClose,
+  children,
+  open,
+  onOpenChange,
 }: {
   view?: View;
-  onClose: () => void;
   popoverType?: {
     category: 'space' | 'page';
     type: 'more' | 'add';
   },
-  anchorPosition?: {
-    top: number;
-    left: number;
-  }
-}) {
+  children: React.ReactNode;
+} & React.ComponentProps<typeof DropdownMenu>) {
 
-  const open = Boolean(anchorPosition);
+  const onClose = useCallback(() => {
+    onOpenChange?.(false);
+  }, [onOpenChange]);
 
   const popoverContent = useMemo(() => {
     if (!popoverType || !view) return null;
 
     if (popoverType.type === 'add') {
       return <AddPageActions
-        onClose={onClose}
         view={view}
       />;
     }
@@ -61,21 +47,23 @@ function ViewActionsPopover({
   }, [onClose, popoverType, view]);
 
   return (
-    <Popover
-      {...popoverProps}
+    <DropdownMenu
       open={open}
-      anchorPosition={anchorPosition}
-      keepMounted={true}
-      onClose={onClose}
-      anchorReference={'anchorPosition'}
-      sx={{
-        '& .MuiPopover-paper': {
-          margin: '10px 0',
-        },
-      }}
+      onOpenChange={onOpenChange}
     >
-      {popoverContent}
-    </Popover>
+      <DropdownMenuTrigger asChild>
+        {children}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align={'start'}
+        onCloseAutoFocus={e => {
+          e.preventDefault();
+        }}
+      >
+        {popoverContent}
+      </DropdownMenuContent>
+
+    </DropdownMenu>
   );
 }
 

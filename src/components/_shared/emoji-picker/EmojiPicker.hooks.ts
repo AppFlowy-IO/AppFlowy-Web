@@ -1,17 +1,15 @@
 import { notify } from '@/components/_shared/notify';
 import { loadEmojiData } from '@/utils/emoji';
 import { EmojiMartData } from '@emoji-mart/data';
-import { PopoverProps } from '@mui/material/Popover';
-import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import chunk from 'lodash-es/chunk';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 
 export interface EmojiCategory {
   id: string;
   emojis: Emoji[];
 }
 
-interface Emoji {
+export interface Emoji {
   id: string;
   name: string;
   native: string;
@@ -107,31 +105,6 @@ export function useLoadEmojiData ({ onEmojiSelect }: { onEmojiSelect: (emoji: st
     skin,
     loading,
     isEmpty,
-  };
-}
-
-export function useSelectSkinPopoverProps (): PopoverProps & {
-  onOpen: (event: React.MouseEvent<HTMLButtonElement>) => void;
-  onClose: () => void;
-} {
-  const [anchorEl, setAnchorEl] = useState<HTMLButtonElement | undefined>(undefined);
-  const onOpen = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
-    setAnchorEl(event.currentTarget);
-  }, []);
-  const onClose = useCallback(() => {
-    setAnchorEl(undefined);
-  }, []);
-  const open = Boolean(anchorEl);
-  const anchorOrigin = { vertical: 'bottom', horizontal: 'center' } as PopoverOrigin;
-  const transformOrigin = { vertical: 'top', horizontal: 'center' } as PopoverOrigin;
-
-  return {
-    anchorEl,
-    onOpen,
-    onClose,
-    open,
-    anchorOrigin,
-    transformOrigin,
   };
 }
 

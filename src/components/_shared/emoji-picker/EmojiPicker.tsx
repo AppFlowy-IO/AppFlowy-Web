@@ -1,4 +1,4 @@
-import CircularProgress from '@mui/material/CircularProgress';
+import { Progress } from '@/components/ui/progress';
 import React from 'react';
 
 import { useLoadEmojiData } from './EmojiPicker.hooks';
@@ -8,13 +8,10 @@ import emptyImageSrc from '@/assets/images/empty.png';
 
 interface Props {
   onEmojiSelect: (emoji: string) => void;
-  onEscape?: () => void;
-  defaultEmoji?: string;
-  hideRemove?: boolean;
   size?: [number, number];
 }
 
-export function EmojiPicker({ defaultEmoji, onEscape, size, ...props }: Props) {
+export function EmojiPicker ({ size, ...props }: Props) {
   const { skin, onSkinChange, emojiCategories, setSearchValue, searchValue, onSelect, loading, isEmpty } =
     useLoadEmojiData(props);
 
@@ -25,19 +22,18 @@ export function EmojiPicker({ defaultEmoji, onEscape, size, ...props }: Props) {
         height: size ? size[1] : undefined,
       }}
       tabIndex={0}
-      className={'emoji-picker flex h-[360px] max-h-[70vh] flex-col p-4 pt-2'}
+      className={'emoji-picker flex h-[360px] max-h-[70vh] flex-col gap-3 px-3'}
     >
       <EmojiPickerHeader
         onEmojiSelect={onSelect}
         skin={skin}
-        hideRemove={props.hideRemove}
         onSkinSelect={onSkinChange}
         searchValue={searchValue}
         onSearchChange={setSearchValue}
       />
       {loading ? (
         <div className={'flex h-full items-center justify-center'}>
-          <CircularProgress />
+          <Progress variant={'primary'} />
         </div>
       ) : isEmpty ? (
         <img
@@ -47,8 +43,6 @@ export function EmojiPicker({ defaultEmoji, onEscape, size, ...props }: Props) {
         />
       ) : (
         <EmojiPickerCategories
-          defaultEmoji={defaultEmoji}
-          onEscape={onEscape}
           onEmojiSelect={onSelect}
           emojiCategories={emojiCategories}
         />

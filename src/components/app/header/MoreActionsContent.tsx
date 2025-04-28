@@ -2,25 +2,25 @@ import { ViewLayout } from '@/application/types';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { notify } from '@/components/_shared/notify';
-import { Origins } from '@/components/_shared/popover';
+import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
+import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { Progress } from '@/components/ui/progress';
+import { toast } from 'sonner';
 import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import DeletePageConfirm from '@/components/app/view-actions/DeletePageConfirm';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { useService } from '@/components/main/app.hooks';
-import { Button, CircularProgress } from '@mui/material';
 import React, { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function MoreActionsContent ({ itemClicked, viewId, movePopoverOrigins, onDeleted }: {
+function MoreActionsContent ({ itemClicked, viewId }: {
   itemClicked?: () => void;
   onDeleted?: () => void;
   viewId: string;
-  movePopoverOrigins: Origins
 }) {
   const { t } = useTranslation();
-  const [movePopoverAnchorEl, setMovePopoverAnchorEl] = useState<null | HTMLElement>(null);
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const {
+    openDeleteModal,
+  } = useAppOverlayContext();
   const service = useService();
   const workspaceId = useCurrentWorkspaceId();
   const view = useAppView(viewId);
@@ -38,7 +38,7 @@ function MoreActionsContent ({ itemClicked, viewId, movePopoverOrigins, onDelete
       void refreshOutline?.();
       // eslint-disable-next-line
     } catch (e: any) {
-      notify.error(e.message);
+      toast.error(e.message);
     } finally {
       setDuplicateLoading(false);
     }
@@ -46,60 +46,58 @@ function MoreActionsContent ({ itemClicked, viewId, movePopoverOrigins, onDelete
     itemClicked?.();
   };
 
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+
+  console.log('container', container);
   return (
-    <div className={'flex flex-col gap-2 more-actions'}>
-      <Button
-        size={'small'}
-        className={`px-3 py-1 ${layout === ViewLayout.AIChat ? 'hidden' : ''} justify-start `}
-        color={'inherit'}
-        onClick={handleDuplicateClick}
+    <DropdownMenuGroup
+
+    >
+      <div
+        ref={el => {
+
+          setContainer(el);
+        }}
+      />
+      <DropdownMenuItem
+        className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
+        onSelect={handleDuplicateClick}
         disabled={duplicateLoading}
-        startIcon={duplicateLoading ? <CircularProgress size={14} /> : <DuplicateIcon />}
-      >{t('button.duplicate')}</Button>
-      <Button
-        size={'small'}
-        className={'px-3 py-1 justify-start '}
-        color={'inherit'}
-        onClick={(e) => {
-          setMovePopoverAnchorEl(e.currentTarget);
-        }}
-
-        startIcon={<MoveToIcon />}
-      >{t('disclosureAction.moveTo')}</Button>
-      <Button
-        size={'small'}
-        className={'px-3 py-1 justify-start  hover:text-function-error'}
-        color={'inherit'}
-        onClick={() => {
-          setDeleteModalOpen(true);
-        }}
-
-        startIcon={<DeleteIcon />}
-      >{t('button.delete')}</Button>
-      <DeletePageConfirm
-        open={deleteModalOpen}
-        onClose={() => {
-          setDeleteModalOpen(false);
-          itemClicked?.();
-        }}
+      >
+        {duplicateLoading ? <Progress /> : <DuplicateIcon />}
+        {t('button.duplicate')}
+      </DropdownMenuItem>
+      {container && <MovePagePopover
         viewId={viewId}
-        onDeleted={() => {
-          onDeleted?.();
-          itemClicked?.();
-        }}
-      />
-      <MovePagePopover
-        {...movePopoverOrigins}
-        viewId={viewId}
-        open={Boolean(movePopoverAnchorEl)}
-        anchorEl={movePopoverAnchorEl}
-        onClose={() => {
-          setMovePopoverAnchorEl(null);
-          itemClicked?.();
-        }}
         onMoved={itemClicked}
-      />
-    </div>
+        popoverContentProps={{
+          side: 'right',
+          align: 'start',
+          container,
+        }}
+      >
+        <DropdownMenuItem
+          onSelect={(e) => {
+            e.preventDefault();
+          }}
+        >
+          <MoveToIcon />
+          {t('disclosureAction.moveTo')}
+        </DropdownMenuItem>
+      </MovePagePopover>
+      }
+
+      <DropdownMenuItem
+        className={'hover:text-text-error'}
+        onSelect={() => {
+          openDeleteModal(viewId);
+        }}
+      >
+        <DeleteIcon />
+        {t('button.delete')}
+      </DropdownMenuItem>
+
+    </DropdownMenuGroup>
   );
 }
 

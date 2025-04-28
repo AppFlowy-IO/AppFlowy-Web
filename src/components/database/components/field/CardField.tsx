@@ -1,13 +1,17 @@
-import { YjsDatabaseKey } from '@/application/types';
-import { FieldType, useCellSelector, useFieldSelector } from '@/application/database-yjs';
+import { FieldType, useCellSelector, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { FileMediaCellData, TextCell } from '@/application/database-yjs/cell.type';
+import { YjsDatabaseKey } from '@/application/types';
+import { ReactComponent as FileMediaSvg } from '@/assets/icons/attachment.svg';
 import Cell from '@/components/database/components/cell/Cell';
 import { PrimaryCell } from '@/components/database/components/cell/primary';
 import React, { CSSProperties, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as FileMediaSvg } from '@/assets/icons/attachment.svg';
 
-export function CardField ({ rowId, fieldId }: { rowId: string; fieldId: string; index: number }) {
+export function CardField ({ rowId, fieldId, editing, setEditing }: {
+  editing: boolean;
+  setEditing: (editing: boolean) => void;
+  rowId: string; fieldId: string; index: number
+}) {
   const { t } = useTranslation();
   const { field } = useFieldSelector(fieldId);
   const cell = useCellSelector({
@@ -15,14 +19,16 @@ export function CardField ({ rowId, fieldId }: { rowId: string; fieldId: string;
     fieldId,
   });
 
+  const readOnly = useReadOnly();
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
+
   const type = field?.get(YjsDatabaseKey.type);
   const style = useMemo(() => {
     const styleProperties: CSSProperties = {
       overflow: 'hidden',
       width: '100%',
       textAlign: 'left',
-      minHeight: 24,
+      minHeight: 20,
       display: 'flex',
       alignItems: 'center',
       fontSize: 12,
@@ -53,27 +59,19 @@ export function CardField ({ rowId, fieldId }: { rowId: string; fieldId: string;
   }, [isPrimary, type]);
 
   if (isPrimary) {
-    if (!cell?.data) {
-      return (
-        <div
-          className={'text-text-caption'}
-          style={style}
-        >
-          {t('grid.row.titlePlaceholder')}
-        </div>
-      );
-    } else {
-      return (
-        <PrimaryCell
-          showDocumentIcon
-          readOnly
-          cell={cell as TextCell}
-          rowId={rowId}
-          fieldId={fieldId}
-          style={style}
-        />
-      );
-    }
+    return (
+      <PrimaryCell
+        placeholder={t('grid.row.titlePlaceholder')}
+        editing={editing}
+        setEditing={setEditing}
+        showDocumentIcon
+        readOnly={readOnly}
+        cell={cell as TextCell}
+        rowId={rowId}
+        fieldId={fieldId}
+        style={style}
+      />
+    );
   }
 
   if (Number(type) === FieldType.Checkbox) {

@@ -1,27 +1,13 @@
-import { View, ViewIconType, ViewLayout } from '@/application/types';
-import { notify } from '@/components/_shared/notify';
+import { View, ViewIconType } from '@/application/types';
+import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
-import { Origins } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppHandlers, useAppViewId } from '@/components/app/app.hooks';
-import { Tooltip } from '@mui/material';
-import React, { lazy, Suspense, useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
-const ChangeIconPopover = lazy(() => import('@/components/_shared/view-icon/ChangeIconPopover'));
-
-const popoverProps: Origins = {
-  transformOrigin: {
-    vertical: 'top',
-    horizontal: 'left',
-  },
-  anchorOrigin: {
-    vertical: 30,
-    horizontal: 'left',
-  },
-};
-
-function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand, onClickView }: {
+function ViewItem ({ view, width, level = 0, renderExtra, expandIds, toggleExpand, onClickView }: {
   view: View;
   width: number;
   level?: number;
@@ -44,8 +30,24 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
 
   const isExpanded = expandIds.includes(viewId);
   const [hovered, setHovered] = React.useState<boolean>(false);
-  const [iconPopoverAnchorEl, setIconPopoverAnchorEl] = React.useState<HTMLDivElement | null>(null);
-  const openIconPopover = Boolean(iconPopoverAnchorEl);
+
+  const handleChangeIcon = useCallback(async (icon: { ty: ViewIconType, value: string }) => {
+    try {
+      await updatePage?.(view.view_id, {
+        icon: icon,
+        name: view.name,
+        extra: view.extra || {},
+      });
+
+      // eslint-disable-next-line
+    } catch (e: any) {
+      toast.error(e);
+    }
+  }, [updatePage, view.extra, view.name, view.view_id]);
+
+  const handleRemoveIcon = useCallback(() => {
+    void handleChangeIcon({ ty: 0, value: '' });
+  }, [handleChangeIcon]);
 
   const getIcon = useCallback(() => {
     return <span className={'text-sm h-full flex items-center justify-end w-5'}><OutlineIcon
@@ -57,13 +59,13 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
     /></span>;
   }, [isExpanded, level, toggleExpand, viewId]);
 
-  const onUploadFile = useCallback(async(file: File) => {
-    if(!uploadFile) return Promise.reject();
+  const onUploadFile = useCallback(async (file: File) => {
+    if (!uploadFile) return Promise.reject();
     return uploadFile(viewId, file);
   }, [uploadFile, viewId]);
 
   const renderItem = useMemo(() => {
-    if(!view) return null;
+    if (!view) return null;
 
     return (
       <div
@@ -73,7 +75,9 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
           paddingLeft: view.children?.length ? ((level * 16) + 'px') : ((level * 16) + 24) + 'px',
         }}
         onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseLeave={() => {
+          setHovered(false);
+        }}
         onClick={() => {
           onClickView?.(viewId);
         }}
@@ -82,32 +86,49 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
         }
       >
         {view.children?.length ? getIcon() : null}
-        <div
-          onClick={e => {
-            e.stopPropagation();
-            setIconPopoverAnchorEl(e.currentTarget);
-          }}
-        >
-          <PageIcon
-            view={view}
-            className={'text-text-caption w-5 h-5 mr-1 max-md:text-[20px] flex items-center justify-center'}
-          />
 
-        </div>
-        <Tooltip
-          title={view.layout === ViewLayout.AIChat ? 'View the chat history in app' : view.name}
-          disableInteractive={true}
+        <CustomIconPopover
+          defaultActiveTab={view.icon?.ty === 1 ? 'upload' : view.icon?.ty === 2 ? 'icon' : 'emoji'}
+          tabs={['emoji', 'icon', 'upload']}
+          onUploadFile={onUploadFile}
+          onSelectIcon={(icon) => {
+            if (icon.ty === ViewIconType.Icon) {
+              void handleChangeIcon({
+                ty: ViewIconType.Icon,
+                value: JSON.stringify({
+                  color: icon.color,
+                  groupName: icon.value.split('/')[0],
+                  iconName: icon.value.split('/')[1],
+                }),
+              });
+              return;
+            }
+
+            void handleChangeIcon(icon);
+          }}
+          removeIcon={handleRemoveIcon}
         >
           <div
-            className={'flex flex-1 overflow-hidden items-center gap-1 text-sm'}
+            onClick={e => {
+              e.stopPropagation();
+            }}
           >
-            <div className={'w-full truncate'}>{view.name.trim() || t('menuAppHeader.defaultNewPageName')}</div>
+            <PageIcon
+              view={view}
+              className={'text-text-caption w-5 h-5 mr-1 max-md:text-[20px] flex items-center justify-center'}
+            />
           </div>
-        </Tooltip>
+        </CustomIconPopover>
+
+        <div
+          className={'flex flex-1 overflow-hidden items-center gap-1 text-sm'}
+        >
+          <div className={'w-full truncate'}>{view.name.trim() || t('menuAppHeader.defaultNewPageName')}</div>
+        </div>
         {renderExtra && renderExtra({ hovered, view })}
       </div>
     );
-  }, [view, selected, level, getIcon, t, renderExtra, hovered, onClickView, viewId]);
+  }, [view, selected, level, getIcon, onUploadFile, handleRemoveIcon, t, renderExtra, hovered, onClickView, viewId, handleChangeIcon]);
 
   const renderChildren = useMemo(() => {
     return <div
@@ -131,26 +152,6 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
     }</div>;
   }, [toggleExpand, onClickView, isExpanded, expandIds, level, renderExtra, view?.children, width]);
 
-  const handleChangeIcon = useCallback(async(icon: { ty: ViewIconType, value: string }) => {
-
-    try {
-      await updatePage?.(view.view_id, {
-        icon: icon,
-        name: view.name,
-        extra: view.extra || {},
-      });
-      setIconPopoverAnchorEl(null);
-
-      // eslint-disable-next-line
-    } catch(e: any) {
-      notify.error(e);
-    }
-  }, [updatePage, view.extra, view.name, view.view_id]);
-
-  const handleRemoveIcon = useCallback(() => {
-    void handleChangeIcon({ ty: 0, value: '' });
-  }, [handleChangeIcon]);
-
   return (
     <div
       style={{
@@ -160,36 +161,7 @@ function ViewItem({ view, width, level = 0, renderExtra, expandIds, toggleExpand
     >
       {renderItem}
       {renderChildren}
-      <Suspense fallback={null}>
-        <ChangeIconPopover
-          iconEnabled={true}
-          defaultType={'emoji'}
-          open={openIconPopover}
-          anchorEl={iconPopoverAnchorEl}
-          onClose={() => {
-            setIconPopoverAnchorEl(null);
-          }}
-          uploadEnabled
-          onUploadFile={onUploadFile}
-          popoverProps={popoverProps}
-          onSelectIcon={(icon) => {
-            if(icon.ty === ViewIconType.Icon) {
-              void handleChangeIcon({
-                ty: ViewIconType.Icon,
-                value: JSON.stringify({
-                  color: icon.color,
-                  groupName: icon.value.split('/')[0],
-                  iconName: icon.value.split('/')[1],
-                }),
-              });
-              return;
-            }
 
-            void handleChangeIcon(icon);
-          }}
-          removeIcon={handleRemoveIcon}
-        />
-      </Suspense>
     </div>
   );
 }

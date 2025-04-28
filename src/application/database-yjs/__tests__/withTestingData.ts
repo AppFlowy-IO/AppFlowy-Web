@@ -4,7 +4,6 @@ import {
   YDatabaseFields,
   YDatabaseFilters,
   YDatabaseGroup,
-  YDatabaseGroupColumn,
   YDatabaseGroupColumns,
   YDatabaseLayoutSettings,
   YDatabaseSorts,
@@ -114,13 +113,14 @@ export function withTestingDatabase (viewId: string) {
 
   group.set(YjsDatabaseKey.groups, groupColumns);
 
-  const column1 = new Y.Map() as YDatabaseGroupColumn;
-  const column2 = new Y.Map() as YDatabaseGroupColumn;
-
-  column1.set(YjsDatabaseKey.id, '1');
-  column1.set(YjsDatabaseKey.visible, true);
-  column2.set(YjsDatabaseKey.id, 'single_select_field');
-  column2.set(YjsDatabaseKey.visible, true);
+  const column1 = {
+    id: '1',
+    visible: true,
+  };
+  const column2 = {
+    id: 'single_select_field',
+    visible: true,
+  };
 
   groupColumns.push([column1]);
   groupColumns.push([column2]);

@@ -113,6 +113,7 @@ export function HoverControls ({ rowId, dragHandleRef }: {
           </TooltipContent>
         </Tooltip>
         <DropdownMenu
+
           open={menuOpen}
           onOpenChange={setMenuOpen}
         >

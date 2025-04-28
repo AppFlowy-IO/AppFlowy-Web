@@ -1,9 +1,10 @@
 import {
   RowMeta,
   useDatabaseContext,
-  useFieldsSelector,
+  useFieldsSelector, useReadOnly,
   useRowMetaSelector,
 } from '@/application/database-yjs';
+import CardToolbar from '@/components/database/components/board/card/CardToolbar';
 import CardField from '@/components/database/components/field/CardField';
 import { cn } from '@/lib/utils';
 import React, { forwardRef, useCallback, useMemo } from 'react';
@@ -15,13 +16,23 @@ export interface CardProps {
   groupFieldId: string;
   rowId: string;
   className?: string;
+  editing: boolean;
+  setEditing: (value: boolean) => void;
 }
 
-export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(({ groupFieldId, rowId, className }, ref) => {
+export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(({
+  editing,
+  setEditing,
+  groupFieldId,
+  rowId,
+  className,
+}, ref) => {
   const fields = useFieldsSelector();
   const meta = useRowMetaSelector(rowId);
   const cover = meta?.cover;
   const showFields = useMemo(() => fields.filter((field) => field.fieldId !== groupFieldId), [fields, groupFieldId]);
+  const readOnly = useReadOnly();
+  const [hovered, setHovered] = React.useState(false);
 
   const navigateToRow = useDatabaseContext().navigateToRow;
 
@@ -64,10 +75,26 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(({ groupField
     );
   }, []);
 
+  const onEdit = useCallback(() => {
+    setEditing(true);
+  }, [setEditing]);
+
   return (
     <div
       onClick={() => {
         navigateToRow?.(rowId);
+      }}
+      onPointerMove={e => {
+        if (editing) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      }}
+      onMouseEnter={() => {
+        setHovered(true);
+      }}
+      onMouseLeave={() => {
+        setHovered(false);
       }}
       ref={ref}
       className={cn(
@@ -83,9 +110,11 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(({ groupField
           {renderCoverImage(cover)}
         </div>
       )}
-      <div className={'flex flex-col py-2 px-3'}>
+      <div className={'flex flex-col gap-2 py-2 px-3'}>
         {showFields.map((field, index) => {
           return <CardField
+            editing={editing}
+            setEditing={setEditing}
             index={index}
             key={field.fieldId}
             rowId={rowId}
@@ -95,6 +124,11 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(({ groupField
         })}
       </div>
 
+      {!readOnly && <CardToolbar
+        visible={hovered && !editing}
+        onEdit={onEdit}
+        rowId={rowId}
+      />}
     </div>
   );
 });

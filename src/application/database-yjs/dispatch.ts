@@ -1,29 +1,44 @@
 import {
   useCreateRow,
-  useDatabase,
+  useDatabase, useDatabaseContext,
   useDatabaseView,
   useDatabaseViewId, useDocGuid,
   useRowDocMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
-import { CalculationType, FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
+import { CalculationType, FieldType, FieldVisibility, RowMetaKey } from '@/application/database-yjs/database.type';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createTextField } from '@/application/database-yjs/fields/text/utils';
 import { filterFillData } from '@/application/database-yjs/filter';
+import { getGroupColumns } from '@/application/database-yjs/group';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
-import { generateRowMeta, getMetaJSON } from '@/application/database-yjs/row_meta';
+import { generateRowMeta, getMetaJSON, getMetaIdMap } from '@/application/database-yjs/row_meta';
+import { useFieldSelector } from '@/application/database-yjs/selector';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
 import {
-  YDatabase, YDatabaseCell,
+  DatabaseViewLayout,
+  FieldId,
+  RowId, UpdatePagePayload,
+  ViewLayout,
+  YDatabase, YDatabaseCalculations,
+  YDatabaseCell,
   YDatabaseField,
+  YDatabaseFieldOrders,
+  YDatabaseFieldSetting,
+  YDatabaseFieldSettings,
+  YDatabaseFieldTypeOption, YDatabaseFilters, YDatabaseGroup, YDatabaseGroupColumns, YDatabaseGroups,
+  YDatabaseLayoutSettings,
   YDatabaseRow,
+  YDatabaseRowOrders, YDatabaseSorts,
   YDatabaseView,
   YjsDatabaseKey,
-  YjsEditorKey, YSharedRoot,
+  YjsEditorKey,
+  YMapFieldTypeOption,
+  YSharedRoot,
 } from '@/application/types';
 import { countBy, meanBy, sortBy, sumBy } from 'lodash-es';
 import { nanoid } from 'nanoid';
@@ -510,7 +525,7 @@ export function useAddPropertyRightDispatch () {
 function executeOperationWithAllViews (
   sharedRoot: YSharedRoot,
   database: YDatabase,
-  operation: (view: YDatabaseView) => void,
+  operation: (view: YDatabaseView, viewId: string) => void,
   operationName: string,
 ) {
   const views = database.get(YjsDatabaseKey.views);
@@ -525,7 +540,7 @@ function executeOperationWithAllViews (
       }
 
       try {
-        operation(view);
+        operation(view, viewId);
       } catch (e) {
         // do nothing
       }
@@ -562,10 +577,11 @@ export function useNewRowDispatch () {
   const sharedRoot = useSharedRoot();
   const createRow = useCreateRow();
   const guid = useDocGuid();
-  const view = useDatabaseView();
-  const filters = view?.get(YjsDatabaseKey.filters);
+  const viewId = useDatabaseViewId();
+  const currentView = useDatabaseView();
+  const filters = currentView?.get(YjsDatabaseKey.filters);
 
-  return async (index?: number) => {
+  return async (index?: number, cellsData?: Record<FieldId, string>) => {
     if (!createRow) {
       throw new Error('No createRow function');
     }
@@ -592,7 +608,7 @@ export function useNewRowDispatch () {
             return;
           }
 
-          const type = Number(filter.get(YjsDatabaseKey.type));
+          const type = Number(field.get(YjsDatabaseKey.type));
 
           cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
           cell.set(YjsDatabaseKey.field_type, type);
@@ -605,9 +621,26 @@ export function useNewRowDispatch () {
         });
       }
 
+      if (cellsData) {
+        Object.entries(cellsData).forEach(([fieldId, data]) => {
+          const cell = new Y.Map() as YDatabaseCell;
+          const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+          const type = Number(field.get(YjsDatabaseKey.type));
+
+          cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
+          cell.set(YjsDatabaseKey.field_type, type);
+
+          cell.set(YjsDatabaseKey.data, data);
+
+          cells.set(fieldId, cell);
+        });
+      }
+
+      row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
     });
 
-    executeOperationWithAllViews(sharedRoot, database, view => {
+    executeOperationWithAllViews(sharedRoot, database, (view, id) => {
       const rowOrders = view.get(YjsDatabaseKey.row_orders);
 
       if (!rowOrders) {
@@ -619,9 +652,7 @@ export function useNewRowDispatch () {
         height: 36,
       };
 
-      console.log('rowOrders', index);
-
-      if (index === undefined) {
+      if (index === undefined || index >= rowOrders.length || viewId !== id) {
         rowOrders.push([row]);
       } else {
         rowOrders.insert(index, [row]);
@@ -630,6 +661,28 @@ export function useNewRowDispatch () {
 
     return rowId;
   };
+}
+
+function cloneCell (fieldId: string, referenceCell: YDatabaseCell) {
+  const cell = new Y.Map() as YDatabaseCell;
+  const fieldType = Number(referenceCell.get(YjsDatabaseKey.field_type));
+  let data = referenceCell.get(YjsDatabaseKey.data);
+
+  if (fieldType === FieldType.Relation && data) {
+    const newData = new Y.Array<RowId>();
+    const referenceData = data as Y.Array<RowId>;
+
+    referenceData.toArray().forEach((rowId) => {
+      newData.push([rowId]);
+    });
+    data = newData;
+  }
+
+  cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+  cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
+  cell.set(YjsDatabaseKey.field_type, fieldType);
+  cell.set(YjsDatabaseKey.data, data);
+  return cell;
 }
 
 export function useDuplicateRowDispatch () {
@@ -688,22 +741,22 @@ export function useDuplicateRowDispatch () {
       const cells = row.get(YjsDatabaseKey.cells);
 
       Object.keys(referenceCells.toJSON()).forEach(fieldId => {
-        const referenceCell = referenceCells.get(fieldId);
-        const cell = new Y.Map() as YDatabaseCell;
-        const fieldType = Number(referenceCell.get(YjsDatabaseKey.field_type));
-        let data = referenceCell.get(YjsDatabaseKey.data);
+        try {
+          const referenceCell = referenceCells.get(fieldId);
 
-        if (data && typeof data === 'bigint') {
-          data = String(data);
+          if (!referenceCell) {
+            throw new Error(`Cell not found`);
+          }
+
+          const cell = cloneCell(fieldId, referenceCell);
+
+          cells.set(fieldId, cell);
+        } catch (e) {
+          console.error(e);
         }
-
-        cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-        cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-        cell.set(YjsDatabaseKey.field_type, fieldType);
-        cell.set(YjsDatabaseKey.data, data);
-
-        cells.set(fieldId, cell);
       });
+
+      row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
     });
 
     executeOperationWithAllViews(sharedRoot, database, view => {
@@ -720,6 +773,11 @@ export function useDuplicateRowDispatch () {
 
       const referenceIndex = rowOrders.toArray().findIndex((row) => row.id === referenceRowId);
       const targetIndex = referenceIndex + 1;
+
+      if (targetIndex >= rowOrders.length) {
+        rowOrders.push([row]);
+        return;
+      }
 
       rowOrders.insert(targetIndex, [row]);
     }, 'duplicateRowDispatch');
@@ -743,4 +801,500 @@ export function useClearSortingDispatch () {
       sorting.delete(0, sorting.length);
     }], 'clearSortingDispatch');
   }, [sharedRoot, view]);
+}
+
+export function useUpdatePropertyIconDispatch (fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((iconId: string) => {
+    executeOperations(sharedRoot, [() => {
+      const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+      field.set(YjsDatabaseKey.icon, iconId);
+    }], 'updatePropertyName');
+  }, [database, sharedRoot, fieldId]);
+}
+
+export function useHidePropertyDispatch () {
+  const sharedRoot = useSharedRoot();
+  const view = useDatabaseView();
+
+  return useCallback((fieldId: string) => {
+    executeOperations(sharedRoot, [() => {
+      const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+      const setting = fieldSettings?.get(fieldId);
+
+      if (!setting) {
+        throw new Error(`Field not found`);
+      }
+
+      setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysHidden);
+    }], 'hidePropertyDispatch');
+  }, [sharedRoot, view]);
+}
+
+export function useTogglePropertyWrapDispatch () {
+  const sharedRoot = useSharedRoot();
+  const view = useDatabaseView();
+
+  return useCallback((fieldId: string, checked?: boolean) => {
+    executeOperations(sharedRoot, [() => {
+      const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+      const setting = fieldSettings?.get(fieldId);
+
+      if (!setting) {
+        throw new Error(`Field not found`);
+      }
+
+      const wrap = setting.get(YjsDatabaseKey.wrap);
+
+      if (checked !== undefined) {
+        setting.set(YjsDatabaseKey.wrap, checked);
+        return;
+      }
+
+      setting.set(YjsDatabaseKey.wrap, !wrap);
+    }], 'togglePropertyWrapDispatch');
+  }, [sharedRoot, view]);
+}
+
+export function useShowPropertyDispatch () {
+  const sharedRoot = useSharedRoot();
+  const view = useDatabaseView();
+
+  return useCallback((fieldId: string) => {
+    executeOperations(sharedRoot, [() => {
+      const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+      const setting = fieldSettings?.get(fieldId);
+
+      if (!setting) {
+        throw new Error(`Field not found`);
+      }
+
+      setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+    }], 'showPropertyDispatch');
+  }, [sharedRoot, view]);
+}
+
+export function useClearCellsWithFieldDispatch () {
+  const sharedRoot = useSharedRoot();
+  const rowDocs = useRowDocMap();
+
+  return useCallback((fieldId: string) => {
+    executeOperations(sharedRoot, [() => {
+      if (!rowDocs) {
+        throw new Error(`Row docs not found`);
+      }
+
+      const rows = Object.keys(rowDocs);
+
+      if (!rows) {
+        throw new Error(`Row orders not found`);
+      }
+
+      rows.forEach((rowId) => {
+        const rowDoc = rowDocs?.[rowId];
+
+        if (!rowDoc) {
+          throw new Error(`Row not found`);
+        }
+
+        rowDoc.transact(() => {
+          const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+          const row = rowSharedRoot.get(YjsEditorKey.database_row);
+          const cells = row.get(YjsDatabaseKey.cells);
+
+          cells.delete(fieldId);
+          row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+        });
+
+      });
+    }], 'clearCellsWithFieldDispatch');
+  }, [rowDocs, sharedRoot]);
+}
+
+export function useDuplicatePropertyDispatch () {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const rowDocs = useRowDocMap();
+
+  return useCallback((fieldId: string) => {
+    const newId = nanoid(6);
+
+    executeOperations(sharedRoot, [() => {
+      const fields = database?.get(YjsDatabaseKey.fields);
+
+      if (!fields) {
+        throw new Error(`Fields not found`);
+      }
+
+      const field = fields.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      // Clone Field
+      const newField = new Y.Map() as YDatabaseField;
+
+      newField.set(YjsDatabaseKey.id, newId);
+      newField.set(YjsDatabaseKey.name, field.get(YjsDatabaseKey.name) + ' (copy)');
+      newField.set(YjsDatabaseKey.type, Number(field.get(YjsDatabaseKey.type)));
+      newField.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+      newField.set(YjsDatabaseKey.is_primary, false);
+      newField.set(YjsDatabaseKey.icon, field.get(YjsDatabaseKey.icon));
+      const fieldTypeOption = field.get(YjsDatabaseKey.type_option);
+      const newFieldTypeOption = new Y.Map() as YDatabaseFieldTypeOption;
+
+      Object.keys(fieldTypeOption.toJSON()).forEach((key) => {
+        const value = fieldTypeOption.get(key);
+
+        const newValue = new Y.Map() as YMapFieldTypeOption;
+
+        Object.keys(value.toJSON()).forEach(key => {
+          // eslint-disable-next-line
+          // @ts-ignore
+          const option = value.get(key);
+
+          newValue.set(key, option);
+        });
+        newFieldTypeOption.set(key, newValue);
+      });
+      newField.set(YjsDatabaseKey.type_option, newFieldTypeOption);
+
+      fields.set(newId, newField);
+
+    }], 'duplicatePropertyDispatch');
+
+    // Insert new field to all views
+    executeOperationWithAllViews(sharedRoot, database, (view) => {
+      const fields = database?.get(YjsDatabaseKey.fields);
+      const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
+      const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+      if (!fields || !fieldOrders || !fieldSettings) {
+        throw new Error(`Fields not found`);
+      }
+
+      const field = fields.get(newId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      const setting = fieldSettings?.get(fieldId);
+      const newSetting = new Y.Map() as YDatabaseFieldSetting;
+
+      Object.keys(setting.toJSON()).forEach((key) => {
+        // eslint-disable-next-line
+        // @ts-ignore
+        const value = setting.get(key);
+
+        if (key === YjsDatabaseKey.visibility) {
+          newSetting.set(key, FieldVisibility.AlwaysShown);
+          return;
+        }
+
+        newSetting.set(key, value);
+      });
+
+      fieldSettings.set(newId, newSetting);
+
+      const index = fieldOrders.toArray().findIndex((field) => field.id === fieldId);
+
+      fieldOrders.insert(index + 1, [{
+        id: newId,
+      }]);
+
+    }, 'insertDuplicateProperty');
+
+    if (!rowDocs) {
+      throw new Error(`Row docs not found`);
+    }
+
+    const rows = Object.keys(rowDocs);
+
+    if (!rows) {
+      throw new Error(`Row orders not found`);
+    }
+
+    // Clone cell for each row
+    rows.forEach((rowId) => {
+      const rowDoc = rowDocs?.[rowId];
+
+      if (!rowDoc) {
+        throw new Error(`Row not found`);
+      }
+
+      rowDoc.transact(() => {
+        const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+        const rowData = rowSharedRoot.get(YjsEditorKey.database_row);
+
+        const cells = rowData.get(YjsDatabaseKey.cells);
+        const cell = cells.get(fieldId);
+        const newCell = cloneCell(fieldId, cell);
+
+        cells.set(newId, newCell);
+
+        const type = Number(cell.get(YjsDatabaseKey.field_type));
+
+        if (type !== FieldType.CreatedTime && type !== FieldType.LastEditedTime) {
+          rowData.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+        }
+      });
+
+    });
+
+    return newId;
+  }, [database, rowDocs, sharedRoot]);
+}
+
+export function useUpdateRowMetaDispatch (rowId: string) {
+  const rowDocMap = useRowDocMap();
+
+  const rowDoc = rowDocMap?.[rowId];
+
+  return useCallback((key: RowMetaKey, value?: string) => {
+    if (!rowDoc) {
+      throw new Error(`Row not found`);
+    }
+
+    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const row = rowSharedRoot.get(YjsEditorKey.database_row);
+    const meta = rowSharedRoot.get(YjsEditorKey.meta);
+
+    const keyId = getMetaIdMap(rowId).get(key);
+
+    if (!keyId) {
+      throw new Error(`Meta key not found: ${key}`);
+    }
+
+    rowDoc.transact(() => {
+      if (value === undefined) {
+        meta.delete(keyId);
+      } else {
+        meta.set(keyId, value);
+      }
+
+      row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+    });
+
+  }, [rowDoc, rowId]);
+}
+
+export function useUpdateCellDispatch (rowId: string, fieldId: string) {
+  const rowDocMap = useRowDocMap();
+  const { field } = useFieldSelector(fieldId);
+
+  return useCallback((data: string) => {
+    const rowDoc = rowDocMap?.[rowId];
+
+    if (!rowDoc) {
+      throw new Error(`Row not found`);
+    }
+
+    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const row = rowSharedRoot.get(YjsEditorKey.database_row);
+    const cells = row.get(YjsDatabaseKey.cells);
+    const cell = cells.get(fieldId);
+
+    if (cell?.get(YjsDatabaseKey.data) === data) return;
+
+    rowDoc.transact(() => {
+      if (!cell) {
+        const newCell = new Y.Map() as YDatabaseCell;
+        const type = Number(field.get(YjsDatabaseKey.type));
+
+        newCell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
+        newCell.set(YjsDatabaseKey.field_type, type);
+        newCell.set(YjsDatabaseKey.data, data);
+        cells.set(fieldId, newCell);
+      } else {
+        cell.set(YjsDatabaseKey.data, data);
+      }
+
+      row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+    });
+
+  }, [field, fieldId, rowDocMap, rowId]);
+}
+
+export function useAddDatabaseView () {
+  const {
+    iidIndex,
+    createFolderView,
+  } = useDatabaseContext();
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(async (layout: DatabaseViewLayout) => {
+    if (!createFolderView) {
+      throw new Error('createFolderView not found');
+    }
+
+    const viewLayout = {
+      [DatabaseViewLayout.Grid]: ViewLayout.Grid,
+      [DatabaseViewLayout.Board]: ViewLayout.Board,
+      [DatabaseViewLayout.Calendar]: ViewLayout.Calendar,
+    }[layout] as ViewLayout;
+    const name = {
+      [DatabaseViewLayout.Grid]: 'Grid',
+      [DatabaseViewLayout.Board]: 'Board',
+      [DatabaseViewLayout.Calendar]: 'Calendar',
+    }[layout];
+
+    const newViewId = await createFolderView({
+      layout: viewLayout,
+      parentViewId: iidIndex,
+      name,
+    });
+
+    const databaseId = database.get(YjsDatabaseKey.id);
+    const views = database.get(YjsDatabaseKey.views);
+    const refView = database.get(YjsDatabaseKey.views)?.get(iidIndex);
+    const refRowOrders = refView.get(YjsDatabaseKey.row_orders);
+    const refFieldOrders = refView.get(YjsDatabaseKey.field_orders);
+
+    executeOperations(sharedRoot, [() => {
+      const newView = new Y.Map() as YDatabaseView;
+      const rowOrders = new Y.Array() as YDatabaseRowOrders;
+      const fieldOrders = new Y.Array() as YDatabaseFieldOrders;
+      const fieldSettings = new Y.Map() as YDatabaseFieldSettings;
+      const layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+      const filters = new Y.Array() as YDatabaseFilters;
+      const sorts = new Y.Array() as YDatabaseSorts;
+      const groups = new Y.Array() as YDatabaseGroups;
+      const calculations = new Y.Array() as YDatabaseCalculations;
+
+      refRowOrders.forEach(rowOrder => {
+        const newRowOrder = {
+          ...rowOrder,
+        };
+
+        rowOrders.push([newRowOrder]);
+      });
+
+      refFieldOrders.forEach(fieldOrder => {
+        const newFieldOrder = {
+          ...fieldOrder,
+        };
+
+        fieldOrders.push([newFieldOrder]);
+      });
+
+      if (layout === DatabaseViewLayout.Board) {
+        const group = new Y.Map() as YDatabaseGroup;
+        const id = `g:${nanoid(6)}`;
+        const columns = new Y.Array() as YDatabaseGroupColumns;
+
+        let groupField: YDatabaseField | undefined;
+
+        refFieldOrders.toArray().some(({ id }) => {
+          const field = database.get(YjsDatabaseKey.fields)?.get(id);
+
+          if (!field) {
+            return;
+          }
+
+          const type = Number(field.get(YjsDatabaseKey.type));
+
+          if ([FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(type)) {
+            groupField = field;
+            return true;
+          }
+
+          return false;
+        });
+
+        if (groupField) {
+          group.set(YjsDatabaseKey.id, id);
+          group.set(YjsDatabaseKey.content, '');
+          group.set(YjsDatabaseKey.field_id, groupField.get(YjsDatabaseKey.id));
+          const groupColumns = getGroupColumns(groupField) || [];
+
+          groupColumns.forEach((column) => {
+            columns.push([{
+              id: column.id,
+              visible: true,
+            }]);
+          });
+
+          group.set(YjsDatabaseKey.groups, columns);
+          groups.push([group]);
+        }
+      }
+
+      newView.set(YjsDatabaseKey.database_id, databaseId);
+      newView.set(YjsDatabaseKey.name, name);
+      newView.set(YjsDatabaseKey.layout, layout);
+      newView.set(YjsDatabaseKey.row_orders, rowOrders);
+      newView.set(YjsDatabaseKey.field_orders, fieldOrders);
+      newView.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
+      newView.set(YjsDatabaseKey.modified_at, String(dayjs().unix()));
+      newView.set(YjsDatabaseKey.field_settings, fieldSettings);
+      newView.set(YjsDatabaseKey.layout_settings, layoutSettings);
+      newView.set(YjsDatabaseKey.filters, filters);
+      newView.set(YjsDatabaseKey.sorts, sorts);
+      newView.set(YjsDatabaseKey.groups, groups);
+      newView.set(YjsDatabaseKey.calculations, calculations);
+
+      views.set(newViewId, newView);
+    }], 'addDatabaseView');
+    return newViewId;
+  }, [createFolderView, database, iidIndex, sharedRoot]);
+}
+
+export function useUpdateDatabaseView () {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const {
+    updatePage,
+  } = useDatabaseContext();
+
+  return useCallback(async (viewId: string, payload: UpdatePagePayload) => {
+
+    await updatePage?.(viewId, payload);
+
+    executeOperations(sharedRoot, [() => {
+      const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (!view) {
+        throw new Error(`View not found`);
+      }
+
+      view.set(YjsDatabaseKey.name, name);
+    }], 'renameDatabaseView');
+  }, [database, updatePage, sharedRoot]);
+}
+
+export function useDeleteView () {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const {
+    deletePage,
+  } = useDatabaseContext();
+
+  return useCallback(async (viewId: string) => {
+    await deletePage?.(viewId);
+
+    executeOperations(sharedRoot, [() => {
+      const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (!view) {
+        throw new Error(`View not found`);
+      }
+
+      database.get(YjsDatabaseKey.views)?.delete(viewId);
+    }], 'deleteView');
+  }, [database, deletePage, sharedRoot]);
 }

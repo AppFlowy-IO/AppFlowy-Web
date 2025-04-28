@@ -42,8 +42,11 @@ function CreateSpaceModal ({ open, onClose, onCreated }: {
     }
   };
 
+  const [container, setContainer] = React.useState<HTMLDivElement | null>(null);
+
   return (
     <NormalModal
+
       keepMounted={false}
       okText={t('button.save')}
       cancelText={t('button.cancel')}
@@ -60,17 +63,24 @@ function CreateSpaceModal ({ open, onClose, onCreated }: {
         className: 'w-[600px] max-w-[70vw]',
       }}
     >
-      <div className={'flex flex-col gap-4'}>
+      <div
+        ref={el => {
+          setContainer(el);
+        }}
+        className={'flex flex-col gap-4'}
+      >
         <div className={'flex flex-col justify-center items-center gap-3'}>
           <div className={'text-text-caption text-center font-normal'}>{t('space.createSpaceDescription')}</div>
-          <SpaceIconButton
+          {container && <SpaceIconButton
+            container={container}
             spaceIcon={spaceIcon}
             spaceIconColor={spaceIconColor}
             spaceName={spaceName}
             size={60}
             onSelectSpaceIcon={setSpaceIcon}
             onSelectSpaceIconColor={setSpaceIconColor}
-          />
+          />}
+
         </div>
         <div className={'flex flex-col gap-2'}>
           <div className={'text-text-caption'}>{t('space.spaceName')}</div>

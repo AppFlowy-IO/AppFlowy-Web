@@ -1,9 +1,9 @@
 import { Row, useReadOnly } from '@/application/database-yjs';
-import CardList from '@/components/database/components/board/column/CardList';
+import CardList, { CardType, RenderCard } from '@/components/database/components/board/column/CardList';
 import { useCardsDrag } from '@/components/database/components/board/column/useCardsDrag';
 import { StateType, useColumnHeaderDrag } from '@/components/database/components/board/column/useColumnHeaderDrag';
 import { DropColumnIndicator } from '@/components/database/components/board/drag-and-drop/DropColumnIndicator';
-import React, { memo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { ColumnContext } from '../drag-and-drop/column-context';
 import { useRenderColumn } from './useRenderColumn';
 
@@ -16,13 +16,30 @@ export interface ColumnProps {
 export const Column = memo(
   ({ id, rows, fieldId }: ColumnProps) => {
     const { header } = useRenderColumn(id, fieldId);
+    const readOnly = useReadOnly();
+
+    const data: RenderCard[] = useMemo(() => {
+      const cards = rows.map(row => ({
+        type: CardType.CARD,
+        id: row.id,
+      }));
+
+      if (!readOnly) {
+        cards.push({
+          type: CardType.NEW_CARD,
+          id: 'new_card',
+        });
+      }
+
+      return cards;
+    }, [rows, readOnly]);
+
     const {
       columnRef,
       headerRef,
       state,
       isDragging,
     } = useColumnHeaderDrag(id);
-    const readOnly = useReadOnly();
     const [scrollerContainer, setScrollerContainer] = React.useState<HTMLDivElement | null>(null);
     const {
       contextValue,
@@ -54,11 +71,13 @@ export const Column = memo(
               <span className={'text-text-secondary text-xs'}>{rows.length}</span>
             </div>
 
-            {rows && <CardList
-              data={rows}
+            <CardList
+              columnId={id}
+              data={data}
               fieldId={fieldId}
               setScrollElement={setScrollerContainer}
-            />}
+            />
+
           </div>
           {state.type === StateType.IS_COLUMN_OVER && state.closestEdge && (
             <DropColumnIndicator edge={state.closestEdge} />

@@ -1,7 +1,7 @@
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { ViewIconType } from '@/application/types';
-import ChangeIconPopover from '@/components/_shared/view-icon/ChangeIconPopover';
+import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { CalloutNode } from '@/components/editor/editor.type';
 import { renderColor } from '@/utils/color';
 import { getIcon, isFlagEmoji } from '@/utils/emoji';
@@ -10,13 +10,12 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 import { Element } from 'slate';
 
-function CalloutIcon({ block: node }: { block: CalloutNode; className: string }) {
+function CalloutIcon ({ block: node }: { block: CalloutNode; className: string }) {
   const ref = useRef<HTMLButtonElement>(null);
   const editor = useSlateStatic();
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
   const blockId = node.blockId;
   const [iconContent, setIconContent] = React.useState<string | undefined>(undefined);
-
   const [open, setOpen] = React.useState(false);
   const handleChangeIcon = useCallback((icon: {
     ty: ViewIconType,
@@ -25,11 +24,10 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className: string })
     content?: string
   }) => {
     setOpen(false);
-
     const iconType = icon.ty === ViewIconType.Icon ? 'icon' : 'emoji';
     let value;
 
-    if(icon.ty === ViewIconType.Icon) {
+    if (icon.ty === ViewIconType.Icon) {
       value = JSON.stringify({
         color: icon.color,
         groupName: icon.value.split('/')[0],
@@ -51,7 +49,7 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className: string })
   const data = node.data;
 
   const emoji = useMemo(() => {
-    if(data.icon && data.icon_type !== 'icon') {
+    if (data.icon && data.icon_type !== 'icon') {
       return data.icon;
     }
 
@@ -63,7 +61,7 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className: string })
   }, [emoji]);
 
   useEffect(() => {
-    if(data.icon && data.icon_type === 'icon') {
+    if (data.icon && data.icon_type === 'icon') {
       try {
         const json = JSON.parse(data.icon);
         const id = `${json.groupName}/${json.iconName}`;
@@ -71,7 +69,7 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className: string })
         void getIcon(id).then((item) => {
           setIconContent(item?.content.replaceAll('black', renderColor(json.color)).replace('<svg', '<svg width="100%" height="100%"'));
         });
-      } catch(e) {
+      } catch (e) {
         console.error(e, data.icon);
       }
     } else {
@@ -79,7 +77,7 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className: string })
     }
   }, [data.icon, data.icon_type]);
   const icon = useMemo(() => {
-    if(iconContent) {
+    if (iconContent) {
       const cleanSvg = DOMPurify.sanitize(iconContent, {
         USE_PROFILES: { svg: true, svgFilters: true },
       });
@@ -100,12 +98,16 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className: string })
   }, [iconContent]);
 
   return (
-    <>
+    <CustomIconPopover
+      open={open}
+      onOpenChange={setOpen}
+      onSelectIcon={handleChangeIcon}
+      removeIcon={handleRemoveIcon}
+      defaultActiveTab={'emoji'}
+      tabs={['emoji']}
+      enable={!readOnly}
+    >
       <span
-        onClick={() => {
-          if(readOnly) return;
-          setOpen(true);
-        }}
         data-testid="callout-icon-button"
         contentEditable={false}
         ref={ref}
@@ -122,26 +124,8 @@ function CalloutIcon({ block: node }: { block: CalloutNode; className: string })
         }</span>
 
       </span>
-      {open && <ChangeIconPopover
-        open={open}
-        anchorEl={ref.current}
-        onClose={() => {
-          setOpen(false);
-        }}
-        defaultType={'emoji'}
-        iconEnabled={true}
-        onSelectIcon={handleChangeIcon}
-        removeIcon={handleRemoveIcon}
-        popoverProps={{
-          sx: {
-            '& .MuiPopover-paper': {
-              margin: '16px 0',
-            },
-          },
-        }}
-      />}
 
-    </>
+    </CustomIconPopover>
   );
 }
 

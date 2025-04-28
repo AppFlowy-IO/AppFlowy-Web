@@ -1,17 +1,15 @@
 import { ViewIconType } from '@/application/types';
-import ChangeIconPopover from '@/components/_shared/view-icon/ChangeIconPopover';
+import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { Button } from '@mui/material';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as AddIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as AddCover } from '@/assets/icons/image.svg';
 
-function AddIconCover({
+function AddIconCover ({
   hasIcon,
   hasCover,
   onUpdateIcon,
   onAddCover,
-  iconAnchorEl,
-  setIconAnchorEl,
   maxWidth,
   visible,
   onUploadFile,
@@ -21,8 +19,6 @@ function AddIconCover({
   hasCover: boolean;
   onUpdateIcon?: (icon: { ty: ViewIconType, value: string }) => void;
   onAddCover?: () => void;
-  iconAnchorEl: HTMLElement | null;
-  setIconAnchorEl: (el: HTMLElement | null) => void;
   maxWidth?: number;
   onUploadFile: (file: File) => Promise<string>;
 }) {
@@ -37,14 +33,31 @@ function AddIconCover({
         }}
         className={'max-sm:px-6 px-24 flex items-end min-w-0 max-w-full gap-2 justify-start max-sm:hidden'}
       >
-        {!hasIcon && <Button
+        {!hasIcon && <CustomIconPopover
+          onSelectIcon={(icon) => {
+            if (icon.ty === ViewIconType.Icon) {
+              onUpdateIcon?.({
+                ty: ViewIconType.Icon,
+                value: JSON.stringify({
+                  color: icon.color,
+                  groupName: icon.value.split('/')[0],
+                  iconName: icon.value.split('/')[1],
+                }),
+              });
+              return;
+            }
+
+            onUpdateIcon?.(icon);
+          }}
+          removeIcon={() => {
+            onUpdateIcon?.({ ty: ViewIconType.Emoji, value: '' });
+          }}
+          onUploadFile={onUploadFile}
+        ><Button
           color={'inherit'}
           size={'small'}
-          onClick={e => {
-            setIconAnchorEl(e.currentTarget);
-          }}
           startIcon={<AddIcon />}
-        >{t('document.plugins.cover.addIcon')}</Button>}
+        >{t('document.plugins.cover.addIcon')}</Button></CustomIconPopover>}
         {!hasCover && <Button
           size={'small'}
           color={'inherit'}
@@ -53,37 +66,7 @@ function AddIconCover({
         >{t('document.plugins.cover.addCover')}</Button>}
 
       </div>
-      <ChangeIconPopover
-        open={Boolean(iconAnchorEl)}
-        anchorEl={iconAnchorEl}
-        onClose={() => {
-          setIconAnchorEl(null);
-        }}
-        defaultType={'emoji'}
-        iconEnabled={true}
-        onSelectIcon={(icon) => {
-          setIconAnchorEl(null);
-          if(icon.ty === ViewIconType.Icon) {
-            onUpdateIcon?.({
-              ty: ViewIconType.Icon,
-              value: JSON.stringify({
-                color: icon.color,
-                groupName: icon.value.split('/')[0],
-                iconName: icon.value.split('/')[1],
-              }),
-            });
-            return;
-          }
 
-          onUpdateIcon?.(icon);
-        }}
-        removeIcon={() => {
-          setIconAnchorEl(null);
-          onUpdateIcon?.({ ty: ViewIconType.Emoji, value: '' });
-        }}
-        uploadEnabled
-        onUploadFile={onUploadFile}
-      />
     </>
 
   );

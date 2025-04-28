@@ -1,6 +1,5 @@
 import { GlobalComment } from '@/application/comment.type';
 import { EmojiPicker } from '@/components/_shared/emoji-picker';
-import { EMOJI_SIZE, PER_ROW_EMOJI_COUNT } from '@/components/_shared/emoji-picker/const';
 import { Popover } from '@/components/_shared/popover';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import { AFConfigContext } from '@/components/main/app.hooks';
@@ -10,7 +9,7 @@ import { IconButton, Tooltip } from '@mui/material';
 import React, { memo, Suspense, useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function ReactAction({ comment }: { comment: GlobalComment }) {
+function ReactAction ({ comment }: { comment: GlobalComment }) {
   const { toggleReaction } = useGlobalCommentContext();
   const { t } = useTranslation();
   const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
@@ -37,13 +36,18 @@ function ReactAction({ comment }: { comment: GlobalComment }) {
       toggleReaction(comment.commentId, emoji);
       handleClose();
     },
-    [comment.commentId, handleClose, toggleReaction]
+    [comment.commentId, handleClose, toggleReaction],
   );
 
   return (
     <>
       <Tooltip title={t('globalComment.addReaction')}>
-        <IconButton ref={ref} onClick={handleOpen} size='small' className={'h-full'}>
+        <IconButton
+          ref={ref}
+          onClick={handleOpen}
+          size="small"
+          className={'h-full'}
+        >
           <EmojiIcon />
         </IconButton>
       </Tooltip>
@@ -56,12 +60,15 @@ function ReactAction({ comment }: { comment: GlobalComment }) {
           transformOrigin={{ vertical: 'top', horizontal: 'right' }}
           sx={{
             '& .MuiPopover-paper': {
-              width: PER_ROW_EMOJI_COUNT * EMOJI_SIZE,
+              width: 402,
+              paddingTop: '12px',
             },
           }}
         >
           <Suspense fallback={<ComponentLoading />}>
-            <EmojiPicker hideRemove onEscape={handleClose} onEmojiSelect={handlePickEmoji} />
+            <EmojiPicker
+              onEmojiSelect={handlePickEmoji}
+            />
           </Suspense>
         </Popover>
       )}

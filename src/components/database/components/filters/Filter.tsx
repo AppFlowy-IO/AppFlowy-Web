@@ -6,7 +6,7 @@ import { FieldDisplay } from '@/components/database/components/field';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_left.svg';
 import { FilterMenu } from './filter-menu';
 
-function Filter({ filterId }: { filterId: string }) {
+function Filter ({ filterId }: { filterId: string }) {
   const filter = useFilterSelector(filterId);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const open = Boolean(anchorEl);
@@ -25,7 +25,10 @@ function Filter({ filterId }: { filterId: string }) {
         }
       >
         <div className={'max-w-[180px] overflow-hidden'}>
-          <FieldDisplay fieldId={filter.fieldId} />
+          <FieldDisplay
+            fieldId={filter.fieldId}
+            className={'gap-1.5 text-xs text-text-primary'}
+          />
         </div>
 
         <div className={'whitespace-nowrap text-xs font-medium'}>

@@ -5,7 +5,7 @@ import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
 const buttonVariants = cva(
-  'inline-flex items-center justify-center gap-2 whitespace-nowrap disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-border-theme-thick focus-visible:ring-border-theme-thick-hover focus-visible:ring-[0.5px] aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick-hover',
+  'inline-flex items-center justify-center gap-2 whitespace-nowrap  disabled:pointer-events-none  [&_svg]:pointer-events-none shrink-0 [&_svg]:shrink-0 outline-none focus-visible:border-border-theme-thick focus-visible:ring-border-theme-thick-hover focus-visible:ring-[0.5px] aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick-hover',
   {
     variants: {
       variant: {
@@ -29,7 +29,8 @@ const buttonVariants = cva(
         xl: 'h-14 rounded-500 px-4 text-xl gap-2 font-medium',
         'icon-sm': 'w-6 h-6 rounded-300 p-0.5 text-icon-primary disabled:text-icon-tertiary',
         icon: 'w-7 h-7 rounded-300 p-1 text-icon-primary disabled:text-icon-tertiary',
-        'icon-lg': 'size-10 rounded-400 p-[10px] text-icon-primary disabled:text-icon-tertiary',
+        'icon-lg': 'w-8 h-8 rounded-300 p-2 text-icon-primary disabled:text-icon-tertiary',
+        'icon-xl': 'w-10 h-10 rounded-400 p-[10px] text-icon-primary disabled:text-icon-tertiary',
       },
       loading: {
         true: 'opacity-70 cursor-not-allowed',
@@ -64,7 +65,11 @@ const Button = React.forwardRef<HTMLButtonElement, React.ComponentProps<'button'
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className, loading }))}
       onClick={e => {
-        if (loading) return;
+        if (loading) {
+          e.stopPropagation();
+          return;
+        }
+
         if (props.onClick) {
           props.onClick(e);
         }

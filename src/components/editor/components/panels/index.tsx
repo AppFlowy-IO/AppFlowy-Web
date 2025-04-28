@@ -1,7 +1,8 @@
-import ChangeIconPopover from '@/components/_shared/view-icon/ChangeIconPopover';
+import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 import { MentionPanel } from './mention-panel';
 import { SlashPanel } from './slash-panel';
@@ -11,7 +12,6 @@ function Panels () {
     top: number;
     left: number
   } | null>(null);
-  const showEmoji = Boolean(emojiPosition);
   const editor = useSlateStatic();
 
   useEffect(() => {
@@ -40,27 +40,30 @@ function Panels () {
     <>
       <MentionPanel />
       <SlashPanel setEmojiPosition={setEmojiPosition} />
-      <ChangeIconPopover
-        hideRemove
-        anchorPosition={emojiPosition || undefined}
-        open={showEmoji}
-        onClose={() => {
-          setEmojiPosition(null);
+      {createPortal(<CustomIconPopover
+        onOpenChange={open => {
+          setEmojiPosition(open ? emojiPosition : null);
         }}
-        iconEnabled={false}
-        defaultType={'emoji'}
+        open={Boolean(emojiPosition)}
         onSelectIcon={({ value }) => {
           editor.insertText(value);
           setEmojiPosition(null);
           ReactEditor.focus(editor);
         }}
-        popoverProps={{
-          transformOrigin: {
-            vertical: -32,
-            horizontal: -8,
-          },
-        }}
-      />
+        hideRemove
+      >
+        <div
+          style={{
+            width: '5px',
+            height: '5px',
+            position: 'fixed',
+            pointerEvents: emojiPosition ? 'auto' : 'none',
+            top: emojiPosition ? emojiPosition.top + 24 : 0,
+            left: emojiPosition ? emojiPosition.left : 0,
+            zIndex: emojiPosition ? 9999 : -1,
+          }}
+        />
+      </CustomIconPopover>, document.body)}
     </>
   );
 }

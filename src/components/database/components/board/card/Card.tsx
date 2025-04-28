@@ -35,6 +35,7 @@ export const Card = memo(({
   const { instanceId, registerCard } = useBoardContext();
   const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
   const [state, setState] = useState<State>(idleState);
+  const [editing, setEditing] = useState(false);
   const readOnly = useReadOnly();
 
   useEffect(() => {
@@ -59,7 +60,9 @@ export const Card = memo(({
         onGenerateDragPreview: () => {
           setState({ type: 'preview' });
         },
-
+        canDrag: () => {
+          return !editing && !readOnly;
+        },
         onDragStart: () => setState(draggingState),
         onDrop: () => setState(idleState),
       }),
@@ -99,11 +102,13 @@ export const Card = memo(({
         },
       }),
     );
-  }, [instanceId, rowId, readOnly]);
+  }, [instanceId, rowId, readOnly, editing]);
 
   return (
     <div className={'relative w-full'}>
       <CardPrimitive
+        editing={editing}
+        setEditing={setEditing}
         groupFieldId={groupFieldId}
         rowId={rowId}
         ref={ref}
