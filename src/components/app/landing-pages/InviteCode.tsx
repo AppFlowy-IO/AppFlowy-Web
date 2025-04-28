@@ -109,7 +109,7 @@ function InviteCode () {
             <AvatarFallback>{workspace?.name?.slice(0, 1)}</AvatarFallback>
           </Avatar>
         </div>
-        <div className={'text-xl text-center text-text-primary font-semibold'}>
+        <div className={'text-xl text-center whitespace-pre-wrap break-words text-text-primary font-semibold'}>
           {isValid ? t('inviteCode.invalid') : hasJoined ? t('inviteCode.hasJoined', {
             workspaceName: workspace?.name,
           }) : t('inviteCode.title', {
