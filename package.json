@@ -19,7 +19,7 @@
     "generate-tokens": "node scripts/system-token/convert-tokens.cjs"
   },
   "dependencies": {
-    "@appflowyinc/ai-chat": "0.1.25",
+    "@appflowyinc/ai-chat": "0.1.26",
     "@appflowyinc/editor": "^0.1.10",
     "@atlaskit/primitives": "^5.5.3",
     "@emoji-mart/data": "^1.1.2",

@@ -2,8 +2,8 @@ lockfileVersion: '6.0'
 
 dependencies:
   '@appflowyinc/ai-chat':
-    specifier: 0.1.25
-    version: 0.1.25(@appflowyinc/editor@0.1.10)(@types/react-dom@18.2.22)(@types/react@18.2.66)(axios@1.7.2)(dompurify@3.1.7)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0)
+    specifier: 0.1.26
+    version: 0.1.26(@appflowyinc/editor@0.1.10)(@types/react-dom@18.2.22)(@types/react@18.2.66)(axios@1.7.2)(dompurify@3.1.7)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0)
   '@appflowyinc/editor':
     specifier: ^0.1.10
     version: 0.1.10(@types/react-dom@18.2.22)(@types/react@18.2.66)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0)(slate-history@0.100.0)(slate-react@0.101.6)(slate@0.101.5)
@@ -586,8 +586,8 @@ packages:
     resolution: {integrity: sha512-+562v9k4aI80m1+VuMHehNJWLOFjBnXn3tdOitzD0il5b7smkSBal4+a3oKiQTbrwMmN/TBUMDvbdoWDehgOww==}
     dev: false
 
-  /@appflowyinc/ai-chat@0.1.25(@appflowyinc/editor@0.1.10)(@types/react-dom@18.2.22)(@types/react@18.2.66)(axios@1.7.2)(dompurify@3.1.7)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0):
-    resolution: {integrity: sha512-MtKeGqYVj50e3MVzjLum5Oczcb6obImiaEo/Y18tzVpza/5Z0oxC6351PD1rapx0Nwf02EzysjasnIxBpjTdFQ==}
+  /@appflowyinc/ai-chat@0.1.26(@appflowyinc/editor@0.1.10)(@types/react-dom@18.2.22)(@types/react@18.2.66)(axios@1.7.2)(dompurify@3.1.7)(i18next-resources-to-backend@1.2.1)(i18next@22.5.1)(react-dom@18.2.0)(react-i18next@14.1.2)(react@18.2.0):
+    resolution: {integrity: sha512-qU40ZSSc5EK1Lo8g/ev7PryDwv4QOgMiGYJv8gE9ZSU6dmxfVn1G3WlR8hWM/e8np5jYq2f9T48S9wYjgIuFdg==}
     peerDependencies:
       '@appflowyinc/editor': ^0.1.7
       axios: ^1.7.9
@@ -8208,7 +8208,7 @@ packages:
   /dom-helpers@5.2.1:
     resolution: {integrity: sha512-nRCa7CK3VTrM2NmGkIy4cbK7IZlgBE/PYMn55rrXefr5xXDP0LdtfPnblFDoVdcAfslJ7or6iqAUnx0CCGIWQA==}
     dependencies:
-      '@babel/runtime': 7.24.6
+      '@babel/runtime': 7.26.0
       csstype: 3.1.3
     dev: false
 
@@ -12944,7 +12944,7 @@ packages:
       react: '>=16.3.0'
       react-dom: '>=16.3.0'
     dependencies:
-      '@babel/runtime': 7.24.6
+      '@babel/runtime': 7.26.0
       '@popperjs/core': 2.11.8
       '@restart/hooks': 0.4.16(react@18.2.0)
       '@types/warning': 3.0.3
@@ -12994,7 +12994,7 @@ packages:
       react-native:
         optional: true
     dependencies:
-      '@babel/runtime': 7.24.6
+      '@babel/runtime': 7.26.0
       '@types/react-redux': 7.1.33
       hoist-non-react-statics: 3.3.2
       loose-envify: 1.4.0
@@ -14745,7 +14745,7 @@ packages:
     peerDependencies:
       react: '>=15.0.0'
     dependencies:
-      '@babel/runtime': 7.24.6
+      '@babel/runtime': 7.26.0
       '@types/react': 18.2.66
       invariant: 2.2.4
       react: 18.2.0
