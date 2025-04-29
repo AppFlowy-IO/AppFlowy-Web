@@ -27,7 +27,7 @@ const popoverProps: Partial<PopoverProps> = {
   },
 };
 
-export default function Help() {
+export default function Help () {
   const ref = React.useRef<HTMLDivElement | null>(null);
   const [open, setOpen] = React.useState(false);
   const { t } = useTranslation();
@@ -35,19 +35,29 @@ export default function Help() {
 
   return (
     <Portal>
-      <Box className={'fixed bottom-6 right-6'} sx={{ transform: 'translateZ(0px)', flexGrow: 1 }}>
+      <Box
+        className={'fixed bottom-6 right-6'}
+        sx={{ transform: 'translateZ(0px)', flexGrow: 1 }}
+      >
         <Tooltip title={t('questionBubble.help')}>
-          <div ref={ref} onClick={() => setOpen(!open)} className={'py-2'}>
+          <div
+            ref={ref}
+            onClick={() => setOpen(!open)}
+            className={'py-2'}
+          >
             <div
               className={
-                'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-line-border bg-bg-body shadow-md hover:bg-fill-list-hover'
+                'flex h-9 w-9 cursor-pointer items-center justify-center rounded-full border border-border-primary bg-surface-primary shadow-md hover:bg-surface-primary-hover'
               }
             >
               <SupportIcon className={'h-5 w-5'} />
             </div>
           </div>
         </Tooltip>
-        <Popover {...popoverProps} open={open} anchorEl={ref.current} onClose={() => setOpen(false)}>
+        <Popover {...popoverProps} open={open}
+                 anchorEl={ref.current}
+                 onClose={() => setOpen(false)}
+        >
           <div className={'flex h-fit w-[240px] flex-col gap-1 p-2'}>
             <Button
               color={'inherit'}
@@ -60,7 +70,7 @@ export default function Help() {
             </Button>
             <Button
               component={'a'}
-              target='_blank'
+              target="_blank"
               href={'https://www.appflowy.com/what-is-new'}
               className={'justify-start'}
               color={'inherit'}
@@ -73,7 +83,7 @@ export default function Help() {
               component={'a'}
               href={'https://appflowy.com/guide/getting-started-with-appflowy'}
               className={'justify-start'}
-              target='_blank'
+              target="_blank"
               color={'inherit'}
               startIcon={<DocumentationIcon />}
               variant={'text'}
@@ -84,7 +94,7 @@ export default function Help() {
               component={'a'}
               href={'https://discord.gg/9Q2xaN37tV'}
               className={'justify-start'}
-              target='_blank'
+              target="_blank"
               color={'inherit'}
               startIcon={<SupportIcon />}
               variant={'text'}
@@ -111,7 +121,7 @@ export default function Help() {
             </Button>
             <Button
               component={'a'}
-              target='_blank'
+              target="_blank"
               href={'https://github.com/AppFlowy-IO/AppFlowy-Web/issues/new/choose'}
               className={'justify-start'}
               color={'inherit'}
@@ -124,7 +134,7 @@ export default function Help() {
             <Divider />
             <Button
               size={'small'}
-              target='_blank'
+              target="_blank"
               component={'a'}
               href={'https://forum.appflowy.io/'}
               className={'justify-start text-text-caption'}
@@ -136,7 +146,7 @@ export default function Help() {
             <Button
               size={'small'}
               component={'a'}
-              target='_blank'
+              target="_blank"
               href={'https://x.com/appflowy'}
               className={'justify-start text-text-caption'}
               color={'inherit'}
@@ -147,7 +157,7 @@ export default function Help() {
             <Button
               size={'small'}
               component={'a'}
-              target='_blank'
+              target="_blank"
               href={'https://www.reddit.com/r/AppFlowy/'}
               className={'justify-start text-text-caption'}
               color={'inherit'}

@@ -1041,7 +1041,8 @@ export interface CreateFolderViewPayload {
   parentViewId: string,
   layout: ViewLayout,
   name?: string,
-  viewId?: string
+  viewId?: string,
+  databaseId?: string,
 }
 
 export interface CreateSpacePayload {

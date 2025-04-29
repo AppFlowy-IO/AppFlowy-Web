@@ -789,3 +789,50 @@ export const useFieldCellsSelector = (fieldId: string) => {
     cells,
   };
 };
+
+export const usePropertiesSelector = () => {
+
+  const view = useDatabaseView();
+
+  const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+  const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
+
+  const [properties, setProperties] = useState<{ id: string, visible: boolean }[]>([]);
+
+  useEffect(() => {
+    if (!fieldOrders) return;
+
+    const observeEvent = () => {
+      const newProperties: {
+        id: string;
+        visible: boolean;
+      }[] = [];
+
+      fieldOrders.toArray().forEach((item) => {
+        const fieldSetting = fieldSettings?.get(item.id);
+        const visible = fieldSetting ? Number(fieldSetting.get(YjsDatabaseKey.visibility)) !== FieldVisibility.AlwaysHidden : true;
+
+        newProperties.push({
+          id: item.id,
+          visible,
+        });
+      });
+
+      setProperties(newProperties);
+    };
+
+    observeEvent();
+
+    fieldOrders.observeDeep(observeEvent);
+    fieldSettings?.observeDeep(observeEvent);
+
+    return () => {
+      fieldOrders.unobserveDeep(observeEvent);
+      fieldSettings?.unobserveDeep(observeEvent);
+    };
+  }, [fieldOrders, fieldSettings]);
+
+  return {
+    properties,
+  };
+};

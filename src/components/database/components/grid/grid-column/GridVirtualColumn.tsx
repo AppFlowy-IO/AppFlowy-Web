@@ -46,7 +46,7 @@ function GridVirtualColumn ({
           borderLeft: borderStyle,
         }),
         ...(rowIndex === 0 ? {
-          borderTop: borderStyle,
+          borderTop: '1px solid transparent',
         } : {}),
       }}
     >

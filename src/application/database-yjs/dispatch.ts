@@ -1152,14 +1152,15 @@ export function useAddDatabaseView () {
       [DatabaseViewLayout.Board]: 'Board',
       [DatabaseViewLayout.Calendar]: 'Calendar',
     }[layout];
+    const databaseId = database.get(YjsDatabaseKey.id);
 
     const newViewId = await createFolderView({
       layout: viewLayout,
       parentViewId: iidIndex,
       name,
+      databaseId,
     });
 
-    const databaseId = database.get(YjsDatabaseKey.id);
     const views = database.get(YjsDatabaseKey.views);
     const refView = database.get(YjsDatabaseKey.views)?.get(iidIndex);
     const refRowOrders = refView.get(YjsDatabaseKey.row_orders);

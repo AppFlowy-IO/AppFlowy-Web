@@ -46,7 +46,7 @@ function FieldCustomIcon ({
 
     return <span
       {...props}
-      className={cn(`h-5 w-5 p-0.5 text-text-secondary`, className)}
+      className={cn(`custom-icon h-5 w-5 p-0.5 text-text-secondary`, className)}
       dangerouslySetInnerHTML={{
         __html: cleanSvg,
       }}

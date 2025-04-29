@@ -184,7 +184,6 @@ function GridVirtualRow ({
           {children}
           {state.type === GridDragState.IS_OVER && isRegularRow && state.closestEdge && (
             <DropRowIndicator
-              rowIndex={row.index}
               edge={state.closestEdge}
             />
           )}

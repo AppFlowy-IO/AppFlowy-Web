@@ -3,7 +3,6 @@ import React from 'react';
 interface DropIndicatorProps {
   edge: string | null;
   style?: React.CSSProperties;
-  rowIndex: number;
 }
 
 export function DropRowIndicator ({ edge, style = {} }: DropIndicatorProps) {

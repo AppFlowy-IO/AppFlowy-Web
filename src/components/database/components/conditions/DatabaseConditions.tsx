@@ -38,7 +38,7 @@ export function DatabaseConditions () {
       style={{
         height: expanded ? '40px' : '0',
         paddingLeft: paddingStart === undefined ? '96px' : paddingStart,
-        paddingRight: layout === DatabaseViewLayout.Grid ? '0' : paddingEnd === undefined ? '96px' : paddingEnd,
+        paddingRight: paddingEnd === undefined ? '96px' : paddingEnd,
       }}
       className={
         className
@@ -46,7 +46,7 @@ export function DatabaseConditions () {
     >
       <AFScroller
         overflowYHidden
-        className={`flex items-center gap-2`}
+        className={`flex items-center gap-2  border-b border-border-primary`}
       >
         <Sorts />
         {sorts.length > 0 && filters.length > 0 && <div className="h-[20px] w-0 border border-line-divider" />}

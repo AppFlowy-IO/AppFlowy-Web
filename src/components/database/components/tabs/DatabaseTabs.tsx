@@ -5,6 +5,7 @@ import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import RenameModal from '@/components/app/view-actions/RenameModal';
+import { DatabaseActions } from '@/components/database/components/conditions';
 import DeleteViewConfirm from '@/components/database/components/tabs/DeleteViewConfirm';
 import { DatabaseViewActions } from '@/components/database/components/tabs/ViewActions';
 import { Button } from '@/components/ui/button';
@@ -46,7 +47,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const [addLoading, setAddLoading] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>();
     const [renameViewId, setRenameViewId] = useState<string | null>();
-    const [menuViewId, setMenuViewId] = useState<View | null>(null);
+    const [menuViewId, setMenuViewId] = useState<string | null>(null);
 
     const reloadView = useCallback(async () => {
       if (loadViewMeta) {
@@ -107,7 +108,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         }}
       >
         <div
-          className={`flex items-center overflow-hidden database-tabs w-full gap-1.5 border-b border-border-primary`}
+          className={`flex items-center justify-between overflow-hidden database-tabs w-full gap-1.5 border-b border-border-primary`}
         >
           <div
             className="flex flex-1 items-center max-w-[500px] overflow-hidden justify-start"
@@ -133,13 +134,19 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
                     id={`view-tab-${viewId}`}
                     data-testid={`view-tab-${viewId}`}
                     className={'max-w-[120px] min-w-[80px]'}
-                    onMouseDown={() => {
-                      if (selectedViewId === viewId && folderView && !readOnly) {
-                        setMenuViewId(folderView);
+                    onContextMenu={e => {
+                      e.preventDefault();
+                    }}
+                    onMouseDown={(e) => {
+                      if (selectedViewId === viewId && !readOnly) {
+                        e.preventDefault();
+                        setMenuViewId(viewId);
                       }
                     }}
                   >
-                    <TabLabel className={'flex items-center gap-1.5 overflow-hidden'}>
+                    <TabLabel
+                      className={'flex items-center gap-1.5 overflow-hidden'}
+                    >
                       <PageIcon
                         iconSize={16}
                         view={folderView || {
@@ -150,7 +157,9 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
                       <Tooltip delayDuration={500}>
                         <TooltipTrigger asChild>
-                          <span className={'flex-1 truncate'}>{name || t('grid.title.placeholder')}</span>
+                          <span
+                            className={'flex-1 truncate'}
+                          >{name || t('grid.title.placeholder')}</span>
 
                         </TooltipTrigger>
                         <TooltipContent side={'right'}>
@@ -159,12 +168,13 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
                       </Tooltip>
                     </TabLabel>
                     <DropdownMenu
+                      modal={false}
                       onOpenChange={(open) => {
                         if (!open) {
                           setMenuViewId(null);
                         }
                       }}
-                      open={menuViewId?.view_id === viewId}
+                      open={menuViewId === viewId}
                     >
                       <DropdownMenuTrigger asChild>
                         <div className={'absolute left-0 bottom-0 opacity-0 pointer-events-none'} />
@@ -244,10 +254,10 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
           </div>
 
-          {/*{showActions ? <>*/}
-          {/*  <DatabaseActions />*/}
-          {/*  {isDocumentBlock && <DatabaseBlockActions />}*/}
-          {/*</> : null}*/}
+          {!readOnly ? <>
+            <DatabaseActions />
+            {/*{isDocumentBlock && <DatabaseBlockActions />}*/}
+          </> : null}
         </div>
 
         {renameView && Boolean(renameViewId) && <RenameModal

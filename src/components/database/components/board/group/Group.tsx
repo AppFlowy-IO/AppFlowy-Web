@@ -71,7 +71,7 @@ export const Group = ({ groupId }: GroupProps) => {
 
   if (notFound) {
     return (
-      <div className={'mt-[10%] flex h-full w-full flex-col items-center gap-2 text-text-caption'}>
+      <div className={'mt-[10%] flex h-full w-full flex-col items-center gap-2 text-text-secondary'}>
         <div className={'text-sm font-medium'}>{t('board.noGroup')}</div>
         <div className={'text-xs'}>{t('board.noGroupDesc')}</div>
       </div>
