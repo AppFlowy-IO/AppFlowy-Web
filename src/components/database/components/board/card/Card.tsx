@@ -1,5 +1,7 @@
 import { useReadOnly } from '@/application/database-yjs';
 import { CardPrimitive } from '@/components/database/components/board/card/CardPrimitive';
+import NewCard from '@/components/database/components/board/card/NewCard';
+import { CardType } from '@/components/database/components/board/column/CardList';
 import { useBoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { DropCardIndicator } from '@/components/database/components/board/drag-and-drop/DropCardIndicator';
 import { cn } from '@/lib/utils';
@@ -27,9 +29,16 @@ const draggingState: State = { type: 'dragging' };
 export const Card = memo(({
   groupFieldId,
   rowId,
+  type,
+  ...props
 }: {
+  type: CardType;
   groupFieldId: string;
   rowId: string;
+  beforeId?: string;
+  columnId: string
+  isCreating: boolean;
+  setIsCreating: (isCreating: boolean) => void;
 }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const { instanceId, registerCard } = useBoardContext();
@@ -61,10 +70,12 @@ export const Card = memo(({
           setState({ type: 'preview' });
         },
         canDrag: () => {
-          return !editing && !readOnly;
+          return !editing && !readOnly && rowId !== 'new_card';
         },
         onDragStart: () => setState(draggingState),
-        onDrop: () => setState(idleState),
+        onDrop: () => {
+          setState(idleState);
+        },
       }),
       dropTargetForExternal({
         element: element,
@@ -86,12 +97,13 @@ export const Card = memo(({
         },
         onDragEnter: (args) => {
           if (args.source.data.itemId !== rowId) {
-            setClosestEdge(extractClosestEdge(args.self.data));
+            setClosestEdge(rowId === 'new_card' ? 'top' : extractClosestEdge(args.self.data));
           }
         },
         onDrag: (args) => {
+
           if (args.source.data.itemId !== rowId) {
-            setClosestEdge(extractClosestEdge(args.self.data));
+            setClosestEdge(rowId === 'new_card' ? 'top' : extractClosestEdge(args.self.data));
           }
         },
         onDragLeave: () => {
@@ -105,15 +117,24 @@ export const Card = memo(({
   }, [instanceId, rowId, readOnly, editing]);
 
   return (
-    <div className={'relative w-full'}>
-      <CardPrimitive
+    <div
+      ref={ref}
+      className={'relative w-full'}
+    >
+      {type === CardType.NEW_CARD ? (
+        <NewCard
+          fieldId={groupFieldId}
+          {...props}
+        />
+      ) : <CardPrimitive
         editing={editing}
         setEditing={setEditing}
         groupFieldId={groupFieldId}
         rowId={rowId}
-        ref={ref}
+
         className={cn(state.type === 'dragging' && 'opacity-40')}
-      />
+      />}
+
       {closestEdge && <DropCardIndicator edge={closestEdge} />}
     </div>
   );

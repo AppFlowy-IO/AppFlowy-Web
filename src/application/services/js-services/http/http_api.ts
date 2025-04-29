@@ -1474,6 +1474,7 @@ export async function createFolderView (workspaceId: string, payload: CreateFold
     layout: payload.layout,
     name: payload.name,
     view_id: payload.viewId,
+    database_id: payload.databaseId,
   });
 
   if (res?.data.code === 0) {

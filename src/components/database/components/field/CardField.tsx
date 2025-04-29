@@ -8,8 +8,8 @@ import React, { CSSProperties, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export function CardField ({ rowId, fieldId, editing, setEditing }: {
-  editing: boolean;
-  setEditing: (editing: boolean) => void;
+  editing?: boolean;
+  setEditing?: (editing: boolean) => void;
   rowId: string; fieldId: string; index: number
 }) {
   const { t } = useTranslation();

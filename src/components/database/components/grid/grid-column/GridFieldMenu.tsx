@@ -13,6 +13,7 @@ import DeletePropertyConfirm from '@/components/database/components/property/Del
 import PropertyMenu from '@/components/database/components/property/PropertyMenu';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
 import { useGridContext } from '@/components/database/grid/useGridContext';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -33,9 +34,13 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 function GridFieldMenu ({
   fieldId,
   children,
+  menuOpen,
+  setMenuOpen,
 }: {
   fieldId: string,
-  children: React.ReactNode
+  children: React.ReactNode;
+  menuOpen: boolean;
+  setMenuOpen: (open: boolean) => void;
 }) {
   const { field } = useFieldSelector(fieldId);
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
@@ -43,7 +48,6 @@ function GridFieldMenu ({
   const onToggleWrap = useTogglePropertyWrapDispatch();
   const onAddPropertyLeft = useAddPropertyLeftDispatch();
   const onAddPropertyRight = useAddPropertyRightDispatch();
-  const [menuOpen, setMenuOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [clearCellsConfirmOpen, setClearCellsConfirmOpen] = useState(false);
 
@@ -107,20 +111,12 @@ function GridFieldMenu ({
   }, {
     label: t('grid.field.delete'),
     icon: <DeleteIcon />,
+    className: 'hover:text-text-error',
     disabled: isPrimary,
     onSelect: () => {
       setDeleteConfirmOpen(true);
     },
-  }], [
-    t,
-    isPrimary,
-    setActivePropertyId,
-    fieldId,
-    onAddPropertyLeft,
-    onAddPropertyRight,
-    onHideProperty,
-    onDuplicateProperty,
-  ]);
+  }], [t, isPrimary, setActivePropertyId, fieldId, setMenuOpen, onAddPropertyLeft, onAddPropertyRight, onHideProperty, onDuplicateProperty]);
 
   const secondItemRef = useRef<HTMLDivElement | null>(null);
 
@@ -130,13 +126,16 @@ function GridFieldMenu ({
 
   return (
     <>
+      {children}
       <DropdownMenu
         open={menuOpen}
         onOpenChange={setMenuOpen}
       >
         <DropdownMenuTrigger asChild>
-          {children}
-
+          <Button
+            tabIndex={-1}
+            className={'absolute left-0 right-0 pointer-events-none top-0 opacity-0 z-[-1]'}
+          />
         </DropdownMenuTrigger>
         <DropdownMenuContent
           onCloseAutoFocus={e => e.preventDefault()}
@@ -162,6 +161,7 @@ function GridFieldMenu ({
                   disabled={operation.disabled}
                   onSelect={operation.onSelect}
                   key={operation.label}
+                  className={operation.className}
                 >
                   {operation.icon}
                   {operation.label}

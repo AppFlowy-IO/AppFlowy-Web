@@ -1,5 +1,4 @@
 import { PADDING_END } from '@/application/database-yjs';
-import NewCard from '@/components/database/components/board/card/NewCard';
 import { getScrollParent } from '@/components/global-comment/utils';
 import { cn } from '@/lib/utils';
 import { useVirtualizer } from '@tanstack/react-virtual';
@@ -95,18 +94,15 @@ function CardList ({
                 paddingTop: virtualRow.index === 0 ? 10 : undefined,
               }}
             >
-              {type === CardType.NEW_CARD ? (
-                <NewCard
-                  setIsCreating={setIsCreating}
-                  isCreating={isCreating}
-                  columnId={columnId}
-                  fieldId={fieldId}
-                  beforeId={data[virtualRow.index - 1]?.id}
-                />
-              ) : <Card
+              <Card
+                type={type}
                 rowId={id}
                 groupFieldId={fieldId}
-              />}
+                setIsCreating={setIsCreating}
+                isCreating={isCreating}
+                columnId={columnId}
+                beforeId={data[virtualRow.index - 1]?.id}
+              />
 
             </div>
           );

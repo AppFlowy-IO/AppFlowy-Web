@@ -26,7 +26,7 @@ export interface DatabaseContextState {
   createRowDoc?: CreateRowDoc;
   loadViewMeta?: LoadViewMeta;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
-  onRendered?: (height: number) => void;
+  onRendered?: () => void;
   showActions?: boolean;
   workspaceId: string;
   createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;

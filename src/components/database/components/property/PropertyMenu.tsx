@@ -53,6 +53,7 @@ function PropertyMenu ({
     label: t('grid.field.delete'),
     icon: <DeleteIcon />,
     disabled: isPrimary,
+    className: 'hover:text-text-error',
     onSelect: () => {
       setDeleteConfirmOpen(true);
     },
@@ -101,6 +102,7 @@ function PropertyMenu ({
                   disabled={operation.disabled}
                   onSelect={operation.onSelect}
                   key={operation.label}
+                  className={operation.className}
                 >
                   {operation.icon}
                   {operation.label}

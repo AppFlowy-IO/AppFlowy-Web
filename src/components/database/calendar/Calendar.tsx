@@ -21,10 +21,8 @@ export function Calendar () {
     if (!el) return;
 
     const onResize = debounce(() => {
-      const conditionHeight = expanded ? el.closest('.appflowy-database')?.querySelector('.database-conditions')?.clientHeight || 0 : 0;
-      const offset = conditionHeight + 60;
 
-      onRendered?.(el.scrollHeight + offset);
+      onRendered?.();
     }, 200);
 
     onResize();

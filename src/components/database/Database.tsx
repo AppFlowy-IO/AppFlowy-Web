@@ -33,13 +33,12 @@ export interface Database2Props {
   visibleViewIds: string[];
   iidIndex: string;
   variant?: UIVariant;
-  onRendered?: (height: number) => void;
+  onRendered?: () => void;
   isDocumentBlock?: boolean;
   paddingStart?: number;
   paddingEnd?: number;
   showActions?: boolean;
   createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
-
 }
 
 function Database ({

@@ -105,17 +105,21 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
       return;
     }
 
-    const startColumnCards = getCards(startColumnId);
-    const finishColumnCards = getCards(finishColumnId);
+    const startColumnCards = getCards(startColumnId) || [];
+    const finishColumnCards = getCards(finishColumnId) || [];
 
-    if (!startColumnCards || !finishColumnCards || itemIndexInFinishColumn === undefined) {
-      throw new Error('No card found for column ' + startColumnId);
+    if (itemIndexInFinishColumn === undefined) {
+      throw new Error('No item index found for column ' + finishColumn);
     }
 
     const rowId = startColumnCards[itemIndexInStartColumn].id;
 
     const beforeId = itemIndexInFinishColumn > 0 ? finishColumnCards[itemIndexInFinishColumn - 1]?.id : undefined;
 
+    console.log({
+      rowId,
+      beforeId,
+    });
     moveColumnCard({
       rowId,
       beforeRowId: beforeId,
@@ -255,11 +259,7 @@ export function useColumnsDrag (groupId: string, columns: GroupColumn[], getCard
                 throw new Error(`Column with id ${destinationColumnId} not found`);
               }
 
-              const destinationCards = getCards(destinationColumn.id);
-
-              if (!destinationCards) {
-                throw new Error(`Cards not found for column ${destinationColumnId}`);
-              }
+              const destinationCards = getCards(destinationColumn.id) || [];
 
               const indexOfTarget = destinationCards.findIndex(
                 (item) => item.id === destinationCardRecord.data.itemId,

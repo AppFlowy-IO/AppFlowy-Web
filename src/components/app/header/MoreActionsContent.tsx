@@ -2,14 +2,15 @@ import { ViewLayout } from '@/application/types';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { findView } from '@/components/_shared/outline/utils';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { toast } from 'sonner';
-import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { useService } from '@/components/main/app.hooks';
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 function MoreActionsContent ({ itemClicked, viewId }: {
@@ -25,6 +26,15 @@ function MoreActionsContent ({ itemClicked, viewId }: {
   const workspaceId = useCurrentWorkspaceId();
   const view = useAppView(viewId);
   const layout = view?.layout;
+  const outline = useAppOutline();
+  const parentViewId = view?.parent_view_id;
+  const parentLayout = useMemo(() => {
+    if (!parentViewId) return null;
+    if (!outline) return null;
+
+    return findView(outline, parentViewId)?.layout;
+  }, [outline, parentViewId]);
+
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const {
     refreshOutline,
@@ -48,10 +58,8 @@ function MoreActionsContent ({ itemClicked, viewId }: {
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
 
-  console.log('container', container);
   return (
     <DropdownMenuGroup
-
     >
       <div
         ref={el => {
@@ -80,6 +88,7 @@ function MoreActionsContent ({ itemClicked, viewId }: {
           onSelect={(e) => {
             e.preventDefault();
           }}
+          disabled={parentLayout !== ViewLayout.Document}
         >
           <MoveToIcon />
           {t('disclosureAction.moveTo')}

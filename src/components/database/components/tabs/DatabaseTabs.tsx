@@ -54,7 +54,6 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         try {
           const meta = await loadViewMeta(iidIndex);
 
-          console.log('========', meta);
           setMeta(meta);
         } catch (e) {
           // do nothing
@@ -67,19 +66,27 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       return meta?.children.find(v => v.view_id === renameViewId);
     }, [iidIndex, meta, renameViewId]);
 
+    const menuView = useMemo(() => {
+      console.log('====', iidIndex, menuViewId, meta);
+      if (menuViewId === iidIndex) return meta;
+      return meta?.children.find(v => v.view_id === menuViewId);
+    }, [iidIndex, menuViewId, meta]);
+
     const handleAddView = useCallback(async (layout: DatabaseViewLayout) => {
       setAddLoading(true);
       try {
         const viewId = await onAddView(layout);
 
         setSelectedViewId?.(viewId);
+
+        await reloadView();
         // eslint-disable-next-line
       } catch (e: any) {
         toast.error(e.message);
       } finally {
         setAddLoading(false);
       }
-    }, [onAddView, setSelectedViewId]);
+    }, [onAddView, setSelectedViewId, reloadView]);
 
     const handleChange = (newValue: string) => {
       setSelectedViewId?.(newValue);
@@ -136,6 +143,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
                     className={'max-w-[120px] min-w-[80px]'}
                     onContextMenu={e => {
                       e.preventDefault();
+                      setMenuViewId(viewId);
                     }}
                     onMouseDown={(e) => {
                       if (selectedViewId === viewId && !readOnly) {
@@ -185,7 +193,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
                         className={'!min-w-fit'}
                         onCloseAutoFocus={e => e.preventDefault()}
                       >
-                        {folderView && <DatabaseViewActions
+                        {menuView && <DatabaseViewActions
                           onClose={() => {
                             setMenuViewId(null);
                           }}
@@ -196,7 +204,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
                             setRenameViewId(viewId);
                           }}
                           deleteDisabled={viewId === iidIndex}
-                          view={folderView}
+                          view={menuView}
                           onUpdatedIcon={reloadView}
                         />}
 
@@ -279,7 +287,13 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           onClose={() => {
             setDeleteConfirmOpen(null);
           }}
-          onDeleted={reloadView}
+          onDeleted={() => {
+            if (!meta) return;
+
+            if (setSelectedViewId) {setSelectedViewId(meta.view_id);}
+
+            void reloadView();
+          }}
         />
       </div>
     );

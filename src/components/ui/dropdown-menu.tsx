@@ -124,7 +124,7 @@ const DropdownMenuItem = forwardRef<HTMLDivElement, React.ComponentProps<typeof 
 
         // SVG/Icon styling
         '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:h-5 [&_svg]:w-5',
-        disabled ? '[&_svg]:text-text-tertiary' : '[&_svg]:text-icon-primary',
+        disabled ? '[&_svg]:text-text-tertiary' : '',
         className,
       )}
       disabled={disabled}

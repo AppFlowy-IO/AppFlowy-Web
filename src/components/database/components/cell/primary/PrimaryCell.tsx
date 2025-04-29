@@ -5,10 +5,10 @@ import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { TextCell } from '@/components/database/components/cell/text';
 import { Button } from '@/components/ui/button';
-import { EditableInput } from '@/components/ui/editable-input';
+import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { getPlatform } from '@/utils/platform';
-import React, { useMemo } from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 export function PrimaryCell (
   props: CellProps<CellType> & {
@@ -38,6 +38,15 @@ export function PrimaryCell (
   });
 
   const showIcon = icon || (hasDocument && showDocumentIcon);
+
+  const focusToEnd = useCallback((el: HTMLTextAreaElement) => {
+    if (el) {
+      const length = el.value.length;
+
+      el.setSelectionRange(length, length);
+      el.focus();
+    }
+  }, []);
 
   return (
     <div
@@ -80,15 +89,20 @@ export function PrimaryCell (
 
       </CustomIconPopover>
 
-      <div className={'flex-1 flex items-center overflow-x-hidden'}>
+      <div
+        className={'flex-1 flex items-center overflow-x-hidden'}
+      >
         {
-          editing ? <EditableInput
-            onClick={e => {
+          editing ? <TextareaAutosize
+            onMouseDown={e => {
               e.stopPropagation();
             }}
             autoFocus
+            ref={focusToEnd}
             value={inputValue}
-            onChange={setInputValue}
+            onChange={e => {
+              setInputValue(e.target.value);
+            }}
             onKeyDown={e => {
               if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
                 onUpdateCell(inputValue);
@@ -100,9 +114,9 @@ export function PrimaryCell (
               setEditing?.(false);
             }}
             placeholder={placeholder}
-            wrapText={true}
             variant={'ghost'}
             size={'sm'}
+            className={'w-full px-0'}
           /> : <TextCell {...props} />
         }
 

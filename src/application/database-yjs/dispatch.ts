@@ -56,9 +56,14 @@ export function useResizeColumnWidthDispatch () {
       const fields = database?.get(YjsDatabaseKey.fields);
       const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
       const field = fields?.get(fieldId);
-      const fieldSetting = fieldSettings?.get(fieldId);
+      let fieldSetting = fieldSettings?.get(fieldId);
 
-      if (!field || !fieldSetting) return;
+      if (!field || !fieldSettings) return;
+
+      if (!fieldSetting) {
+        fieldSetting = new Y.Map() as YDatabaseFieldSetting;
+        fieldSettings.set(fieldId, fieldSetting);
+      }
 
       const currentWidth = fieldSetting.get(YjsDatabaseKey.width);
 
@@ -663,10 +668,9 @@ export function useNewRowDispatch () {
   };
 }
 
-function cloneCell (fieldId: string, referenceCell: YDatabaseCell) {
+function cloneCell (fieldType: FieldType, referenceCell?: YDatabaseCell) {
   const cell = new Y.Map() as YDatabaseCell;
-  const fieldType = Number(referenceCell.get(YjsDatabaseKey.field_type));
-  let data = referenceCell.get(YjsDatabaseKey.data);
+  let data = referenceCell?.get(YjsDatabaseKey.data);
 
   if (fieldType === FieldType.Relation && data) {
     const newData = new Y.Array<RowId>();
@@ -681,7 +685,10 @@ function cloneCell (fieldId: string, referenceCell: YDatabaseCell) {
   cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
   cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
   cell.set(YjsDatabaseKey.field_type, fieldType);
-  cell.set(YjsDatabaseKey.data, data);
+  if (referenceCell) {
+    cell.set(YjsDatabaseKey.data, data);
+  }
+
   return cell;
 }
 
@@ -748,7 +755,10 @@ export function useDuplicateRowDispatch () {
             throw new Error(`Cell not found`);
           }
 
-          const cell = cloneCell(fieldId, referenceCell);
+          const field = database.get(YjsDatabaseKey.fields);
+          const fieldType = Number(field.get(fieldId)?.get(YjsDatabaseKey.type));
+
+          const cell = cloneCell(fieldType, referenceCell);
 
           cells.set(fieldId, cell);
         } catch (e) {
@@ -830,10 +840,16 @@ export function useHidePropertyDispatch () {
     executeOperations(sharedRoot, [() => {
       const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
-      const setting = fieldSettings?.get(fieldId);
+      if (!fieldSettings) {
+        throw new Error(`Field settings not found`);
+      }
+
+      let setting = fieldSettings?.get(fieldId);
 
       if (!setting) {
-        throw new Error(`Field not found`);
+        setting = new Y.Map() as YDatabaseFieldSetting;
+
+        fieldSettings.set(fieldId, setting);
       }
 
       setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysHidden);
@@ -849,20 +865,25 @@ export function useTogglePropertyWrapDispatch () {
     executeOperations(sharedRoot, [() => {
       const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
-      const setting = fieldSettings?.get(fieldId);
-
-      if (!setting) {
-        throw new Error(`Field not found`);
+      if (!fieldSettings) {
+        throw new Error(`Field settings not found`);
       }
 
-      const wrap = setting.get(YjsDatabaseKey.wrap);
+      let setting = fieldSettings.get(fieldId);
+
+      if (!setting) {
+        setting = new Y.Map() as YDatabaseFieldSetting;
+        fieldSettings.set(fieldId, setting);
+      }
+
+      const wrap = setting.get(YjsDatabaseKey.wrap) ?? true;
 
       if (checked !== undefined) {
         setting.set(YjsDatabaseKey.wrap, checked);
-        return;
+      } else {
+        setting.set(YjsDatabaseKey.wrap, !wrap);
       }
 
-      setting.set(YjsDatabaseKey.wrap, !wrap);
     }], 'togglePropertyWrapDispatch');
   }, [sharedRoot, view]);
 }
@@ -956,21 +977,23 @@ export function useDuplicatePropertyDispatch () {
       const fieldTypeOption = field.get(YjsDatabaseKey.type_option);
       const newFieldTypeOption = new Y.Map() as YDatabaseFieldTypeOption;
 
-      Object.keys(fieldTypeOption.toJSON()).forEach((key) => {
-        const value = fieldTypeOption.get(key);
+      if (fieldTypeOption) {
+        Object.keys(fieldTypeOption.toJSON()).forEach((key) => {
+          const value = fieldTypeOption.get(key);
 
-        const newValue = new Y.Map() as YMapFieldTypeOption;
+          const newValue = new Y.Map() as YMapFieldTypeOption;
 
-        Object.keys(value.toJSON()).forEach(key => {
-          // eslint-disable-next-line
-          // @ts-ignore
-          const option = value.get(key);
+          Object.keys(value.toJSON()).forEach(key => {
+            // eslint-disable-next-line
+            // @ts-ignore
+            const option = value.get(key);
 
-          newValue.set(key, option);
+            newValue.set(key, option);
+          });
+          newFieldTypeOption.set(key, newValue);
         });
-        newFieldTypeOption.set(key, newValue);
-      });
-      newField.set(YjsDatabaseKey.type_option, newFieldTypeOption);
+        newField.set(YjsDatabaseKey.type_option, newFieldTypeOption);
+      }
 
       fields.set(newId, newField);
 
@@ -992,23 +1015,26 @@ export function useDuplicatePropertyDispatch () {
         throw new Error(`Field not found`);
       }
 
-      const setting = fieldSettings?.get(fieldId);
-      const newSetting = new Y.Map() as YDatabaseFieldSetting;
+      const setting = fieldSettings.get(fieldId);
 
-      Object.keys(setting.toJSON()).forEach((key) => {
-        // eslint-disable-next-line
-        // @ts-ignore
-        const value = setting.get(key);
+      if (setting) {
+        const newSetting = new Y.Map() as YDatabaseFieldSetting;
 
-        if (key === YjsDatabaseKey.visibility) {
-          newSetting.set(key, FieldVisibility.AlwaysShown);
-          return;
-        }
+        Object.keys(setting.toJSON()).forEach((key) => {
+          // eslint-disable-next-line
+          // @ts-ignore
+          const value = setting.get(key);
 
-        newSetting.set(key, value);
-      });
+          if (key === YjsDatabaseKey.visibility) {
+            newSetting.set(key, FieldVisibility.AlwaysShown);
+            return;
+          }
 
-      fieldSettings.set(newId, newSetting);
+          newSetting.set(key, value);
+        });
+
+        fieldSettings.set(newId, newSetting);
+      }
 
       const index = fieldOrders.toArray().findIndex((field) => field.id === fieldId);
 
@@ -1041,14 +1067,16 @@ export function useDuplicatePropertyDispatch () {
         const rowData = rowSharedRoot.get(YjsEditorKey.database_row);
 
         const cells = rowData.get(YjsDatabaseKey.cells);
+
+        const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+        const fieldType = Number(field.get(YjsDatabaseKey.type));
+
         const cell = cells.get(fieldId);
-        const newCell = cloneCell(fieldId, cell);
+        const newCell = cloneCell(fieldType, cell);
 
         cells.set(newId, newCell);
 
-        const type = Number(cell.get(YjsDatabaseKey.field_type));
-
-        if (type !== FieldType.CreatedTime && type !== FieldType.LastEditedTime) {
+        if (fieldType !== FieldType.CreatedTime && fieldType !== FieldType.LastEditedTime) {
           rowData.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
         }
       });

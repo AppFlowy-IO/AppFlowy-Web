@@ -73,6 +73,7 @@ function PropertyProfile ({ fieldId, onNext, onEnter, ...props }: {
           // setName(target.value);
         }}
         onKeyDown={e => {
+          e.stopPropagation();
           if (createHotkey(HOT_KEY_NAME.DOWN)(e.nativeEvent)) {
             e.preventDefault();
             inputRef.current?.blur();

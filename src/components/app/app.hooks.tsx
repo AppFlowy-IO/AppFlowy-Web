@@ -693,7 +693,7 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     try {
       const res = await service.createFolderView(currentWorkspaceId, payload);
 
-      void loadOutline(currentWorkspaceId, false);
+      await loadOutline(currentWorkspaceId, false);
       return res;
     } catch (e) {
       return Promise.reject(e);

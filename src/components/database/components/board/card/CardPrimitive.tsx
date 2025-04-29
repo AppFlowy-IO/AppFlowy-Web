@@ -82,6 +82,7 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(({
   return (
     <div
       onClick={() => {
+        if (editing) return;
         navigateToRow?.(rowId);
       }}
       onPointerMove={e => {
@@ -95,6 +96,11 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(({
       }}
       onMouseLeave={() => {
         setHovered(false);
+      }}
+      onMouseDown={e => {
+        if (editing) {
+          e.preventDefault();
+        }
       }}
       ref={ref}
       className={cn(

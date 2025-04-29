@@ -66,9 +66,12 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
   value,
   defaultValue,
   onChange,
+  style,
   ...props
 }, ref) => {
   const innerRef = React.useRef<HTMLTextAreaElement | null>(null);
+  const contentRef = React.useRef<HTMLDivElement | null>(null);
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null);
   const [currentValue, setCurrentValue] = React.useState(value || defaultValue || '');
 
   // Get the combined ref
@@ -82,42 +85,92 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
     }
   }, [ref]);
 
-  // Auto-resize logic
-  const adjustHeight = React.useCallback(() => {
-    if (!innerRef.current) return;
+  // Update the content of the hidden div
+  const updateContentMirror = React.useCallback(() => {
+    if (!contentRef.current || !innerRef.current) return;
 
     const textarea = innerRef.current;
+    const contentMirror = contentRef.current;
 
-    // Calculate line height based on computed styles
-    const style = window.getComputedStyle(textarea);
-    const lineHeight = parseInt(style.lineHeight) || 20; // fallback to 20px
+    // Copy styles that affect text layout
+    const styles = window.getComputedStyle(textarea);
 
-    // Calculate padding
-    const paddingTop = parseInt(style.paddingTop) || 0;
-    const paddingBottom = parseInt(style.paddingBottom) || 0;
+    contentMirror.style.width = `${textarea.clientWidth - parseInt(styles.paddingLeft) - parseInt(styles.paddingRight)}px`;
+    contentMirror.style.fontFamily = styles.fontFamily;
+    contentMirror.style.fontSize = styles.fontSize;
+    contentMirror.style.lineHeight = styles.lineHeight;
+    contentMirror.style.letterSpacing = styles.letterSpacing;
+    contentMirror.style.fontWeight = styles.fontWeight;
+    contentMirror.style.whiteSpace = 'pre-wrap';
+    contentMirror.style.boxSizing = 'content-box';
+
+    // Replace newlines with <br> to mimic textarea behavior
+    const content = (currentValue as string).replace(/\n/g, '<br>') || '<br>';
+
+    if (contentMirror.innerHTML !== content) {
+      contentMirror.innerHTML = content;
+    }
+  }, [currentValue]);
+
+  // Calculate line height and padding
+  const getTextareaMetrics = React.useCallback(() => {
+    if (!innerRef.current) return { lineHeight: 20, paddingTop: 0, paddingBottom: 0 };
+
+    const style = window.getComputedStyle(innerRef.current);
+
+    return {
+      lineHeight: parseInt(style.lineHeight) || 20,
+      paddingTop: parseInt(style.paddingTop) || 0,
+      paddingBottom: parseInt(style.paddingBottom) || 0,
+    };
+  }, []);
+
+  // Auto-resize logic using content mirror
+  const adjustHeight = React.useCallback(() => {
+    if (!innerRef.current || !contentRef.current) return;
+
+    const textarea = innerRef.current;
+    const contentMirror = contentRef.current;
+    const metrics = getTextareaMetrics();
+
+    // Update content mirror first
+    updateContentMirror();
+
+    // Get actual content height
+    const contentHeight = contentMirror.offsetHeight;
 
     // Calculate min/max heights based on rows
-    const minHeight = minRows * lineHeight + paddingTop + paddingBottom;
-    const maxHeight = maxRows * lineHeight + paddingTop + paddingBottom;
+    const minHeight = minRows * metrics.lineHeight + metrics.paddingTop + metrics.paddingBottom;
+    const maxHeight = maxRows * metrics.lineHeight + metrics.paddingTop + metrics.paddingBottom;
 
-    // Reset height to auto for proper scrollHeight calculation
-    textarea.style.height = 'auto';
+    // Calculate new height
+    let newHeight;
 
-    // Set new height within constraints
-    const scrollHeight = textarea.scrollHeight;
-    const newHeight = Math.min(Math.max(scrollHeight, minHeight), maxHeight);
+    if ((currentValue as string).trim() === '') {
+      // For empty content, use minimum height
+      newHeight = minHeight;
+    } else {
+      // For non-empty content, use content height plus padding
+      newHeight = contentHeight + metrics.paddingTop + metrics.paddingBottom;
 
+      // Apply min/max constraints
+      newHeight = Math.min(Math.max(newHeight, minHeight), maxHeight);
+    }
+
+    // Set new height
     textarea.style.height = `${newHeight}px`;
 
     // Enable scrolling if content exceeds max height
-    textarea.style.overflowY = scrollHeight > maxHeight ? 'auto' : 'hidden';
-  }, [minRows, maxRows]);
+    textarea.style.overflowY = contentHeight > (maxHeight - metrics.paddingTop - metrics.paddingBottom) ? 'auto' : 'hidden';
+  }, [minRows, maxRows, updateContentMirror, getTextareaMetrics, currentValue]);
 
   // Handle controlled/uncontrolled input
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+
     // For uncontrolled component
     if (value === undefined) {
-      setCurrentValue(e.target.value);
+      setCurrentValue(newValue);
     }
 
     // Call the original onChange handler
@@ -131,7 +184,7 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
       setCurrentValue(value);
     }
 
-    // Adjust height after render
+    // Adjust height after value update
     requestAnimationFrame(() => {
       adjustHeight();
     });
@@ -139,8 +192,10 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
 
   // Handle initial render and window resize
   React.useEffect(() => {
+    // Initial height adjustment
     adjustHeight();
 
+    // Handle window resize
     const handleResize = () => adjustHeight();
 
     window.addEventListener('resize', handleResize);
@@ -150,21 +205,52 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
     };
   }, [adjustHeight]);
 
+  // Force adjustment when component mounts to get accurate initial measurements
+  React.useEffect(() => {
+    // Small delay to ensure rendered
+    const timeoutId = setTimeout(() => {
+      updateContentMirror();
+      adjustHeight();
+    }, 0);
+
+    return () => clearTimeout(timeoutId);
+  }, [updateContentMirror, adjustHeight]);
+
   return (
-    <textarea
-      ref={setRefs}
-      data-slot="textarea"
-      value={value}
-      defaultValue={defaultValue}
-      onChange={handleChange}
-      className={cn(
-        textareaVariants({ variant, size }),
-        // Invalid state styling
-        'aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick',
-        className,
-      )}
-      {...props}
-    />
+    <div
+      ref={wrapperRef}
+      className="relative w-full"
+    >
+      <textarea
+        ref={setRefs}
+        data-slot="textarea"
+        value={value}
+        defaultValue={defaultValue}
+        onChange={handleChange}
+        className={cn(
+          textareaVariants({ variant, size }),
+          // Invalid state styling
+          'aria-invalid:ring-border-error-thick aria-invalid:border-border-error-thick',
+          className,
+        )}
+        style={{
+          ...style,
+        }}
+        {...props}
+      />
+
+      {/* Hidden content mirror for accurate height measurement */}
+      <div
+        ref={contentRef}
+        aria-hidden="true"
+        className="absolute top-0 left-0 invisible overflow-hidden pointer-events-none"
+        style={{
+          height: 'auto',
+          minHeight: 0,
+          maxHeight: 'none',
+        }}
+      />
+    </div>
   );
 });
 

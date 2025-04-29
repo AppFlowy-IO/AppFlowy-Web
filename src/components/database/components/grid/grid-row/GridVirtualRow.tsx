@@ -48,7 +48,7 @@ function GridVirtualRow ({
   } = useGridContext();
   const rowRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
-  const dragHandleRef = useRef<HTMLButtonElement | null>(null);
+  const dragHandleRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ItemState>(idleState);
   const sorts = useSortsSelector();
   const [openClearSortsConfirmed, setOpenClearSortsConfirmed] = useState(false);
@@ -93,6 +93,7 @@ function GridVirtualRow ({
           setState({ type: GridDragState.PREVIEW });
         },
         onDragStart () {
+          console.log('drag start');
           setState(draggingState);
         },
         onDrop () {
@@ -165,7 +166,9 @@ function GridVirtualRow ({
           'relative flex',
         )}
       >
-        <div style={{ width: `${before}px` }}>
+        <div
+          style={{ width: `${before}px` }}
+        >
           {isRegularRow && !readOnly && <HoverControls
             state={state}
             dragHandleRef={el => {

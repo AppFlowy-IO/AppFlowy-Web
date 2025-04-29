@@ -60,13 +60,13 @@ export function Outline ({
       });
     };
 
-    if (!hovered) return null;
+    const shouldHidden = !hovered && menuProps?.view.view_id !== view.view_id;
+
+    if (shouldHidden) return null;
+
     return <div
       onClick={e => e.stopPropagation()}
       className={'flex items-center px-2'}
-      style={{
-        opacity: hovered ? 1 : 0,
-      }}
     >
       <Tooltip
         disableHoverableContent
@@ -109,7 +109,7 @@ export function Outline ({
       </Tooltip> : null}
 
     </div>;
-  }, [t]);
+  }, [menuProps, t]);
 
   const {
     toView,

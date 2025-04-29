@@ -19,6 +19,7 @@ export function ResizeHandle ({
   const handleMouseDown = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+    e.nativeEvent.stopImmediatePropagation();
 
     if (handleRef.current) {
       onResizeStart(fieldId, handleRef.current);

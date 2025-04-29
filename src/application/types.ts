@@ -872,6 +872,7 @@ export interface View {
   publisher_email?: string;
   publish_name?: string;
   publish_timestamp?: string;
+  parent_view_id?: string;
 }
 
 export interface UpdatePublishConfigPayload {

@@ -61,7 +61,7 @@ function AddPageActions ({ view }: {
         size={'small'}
       />,
       onSelect: () => {
-        void handleAddPage(ViewLayout.Grid, 'Table');
+        void handleAddPage(ViewLayout.Grid, 'New Grid');
       },
     },
     {
@@ -71,7 +71,7 @@ function AddPageActions ({ view }: {
         size={'small'}
       />,
       onSelect: () => {
-        void handleAddPage(ViewLayout.Board, 'Board');
+        void handleAddPage(ViewLayout.Board, 'New Board');
       },
     },
     // {

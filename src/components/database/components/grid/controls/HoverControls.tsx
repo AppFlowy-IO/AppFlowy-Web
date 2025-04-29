@@ -7,10 +7,11 @@ import { HoverControlsProvider } from '@/components/database/components/grid/con
 import RowMenu from '@/components/database/components/grid/controls/RowMenu';
 import { ItemState } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import ClearSortingConfirm from '@/components/database/components/sorts/ClearSortingConfirm';
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import { DropdownMenu, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
 import { isMac } from '@/utils/hotkeys';
 import React, { useCallback, useRef, useState } from 'react';
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
@@ -19,7 +20,7 @@ import { useTranslation } from 'react-i18next';
 
 export function HoverControls ({ rowId, dragHandleRef }: {
   rowId: string;
-  dragHandleRef?: (node: HTMLButtonElement | null) => void;
+  dragHandleRef?: (node: HTMLDivElement | null) => void;
   state: ItemState
 }) {
   const { ref } = useHoverControlsDisplay(rowId);
@@ -93,18 +94,19 @@ export function HoverControls ({ rowId, dragHandleRef }: {
         </Tooltip>
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>
-            <Button
-              tabIndex={-1}
+            <div
               ref={dragHandleRef}
               onClick={() => {
                 setMenuOpen(true);
               }}
-              variant={'ghost'}
-              size={'icon-sm'}
-              className={'text-icon-secondary'}
+              className={cn(buttonVariants({
+                variant: 'ghost',
+                size: 'icon-sm',
+                className: 'text-icon-secondary cursor-pointer',
+              }))}
             >
               <DragIcon className={'w-4 h-4 '} />
-            </Button>
+            </div>
 
           </TooltipTrigger>
           <TooltipContent>
@@ -113,7 +115,6 @@ export function HoverControls ({ rowId, dragHandleRef }: {
           </TooltipContent>
         </Tooltip>
         <DropdownMenu
-
           open={menuOpen}
           onOpenChange={setMenuOpen}
         >

@@ -150,17 +150,19 @@ export function useFieldWrap (fieldId: string) {
   useEffect(() => {
     if (!view) return;
     const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
-    const fieldSetting = fieldSettings?.get(fieldId);
 
     const observerEvent = () => {
+      const fieldSetting = fieldSettings?.get(fieldId);
+
       setWrap(fieldSetting?.get(YjsDatabaseKey.wrap) ?? true);
     };
 
     observerEvent();
-    fieldSetting?.observe(observerEvent);
+
+    fieldSettings.observeDeep(observerEvent);
 
     return () => {
-      fieldSetting?.unobserve(observerEvent);
+      fieldSettings?.unobserveDeep(observerEvent);
     };
   }, [database, view, fieldId]);
 
