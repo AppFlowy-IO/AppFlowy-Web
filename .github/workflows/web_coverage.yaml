@@ -9,6 +9,7 @@ on:
 env:
   NODE_VERSION: "18.16.0"
   PNPM_VERSION: "8.5.0"
+  COVERAGE: "true"
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -45,10 +46,14 @@ jobs:
           build: pnpm run build
           start: pnpm run start
           browser: chrome
+        env:
+          COVERAGE: "true"
 
       - name: Jest run
         run: |
           pnpm run test:unit
+        env:
+          COVERAGE: "true"
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2

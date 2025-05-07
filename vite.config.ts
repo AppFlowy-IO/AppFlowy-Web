@@ -1,8 +1,7 @@
-import { defineConfig } from 'vite';
+import { defineConfig, Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import svgr from 'vite-plugin-svgr';
 import { visualizer } from 'rollup-plugin-visualizer';
-import usePluginImport from 'vite-plugin-importer';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
 import path from 'path';
 import istanbul from 'vite-plugin-istanbul';
@@ -12,6 +11,7 @@ import { viteExternalsPlugin } from 'vite-plugin-externals';
 const resourcesPath = path.resolve(__dirname, '../resources');
 const isDev = process.env.NODE_ENV === 'development';
 const isProd = process.env.NODE_ENV === 'production';
+const isTest = process.env.NODE_ENV === 'test' || process.env.COVERAGE === 'true';
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -34,7 +34,6 @@ export default defineConfig({
     isProd ? viteExternalsPlugin({
       react: 'React',
       'react-dom': 'ReactDOM',
-
     }) : undefined,
     svgr({
       svgrOptions: {
@@ -72,7 +71,8 @@ export default defineConfig({
         },
       },
     }),
-    istanbul({
+    // Enable istanbul for code coverage (active if isTest is true)
+    isTest ? istanbul({
       cypress: true,
       requireEnv: false,
       include: ['src/**/*'],
@@ -81,13 +81,7 @@ export default defineConfig({
         'cypress/**/*',
         'node_modules/**/*',
       ],
-    }),
-    usePluginImport({
-      libraryName: '@mui/icons-material',
-      libraryDirectory: '',
-      camel2DashComponentName: false,
-      style: false,
-    }),
+    }) : undefined,
     process.env.ANALYZE_MODE
       ? visualizer({
         emitFile: true,
@@ -109,15 +103,20 @@ export default defineConfig({
       ignored: ['node_modules'],
     },
     cors: false,
+    sourcemapIgnoreList: false,
   },
   envPrefix: ['AF'],
   esbuild: {
+    keepNames: true,
+    sourcesContent: true,
+    sourcemap: true,
+    minifyIdentifiers: false, // Disable identifier minification in development
+    minifySyntax: false,      // Disable syntax minification in development
     pure: !isDev ? ['console.log', 'console.debug', 'console.info', 'console.trace'] : [],
   },
   build: {
     target: `esnext`,
     reportCompressedSize: true,
-    sourcemap: isDev,
     rollupOptions: isProd
       ? {
 

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:coverage": "cross-env COVERAGE=true vite",
     "build": "vite build",
     "lint": "tsc --noEmit --project tsconfig.web.json && eslint --ext .js,.ts,.tsx . --ignore-path .eslintignore.web",
     "start": "vite preview --port 3000",
@@ -14,8 +15,10 @@
     "test": "pnpm run test:unit && pnpm run test:components",
     "test:components": "cypress run --component --browser chrome --headless",
     "test:unit": "jest --coverage",
+    "test:unit:coverage": "cross-env COVERAGE=true jest --coverage",
+    "test:components:coverage": "cross-env COVERAGE=true cypress run --component --browser chrome --headless",
     "test:cy": "cypress run",
-    "coverage": "pnpm run test:unit && pnpm run test:components",
+    "coverage": "cross-env COVERAGE=true pnpm run test:unit && cross-env COVERAGE=true pnpm run test:components",
     "generate-tokens": "node scripts/system-token/convert-tokens.cjs"
   },
   "dependencies": {

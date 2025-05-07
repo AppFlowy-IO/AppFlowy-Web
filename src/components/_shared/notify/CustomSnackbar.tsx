@@ -1,10 +1,8 @@
-import {
-  ErrorOutline,
-  HighlightOff,
-  PowerSettingsNew,
-  TaskAltRounded,
-} from '@mui/icons-material';
-import { IconButton } from '@mui/material';
+import ErrorOutline from '@mui/icons-material/ErrorOutline';
+import HighlightOff from '@mui/icons-material/HighlightOff';
+import PowerSettingsNew from '@mui/icons-material/PowerSettingsNew';
+import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
+import IconButton from '@mui/material/IconButton';
 import React from 'react';
 import { useSnackbar, SnackbarContent, CustomContentProps } from 'notistack';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';

@@ -1,5 +1,8 @@
 import { notify } from '@/components/_shared/notify';
-import { TaskAltRounded } from '@mui/icons-material';
+
+import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
+import DeleteIcon from '@mui/icons-material/Delete';
+
 import React, { useState, useEffect } from 'react';
 import {
   Box,
@@ -11,7 +14,6 @@ import {
   ListItemText,
   Typography,
 } from '@mui/material';
-import DeleteIcon from '@mui/icons-material/Delete';
 
 const MAX_DELETE = 50;
 const IndexedDBCleaner = () => {

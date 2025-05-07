@@ -5,7 +5,8 @@ import AppTheme from '@/components/main/AppTheme';
 import AppConfig from '@/components/main/AppConfig';
 import { Suspense } from 'react';
 import { SnackbarProvider } from 'notistack';
-import { styled } from '@mui/material';
+
+import { styled } from '@mui/material/styles';
 import { InfoSnackbar } from '../_shared/notify';
 
 const StyledSnackbarProvider = styled(SnackbarProvider)`

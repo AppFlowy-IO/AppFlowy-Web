@@ -2,8 +2,11 @@ import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { AFConfigContext, useCurrentUser, useService } from '@/components/main/app.hooks';
-import { TaskAltRounded } from '@mui/icons-material';
-import { Button, Divider, Typography } from '@mui/material';
+
+import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
+import Button from '@mui/material/Button';
+import Divider from '@mui/material/Divider';
+import Typography from '@mui/material/Typography';
 import React, { useContext } from 'react';
 import { useTranslation, Trans } from 'react-i18next';
 import { ReactComponent as AppflowyLogo } from '@/assets/icons/appflowy.svg';

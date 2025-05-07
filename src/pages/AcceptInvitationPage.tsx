@@ -4,7 +4,7 @@ import ChangeAccount from '@/components/_shared/modal/ChangeAccount';
 import { notify } from '@/components/_shared/notify';
 import { getAvatar } from '@/components/_shared/view-icon/utils';
 import { AFConfigContext, useCurrentUser, useService } from '@/components/main/app.hooks';
-import { EmailOutlined } from '@mui/icons-material';
+import EmailOutlined from '@mui/icons-material/EmailOutlined';
 import { Avatar, Button, Divider } from '@mui/material';
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';

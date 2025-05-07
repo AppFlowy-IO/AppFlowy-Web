@@ -5,7 +5,7 @@ import React, { useCallback, useRef, useMemo } from 'react';
 import Typography from '@mui/material/Typography';
 
 import { useTranslation } from 'react-i18next';
-import { TitleOutlined } from '@mui/icons-material';
+import TitleOutlined from '@mui/icons-material/TitleOutlined';
 
 export interface ColorPickerProps {
   onChange?: (format: EditorMarkFormat.FontColor | EditorMarkFormat.BgColor, color: string) => void;
