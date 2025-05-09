@@ -1,4 +1,6 @@
 import { defineConfig } from 'cypress';
+import codeCoverageTask from '@cypress/code-coverage/task.js';
+import { execSync } from 'child_process';
 
 export default defineConfig({
   env: {
@@ -8,12 +10,11 @@ export default defineConfig({
   },
   watchForFileChanges: false,
   component: {
+    // src/components/editor/__tests__/blocks/Paragraph.cy.tsx
+    specPattern: 'src/**/__tests__/**/*.cy.tsx',
     devServer: {
       framework: 'react',
       bundler: 'vite',
-    },
-    setupNodeEvents(on, config) {
-      return config;
     },
     supportFile: 'cypress/support/component.ts',
   },

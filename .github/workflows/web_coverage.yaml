@@ -28,33 +28,30 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache/codeQL
           sudo rm -rf ${GITHUB_WORKSPACE}/.git
           sudo rm -rf $ANDROID_HOME/ndk
+
       - name: setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+
       - name: setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v4
         with:
           version: ${{ env.PNPM_VERSION }}
-      # Install pnpm dependencies, cache them correctly
-      # and run all Cypress tests
-      - name: Cypress run
-        uses: cypress-io/github-action@v6
-        with:
-          component: true
-          build: pnpm run build
-          start: pnpm run start
-          browser: chrome
+
+      - name: Install dependencies
+        run: pnpm install
+        shell: bash
 
       - name: Jest run
         run: |
           pnpm run test:unit
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v3
         with:
           token: cf9245e0-e136-4e21-b0ee-35755fa0c493
-          files: coverage/jest/lcov.info, coverage/cypress/lcov.info
+          files: coverage/jest/lcov.info
           flags: appflowy_web
           name: codecov-umbrella
           fail_ci_if_error: true

@@ -1,0 +1,55 @@
+name: E2E Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  NODE_VERSION: 18
+  PNPM_VERSION: 8.5.0
+  COVERAGE: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Install dependencies
+        run: pnpm install
+        shell: bash
+
+      - name: Cypress run
+        uses: cypress-io/github-action@v6
+        with:
+          component: true
+          build: pnpm run build
+          start: pnpm run start
+          browser: chrome
+
+      - name: Run Component Tests
+        run: |
+          echo "Starting component tests..."
+          pnpm test:components:parallel
+          echo "Component tests finished."
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          token: cf9245e0-e136-4e21-b0ee-35755fa0c493
+          files: coverage/cypress/lcov.info
+          flags: appflowy_web_e2e
+          name: codecov-umbrella-e2e
+          fail_ci_if_error: true
+          verbose: true
