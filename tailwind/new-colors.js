@@ -11,7 +11,7 @@
  * These colors reference CSS variables, ensure the corresponding CSS files are loaded
  */
 
-module.exports = {
+export default {
   "text": {
     "primary": "var(--text-primary)",
     "secondary": "var(--text-secondary)",

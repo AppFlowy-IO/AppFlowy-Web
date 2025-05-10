@@ -1,5 +1,10 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// 获取当前文件的目录路径
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Ensure target directory exists
 function ensureDirectoryExists (dirPath) {
@@ -190,7 +195,7 @@ function createTailwindColorsFromVariables (variableNames) {
  * These colors reference CSS variables, ensure the corresponding CSS files are loaded
  */
 
-module.exports = ${JSON.stringify(colors, null, 2)};
+export default ${JSON.stringify(colors, null, 2)};
 `;
 
   return tailwindCode;

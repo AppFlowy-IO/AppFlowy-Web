@@ -1,9 +1,10 @@
-const { compilerOptions } = require('./tsconfig.json');
-const { pathsToModuleNameMapper } = require('ts-jest');
+import { compilerOptions } from './tsconfig.json' assert { type: 'json' };
+import { pathsToModuleNameMapper } from 'ts-jest';
+
 const esModules = ['lodash-es', 'nanoid'].join('|');
 
 /** @type {import('ts-jest').JestConfigWithTsJest} */
-module.exports = {
+export default {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
   roots: ['<rootDir>'],

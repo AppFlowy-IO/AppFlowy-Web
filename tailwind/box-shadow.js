@@ -1,4 +1,4 @@
-module.exports = {
+export default {
   'md': 'var(--shadow)',
   'popover': 'var(--custom-shadow-sm)',
   'menu': 'var(--custom-shadow-sm)',

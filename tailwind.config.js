@@ -1,8 +1,8 @@
-const colors = require('./tailwind/colors.cjs');
-const boxShadow = require('./tailwind/box-shadow.cjs');
+import colors from './tailwind/colors.js';
+import boxShadow from './tailwind/box-shadow.js';
 
 /** @type {import('tailwindcss').Config} */
-module.exports = {
+export default {
   content: [
     './index.html',
     './src/**/*.{js,ts,jsx,tsx}',

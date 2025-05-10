@@ -1,6 +1,11 @@
-const { execSync } = require('child_process');
-const fs = require('fs');
-const path = require('path');
+import { execSync } from 'child_process';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 const jestCoverageFile = path.join(__dirname, '../coverage/jest/coverage-final.json');
 const cypressCoverageFile = path.join(__dirname, '../coverage/cypress/coverage-final.json');
 const nycOutputDir = path.join(__dirname, '../coverage/.nyc_output');
@@ -30,6 +35,3 @@ fs.copyFileSync(path.join(__dirname, '../coverage/merged/coverage-final.json'), 
 // Generate final merged report
 execSync('nyc report --reporter=html --reporter=text-summary --report-dir=coverage/merged --temp-dir=coverage/.nyc_output', { stdio: 'inherit' });
 console.log(`Merged coverage report written to coverage/merged`);
-
-
-
