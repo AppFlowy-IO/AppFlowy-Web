@@ -36,7 +36,7 @@ import {
   UploadTemplatePayload,
 } from '@/application/template.type';
 import { AxiosInstance } from 'axios';
-import { RepeatedChatMessage } from '@appflowyinc/ai-chat/dist/types';
+import { RepeatedChatMessage } from '@appflowyinc/ai-chat';
 
 export type AFService =
   PublishService

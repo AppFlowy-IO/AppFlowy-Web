@@ -4,7 +4,9 @@
     "node_modules",
     "**/*.cy.tsx",
     "dist",
-    "coverage"
+    "coverage",
+    "**/*.test.ts",
+    "**/*.test.tsx",
   ],
   "references": [
     {

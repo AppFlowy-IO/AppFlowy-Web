@@ -46,7 +46,7 @@ import dayjs from 'dayjs';
 import { omit } from 'lodash-es';
 import { nanoid } from 'nanoid';
 import { notify } from '@/components/_shared/notify';
-import { RepeatedChatMessage } from '@appflowyinc/ai-chat/dist/types';
+import { RepeatedChatMessage } from '@appflowyinc/ai-chat/';
 
 export * from './gotrue';
 

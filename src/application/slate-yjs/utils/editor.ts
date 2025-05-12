@@ -915,7 +915,7 @@ export function getSelectionTexts(editor: ReactEditor) {
         match: (n) => Text.isText(n),
       }),
     ).forEach((match) => {
-      const node = match[0] as Element;
+      const node = match[0] as unknown as Element;
 
       if(Text.isText(node)) {
         texts.push(node);

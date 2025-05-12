@@ -1,6 +1,6 @@
 import { YDatabaseCell, YjsDatabaseKey } from '@/application/types';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { YArray } from 'yjs/dist/src/types/YArray';
+import { Array as YArray } from 'yjs';
 import { Cell, CheckboxCell, DateTimeCell, FileMediaCell, FileMediaCellData } from './cell.type';
 
 export function parseYDatabaseCommonCellToCell (cell: YDatabaseCell): Cell {

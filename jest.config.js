@@ -1,24 +1,35 @@
-const { compilerOptions } = require('./tsconfig.json');
-const { pathsToModuleNameMapper } = require('ts-jest');
+import tsconfig from './tsconfig.jest.json' with { type: 'json' };
+import { pathsToModuleNameMapper } from 'ts-jest';
+
 const esModules = ['lodash-es', 'nanoid'].join('|');
 
 /** @type {import('ts-jest').JestConfigWithTsJest} */
-module.exports = {
+export default {
+  testEnvironment: 'node',
   preset: 'ts-jest',
+  // preset: 'ts-jest/presets/default-esm',
   testEnvironment: 'jsdom',
   roots: ['<rootDir>'],
-  modulePaths: [compilerOptions.baseUrl],
+  modulePaths: [tsconfig.compilerOptions.baseUrl],
   moduleNameMapper: {
-    ...pathsToModuleNameMapper(compilerOptions.paths),
+    ...pathsToModuleNameMapper(tsconfig.compilerOptions.paths),
     '^lodash-es(/(.*)|$)': 'lodash$1',
     '^nanoid(/(.*)|$)': 'nanoid$1',
     '^dayjs$': '<rootDir>/node_modules/dayjs/dayjs.min.js',
   },
-  'transform': {
-    '^.+\\.(j|t)sx?$': 'ts-jest',
-    '(.*)/node_modules/nanoid/.+\\.(j|t)sx?$': 'ts-jest',
+  transform: {
+    '^.+\\.(j|t)sx?$': ['ts-jest', {
+      tsconfig: 'tsconfig.jest.json',
+      useESM: true,
+      isolatedModules: true
+    }],
+    '(.*)/node_modules/nanoid/.+\\.(j|t)sx?$': ['ts-jest', {
+      useESM: true,
+      tsconfig: 'tsconfig.jest.json'
+    }],
   },
-  'transformIgnorePatterns': [`/node_modules/(?!${esModules})`],
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
+  transformIgnorePatterns: [`/node_modules/(?!${esModules})`],
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
   coverageDirectory: '<rootDir>/coverage/jest',
   collectCoverage: true,

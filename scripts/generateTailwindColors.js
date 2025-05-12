@@ -1,5 +1,9 @@
-const fs = require('fs');
-const path = require('path');
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Read CSS file
 const cssFilePath = path.join(__dirname, '../src/styles/variables/light.variables.css');
@@ -44,12 +48,12 @@ const header = `/**\n` + '* Do not edit directly\n' + `* Generated on ${new Date
 // Write Tailwind CSS colors configuration to file
 const tailwindColorTemplate = `
 ${header}
-module.exports = ${tailwindColorsFormatted};
+export default ${tailwindColorsFormatted};
 `;
 
 const tailwindShadowTemplate = `
 ${header}
-module.exports = ${JSON.stringify(shadows, null, 2).replace(/_/g, '-')};
+export default ${JSON.stringify(shadows, null, 2).replace(/_/g, '-')};
 `;
 
 const tailwindConfigFilePath = path.join(__dirname, '../tailwind/colors.cjs');

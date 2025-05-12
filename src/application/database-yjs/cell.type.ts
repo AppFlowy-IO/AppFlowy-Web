@@ -2,7 +2,7 @@ import { FieldId, RowId } from '@/application/types';
 import { DateFormat, TimeFormat } from '@/application/database-yjs/index';
 import { FieldType } from '@/application/database-yjs/database.type';
 import React from 'react';
-import { YArray } from 'yjs/dist/src/types/YArray';
+import { Array as YArray } from 'yjs';
 
 export interface Cell {
   createdAt: number;

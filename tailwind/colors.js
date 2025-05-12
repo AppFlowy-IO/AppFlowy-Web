@@ -1,6 +1,6 @@
-const newColors = require('./new-colors.cjs');
+import newColors from './new-colors.js';
 
-module.exports = {
+export default {
   'bg': {
     'selection': 'var(--bg-selection)',
     'body': 'var(--bg-body)',

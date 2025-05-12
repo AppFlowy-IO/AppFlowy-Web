@@ -1,6 +1,6 @@
 import { NumberFormat } from './number.type';
 
-const commonProps = {
+const commonProps: Intl.NumberFormatOptions = {
   minimumFractionDigits: 0,
   maximumFractionDigits: 2,
   style: 'currency',

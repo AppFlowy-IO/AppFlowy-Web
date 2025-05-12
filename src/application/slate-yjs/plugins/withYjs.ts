@@ -3,7 +3,7 @@ import { CollabOrigin, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { applyToYjs } from '@/application/slate-yjs/utils/applyToYjs';
 import { Editor, Operation, Descendant, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
-import Y, { YEvent, Transaction } from 'yjs';
+import { Doc, YEvent, Transaction } from 'yjs';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
 
 type LocalChange = {
@@ -72,7 +72,7 @@ export const YjsEditor = {
 
 export function withYjs<T extends Editor>(
   editor: T,
-  doc: Y.Doc,
+  doc: Doc,
   opts?: {
     id?: string;
     readOnly: boolean;

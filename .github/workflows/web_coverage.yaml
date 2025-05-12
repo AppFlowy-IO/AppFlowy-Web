@@ -7,9 +7,10 @@ on:
       - "develop"
       - "release/*"
 env:
-  NODE_VERSION: "18.16.0"
-  PNPM_VERSION: "8.5.0"
+  NODE_VERSION: "18.20.8"
+  PNPM_VERSION: "10.9.0"
   COVERAGE: "true"
+  
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -30,33 +31,36 @@ jobs:
           sudo rm -rf ${GITHUB_WORKSPACE}/.git
           sudo rm -rf $ANDROID_HOME/ndk
       - name: setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v3
         with:
           version: ${{ env.PNPM_VERSION }}
+          
+      - name: Install dependencies
+        run: pnpm install
+        
       # Install pnpm dependencies, cache them correctly
       # and run all Cypress tests
       - name: Cypress run
-        uses: cypress-io/github-action@v6
-        with:
-          component: true
-          build: pnpm run build
-          start: pnpm run start
-          browser: chrome
+        run: |
+          pnpm run build
+          pnpm run start
+          npx cypress run --component --browser chrome
         env:
           COVERAGE: "true"
 
       - name: Jest run
         run: |
           pnpm run test:unit
-        env:
-          COVERAGE: "true"
 
+        env:
+          COVERAGE: "true"        
+      
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v3
         with:
           token: cf9245e0-e136-4e21-b0ee-35755fa0c493
           files: coverage/jest/lcov.info, coverage/cypress/lcov.info

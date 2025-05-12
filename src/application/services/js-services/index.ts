@@ -48,7 +48,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
-import { RepeatedChatMessage } from '@appflowyinc/ai-chat/dist/types';
+import { RepeatedChatMessage } from '@appflowyinc/ai-chat';
 import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
 
