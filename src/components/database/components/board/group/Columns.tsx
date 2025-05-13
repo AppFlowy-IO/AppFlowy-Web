@@ -6,10 +6,14 @@ const Columns = forwardRef<HTMLDivElement, {
   fieldId: string;
   groupResult: Map<string, Row[]>;
   columns: GroupColumn[];
+  addCardBefore: (id: string) => void;
+  editingCardId: string | null;
+  setEditingCardId: (id: string | null) => void;
 }>(({
   columns,
   groupResult,
   fieldId,
+  ...props
 }, ref) => {
 
   return (
@@ -23,6 +27,7 @@ const Columns = forwardRef<HTMLDivElement, {
           id={data.id}
           fieldId={fieldId}
           rows={groupResult.get(data.id) || []}
+          {...props}
         />
       ))}
     </div>

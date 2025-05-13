@@ -1276,6 +1276,7 @@ export function useAddDatabaseView () {
       newView.set(YjsDatabaseKey.sorts, sorts);
       newView.set(YjsDatabaseKey.groups, groups);
       newView.set(YjsDatabaseKey.calculations, calculations);
+      newView.set(YjsDatabaseKey.is_inline, false);
 
       views.set(newViewId, newView);
     }], 'addDatabaseView');

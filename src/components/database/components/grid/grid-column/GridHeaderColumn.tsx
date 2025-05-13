@@ -29,6 +29,7 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
         style={{
           cursor: readOnly ? 'default' : 'pointer',
         }}
+
         className={'rounded-none text-text-secondary overflow-hidden hover:bg-fill-content-hover relative text-sm flex items-center px-2 h-full gap-[10px] w-full justify-start'}
       >
         <Tooltip delayDuration={500}>
@@ -38,7 +39,7 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
               e.stopPropagation();
               setMenuOpen(true);
             }}
-            className={'flex-1 overflow-hidden'}
+            className={'flex-1 h-full overflow-hidden'}
           >
             <FieldDisplay
               fieldId={fieldId}

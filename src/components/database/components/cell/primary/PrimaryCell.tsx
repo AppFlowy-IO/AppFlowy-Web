@@ -116,7 +116,7 @@ export function PrimaryCell (
             placeholder={placeholder}
             variant={'ghost'}
             size={'sm'}
-            className={'w-full px-0'}
+            className={'w-full px-0 rounded-none'}
           /> : <TextCell {...props} />
         }
 

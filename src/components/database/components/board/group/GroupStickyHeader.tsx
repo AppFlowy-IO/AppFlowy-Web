@@ -7,11 +7,13 @@ const GroupStickyHeader = forwardRef<HTMLDivElement, {
   fieldId: string;
   groupResult: Map<string, Row[]>
   onScrollLeft: (left: number) => void,
+  addCardBefore: (id: string) => void;
 }>(({
   columns,
   fieldId,
   groupResult,
   onScrollLeft,
+  addCardBefore,
 }, ref) => {
   const context = useDatabaseContext();
   const {
@@ -31,9 +33,10 @@ const GroupStickyHeader = forwardRef<HTMLDivElement, {
 
         onScrollLeft(scrollLeft);
       }}
-      className={'max-sm:!px-6 pb-1 px-24 appflowy-custom-scroller bg-background-primary overflow-x-auto h-full'}
+      className={'max-sm:!px-6 border-t border-border-primary pb-1 px-24 appflowy-custom-scroller bg-background-primary overflow-x-auto h-full'}
     >
       <GroupHeader
+        addCardBefore={addCardBefore}
         columns={columns}
         fieldId={fieldId}
         groupResult={groupResult}

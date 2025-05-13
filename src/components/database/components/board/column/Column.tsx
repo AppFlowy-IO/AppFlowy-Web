@@ -1,21 +1,23 @@
 import { Row, useReadOnly } from '@/application/database-yjs';
 import CardList, { CardType, RenderCard } from '@/components/database/components/board/column/CardList';
+import ColumnHeaderPrimitive from '@/components/database/components/board/column/ColumnHeaderPrimitive';
 import { useCardsDrag } from '@/components/database/components/board/column/useCardsDrag';
 import { StateType, useColumnHeaderDrag } from '@/components/database/components/board/column/useColumnHeaderDrag';
 import { DropColumnIndicator } from '@/components/database/components/board/drag-and-drop/DropColumnIndicator';
 import React, { memo, useMemo } from 'react';
 import { ColumnContext } from '../drag-and-drop/column-context';
-import { useRenderColumn } from './useRenderColumn';
 
 export interface ColumnProps {
   id: string;
   rows: Row[];
   fieldId: string;
+  addCardBefore: (id: string) => void;
+  editingCardId: string | null;
+  setEditingCardId: (id: string | null) => void;
 }
 
 export const Column = memo(
-  ({ id, rows, fieldId }: ColumnProps) => {
-    const { header } = useRenderColumn(id, fieldId);
+  ({ id, rows, fieldId, addCardBefore, editingCardId, setEditingCardId }: ColumnProps) => {
     const readOnly = useReadOnly();
 
     const data: RenderCard[] = useMemo(() => {
@@ -60,22 +62,24 @@ export const Column = memo(
             ref={columnRef}
             className={'flex flex-col items-center min-w-[256px] w-[256px] pt-2'}
           >
-            <div
+            <ColumnHeaderPrimitive
+              rowCount={rows.length}
+              id={id}
+              fieldId={fieldId}
               ref={headerRef}
               style={{
                 cursor: readOnly ? 'default' : isDragging ? 'grabbing' : 'grab',
               }}
-              className="column-header select-none flex overflow-hidden justify-start w-[240px] items-center gap-2 h-[26px] text-sm leading-[16px] font-medium whitespace-nowrap"
-            >
-              <div className={'max-w-[180px] w-auto overflow-hidden'}>{header}</div>
-              <span className={'text-text-secondary text-xs'}>{rows.length}</span>
-            </div>
+              addCardBefore={addCardBefore}
+            />
 
             <CardList
               columnId={id}
               data={data}
               fieldId={fieldId}
               setScrollElement={setScrollerContainer}
+              editingCardId={editingCardId}
+              setEditingCardId={setEditingCardId}
             />
 
           </div>

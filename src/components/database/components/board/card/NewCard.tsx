@@ -4,6 +4,7 @@ import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import React, { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -42,7 +43,7 @@ function NewCard ({ beforeId, fieldId, columnId, isCreating, setIsCreating }: {
     });
   }, [container]);
 
-  const handleSumit = useCallback((inputValue: string) => {
+  const handleSubmit = useCallback((inputValue: string) => {
     if (!rows) {
       throw new Error('Rows not found');
     }
@@ -86,12 +87,22 @@ function NewCard ({ beforeId, fieldId, columnId, isCreating, setIsCreating }: {
           className={'w-full p-1 justify-start text-text-secondary'}
           variant={'ghost'}
         >
-          {isCreating ? '' : <>
-            <PlusIcon className={'w-4 h-4'} />
-            {t('board.column.createNewCard')}
-          </>}
+
+          {isCreating ? '' : <Tooltip>
+            <TooltipTrigger asChild>
+              <div className={'flex w-full gap-1.5 items-center'}>
+                <PlusIcon className={'w-5 h-5'} />
+                {t('board.column.createNewCard')}
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>
+              {t('board.column.addToColumnBottomTooltip')}
+            </TooltipContent>
+          </Tooltip>}
 
         </Button>
+
+
       </PopoverTrigger>
 
       <PopoverContent
@@ -104,7 +115,7 @@ function NewCard ({ beforeId, fieldId, columnId, isCreating, setIsCreating }: {
         onCloseAutoFocus={e => e.preventDefault()}
         onKeyDown={e => {
           if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
-            handleSumit(value);
+            handleSubmit(value);
           }
         }}
       >

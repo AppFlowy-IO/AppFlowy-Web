@@ -354,6 +354,7 @@ export enum YjsDatabaseKey {
   show_weekends = 'show_weekends',
   layout_ty = 'layout_ty',
   icon = 'icon',
+  is_inline = 'is_inline'
 }
 
 export interface YDoc extends Y.Doc {
@@ -547,6 +548,8 @@ export interface YDatabaseView extends Y.Map<unknown> {
   get (key: YjsDatabaseKey.row_orders): YDatabaseRowOrders;
 
   get (key: YjsDatabaseKey.calculations): YDatabaseCalculations;
+
+  get (key: YjsDatabaseKey.is_inline): boolean;
 }
 
 export type YDatabaseFieldOrders = Y.Array<{ id: FieldId }>; // [ { id: FieldId } ]

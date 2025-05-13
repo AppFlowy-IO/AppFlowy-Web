@@ -16,6 +16,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
 import { TabLabel, Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import React, { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
@@ -97,7 +98,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     }, [reloadView]);
 
     const className = useMemo(() => {
-      const classList = ['-mb-[0.5px] gap-1.5 flex items-center overflow-hidden text-text-primary  max-sm:!px-6 min-w-0 overflow-hidden'];
+      const classList = ['-mb-[0.5px] flex items-center overflow-hidden text-text-primary flex-col  max-sm:!px-6 min-w-0 overflow-hidden'];
 
       return classList.join(' ');
     }, []);
@@ -115,7 +116,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
         }}
       >
         <div
-          className={`flex items-center justify-between overflow-hidden database-tabs w-full gap-1.5 border-b border-border-primary`}
+          className={`flex items-center justify-between overflow-hidden database-tabs w-full gap-1.5`}
         >
           <div
             className="flex flex-1 items-center max-w-[500px] overflow-hidden justify-start"
@@ -266,8 +267,10 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             <DatabaseActions />
             {/*{isDocumentBlock && <DatabaseBlockActions />}*/}
           </> : null}
+
         </div>
 
+        <Separator />
         {renameView && Boolean(renameViewId) && <RenameModal
           open={Boolean(renameViewId)}
           onClose={() => {

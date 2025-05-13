@@ -24,11 +24,15 @@ function CardList ({
   fieldId,
   columnId,
   setScrollElement,
+  editingCardId,
+  setEditingCardId,
 }: {
   columnId: string;
   data: RenderCard[];
   fieldId: string;
   setScrollElement?: (element: HTMLDivElement | null) => void;
+  editingCardId: string | null;
+  setEditingCardId: (id: string | null) => void;
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const parentOffsetRef = React.useRef(0);
@@ -102,6 +106,14 @@ function CardList ({
                 isCreating={isCreating}
                 columnId={columnId}
                 beforeId={data[virtualRow.index - 1]?.id}
+                editing={editingCardId === id}
+                setEditing={(editing: boolean) => {
+                  if (editing) {
+                    setEditingCardId(id);
+                  } else {
+                    setEditingCardId(null);
+                  }
+                }}
               />
 
             </div>

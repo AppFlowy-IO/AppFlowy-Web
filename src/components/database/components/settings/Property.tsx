@@ -1,9 +1,11 @@
-import { useReadOnly } from '@/application/database-yjs';
+import { useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { useHidePropertyDispatch, useShowPropertyDispatch } from '@/application/database-yjs/dispatch';
+import { YjsDatabaseKey } from '@/application/types';
 import { DropRowIndicator } from '@/components/database/components/grid/drag-and-drop/DropRowIndicator';
 import { usePropertyDragContext } from '@/components/database/components/settings/usePropertyDragContext';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
@@ -41,7 +43,8 @@ function Property ({ property }: {
     registerProperty,
     instanceId,
   } = usePropertyDragContext();
-
+  const { field } = useFieldSelector(property.id);
+  const name = field?.get(YjsDatabaseKey.name);
   const onHideProperty = useHidePropertyDispatch();
   const onShowProperty = useShowPropertyDispatch();
 
@@ -120,13 +123,21 @@ function Property ({ property }: {
     >
       <div
         ref={dragHandleRef}
-        className={'w-full flex gap-[10px] items-center'}
+        className={'w-full overflow-hidden flex gap-[10px] items-center'}
       >
         <DragIcon className={'!text-icon-secondary'} />
-        <FieldDisplay
-          className={'gap-[10px] [&_svg]:text-icon-secondary [&_.custom-icon_svg]:w-4 [&_.custom-icon_svg]:h-4  flex-1'}
-          fieldId={property.id}
-        />
+        <Tooltip delayDuration={1000}>
+          <TooltipTrigger className={'w-full text-left overflow-hidden'}>
+            <FieldDisplay
+              className={'gap-[10px] truncate [&_svg]:text-icon-secondary [&_.custom-icon_svg]:w-4 [&_.custom-icon_svg]:h-4  flex-1'}
+              fieldId={property.id}
+            />
+          </TooltipTrigger>
+          <TooltipContent side={'right'}>
+            {name}
+          </TooltipContent>
+        </Tooltip>
+
         <Button
           variant={'ghost'}
           size={'icon-sm'}

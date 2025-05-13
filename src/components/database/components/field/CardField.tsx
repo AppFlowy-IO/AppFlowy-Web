@@ -65,7 +65,7 @@ export function CardField ({ rowId, fieldId, editing, setEditing }: {
         editing={editing}
         setEditing={setEditing}
         showDocumentIcon
-        readOnly={readOnly}
+        readOnly
         cell={cell as TextCell}
         rowId={rowId}
         fieldId={fieldId}

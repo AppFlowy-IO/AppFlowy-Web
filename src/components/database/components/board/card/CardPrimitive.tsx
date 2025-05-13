@@ -104,7 +104,7 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(({
       }}
       ref={ref}
       className={cn(
-        'relative board-card shadow-card flex flex-col gap-2 overflow-hidden rounded-[6px] text-xs',
+        'relative board-card shadow-card flex flex-col overflow-hidden rounded-[6px] text-xs',
         navigateToRow && 'cursor-pointer hover:bg-fill-content-hover',
         className,
       )}

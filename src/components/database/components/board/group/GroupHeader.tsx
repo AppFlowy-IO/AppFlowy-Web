@@ -6,10 +6,13 @@ const GroupHeader = forwardRef<HTMLDivElement, {
   columns: GroupColumn[];
   fieldId: string;
   groupResult: Map<string, Row[]>;
+  addCardBefore: (id: string) => void;
+
 }>(({
   columns,
   fieldId,
   groupResult,
+  addCardBefore,
 }, ref) => {
 
   return (
@@ -23,6 +26,7 @@ const GroupHeader = forwardRef<HTMLDivElement, {
           id={data.id}
           fieldId={fieldId}
           rowCount={groupResult.get(data.id)?.length || 0}
+          addCardBefore={addCardBefore}
         />
       ))}
     </div>

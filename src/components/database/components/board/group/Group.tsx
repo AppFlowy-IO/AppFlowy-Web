@@ -1,4 +1,5 @@
 import { PADDING_END, useDatabaseContext, useRowsByGroup } from '@/application/database-yjs';
+import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { BoardContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
 import Columns from '@/components/database/components/board/group/Columns';
@@ -27,6 +28,21 @@ export const Group = ({ groupId }: GroupProps) => {
   const getCards = useCallback((columnId: string) => {
     return groupResult.get(columnId);
   }, [groupResult]);
+  const onNewCard = useNewRowDispatch();
+  const [editingCardId, setEditingCardId] = useState<string | null>(null);
+
+  const addCardBefore = useCallback(async (columnId: string) => {
+    if (!fieldId) return;
+    const cellsData = {
+      [fieldId]: columnId,
+    };
+
+    const cardId = await onNewCard(0, cellsData);
+
+    if (!cardId) return;
+
+    setEditingCardId(cardId);
+  }, [fieldId, onNewCard]);
 
   const { contextValue, scrollableRef: ref } = useColumnsDrag(groupId, columns, getCards, fieldId);
 
@@ -127,11 +143,15 @@ export const Group = ({ groupId }: GroupProps) => {
             groupResult={groupResult}
             columns={columns}
             ref={innerRef}
+            addCardBefore={addCardBefore}
+            editingCardId={editingCardId}
+            setEditingCardId={setEditingCardId}
           />
 
         </div>
         <DatabaseStickyTopOverlay>
           <GroupStickyHeader
+            addCardBefore={addCardBefore}
             ref={stickyHeaderRef}
             groupResult={groupResult}
             columns={columns}

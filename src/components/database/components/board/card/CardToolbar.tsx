@@ -77,6 +77,7 @@ function CardToolbar ({
               onSelect={() => {
                 setDeleteConfirm(true);
               }}
+              className={'hover:!text-text-error'}
             >
               <DeleteIcon />
               {t('button.delete')}

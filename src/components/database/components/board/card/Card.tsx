@@ -30,6 +30,8 @@ export const Card = memo(({
   groupFieldId,
   rowId,
   type,
+  editing,
+  setEditing,
   ...props
 }: {
   type: CardType;
@@ -38,13 +40,14 @@ export const Card = memo(({
   beforeId?: string;
   columnId: string
   isCreating: boolean;
+  setEditing: (value: boolean) => void;
+  editing: boolean;
   setIsCreating: (isCreating: boolean) => void;
 }) => {
   const ref = useRef<HTMLDivElement | null>(null);
   const { instanceId, registerCard } = useBoardContext();
   const [closestEdge, setClosestEdge] = useState<Edge | null>(null);
   const [state, setState] = useState<State>(idleState);
-  const [editing, setEditing] = useState(false);
   const readOnly = useReadOnly();
 
   useEffect(() => {
