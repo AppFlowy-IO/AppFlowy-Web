@@ -35,7 +35,7 @@ function GridVirtualColumn ({
       data-column-id={columnData.fieldId}
       key={column.key}
       data-is-primary={columnData.isPrimary}
-      className={cn(columnData.wrap ? 'wrap-cell' : 'whitespace-nowrap', 'border-t border-l relative border-transparent')}
+      className={cn(columnData.wrap ? 'wrap-cell' : 'whitespace-nowrap', 'grid-row-cell border-t border-l relative border-transparent')}
       style={{
         minHeight: rowIndex === 0 ? MIN_HEIGHT : row.size,
         width: columnData.width,

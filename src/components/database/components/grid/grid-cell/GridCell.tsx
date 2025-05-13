@@ -36,13 +36,12 @@ function GridCell ({
         />
       </GridDragColumn>;
     case RenderRowType.Row:
-      return <div className={'flex px-2 select-text py-1.5 items-center'}>
-        <GridRowCell
-          rowIndex={rowIndex}
-          rowId={rowId}
-          fieldId={fieldId}
-          columnIndex={columnIndex}
-        /></div>;
+      return <GridRowCell
+        rowIndex={rowIndex}
+        rowId={rowId}
+        fieldId={fieldId}
+        columnIndex={columnIndex}
+      />;
     case RenderRowType.CalculateRow:
       return <GridCalculateRowCell fieldId={fieldId} />;
     default:

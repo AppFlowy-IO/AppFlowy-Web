@@ -179,6 +179,7 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
 
   // Update height when value changes
   React.useEffect(() => {
+
     // Handle controlled component
     if (value !== undefined && value !== currentValue) {
       setCurrentValue(value);

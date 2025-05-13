@@ -1,4 +1,4 @@
-import { FieldType, useCellSelector, useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { FieldType, useCellSelector, useFieldSelector } from '@/application/database-yjs';
 import { FileMediaCellData, TextCell } from '@/application/database-yjs/cell.type';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as FileMediaSvg } from '@/assets/icons/attachment.svg';
@@ -19,7 +19,6 @@ export function CardField ({ rowId, fieldId, editing, setEditing }: {
     fieldId,
   });
 
-  const readOnly = useReadOnly();
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
 
   const type = field?.get(YjsDatabaseKey.type);

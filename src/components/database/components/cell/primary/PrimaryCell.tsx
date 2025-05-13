@@ -1,12 +1,11 @@
 import { RowMetaKey, useDatabaseContext, useRowMetaSelector } from '@/application/database-yjs';
 import { CellProps, TextCell as CellType } from '@/application/database-yjs/cell.type';
-import { useUpdateCellDispatch, useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
+import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { TextCell } from '@/components/database/components/cell/text';
+import TextCellEditing from '@/components/database/components/cell/text/TextCellEditing';
 import { Button } from '@/components/ui/button';
-import { TextareaAutosize } from '@/components/ui/textarea-autosize';
-import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { getPlatform } from '@/utils/platform';
 import React, { useCallback, useMemo } from 'react';
 
@@ -26,16 +25,7 @@ export function PrimaryCell (
   const isMobile = useMemo(() => {
     return getPlatform()?.isMobile;
   }, []);
-  const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
   const onUpdateMeta = useUpdateRowMetaDispatch(rowId);
-
-  const [inputValue, setInputValue] = React.useState<string>(() => {
-    if (cell) {
-      return cell.data;
-    }
-
-    return '';
-  });
 
   const showIcon = icon || (hasDocument && showDocumentIcon);
 
@@ -55,7 +45,7 @@ export function PrimaryCell (
           navigateToRow?.(rowId);
         }
       }}
-      className={'primary-cell relative flex h-full w-full gap-2'}
+      className={'primary-cell h-full items-start relative flex w-full gap-2'}
     >
       <CustomIconPopover
         defaultActiveTab={'emoji'}
@@ -90,33 +80,18 @@ export function PrimaryCell (
       </CustomIconPopover>
 
       <div
-        className={'flex-1 flex items-center overflow-x-hidden'}
+        className={'flex-1 flex h-full items-center overflow-x-hidden'}
       >
         {
-          editing ? <TextareaAutosize
-            onMouseDown={e => {
-              e.stopPropagation();
-            }}
-            autoFocus
+          editing ? <TextCellEditing
             ref={focusToEnd}
-            value={inputValue}
-            onChange={e => {
-              setInputValue(e.target.value);
-            }}
-            onKeyDown={e => {
-              if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
-                onUpdateCell(inputValue);
-                setEditing?.(false);
-              }
-            }}
-            onBlur={() => {
-              onUpdateCell(inputValue);
+            cell={cell}
+            rowId={rowId}
+            fieldId={fieldId}
+            placeholder={placeholder}
+            onExit={() => {
               setEditing?.(false);
             }}
-            placeholder={placeholder}
-            variant={'ghost'}
-            size={'sm'}
-            className={'w-full px-0 rounded-none'}
           /> : <TextCell {...props} />
         }
 

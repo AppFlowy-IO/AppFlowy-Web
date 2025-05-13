@@ -128,23 +128,6 @@ body {
   }
 }
 
-.grid-row-cell.wrap-cell {
-  .primary-cell {
-    @apply py-2;
-  }
-
-  .text-cell {
-    @apply break-words whitespace-pre-wrap overflow-hidden;
-  }
-
-  .relation-cell {
-    @apply py-2 break-words whitespace-pre-wrap flex-wrap;
-  }
-
-  .select-option-cell {
-    @apply flex-wrap py-2;
-  }
-}
 
 @keyframes blink {
   0%, 100% {
@@ -153,6 +136,10 @@ body {
   50% {
     background-color: unset;
   }
+}
+
+.grid-row-cell.editing {
+  border: 1.5px solid var(--border-theme-thick) !important;
 }
 
 .blink {

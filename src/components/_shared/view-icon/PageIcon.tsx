@@ -54,7 +54,7 @@ function PageIcon ({
         const id = `${json.groupName}/${json.iconName}`;
 
         void getIcon(id).then((item) => {
-          setIconContent(item?.content.replaceAll('black', renderColor(json.color)).replace('<svg', '<svg width="100%" height="100%"'));
+          setIconContent(item?.content.replaceAll('black', json.color ? renderColor(json.color) : 'currentColor').replace('<svg', '<svg width="100%" height="100%"'));
         });
       } catch (e) {
         console.error(e, view.icon);

@@ -55,9 +55,7 @@ export function PropertySelectTrigger ({ fieldId, disabled }: { fieldId: string;
   }, [t]);
 
   return (
-    <DropdownMenuGroup
-
-    >
+    <DropdownMenuGroup>
       <DropdownMenuSub>
         <DropdownMenuSubTrigger
           disabled={disabled}
