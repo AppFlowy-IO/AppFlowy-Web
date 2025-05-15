@@ -4,7 +4,6 @@ import { useFieldSelector } from '@/application/database-yjs/selector';
 import { RowCreateModifiedTime } from '@/components/database/components/cell/created-modified';
 import React, { FC, useMemo } from 'react';
 import { TextCell } from '@/components/database/components/cell/text';
-import { UrlCell } from '@/components/database/components/cell/url';
 import { NumberCell } from '@/components/database/components/cell/number';
 import { CheckboxCell } from '@/components/database/components/cell/checkbox';
 import { SelectOptionCell } from '@/components/database/components/cell/select-option';
@@ -15,16 +14,16 @@ import { RelationCell } from '@/components/database/components/cell/relation';
 import { FileMediaCell } from 'src/components/database/components/cell/file-media';
 
 export function Cell (props: CellProps<CellType>) {
-  const { cell, rowId, fieldId, style } = props;
+  const { rowId, fieldId, style } = props;
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
   const Component = useMemo(() => {
     switch (fieldType) {
       case FieldType.RichText:
-        return TextCell;
       case FieldType.URL:
-        return UrlCell;
+        return TextCell;
+
       case FieldType.Number:
         return NumberCell;
       case FieldType.Checkbox:
@@ -56,9 +55,9 @@ export function Cell (props: CellProps<CellType>) {
     />;
   }
 
-  if (cell && cell.fieldType !== fieldType) {
-    return null;
-  }
+  // if (cell && cell.fieldType !== fieldType) {
+  //   return null;
+  // }
 
   return <Component {...props} />;
 }

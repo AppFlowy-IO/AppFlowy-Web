@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils';
 // Base textarea styles that match the input base styles
 const baseTextareaStyles = cn(
   // Text and placeholder styling
-  'text-text-primary placeholder:text-text-tertiary',
+  'placeholder:text-text-tertiary',
 
   // Selection styling
   'selection:bg-fill-theme-thick selection:text-text-on-fill focus:caret-fill-theme-thick',
@@ -62,7 +62,7 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
   variant,
   size,
   minRows = 1,
-  maxRows = 8,
+  maxRows,
   value,
   defaultValue,
   onChange,
@@ -127,42 +127,44 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
 
   // Auto-resize logic using content mirror
   const adjustHeight = React.useCallback(() => {
-    if (!innerRef.current || !contentRef.current) return;
+      if (!innerRef.current || !contentRef.current) return;
 
-    const textarea = innerRef.current;
-    const contentMirror = contentRef.current;
-    const metrics = getTextareaMetrics();
+      const textarea = innerRef.current;
+      const contentMirror = contentRef.current;
+      const metrics = getTextareaMetrics();
 
-    // Update content mirror first
-    updateContentMirror();
+      // Update content mirror first
+      updateContentMirror();
 
-    // Get actual content height
-    const contentHeight = contentMirror.offsetHeight;
+      // Get actual content height
+      const contentHeight = contentMirror.offsetHeight;
 
-    // Calculate min/max heights based on rows
-    const minHeight = minRows * metrics.lineHeight + metrics.paddingTop + metrics.paddingBottom;
-    const maxHeight = maxRows * metrics.lineHeight + metrics.paddingTop + metrics.paddingBottom;
+      // Calculate min/max heights based on rows
+      const minHeight = minRows * metrics.lineHeight + metrics.paddingTop + metrics.paddingBottom;
+      const maxHeight = maxRows !== undefined ? maxRows * metrics.lineHeight + metrics.paddingTop + metrics.paddingBottom : Infinity;
 
-    // Calculate new height
-    let newHeight;
+      // Calculate new height
+      let newHeight;
 
-    if ((currentValue as string).trim() === '') {
-      // For empty content, use minimum height
-      newHeight = minHeight;
-    } else {
-      // For non-empty content, use content height plus padding
-      newHeight = contentHeight + metrics.paddingTop + metrics.paddingBottom;
+      if ((currentValue as string).trim() === '') {
+        // For empty content, use minimum height
+        newHeight = minHeight;
+      } else {
+        // For non-empty content, use content height plus padding
+        newHeight = contentHeight + metrics.paddingTop + metrics.paddingBottom;
 
-      // Apply min/max constraints
-      newHeight = Math.min(Math.max(newHeight, minHeight), maxHeight);
-    }
+        // Apply min/max constraints
+        newHeight = Math.min(Math.max(newHeight, minHeight), maxHeight);
+      }
 
-    // Set new height
-    textarea.style.height = `${newHeight}px`;
+      // Set new height
+      textarea.style.height = `${newHeight}px`;
 
-    // Enable scrolling if content exceeds max height
-    textarea.style.overflowY = contentHeight > (maxHeight - metrics.paddingTop - metrics.paddingBottom) ? 'auto' : 'hidden';
-  }, [minRows, maxRows, updateContentMirror, getTextareaMetrics, currentValue]);
+      // Enable scrolling if content exceeds max height
+      textarea.style.overflowY = contentHeight > (maxHeight - metrics.paddingTop - metrics.paddingBottom) ? 'auto' : 'hidden';
+    },
+    [minRows, maxRows, updateContentMirror, getTextareaMetrics, currentValue],
+  );
 
   // Handle controlled/uncontrolled input
   const handleChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {

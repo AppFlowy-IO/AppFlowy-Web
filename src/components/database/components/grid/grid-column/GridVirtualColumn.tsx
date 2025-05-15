@@ -1,7 +1,8 @@
+import { FieldType, useReadOnly } from '@/application/database-yjs';
 import OpenAction from '@/components/database/components/database-row/OpenAction';
 import GridCell from '@/components/database/components/grid/grid-cell/GridCell';
-import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
-import { RenderRow } from '@/components/database/components/grid/grid-row';
+import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
+import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
 import { VirtualItem } from '@tanstack/react-virtual';
@@ -23,19 +24,40 @@ function GridVirtualColumn ({
   column: VirtualItem;
   onResizeColumnStart?: (fieldId: string, element: HTMLElement) => void;
 }) {
+
   const rowIndex = row.index;
   const rowData = useMemo(() => data[rowIndex], [data, rowIndex]);
-
+  const {
+    setActiveCell,
+    activeCell,
+  } = useGridContext();
+  const readOnly = useReadOnly();
   const columnData = useMemo(() => columns[column.index], [columns, column.index]);
   const { hoverRowId } = useGridContext();
+
   const isHoverRow = hoverRowId === rowData.rowId;
+  const isActiveCell = activeCell && columnData.fieldType !== undefined && activeCell.rowId === rowData.rowId && activeCell.fieldId === columnData.fieldId && [
+    FieldType.RichText,
+    FieldType.URL,
+  ].includes(columnData.fieldType);
 
   return (
     <div
       data-column-id={columnData.fieldId}
       key={column.key}
       data-is-primary={columnData.isPrimary}
-      className={cn(columnData.wrap ? 'wrap-cell' : 'whitespace-nowrap', 'grid-row-cell border-t border-l relative border-transparent')}
+      onClick={() => {
+        if (readOnly) return;
+        if (rowData.type === RenderRowType.Row && columnData.type === GridColumnType.Field && rowData.rowId && columnData.fieldId) {
+          console.log('click', rowData.rowId, columnData.fieldId, columnData.fieldType);
+          setActiveCell({
+            rowId: rowData.rowId,
+            fieldId: columnData.fieldId,
+          });
+        }
+
+      }}
+      className={cn(columnData.wrap ? 'wrap-cell' : 'whitespace-nowrap', 'grid-row-cell border-t border-l relative border-transparent', isActiveCell ? 'editing' : '')}
       style={{
         minHeight: rowIndex === 0 ? MIN_HEIGHT : row.size,
         width: columnData.width,

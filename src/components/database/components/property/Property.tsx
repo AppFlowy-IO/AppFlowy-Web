@@ -9,7 +9,6 @@ import { NumberCell } from '@/components/database/components/cell/number';
 import { RelationCell } from '@/components/database/components/cell/relation';
 import { SelectOptionCell } from '@/components/database/components/cell/select-option';
 import { TextCell } from '@/components/database/components/cell/text';
-import { UrlCell } from '@/components/database/components/cell/url';
 import PropertyWrapper from '@/components/database/components/property/PropertyWrapper';
 import { TextProperty } from '@/components/database/components/property/text';
 
@@ -29,8 +28,6 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
   const { t } = useTranslation();
   const Component = useMemo(() => {
     switch (fieldType) {
-      case FieldType.URL:
-        return UrlCell;
       case FieldType.Number:
         return NumberCell;
       case FieldType.Checkbox:
@@ -44,6 +41,7 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
         return ChecklistProperty;
       case FieldType.Relation:
         return RelationCell;
+      case FieldType.URL:
       case FieldType.RichText:
       case FieldType.AISummaries:
       case FieldType.AITranslations:

@@ -1,4 +1,4 @@
-import { useReadOnly } from '@/application/database-yjs';
+import { FieldType, useReadOnly } from '@/application/database-yjs';
 import { FieldVisibility } from '@/application/database-yjs/database.type';
 import { useFieldsSelector } from '@/application/database-yjs/selector';
 import { FieldId } from '@/application/types';
@@ -13,6 +13,7 @@ export type RenderColumn = {
   type: GridColumnType;
   visibility?: FieldVisibility;
   fieldId?: FieldId;
+  fieldType?: FieldType;
   width: number;
   wrap?: boolean;
   isPrimary?: boolean;

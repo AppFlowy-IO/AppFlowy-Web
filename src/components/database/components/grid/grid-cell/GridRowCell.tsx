@@ -4,7 +4,8 @@ import { useFieldSelector } from '@/application/database-yjs/selector';
 import { Cell } from '@/components/database/components/cell';
 import { CellProps, Cell as CellType } from '@/application/database-yjs/cell.type';
 import { PrimaryCell } from '@/components/database/components/cell/primary';
-import React, { useEffect, useMemo, useRef } from 'react';
+import { useGridContext } from '@/components/database/grid/useGridContext';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 
 export interface GridCellProps {
   rowId: string;
@@ -42,6 +43,7 @@ export function GridRowCell ({ onResize, rowId, fieldId, columnIndex, rowIndex }
       observer.disconnect();
     };
   }, [columnIndex, onResize, rowIndex, cell]);
+  const { setNeedResizeRowId, activeCell, setActiveCell } = useGridContext();
 
   const Component = useMemo(() => {
     if (isPrimary) {
@@ -51,19 +53,34 @@ export function GridRowCell ({ onResize, rowId, fieldId, columnIndex, rowIndex }
     return Cell;
   }, [isPrimary]) as React.FC<CellProps<CellType>>;
 
+  const isActive = activeCell?.rowId === rowId && activeCell?.fieldId === fieldId;
+
+  const setEditing = useCallback((status: boolean) => {
+    if (status) {
+      setActiveCell({
+        rowId,
+        fieldId,
+      });
+    } else {
+      setActiveCell(undefined);
+    }
+  }, [fieldId, rowId, setActiveCell]);
+
   if (!field) return null;
 
   return (
     <div
       ref={ref}
-
-      className={'grid-cell px-2 py-1.5 h-full relative flex min-h-full items-start w-full cursor-text overflow-hidden text-sm'}
+      className={'grid-cell px-2 py-2 relative flex items-start w-full cursor-text overflow-hidden text-sm'}
     >
       <Component
         cell={cell}
         rowId={rowId}
         fieldId={fieldId}
         readOnly={readOnly}
+        setNeedResizeRowId={setNeedResizeRowId}
+        editing={isActive}
+        setEditing={setEditing}
       />
     </div>
   );

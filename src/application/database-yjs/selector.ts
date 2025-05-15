@@ -21,6 +21,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import { useDateTypeCellDispatcher } from '@/components/database/components/cell/Cell.hooks';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -119,6 +120,7 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
               setting?.get(YjsDatabaseKey.visibility) || FieldVisibility.AlwaysShown,
             ) as FieldVisibility,
             wrap: setting?.get(YjsDatabaseKey.wrap) ?? true,
+            fieldType: Number(field?.get(YjsDatabaseKey.type)) as FieldType,
           };
         })
         .filter((column) => {
@@ -526,17 +528,19 @@ export function useRowDataSelector (rowId: string) {
 export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: string }) {
   const { row } = useRowDataSelector(rowId);
   const cells = row?.get(YjsDatabaseKey.cells);
+  const { field } = useFieldSelector(fieldId);
+  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
   const cell = cells?.get(fieldId);
   const [, setClock] = useState<number>(0);
   const [cellValue, setCellValue] = useState(() => {
-    return cell ? parseYDatabaseCellToCell(cell) : undefined;
+    return cell ? parseYDatabaseCellToCell(cell, fieldType) : undefined;
   });
 
   useEffect(() => {
     const observerEvent = () => {
       setClock(prev => prev + 1);
-      setCellValue(cell ? parseYDatabaseCellToCell(cell) : undefined);
+      setCellValue(cell ? parseYDatabaseCellToCell(cell, fieldType) : undefined);
     };
 
     observerEvent();
@@ -545,7 +549,7 @@ export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: s
     return () => {
       cell?.unobserveDeep(observerEvent);
     };
-  }, [cell]);
+  }, [cell, fieldType]);
 
   useEffect(() => {
     if (!cells) return;
@@ -556,6 +560,10 @@ export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: s
       if (!cell) {
         setCellValue(undefined);
         return;
+      } else {
+        const cellValue = parseYDatabaseCellToCell(cell, fieldType);
+
+        setCellValue(cellValue);
       }
     };
 
@@ -566,7 +574,7 @@ export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: s
     return () => {
       cells.unobserve(observerEvent);
     };
-  }, [cells, fieldId]);
+  }, [cells, fieldId, fieldType]);
 
   return cellValue;
 }
@@ -837,4 +845,54 @@ export const usePropertiesSelector = () => {
   return {
     properties,
   };
+};
+
+export const useDateTimeCellString = (cell: DateTimeCell | undefined, fieldId: string) => {
+  const { getDateTimeStr } = useDateTypeCellDispatcher(fieldId);
+
+  const startDateTime = useMemo(() => {
+    return getDateTimeStr(cell?.data || '', cell?.includeTime);
+  }, [cell, getDateTimeStr]);
+
+  const endDateTime = useMemo(() => {
+    if (!cell) return null;
+    const { endTimestamp, isRange } = cell;
+
+    if (!isRange) return null;
+
+    return getDateTimeStr(endTimestamp || '', cell?.includeTime);
+  }, [cell, getDateTimeStr]);
+
+  const dateStr = useMemo(() => {
+    return [startDateTime, endDateTime].filter(Boolean).join(' - ');
+  }, [startDateTime, endDateTime]);
+
+  return dateStr;
+};
+
+export const useRowTimeString = (rowId: string, fieldId: string, attrName: string) => {
+  const { getDateTimeStr } = useDateTypeCellDispatcher(fieldId);
+  const { row: rowData } = useRowDataSelector(rowId);
+  const [value, setValue] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!rowData) return;
+    const observeHandler = () => {
+      setValue(rowData.get(attrName));
+    };
+
+    observeHandler();
+
+    rowData.observe(observeHandler);
+    return () => {
+      rowData.unobserve(observeHandler);
+    };
+  }, [rowData, attrName]);
+
+  const time = useMemo(() => {
+    if (!value) return null;
+    return getDateTimeStr(value, true);
+  }, [value, getDateTimeStr]);
+
+  return time;
 };

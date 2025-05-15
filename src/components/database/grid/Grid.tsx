@@ -15,7 +15,7 @@ export function Grid () {
       onRendered?.();
     }
   }, [fields, onRendered]);
-  
+
   return (
     <GridProvider>
       <div className={`database-grid relative grid-table-${viewId} flex w-full flex-1 flex-col`}>

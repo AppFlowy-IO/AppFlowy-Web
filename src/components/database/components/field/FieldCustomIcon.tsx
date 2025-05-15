@@ -16,13 +16,7 @@ function FieldCustomIcon ({
   const { field } = useFieldSelector(fieldId);
   const [iconContent, setIconContent] = useState<string | undefined>('');
   const iconId = field?.get(YjsDatabaseKey.icon);
-  const type = useMemo(() => {
-    const type = field?.get(YjsDatabaseKey.type);
-
-    if (!type) return FieldType.RichText;
-
-    return parseInt(type) as FieldType;
-  }, [field]);
+  const type = Number(field?.get(YjsDatabaseKey.type)) || FieldType.RichText;
 
   useEffect(() => {
     if (iconId) {

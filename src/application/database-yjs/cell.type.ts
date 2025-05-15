@@ -23,7 +23,7 @@ export interface NumberCell extends Cell {
 
 export interface CheckboxCell extends Cell {
   fieldType: FieldType.Checkbox;
-  data: boolean;
+  data: string; // 'Yes' | 'No'
 }
 
 export interface UrlCell extends Cell {
@@ -110,4 +110,7 @@ export interface CellProps<T extends Cell> {
   readOnly?: boolean;
   placeholder?: string;
   className?: string;
+  setNeedResizeRowId?: (rowId: string) => void;
+  editing?: boolean;
+  setEditing?: (editing: boolean) => void;
 }

@@ -1,9 +1,10 @@
-import { FieldType, useCellSelector, useFieldSelector } from '@/application/database-yjs';
+import { FieldType, useCellSelector, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { FileMediaCellData, TextCell } from '@/application/database-yjs/cell.type';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as FileMediaSvg } from '@/assets/icons/attachment.svg';
 import Cell from '@/components/database/components/cell/Cell';
 import { PrimaryCell } from '@/components/database/components/cell/primary';
+import { cn } from '@/lib/utils';
 import React, { CSSProperties, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -18,6 +19,7 @@ export function CardField ({ rowId, fieldId, editing, setEditing }: {
     rowId,
     fieldId,
   });
+  const readOnly = useReadOnly();
 
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
 
@@ -76,9 +78,9 @@ export function CardField ({ rowId, fieldId, editing, setEditing }: {
   if (Number(type) === FieldType.Checkbox) {
     return (
       <div className={'flex items-center gap-1'}>
-        <span>
+        <span className={cn(readOnly ? '' : 'cursor-pointer hover:bg-fill-content-hover rounded-100')}>
           <Cell
-            readOnly
+            readOnly={readOnly}
             cell={cell || undefined}
             rowId={rowId}
             fieldId={fieldId}

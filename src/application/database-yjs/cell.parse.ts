@@ -1,7 +1,7 @@
 import { YDatabaseCell, YjsDatabaseKey } from '@/application/types';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { YArray } from 'yjs/dist/src/types/YArray';
-import { Cell, CheckboxCell, DateTimeCell, FileMediaCell, FileMediaCellData } from './cell.type';
+import { Cell, DateTimeCell, FileMediaCell, FileMediaCellData } from './cell.type';
 
 export function parseYDatabaseCommonCellToCell (cell: YDatabaseCell): Cell {
   return {
@@ -12,22 +12,24 @@ export function parseYDatabaseCommonCellToCell (cell: YDatabaseCell): Cell {
   };
 }
 
-export function parseYDatabaseCellToCell (cell: YDatabaseCell): Cell {
-  const fieldType = parseInt(cell.get(YjsDatabaseKey.field_type));
+export function parseYDatabaseCellToCell (cell: YDatabaseCell, fieldType?: FieldType): Cell {
+  const cellType = parseInt(cell.get(YjsDatabaseKey.field_type));
 
-  if (fieldType === FieldType.DateTime) {
-    return parseYDatabaseDateTimeCellToCell(cell);
+  let value = parseYDatabaseCommonCellToCell(cell);
+
+  if (cellType === FieldType.DateTime) {
+    value = parseYDatabaseDateTimeCellToCell(cell);
   }
 
-  if (fieldType === FieldType.Checkbox) {
-    return parseYDatabaseCheckboxCellToCell(cell);
+  if (cellType === FieldType.FileMedia) {
+    value = parseYDatabaseFileMediaCellToCell(cell);
   }
 
-  if (fieldType === FieldType.FileMedia) {
-    return parseYDatabaseFileMediaCellToCell(cell);
+  if (fieldType !== undefined && cellType !== fieldType) {
+    // If the field type does not match, deal with it here
   }
 
-  return parseYDatabaseCommonCellToCell(cell);
+  return value;
 }
 
 export function parseYDatabaseDateTimeCellToCell (cell: YDatabaseCell): DateTimeCell {
@@ -50,13 +52,5 @@ export function parseYDatabaseFileMediaCellToCell (cell: YDatabaseCell): FileMed
     ...parseYDatabaseCommonCellToCell(cell),
     data: dataJson,
     fieldType: FieldType.FileMedia,
-  };
-}
-
-export function parseYDatabaseCheckboxCellToCell (cell: YDatabaseCell): CheckboxCell {
-  return {
-    ...parseYDatabaseCommonCellToCell(cell),
-    data: cell.get(YjsDatabaseKey.data) === 'Yes',
-    fieldType: FieldType.Checkbox,
   };
 }

@@ -43,6 +43,8 @@ export const GridProvider = ({ children }: {
 
     setHoverRowId(rowId);
   }, []);
+  const [needResizeRowId, setNeedResizeRowId] = useState<string | undefined>(undefined);
+  const [activeCell, setActiveCell] = useState<{ rowId: string; fieldId: string } | undefined>(undefined);
 
   return <GridContext.Provider
     value={{
@@ -54,6 +56,10 @@ export const GridProvider = ({ children }: {
       setActivePropertyId,
       showStickyHeader,
       setShowStickyHeader,
+      needResizeRowId,
+      setNeedResizeRowId,
+      activeCell,
+      setActiveCell,
     }}
   >
     <div

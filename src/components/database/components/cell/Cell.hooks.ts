@@ -1,20 +1,18 @@
 import { YjsDatabaseKey } from '@/application/types';
-import { FieldType } from '@/application/database-yjs/database.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
-import { DateFormat, TimeFormat, getDateFormat, getTimeFormat } from '@/application/database-yjs';
+import { DateFormat, TimeFormat, getDateFormat, getTimeFormat, getTypeOptions } from '@/application/database-yjs';
 import { renderDate } from '@/utils/time';
 import { useCallback, useMemo } from 'react';
 
-export function useCellTypeOption(fieldId: string) {
+export function useCellTypeOption (fieldId: string) {
   const { field } = useFieldSelector(fieldId);
-  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
   return useMemo(() => {
-    return field?.get(YjsDatabaseKey.type_option)?.get(String(fieldType));
-  }, [fieldType, field]);
+    return getTypeOptions(field);
+  }, [field]);
 }
 
-export function useDateTypeCellDispatcher(fieldId: string) {
+export function useDateTypeCellDispatcher (fieldId: string) {
   const typeOption = useCellTypeOption(fieldId);
   const typeOptionValue = useMemo(() => {
     if (!typeOption) return null;
@@ -37,7 +35,7 @@ export function useDateTypeCellDispatcher(fieldId: string) {
 
       return renderDate(timeStamp, format.join(' '), true);
     },
-    [typeOptionValue]
+    [typeOptionValue],
   );
 
   return {

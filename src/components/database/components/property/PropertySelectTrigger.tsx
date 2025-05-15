@@ -1,4 +1,5 @@
 import { FieldType, useFieldSelector } from '@/application/database-yjs';
+import { useSwitchPropertyType } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
 import { FieldTypeIcon } from '@/components/database/components/field';
 import FieldLabel from '@/components/database/components/field/FieldLabel';
@@ -33,6 +34,13 @@ export function PropertySelectTrigger ({ fieldId, disabled }: { fieldId: string;
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
   const { t } = useTranslation();
+  const switchType = useSwitchPropertyType();
+
+  const handleSelect = (property: FieldType) => {
+    if (disabled) return;
+    switchType(fieldId, property);
+  };
+
   const propertyTooltip: {
     [key in FieldType]: string
   } = useMemo(() => {
@@ -68,7 +76,11 @@ export function PropertySelectTrigger ({ fieldId, disabled }: { fieldId: string;
             {properties.map((property) => (
               <Tooltip key={property}>
                 <TooltipTrigger asChild>
-                  <DropdownMenuItem>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      handleSelect(property);
+                    }}
+                  >
                     <FieldTypeIcon type={property} />
                     <FieldLabel type={property} />
                   </DropdownMenuItem>

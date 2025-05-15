@@ -7,6 +7,7 @@ import {
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { CalculationType, FieldType, FieldVisibility, RowMetaKey } from '@/application/database-yjs/database.type';
+import { getFieldName } from '@/application/database-yjs/fields';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createTextField } from '@/application/database-yjs/fields/text/utils';
@@ -1327,4 +1328,33 @@ export function useDeleteView () {
       database.get(YjsDatabaseKey.views)?.delete(viewId);
     }], 'deleteView');
   }, [database, deletePage, sharedRoot]);
+}
+
+export function useSwitchPropertyType () {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((fieldId: string, fieldType: FieldType) => {
+    executeOperations(sharedRoot, [() => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      const lastModified = field.get(YjsDatabaseKey.last_modified);
+
+      if (!lastModified) {
+        const fieldName = getFieldName(fieldType);
+
+        field.set(YjsDatabaseKey.name, fieldName);
+      }
+
+      field.set(YjsDatabaseKey.type, fieldType);
+
+      field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+    }], 'switchPropertyType');
+
+  }, [database, sharedRoot]);
 }

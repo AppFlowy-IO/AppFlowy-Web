@@ -24,6 +24,8 @@ function GridVirtualizer ({
     rows: data,
     setShowStickyHeader,
     showStickyHeader,
+    needResizeRowId,
+    setNeedResizeRowId,
   } = useGridContext();
   const {
     handleResizeStart,
@@ -54,6 +56,27 @@ function GridVirtualizer ({
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
   const [isHover, setIsHover] = useState(false);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+
+    if (!needResizeRowId) return;
+    const node = parentRef.current?.querySelector('[data-row-id="' + needResizeRowId + '"]');
+
+    if (!node) return;
+    const index = data.findIndex(row => row.rowId === needResizeRowId);
+
+    if (index === -1) return;
+
+    const cells = node.querySelectorAll('.grid-cell');
+    const cellHeight = Array.from(cells).reduce((acc, cell) => {
+      const cellHeight = cell.getBoundingClientRect().height;
+
+      return Math.max(acc, cellHeight);
+    }, 0);
+
+    virtualizer.resizeItem(index, cellHeight);
+    setNeedResizeRowId(undefined);
+  }, [data, needResizeRowId, parentRef, setNeedResizeRowId, virtualizer]);
 
   useEffect(() => {
     const scrollElement = virtualizer.scrollElement;

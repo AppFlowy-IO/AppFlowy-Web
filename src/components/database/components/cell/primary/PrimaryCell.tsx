@@ -4,10 +4,9 @@ import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { TextCell } from '@/components/database/components/cell/text';
-import TextCellEditing from '@/components/database/components/cell/text/TextCellEditing';
 import { Button } from '@/components/ui/button';
 import { getPlatform } from '@/utils/platform';
-import React, { useCallback, useMemo } from 'react';
+import React, { useMemo } from 'react';
 
 export function PrimaryCell (
   props: CellProps<CellType> & {
@@ -16,7 +15,7 @@ export function PrimaryCell (
     editing?: boolean
   },
 ) {
-  const { placeholder, rowId, showDocumentIcon, editing, setEditing, cell, fieldId, readOnly } = props;
+  const { rowId, showDocumentIcon, readOnly } = props;
   const meta = useRowMetaSelector(rowId);
   const navigateToRow = useDatabaseContext().navigateToRow;
   const hasDocument = meta?.isEmptyDocument === false;
@@ -29,15 +28,6 @@ export function PrimaryCell (
 
   const showIcon = icon || (hasDocument && showDocumentIcon);
 
-  const focusToEnd = useCallback((el: HTMLTextAreaElement) => {
-    if (el) {
-      const length = el.value.length;
-
-      el.setSelectionRange(length, length);
-      el.focus();
-    }
-  }, []);
-
   return (
     <div
       onClick={() => {
@@ -45,7 +35,7 @@ export function PrimaryCell (
           navigateToRow?.(rowId);
         }
       }}
-      className={'primary-cell h-full items-start relative flex w-full gap-2'}
+      className={'primary-cell  items-start relative flex w-full gap-2'}
     >
       <CustomIconPopover
         defaultActiveTab={'emoji'}
@@ -80,21 +70,9 @@ export function PrimaryCell (
       </CustomIconPopover>
 
       <div
-        className={'flex-1 flex h-full items-center overflow-x-hidden'}
+        className={'flex-1 flex items-center overflow-x-hidden'}
       >
-        {
-          editing ? <TextCellEditing
-            ref={focusToEnd}
-            cell={cell}
-            rowId={rowId}
-            fieldId={fieldId}
-            placeholder={placeholder}
-            onExit={() => {
-              setEditing?.(false);
-            }}
-          /> : <TextCell {...props} />
-        }
-
+        <TextCell {...props} />
       </div>
     </div>
   );
