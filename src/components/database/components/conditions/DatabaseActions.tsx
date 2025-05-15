@@ -20,7 +20,7 @@ export function DatabaseActions () {
   return (
     <div className="flex w-[120px] items-center justify-end gap-1.5">
       <Tooltip>
-        <TooltipTrigger>
+        <TooltipTrigger asChild>
           <Button
             variant={'ghost'}
             size={'icon'}
@@ -41,7 +41,7 @@ export function DatabaseActions () {
         </TooltipContent>
       </Tooltip>
       <Tooltip>
-        <TooltipTrigger>
+        <TooltipTrigger asChild>
           <Button
             variant={'ghost'}
             size={'icon'}
@@ -61,24 +61,26 @@ export function DatabaseActions () {
           {t('grid.settings.sort')}
         </TooltipContent>
       </Tooltip>
-      <Settings>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant={'ghost'}
-              size={'icon'}
-              data-testid={'database-actions-settings'}
-            >
-              <SettingsIcon className={'w-5 h-5'} />
-            </Button>
 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <div>
+            <Settings>
+              <Button
+                variant={'ghost'}
+                size={'icon'}
+                data-testid={'database-actions-settings'}
+              >
+                <SettingsIcon className={'w-5 h-5'} />
+              </Button>
+            </Settings>
+          </div>
+        </TooltipTrigger>
+        <TooltipContent>
+          {t('settings.title')}
+        </TooltipContent>
+      </Tooltip>
 
-          </TooltipTrigger>
-          <TooltipContent>
-            {t('settings.title')}
-          </TooltipContent>
-        </Tooltip>
-      </Settings>
     </div>
   );
 }

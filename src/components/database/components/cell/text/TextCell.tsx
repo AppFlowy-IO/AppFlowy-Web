@@ -1,5 +1,8 @@
 import { FieldType } from '@/application/database-yjs';
-import { CellProps, TextCell as TextCellType, UrlCell as UrlCellType } from '@/application/database-yjs/cell.type';
+import {
+  Cell,
+  CellProps,
+} from '@/application/database-yjs/cell.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import TextCellEditing from '@/components/database/components/cell/text/TextCellEditing';
 import UrlActions from '@/components/database/components/cell/text/UrlActions';
@@ -17,10 +20,21 @@ export function TextCell ({
   setNeedResizeRowId,
   editing,
   setEditing,
-}: CellProps<TextCellType | UrlCellType>) {
+}: CellProps<Cell>) {
   const ref = React.useRef<HTMLDivElement>(null);
   const cellType = cell?.fieldType || FieldType.RichText;
+
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
+
+  const middleware = useCallback((data: unknown) => {
+    if (typeof data !== 'string' && typeof data !== 'number') {
+      return '';
+    }
+
+    return data as string || '';
+  }, []);
+
+  const value = middleware(cell?.data);
 
   const isValidUrl = useCallback((url: string) => {
     return !!processUrl(url);
@@ -44,32 +58,30 @@ export function TextCell ({
         style={style}
         onClick={(e) => {
           if (readOnly) {
-            const data = cell?.data as string;
 
-            if (data && isValidUrl(data)) {
+            if (value && isValidUrl(value)) {
               e.stopPropagation();
-              void openUrl(data, '_blank');
+              void openUrl(value, '_blank');
             }
 
             return;
           }
         }}
         onMouseEnter={() => {
-          const data = cell?.data as string;
 
-          if (data && isValidUrl(data) && !editing) {
+          if (value && isValidUrl(value) && !editing) {
             setShowUrlActions(true);
           }
         }}
         onMouseLeave={() => {
           setShowUrlActions(false);
         }}
-        className={cn(`text-cell w-full text-sm whitespace-pre-wrap break-words ${readOnly ? 'select-auto' : 'cursor-pointer'}`, !cell?.data && placeholder ? 'text-text-placeholder' : '', cellType === FieldType.URL ? 'underline !text-text-action hover:text-text-action-hover' : '')}
+        className={cn(`text-cell w-full text-sm whitespace-pre-wrap break-words ${readOnly ? 'select-auto' : 'cursor-pointer'}`, !value && placeholder ? 'text-text-placeholder' : '', cellType === FieldType.URL ? 'underline !text-text-action hover:text-text-action-hover' : '')}
       >
-        {!editing ? <>{cell?.data || placeholder || ''}</> :
+        {!editing ? <>{value || placeholder || ''}</> :
           <TextCellEditing
             ref={focusToEnd}
-            cell={cell}
+            defaultValue={value}
             placeholder={placeholder}
             fieldId={fieldId}
             rowId={rowId}
@@ -81,7 +93,7 @@ export function TextCell ({
           />}
         {showUrlActions && !editing && cell && cellType === FieldType.URL && (
           <div className={'absolute right-0 top-1'}>
-            <UrlActions url={cell.data || ''} />
+            <UrlActions url={value} />
           </div>
         )}
       </div>

@@ -5,6 +5,7 @@ import {
 } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
 import DeletePropertyConfirm from '@/components/database/components/property/DeletePropertyConfirm';
+import NumberPropertyMenuContent from '@/components/database/components/property/number/NumberPropertyMenuContent';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
 import PropertySelectTrigger from '@/components/database/components/property/PropertySelectTrigger';
 import TextPropertyMenuContent from '@/components/database/components/property/text/TextPropertyMenuContent';
@@ -63,6 +64,8 @@ function PropertyMenu ({
     switch (type) {
       case FieldType.RichText:
         return <TextPropertyMenuContent fieldId={fieldId} />;
+      case FieldType.Number:
+        return <NumberPropertyMenuContent fieldId={fieldId} />;
       default:
         return <PropertySelectTrigger fieldId={fieldId} />;
     }

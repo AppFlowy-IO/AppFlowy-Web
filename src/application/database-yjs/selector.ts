@@ -180,10 +180,10 @@ export function useFieldSelector (fieldId: string) {
     if (!database) return;
     const observerEvent = () => setClock((prev) => prev + 1);
 
-    field?.observe(observerEvent);
+    field?.observeDeep(observerEvent);
 
     return () => {
-      field?.unobserve(observerEvent);
+      field?.unobserveDeep(observerEvent);
     };
   }, [database, field, fieldId]);
 
@@ -528,19 +528,17 @@ export function useRowDataSelector (rowId: string) {
 export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: string }) {
   const { row } = useRowDataSelector(rowId);
   const cells = row?.get(YjsDatabaseKey.cells);
-  const { field } = useFieldSelector(fieldId);
-  const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
   const cell = cells?.get(fieldId);
   const [, setClock] = useState<number>(0);
   const [cellValue, setCellValue] = useState(() => {
-    return cell ? parseYDatabaseCellToCell(cell, fieldType) : undefined;
+    return cell ? parseYDatabaseCellToCell(cell) : undefined;
   });
 
   useEffect(() => {
     const observerEvent = () => {
       setClock(prev => prev + 1);
-      setCellValue(cell ? parseYDatabaseCellToCell(cell, fieldType) : undefined);
+      setCellValue(cell ? parseYDatabaseCellToCell(cell) : undefined);
     };
 
     observerEvent();
@@ -549,7 +547,7 @@ export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: s
     return () => {
       cell?.unobserveDeep(observerEvent);
     };
-  }, [cell, fieldType]);
+  }, [cell]);
 
   useEffect(() => {
     if (!cells) return;
@@ -561,7 +559,7 @@ export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: s
         setCellValue(undefined);
         return;
       } else {
-        const cellValue = parseYDatabaseCellToCell(cell, fieldType);
+        const cellValue = parseYDatabaseCellToCell(cell);
 
         setCellValue(cellValue);
       }
@@ -574,7 +572,7 @@ export function useCellSelector ({ rowId, fieldId }: { rowId: string; fieldId: s
     return () => {
       cells.unobserve(observerEvent);
     };
-  }, [cells, fieldId, fieldType]);
+  }, [cells, fieldId]);
 
   return cellValue;
 }

@@ -16,7 +16,7 @@ function OpenAction ({ rowId }: { rowId: string }) {
 
   return (
     <Tooltip>
-      <TooltipTrigger>
+      <TooltipTrigger asChild>
         <button
           color={'primary'}
           className={'rounded border border-border-primary w-5 h-5 flex items-center justify-center bg-surface-primary p-1 hover:bg-surface-primary-hover'}

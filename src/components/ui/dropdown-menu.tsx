@@ -3,6 +3,7 @@ import * as React from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
 import { ChevronRightIcon } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 
 function DropdownMenu ({
   ...props
@@ -145,7 +146,7 @@ function DropdownMenuLabel ({
       data-slot="dropdown-menu-label"
       data-inset={inset}
       className={cn(
-        'px-2 py-1 text-xs flex items-center font-semibold  min-h-[32px] data-[inset]:pl-8 text-text-tertiary',
+        'px-2 py-1 text-xs flex items-center font-medium  min-h-[32px] data-[inset]:pl-8 text-text-tertiary',
         className,
       )}
       {...props}
@@ -179,6 +180,24 @@ function DropdownMenuShortcut ({
       )}
       {...props}
     />
+  );
+}
+
+function DropMenuTick ({
+  className,
+  ...props
+}: React.ComponentProps<'span'>) {
+  return (
+    <span
+      data-slot="dropdown-menu-tick"
+      className={cn(
+        'text-icon-info-thick ml-auto tracking-widest',
+        className,
+      )}
+      {...props}
+    >
+      <CheckIcon />
+    </span>
   );
 }
 
@@ -273,4 +292,5 @@ export {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
+  DropMenuTick,
 };

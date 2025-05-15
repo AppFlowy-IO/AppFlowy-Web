@@ -8,6 +8,142 @@ const commonProps = {
   useGrouping: true,
 };
 
+export const formats = [
+  {
+    label: 'Number',
+    value: NumberFormat.Num,
+  },
+  {
+    label: 'US dollar',
+    value: NumberFormat.USD,
+  },
+  {
+    label: 'Canadian dollar',
+    value: NumberFormat.CanadianDollar,
+  },
+  {
+    label: 'Euro',
+    value: NumberFormat.EUR,
+  },
+  {
+    label: 'Pound',
+    value: NumberFormat.Pound,
+  },
+  {
+    label: 'Yen',
+    value: NumberFormat.Yen,
+  },
+  {
+    label: 'Ruble',
+    value: NumberFormat.Ruble,
+  },
+  {
+    label: 'Rupee',
+    value: NumberFormat.Rupee,
+  },
+  {
+    label: 'Won',
+    value: NumberFormat.Won,
+  },
+  {
+    label: 'Yuan',
+    value: NumberFormat.Yuan,
+  },
+  {
+    label: 'Real',
+    value: NumberFormat.Real,
+  },
+  {
+    label: 'Lira',
+    value: NumberFormat.Lira,
+  },
+  {
+    label: 'Rupiah',
+    value: NumberFormat.Rupiah,
+  },
+  {
+    label: 'Franc',
+    value: NumberFormat.Franc,
+  },
+  {
+    label: 'Hong Kong dollar',
+    value: NumberFormat.HongKongDollar,
+  },
+  {
+    label: 'New Zealand dollar',
+    value: NumberFormat.NewZealandDollar,
+  },
+  {
+    label: 'Krona',
+    value: NumberFormat.Krona,
+  },
+  {
+    label: 'Norwegian krone',
+    value: NumberFormat.NorwegianKrone,
+  },
+  {
+    label: 'Danish krone',
+    value: NumberFormat.DanishKrone,
+  },
+  {
+    label: 'Baht',
+    value: NumberFormat.Baht,
+  },
+  {
+    label: 'Forint',
+    value: NumberFormat.Forint,
+  },
+  {
+    label: 'Koruna',
+    value: NumberFormat.Koruna,
+  },
+  {
+    label: 'Shekel',
+    value: NumberFormat.Shekel,
+  },
+  {
+    label: 'Cheilean peso',
+    value: NumberFormat.ChileanPeso,
+  },
+  {
+    label: 'Philippine peso',
+    value: NumberFormat.PhilippinePeso,
+  },
+  {
+    label: 'Dirham',
+    value: NumberFormat.Dirham,
+  },
+  {
+    label: 'Colombian peso',
+    value: NumberFormat.ColombianPeso,
+  },
+  {
+    label: 'Riyal',
+    value: NumberFormat.Riyal,
+  },
+  {
+    label: 'Ringgit',
+    value: NumberFormat.Ringgit,
+  },
+  {
+    label: 'Leu',
+    value: NumberFormat.Leu,
+  },
+  {
+    label: 'Argentine peso',
+    value: NumberFormat.ArgentinePeso,
+  },
+  {
+    label: 'Uruguayan peso',
+    value: NumberFormat.UruguayanPeso,
+  },
+  {
+    label: 'Percent',
+    value: NumberFormat.Percent,
+  },
+
+];
+
 export const currencyFormaterMap: Record<NumberFormat, (n: number) => string> = {
   [NumberFormat.Num]: (n: number) =>
     new Intl.NumberFormat('en-US', {

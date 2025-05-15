@@ -1,50 +1,59 @@
 import {
   useCreateRow,
-  useDatabase, useDatabaseContext,
+  useDatabase,
+  useDatabaseContext,
   useDatabaseView,
-  useDatabaseViewId, useDocGuid,
+  useDatabaseViewId,
+  useDocGuid,
   useRowDocMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { CalculationType, FieldType, FieldVisibility, RowMetaKey } from '@/application/database-yjs/database.type';
-import { getFieldName } from '@/application/database-yjs/fields';
+import { DateFormat, getFieldName, getFormatValue, NumberFormat, TimeFormat } from '@/application/database-yjs/fields';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createTextField } from '@/application/database-yjs/fields/text/utils';
 import { filterFillData } from '@/application/database-yjs/filter';
 import { getGroupColumns } from '@/application/database-yjs/group';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
-import { generateRowMeta, getMetaJSON, getMetaIdMap } from '@/application/database-yjs/row_meta';
+import { generateRowMeta, getMetaIdMap, getMetaJSON } from '@/application/database-yjs/row_meta';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
-import dayjs from 'dayjs';
-import * as Y from 'yjs';
 
 import {
   DatabaseViewLayout,
   FieldId,
-  RowId, UpdatePagePayload,
+  RowId,
+  UpdatePagePayload,
   ViewLayout,
-  YDatabase, YDatabaseCalculations,
+  YDatabase,
+  YDatabaseCalculations,
   YDatabaseCell,
   YDatabaseField,
   YDatabaseFieldOrders,
   YDatabaseFieldSetting,
   YDatabaseFieldSettings,
-  YDatabaseFieldTypeOption, YDatabaseFilters, YDatabaseGroup, YDatabaseGroupColumns, YDatabaseGroups,
+  YDatabaseFieldTypeOption,
+  YDatabaseFilters,
+  YDatabaseGroup,
+  YDatabaseGroupColumns,
+  YDatabaseGroups,
   YDatabaseLayoutSettings,
   YDatabaseRow,
-  YDatabaseRowOrders, YDatabaseSorts,
+  YDatabaseRowOrders,
+  YDatabaseSorts,
   YDatabaseView,
   YjsDatabaseKey,
   YjsEditorKey,
   YMapFieldTypeOption,
   YSharedRoot,
 } from '@/application/types';
+import dayjs from 'dayjs';
 import { countBy, meanBy, sortBy, sumBy } from 'lodash-es';
 import { nanoid } from 'nanoid';
 import { useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
+import * as Y from 'yjs';
 
 export function useResizeColumnWidthDispatch () {
   const database = useDatabase();
@@ -928,7 +937,7 @@ export function useClearCellsWithFieldDispatch () {
         const rowDoc = rowDocs?.[rowId];
 
         if (!rowDoc) {
-          throw new Error(`Row not found`);
+          return;
         }
 
         rowDoc.transact(() => {
@@ -1060,7 +1069,7 @@ export function useDuplicatePropertyDispatch () {
       const rowDoc = rowDocs?.[rowId];
 
       if (!rowDoc) {
-        throw new Error(`Row not found`);
+        return;
       }
 
       rowDoc.transact(() => {
@@ -1138,18 +1147,21 @@ export function useUpdateCellDispatch (rowId: string, fieldId: string) {
     const cell = cells.get(fieldId);
 
     if (cell?.get(YjsDatabaseKey.data) === data) return;
+    const type = Number(field.get(YjsDatabaseKey.type));
 
     rowDoc.transact(() => {
       if (!cell) {
         const newCell = new Y.Map() as YDatabaseCell;
-        const type = Number(field.get(YjsDatabaseKey.type));
 
         newCell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
         newCell.set(YjsDatabaseKey.field_type, type);
         newCell.set(YjsDatabaseKey.data, data);
+        newCell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
         cells.set(fieldId, newCell);
       } else {
         cell.set(YjsDatabaseKey.data, data);
+        cell.set(YjsDatabaseKey.field_type, type);
+        cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       }
 
       row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
@@ -1333,8 +1345,15 @@ export function useDeleteView () {
 export function useSwitchPropertyType () {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
+  const rowDocMap = useRowDocMap();
 
   return useCallback((fieldId: string, fieldType: FieldType) => {
+    if (!rowDocMap) {
+      throw new Error(`Row docs not found`);
+    }
+
+    const rows = Object.keys(rowDocMap);
+
     executeOperations(sharedRoot, [() => {
       const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
@@ -1342,19 +1361,134 @@ export function useSwitchPropertyType () {
         throw new Error(`Field not found`);
       }
 
-      const lastModified = field.get(YjsDatabaseKey.last_modified);
+      let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
 
-      if (!lastModified) {
-        const fieldName = getFieldName(fieldType);
+      // Check if the field type is supported for type options
+      if ([FieldType.Number, FieldType.SingleSelect, FieldType.MultiSelect, FieldType.DateTime, FieldType.CreatedTime, FieldType.LastEditedTime].includes(fieldType)) {
+        // Ensure the type option map is created
+        if (!typeOptionMap) {
+          typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
 
-        field.set(YjsDatabaseKey.name, fieldName);
+          field.set(YjsDatabaseKey.type_option, typeOptionMap);
+        }
+
+        const typeOption = typeOptionMap.get(String(fieldType));
+
+        // Check if the type option is created, if not, create it with default values
+        // Otherwise, just ignore it
+        if (typeOption === undefined || Array.from(typeOption.keys()).length === 0) {
+          const newTypeOption = new Y.Map() as YMapFieldTypeOption;
+
+          // Set default values for the type option
+          if ([FieldType.CreatedTime, FieldType.LastEditedTime, FieldType.DateTime].includes(fieldType)) {
+            newTypeOption.set(YjsDatabaseKey.time_format, TimeFormat.TwelveHour);
+            newTypeOption.set(YjsDatabaseKey.date_format, DateFormat.Friendly);
+          } else if (fieldType === FieldType.Number) {
+            newTypeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
+          }
+
+          typeOptionMap.set(String(fieldType), newTypeOption);
+        }
       }
 
       field.set(YjsDatabaseKey.type, fieldType);
 
+      const lastModified = field.get(YjsDatabaseKey.last_modified);
+
+      // Before update-last modified time, check if the field is created
+      if (!lastModified) {
+        const fieldName = getFieldName(fieldType);
+
+        // Set the default name for the field if it is created
+        field.set(YjsDatabaseKey.name, fieldName);
+      }
+
       field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
+      rows.forEach((row) => {
+        const rowDoc = rowDocMap?.[row];
+
+        if (!rowDoc) {
+          return;
+        }
+
+        rowDoc.transact(() => {
+          const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+          const row = rowSharedRoot.get(YjsEditorKey.database_row);
+          const cells = row.get(YjsDatabaseKey.cells);
+          const cell = cells.get(fieldId);
+
+          // Update each cell
+          if (cell) {
+            const data = cell.get(YjsDatabaseKey.data);
+            let newData = data;
+
+            // Handle transformation of data based on the new field type
+            // 1. to RichText
+            if (fieldType === FieldType.RichText) {
+              const cellType = Number(cell.get(YjsDatabaseKey.field_type));
+              const typeOption = field.get(YjsDatabaseKey.type_option)?.get(String(cellType));
+
+              switch (cellType) {
+                // From Number to RichText, keep the number format value
+                case FieldType.Number: {
+                  const format = Number(typeOption.get(YjsDatabaseKey.format)) as NumberFormat ?? NumberFormat.Num;
+
+                  newData = getFormatValue(data as string, format);
+                  break;
+                }
+
+                default:
+                  break;
+              }
+            }
+
+            cell.set(YjsDatabaseKey.field_type, fieldType);
+            cell.set(YjsDatabaseKey.data, newData);
+            cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+            row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+          }
+
+        });
+      });
     }], 'switchPropertyType');
 
+  }, [database, sharedRoot, rowDocMap]);
+}
+
+export function useUpdateNumberTypeOption () {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((fieldId: string, format: NumberFormat) => {
+    executeOperations(sharedRoot, [() => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+
+      if (!typeOptionMap) {
+        typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+
+        field.set(YjsDatabaseKey.type_option, typeOptionMap);
+      }
+
+      const typeOption = typeOptionMap.get(String(FieldType.Number));
+
+      if (!typeOption) {
+        const newTypeOption = new Y.Map() as YMapFieldTypeOption;
+
+        newTypeOption.set(YjsDatabaseKey.format, format);
+
+        typeOptionMap.set(String(FieldType.Number), newTypeOption);
+      } else {
+        typeOption.set(YjsDatabaseKey.format, format);
+      }
+
+      field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+    }], 'updateNumberTypeOption');
   }, [database, sharedRoot]);
 }

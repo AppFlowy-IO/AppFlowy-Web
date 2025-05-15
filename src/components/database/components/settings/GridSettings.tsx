@@ -13,8 +13,8 @@ function GridSettings ({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger>
-        {children}
+      <DropdownMenuTrigger asChild>
+        <div>{children}</div>
       </DropdownMenuTrigger>
       <DropdownMenuContent
         onCloseAutoFocus={e => e.preventDefault()}

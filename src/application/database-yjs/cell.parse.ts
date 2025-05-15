@@ -12,7 +12,7 @@ export function parseYDatabaseCommonCellToCell (cell: YDatabaseCell): Cell {
   };
 }
 
-export function parseYDatabaseCellToCell (cell: YDatabaseCell, fieldType?: FieldType): Cell {
+export function parseYDatabaseCellToCell (cell: YDatabaseCell): Cell {
   const cellType = parseInt(cell.get(YjsDatabaseKey.field_type));
 
   let value = parseYDatabaseCommonCellToCell(cell);
@@ -23,10 +23,6 @@ export function parseYDatabaseCellToCell (cell: YDatabaseCell, fieldType?: Field
 
   if (cellType === FieldType.FileMedia) {
     value = parseYDatabaseFileMediaCellToCell(cell);
-  }
-
-  if (fieldType !== undefined && cellType !== fieldType) {
-    // If the field type does not match, deal with it here
   }
 
   return value;

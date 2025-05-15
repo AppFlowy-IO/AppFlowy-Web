@@ -39,6 +39,7 @@ function GridVirtualColumn ({
   const isActiveCell = activeCell && columnData.fieldType !== undefined && activeCell.rowId === rowData.rowId && activeCell.fieldId === columnData.fieldId && [
     FieldType.RichText,
     FieldType.URL,
+    FieldType.Number,
   ].includes(columnData.fieldType);
 
   return (
@@ -49,7 +50,6 @@ function GridVirtualColumn ({
       onClick={() => {
         if (readOnly) return;
         if (rowData.type === RenderRowType.Row && columnData.type === GridColumnType.Field && rowData.rowId && columnData.fieldId) {
-          console.log('click', rowData.rowId, columnData.fieldId, columnData.fieldType);
           setActiveCell({
             rowId: rowData.rowId,
             fieldId: columnData.fieldId,
@@ -59,7 +59,8 @@ function GridVirtualColumn ({
       }}
       className={cn(columnData.wrap ? 'wrap-cell' : 'whitespace-nowrap', 'grid-row-cell border-t border-l relative border-transparent', isActiveCell ? 'editing' : '')}
       style={{
-        minHeight: rowIndex === 0 ? MIN_HEIGHT : row.size,
+        height: rowIndex === 0 ? MIN_HEIGHT : row.size,
+        minHeight: 'fit-content',
         width: columnData.width,
         ...(rowIndex !== data.length - 1 && {
           borderBottom: borderStyle,

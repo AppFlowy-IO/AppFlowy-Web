@@ -19,7 +19,7 @@ export function RowCreateModifiedTime ({
   return (
     <div
       style={style}
-      className={'flex w-full'}
+      className={'flex w-full select-text'}
     >
       {time}
     </div>

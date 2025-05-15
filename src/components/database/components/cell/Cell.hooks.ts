@@ -4,7 +4,7 @@ import { DateFormat, TimeFormat, getDateFormat, getTimeFormat, getTypeOptions } 
 import { renderDate } from '@/utils/time';
 import { useCallback, useMemo } from 'react';
 
-export function useCellTypeOption (fieldId: string) {
+export function useFieldTypeOption (fieldId: string) {
   const { field } = useFieldSelector(fieldId);
 
   return useMemo(() => {
@@ -13,7 +13,7 @@ export function useCellTypeOption (fieldId: string) {
 }
 
 export function useDateTypeCellDispatcher (fieldId: string) {
-  const typeOption = useCellTypeOption(fieldId);
+  const typeOption = useFieldTypeOption(fieldId);
   const typeOptionValue = useMemo(() => {
     if (!typeOption) return null;
     return {

@@ -674,19 +674,21 @@ export interface YDatabaseFieldTypeOption extends Y.Map<unknown> {
 }
 
 export interface YMapFieldTypeOption extends Y.Map<unknown> {
+  // single select and multi select
   get (key: YjsDatabaseKey.content): string;
 
-  // eslint-disable-next-line @typescript-eslint/unified-signatures
-  get (key: YjsDatabaseKey.data): string;
-
+  // CreatedTime, LastEditedTime, DateTime
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get (key: YjsDatabaseKey.time_format): string;
 
+  // CreatedTime, LastEditedTime, DateTime
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get (key: YjsDatabaseKey.date_format): string;
 
+  // Relation
   get (key: YjsDatabaseKey.database_id): DatabaseId;
 
+  // Number
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get (key: YjsDatabaseKey.format): string;
 }

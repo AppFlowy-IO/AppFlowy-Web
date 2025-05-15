@@ -1,28 +1,30 @@
+import { valueToNumberParser } from '@/application/database-yjs';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { FieldId } from '@/application/types';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import React, { forwardRef, memo, useState } from 'react';
+import React, { forwardRef, memo, useCallback, useState } from 'react';
 
-function TextCellEditing ({
-  defaultValue = '',
-  placeholder,
+function NumberCellEditing ({
+  defaultValue,
   rowId,
   fieldId,
   onExit,
-  onChange,
 }: {
-  defaultValue?: string;
+  defaultValue: string;
   rowId: string;
   fieldId: FieldId;
-  placeholder?: string;
   onExit?: () => void;
-  onChange?: (value: string) => void;
 }, ref: React.Ref<HTMLTextAreaElement>) {
-
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
 
   const [inputValue, setInputValue] = useState<string>(defaultValue);
+
+  const handleUpdateCell = useCallback((value: string) => {
+    const decimalValue = valueToNumberParser(value);
+
+    onUpdateCell(decimalValue.toString());
+  }, [onUpdateCell]);
 
   return (
     <TextareaAutosize
@@ -34,13 +36,12 @@ function TextCellEditing ({
       value={inputValue}
       onChange={e => {
         setInputValue(e.target.value);
-        onChange?.(e.target.value);
       }}
       onKeyDown={e => {
         if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
           e.stopPropagation();
           if (inputValue !== defaultValue) {
-            onUpdateCell(inputValue);
+            handleUpdateCell(inputValue);
           }
 
           onExit?.();
@@ -51,12 +52,11 @@ function TextCellEditing ({
       }}
       onBlur={() => {
         if (inputValue !== defaultValue) {
-          onUpdateCell(inputValue);
+          handleUpdateCell(inputValue);
         }
 
         onExit?.();
       }}
-      placeholder={placeholder}
       variant={'ghost'}
       size={'sm'}
       className={'w-full px-0 rounded-none'}
@@ -64,4 +64,4 @@ function TextCellEditing ({
   );
 }
 
-export default memo(forwardRef(TextCellEditing));
+export default memo(forwardRef(NumberCellEditing));
