@@ -2,15 +2,26 @@ import { useFieldSelector, parseSelectOptionTypeOptions } from '@/application/da
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap } from '@/components/database/components/cell/cell.const';
 import { CellProps, SelectOptionCell as SelectOptionCellType } from '@/application/database-yjs/cell.type';
+import SelectOptionCellMenu from '@/components/database/components/cell/select-option/SelectOptionCellMenu';
+import { cn } from '@/lib/utils';
 import React, { useCallback, useMemo } from 'react';
 
-export function SelectOptionCell ({ cell, fieldId, style, placeholder }: CellProps<SelectOptionCellType>) {
+export function SelectOptionCell ({
+  editing,
+  setEditing,
+  cell,
+  fieldId,
+  style,
+  placeholder,
+  rowId,
+}: CellProps<SelectOptionCellType>) {
   const selectOptionIds = useMemo(() => (!cell?.data ? [] : cell?.data.split(',')), [cell]);
-  const { field } = useFieldSelector(fieldId);
+  const { field, clock } = useFieldSelector(fieldId);
   const typeOption = useMemo(() => {
     if (!field) return null;
     return parseSelectOptionTypeOptions(field);
-  }, [field]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field, clock]);
 
   const renderSelectedOptions = useCallback(
     (selected: string[]) =>
@@ -27,22 +38,27 @@ export function SelectOptionCell ({ cell, fieldId, style, placeholder }: CellPro
     [typeOption],
   );
 
-  if (!typeOption || !selectOptionIds?.length)
-    return placeholder ? (
-      <div
-        style={style}
-        className={'text-text-placeholder'}
-      >
-        {placeholder}
-      </div>
-    ) : null;
+  const isEmpty = !typeOption || !selectOptionIds?.length;
+
+  const handleOpenChange = useCallback((status: boolean) => {
+    setEditing?.(status);
+  }, [setEditing]);
 
   return (
     <div
       style={style}
-      className={'select-option-cell flex w-full items-center gap-1 overflow-x-hidden'}
+      className={cn('select-option-cell flex-wrap flex w-full items-center gap-1 overflow-x-hidden', isEmpty && placeholder ? 'text-text-placeholder' : '')}
     >
-      {renderSelectedOptions(selectOptionIds)}
+      {isEmpty ? placeholder || null : renderSelectedOptions(selectOptionIds)}
+      {editing ? (
+        <SelectOptionCellMenu
+          cell={cell}
+          fieldId={fieldId}
+          rowId={rowId}
+          open={editing}
+          onOpenChange={handleOpenChange}
+        />
+      ) : null}
     </div>
   );
 }

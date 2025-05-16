@@ -9,7 +9,7 @@ import {
   DropdownMenuGroup, DropdownMenuItem,
   DropdownMenuLabel, DropdownMenuPortal,
   DropdownMenuSeparator,
-  DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropMenuTick,
+  DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuItemTick,
 } from '@/components/ui/dropdown-menu';
 import { SearchInput } from '@/components/ui/search-input';
 import React, { useMemo, useState } from 'react';
@@ -80,7 +80,7 @@ function NumberPropertyMenuContent ({ fieldId }: {
                   }}
                 >
                   {item.label}
-                  {item.value === format ? <DropMenuTick /> : ''}
+                  {item.value === format ? <DropdownMenuItemTick /> : ''}
                 </DropdownMenuItem>;
               })}
             </DropdownMenuSubContent>

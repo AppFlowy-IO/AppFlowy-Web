@@ -45,9 +45,8 @@ function GridVirtualizer ({
   useEffect(() => {
     if (!isResizing) {
       columnVirtualizer.measure();
-      virtualizer.measure();
     }
-  }, [virtualizer, columns, isResizing, columnVirtualizer]);
+  }, [columns, isResizing, columnVirtualizer]);
 
   const rowItems = virtualizer.getVirtualItems();
   const columnItems = columnVirtualizer.getVirtualItems();

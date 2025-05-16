@@ -8,6 +8,7 @@ import {
   useDatabaseViewId,
   useRowDocMap,
 } from '@/application/database-yjs/context';
+import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields';
 import { filterBy, parseFilter } from '@/application/database-yjs/filter';
 import { groupByField } from '@/application/database-yjs/group';
 import { getMetaJSON } from '@/application/database-yjs/row_meta';
@@ -100,6 +101,7 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
   useEffect(() => {
     if (!view) return;
     const fields = database?.get(YjsDatabaseKey.fields);
+    const field = view?.get(YjsDatabaseKey.fields);
     const fieldsOrder = view?.get(YjsDatabaseKey.field_orders);
     const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
     const getColumns = () => {
@@ -110,7 +112,6 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
       return fieldIds
         .map((fieldId) => {
           const setting = fieldSettings.get(fieldId);
-          const field = fields.get(fieldId);
 
           return {
             fieldId,
@@ -134,10 +135,12 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
 
     fieldsOrder?.observeDeep(observerEvent);
     fieldSettings?.observeDeep(observerEvent);
+    field?.observe(observerEvent);
 
     return () => {
       fieldsOrder?.unobserveDeep(observerEvent);
       fieldSettings?.unobserveDeep(observerEvent);
+      field?.unobserve(observerEvent);
     };
   }, [database, view, visibilitys]);
 
@@ -893,4 +896,21 @@ export const useRowTimeString = (rowId: string, fieldId: string, attrName: strin
   }, [value, getDateTimeStr]);
 
   return time;
+};
+
+export const useSelectFieldOptions = (fieldId: string, searchValue?: string) => {
+  const { field, clock } = useFieldSelector(fieldId);
+
+  return useMemo(() => {
+    const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
+
+    if (!typeOption) return [] as SelectOption[];
+
+    return typeOption.options.filter((option) => {
+      if (!searchValue) return true;
+      return option.name.toLowerCase().includes(searchValue.toLowerCase());
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field, searchValue, clock]);
+
 };

@@ -55,7 +55,6 @@ function GridVirtualColumn ({
             fieldId: columnData.fieldId,
           });
         }
-
       }}
       className={cn(columnData.wrap ? 'wrap-cell' : 'whitespace-nowrap', 'grid-row-cell border-t border-l relative border-transparent', isActiveCell ? 'editing' : '')}
       style={{
