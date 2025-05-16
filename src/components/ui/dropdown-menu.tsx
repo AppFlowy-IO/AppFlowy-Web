@@ -183,7 +183,7 @@ function DropdownMenuShortcut ({
   );
 }
 
-function DropMenuTick ({
+function DropdownMenuItemTick ({
   className,
   ...props
 }: React.ComponentProps<'span'>) {
@@ -292,5 +292,5 @@ export {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-  DropMenuTick,
+  DropdownMenuItemTick,
 };

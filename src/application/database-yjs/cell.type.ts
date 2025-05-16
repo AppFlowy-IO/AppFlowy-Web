@@ -110,7 +110,6 @@ export interface CellProps<T extends Cell> {
   readOnly?: boolean;
   placeholder?: string;
   className?: string;
-  setNeedResizeRowId?: (rowId: string) => void;
   editing?: boolean;
   setEditing?: (editing: boolean) => void;
 }

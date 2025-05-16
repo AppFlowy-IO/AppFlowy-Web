@@ -10,8 +10,6 @@ export const GridContext = createContext<{
   activePropertyId?: string;
   setActivePropertyId: (activePropertyId?: string) => void;
   setShowStickyHeader: (show: boolean) => void;
-  needResizeRowId?: string;
-  setNeedResizeRowId: (needResizeRowId?: string) => void;
   activeCell?: {
     rowId: string;
     fieldId: string;
@@ -24,7 +22,6 @@ export const GridContext = createContext<{
   setHoverRowId: (_hoverRowId?: string) => undefined,
   setActivePropertyId: (_activePropertyId?: string) => undefined,
   setShowStickyHeader: (_show: boolean) => undefined,
-  setNeedResizeRowId: (_needResizeRowId?: string) => undefined,
   setActiveCell: (_activeCell?: { rowId: string; fieldId: string }) => undefined,
 });
 

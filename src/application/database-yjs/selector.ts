@@ -8,6 +8,7 @@ import {
   useDatabaseViewId,
   useRowDocMap,
 } from '@/application/database-yjs/context';
+import { parseSelectOptionTypeOptions, SelectOption } from '@/application/database-yjs/fields';
 import { filterBy, parseFilter } from '@/application/database-yjs/filter';
 import { groupByField } from '@/application/database-yjs/group';
 import { getMetaJSON } from '@/application/database-yjs/row_meta';
@@ -134,10 +135,12 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
 
     fieldsOrder?.observeDeep(observerEvent);
     fieldSettings?.observeDeep(observerEvent);
+    fields?.observe(observerEvent);
 
     return () => {
       fieldsOrder?.unobserveDeep(observerEvent);
       fieldSettings?.unobserveDeep(observerEvent);
+      fields?.unobserve(observerEvent);
     };
   }, [database, view, visibilitys]);
 
@@ -147,26 +150,26 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
 export function useFieldWrap (fieldId: string) {
   const view = useDatabaseView();
   const database = useDatabase();
-  const [wrap, setWrap] = useState(true);
+  const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+  const fieldSetting = fieldSettings?.get(fieldId);
+
+  const [wrap, setWrap] = useState(fieldSetting?.get(YjsDatabaseKey.wrap) ?? true);
 
   useEffect(() => {
     if (!view) return;
-    const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
     const observerEvent = () => {
-      const fieldSetting = fieldSettings?.get(fieldId);
-
       setWrap(fieldSetting?.get(YjsDatabaseKey.wrap) ?? true);
     };
 
     observerEvent();
 
-    fieldSettings.observeDeep(observerEvent);
+    fieldSettings?.observeDeep(observerEvent);
 
     return () => {
       fieldSettings?.unobserveDeep(observerEvent);
     };
-  }, [database, view, fieldId]);
+  }, [database, view, fieldId, fieldSettings, fieldSetting]);
 
   return wrap;
 }
@@ -893,4 +896,21 @@ export const useRowTimeString = (rowId: string, fieldId: string, attrName: strin
   }, [value, getDateTimeStr]);
 
   return time;
+};
+
+export const useSelectFieldOptions = (fieldId: string, searchValue?: string) => {
+  const { field, clock } = useFieldSelector(fieldId);
+
+  return useMemo(() => {
+    const typeOption = field ? parseSelectOptionTypeOptions(field) : null;
+
+    if (!typeOption) return [] as SelectOption[];
+
+    return typeOption.options.filter((option) => {
+      if (!searchValue) return true;
+      return option.name.toLowerCase().includes(searchValue.toLowerCase());
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field, searchValue, clock]);
+
 };

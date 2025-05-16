@@ -12,7 +12,7 @@ function Label ({
       data-slot="label"
       className={cn(
         // Typography and base appearance
-        'text-text-secondary text-xs leading-[16px] font-semibold',
+        'text-text-tertiary text-xs leading-[16px] font-medium',
 
         // Layout
         'flex items-center gap-2',

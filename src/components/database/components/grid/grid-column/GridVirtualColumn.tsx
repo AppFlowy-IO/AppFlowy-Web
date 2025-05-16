@@ -9,7 +9,6 @@ import { VirtualItem } from '@tanstack/react-virtual';
 import React, { memo, useMemo } from 'react';
 
 const MIN_HEIGHT = 35;
-const borderStyle = '1px solid var(--border-primary)';
 
 function GridVirtualColumn ({
   data,
@@ -41,6 +40,8 @@ function GridVirtualColumn ({
     FieldType.URL,
     FieldType.Number,
   ].includes(columnData.fieldType);
+  const showActions = Boolean(isHoverRow && columnData.isPrimary && rowData.rowId);
+  const rowType = rowData.type;
 
   return (
     <div
@@ -55,22 +56,20 @@ function GridVirtualColumn ({
             fieldId: columnData.fieldId,
           });
         }
-
       }}
-      className={cn(columnData.wrap ? 'wrap-cell' : 'whitespace-nowrap', 'grid-row-cell border-t border-l relative border-transparent', isActiveCell ? 'editing' : '')}
+      className={cn('grid-row-cell relative border border-transparent', isActiveCell ? 'editing' : '')}
       style={{
         height: rowIndex === 0 ? MIN_HEIGHT : row.size,
         minHeight: 'fit-content',
         width: columnData.width,
-        ...(rowIndex !== data.length - 1 && {
-          borderBottom: borderStyle,
+        ...(column.index === 0 || rowType === RenderRowType.CalculateRow ? {} : {
+          borderLeftColor: 'var(--border-primary)',
         }),
-        ...(column.index === 0 || rowIndex === data.length - 1 ? {} : {
-          borderLeft: borderStyle,
+        ...(rowIndex === 0 || rowType === RenderRowType.CalculateRow ? {
+          borderTopColor: 'transparent',
+        } : {
+          borderTopColor: 'var(--border-primary)',
         }),
-        ...(rowIndex === 0 ? {
-          borderTop: '1px solid transparent',
-        } : {}),
       }}
     >
       <GridCell
@@ -81,9 +80,9 @@ function GridVirtualColumn ({
         onResizeColumnStart={onResizeColumnStart}
       />
 
-      {isHoverRow && columnData.isPrimary && rowData.rowId &&
-        <div className={'absolute right-2 top-2 min-w-0 transform '}>
-          <OpenAction rowId={rowData.rowId} />
+      {showActions &&
+        <div className={'absolute right-2 top-2 z-10 min-w-0 transform '}>
+          <OpenAction rowId={rowData.rowId!} />
         </div>}
     </div>
   );

@@ -1,25 +1,25 @@
 import { FieldType, useFieldSelector } from '@/application/database-yjs';
-import {
-  useDuplicatePropertyDispatch,
-  useHidePropertyDispatch,
-} from '@/application/database-yjs/dispatch';
+import { useDuplicatePropertyDispatch, useHidePropertyDispatch } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
+import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
 import DeletePropertyConfirm from '@/components/database/components/property/DeletePropertyConfirm';
 import NumberPropertyMenuContent from '@/components/database/components/property/number/NumberPropertyMenuContent';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
 import PropertySelectTrigger from '@/components/database/components/property/PropertySelectTrigger';
+import SelectPropertyMenuContent from '@/components/database/components/property/select/SelectPropertyMenuContent';
 import TextPropertyMenuContent from '@/components/database/components/property/text/TextPropertyMenuContent';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
-import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
-import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 
 function PropertyMenu ({
   fieldId,
@@ -66,6 +66,9 @@ function PropertyMenu ({
         return <TextPropertyMenuContent fieldId={fieldId} />;
       case FieldType.Number:
         return <NumberPropertyMenuContent fieldId={fieldId} />;
+      case FieldType.SingleSelect:
+      case FieldType.MultiSelect:
+        return <SelectPropertyMenuContent fieldId={fieldId} />;
       default:
         return <PropertySelectTrigger fieldId={fieldId} />;
     }

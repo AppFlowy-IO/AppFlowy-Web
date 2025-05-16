@@ -12,7 +12,7 @@ import DatabaseStickyHorizontalScrollbar
   from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
 import { useGridContext } from '@/components/database/grid/useGridContext';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useColumnResize } from '../grid-column/useColumnResize';
 
 function GridVirtualizer ({
@@ -24,8 +24,6 @@ function GridVirtualizer ({
     rows: data,
     setShowStickyHeader,
     showStickyHeader,
-    needResizeRowId,
-    setNeedResizeRowId,
   } = useGridContext();
   const {
     handleResizeStart,
@@ -42,13 +40,6 @@ function GridVirtualizer ({
     columns,
   });
 
-  useEffect(() => {
-    if (!isResizing) {
-      columnVirtualizer.measure();
-      virtualizer.measure();
-    }
-  }, [virtualizer, columns, isResizing, columnVirtualizer]);
-
   const rowItems = virtualizer.getVirtualItems();
   const columnItems = columnVirtualizer.getVirtualItems();
   const totalSize = columnVirtualizer.getTotalSize();
@@ -58,13 +49,11 @@ function GridVirtualizer ({
   const [isHover, setIsHover] = useState(false);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-
-    if (!needResizeRowId) return;
-    const node = parentRef.current?.querySelector('[data-row-id="' + needResizeRowId + '"]');
+  const resizeRow = useCallback((id: string) => {
+    const node = parentRef.current?.querySelector('[data-row-id="' + id + '"]');
 
     if (!node) return;
-    const index = data.findIndex(row => row.rowId === needResizeRowId);
+    const index = data.findIndex(row => row.rowId === id);
 
     if (index === -1) return;
 
@@ -75,9 +64,25 @@ function GridVirtualizer ({
       return Math.max(acc, cellHeight);
     }, 0);
 
-    virtualizer.resizeItem(index, cellHeight);
-    setNeedResizeRowId(undefined);
-  }, [data, needResizeRowId, parentRef, setNeedResizeRowId, virtualizer]);
+    virtualizer.resizeItem(index, cellHeight + 1);
+  }, [data, parentRef, virtualizer]);
+
+  useEffect(() => {
+    if (!isResizing) {
+      columnVirtualizer.measure();
+      const rowIds = rowItems.map(item => {
+        const rowData = data[item.index];
+
+        if (rowData.type === RenderRowType.Row) {
+          return rowData.rowId;
+        }
+
+        return null;
+      }).filter(Boolean) as string[];
+
+      rowIds.forEach(resizeRow);
+    }
+  }, [columns, isResizing, columnVirtualizer, rowItems, resizeRow, data]);
 
   useEffect(() => {
     const scrollElement = virtualizer.scrollElement;
@@ -89,7 +94,6 @@ function GridVirtualizer ({
       const scrollMarginTop = gridElement.getBoundingClientRect().top ?? 0;
       const bottom = gridElement.getBoundingClientRect().bottom ?? 0;
 
-      // console.log(header, scrollMarginTop);
       if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
         setShowStickyHeader(true);
       } else {

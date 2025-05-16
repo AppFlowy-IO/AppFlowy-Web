@@ -1,5 +1,6 @@
 import { YjsDatabaseKey } from '@/application/types';
-import { useRowTimeString } from '@/application/database-yjs';
+import { useFieldWrap, useRowTimeString } from '@/application/database-yjs';
+import { cn } from '@/lib/utils';
 import React from 'react';
 
 export function RowCreateModifiedTime ({
@@ -14,12 +15,13 @@ export function RowCreateModifiedTime ({
   attrName: YjsDatabaseKey.last_modified | YjsDatabaseKey.created_at;
 }) {
   const time = useRowTimeString(rowId, fieldId, attrName);
+  const wrap = useFieldWrap(fieldId);
 
   if (!time) return null;
   return (
     <div
       style={style}
-      className={'flex w-full select-text'}
+      className={cn('flex w-full select-text', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-nowrap')}
     >
       {time}
     </div>

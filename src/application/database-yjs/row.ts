@@ -20,3 +20,32 @@ export function initialDatabaseRow (rowId: string, databaseId: string, rowDoc: Y
   rowSharedRoot.set(YjsEditorKey.meta, meta);
   rowSharedRoot.set(YjsEditorKey.database_row, row);
 }
+
+export function getOptionsFromRow (rowDoc: YDoc, fieldId: string) {
+  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+  const row = rowSharedRoot.get(YjsEditorKey.database_row);
+  const options: string[] = [];
+
+  if (!row) return options;
+
+  const cells = row.get(YjsDatabaseKey.cells);
+  const cell = cells.get(fieldId);
+
+  if (!cell) return options;
+
+  const data = cell.get(YjsDatabaseKey.data);
+
+  if (data && typeof data === 'string') {
+    const dataArray = data.split(',');
+
+    dataArray.forEach(item => {
+      const option = item.trim();
+
+      if (option) {
+        options.push(option);
+      }
+    });
+  }
+
+  return options;
+}

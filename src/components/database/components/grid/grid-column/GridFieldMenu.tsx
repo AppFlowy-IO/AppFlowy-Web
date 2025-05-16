@@ -175,6 +175,10 @@ function GridFieldMenu ({
               onPointerMove={e => e.preventDefault()}
               onPointerEnter={e => e.preventDefault()}
               onPointerLeave={e => e.preventDefault()}
+              onSelect={e => {
+                e.preventDefault();
+                onToggleWrap(fieldId, !wrap);
+              }}
             >
               {t('grid.field.wrapCellContent')}
               <DropdownMenuShortcut

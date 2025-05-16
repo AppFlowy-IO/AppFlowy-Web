@@ -57,9 +57,9 @@ export function HoverControls ({ rowId, dragHandleRef }: {
       <div
         ref={ref}
         style={{
-          minHeight: 36,
+          minHeight: 37,
         }}
-        className={'flex relative border w-full py-1 border-transparent items-start left-0 justify-end'}
+        className={'flex relative border w-full py-1.5 border-transparent items-start left-0 justify-end'}
       >
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>

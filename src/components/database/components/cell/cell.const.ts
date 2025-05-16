@@ -22,5 +22,4 @@ export const SelectOptionBadgeColorMap = {
   [SelectOptionColor.Green]: '--badge-green',
   [SelectOptionColor.Aqua]: '--badge-aqua',
   [SelectOptionColor.Blue]: '--badge-blue',
-
 };

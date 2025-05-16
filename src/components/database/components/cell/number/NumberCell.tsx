@@ -1,6 +1,6 @@
 import {
   NumberFormat,
-  getFormatValue,
+  getFormatValue, useFieldWrap,
 } from '@/application/database-yjs';
 import { CellProps, NumberCell as NumberCellType } from '@/application/database-yjs/cell.type';
 import { YjsDatabaseKey } from '@/application/types';
@@ -18,8 +18,8 @@ export function NumberCell ({
   setEditing,
   readOnly,
   rowId,
-  setNeedResizeRowId,
 }: CellProps<NumberCellType>) {
+  const wrap = useFieldWrap(fieldId);
 
   const typeOption = useFieldTypeOption(fieldId);
 
@@ -42,20 +42,10 @@ export function NumberCell ({
 
   const undefinedValue = value === undefined;
 
-  if (undefinedValue)
-    return placeholder ? (
-      <div
-        style={style}
-        className={'text-text-placeholder'}
-      >
-        {placeholder}
-      </div>
-    ) : null;
-
   return (
     <div
       style={style}
-      className={cn('select-text w-full whitespace-pre-wrap break-all', readOnly ? 'cursor-text' : 'cursor-pointer', undefinedValue && placeholder ? 'text-text-placeholder' : '')}
+      className={cn('select-text w-full', readOnly ? 'cursor-text' : 'cursor-pointer', undefinedValue && placeholder ? 'text-text-placeholder' : '', wrap ? 'whitespace-pre-wrap break-all' : 'whitespace-nowrap')}
     >
       {undefinedValue ? placeholder : editing ? <NumberCellEditing
         ref={focusToEnd}
@@ -64,7 +54,6 @@ export function NumberCell ({
         defaultValue={value}
         onExit={() => {
           setEditing?.(false);
-          setNeedResizeRowId?.(rowId);
         }}
       /> : (
         <>{value}</>

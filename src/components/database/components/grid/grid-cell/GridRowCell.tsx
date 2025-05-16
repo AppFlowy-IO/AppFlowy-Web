@@ -43,7 +43,7 @@ export function GridRowCell ({ onResize, rowId, fieldId, columnIndex, rowIndex }
       observer.disconnect();
     };
   }, [columnIndex, onResize, rowIndex, cell]);
-  const { setNeedResizeRowId, activeCell, setActiveCell } = useGridContext();
+  const { activeCell, setActiveCell } = useGridContext();
 
   const Component = useMemo(() => {
     if (isPrimary) {
@@ -71,14 +71,13 @@ export function GridRowCell ({ onResize, rowId, fieldId, columnIndex, rowIndex }
   return (
     <div
       ref={ref}
-      className={'grid-cell px-2 py-2 relative flex items-start w-full cursor-text overflow-hidden text-sm'}
+      className={'grid-cell px-2 py-2 flex items-start w-full cursor-text overflow-hidden text-sm'}
     >
       <Component
         cell={cell}
         rowId={rowId}
         fieldId={fieldId}
         readOnly={readOnly}
-        setNeedResizeRowId={setNeedResizeRowId}
         editing={isActive}
         setEditing={setEditing}
       />

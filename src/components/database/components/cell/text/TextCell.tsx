@@ -1,4 +1,4 @@
-import { FieldType } from '@/application/database-yjs';
+import { FieldType, useFieldWrap } from '@/application/database-yjs';
 import {
   Cell,
   CellProps,
@@ -17,7 +17,6 @@ export function TextCell ({
   readOnly,
   fieldId,
   rowId,
-  setNeedResizeRowId,
   editing,
   setEditing,
 }: CellProps<Cell>) {
@@ -50,6 +49,7 @@ export function TextCell ({
       el.focus();
     }
   }, []);
+  const wrap = useFieldWrap(fieldId);
 
   return (
     <>
@@ -76,7 +76,7 @@ export function TextCell ({
         onMouseLeave={() => {
           setShowUrlActions(false);
         }}
-        className={cn(`text-cell w-full text-sm whitespace-pre-wrap break-words ${readOnly ? 'select-auto' : 'cursor-pointer'}`, !value && placeholder ? 'text-text-placeholder' : '', cellType === FieldType.URL ? 'underline !text-text-action hover:text-text-action-hover' : '')}
+        className={cn(`text-cell w-full text-sm ${readOnly ? 'select-auto' : 'cursor-pointer'}`, !value && placeholder ? 'text-text-placeholder' : '', cellType === FieldType.URL ? 'underline !text-text-action hover:text-text-action-hover' : '', wrap ? ' whitespace-pre-wrap break-words' : 'whitespace-nowrap')}
       >
         {!editing ? <>{value || placeholder || ''}</> :
           <TextCellEditing
@@ -87,7 +87,6 @@ export function TextCell ({
             rowId={rowId}
             onExit={() => {
               setEditing?.(false);
-              setNeedResizeRowId?.(rowId);
             }}
             onChange={onUpdateCell}
           />}

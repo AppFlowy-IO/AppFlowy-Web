@@ -9,13 +9,20 @@ import {
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { CalculationType, FieldType, FieldVisibility, RowMetaKey } from '@/application/database-yjs/database.type';
-import { DateFormat, getFieldName, getFormatValue, NumberFormat, TimeFormat } from '@/application/database-yjs/fields';
+import {
+  DateFormat,
+  getFieldName,
+  getFormatValue,
+  NumberFormat, SelectOption,
+  SelectTypeOption,
+  TimeFormat,
+} from '@/application/database-yjs/fields';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
-import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
+import { createSelectOptionCell, getColorByFirstChar } from '@/application/database-yjs/fields/select-option/utils';
 import { createTextField } from '@/application/database-yjs/fields/text/utils';
 import { filterFillData } from '@/application/database-yjs/filter';
 import { getGroupColumns } from '@/application/database-yjs/group';
-import { initialDatabaseRow } from '@/application/database-yjs/row';
+import { getOptionsFromRow, initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON } from '@/application/database-yjs/row_meta';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
@@ -1385,6 +1392,33 @@ export function useSwitchPropertyType () {
             newTypeOption.set(YjsDatabaseKey.date_format, DateFormat.Friendly);
           } else if (fieldType === FieldType.Number) {
             newTypeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
+          } else if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
+            const rows = Object.keys(rowDocMap);
+            const options = new Set<string>();
+
+            rows.forEach(rowId => {
+              const rowDoc = rowDocMap[rowId];
+
+              if (!rowDoc) {
+                return;
+              }
+
+              getOptionsFromRow(rowDoc, fieldId).forEach((option) => {
+                options.add(option);
+              });
+            });
+            const content = JSON.stringify({
+              disable_color: false,
+              options: Array.from(options).map(name => {
+                return {
+                  id: name,
+                  name,
+                  color: getColorByFirstChar(name),
+                };
+              }),
+            });
+
+            newTypeOption.set(YjsDatabaseKey.content, content);
           }
 
           typeOptionMap.set(String(fieldType), newTypeOption);
@@ -1491,4 +1525,253 @@ export function useUpdateNumberTypeOption () {
       field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
     }], 'updateNumberTypeOption');
   }, [database, sharedRoot]);
+}
+
+export function useAddSelectOption (fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((option: SelectOption) => {
+    executeOperations(sharedRoot, [() => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+      let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+
+      if (!typeOptionMap) {
+        typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+
+        field.set(YjsDatabaseKey.type_option, typeOptionMap);
+      }
+
+      let typeOption = typeOptionMap.get(String(fieldType));
+
+      if (!typeOption) {
+        typeOption = new Y.Map() as YMapFieldTypeOption;
+
+        typeOption.set(YjsDatabaseKey.content, JSON.stringify({
+          disable_color: false,
+          options: [],
+        }));
+
+        typeOptionMap.set(String(fieldType), typeOption);
+      }
+
+      const content = typeOption.get(YjsDatabaseKey.content);
+
+      if (!content) {
+        throw new Error(`Content not found`);
+      }
+
+      const options = JSON.parse(content) as SelectTypeOption;
+      const newOptions = [...options.options];
+
+      // Check if the option already exists
+      if (newOptions.some((opt) => opt.name === option.name)) {
+        return;
+      }
+
+      newOptions.push(option);
+      typeOption.set(YjsDatabaseKey.content, JSON.stringify({
+        ...options,
+        options: newOptions,
+      }));
+
+    }], 'addSelectOption');
+  }, [database, fieldId, sharedRoot]);
+}
+
+export function useReorderSelectFieldOptions (fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+  const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+  if (!field) {
+    throw new Error(`Field not found`);
+  }
+
+  return useCallback((optionId: string, beforeId?: string) => {
+    executeOperations(sharedRoot, [() => {
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+      let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+
+      if (!typeOptionMap) {
+        typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+
+        field.set(YjsDatabaseKey.type_option, typeOptionMap);
+      }
+
+      let typeOption = typeOptionMap.get(String(fieldType));
+
+      if (!typeOption) {
+        typeOption = new Y.Map() as YMapFieldTypeOption;
+
+        typeOption.set(YjsDatabaseKey.content, JSON.stringify({
+          disable_color: false,
+          options: [],
+        }));
+
+        typeOptionMap.set(String(fieldType), typeOption);
+      }
+
+      let content = typeOption.get(YjsDatabaseKey.content);
+
+      if (!content) {
+        content = JSON.stringify({
+          disable_color: false,
+          options: [],
+        });
+      }
+
+      const data = JSON.parse(content) as SelectTypeOption;
+
+      const options = data.options;
+
+      const index = options.findIndex((opt) => opt.id === optionId);
+      const option = options[index];
+
+      if (index === -1) {
+        return;
+      }
+
+      const newOptions = [...options];
+      const beforeIndex = newOptions.findIndex((opt) => opt.id === beforeId);
+
+      if (beforeIndex === index) {
+        return;
+      }
+
+      newOptions.splice(index, 1);
+
+      if (beforeId === undefined || beforeIndex === -1) {
+        newOptions.unshift(option);
+      } else {
+        const targetIndex = beforeIndex > index ? beforeIndex - 1 : beforeIndex;
+
+        newOptions.splice(targetIndex + 1, 0, option);
+      }
+
+      typeOption.set(YjsDatabaseKey.content, JSON.stringify({
+        ...data,
+        options: newOptions,
+      }));
+    }], 'updateSelectOptions');
+  }, [field, sharedRoot]);
+}
+
+export function useDeleteSelectOption (fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((optionId: string) => {
+    executeOperations(sharedRoot, [() => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+      let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+
+      if (!typeOptionMap) {
+        typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+
+        field.set(YjsDatabaseKey.type_option, typeOptionMap);
+      }
+
+      let typeOption = typeOptionMap.get(String(fieldType));
+
+      if (!typeOption) {
+        typeOption = new Y.Map() as YMapFieldTypeOption;
+
+        typeOption.set(YjsDatabaseKey.content, JSON.stringify({
+          disable_color: false,
+          options: [],
+        }));
+
+        typeOptionMap.set(String(fieldType), typeOption);
+      }
+
+      const content = typeOption.get(YjsDatabaseKey.content);
+
+      if (!content) {
+        throw new Error(`Content not found`);
+      }
+
+      const options = JSON.parse(content) as SelectTypeOption;
+      const newOptions = options.options.filter((opt) => opt.id !== optionId);
+
+      typeOption.set(YjsDatabaseKey.content, JSON.stringify({
+        ...options,
+        options: newOptions,
+      }));
+    }], 'deleteSelectOption');
+  }, [database, fieldId, sharedRoot]);
+}
+
+export function useUpdateSelectOption (fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((optionId: string, option: SelectOption) => {
+    executeOperations(sharedRoot, [() => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+      let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+
+      if (!typeOptionMap) {
+        typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+
+        field.set(YjsDatabaseKey.type_option, typeOptionMap);
+      }
+
+      let typeOption = typeOptionMap.get(String(fieldType));
+
+      if (!typeOption) {
+        typeOption = new Y.Map() as YMapFieldTypeOption;
+
+        typeOption.set(YjsDatabaseKey.content, JSON.stringify({
+          disable_color: false,
+          options: [],
+        }));
+
+        typeOptionMap.set(String(fieldType), typeOption);
+      }
+
+      const content = typeOption.get(YjsDatabaseKey.content);
+
+      if (!content) {
+        throw new Error(`Content not found`);
+      }
+
+      const options = JSON.parse(content) as SelectTypeOption;
+
+      const newOptions = options.options.map((opt) => {
+        if (opt.id === optionId) {
+          return option;
+        }
+
+        return opt;
+      });
+
+      typeOption.set(YjsDatabaseKey.content, JSON.stringify({
+        ...options,
+        options: newOptions,
+      }));
+    }], 'updateSelectOption');
+  }, [database, fieldId, sharedRoot]);
 }
