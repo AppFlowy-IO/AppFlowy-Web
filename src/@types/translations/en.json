@@ -298,7 +298,13 @@
     "highlight": "Highlight",
     "color": "Color",
     "addLink": "Add Link",
-    "link": "Link"
+    "link": "Link",
+    "suggestion": "Suggestion",
+    "turninto": "Turn into",
+    "paragraph": "Paragraph",
+    "heading1": "Heading 1",
+    "heading2": "Heading 2",
+    "heading3": "Heading 3"
   },
   "tooltip": {
     "lightMode": "Switch to Light mode",

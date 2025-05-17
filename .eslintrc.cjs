@@ -68,6 +68,9 @@ module.exports = {
       { blankLine: 'always', prev: 'block', next: '*' },
 
     ],
+    '@typescript-eslint/no-explicit-any': 'off',
+    'import/no-named-as-default': 'off',
+    'import/no-named-as-default-member': 'off',
   },
   ignorePatterns: ['src/**/*.test.ts', '**/__tests__/**/*.json', 'package.json', '__mocks__/*.ts'],
 };

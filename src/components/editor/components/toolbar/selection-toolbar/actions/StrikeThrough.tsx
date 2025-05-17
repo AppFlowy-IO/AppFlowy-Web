@@ -1,11 +1,13 @@
-import { CustomEditor } from '@/application/slate-yjs/command';
-import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
-import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
-import React, { useCallback, useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSlateStatic } from 'slate-react';
+
+import { CustomEditor } from '@/application/slate-yjs/command';
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { ReactComponent as StrikeThroughSvg } from '@/assets/icons/strikethrough.svg';
+import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
+import { createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
+
 
 export function StrikeThrough() {
   const { t } = useTranslation();
@@ -31,7 +33,7 @@ export function StrikeThrough() {
         </>
       }
     >
-      <StrikeThroughSvg className='h-4 w-4' />
+      <StrikeThroughSvg className='h-5 w-5' />
     </ActionButton>
   );
 }

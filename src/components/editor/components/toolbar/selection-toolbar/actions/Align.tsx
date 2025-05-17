@@ -1,3 +1,10 @@
+import Button from '@mui/material/Button';
+import { PopoverProps } from '@mui/material/Popover';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Element } from 'slate';
+import { useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId, getBlockEntry } from '@/application/slate-yjs/utils/editor';
@@ -7,11 +14,9 @@ import { ReactComponent as AlignLeftSvg } from '@/assets/icons/align_left.svg';
 import { ReactComponent as AlignRightSvg } from '@/assets/icons/align_right.svg';
 import { Popover } from '@/components/_shared/popover';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
-import { PopoverProps } from '@mui/material/Popover';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useSlateStatic } from 'slate-react';
-import { Element } from 'slate';
+
+import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
+
 import ActionButton from './ActionButton';
 
 const popoverProps: Partial<PopoverProps> = {
@@ -25,14 +30,13 @@ const popoverProps: Partial<PopoverProps> = {
   },
   slotProps: {
     paper: {
-      className: 'bg-[var(--fill-toolbar)] rounded-[6px]',
+      className: 'bg-[var(--surface-primary)] rounded-[6px]',
     },
   },
 };
 
 export function Align({ blockId, enabled = true }: { blockId?: string; enabled?: boolean }) {
   const [open, setOpen] = useState(false);
-
   const ref = useRef<HTMLButtonElement | null>(null);
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
@@ -72,13 +76,13 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
 
     switch (align) {
       case AlignType.Left:
-        return <AlignLeftSvg className={'h-4 w-4 text-fill-default'} />;
+        return <AlignLeftSvg className={'h-5 w-5 text-fill-default'} />;
       case 'center':
-        return <AlignCenterSvg className={'h-4 w-4 text-fill-default'} />;
+        return <AlignCenterSvg className={'h-5 w-5 text-fill-default'} />;
       case 'right':
-        return <AlignRightSvg className={'h-4 w-4 text-fill-default'} />;
+        return <AlignRightSvg className={'h-5 w-5 text-fill-default'} />;
       default:
-        return <AlignLeftSvg className={'h-4 w-4'} />;
+        return <AlignLeftSvg className={'h-5 w-5'} />;
     }
   }, [getAlign]);
 
@@ -103,6 +107,17 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
     },
     [getNode, editor, handleClose, rePosition]
   );
+
+  const { getButtonProps, selectedIndex } = useKeyboardNavigation({
+    itemCount: 3,
+    isOpen: open,
+    onSelect: (index) => {
+      const align = [AlignType.Left, AlignType.Center, AlignType.Right][index];
+
+      toggleAlign(align)();
+    },
+    onClose: handleClose
+  });
 
   useEffect(() => {
     if (!enabled) {
@@ -136,28 +151,100 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
         anchorEl={ref.current}
         {...popoverProps}
       >
-        <div className={'flex h-[32px] items-center justify-center px-2'}>
-          <ActionButton
-            active={getAlign() === AlignType.Left}
-            tooltip={t('document.plugins.optionAction.left')}
-            onClick={toggleAlign(AlignType.Left)}
+        <div className="flex flex-col w-[200px] rounded-[12px]" style={{ padding: 'var(--spacing-spacing-m)' }}>
+          <Button
+            {...getButtonProps(0)}
+            startIcon={<AlignLeftSvg className="h-5 w-5" />}
+            color="inherit"
+            onClick={() => {
+              toggleAlign(AlignType.Left)();
+              setOpen(false);
+            }}
+            className="text-foreground"
+            disableRipple
+            sx={{
+              '.MuiButton-startIcon': {
+                margin: 0,
+                marginRight: 'var(--spacing-spacing-m)'
+              },
+              padding: '0 var(--spacing-spacing-m)',
+              height: '32px',
+              minHeight: '32px',
+              borderRadius: '8px',
+              justifyContent: 'flex-start',
+              textAlign: 'left',
+              ...(getAlign() === AlignType.Left && {
+                backgroundColor: 'var(--fill-list-active)'
+              }),
+              ...(selectedIndex === 0 && {
+                backgroundColor: 'var(--fill-list-hover)'
+              })
+            }}
           >
-            <AlignLeftSvg className='h-4 w-4' />
-          </ActionButton>
-          <ActionButton
-            active={getAlign() === AlignType.Center}
-            tooltip={t('document.plugins.optionAction.center')}
-            onClick={toggleAlign(AlignType.Center)}
+            {t('document.plugins.optionAction.left')}
+          </Button>
+          <Button
+            {...getButtonProps(1)}
+            startIcon={<AlignCenterSvg className="h-5 w-5" />}
+            color="inherit"
+            onClick={() => {
+              toggleAlign(AlignType.Center)();
+              setOpen(false);
+            }}
+            className="text-foreground"
+            disableRipple
+            sx={{
+              '.MuiButton-startIcon': {
+                margin: 0,
+                marginRight: 'var(--spacing-spacing-m)'
+              },
+              padding: '0 var(--spacing-spacing-m)',
+              height: '32px',
+              minHeight: '32px',
+              borderRadius: '8px',
+              justifyContent: 'flex-start',
+              textAlign: 'left',
+              ...(getAlign() === AlignType.Center && {
+                backgroundColor: 'var(--fill-list-active)'
+              }),
+              ...(selectedIndex === 1 && {
+                backgroundColor: 'var(--fill-list-hover)'
+              })
+            }}
           >
-            <AlignCenterSvg className='h-4 w-4' />
-          </ActionButton>
-          <ActionButton
-            active={getAlign() === AlignType.Right}
-            tooltip={t('document.plugins.optionAction.right')}
-            onClick={toggleAlign(AlignType.Right)}
+            {t('document.plugins.optionAction.center')}
+          </Button>
+          <Button
+            {...getButtonProps(2)}
+            startIcon={<AlignRightSvg className="h-5 w-5" />}
+            color="inherit"
+            onClick={() => {
+              toggleAlign(AlignType.Right)();
+              setOpen(false);
+            }}
+            className="text-foreground"
+            disableRipple
+            sx={{
+              '.MuiButton-startIcon': {
+                margin: 0,
+                marginRight: 'var(--spacing-spacing-m)'
+              },
+              padding: '0 var(--spacing-spacing-m)',
+              height: '32px',
+              minHeight: '32px',
+              borderRadius: '8px',
+              justifyContent: 'flex-start',
+              textAlign: 'left',
+              ...(getAlign() === AlignType.Right && {
+                backgroundColor: 'var(--fill-list-active)'
+              }),
+              ...(selectedIndex === 2 && {
+                backgroundColor: 'var(--fill-list-hover)'
+              })
+            }}
           >
-            <AlignRightSvg className='h-4 w-4' />
-          </ActionButton>
+            {t('document.plugins.optionAction.right')}
+          </Button>
         </div>
       </Popover>
     </>
