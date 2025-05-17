@@ -44,7 +44,6 @@ jobs:
         with:
           component: true
           build: pnpm run build
-          start: pnpm run start
           browser: chrome
         env:
           COVERAGE: "true"
