@@ -87,7 +87,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           className={`flex items-center  database-tabs w-full gap-1.5 ${expanded || [
             DatabaseViewLayout.Board,
             DatabaseViewLayout.Calendar,
-          ].includes(layout as DatabaseViewLayout) ? 'border-b' : ''} border-line-divider `}
+          ].includes(layout) ? 'border-b' : ''} border-line-divider `}
         >
           <div
             style={{

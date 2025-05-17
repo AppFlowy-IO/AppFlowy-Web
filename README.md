@@ -76,7 +76,7 @@ For local development, please follow the steps below:
 1. Copy .development.env to .env. The default value assumes that AppFlowy Cloud is deployed on localhost. If not, please update the value of the API endpoints.
 2. Make sure `npm` has been installed on your dev environment, then run the following:
 ```
-# npm install pnpm@8.5.0
+corepack enable
 pnpm install
 
 pnpm run dev

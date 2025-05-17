@@ -11,13 +11,16 @@ import { ReactComponent as DownArrow } from '@/assets/icons/alt_arrow_down.svg';
 
 import { useTranslation } from 'react-i18next';
 
+// 创建扩展的 ToolbarProps 类型
+interface ExtendedToolbarProps extends ToolbarProps<CalendarEvent, object> {
+  emptyEvents: CalendarEvent[];
+}
+
 export function Toolbar({
   onNavigate,
   date,
   emptyEvents,
-}: ToolbarProps & {
-  emptyEvents: CalendarEvent[];
-}) {
+}: ExtendedToolbarProps) {
   const dateStr = useMemo(() => dayjs(date).format('MMM YYYY'), [date]);
   const { t } = useTranslation();
 

@@ -14,7 +14,7 @@ import { EditorData } from '@appflowyinc/editor';
 import { Portal } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
-import { Element, NodeEntry, Range, Text, Transforms } from 'slate';
+import { Range, Text, Transforms } from 'slate';
 import { ReactEditor, useSlate } from 'slate-react';
 import BlockPopover from './components/block-popover';
 import Panels from './components/panels';
@@ -34,20 +34,20 @@ function EditorOverlay({
   const start = useMemo(() => selection ? editor.start(selection) : null, [editor, selection]);
   const end = useMemo(() => selection ? editor.end(selection) : null, [editor, selection]);
   const startBlock = useMemo(() => {
-    if(!start) return null;
+    if (!start) return null;
     try {
       return getBlockEntry(editor, start);
-    } catch(e) {
+    } catch (e) {
       return null;
     }
   }, [editor, start]);
 
   const endBlock = useMemo(() => {
-    if(!end) return null;
+    if (!end) return null;
     try {
       return getBlockEntry(editor, end);
 
-    } catch(e) {
+    } catch (e) {
       return null;
     }
   }, [editor, end]);
@@ -57,11 +57,11 @@ function EditorOverlay({
   }, [workspaceId, viewId, requestInstance]);
 
   const handleInsertBelow = useCallback((data: EditorData) => {
-    if(!endBlock) return;
+    if (!endBlock) return;
     try {
-      const [node] = endBlock as NodeEntry<Element>;
+      const [node] = endBlock;
 
-      if(!node) return;
+      if (!node) return;
 
       const blockId = insertDataAfterBlock(editor.sharedRoot, data, node.blockId as string);
 
@@ -70,10 +70,10 @@ function EditorOverlay({
         const [, path] = findSlateEntryByBlockId(editor, blockId);
 
         editor.select(editor.end(path));
-      } catch(e) {
+      } catch (e) {
         //
       }
-    } catch(e) {
+    } catch (e) {
       console.error(e);
     }
 
@@ -81,9 +81,9 @@ function EditorOverlay({
 
   const handleReplaceSelection = useCallback((data: EditorData) => {
     try {
-      if(data.length === 1 && !isEmbedBlockTypes(data[0].type as unknown as BlockType)) {
+      if (data.length === 1 && !isEmbedBlockTypes(data[0].type as unknown as BlockType)) {
         ReactEditor.focus(editor);
-        if(Range.isExpanded(editor.selection as Range)) {
+        if (Range.isExpanded(editor.selection as Range)) {
           CustomEditor.deleteBlockForward(editor);
         }
 
@@ -102,21 +102,21 @@ function EditorOverlay({
         return;
       } else {
         ReactEditor.focus(editor);
-        if(Range.isExpanded(editor.selection as Range)) {
+        if (Range.isExpanded(editor.selection as Range)) {
           CustomEditor.deleteBlockForward(editor);
         }
 
-        if(!startBlock) return;
+        if (!startBlock) return;
 
-        const [node] = startBlock as NodeEntry<Element>;
+        const [node] = startBlock;
 
-        if(!node) return;
+        if (!node) return;
 
         const blockId = insertDataAfterBlock(editor.sharedRoot, data, node.blockId as string);
         const startYBlock = getBlock(node.blockId as string, editor.sharedRoot);
         const startYText = getText(startYBlock.get(YjsEditorKey.block_external_id), editor.sharedRoot);
 
-        if(startYText && startYText.length === 0) {
+        if (startYText && startYText.length === 0) {
           CustomEditor.deleteBlock(editor, node.blockId as string);
         }
 
@@ -127,7 +127,7 @@ function EditorOverlay({
 
       }
       // eslint-disable-next-line
-    } catch(e: any) {
+    } catch (e: any) {
       notify.error(e.message);
     }
 
@@ -138,7 +138,7 @@ function EditorOverlay({
 
   const handleExit = useCallback(() => {
     removeDecorate?.('ai-writer');
-    if(!ReactEditor.isFocused(editor)) {
+    if (!ReactEditor.isFocused(editor)) {
       ReactEditor.focus(editor);
     }
   }, [removeDecorate, editor]);
@@ -148,7 +148,7 @@ function EditorOverlay({
   const [absoluteHeight, setAbsoluteHeight] = React.useState(0);
 
   useEffect(() => {
-    if(endBlock) {
+    if (endBlock) {
       const [node] = endBlock;
 
       try {
@@ -156,7 +156,7 @@ function EditorOverlay({
 
         const firstChild = dom.firstChild as HTMLElement;
 
-        if(firstChild && firstChild.innerText.trim() === '') {
+        if (firstChild && firstChild.innerText.trim() === '') {
           setAbsoluteHeight(firstChild.offsetHeight);
         } else {
           setAbsoluteHeight(0);
@@ -167,7 +167,7 @@ function EditorOverlay({
         const container = dom.closest('.appflowy-scroll-container') || getScrollParent(dom);
 
         setScrollerContainer(container as HTMLDivElement);
-      } catch(e) {
+      } catch (e) {
         console.error(e);
       }
     }
@@ -191,11 +191,11 @@ function EditorOverlay({
           container={container}
         >
           {absoluteHeight ? <div
-              style={{
-                transform: 'translateY(-' + absoluteHeight + 'px)',
-              }}
-              className={'w-full flex'}
-            ><ContextPlaceholder /></div> :
+            style={{
+              transform: 'translateY(-' + absoluteHeight + 'px)',
+            }}
+            className={'w-full flex'}
+          ><ContextPlaceholder /></div> :
             <ContextPlaceholder />}
 
         </Portal>

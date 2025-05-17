@@ -7,7 +7,7 @@ on:
       - "release/*"
 env:
   NODE_VERSION: "18.16.0"
-  PNPM_VERSION: "8.5.0"
+  PNPM_VERSION: "10.9.0"
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -35,11 +35,11 @@ jobs:
           sudo rm -rf ${GITHUB_WORKSPACE}/.git
           sudo rm -rf $ANDROID_HOME/ndk
       - name: setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
       - name: setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v3
         with:
           version: ${{ env.PNPM_VERSION }}
      

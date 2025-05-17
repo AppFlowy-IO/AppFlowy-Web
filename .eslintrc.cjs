@@ -5,7 +5,12 @@ module.exports = {
     es6: true,
     node: true,
   },
-  extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
+  extends: [
+    'eslint:recommended',
+    'plugin:@typescript-eslint/recommended',
+    'plugin:import/recommended',
+    'plugin:import/typescript'
+  ],
   parser: '@typescript-eslint/parser',
   parserOptions: {
     project: 'tsconfig.json',
@@ -13,7 +18,15 @@ module.exports = {
     tsconfigRootDir: __dirname,
     extraFileExtensions: ['.json'],
   },
-  plugins: ['@typescript-eslint', 'react-hooks'],
+  plugins: ['@typescript-eslint', 'react-hooks', 'import', 'unused-imports'],
+  settings: {
+    'import/resolver': {
+      typescript: {
+        alwaysTryTypes: true,
+        project: 'tsconfig.json',
+      },
+    },
+  },
   rules: {
     'react-hooks/rules-of-hooks': 'error',
     'react-hooks/exhaustive-deps': 'error',
@@ -34,7 +47,8 @@ module.exports = {
     eqeqeq: ['error', 'always'],
     'no-cond-assign': 'error',
     'no-duplicate-case': 'error',
-    'no-duplicate-imports': 'error',
+    // replaced by import/no-duplicates
+    'no-duplicate-imports': 'off',
     'no-empty': [
       'error',
       {
@@ -52,12 +66,10 @@ module.exports = {
     'no-void': 'off',
     'prefer-const': 'error',
     'prefer-spread': 'off',
-    '@typescript-eslint/no-unused-vars': [
-      'error',
-      {
-        argsIgnorePattern: '^_',
-      },
-    ],
+
+    // 禁用标准的未使用变量规则，使用 unused-imports 插件的规则代替
+    '@typescript-eslint/no-unused-vars': 'off',
+
     'padding-line-between-statements': [
       'error',
       { blankLine: 'always', prev: ['const', 'let', 'var'], next: '*' },
@@ -66,8 +78,62 @@ module.exports = {
       { blankLine: 'any', prev: 'import', next: 'import' },
       { blankLine: 'always', prev: 'block-like', next: '*' },
       { blankLine: 'always', prev: 'block', next: '*' },
-
     ],
+    '@typescript-eslint/no-explicit-any': 'off',
+    'import/no-named-as-default': 'off',
+    'import/no-named-as-default-member': 'off',
+
+    'import/no-unresolved': 'warn',
+    'import/named': 'warn',
+    'import/namespace': 'warn',
+    'import/default': 'warn',
+    'import/export': 'warn',
+    'import/no-unused-modules': 'warn',
+    'import/no-duplicates': 'warn',
+
+    // unused-imports should be error level so eslint can auto fix it
+    'unused-imports/no-unused-imports': 'error',
+    'unused-imports/no-unused-vars': [
+      'warn',
+      {
+        vars: 'all',
+        varsIgnorePattern: '^_',
+        args: 'after-used',
+        argsIgnorePattern: '^_'
+      }
+    ],
+
+    // 导入顺序规则
+    'import/order': ['warn', {
+      'groups': [
+        'builtin',
+        'external',
+        'internal',
+        'parent',
+        'sibling',
+        'index',
+        'object',
+        'type'
+      ],
+      'newlines-between': 'always',
+      'alphabetize': {
+        'order': 'asc',
+        'caseInsensitive': true
+      },
+      'pathGroups': [
+        {
+          'pattern': '@/**',
+          'group': 'internal',
+          'position': 'after'
+        },
+        {
+          'pattern': 'src/**',
+          'group': 'internal',
+          'position': 'after'
+        }
+      ],
+      'pathGroupsExcludedImportTypes': ['builtin']
+    }]
   },
   ignorePatterns: ['src/**/*.test.ts', '**/__tests__/**/*.json', 'package.json', '__mocks__/*.ts'],
 };
