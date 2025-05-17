@@ -9,7 +9,7 @@
     "build": "vite build",
     "type-check": "tsc --noEmit --project tsconfig.web.json",
     "type-check:watch": "tsc --build --watch",
-    "lint": "pnpm type-check && eslint --ext .js,.ts,.tsx . --ignore-path .eslintignore.web",
+    "lint": "pnpm type-check && eslint --quiet --ext .js,.ts,.tsx . --ignore-path .eslintignore.web",
     "start": "vite preview --port 3000",
     "css:variables": "node scripts/generateTailwindColors.cjs",
     "analyze": "cross-env ANALYZE_MODE=true vite build",
