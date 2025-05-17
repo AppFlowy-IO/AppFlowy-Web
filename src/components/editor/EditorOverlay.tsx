@@ -9,13 +9,12 @@ import { notify } from '@/components/_shared/notify';
 import { insertDataAfterBlock } from '@/components/ai-chat/utils';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { getScrollParent } from '@/components/global-comment/utils';
-
 import { AIAssistantProvider, ContextPlaceholder, WriterRequest } from '@appflowyinc/ai-chat';
 import { EditorData } from '@appflowyinc/editor';
 import { Portal } from '@mui/material';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
-import { Element, NodeEntry, Range, Text, Transforms } from 'slate';
+import { Range, Text, Transforms } from 'slate';
 import { ReactEditor, useSlate } from 'slate-react';
 
 import BlockPopover from './components/block-popover';
@@ -61,7 +60,7 @@ function EditorOverlay({
   const handleInsertBelow = useCallback((data: EditorData) => {
     if (!endBlock) return;
     try {
-      const [node] = endBlock as NodeEntry<Element>;
+      const [node] = endBlock;
 
       if (!node) return;
 
@@ -110,7 +109,7 @@ function EditorOverlay({
 
         if (!startBlock) return;
 
-        const [node] = startBlock as NodeEntry<Element>;
+        const [node] = startBlock;
 
         if (!node) return;
 

@@ -66,12 +66,10 @@ module.exports = {
     'no-void': 'off',
     'prefer-const': 'error',
     'prefer-spread': 'off',
-    '@typescript-eslint/no-unused-vars': [
-      'error',
-      {
-        argsIgnorePattern: '^_',
-      },
-    ],
+
+    // 禁用标准的未使用变量规则，使用 unused-imports 插件的规则代替
+    '@typescript-eslint/no-unused-vars': 'off',
+
     'padding-line-between-statements': [
       'error',
       { blankLine: 'always', prev: ['const', 'let', 'var'], next: '*' },

@@ -3,11 +3,11 @@ import { useCalendarSetup } from '@/components/database/calendar/Calendar.hooks'
 import { Toolbar, Event } from '@/components/database/components/calendar';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { debounce } from 'lodash-es';
-import React, { useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Calendar as BigCalendar } from 'react-big-calendar';
 import './calendar.scss';
 
-export function Calendar () {
+export function Calendar() {
   const { dayPropGetter, localizer, formats, events, emptyEvents } = useCalendarSetup();
   const scrollLeft = useDatabaseContext().scrollLeft;
   const isDocumentBlock = useDatabaseContext().isDocumentBlock;

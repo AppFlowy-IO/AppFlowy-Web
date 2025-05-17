@@ -34,7 +34,7 @@
     "@floating-ui/react": "^0.26.27",
     "@jest/globals": "^29.7.0",
     "@mui/icons-material": "^5.11.11",
-    "@mui/material": "6.0.0-alpha.2",
+    "@mui/material": "^6.0.0",
     "@mui/x-date-pickers-pro": "^6.18.2",
     "@radix-ui/react-avatar": "^1.1.3",
     "@radix-ui/react-dialog": "^1.1.6",
@@ -215,6 +215,8 @@
     "vite-plugin-total-bundle-size": "^1.0.7"
   },
   "engines": {
-    "pnpm": "^8.0.0"
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0",
+    "pnpm": "^10.9.0"
   }
 }

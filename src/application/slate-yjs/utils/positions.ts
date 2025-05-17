@@ -141,7 +141,7 @@ export function relativePositionToSlatePoint(
     return null;
   }
 
-  const [node, path] = entry as NodeEntry<Element>;
+  const [node, path] = entry;
 
   if (!node) {
     return null;

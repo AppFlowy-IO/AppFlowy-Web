@@ -7,7 +7,7 @@ on:
       - "release/*"
 env:
   NODE_VERSION: "18.16.0"
-  PNPM_VERSION: "8.5.0"
+  PNPM_VERSION: "10.9.0"
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true

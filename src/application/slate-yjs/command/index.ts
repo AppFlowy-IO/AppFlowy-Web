@@ -156,9 +156,9 @@ export const CustomEditor = {
 
       const blockEntry = getBlockEntry(editor, point);
 
-      const [node, path] = blockEntry as NodeEntry<Element>;
+      const [node, path] = blockEntry;
       const block = getBlock(node.blockId as string, sharedRoot);
-      const blockType = block.get(YjsEditorKey.block_type) as BlockType;
+      const blockType = block.get(YjsEditorKey.block_type);
       const parent = getParent(node.blockId as string, sharedRoot);
 
       if(blockType !== BlockType.Paragraph && parent?.get(YjsEditorKey.block_type) === BlockType.QuoteBlock && LIST_BLOCK_TYPES.includes(blockType)) {
@@ -194,7 +194,7 @@ export const CustomEditor = {
 
       const blockEntry = getBlockEntry(editor, point);
 
-      const [node] = blockEntry as NodeEntry<Element>;
+      const [node] = blockEntry;
 
       handleMergeBlockForwardWithTxn(editor, node, point);
     } else {
@@ -389,7 +389,7 @@ export const CustomEditor = {
     const operations: (() => void)[] = [];
     const sharedRoot = getSharedRoot(editor);
     const sourceBlock = getBlock(blockId, sharedRoot);
-    const sourceType = sourceBlock.get(YjsEditorKey.block_type) as BlockType;
+    const sourceType = sourceBlock.get(YjsEditorKey.block_type);
     const oldData = dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data));
 
     if(sourceType === type && isEqual(oldData, data)) {

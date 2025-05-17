@@ -1,19 +1,18 @@
 import { notify } from '@/components/_shared/notify';
 
-import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
 import DeleteIcon from '@mui/icons-material/Delete';
+import TaskAltRounded from '@mui/icons-material/TaskAltRounded';
 
-import React, { useState, useEffect } from 'react';
 import {
   Box,
   Button,
   Checkbox,
-  List,
-  ListItem,
+  List, ListItemButton,
   ListItemIcon,
   ListItemText,
-  Typography,
+  Typography
 } from '@mui/material';
+import { useEffect, useState } from 'react';
 
 const MAX_DELETE = 50;
 const IndexedDBCleaner = () => {
@@ -88,10 +87,9 @@ const IndexedDBCleaner = () => {
           const labelId = `checkbox-list-label-${dbName}`;
 
           return (
-            <ListItem
+            <ListItemButton
               key={dbName}
               dense
-              button
               onClick={() => handleToggle(dbName)}
             >
               <ListItemIcon>
@@ -104,7 +102,7 @@ const IndexedDBCleaner = () => {
                 />
               </ListItemIcon>
               <ListItemText id={labelId} primary={dbName} />
-            </ListItem>
+            </ListItemButton>
           );
         })}
       </List>
