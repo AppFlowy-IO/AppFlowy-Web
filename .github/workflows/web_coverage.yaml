@@ -10,6 +10,8 @@ env:
   NODE_VERSION: "18.16.0"
   PNPM_VERSION: "10.9.0"
   COVERAGE: "true"
+  CYPRESS_CACHE_FOLDER: ${{ github.workspace }}/.cypress_cache
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -19,25 +21,34 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
-      - name: Maximize build space (ubuntu only)
-        run: |
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf "/usr/local/share/boost"
-          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
-          sudo docker image prune --all --force
-          sudo rm -rf /opt/hostedtoolcache/codeQL
-          sudo rm -rf ${GITHUB_WORKSPACE}/.git
-          sudo rm -rf $ANDROID_HOME/ndk
+      # - name: Maximize build space (ubuntu only)
+      #   run: |
+      #     sudo rm -rf /usr/share/dotnet
+      #     sudo rm -rf /opt/ghc
+      #     sudo rm -rf "/usr/local/share/boost"
+      #     sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+      #     sudo docker image prune --all --force
+      #     sudo rm -rf /opt/hostedtoolcache/codeQL
+      #     sudo rm -rf ${GITHUB_WORKSPACE}/.git
+      #     sudo rm -rf $ANDROID_HOME/ndk
+
       - name: setup node
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
+
       - name: setup pnpm
-        uses: pnpm/action-setup@v2
+        uses: pnpm/action-setup@v3
         with:
           version: ${{ env.PNPM_VERSION }}
+
       # Install pnpm dependencies, cache them correctly
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install Cypress
+        run: npx cypress install
+
       # and run all Cypress tests
       - name: Cypress run
         uses: cypress-io/github-action@v6
@@ -45,6 +56,8 @@ jobs:
           component: true
           build: pnpm run build
           browser: chrome
+          # cache-key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          # install-command: pnpm add --save-dev cypress
         env:
           COVERAGE: "true"
 
@@ -55,7 +68,7 @@ jobs:
           COVERAGE: "true"
 
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v2
+        uses: codecov/codecov-action@v4
         with:
           token: cf9245e0-e136-4e21-b0ee-35755fa0c493
           files: coverage/jest/lcov.info, coverage/cypress/lcov.info

@@ -1,17 +1,16 @@
 import { CalendarEvent } from '@/application/database-yjs';
+import { ReactComponent as DownArrow } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as LeftArrow } from '@/assets/icons/alt_arrow_left.svg';
+import { ReactComponent as RightArrow } from '@/assets/icons/alt_arrow_right.svg';
 import NoDate from '@/components/database/components/calendar/toolbar/NoDate';
 import { IconButton } from '@mui/material';
 import Button from '@mui/material/Button';
 import dayjs from 'dayjs';
-import React, { useMemo } from 'react';
+import { useMemo } from 'react';
 import { ToolbarProps } from 'react-big-calendar';
-import { ReactComponent as LeftArrow } from '@/assets/icons/alt_arrow_left.svg';
-import { ReactComponent as RightArrow } from '@/assets/icons/alt_arrow_right.svg';
-import { ReactComponent as DownArrow } from '@/assets/icons/alt_arrow_down.svg';
 
 import { useTranslation } from 'react-i18next';
 
-// 创建扩展的 ToolbarProps 类型
 interface ExtendedToolbarProps extends ToolbarProps<CalendarEvent, object> {
   emptyEvents: CalendarEvent[];
 }
