@@ -1,10 +1,9 @@
 import Button from '@mui/material/Button';
 import { PopoverProps } from '@mui/material/Popover';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { cloneElement, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element } from 'slate';
 import { useSlateStatic } from 'slate-react';
-import React from 'react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -76,6 +75,7 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
   const getAlign = useCallback(() => {
     try {
       const node = getNode();
+
       return (node.data as BlockData).align;
     } catch (e) {
       return;
@@ -93,7 +93,8 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
   const activeIcon = useCallback(() => {
     const align = getAlign();
     const option = alignOptions.find(opt => opt.type === align) || alignOptions[0];
-    return React.cloneElement(option.icon, {
+
+    return cloneElement(option.icon, {
       className: `h-5 w-5 ${align ? 'text-fill-default' : ''}`
     });
   }, [getAlign]);
@@ -103,6 +104,7 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
       return () => {
         try {
           const node = getNode();
+
           CustomEditor.setBlockData(editor, node.blockId as string, { align });
           handleClose();
           rePosition();
