@@ -171,7 +171,17 @@
     "highlight": "Surligner",
     "color": "Couleur",
     "addLink": "Ajouter un lien",
-    "link": "Lien"
+    "link": "Lien",
+    "h1": "Titre 1",
+    "h2": "Titre 2",
+    "h3": "Titre 3",
+    "alignLeft": "Aligner à gauche",
+    "alignRight": "Aligner à droite",
+    "alignCenter": "Aligner le centre",
+    "moreOptions": "Plus d'options",
+    "font": "Police",
+    "suggestions": "Suggestions",
+    "turnInto": "Devenir"
   },
   "tooltip": {
     "lightMode": "Passer en mode clair",

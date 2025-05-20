@@ -252,7 +252,17 @@
     "highlight": "ハイライト",
     "color": "カラー",
     "addLink": "リンクを追加",
-    "link": "リンク"
+    "link": "リンク",
+    "h1": "見出し1",
+    "h2": "見出し2",
+    "h3": "見出し3",
+    "alignLeft": "テキストを左揃え",
+    "alignCenter": "テキストを中央揃え",
+    "alignRight": "テキストを右揃え",
+    "moreOptions": "More options",
+    "font": "フォント",
+    "suggestions": "提案",
+    "turnInto": "変換"
   },
   "tooltip": {
     "lightMode": "ライトモードに切り替える",

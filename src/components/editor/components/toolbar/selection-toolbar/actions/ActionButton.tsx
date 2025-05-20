@@ -1,13 +1,15 @@
-import React, { forwardRef } from 'react';
-import IconButton, { IconButtonProps } from '@mui/material/IconButton';
 import { Tooltip } from '@mui/material';
+import IconButton, { IconButtonProps } from '@mui/material/IconButton';
+import { forwardRef, ReactNode, MouseEvent } from 'react';
+
+import { cn } from '@/lib/utils';
 
 const ActionButton = forwardRef<
   HTMLButtonElement,
   {
-    tooltip?: string | React.ReactNode;
-    onClick?: (e: React.MouseEvent<HTMLButtonElement>) => void;
-    children: React.ReactNode;
+    tooltip?: string | ReactNode;
+    onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
+    children: ReactNode;
     active?: boolean;
   } & IconButtonProps
 >(({ tooltip, onClick, disabled, children, active, className, ...props }, ref) => {
@@ -20,17 +22,18 @@ const ActionButton = forwardRef<
       <IconButton
         ref={ref}
         onClick={onClick}
-        size={'small'}
-        style={{
-          color: active ? 'var(--fill-default)' : disabled ? 'var(--line-on-toolbar)' : undefined,
-        }}
+        size={'large'}
         disabled={disabled}
         {...props}
-        className={`${
-          className ?? ''
-        } bg-transparent px-1 py-1 text-icon-on-toolbar hover:bg-transparent hover:text-fill-default`}
+        className={cn(
+          className,
+          'bg-transparent px-1.5 py-1.5 text-icon-primary hover:bg-fill-content-hover',
+          active && 'bg-fill-theme-select'
+        )}
       >
-        {children}
+        <div className="min-w-5 h-5 flex items-center justify-center">
+          {children}
+        </div>
       </IconButton>
     </Tooltip>
   );

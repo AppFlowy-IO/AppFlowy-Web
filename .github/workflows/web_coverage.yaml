@@ -44,7 +44,7 @@ jobs:
         with:
           component: true
           build: pnpm run build
-          start: pnpm run start
+          # start: pnpm run start
           browser: chrome
         env:
           COVERAGE: "true"
@@ -58,7 +58,7 @@ jobs:
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
         with:
-          token: ${{ secrets.WEB_CODE_COV }}
+          token: cf9245e0-e136-4e21-b0ee-35755fa0c493
           files: coverage/jest/lcov.info, coverage/cypress/lcov.info
           flags: appflowy_web
           name: codecov-umbrella

@@ -1,3 +1,8 @@
+import { cloneElement, useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Element } from 'slate';
+import { useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { findSlateEntryByBlockId, getBlockEntry } from '@/application/slate-yjs/utils/editor';
@@ -5,37 +10,46 @@ import { AlignType, BlockData } from '@/application/types';
 import { ReactComponent as AlignCenterSvg } from '@/assets/icons/align_center.svg';
 import { ReactComponent as AlignLeftSvg } from '@/assets/icons/align_left.svg';
 import { ReactComponent as AlignRightSvg } from '@/assets/icons/align_right.svg';
-import { Popover } from '@/components/_shared/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
-import { PopoverProps } from '@mui/material/Popover';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useTranslation } from 'react-i18next';
-import { useSlateStatic } from 'slate-react';
-import { Element } from 'slate';
-import ActionButton from './ActionButton';
 
-const popoverProps: Partial<PopoverProps> = {
-  anchorOrigin: {
-    vertical: 'bottom',
-    horizontal: 'center',
+import { useKeyboardNavigation } from '../hooks/useKeyboardNavigation';
+import ActionButton from './ActionButton';
+import { MenuButton } from './MenuButton';
+
+// Define allowed translation keys for align options
+const alignLabelKeys = [
+  'toolbar.alignLeft',
+  'toolbar.alignCenter',
+  'toolbar.alignRight',
+] as const;
+
+type AlignLabelKey = typeof alignLabelKeys[number];
+
+const alignOptions = [
+  {
+    icon: <AlignLeftSvg className="h-5 w-5" />,
+    labelKey: 'toolbar.alignLeft' as AlignLabelKey,
+    type: AlignType.Left,
   },
-  transformOrigin: {
-    vertical: -8,
-    horizontal: 'center',
+  {
+    icon: <AlignCenterSvg className="h-5 w-5" />,
+    labelKey: 'toolbar.alignCenter' as AlignLabelKey,
+    type: AlignType.Center,
   },
-  slotProps: {
-    paper: {
-      className: 'bg-[var(--fill-toolbar)] rounded-[6px]',
-    },
+  {
+    icon: <AlignRightSvg className="h-5 w-5" />,
+    labelKey: 'toolbar.alignRight' as AlignLabelKey,
+    type: AlignType.Right,
   },
-};
+];
 
 export function Align({ blockId, enabled = true }: { blockId?: string; enabled?: boolean }) {
   const [open, setOpen] = useState(false);
-
   const ref = useRef<HTMLButtonElement | null>(null);
   const { t } = useTranslation();
   const editor = useSlateStatic() as YjsEditor;
+  const { rePosition, forceShow } = useSelectionToolbarContext();
 
   const getNode = useCallback(() => {
     let node: Element;
@@ -61,28 +75,22 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
 
   const handleClose = useCallback(() => {
     setOpen(false);
-  }, []);
+    forceShow(false);
+  }, [forceShow]);
 
   const handleOpen = useCallback(() => {
     setOpen(true);
-  }, []);
+    forceShow(true);
+  }, [forceShow]);
 
   const activeIcon = useCallback(() => {
     const align = getAlign();
+    const option = alignOptions.find(opt => opt.type === align) || alignOptions[0];
 
-    switch (align) {
-      case AlignType.Left:
-        return <AlignLeftSvg className={'h-4 w-4 text-fill-default'} />;
-      case 'center':
-        return <AlignCenterSvg className={'h-4 w-4 text-fill-default'} />;
-      case 'right':
-        return <AlignRightSvg className={'h-4 w-4 text-fill-default'} />;
-      default:
-        return <AlignLeftSvg className={'h-4 w-4'} />;
-    }
+    return cloneElement(option.icon, {
+      className: 'h-5 w-5'
+    });
   }, [getAlign]);
-
-  const { rePosition } = useSelectionToolbarContext();
 
   const toggleAlign = useCallback(
     (align: AlignType) => {
@@ -90,11 +98,8 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
         try {
           const node = getNode();
 
-          CustomEditor.setBlockData(editor, node.blockId as string, {
-            align,
-          });
+          CustomEditor.setBlockData(editor, node.blockId as string, { align });
           handleClose();
-
           rePosition();
         } catch (e) {
           return;
@@ -104,6 +109,15 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
     [getNode, editor, handleClose, rePosition]
   );
 
+  const { getButtonProps, selectedIndex } = useKeyboardNavigation({
+    itemCount: alignOptions.length,
+    isOpen: open,
+    onSelect: (index) => {
+      toggleAlign(alignOptions[index].type)();
+    },
+    onClose: handleClose
+  });
+
   useEffect(() => {
     if (!enabled) {
       setOpen(false);
@@ -112,53 +126,38 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
 
   return (
     <>
-      <ActionButton
-        ref={ref}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          handleOpen();
-        }}
-        tooltip={t('document.plugins.optionAction.align')}
-      >
-        {activeIcon()}
-      </ActionButton>
-
-      <Popover
-        keepMounted={false}
-        disableAutoFocus={true}
-        disableEnforceFocus={true}
-        disableRestoreFocus={true}
-        onClose={() => {
-          setOpen(false);
-        }}
-        open={open && enabled}
-        anchorEl={ref.current}
-        {...popoverProps}
-      >
-        <div className={'flex h-[32px] items-center justify-center px-2'}>
+      <Popover open={open && enabled} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
           <ActionButton
-            active={getAlign() === AlignType.Left}
-            tooltip={t('document.plugins.optionAction.left')}
-            onClick={toggleAlign(AlignType.Left)}
+            ref={ref}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              handleOpen();
+            }}
+            tooltip={t('document.plugins.optionAction.align')}
           >
-            <AlignLeftSvg className='h-4 w-4' />
+            {activeIcon()}
           </ActionButton>
-          <ActionButton
-            active={getAlign() === AlignType.Center}
-            tooltip={t('document.plugins.optionAction.center')}
-            onClick={toggleAlign(AlignType.Center)}
-          >
-            <AlignCenterSvg className='h-4 w-4' />
-          </ActionButton>
-          <ActionButton
-            active={getAlign() === AlignType.Right}
-            tooltip={t('document.plugins.optionAction.right')}
-            onClick={toggleAlign(AlignType.Right)}
-          >
-            <AlignRightSvg className='h-4 w-4' />
-          </ActionButton>
-        </div>
+        </PopoverTrigger>
+        <PopoverContent className="w-[200px] p-2" align="start" sideOffset={5}>
+          <div className="flex flex-col gap-1">
+            {alignOptions.map((option, index) => (
+              <MenuButton
+                key={option.labelKey}
+                icon={option.icon}
+                label={t(option.labelKey)}
+                isActive={getAlign() === option.type}
+                onClick={() => {
+                  toggleAlign(option.type)();
+                  handleClose();
+                }}
+                selected={selectedIndex === index}
+                buttonProps={getButtonProps(index)}
+              />
+            ))}
+          </div>
+        </PopoverContent>
       </Popover>
     </>
   );

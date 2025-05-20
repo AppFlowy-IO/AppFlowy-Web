@@ -1,14 +1,18 @@
+import { useCallback, useEffect, useMemo, useState, MouseEvent } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ReactEditor, useSlate } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
-import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
-import { createHotkey, getModifier, HOT_KEY_NAME } from '@/utils/hotkeys';
-import React, { useCallback, useEffect, useMemo } from 'react';
-import ActionButton from './ActionButton';
-import { useTranslation } from 'react-i18next';
-import { ReactEditor, useSlate } from 'slate-react';
 import { ReactComponent as LinkSvg } from '@/assets/icons/link.svg';
 import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
+import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
+import { createHotkey, getModifier, HOT_KEY_NAME } from '@/utils/hotkeys';
+
+import ActionButton from './ActionButton';
+
+
 
 export function Href() {
   const { t } = useTranslation();
@@ -17,13 +21,13 @@ export function Href() {
   const editor = useSlate() as YjsEditor;
 
   const { visible } = useSelectionToolbarContext();
-  const [state, setState] = React.useState({
+  const [state, setState] = useState({
     isActivated: false,
     hasFormulaActivated: false,
     hasMentionActivated: false,
   });
 
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = useState(false);
   const { isActivated, hasFormulaActivated, hasMentionActivated } = state;
 
   const getState = useCallback(() => {
@@ -44,7 +48,7 @@ export function Href() {
   }, [visible, getState, editor.selection]);
 
   const onClick = useCallback(
-    (e: React.MouseEvent) => {
+    (e: MouseEvent<HTMLButtonElement>) => {
       e.stopPropagation();
       e.preventDefault();
       setOpen(true);
@@ -93,7 +97,7 @@ export function Href() {
   return (
     <>
       <ActionButton disabled={disabled} onClick={onClick} active={isActivated} tooltip={tooltip}>
-        <LinkSvg className='h-4 w-4' />
+        <LinkSvg className='h-5 w-5' />
       </ActionButton>
 
       <HrefPopover

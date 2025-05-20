@@ -297,7 +297,18 @@
     "highlight": "강조",
     "color": "색상",
     "addLink": "링크 추가",
-    "link": "링크"
+    "link": "링크",
+    "h1": "헤딩 1",
+    "h2": "헤딩 2",
+    "h3": "헤딩 3",
+    "alignLeft": "왼쪽 정렬",
+    "alignRight": "오른쪽 정렬",
+    "alignCenter": "가운데 정렬",
+    "textAlign": "텍스트 정렬",
+    "moreOptions": "더 많은 옵션",
+    "font": "글꼴",
+    "suggestions": "제안",
+    "turnInto": "변환"
   },
   "tooltip": {
     "lightMode": "라이트 모드로 전환",

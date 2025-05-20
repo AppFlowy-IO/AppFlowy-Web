@@ -1,16 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Button, Divider, OutlinedInput, PopoverPosition } from '@mui/material';
+import { PopoverOrigin } from '@mui/material/Popover/Popover';
+import { debounce } from 'lodash-es';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ReactEditor, useSlateStatic } from 'slate-react';
+
+import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { Popover } from '@/components/_shared/popover';
-import { ReactEditor, useSlateStatic } from 'slate-react';
-import { useTranslation } from 'react-i18next';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
-import { YjsEditor } from '@/application/slate-yjs';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-import { debounce } from 'lodash-es';
-import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import { processUrl } from '@/utils/url';
 
 const defaultOrigin: PopoverOrigin = {
@@ -31,9 +32,9 @@ function HrefPopover({
 }: HrefPopoverProps) {
   const editor = useSlateStatic() as YjsEditor;
   const { t } = useTranslation();
-  const [isActivated, setIsActivated] = React.useState(CustomEditor.isMarkActive(editor, EditorMarkFormat.Href));
-  const [popoverType, setPopoverType] = React.useState<'add' | 'update' | undefined>(undefined);
-  const [anchorPosition, setAnchorPosition] = React.useState<undefined | PopoverPosition>(undefined);
+  const [isActivated, setIsActivated] = useState(CustomEditor.isMarkActive(editor, EditorMarkFormat.Href));
+  const [popoverType, setPopoverType] = useState<'add' | 'update' | undefined>(undefined);
+  const [anchorPosition, setAnchorPosition] = useState<undefined | PopoverPosition>(undefined);
 
   useEffect(() => {
     if (isActivated) {
@@ -125,7 +126,7 @@ function HrefPopover({
   const urlRef = useRef<HTMLInputElement | null>(null);
   const textRef = useRef<HTMLInputElement | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
-  const [urlValid, setUrlValid] = React.useState(true);
+  const [urlValid, setUrlValid] = useState(true);
   const addLink = useMemo(() => {
     if (!open || popoverType !== 'add') return null;
     return (
@@ -152,7 +153,7 @@ function HrefPopover({
 
             setUrlValid(true);
           }}
-          size={'small'} fullWidth={true} placeholder={t('toolbar.addLink')}/>
+          size={'small'} fullWidth={true} placeholder={t('toolbar.addLink')} className="text-text-primary" />
         {urlValid ? null : (
           <div className={'text-function-error text-xs'}>
             {t('editor.incorrectLink')}
@@ -252,11 +253,11 @@ function HrefPopover({
               }
             }}
             size={'small'}
-            fullWidth={true} placeholder={t('toolbar.addLink')}/>
+            fullWidth={true} placeholder={t('toolbar.addLink')} className="text-text-primary" />
         </div>
-        <Divider/>
+        <Divider />
         <Button
-          ref={buttonRef} onClick={removeLink} startIcon={<DeleteIcon/>} size={'small'}
+          ref={buttonRef} onClick={removeLink} startIcon={<DeleteIcon />} size={'small'}
           className={'w-full hover:text-function-error justify-start'}
           color={'inherit'}>
           {t('document.inlineLink.removeLink')}

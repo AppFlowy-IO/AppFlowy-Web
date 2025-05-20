@@ -248,7 +248,17 @@
     "highlight": "醒目提示",
     "color": "顏色",
     "addLink": "新增連結",
-    "link": "連結"
+    "link": "連結",
+    "h1": "標題 1",
+    "h2": "標題 2",
+    "h3": "標題 3",
+    "alignLeft": "左對齊",
+    "alignRight": "右對齊",
+    "alignCenter": "中對齊",
+    "moreOptions": "更多選項",
+    "font": "字型",
+    "suggestions": "建議",
+    "turnInto": "變成"
   },
   "tooltip": {
     "lightMode": "切換至亮色模式",

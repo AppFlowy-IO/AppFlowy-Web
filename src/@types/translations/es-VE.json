@@ -223,7 +223,17 @@
     "highlight": "Resaltado",
     "color": "Color",
     "addLink": "Añadir enlace",
-    "link": "Enlace"
+    "link": "Enlace",
+    "h1": "Encabezado 1",
+    "h2": "Encabezado 2",
+    "h3": "Encabezado 3",
+    "alignLeft": "Alinear a la izquierda",
+    "alignRight": "Alinear a la derecha",
+    "alignCenter": "Alinear al centro",
+    "moreOptions": "Más opciones",
+    "font": "Fuente",
+    "suggestions": "Sugerencias",
+    "turnInto": "Convertir en"
   },
   "tooltip": {
     "lightMode": "Cambiar a modo Claro",

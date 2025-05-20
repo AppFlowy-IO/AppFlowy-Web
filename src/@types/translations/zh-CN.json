@@ -277,7 +277,17 @@
     "highlight": "高亮",
     "color": "颜色",
     "addLink": "添加链接",
-    "link": "关联"
+    "link": "关联",
+    "h1": "一级标题",
+    "h2": "二级标题",
+    "h3": "三级标题",
+    "alignLeft": "文本居左对齐",
+    "alignCenter": "文本居中对齐",
+    "alignRight": "文本居右对齐",
+    "moreOptions": "更多选项",
+    "font": "字体",
+    "suggestions": "建议",
+    "turnInto": "变成"
   },
   "tooltip": {
     "lightMode": "切换到亮色模式",
