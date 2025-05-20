@@ -1,3 +1,4 @@
+import { cva } from 'class-variance-authority';
 import { forwardRef } from 'react';
 import * as React from 'react';
 import * as DropdownMenuPrimitive from '@radix-ui/react-dropdown-menu';
@@ -87,6 +88,33 @@ const DropdownMenuGroup = ({
   );
 };
 
+const dropdownMenuItemVariants = cva(
+  cn(
+    'focus:bg-fill-content-hover hover:bg-fill-content-hover focus-visible:outline-none',
+    'relative flex cursor-pointer items-center gap-[10px] rounded-300 px-2 py-1 min-h-[32px]',
+    'text-sm text-text-primary outline-hidden select-none',
+
+    // Disabled state
+    'data-[disabled]:pointer-events-none data-[disabled]:text-text-tertiary',
+
+    // Inset variant (with left padding for icons)
+    'data-[inset]:pl-8',
+
+    // SVG/Icon styling
+    '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:h-5 [&_svg]:w-5',
+  ),
+  {
+    variants: {
+      variant: {
+        default: 'text-text-primary',
+        destructive: 'text-text-error focus:bg-fill-error-light hover:bg-fill-error-light *:[svg]:!text-text-error focus:text-text-error hover:text-text-error',
+      },
+    },
+    defaultVariants: {
+      variant: 'default',
+    },
+  },
+);
 const DropdownMenuItem = forwardRef<HTMLDivElement, React.ComponentProps<typeof DropdownMenuPrimitive.Item> & {
   inset?: boolean;
   variant?: 'default' | 'destructive';
@@ -104,27 +132,7 @@ const DropdownMenuItem = forwardRef<HTMLDivElement, React.ComponentProps<typeof 
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        // Focus states
-        'focus:bg-fill-content-hover hover:bg-fill-content-hover focus-visible:outline-none focus:text-text-primary',
-
-        // Destructive variant styling
-        'data-[variant=destructive]:text-text-error',
-        'data-[variant=destructive]:focus:bg-fill-error-light',
-        'data-[variant=destructive]:focus:text-text-error',
-        'data-[variant=destructive]:*:[svg]:!text-text-error',
-
-        // Base layout and appearance
-        'relative flex cursor-pointer items-center gap-[10px] rounded-300 px-2 py-1 min-h-[32px]',
-        'text-sm text-text-primary outline-hidden select-none',
-
-        // Disabled state
-        'data-[disabled]:pointer-events-none data-[disabled]:text-text-tertiary',
-
-        // Inset variant (with left padding for icons)
-        'data-[inset]:pl-8',
-
-        // SVG/Icon styling
-        '[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg]:h-5 [&_svg]:w-5',
+        dropdownMenuItemVariants({ variant }),
         disabled ? '[&_svg]:text-text-tertiary' : '',
         className,
       )}
@@ -221,7 +229,7 @@ function DropdownMenuSubTrigger ({
       data-inset={inset}
       className={cn(
         // Focus and open states
-        'focus:bg-fill-content-hover hover:bg-fill-content-hover focus-visible:outline-none focus:text-text-primary',
+        'focus:bg-fill-content-hover focus-visible:outline-none focus:text-text-primary',
         'data-[state=open]:bg-fill-content-hover data-[state=open]:text-text-primary',
 
         // Base layout and appearance
@@ -293,4 +301,5 @@ export {
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
   DropdownMenuItemTick,
+  dropdownMenuItemVariants,
 };

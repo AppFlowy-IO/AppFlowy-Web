@@ -57,7 +57,7 @@ function GridVirtualColumn ({
           });
         }
       }}
-      className={cn('grid-row-cell relative border border-transparent', isActiveCell ? 'editing' : '')}
+      className={cn('grid-row-cell relative border border-transparent', isActiveCell ? 'editing' : '', columnData.wrap ? 'whitespace-prewrap' : 'whitespace-nowrap')}
       style={{
         height: rowIndex === 0 ? MIN_HEIGHT : row.size,
         minHeight: 'fit-content',

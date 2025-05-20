@@ -109,4 +109,4 @@ const SearchInput = forwardRef<HTMLInputElement, InputProps>(({
   );
 });
 
-export { SearchInput };
+export { SearchInput, inputVariants, baseInputStyles };

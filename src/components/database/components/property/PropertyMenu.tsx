@@ -4,6 +4,7 @@ import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
+import DataTimePropertyMenuContent from '@/components/database/components/property/date/DataTimePropertyMenuContent';
 import DeletePropertyConfirm from '@/components/database/components/property/DeletePropertyConfirm';
 import NumberPropertyMenuContent from '@/components/database/components/property/number/NumberPropertyMenuContent';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
@@ -69,6 +70,14 @@ function PropertyMenu ({
       case FieldType.SingleSelect:
       case FieldType.MultiSelect:
         return <SelectPropertyMenuContent fieldId={fieldId} />;
+      case FieldType.DateTime:
+        return <DataTimePropertyMenuContent fieldId={fieldId} />;
+      case FieldType.CreatedTime:
+      case FieldType.LastEditedTime:
+        return <DataTimePropertyMenuContent
+          fieldId={fieldId}
+          enableInclusivitiesTime={true}
+        />;
       default:
         return <PropertySelectTrigger fieldId={fieldId} />;
     }
@@ -102,13 +111,15 @@ function PropertyMenu ({
             {
               operations.map((operation) => (
                 <DropdownMenuItem
-                  onPointerMove={e => e.preventDefault()}
-                  onPointerEnter={e => e.preventDefault()}
-                  onPointerLeave={e => e.preventDefault()}
                   disabled={operation.disabled}
                   onSelect={operation.onSelect}
                   key={operation.label}
                   className={operation.className}
+                  {...[FieldType.MultiSelect, FieldType.SingleSelect].includes(type) ? {
+                    onPointerMove: e => e.preventDefault(),
+                    onPointerEnter: e => e.preventDefault(),
+                    onPointerLeave: e => e.preventDefault(),
+                  } : undefined}
                 >
                   {operation.icon}
                   {operation.label}

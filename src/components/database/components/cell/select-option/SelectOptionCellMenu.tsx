@@ -45,7 +45,16 @@ function SelectOptionCellMenu ({ open, onOpenChange, cell, fieldId, rowId }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [field, clock]);
   const { t } = useTranslation();
-  const selectOptionIds = useMemo(() => cell?.data.split(',') || [], [cell]);
+  const selectOptionIds = useMemo(() => {
+    if (!cell) return [];
+    const data = cell.data;
+
+    if (typeof data === 'string') {
+      return data.split(',').filter(Boolean);
+    }
+
+    return [];
+  }, [cell]);
   const [searchValue, setSearchValue] = useState<string>('');
   const [hoveredId, setHoveredId] = useState<string | undefined>(undefined);
   const options = useSelectFieldOptions(fieldId, searchValue);
@@ -107,11 +116,11 @@ function SelectOptionCellMenu ({ open, onOpenChange, cell, fieldId, rowId }: {
 
       onUpdateCell(newSelectOptionIds.join(','));
     } else {
-      const newSelectOptionIds = [...selectOptionIds, optionId];
+      const newSelectOptionIds = isMultiple ? [...selectOptionIds, optionId] : [optionId];
 
       onUpdateCell(newSelectOptionIds.join(','));
     }
-  }, [onUpdateCell, selectOptionIds]);
+  }, [isMultiple, onUpdateCell, selectOptionIds]);
 
   const handleCreateOption = useCallback(() => {
     const searchValue = searchValueRef.current;

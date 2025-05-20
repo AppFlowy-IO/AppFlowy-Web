@@ -354,7 +354,7 @@ export enum YjsDatabaseKey {
   show_weekends = 'show_weekends',
   layout_ty = 'layout_ty',
   icon = 'icon',
-  is_inline = 'is_inline'
+  is_inline = 'is_inline',
 }
 
 export interface YDoc extends Y.Doc {
@@ -691,6 +691,9 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   // Number
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get (key: YjsDatabaseKey.format): string;
+
+  // LastModified and CreatedTime
+  get (key: YjsDatabaseKey.include_time): boolean;
 }
 
 export enum Types {

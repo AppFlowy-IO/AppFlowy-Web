@@ -15,7 +15,7 @@ export function SelectOptionCell ({
   placeholder,
   rowId,
 }: CellProps<SelectOptionCellType>) {
-  const selectOptionIds = useMemo(() => (!cell?.data ? [] : cell?.data.split(',')), [cell]);
+  const selectOptionIds = useMemo(() => (!cell?.data || typeof cell.data !== 'string' ? [] : cell.data.split(',')), [cell]);
   const { field, clock } = useFieldSelector(fieldId);
   const typeOption = useMemo(() => {
     if (!field) return null;

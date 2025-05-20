@@ -6,7 +6,10 @@ import GridNewRow from '@/components/database/components/grid/grid-row/GridNewRo
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
 import { useGridDnd } from '@/components/database/components/grid/grid-table/useGridDnd';
-import { useGridVirtualizer } from '@/components/database/components/grid/grid-table/useGridVirtualizer';
+import {
+  PADDING_INLINE,
+  useGridVirtualizer,
+} from '@/components/database/components/grid/grid-table/useGridVirtualizer';
 import DatabaseStickyBottomOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyBottomOverlay';
 import DatabaseStickyHorizontalScrollbar
   from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
@@ -161,7 +164,7 @@ function GridVirtualizer ({
                 {rowData.type === RenderRowType.NewRow ? <div
                   style={{
                     paddingLeft: columnItems[0].start,
-                    paddingRight: columnItems[0].start,
+                    paddingRight: PADDING_INLINE,
                     width: totalSize,
                   }}
                 >

@@ -1,3 +1,4 @@
+import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   useCreateRow,
   useDatabase,
@@ -11,9 +12,11 @@ import {
 import { CalculationType, FieldType, FieldVisibility, RowMetaKey } from '@/application/database-yjs/database.type';
 import {
   DateFormat,
+  getDateCellStr,
   getFieldName,
-  getFormatValue,
-  NumberFormat, SelectOption,
+  getFormatValue, isDate,
+  NumberFormat, safeParseTimestamp,
+  SelectOption,
   SelectTypeOption,
   TimeFormat,
 } from '@/application/database-yjs/fields';
@@ -1137,11 +1140,43 @@ export function useUpdateRowMetaDispatch (rowId: string) {
   }, [rowDoc, rowId]);
 }
 
+function updateDateCell (cell: YDatabaseCell, payload: {
+  data: string;
+  endTimestamp?: string;
+  includeTime?: boolean;
+  isRange?: boolean;
+  reminderId?: string;
+}) {
+  cell.set(YjsDatabaseKey.data, payload.data);
+
+  if (payload.endTimestamp !== undefined) {
+    cell.set(YjsDatabaseKey.end_timestamp, payload.endTimestamp);
+  }
+
+  if (payload.includeTime !== undefined) {
+    console.log('includeTime', payload.includeTime);
+    cell.set(YjsDatabaseKey.include_time, payload.includeTime);
+  }
+
+  if (payload.isRange !== undefined) {
+    cell.set(YjsDatabaseKey.is_range, payload.isRange);
+  }
+
+  if (payload.reminderId !== undefined) {
+    cell.set(YjsDatabaseKey.reminder_id, payload.reminderId);
+  }
+}
+
 export function useUpdateCellDispatch (rowId: string, fieldId: string) {
   const rowDocMap = useRowDocMap();
   const { field } = useFieldSelector(fieldId);
 
-  return useCallback((data: string) => {
+  return useCallback((data: string, dateOpts?: {
+    endTimestamp?: string;
+    includeTime?: boolean;
+    isRange?: boolean;
+    reminderId?: string;
+  }) => {
     const rowDoc = rowDocMap?.[rowId];
 
     if (!rowDoc) {
@@ -1153,7 +1188,6 @@ export function useUpdateCellDispatch (rowId: string, fieldId: string) {
     const cells = row.get(YjsDatabaseKey.cells);
     const cell = cells.get(fieldId);
 
-    if (cell?.get(YjsDatabaseKey.data) === data) return;
     const type = Number(field.get(YjsDatabaseKey.type));
 
     rowDoc.transact(() => {
@@ -1164,9 +1198,25 @@ export function useUpdateCellDispatch (rowId: string, fieldId: string) {
         newCell.set(YjsDatabaseKey.field_type, type);
         newCell.set(YjsDatabaseKey.data, data);
         newCell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+        if (dateOpts) {
+          updateDateCell(newCell, {
+            data,
+            ...dateOpts,
+          });
+        }
+
         cells.set(fieldId, newCell);
       } else {
         cell.set(YjsDatabaseKey.data, data);
+
+        if (dateOpts) {
+          updateDateCell(cell, {
+            data,
+            ...dateOpts,
+          });
+        }
+
         cell.set(YjsDatabaseKey.field_type, type);
         cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       }
@@ -1368,6 +1418,8 @@ export function useSwitchPropertyType () {
         throw new Error(`Field not found`);
       }
 
+      const oldFieldType = Number(field.get(YjsDatabaseKey.type));
+
       let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
 
       // Check if the field type is supported for type options
@@ -1388,7 +1440,7 @@ export function useSwitchPropertyType () {
 
           // Set default values for the type option
           if ([FieldType.CreatedTime, FieldType.LastEditedTime, FieldType.DateTime].includes(fieldType)) {
-            newTypeOption.set(YjsDatabaseKey.time_format, TimeFormat.TwelveHour);
+            newTypeOption.set(YjsDatabaseKey.time_format, TimeFormat.TwentyFourHour);
             newTypeOption.set(YjsDatabaseKey.date_format, DateFormat.Friendly);
           } else if (fieldType === FieldType.Number) {
             newTypeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
@@ -1396,17 +1448,25 @@ export function useSwitchPropertyType () {
             const rows = Object.keys(rowDocMap);
             const options = new Set<string>();
 
-            rows.forEach(rowId => {
-              const rowDoc = rowDocMap[rowId];
+            if (oldFieldType === FieldType.Checkbox) {
+              options.add('Yes');
+              options.add('No');
+            } else if (
+              [FieldType.RichText, FieldType.Number, FieldType.URL].includes(oldFieldType)
+            ) {
+              rows.forEach(rowId => {
+                const rowDoc = rowDocMap[rowId];
 
-              if (!rowDoc) {
-                return;
-              }
+                if (!rowDoc) {
+                  return;
+                }
 
-              getOptionsFromRow(rowDoc, fieldId).forEach((option) => {
-                options.add(option);
+                getOptionsFromRow(rowDoc, fieldId).forEach((option) => {
+                  options.add(option);
+                });
               });
-            });
+            }
+
             const content = JSON.stringify({
               disable_color: false,
               options: Array.from(options).map(name => {
@@ -1459,7 +1519,7 @@ export function useSwitchPropertyType () {
 
             // Handle transformation of data based on the new field type
             // 1. to RichText
-            if (fieldType === FieldType.RichText) {
+            if ([FieldType.RichText, FieldType.URL].includes(fieldType)) {
               const cellType = Number(cell.get(YjsDatabaseKey.field_type));
               const typeOption = field.get(YjsDatabaseKey.type_option)?.get(String(cellType));
 
@@ -1472,8 +1532,91 @@ export function useSwitchPropertyType () {
                   break;
                 }
 
+                case FieldType.SingleSelect:
+                case FieldType.MultiSelect: {
+                  const selectedIds = (data as string).split(',');
+                  const typeOption = typeOptionMap.get(String(cellType));
+                  const content = typeOption.get(YjsDatabaseKey.content);
+
+                  try {
+                    const parsedContent = JSON.parse(content) as SelectTypeOption;
+                    const options = parsedContent.options;
+                    const selectedNames = selectedIds.map((id) => {
+                      const option = options.find((opt) => opt.id === id);
+
+                      if (!option) {
+                        return '';
+                      }
+
+                      return option.name;
+                    }).filter((name) => name !== '');
+
+                    newData = selectedNames.join(',');
+                  } catch (e) {
+                    // do nothing
+                  }
+
+                  break;
+                }
+
+                case FieldType.DateTime: {
+                  const dateCell = parseYDatabaseDateTimeCellToCell(cell);
+
+                  newData = getDateCellStr({
+                    cell: dateCell,
+                    field,
+                  });
+
+                  break;
+                }
+
                 default:
                   break;
+              }
+            }
+
+            if (fieldType === FieldType.Number) {
+              if (data && isDate(data.toString())) {
+                const date = safeParseTimestamp(data.toString());
+
+                if (date) {
+                  newData = date.unix().toString();
+                }
+              }
+            }
+
+            if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
+              const typeOption = typeOptionMap.get(String(fieldType));
+              const content = typeOption.get(YjsDatabaseKey.content);
+
+              try {
+                const parsedContent = JSON.parse(content) as SelectTypeOption;
+                const options = parsedContent.options;
+                const selectedOptionNames = (data as string).split(',');
+                const selectedOptionIds = selectedOptionNames.map((name) => {
+                  const option = options.find((opt) => opt.name === name);
+
+                  if (!option) {
+                    return '';
+                  }
+
+                  return option.id;
+                }).filter((id) => id !== '');
+
+                if (fieldType === FieldType.MultiSelect) {
+                  newData = selectedOptionIds.join(',');
+                } else {
+                  newData = selectedOptionIds[0];
+                }
+
+              } catch (e) {
+                // do nothing
+              }
+            }
+
+            if (fieldType === FieldType.DateTime) {
+              if (data && (typeof data === 'string' || typeof data === 'number')) {
+                newData = safeParseTimestamp(data.toString()).unix();
               }
             }
 
@@ -1773,5 +1916,57 @@ export function useUpdateSelectOption (fieldId: string) {
         options: newOptions,
       }));
     }], 'updateSelectOption');
+  }, [database, fieldId, sharedRoot]);
+}
+
+export function useUpdateDateTimeFieldFormat (fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(({
+    dateFormat,
+    timeFormat,
+    includeTime,
+  }: {
+    dateFormat?: DateFormat;
+    timeFormat?: TimeFormat;
+    includeTime?: boolean;
+  }) => {
+    executeOperations(sharedRoot, [() => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+
+      if (!typeOptionMap) {
+        typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+
+        field.set(YjsDatabaseKey.type_option, typeOptionMap);
+      }
+
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+      let typeOption = typeOptionMap.get(String(fieldType));
+
+      if (!typeOption) {
+        typeOption = new Y.Map() as YMapFieldTypeOption;
+        typeOptionMap.set(String(FieldType.DateTime), typeOption);
+      }
+
+      if (dateFormat !== undefined) {
+        typeOption.set(YjsDatabaseKey.date_format, dateFormat);
+      }
+
+      if (timeFormat !== undefined) {
+        typeOption.set(YjsDatabaseKey.time_format, timeFormat);
+      }
+
+      if (includeTime !== undefined) {
+        typeOption.set(YjsDatabaseKey.include_time, includeTime);
+      }
+    }], 'updateDateTimeFieldFormat');
   }, [database, fieldId, sharedRoot]);
 }

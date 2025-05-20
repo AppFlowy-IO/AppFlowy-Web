@@ -150,6 +150,7 @@ export const currencyFormaterMap: Record<NumberFormat, (n: number) => string> = 
       style: 'decimal',
       minimumFractionDigits: 0,
       maximumFractionDigits: 20,
+      useGrouping: false,
     }).format(n),
   [NumberFormat.Percent]: (n: number) =>
     new Intl.NumberFormat('en-US', {

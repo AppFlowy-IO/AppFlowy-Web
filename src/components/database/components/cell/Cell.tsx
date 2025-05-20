@@ -1,6 +1,6 @@
 import { YjsDatabaseKey } from '@/application/types';
 import { FieldType } from '@/application/database-yjs/database.type';
-import { useFieldSelector } from '@/application/database-yjs/selector';
+import { useCellSelector, useFieldSelector } from '@/application/database-yjs/selector';
 import { RowCreateModifiedTime } from '@/components/database/components/cell/created-modified';
 import React, { FC, useMemo } from 'react';
 import { TextCell } from '@/components/database/components/cell/text';
@@ -17,6 +17,7 @@ export function Cell (props: CellProps<CellType>) {
   const { rowId, fieldId, style } = props;
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const cell = useCellSelector({ rowId, fieldId });
 
   const Component = useMemo(() => {
     switch (fieldType) {
@@ -55,9 +56,9 @@ export function Cell (props: CellProps<CellType>) {
     />;
   }
 
-  // if (cell && cell.fieldType !== fieldType) {
-  //   return null;
-  // }
+  if (cell && cell.fieldType !== fieldType) {
+    return null;
+  }
 
   return <Component {...props} />;
 }

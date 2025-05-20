@@ -8,7 +8,13 @@ import {
   useDatabaseViewId,
   useRowDocMap,
 } from '@/application/database-yjs/context';
-import { parseSelectOptionTypeOptions, SelectOption } from '@/application/database-yjs/fields';
+import {
+  DateFormat,
+  getDateCellStr, getDateFormat, getTimeFormat,
+  getTypeOptions,
+  parseSelectOptionTypeOptions,
+  SelectOption, TimeFormat,
+} from '@/application/database-yjs/fields';
 import { filterBy, parseFilter } from '@/application/database-yjs/filter';
 import { groupByField } from '@/application/database-yjs/group';
 import { getMetaJSON } from '@/application/database-yjs/row_meta';
@@ -22,7 +28,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
-import { useDateTypeCellDispatcher } from '@/components/database/components/cell/Cell.hooks';
+import { renderDate } from '@/utils/time';
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -849,30 +855,45 @@ export const usePropertiesSelector = () => {
 };
 
 export const useDateTimeCellString = (cell: DateTimeCell | undefined, fieldId: string) => {
-  const { getDateTimeStr } = useDateTypeCellDispatcher(fieldId);
+  const { field, clock } = useFieldSelector(fieldId);
 
-  const startDateTime = useMemo(() => {
-    return getDateTimeStr(cell?.data || '', cell?.includeTime);
-  }, [cell, getDateTimeStr]);
-
-  const endDateTime = useMemo(() => {
+  return useMemo(() => {
     if (!cell) return null;
-    const { endTimestamp, isRange } = cell;
-
-    if (!isRange) return null;
-
-    return getDateTimeStr(endTimestamp || '', cell?.includeTime);
-  }, [cell, getDateTimeStr]);
-
-  const dateStr = useMemo(() => {
-    return [startDateTime, endDateTime].filter(Boolean).join(' - ');
-  }, [startDateTime, endDateTime]);
-
-  return dateStr;
+    return getDateCellStr({ cell, field });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cell, field, clock]);
 };
 
 export const useRowTimeString = (rowId: string, fieldId: string, attrName: string) => {
-  const { getDateTimeStr } = useDateTypeCellDispatcher(fieldId);
+  const { field, clock } = useFieldSelector(fieldId);
+
+  const typeOptionValue = useMemo(() => {
+    const typeOption = getTypeOptions(field);
+
+    return {
+      timeFormat: parseInt(typeOption.get(YjsDatabaseKey.time_format)) as TimeFormat,
+      dateFormat: parseInt(typeOption.get(YjsDatabaseKey.date_format)) as DateFormat,
+      includeTime: typeOption.get(YjsDatabaseKey.include_time),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [field, clock]);
+
+  const getDateTimeStr = useCallback(
+    (timeStamp: string, includeTime?: boolean) => {
+      if (!typeOptionValue || !timeStamp) return null;
+      const timeFormat = getTimeFormat(typeOptionValue.timeFormat);
+      const dateFormat = getDateFormat(typeOptionValue.dateFormat);
+      const format = [dateFormat];
+
+      if (includeTime || typeOptionValue.includeTime) {
+        format.push(timeFormat);
+      }
+
+      return renderDate(timeStamp, format.join(' '), true);
+    },
+    [typeOptionValue],
+  );
+
   const { row: rowData } = useRowDataSelector(rowId);
   const [value, setValue] = useState<string | null>(null);
 
@@ -892,7 +913,7 @@ export const useRowTimeString = (rowId: string, fieldId: string, attrName: strin
 
   const time = useMemo(() => {
     if (!value) return null;
-    return getDateTimeStr(value, true);
+    return getDateTimeStr(value);
   }, [value, getDateTimeStr]);
 
   return time;

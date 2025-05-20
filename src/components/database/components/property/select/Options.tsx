@@ -4,7 +4,7 @@ import {
   OptionDragContext,
   useOptionDragContextValue,
 } from '@/components/database/components/property/select/useOptionDragContext';
-import React from 'react';
+import React, { useCallback, useRef } from 'react';
 
 function Options ({
   fieldId,
@@ -25,10 +25,36 @@ function Options ({
 
   const contextValue = useOptionDragContextValue(fieldId, options, container);
 
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleHovered = useCallback((id: string) => {
+    const isScrolling = isScrollingRef.current;
+
+    if (isScrolling) return;
+
+    if (onHover) {
+      onHover(id);
+    }
+  }, [onHover]);
+
+  const handleScroll = useCallback(() => {
+    if (scrollTimeoutRef.current) {
+      clearTimeout(scrollTimeoutRef.current);
+    }
+
+    isScrollingRef.current = true;
+
+    scrollTimeoutRef.current = setTimeout(() => {
+      isScrollingRef.current = false;
+    }, 100);
+  }, []);
+
   return (
     <OptionDragContext.Provider value={contextValue}>
       <div
         ref={setContainer}
+        onScroll={handleScroll}
         className={'pt-1 w-full overflow-hidden max-h-[260px] appflowy-scroller overflow-y-auto'}
       >
         {options.map((option) => (
@@ -39,7 +65,7 @@ function Options ({
             isSelected={selectedOptionIds?.includes(option.id)}
             onSelect={onSelectOption}
             isHovered={hoveredId === option.id}
-            onHover={onHover}
+            onHover={handleHovered}
           />
         ))}
       </div>

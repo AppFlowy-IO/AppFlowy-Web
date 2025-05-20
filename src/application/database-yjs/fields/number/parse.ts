@@ -24,7 +24,7 @@ export function getFormatValue (data: string, format: NumberFormat) {
   const numberFormater = currencyFormaterMap[format];
 
   const newData = valueToNumberParser(data);
-  
+
   if (!numberFormater) return newData;
 
   if (isNaN(parseInt(newData))) return '';
@@ -46,7 +46,7 @@ export function valueToNumberParser (input: string): string {
     return parseFloat(numericMatch[0]).toString();
   }
 
-  const allDigits = input.replace(/[^0-9]/g, '');
+  const allDigits = input.toString().replace(/[^0-9]/g, '');
 
   if (allDigits.length > 0) {
     return parseInt(allDigits, 10).toString();
