@@ -66,7 +66,12 @@ module.exports = {
     'no-void': 'off',
     'prefer-const': 'error',
     'prefer-spread': 'off',
-
+    '@typescript-eslint/no-unused-vars': [
+      'error',
+      {
+        argsIgnorePattern: '^_',
+      },
+    ],
     'padding-line-between-statements': [
       'error',
       { blankLine: 'always', prev: ['const', 'let', 'var'], next: '*' },
@@ -76,17 +81,16 @@ module.exports = {
       { blankLine: 'always', prev: 'block-like', next: '*' },
       { blankLine: 'always', prev: 'block', next: '*' },
     ],
-    '@typescript-eslint/no-explicit-any': 'off',
-    'import/no-named-as-default': 'off',
-    'import/no-named-as-default-member': 'off',
-
-    'import/no-unresolved': 'warn',
+    'import/no-unresolved': ['error', {
+      ignore: ['\\.svg$', 'bun']
+    }],
     'import/named': 'warn',
     'import/namespace': 'warn',
     'import/default': 'warn',
     'import/export': 'warn',
+    'import/no-duplicates': 'error',
+    // Detect whether there are modules that are exported but not used.
     'import/no-unused-modules': 'warn',
-    'import/no-duplicates': 'warn',
 
     // unused-imports should be error level so eslint can auto fix it
     'unused-imports/no-unused-imports': 'error',
@@ -99,7 +103,7 @@ module.exports = {
         argsIgnorePattern: '^_'
       }
     ],
-    '@typescript-eslint/no-unused-vars': ['warn', {
+    '@typescript-eslint/no-unused-vars': ['error', {
       vars: 'all',
       varsIgnorePattern: '^_',
       args: 'after-used',

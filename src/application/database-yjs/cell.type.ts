@@ -2,7 +2,7 @@ import { FieldId, RowId } from '@/application/types';
 import { DateFormat, TimeFormat } from '@/application/database-yjs/index';
 import { FieldType } from '@/application/database-yjs/database.type';
 import React from 'react';
-import { YArray } from 'yjs/dist/src/types/YArray';
+import * as Y from 'yjs';
 
 export interface Cell {
   createdAt: number;
@@ -97,7 +97,7 @@ export interface ChecklistCell extends Cell {
 
 export interface RelationCell extends Cell {
   fieldType: FieldType.Relation;
-  data: YArray<unknown>;
+  data: Y.Array<unknown>;
 }
 
 export type RelationCellData = RowId[];

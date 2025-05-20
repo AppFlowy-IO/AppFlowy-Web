@@ -36,7 +36,7 @@ import {
   UploadTemplatePayload,
 } from '@/application/template.type';
 import { AxiosInstance } from 'axios';
-import { RepeatedChatMessage } from '@appflowyinc/ai-chat/dist/types';
+import { RepeatedChatMessage } from '@appflowyinc/ai-chat';
 
 export type AFService =
   PublishService
@@ -46,9 +46,9 @@ export type AFService =
   & QuickNoteService
   & AIChatService
   & {
-  getClientId: () => string;
-  getAxiosInstance: () => AxiosInstance | null;
-};
+    getClientId: () => string;
+    getAxiosInstance: () => AxiosInstance | null;
+  };
 
 export interface AFServiceConfig {
   cloudConfig: AFCloudConfig;
@@ -185,7 +185,7 @@ export interface PublishService {
   updatePublishHomepage: (workspaceId: string, viewId: string) => Promise<void>;
   removePublishHomepage: (workspaceId: string) => Promise<void>;
 
-  getPublishOutline (namespace: string): Promise<View[]>;
+  getPublishOutline(namespace: string): Promise<View[]>;
 
   getPublishViewGlobalComments: (viewId: string) => Promise<GlobalComment[]>;
   createCommentOnPublishView: (viewId: string, content: string, replyCommentId?: string) => Promise<void>;

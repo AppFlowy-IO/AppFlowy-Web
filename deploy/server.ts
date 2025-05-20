@@ -1,10 +1,11 @@
-import path from 'path';
 import * as fs from 'fs';
-import pino from 'pino';
-import { type CheerioAPI, load } from 'cheerio';
+import path from 'path';
+
+// @ts-expect-error no bun
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-// @ts-expect-error
 import { fetch } from 'bun';
+import { type CheerioAPI, load } from 'cheerio';
+import pino from 'pino';
 
 const distDir = path.join(__dirname, 'dist');
 const indexPath = path.join(distDir, 'index.html');
@@ -270,9 +271,9 @@ const start = () => {
 
 start();
 
-export {};
+export { };
 
-function getIconBase64 (svgText: string, color: string) {
+function getIconBase64(svgText: string, color: string) {
   let newSvgText = svgText.replace(/fill="[^"]*"/g, ``);
 
   newSvgText = newSvgText.replace('<svg', `<svg fill="${argbToRgba(color)}"`);
@@ -282,7 +283,7 @@ function getIconBase64 (svgText: string, color: string) {
   return `data:image/svg+xml;base64,${base64String}`;
 }
 
-function argbToRgba (color: string): string {
+function argbToRgba(color: string): string {
   const hex = color.replace(/^#|0x/, '');
 
   const hasAlpha = hex.length === 8;
