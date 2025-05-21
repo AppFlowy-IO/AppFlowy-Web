@@ -125,7 +125,7 @@ function DateTimeCellPicker ({ open, onOpenChange, cell, fieldId, rowId }: {
       <PopoverContent
         onOpenAutoFocus={e => e.preventDefault()}
         onCloseAutoFocus={e => e.preventDefault()}
-        className={'w-[260px]'}
+        className={'w-[260px] overflow-y-auto'}
       >
         <div className={'flex flex-col w-full gap-2 p-2'}>
           <DateTimeInput
@@ -250,7 +250,7 @@ function DateTimeCellPicker ({ open, onOpenChange, cell, fieldId, rowId }: {
           </div>
         </div>
         <Separator className={'my-2'} />
-        <div className={'px-2 pb-2'}>
+        <div className={'px-2'}>
           <DateTimeFormatMenu fieldId={fieldId}>
             <div
               className={cn(dropdownMenuItemVariants({

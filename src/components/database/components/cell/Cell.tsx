@@ -1,6 +1,7 @@
 import { YjsDatabaseKey } from '@/application/types';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useCellSelector, useFieldSelector } from '@/application/database-yjs/selector';
+import { AITextCell } from '@/components/database/components/cell/ai-text/AITextCell';
 import { RowCreateModifiedTime } from '@/components/database/components/cell/created-modified';
 import React, { FC, useMemo } from 'react';
 import { TextCell } from '@/components/database/components/cell/text';
@@ -24,7 +25,6 @@ export function Cell (props: CellProps<CellType>) {
       case FieldType.RichText:
       case FieldType.URL:
         return TextCell;
-
       case FieldType.Number:
         return NumberCell;
       case FieldType.Checkbox:
@@ -40,6 +40,9 @@ export function Cell (props: CellProps<CellType>) {
         return RelationCell;
       case FieldType.FileMedia:
         return FileMediaCell;
+      case FieldType.AISummaries:
+      case FieldType.AITranslations:
+        return AITextCell;
       default:
         return TextCell;
     }

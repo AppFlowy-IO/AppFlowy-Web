@@ -81,7 +81,6 @@ function Database ({
   const updateRowMap = useCallback(async () => {
     const newRowMap: Record<RowId, YDoc> = {};
 
-    console.log('Database.tsx: updateRowMap', rowIds, dbRows);
     if (!dbRows || !createRowDoc) return;
 
     for (const row of dbRows) {
@@ -93,7 +92,7 @@ function Database ({
     }
 
     setRowDocMap(newRowMap);
-  }, [createRowDoc, dbRows, rowIds]);
+  }, [createRowDoc, dbRows]);
 
   const debounceUpdateRowMap = useMemo(() => {
     return debounce(updateRowMap, 200);

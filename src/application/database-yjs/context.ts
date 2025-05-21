@@ -1,8 +1,8 @@
 import {
   CreateFolderViewPayload,
-  CreateRowDoc,
+  CreateRowDoc, DatabaseRelations, GenerateAISummaryRowPayload, GenerateAITranslateRowPayload,
   LoadView,
-  LoadViewMeta, RowId, UpdatePagePayload,
+  LoadViewMeta, RowId, UpdatePagePayload, View,
   YDatabase,
   YDatabaseRow,
   YDoc,
@@ -32,6 +32,10 @@ export interface DatabaseContextState {
   createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   deletePage?: (viewId: string) => Promise<void>;
+  generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
+  generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
+  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  loadViews?: () => Promise<View[]>;
 }
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);

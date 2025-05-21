@@ -46,6 +46,7 @@ function GridVirtualRow ({
   const {
     setHoverRowId,
   } = useGridContext();
+
   const rowRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const dragHandleRef = useRef<HTMLDivElement | null>(null);

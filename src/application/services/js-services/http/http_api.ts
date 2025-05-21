@@ -27,7 +27,11 @@ import {
   CreateWorkspacePayload,
   UpdateWorkspacePayload,
   PublishViewPayload,
-  UploadPublishNamespacePayload, UpdatePublishConfigPayload, CreateFolderViewPayload,
+  UploadPublishNamespacePayload,
+  UpdatePublishConfigPayload,
+  CreateFolderViewPayload,
+  GenerateAITranslateRowPayload,
+  GenerateAISummaryRowPayload,
 } from '@/application/types';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
@@ -1954,4 +1958,50 @@ export async function getWorkspaceInfoByInvitationCode (code: string) {
   }
 
   return Promise.reject(data);
+}
+
+export async function generateAISummaryForRow (workspaceId: string, payload: GenerateAISummaryRowPayload) {
+  const url = `/api/ai/${workspaceId}/summarize_row`;
+  const response = await axiosInstance?.post<{
+    code: number;
+    message: string;
+    data: {
+      text: string;
+    }
+  }>(url, {
+    workspace_id: workspaceId,
+    data: payload,
+  });
+
+  if (response?.data.code === 0) {
+    return response?.data.data.text;
+  }
+
+  return Promise.reject(response?.data);
+}
+
+export async function generateAITranslateForRow (workspaceId: string, payload: GenerateAITranslateRowPayload) {
+  const url = `/api/ai/${workspaceId}/translate_row`;
+  const response = await axiosInstance?.post<{
+    code: number;
+    message: string;
+    data: {
+      items: {
+        [key: string]: string;
+      }[]
+    }
+  }>(url, {
+    workspace_id: workspaceId,
+    data: payload,
+  });
+
+  if (response?.data.code === 0) {
+    return response?.data.data.items.map((item) => {
+      return Object.entries(item).map(([key, value]) => {
+        return `${key}: ${value}`;
+      }).join(', ');
+    }).join('\n');
+  }
+
+  return Promise.reject(response?.data);
 }

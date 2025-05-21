@@ -29,8 +29,11 @@ export function SelectOptionCell ({
         const option = typeOption?.options?.find((option) => option.id === id);
 
         if (!option) return null;
-        return <div className={'min-w-fit max-w-[120px]'}><Tag
+        return <div
           key={option.id}
+          className={'min-w-fit max-w-[120px]'}
+        ><Tag
+
           color={SelectOptionColorMap[option.color]}
           label={option.name}
         /></div>;

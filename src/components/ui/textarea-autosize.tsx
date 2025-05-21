@@ -105,7 +105,19 @@ const TextareaAutosize = forwardRef<HTMLTextAreaElement, TextareaAutosizeProps>(
     contentMirror.style.boxSizing = 'content-box';
 
     // Replace newlines with <br> to mimic textarea behavior
-    const content = (currentValue as string).replace(/\n/g, '<br>') || '<br>';
+    let content = (currentValue as string);
+
+    if (content === '') {
+      content = '\u200B'; // Use zero-width space to ensure height is calculated
+    } else {
+      // Replace newlines with <br> and preserve spaces
+      content = content
+        .replace(/\n/g, '<br>\u200B')  // Replace newlines with <br> and add zero-width space
+        .replace(/\s{2,}/g, match => {
+          // Replace multiple spaces with non-breaking spaces
+          return match.replace(/ /g, '&nbsp;');
+        });
+    }
 
     if (contentMirror.innerHTML !== content) {
       contentMirror.innerHTML = content;

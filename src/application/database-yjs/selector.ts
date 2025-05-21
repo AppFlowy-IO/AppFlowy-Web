@@ -24,7 +24,7 @@ import {
   SortId,
   YDatabase,
   YDatabaseMetas,
-  YDatabaseRow,
+  YDatabaseRow, YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
@@ -935,3 +935,40 @@ export const useSelectFieldOptions = (fieldId: string, searchValue?: string) => 
   }, [field, searchValue, clock]);
 
 };
+
+export function useRowPrimaryContentSelector (rowDoc: YDoc | null, primaryFieldId: string) {
+
+  const [primaryContent, setPrimaryContent] = useState<string | null>(null);
+
+  const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
+  const row = rowSharedRoot?.get(YjsEditorKey.database_row) as YDatabaseRow;
+
+  useEffect(() => {
+    const observerEvent = () => {
+      if (!row) return;
+
+      const cell = row.get(YjsDatabaseKey.cells)?.get(primaryFieldId);
+
+      if (!cell) return;
+
+      const cellValue = parseYDatabaseCellToCell(cell);
+
+      if (cellValue) {
+        setPrimaryContent(cellValue.data as string);
+      } else {
+        setPrimaryContent(null);
+      }
+    };
+
+    observerEvent();
+
+    row?.observeDeep(observerEvent);
+
+    return () => {
+      row?.unobserveDeep(observerEvent);
+    };
+  }, [primaryFieldId, row, rowDoc]);
+
+  return primaryContent;
+}
+

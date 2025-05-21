@@ -24,7 +24,11 @@ import {
   CreateWorkspacePayload,
   UpdateWorkspacePayload,
   PublishViewPayload,
-  UploadPublishNamespacePayload, UpdatePublishConfigPayload, CreateFolderViewPayload,
+  UploadPublishNamespacePayload,
+  UpdatePublishConfigPayload,
+  CreateFolderViewPayload,
+  GenerateAISummaryRowPayload,
+  GenerateAITranslateRowPayload,
 } from '@/application/types';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { ViewMeta } from '@/application/db/tables/view_metas';
@@ -130,6 +134,8 @@ export interface AppService {
     is_member: boolean;
     member_count: number;
   }>;
+  generateAISummaryForRow: (workspaceId: string, payload: GenerateAISummaryRowPayload) => Promise<string>;
+  generateAITranslateForRow: (workspaceId: string, payload: GenerateAITranslateRowPayload) => Promise<string>;
 }
 
 export interface QuickNoteService {

@@ -3,11 +3,12 @@ import {
   DatabaseContextState,
   getPrimaryFieldId,
   parseRelationTypeOption, useDatabaseContext,
-  useFieldSelector,
+  useFieldSelector, useFieldWrap,
 } from '@/application/database-yjs';
 import { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
 import { notify } from '@/components/_shared/notify';
 import { RelationPrimaryValue } from '@/components/database/components/cell/relation/RelationPrimaryValue';
+import { cn } from '@/lib/utils';
 import React, { useCallback, useEffect, useState } from 'react';
 
 function RelationItems ({ style, cell, fieldId }: {
@@ -18,7 +19,7 @@ function RelationItems ({ style, cell, fieldId }: {
   const context = useDatabaseContext();
   const viewId = context.iidIndex;
   const { field } = useFieldSelector(fieldId);
-  const relatedDatabaseId = field ? parseRelationTypeOption(field).database_id : null;
+  const relatedDatabaseId = field ? parseRelationTypeOption(field)?.database_id : null;
 
   const createRowDoc = context.createRowDoc;
   const loadViewMeta = context.loadViewMeta;
@@ -107,10 +108,12 @@ function RelationItems ({ style, cell, fieldId }: {
     })();
   }, [loadView, relatedViewId]);
 
+  const wrap = useFieldWrap(fieldId);
+
   return (
     <div
       style={style}
-      className={'relation-cell flex w-full gap-2'}
+      className={cn('relation-cell overflow-hidden flex w-full gap-2', wrap ? 'flex-wrap' : 'flex-nowrap')}
     >
       {noAccess ? (
         <div className={'text-text-caption'}>No access</div>
@@ -143,7 +146,7 @@ function RelationItems ({ style, cell, fieldId }: {
                   notify.error(e.message);
                 }
               }}
-              className={`underline ${relatedViewId ? 'cursor-pointer hover:text-content-blue-400' : ''}`}
+              className={`underline max-w-full overflow-hidden ${relatedViewId ? 'cursor-pointer hover:text-content-blue-400' : ''}`}
 
             >
               <RelationPrimaryValue

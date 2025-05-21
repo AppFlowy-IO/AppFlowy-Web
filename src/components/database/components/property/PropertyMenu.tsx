@@ -9,6 +9,8 @@ import DeletePropertyConfirm from '@/components/database/components/property/Del
 import NumberPropertyMenuContent from '@/components/database/components/property/number/NumberPropertyMenuContent';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
 import PropertySelectTrigger from '@/components/database/components/property/PropertySelectTrigger';
+import RelationPropertyMenuContent
+  from '@/components/database/components/property/relation/RelationPropertyMenuContent';
 import SelectPropertyMenuContent from '@/components/database/components/property/select/SelectPropertyMenuContent';
 import TextPropertyMenuContent from '@/components/database/components/property/text/TextPropertyMenuContent';
 import {
@@ -78,6 +80,8 @@ function PropertyMenu ({
           fieldId={fieldId}
           enableInclusivitiesTime={true}
         />;
+      case FieldType.Relation:
+        return <RelationPropertyMenuContent fieldId={fieldId} />;
       default:
         return <PropertySelectTrigger fieldId={fieldId} />;
     }

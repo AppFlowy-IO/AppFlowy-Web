@@ -5,7 +5,7 @@ import GridNewProperty from '@/components/database/components/grid/grid-column/G
 import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import React, { useMemo, useState } from 'react';
-import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/ai_indicator.svg';
+import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/database/ai.svg';
 import FieldDisplay from 'src/components/database/components/field/FieldDisplay';
 import { ResizeHandle } from './ResizeHandle';
 
@@ -51,7 +51,7 @@ export function GridHeaderColumn ({ column, onResizeColumnStart }: {
           </TooltipContent>
         </Tooltip>
 
-        {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-xl'} />}
+        {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-text-featured'} />}
         {onResizeColumnStart && !readOnly && fieldId && <ResizeHandle
           fieldId={fieldId}
           onResizeStart={onResizeColumnStart}

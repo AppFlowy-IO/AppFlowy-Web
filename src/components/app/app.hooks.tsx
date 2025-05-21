@@ -4,7 +4,7 @@ import {
   CreatePagePayload,
   CreateRowDoc,
   CreateSpacePayload,
-  DatabaseRelations,
+  DatabaseRelations, GenerateAISummaryRowPayload, GenerateAITranslateRowPayload,
   LoadView,
   LoadViewMeta,
   Subscription,
@@ -73,6 +73,9 @@ export interface AppContextType {
   unpublish?: (viewId: string) => Promise<void>;
   refreshOutline?: () => Promise<void>;
   createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
+  generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
+  generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
+  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
 }
 
 const USER_NO_ACCESS_CODE = [1024, 1012];
@@ -321,16 +324,6 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       console.error(e);
     }
   }, [service]);
-  const loadDatabaseViewRelations = useCallback(async (workspaceId: string, databaseStorageId: string) => {
-    if (!service) return;
-    try {
-      const res = await service.getAppDatabaseViewRelations(workspaceId, databaseStorageId);
-
-      setWorkspaceDatabases(res);
-    } catch (e) {
-      console.error(e);
-    }
-  }, [service]);
 
   const loadOutline = useCallback(async (workspaceId: string, force = true) => {
 
@@ -457,15 +450,32 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
     })();
   }, [loadOutline, currentWorkspaceId, loadTrash]);
 
+  const loadDatabaseRelations = useCallback(async () => {
+    if (!currentWorkspaceId || !service) {
+      throw new Error('No workspace or service found');
+    }
+
+    const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
+
+    if (!selectedWorkspace) return;
+
+    try {
+      const res = await service.getAppDatabaseViewRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
+
+      setWorkspaceDatabases(res);
+      return res;
+    } catch (e) {
+      console.error(e);
+    }
+  }, [currentWorkspaceId, service, userWorkspaceInfo?.selectedWorkspace]);
+
   useEffect(() => {
-    void loadUserWorkspaceInfo().then(res => {
-      const selectedWorkspace = res?.selectedWorkspace;
+    void loadUserWorkspaceInfo();
+  }, [loadUserWorkspaceInfo]);
 
-      if (!selectedWorkspace) return;
-
-      void loadDatabaseViewRelations(selectedWorkspace.id, selectedWorkspace.databaseStorageId);
-    });
-  }, [loadDatabaseViewRelations, loadUserWorkspaceInfo]);
+  useEffect(() => {
+    void loadDatabaseRelations();
+  }, [loadDatabaseRelations]);
 
   const onChangeWorkspace = useCallback(async (workspaceId: string) => {
     if (!service) return;
@@ -701,6 +711,34 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
 
   }, [currentWorkspaceId, loadOutline, service]);
 
+  const generateAISummaryForRow = useCallback(async (payload: GenerateAISummaryRowPayload) => {
+    if (!currentWorkspaceId || !service) {
+      throw new Error('No workspace or service found');
+    }
+
+    try {
+      const res = await service.generateAISummaryForRow(currentWorkspaceId, payload);
+
+      return res;
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }, [currentWorkspaceId, service]);
+
+  const generateAITranslateForRow = useCallback(async (payload: GenerateAITranslateRowPayload) => {
+    if (!currentWorkspaceId || !service) {
+      throw new Error('No workspace or service found');
+    }
+
+    try {
+      const res = await service.generateAITranslateForRow(currentWorkspaceId, payload);
+
+      return res;
+    } catch (e) {
+      return Promise.reject(e);
+    }
+  }, [currentWorkspaceId, service]);
+
   return <AppContext.Provider
     value={{
       currentWorkspaceId,
@@ -743,6 +781,9 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
       unpublish,
       refreshOutline,
       createFolderView,
+      generateAISummaryForRow,
+      generateAITranslateForRow,
+      loadDatabaseRelations,
     }}
   >
     <AIChatProvider>
@@ -891,6 +932,9 @@ export function useAppHandlers () {
     unpublish: context.unpublish,
     refreshOutline: context.refreshOutline,
     createFolderView: context.createFolderView,
+    generateAISummaryForRow: context.generateAISummaryForRow,
+    generateAITranslateForRow: context.generateAITranslateForRow,
+    loadDatabaseRelations: context.loadDatabaseRelations,
   };
 }
 

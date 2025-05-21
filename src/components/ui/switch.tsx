@@ -58,8 +58,8 @@ function Switch ({
 
           // Transition and positioning
           'transition-transform',
-          'data-[state=checked]:translate-x-[calc(100%-3px)]',
-          'data-[state=unchecked]:translate-x-0',
+          'data-[state=checked]:translate-x-[calc(100%-4px)]',
+          'data-[state=unchecked]:translate-x-[1px]',
         )}
       />
     </SwitchPrimitive.Root>

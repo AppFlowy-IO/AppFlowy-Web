@@ -61,25 +61,25 @@ export function DatabaseActions () {
           {t('grid.settings.sort')}
         </TooltipContent>
       </Tooltip>
+      <Settings>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant={'ghost'}
+              size={'icon'}
+              data-testid={'database-actions-settings'}
+            >
+              <SettingsIcon className={'w-5 h-5'} />
+            </Button>
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <div>
-            <Settings>
-              <Button
-                variant={'ghost'}
-                size={'icon'}
-                data-testid={'database-actions-settings'}
-              >
-                <SettingsIcon className={'w-5 h-5'} />
-              </Button>
-            </Settings>
-          </div>
-        </TooltipTrigger>
-        <TooltipContent>
-          {t('settings.title')}
-        </TooltipContent>
-      </Tooltip>
+          </TooltipTrigger>
+
+          <TooltipContent>
+            {t('settings.title')}
+          </TooltipContent>
+        </Tooltip>
+      </Settings>
+
 
     </div>
   );

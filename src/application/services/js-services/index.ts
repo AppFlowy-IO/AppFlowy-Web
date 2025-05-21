@@ -34,7 +34,7 @@ import {
   CreateSpacePayload,
   CreateWorkspacePayload,
   DatabaseRelations,
-  DuplicatePublishView,
+  DuplicatePublishView, GenerateAISummaryRowPayload, GenerateAITranslateRowPayload,
   PublishViewPayload,
   QuickNoteEditorData,
   SubscriptionInterval,
@@ -196,7 +196,6 @@ export class AFClientService implements AFService {
   }
 
   async getAppDatabaseViewRelations (workspaceId: string, databaseStorageId: string) {
-
     const res = await APIService.getCollab(workspaceId, databaseStorageId, Types.WorkspaceDatabase);
     const doc = new Y.Doc();
 
@@ -550,9 +549,11 @@ export class AFClientService implements AFService {
     return APIService.getWorkspaceSubscriptions(workspaceId);
   }
 
-  registerDocUpdate (doc: Y.Doc, context: {
+  private registeredDocSync = new Map<string, SyncManager>();
+
+  registerDocUpdate = (doc: Y.Doc, context: {
     workspaceId: string, objectId: string, collabType: Types
-  }) {
+  }) => {
     const token = getTokenParsed();
     const userId = token?.user.id;
 
@@ -560,10 +561,15 @@ export class AFClientService implements AFService {
       throw new Error('User not found');
     }
 
+    if (this.registeredDocSync.has(context.objectId)) {
+      return;
+    }
+
     const sync = new SyncManager(doc, { userId, ...context });
 
+    this.registeredDocSync.set(context.objectId, sync);
     sync.initialize();
-  }
+  };
 
   async importFile (file: File, onProgress: (progress: number) => void) {
     const task = await APIService.createImportTask(file);
@@ -669,5 +675,13 @@ export class AFClientService implements AFService {
 
   async getWorkspaceInfoByInvitationCode (code: string) {
     return APIService.getWorkspaceInfoByInvitationCode(code);
+  }
+
+  async generateAISummaryForRow (workspaceId: string, payload: GenerateAISummaryRowPayload) {
+    return APIService.generateAISummaryForRow(workspaceId, payload);
+  }
+
+  async generateAITranslateForRow (workspaceId: string, payload: GenerateAITranslateRowPayload) {
+    return APIService.generateAITranslateForRow(workspaceId, payload);
   }
 }

@@ -124,8 +124,8 @@ export default defineConfig({
           chunkFileNames: 'static/js/[name]-[hash].js',
           entryFileNames: 'static/js/[name]-[hash].js',
           assetFileNames: 'static/[ext]/[name]-[hash].[ext]',
-          manualChunks(id) {
-            if(
+          manualChunks (id) {
+            if (
               // id.includes('/react@') ||
               // id.includes('/react-dom@') ||
               id.includes('/react-is@') ||

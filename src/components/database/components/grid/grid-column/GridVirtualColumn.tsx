@@ -1,4 +1,5 @@
-import { FieldType, useReadOnly } from '@/application/database-yjs';
+import { FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
+import { YjsDatabaseKey } from '@/application/types';
 import OpenAction from '@/components/database/components/database-row/OpenAction';
 import GridCell from '@/components/database/components/grid/grid-cell/GridCell';
 import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
@@ -6,7 +7,7 @@ import { RenderRow, RenderRowType } from '@/components/database/components/grid/
 import { useGridContext } from '@/components/database/grid/useGridContext';
 import { cn } from '@/lib/utils';
 import { VirtualItem } from '@tanstack/react-virtual';
-import React, { memo, useMemo } from 'react';
+import React, { memo, useEffect, useMemo } from 'react';
 
 const MIN_HEIGHT = 35;
 
@@ -33,24 +34,41 @@ function GridVirtualColumn ({
   const readOnly = useReadOnly();
   const columnData = useMemo(() => columns[column.index], [columns, column.index]);
   const { hoverRowId } = useGridContext();
-
+  const { field } = useFieldSelector(columnData.fieldId || '');
+  const fieldType = field ? Number(field?.get(YjsDatabaseKey.type)) as FieldType : undefined;
   const isHoverRow = hoverRowId === rowData.rowId;
-  const isActiveCell = activeCell && columnData.fieldType !== undefined && activeCell.rowId === rowData.rowId && activeCell.fieldId === columnData.fieldId && [
+  const isActiveCell = activeCell && fieldType !== undefined && activeCell.rowId === rowData.rowId && activeCell.fieldId === columnData.fieldId && [
     FieldType.RichText,
     FieldType.URL,
     FieldType.Number,
-  ].includes(columnData.fieldType);
+    FieldType.Checklist,
+    FieldType.AISummaries,
+    FieldType.AITranslations,
+    FieldType.Relation,
+  ].includes(fieldType);
   const showActions = Boolean(isHoverRow && columnData.isPrimary && rowData.rowId);
   const rowType = rowData.type;
 
+  useEffect(() => {
+    const clickOutside = () => {
+      setActiveCell(undefined);
+    };
+
+    document.addEventListener('click', clickOutside);
+
+    return () => {
+      document.removeEventListener('click', clickOutside);
+    };
+  }, [setActiveCell]);
   return (
     <div
       data-column-id={columnData.fieldId}
       key={column.key}
       data-is-primary={columnData.isPrimary}
-      onClick={() => {
+      onClick={(e) => {
         if (readOnly) return;
         if (rowData.type === RenderRowType.Row && columnData.type === GridColumnType.Field && rowData.rowId && columnData.fieldId) {
+          e.stopPropagation();
           setActiveCell({
             rowId: rowData.rowId,
             fieldId: columnData.fieldId,

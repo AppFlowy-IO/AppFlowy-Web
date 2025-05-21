@@ -68,7 +68,6 @@ export function TextCell ({
           }
         }}
         onMouseEnter={() => {
-
           if (value && isValidUrl(value) && !editing) {
             setShowUrlActions(true);
           }

@@ -3,7 +3,7 @@ import { FieldType } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import React, { useEffect, useState } from 'react';
 
-export function RelationPrimaryValue({ rowDoc, fieldId }: { rowDoc: YDoc; fieldId?: FieldId }) {
+export function RelationPrimaryValue ({ rowDoc, fieldId }: { rowDoc: YDoc; fieldId?: FieldId }) {
   const [text, setText] = useState<string | null>(null);
   const [row, setRow] = useState<YDatabaseRow | null>(null);
 
@@ -55,5 +55,5 @@ export function RelationPrimaryValue({ rowDoc, fieldId }: { rowDoc: YDoc; fieldI
     };
   }, [row, fieldId]);
 
-  return <div>{text}</div>;
+  return <div className={'truncate'}>{text}</div>;
 }

@@ -64,6 +64,7 @@ import { nanoid } from 'nanoid';
 import { useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
+import { YArray } from 'yjs/dist/src/types/YArray';
 
 export function useResizeColumnWidthDispatch () {
   const database = useDatabase();
@@ -1171,7 +1172,7 @@ export function useUpdateCellDispatch (rowId: string, fieldId: string) {
   const rowDocMap = useRowDocMap();
   const { field } = useFieldSelector(fieldId);
 
-  return useCallback((data: string, dateOpts?: {
+  return useCallback((data: string | YArray<string>, dateOpts?: {
     endTimestamp?: string;
     includeTime?: boolean;
     isRange?: boolean;
@@ -1199,7 +1200,7 @@ export function useUpdateCellDispatch (rowId: string, fieldId: string) {
         newCell.set(YjsDatabaseKey.data, data);
         newCell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
-        if (dateOpts) {
+        if (dateOpts && (typeof data === 'string' || typeof data === 'number')) {
           updateDateCell(newCell, {
             data,
             ...dateOpts,
@@ -1210,7 +1211,7 @@ export function useUpdateCellDispatch (rowId: string, fieldId: string) {
       } else {
         cell.set(YjsDatabaseKey.data, data);
 
-        if (dateOpts) {
+        if (dateOpts && (typeof data === 'string' || typeof data === 'number')) {
           updateDateCell(cell, {
             data,
             ...dateOpts,
@@ -1576,8 +1577,10 @@ export function useSwitchPropertyType () {
             }
 
             if (fieldType === FieldType.Number) {
-              if (data && isDate(data.toString())) {
-                const date = safeParseTimestamp(data.toString());
+              const start = (typeof data === 'number' || typeof data === 'string') ? data.toString().split('-')[0] : '';
+
+              if (data && isDate(start)) {
+                const date = safeParseTimestamp(start);
 
                 if (date) {
                   newData = date.unix().toString();
@@ -1616,7 +1619,9 @@ export function useSwitchPropertyType () {
 
             if (fieldType === FieldType.DateTime) {
               if (data && (typeof data === 'string' || typeof data === 'number')) {
-                newData = safeParseTimestamp(data.toString()).unix();
+                const start = data.toString().split('-')[0];
+
+                newData = safeParseTimestamp(start).unix();
               }
             }
 
@@ -1970,3 +1975,41 @@ export function useUpdateDateTimeFieldFormat (fieldId: string) {
     }], 'updateDateTimeFieldFormat');
   }, [database, fieldId, sharedRoot]);
 }
+
+export function useUpdateRelationDatabaseId (fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((databaseId: string) => {
+    executeOperations(sharedRoot, [() => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+      if (!field) {
+        throw new Error(`Field not found`);
+      }
+
+      let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+
+      if (!typeOptionMap) {
+        typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+
+        field.set(YjsDatabaseKey.type_option, typeOptionMap);
+      }
+
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+      let typeOption = typeOptionMap.get(String(fieldType));
+
+      if (!typeOption) {
+        typeOption = new Y.Map() as YMapFieldTypeOption;
+        typeOptionMap.set(String(fieldType), typeOption);
+      }
+
+      typeOption.set(YjsDatabaseKey.database_id, databaseId);
+
+      field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+    }], 'updateRelationDatabaseId');
+  }, [database, fieldId, sharedRoot]);
+}
+

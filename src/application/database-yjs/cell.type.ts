@@ -16,6 +16,11 @@ export interface TextCell extends Cell {
   data: string;
 }
 
+export interface AICell extends Cell {
+  fieldType: FieldType.AISummaries | FieldType.AITranslations;
+  data: string;
+}
+
 export interface NumberCell extends Cell {
   fieldType: FieldType.Number;
   data: string;
@@ -97,7 +102,7 @@ export interface ChecklistCell extends Cell {
 
 export interface RelationCell extends Cell {
   fieldType: FieldType.Relation;
-  data: YArray<unknown>;
+  data: YArray<string>;
 }
 
 export type RelationCellData = RowId[];

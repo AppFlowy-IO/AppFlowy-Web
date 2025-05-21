@@ -73,19 +73,14 @@ function GridVirtualizer ({
   useEffect(() => {
     if (!isResizing) {
       columnVirtualizer.measure();
-      const rowIds = rowItems.map(item => {
-        const rowData = data[item.index];
+      const rowIds = data.map(rowData => {
 
-        if (rowData.type === RenderRowType.Row) {
-          return rowData.rowId;
-        }
-
-        return null;
-      }).filter(Boolean) as string[];
+        return rowData.rowId;
+      }).filter(rowId => !!rowId);
 
       rowIds.forEach(resizeRow);
     }
-  }, [columns, isResizing, columnVirtualizer, rowItems, resizeRow, data]);
+  }, [columns, isResizing, columnVirtualizer, resizeRow, data]);
 
   useEffect(() => {
     const scrollElement = virtualizer.scrollElement;

@@ -17,7 +17,7 @@ export class SyncManager {
 
   private isSending = false;
 
-  constructor(private doc: Y.Doc, private context: {
+  constructor (private doc: Y.Doc, private context: {
     userId: string, workspaceId: string, objectId: string, collabType: Types
   }) {
     this.versionVector = this.loadVersionVector();
@@ -26,41 +26,41 @@ export class SyncManager {
     this.setupListener();
   }
 
-  private setupListener() {
+  private setupListener () {
     this.doc.on('update', (_update: Uint8Array, origin: CollabOrigin) => {
-      if(origin === CollabOrigin.Remote) return;
+      if (origin === CollabOrigin.Remote) return;
       console.log('Local changes detected. Sending update...', origin);
       this.debouncedSendUpdate();
     });
   }
 
-  private getStorageKey(baseKey: string): string {
+  private getStorageKey (baseKey: string): string {
     return `${this.context.userId}_${baseKey}_${this.context.workspaceId}_${this.context.objectId}`;
   }
 
-  private loadVersionVector(): number {
+  private loadVersionVector (): number {
     const storedVector = localStorage.getItem(this.getStorageKey(VERSION_VECTOR_KEY));
 
     return storedVector ? parseInt(storedVector, 10) : 0;
   }
 
-  private saveVersionVector() {
+  private saveVersionVector () {
     localStorage.setItem(this.getStorageKey(VERSION_VECTOR_KEY), this.versionVector.toString());
   }
 
-  private loadUnsyncedFlag(): boolean {
+  private loadUnsyncedFlag (): boolean {
     return localStorage.getItem(this.getStorageKey(UNSYNCED_FLAG_KEY)) === 'true';
   }
 
-  private saveUnsyncedFlag() {
+  private saveUnsyncedFlag () {
     localStorage.setItem(this.getStorageKey(UNSYNCED_FLAG_KEY), this.hasUnsyncedChanges.toString());
   }
 
-  private loadLastSyncedAt(): string {
+  private loadLastSyncedAt (): string {
     return localStorage.getItem(this.getStorageKey(LAST_SYNCED_AT_KEY)) || '';
   }
 
-  private saveLastSyncedAt() {
+  private saveLastSyncedAt () {
     localStorage.setItem(this.getStorageKey(LAST_SYNCED_AT_KEY), this.lastSyncedAt);
   }
 
@@ -71,8 +71,8 @@ export class SyncManager {
     void this.sendUpdate();
   }, 1000);  // 1 second debounce
 
-  private async sendUpdate() {
-    if(this.isSending) return;
+  private async sendUpdate () {
+    if (this.isSending) return;
     this.isSending = true;
 
     try {
@@ -85,14 +85,14 @@ export class SyncManager {
 
       const response = await updateCollab(this.context.workspaceId, this.context.objectId, this.context.collabType, update, context);
 
-      if(response) {
+      if (response) {
         console.log(`Update sent successfully. Server version: ${response.version_vector}`);
 
         // Update last synced time
         this.lastSyncedAt = String(Date.now());
         this.saveLastSyncedAt();
 
-        if(response.version_vector === this.versionVector) {
+        if (response.version_vector === this.versionVector) {
           // Our update was the latest
           this.hasUnsyncedChanges = false;
           this.saveUnsyncedFlag();
@@ -106,7 +106,7 @@ export class SyncManager {
       } else {
         return Promise.reject(response);
       }
-    } catch(error) {
+    } catch (error) {
       console.error('Failed to send update:', error);
       // Keep the unsynced flag as true
       this.hasUnsyncedChanges = true;
@@ -116,23 +116,27 @@ export class SyncManager {
     }
   }
 
-  public initialize() {
-    if(this.hasUnsyncedChanges) {
+  public initialize () {
+    if (this.hasUnsyncedChanges) {
       console.log('Unsynced changes found. Sending update...');
       // Send an update if there are unsynced changes
       this.debouncedSendUpdate();
     }
   }
 
-  public getUnsyncedStatus(): boolean {
+  public getUnsyncedStatus (): boolean {
     return this.hasUnsyncedChanges;
   }
 
-  public getLastSyncedAt(): string {
+  public getLastSyncedAt (): string {
     return this.lastSyncedAt;
   }
 
-  public getCurrentVersionVector(): number {
+  public getCurrentVersionVector (): number {
     return this.versionVector;
+  }
+
+  public destroy () {
+    this.doc.off('update', this.setupListener);
   }
 }

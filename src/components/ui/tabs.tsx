@@ -25,7 +25,7 @@ function TabsList ({
     <TabsPrimitive.List
       data-slot="tabs-list"
       className={cn(
-        'bg-background-primary text-text-primary text-sm font-semibold inline-flex w-fit gap-3 items-center justify-center whitespace-nowrap',
+        'bg-background-primary text-text-primary text-sm font-semibold inline-flex w-fit gap-1 items-center justify-center whitespace-nowrap',
         className,
       )}
       {...props}
@@ -42,7 +42,7 @@ function TabsTrigger ({
       data-slot="tabs-trigger"
       className={cn(
         // Base Styles
-        'flex min-w-[60px] w-fit relative h-[40px] items-start justify-center',
+        'flex min-w-[60px] w-fit relative h-[34px] items-start justify-center',
         'gap-[10px]',
         'border border-transparent',
 
@@ -87,7 +87,7 @@ const TabLabel = forwardRef<HTMLDivElement, HTMLAttributes<HTMLDivElement>
     <div
       ref={ref}
       className={cn(
-        'rounded-300 px-1.5 w-fit py-1.5 hover:bg-fill-content-hover',
+        'rounded-300 px-1.5 w-fit py-1 hover:bg-fill-content-hover',
         className)}
       {...props}
     />

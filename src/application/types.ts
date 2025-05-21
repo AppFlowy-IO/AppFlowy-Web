@@ -1039,6 +1039,8 @@ export interface ViewComponentProps {
   uploadFile?: (file: File) => Promise<string>;
   requestInstance?: AxiosInstance | null;
   createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
+  generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
+  generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
 }
 
 export interface CreatePagePayload {
@@ -1094,3 +1096,22 @@ export enum SettingMenuItem {
   MEMBERS = 'MEMBERS',
   SITES = 'SITES',
 }
+
+export interface GenerateAISummaryRowPayload {
+  Content: {
+    // key = field name, value = cell data
+    [key: string]: string;
+  };
+}
+
+export interface GenerateAITranslateRowPayload {
+  cells: {
+    // field name
+    title: string;
+    // cell data
+    content: string;
+  }[],
+  language: string,
+  include_header?: boolean
+}
+
