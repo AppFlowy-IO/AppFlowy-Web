@@ -1,6 +1,6 @@
 import GridDragColumn from '@/components/database/components/grid/drag-and-drop/GridDragColumn';
 import { GridRowCell } from '@/components/database/components/grid/grid-cell/index';
-import { RenderColumn } from '@/components/database/components/grid/grid-column';
+import { GridColumnType, RenderColumn } from '@/components/database/components/grid/grid-column';
 import { RenderRow, RenderRowType } from '@/components/database/components/grid/grid-row/useRenderRows';
 import GridCalculateRowCell from '@/components/database/components/grid/grid-cell/GridCalculateRowCell';
 import GridHeaderColumn from '@/components/database/components/grid/grid-column/GridHeaderColumn';
@@ -43,6 +43,10 @@ function GridCell ({
         columnIndex={columnIndex}
       />;
     case RenderRowType.CalculateRow:
+      if (column.type !== GridColumnType.Field) {
+        return null;
+      }
+
       return <GridCalculateRowCell fieldId={fieldId} />;
     default:
       return null;

@@ -75,6 +75,10 @@ export function CardField ({ rowId, fieldId, editing, setEditing }: {
     );
   }
 
+  if (!cell || !cell.data) {
+    return null;
+  }
+
   if (Number(type) === FieldType.Checkbox) {
     return (
       <div className={'flex items-center gap-1'}>

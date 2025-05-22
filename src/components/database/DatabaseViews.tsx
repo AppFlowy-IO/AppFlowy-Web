@@ -9,11 +9,11 @@ import { DatabaseConditionsContext } from '@/components/database/components/cond
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import { Grid } from '@/components/database/grid';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
-import React, { Suspense, useCallback, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
 
-function DatabaseViews({
+function DatabaseViews ({
   onChangeView,
   viewId,
   iidIndex,
@@ -28,6 +28,7 @@ function DatabaseViews({
 }) {
   const { childViews, viewIds } = useDatabaseViewsSelector(iidIndex, visibleViewIds);
 
+  const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
   const value = useMemo(() => {
     return Math.max(
       0,
@@ -44,9 +45,20 @@ function DatabaseViews({
     return childViews[value];
   }, [childViews, value]);
 
-  const layout = useMemo(() => {
-    if (!activeView) return null;
-    return Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout;
+  useEffect(() => {
+    if (!activeView) return;
+
+    const observerEvent = () => {
+      setLayout(Number(activeView.get(YjsDatabaseKey.layout)) as DatabaseViewLayout);
+    };
+
+    observerEvent();
+
+    activeView.observe(observerEvent);
+
+    return () => {
+      activeView.unobserve(observerEvent);
+    };
   }, [activeView]);
 
   const view = useMemo(() => {
@@ -100,7 +112,7 @@ function DatabaseViews({
           setSelectedViewId={onChangeView}
           viewIds={viewIds}
         />
-        <DatabaseConditions/>
+        <DatabaseConditions />
 
         <div className={'flex h-full w-full flex-1 flex-col overflow-hidden'}>
           <Suspense fallback={skeleton}>

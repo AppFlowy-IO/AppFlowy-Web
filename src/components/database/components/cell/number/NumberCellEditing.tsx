@@ -1,5 +1,5 @@
-import { valueToNumberParser } from '@/application/database-yjs';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
+import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { FieldId } from '@/application/types';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
@@ -21,9 +21,9 @@ function NumberCellEditing ({
   const [inputValue, setInputValue] = useState<string>(defaultValue);
 
   const handleUpdateCell = useCallback((value: string) => {
-    const decimalValue = valueToNumberParser(value);
+    const decimalValue = EnhancedBigStats.parse(value);
 
-    onUpdateCell(decimalValue.toString());
+    onUpdateCell(decimalValue || '');
   }, [onUpdateCell]);
 
   return (

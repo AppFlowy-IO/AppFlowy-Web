@@ -97,6 +97,9 @@ dependencies:
   '@tanstack/react-virtual':
     specifier: ^3.13.6
     version: 3.13.6(react-dom@18.2.0)(react@18.2.0)
+  '@types/big.js':
+    specifier: ^6.2.2
+    version: 6.2.2
   '@types/react-swipeable-views':
     specifier: ^0.13.4
     version: 0.13.5
@@ -106,6 +109,9 @@ dependencies:
   axios:
     specifier: ^1.9.0
     version: 1.9.0
+  big.js:
+    specifier: ^7.0.1
+    version: 7.0.1
   class-variance-authority:
     specifier: ^0.7.1
     version: 0.7.1
@@ -121,9 +127,6 @@ dependencies:
   dayjs:
     specifier: ^1.11.9
     version: 1.11.9
-  decimal.js:
-    specifier: ^10.4.3
-    version: 10.4.3
   dexie:
     specifier: ^4.0.7
     version: 4.0.7
@@ -6087,6 +6090,10 @@ packages:
     dependencies:
       '@babel/types': 7.24.7
 
+  /@types/big.js@6.2.2:
+    resolution: {integrity: sha512-e2cOW9YlVzFY2iScnGBBkplKsrn2CsObHQ2Hiw4V1sSyiGbgWL8IyqE3zFi1Pt5o1pdAtYkDAIsF3KKUPjdzaA==}
+    dev: false
+
   /@types/cypress-image-snapshot@3.1.9:
     resolution: {integrity: sha512-vcFgB8AfuM0dtupCHAGgapUbjRNWmMDtpzzpXz5gexWOHW4y/n10XRi5/y5Xpi0Ztku+X4dnRVMqQa5IDcy3Ig==}
     dev: true
@@ -7450,6 +7457,10 @@ packages:
     dependencies:
       tweetnacl: 0.14.5
 
+  /big.js@7.0.1:
+    resolution: {integrity: sha512-iFgV784tD8kq4ccF1xtNMZnXeZzVuXWWM+ERFzKQjv+A5G9HC8CY3DuV45vgzFFcW+u2tIvmF95+AzWgs6BjCg==}
+    dev: false
+
   /binary-extensions@2.3.0:
     resolution: {integrity: sha512-Ceh+7ox5qe7LJuLHoY0feh3pHuUDHAcRUeyL2VYghZwfpkNIy/+8Ocg0a3UuSoYzavmylwuLWQOf3hl0jjMMIw==}
     engines: {node: '>=8'}
@@ -8643,6 +8654,7 @@ packages:
 
   /decimal.js@10.4.3:
     resolution: {integrity: sha512-VBBaLc1MgL5XpzgIP7ny5Z6Nx3UrRkIViUkPUdtl9aya5amy3De1gsUUSB1g3+3sExYNjCAsAznmukyxCb1GRA==}
+    dev: true
 
   /decode-named-character-reference@1.0.2:
     resolution: {integrity: sha512-O8x12RzrUF8xyVcY0KJowWsmaJxQbmy0/EtnNtHRpsOcT7dFk5W598coHqBVpmWo1oQQfsCqfCmkZN5DJrZVdg==}

@@ -35,7 +35,7 @@ function ColumnHeaderPrimitive ({
         <div className={'max-w-[180px] w-auto overflow-hidden'}>{header}</div>
         <span className={'text-text-secondary text-xs'}>{rowCount}</span>
       </div>
-      {readOnly && <div className={'flex items-center'}>
+      {!readOnly && <div className={'flex items-center'}>
         <Tooltip disableHoverableContent>
           <TooltipTrigger asChild>
             <Button

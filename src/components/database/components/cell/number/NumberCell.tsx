@@ -1,8 +1,9 @@
 import {
   NumberFormat,
-  getFormatValue, useFieldWrap,
+  useFieldWrap,
 } from '@/application/database-yjs';
 import { CellProps, NumberCell as NumberCellType } from '@/application/database-yjs/cell.type';
+import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { YjsDatabaseKey } from '@/application/types';
 import { useFieldTypeOption } from '@/components/database/components/cell/Cell.hooks';
 import NumberCellEditing from '@/components/database/components/cell/number/NumberCellEditing';
@@ -28,7 +29,7 @@ export function NumberCell ({
   const value = useMemo(() => {
     if (!cell) return '';
 
-    return getFormatValue(cell.data, format);
+    return EnhancedBigStats.parse(cell.data, format) || '';
   }, [cell, format]);
 
   const focusToEnd = useCallback((el: HTMLTextAreaElement) => {

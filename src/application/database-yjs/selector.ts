@@ -153,6 +153,30 @@ export function useFieldsSelector (visibilitys: FieldVisibility[] = defaultVisib
   return columns;
 }
 
+export function useFieldType (fieldId: string) {
+  const database = useDatabase();
+  const field = database?.get(YjsDatabaseKey.fields)?.get(fieldId);
+  const [fieldType, setFieldType] = useState<FieldType>(FieldType.RichText);
+
+  useEffect(() => {
+    if (!field) return;
+
+    const observerEvent = () => {
+      setFieldType(Number(field.get(YjsDatabaseKey.type)) as FieldType);
+    };
+
+    observerEvent();
+
+    field.observe(observerEvent);
+
+    return () => {
+      field.unobserve(observerEvent);
+    };
+  }, [database, field]);
+
+  return fieldType;
+}
+
 export function useFieldWrap (fieldId: string) {
   const view = useDatabaseView();
   const database = useDatabase();
@@ -760,21 +784,22 @@ export const useFieldCellsSelector = (fieldId: string) => {
 
       if (!databaseRow) return;
 
-      const cell = databaseRow.get(YjsDatabaseKey.cells)?.get(fieldId);
-
-      if (!cell) {
-        setCells((prev) => {
-          const newMap = new Map(prev);
-
-          newMap.set(row.id, '');
-
-          return newMap;
-        });
-        return;
-      }
+      const cells = databaseRow.get(YjsDatabaseKey.cells);
 
       const observerEvent = () => {
-        if (!cell) return;
+        const cell = databaseRow.get(YjsDatabaseKey.cells)?.get(fieldId);
+
+        if (!cell) {
+          setCells((prev) => {
+            const newMap = new Map(prev);
+
+            newMap.set(row.id, '');
+
+            return newMap;
+          });
+          return;
+        }
+
         const cellData = cell.get(YjsDatabaseKey.data);
 
         setCells((prev) => {
@@ -787,10 +812,10 @@ export const useFieldCellsSelector = (fieldId: string) => {
       };
 
       observerEvent();
-      cell?.observeDeep(observerEvent);
+      cells?.observeDeep(observerEvent);
 
       cellObserverEventsRef.current.push(() => {
-        cell?.unobserveDeep(observerEvent);
+        cells?.unobserveDeep(observerEvent);
       });
     });
 

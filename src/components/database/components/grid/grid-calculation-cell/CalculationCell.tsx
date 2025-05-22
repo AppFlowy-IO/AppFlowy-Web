@@ -1,3 +1,4 @@
+import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { YjsDatabaseKey } from '@/application/types';
 import {
   currencyFormaterMap,
@@ -5,7 +6,7 @@ import {
   parseNumberTypeOptions, useFieldSelector,
 } from '@/application/database-yjs';
 import { CalculationType } from '@/application/database-yjs/database.type';
-import Decimal from 'decimal.js';
+import { Tooltip, TooltipContent, TooltipShortcut, TooltipTrigger } from '@/components/ui/tooltip';
 import { isNaN } from 'lodash-es';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -25,13 +26,14 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
   const { t } = useTranslation();
 
   const fieldId = cell?.fieldId || '';
-  const { field } = useFieldSelector(fieldId);
+  const { field, clock } = useFieldSelector(fieldId);
   const format = useMemo(
     () =>
       field && Number(field?.get(YjsDatabaseKey.type)) === FieldType.Number
         ? parseNumberTypeOptions(field).format
         : undefined,
-    [field],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [field, clock],
   );
   const [num, setNum] = useState<string>();
 
@@ -53,32 +55,67 @@ export function CalculationCell ({ cell }: CalculationCellProps) {
         return t('grid.calculationTypeLabel.countEmptyShort');
       case CalculationType.CountNonEmpty:
         return t('grid.calculationTypeLabel.countNonEmptyShort');
+      case CalculationType.Median:
+        return t('grid.calculationTypeLabel.median');
       default:
         return '';
     }
   }, [cell, t]);
 
+  const isCount = useMemo(() => {
+    if (!cell) return false;
+
+    return (
+      cell.type === CalculationType.Count ||
+      cell.type === CalculationType.CountEmpty ||
+      cell.type === CalculationType.CountNonEmpty
+    );
+  }, [cell]);
+
   useEffect(() => {
+    if (!prefix) return;
     const readValue = () => {
       const value = cell?.value;
 
-      if (value === undefined || isNaN(parseInt(value))) return '';
+      if (value === undefined || isNaN(parseInt(value))) return '0';
 
-      if (format && currencyFormaterMap[format]) {
-        return currencyFormaterMap[format](new Decimal(value).toNumber());
+      const data = EnhancedBigStats.parse(value) || '0';
+
+      const isInteger = Number.isInteger(data);
+
+      if (isInteger) {
+        if (format && currencyFormaterMap[format] && !isCount) {
+          return currencyFormaterMap[format](BigInt(data));
+        }
+
+        return data.toString();
       }
 
-      return String(parseFloat(value));
+      const res = parseFloat(data).toFixed(2).replace(/(\.[0-9]*[1-9])0+$/, '$1').replace(/\.0+$/, '');
+
+      if (format && currencyFormaterMap[format] && !isCount) {
+        return currencyFormaterMap[format](parseFloat(res));
+      }
+
+      return res;
     };
 
     setNum(readValue());
-  }, [cell?.value, format]);
+  }, [cell?.value, format, prefix, isCount]);
 
   return (
-    <div className={'h-full text-sm w-full items-center px-2 text-right flex gap-[10px] uppercase leading-[36px] text-text-secondary'}>
-      <span className={'flex-1 text-xs'}>{prefix}</span>
-      <span className={'font-medium text-text-primary'}>{num}</span>
-    </div>
+    <Tooltip delayDuration={1500}>
+      <TooltipTrigger asChild>
+        <div className={'h-full text-sm w-full overflow-hidden items-center px-2 text-right flex gap-[10px] uppercase leading-[36px] text-text-secondary'}>
+          <span className={'flex-1 text-xs'}>{prefix}</span>
+          <span className={'font-medium text-text-primary truncate'}>{num}</span>
+        </div>
+      </TooltipTrigger>
+      <TooltipContent>
+        {prefix}
+        <TooltipShortcut>{num}</TooltipShortcut>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 

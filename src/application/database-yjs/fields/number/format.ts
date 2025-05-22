@@ -144,32 +144,32 @@ export const formats = [
 
 ];
 
-export const currencyFormaterMap: Record<NumberFormat, (n: number) => string> = {
-  [NumberFormat.Num]: (n: number) =>
+export const currencyFormaterMap: Record<NumberFormat, (n: bigint | number) => string> = {
+  [NumberFormat.Num]: (n: bigint | number) =>
     new Intl.NumberFormat('en-US', {
       style: 'decimal',
       minimumFractionDigits: 0,
       maximumFractionDigits: 20,
       useGrouping: false,
     }).format(n),
-  [NumberFormat.Percent]: (n: number) =>
+  [NumberFormat.Percent]: (n: bigint | number) =>
     new Intl.NumberFormat('en-US', {
       ...commonProps,
       style: 'decimal',
     }).format(n) + '%',
-  [NumberFormat.USD]: (n: number) =>
+  [NumberFormat.USD]: (n: bigint | number) =>
     new Intl.NumberFormat('en-US', {
       ...commonProps,
       currency: 'USD',
     }).format(n),
-  [NumberFormat.CanadianDollar]: (n: number) =>
+  [NumberFormat.CanadianDollar]: (n: bigint | number) =>
     new Intl.NumberFormat('en-CA', {
       ...commonProps,
       currency: 'CAD',
     })
       .format(n)
       .replace('$', 'CA$'),
-  [NumberFormat.EUR]: (n: number) => {
+  [NumberFormat.EUR]: (n: bigint | number) => {
     const formattedAmount = new Intl.NumberFormat('de-DE', {
       ...commonProps,
       currency: 'EUR',
@@ -181,17 +181,17 @@ export const currencyFormaterMap: Record<NumberFormat, (n: number) => string> = 
     return `€${formattedAmount}`;
   },
 
-  [NumberFormat.Pound]: (n: number) =>
+  [NumberFormat.Pound]: (n: bigint | number) =>
     new Intl.NumberFormat('en-GB', {
       ...commonProps,
       currency: 'GBP',
     }).format(n),
-  [NumberFormat.Yen]: (n: number) =>
+  [NumberFormat.Yen]: (n: bigint | number) =>
     new Intl.NumberFormat('ja-JP', {
       ...commonProps,
       currency: 'JPY',
     }).format(n),
-  [NumberFormat.Ruble]: (n: number) =>
+  [NumberFormat.Ruble]: (n: bigint | number) =>
     new Intl.NumberFormat('ru-RU', {
       ...commonProps,
       currency: 'RUB',
@@ -199,31 +199,31 @@ export const currencyFormaterMap: Record<NumberFormat, (n: number) => string> = 
     })
       .format(n)
       .replaceAll(' ', ' '),
-  [NumberFormat.Rupee]: (n: number) =>
+  [NumberFormat.Rupee]: (n: bigint | number) =>
     new Intl.NumberFormat('hi-IN', {
       ...commonProps,
       currency: 'INR',
     }).format(n),
-  [NumberFormat.Won]: (n: number) =>
+  [NumberFormat.Won]: (n: bigint | number) =>
     new Intl.NumberFormat('ko-KR', {
       ...commonProps,
       currency: 'KRW',
     }).format(n),
-  [NumberFormat.Yuan]: (n: number) =>
+  [NumberFormat.Yuan]: (n: bigint | number) =>
     new Intl.NumberFormat('zh-CN', {
       ...commonProps,
       currency: 'CNY',
     })
       .format(n)
       .replace('¥', 'CN¥'),
-  [NumberFormat.Real]: (n: number) =>
+  [NumberFormat.Real]: (n: bigint | number) =>
     new Intl.NumberFormat('pt-BR', {
       ...commonProps,
       currency: 'BRL',
     })
       .format(n)
       .replaceAll(' ', ' '),
-  [NumberFormat.Lira]: (n: number) =>
+  [NumberFormat.Lira]: (n: bigint | number) =>
     new Intl.NumberFormat('tr-TR', {
       ...commonProps,
       currency: 'TRY',
@@ -231,7 +231,7 @@ export const currencyFormaterMap: Record<NumberFormat, (n: number) => string> = 
     })
       .format(n)
       .replaceAll(' ', ' '),
-  [NumberFormat.Rupiah]: (n: number) =>
+  [NumberFormat.Rupiah]: (n: bigint | number) =>
     new Intl.NumberFormat('id-ID', {
       ...commonProps,
       currency: 'IDR',
@@ -239,132 +239,132 @@ export const currencyFormaterMap: Record<NumberFormat, (n: number) => string> = 
     })
       .format(n)
       .replaceAll(' ', ' '),
-  [NumberFormat.Franc]: (n: number) =>
+  [NumberFormat.Franc]: (n: bigint | number) =>
     new Intl.NumberFormat('de-CH', {
       ...commonProps,
       currency: 'CHF',
     })
       .format(n)
       .replaceAll(' ', ' '),
-  [NumberFormat.HongKongDollar]: (n: number) =>
+  [NumberFormat.HongKongDollar]: (n: bigint | number) =>
     new Intl.NumberFormat('zh-HK', {
       ...commonProps,
       currency: 'HKD',
     }).format(n),
-  [NumberFormat.NewZealandDollar]: (n: number) =>
+  [NumberFormat.NewZealandDollar]: (n: bigint | number) =>
     new Intl.NumberFormat('en-NZ', {
       ...commonProps,
       currency: 'NZD',
     })
       .format(n)
       .replace('$', 'NZ$'),
-  [NumberFormat.Krona]: (n: number) =>
+  [NumberFormat.Krona]: (n: bigint | number) =>
     new Intl.NumberFormat('sv-SE', {
       ...commonProps,
       currency: 'SEK',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.NorwegianKrone]: (n: number) =>
+  [NumberFormat.NorwegianKrone]: (n: bigint | number) =>
     new Intl.NumberFormat('nb-NO', {
       ...commonProps,
       currency: 'NOK',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.MexicanPeso]: (n: number) =>
+  [NumberFormat.MexicanPeso]: (n: bigint | number) =>
     new Intl.NumberFormat('es-MX', {
       ...commonProps,
       currency: 'MXN',
     })
       .format(n)
       .replace('$', 'MX$'),
-  [NumberFormat.Rand]: (n: number) =>
+  [NumberFormat.Rand]: (n: bigint | number) =>
     new Intl.NumberFormat('en-ZA', {
       ...commonProps,
       currency: 'ZAR',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.NewTaiwanDollar]: (n: number) =>
+  [NumberFormat.NewTaiwanDollar]: (n: bigint | number) =>
     new Intl.NumberFormat('zh-TW', {
       ...commonProps,
       currency: 'TWD',
     })
       .format(n)
       .replace('$', 'NT$'),
-  [NumberFormat.DanishKrone]: (n: number) =>
+  [NumberFormat.DanishKrone]: (n: bigint | number) =>
     new Intl.NumberFormat('da-DK', {
       ...commonProps,
       currency: 'DKK',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.Baht]: (n: number) =>
+  [NumberFormat.Baht]: (n: bigint | number) =>
     new Intl.NumberFormat('th-TH', {
       ...commonProps,
       currency: 'THB',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.Forint]: (n: number) =>
+  [NumberFormat.Forint]: (n: bigint | number) =>
     new Intl.NumberFormat('hu-HU', {
       ...commonProps,
       currency: 'HUF',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.Koruna]: (n: number) =>
+  [NumberFormat.Koruna]: (n: bigint | number) =>
     new Intl.NumberFormat('cs-CZ', {
       ...commonProps,
       currency: 'CZK',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.Shekel]: (n: number) =>
+  [NumberFormat.Shekel]: (n: bigint | number) =>
     new Intl.NumberFormat('he-IL', {
       ...commonProps,
       currency: 'ILS',
     }).format(n),
-  [NumberFormat.ChileanPeso]: (n: number) =>
+  [NumberFormat.ChileanPeso]: (n: bigint | number) =>
     new Intl.NumberFormat('es-CL', {
       ...commonProps,
       currency: 'CLP',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.PhilippinePeso]: (n: number) =>
+  [NumberFormat.PhilippinePeso]: (n: bigint | number) =>
     new Intl.NumberFormat('fil-PH', {
       ...commonProps,
       currency: 'PHP',
     }).format(n),
-  [NumberFormat.Dirham]: (n: number) =>
+  [NumberFormat.Dirham]: (n: bigint | number) =>
     new Intl.NumberFormat('ar-AE', {
       ...commonProps,
       currency: 'AED',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.ColombianPeso]: (n: number) =>
+  [NumberFormat.ColombianPeso]: (n: bigint | number) =>
     new Intl.NumberFormat('es-CO', {
       ...commonProps,
       currency: 'COP',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.Riyal]: (n: number) =>
+  [NumberFormat.Riyal]: (n: bigint | number) =>
     new Intl.NumberFormat('en-US', {
       ...commonProps,
       currency: 'SAR',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.Ringgit]: (n: number) =>
+  [NumberFormat.Ringgit]: (n: bigint | number) =>
     new Intl.NumberFormat('ms-MY', {
       ...commonProps,
       currency: 'MYR',
     }).format(n),
-  [NumberFormat.Leu]: (n: number) =>
+  [NumberFormat.Leu]: (n: bigint | number) =>
     new Intl.NumberFormat('ro-RO', {
       ...commonProps,
       currency: 'RON',
     }).format(n),
-  [NumberFormat.ArgentinePeso]: (n: number) =>
+  [NumberFormat.ArgentinePeso]: (n: bigint | number) =>
     new Intl.NumberFormat('es-AR', {
       ...commonProps,
       currency: 'ARS',
       currencyDisplay: 'code',
     }).format(n),
-  [NumberFormat.UruguayanPeso]: (n: number) =>
+  [NumberFormat.UruguayanPeso]: (n: bigint | number) =>
     new Intl.NumberFormat('es-UY', {
       ...commonProps,
       currency: 'UYU',

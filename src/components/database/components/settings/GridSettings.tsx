@@ -1,3 +1,5 @@
+import { DatabaseViewLayout } from '@/application/types';
+import Layout from '@/components/database/components/settings/Layout';
 import Properties from '@/components/database/components/settings/Properties';
 import {
   DropdownMenu,
@@ -24,6 +26,7 @@ function GridSettings ({
       >
         <DropdownMenuGroup>
           <Properties />
+          <Layout currentLayout={DatabaseViewLayout.Grid} />
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

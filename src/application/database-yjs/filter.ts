@@ -1,3 +1,4 @@
+import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import {
   RowId, YDatabaseField,
   YDatabaseFields,
@@ -24,7 +25,6 @@ import {
   TextFilterCondition,
 } from '@/application/database-yjs/fields';
 import { Row } from '@/application/database-yjs/selector';
-import Decimal from 'decimal.js';
 import { every, filter, some } from 'lodash-es';
 
 export function parseFilter (fieldType: FieldType, filter: YDatabaseFilter) {
@@ -156,22 +156,21 @@ export function numberFilterCheck (data: string, content: string, condition: num
     return false;
   }
 
-  const decimal = new Decimal(data).toNumber();
-  const filterDecimal = new Decimal(content).toNumber();
+  const res = EnhancedBigStats.compare(data, content);
 
   switch (condition) {
     case NumberFilterCondition.Equal:
-      return decimal === filterDecimal;
+      return res === 0;
     case NumberFilterCondition.NotEqual:
-      return decimal !== filterDecimal;
+      return res !== 0;
     case NumberFilterCondition.GreaterThan:
-      return decimal > filterDecimal;
+      return res > 0;
     case NumberFilterCondition.GreaterThanOrEqualTo:
-      return decimal >= filterDecimal;
+      return res >= 0;
     case NumberFilterCondition.LessThan:
-      return decimal < filterDecimal;
+      return res < 0;
     case NumberFilterCondition.LessThanOrEqualTo:
-      return decimal <= filterDecimal;
+      return res <= 0;
     default:
       return false;
   }

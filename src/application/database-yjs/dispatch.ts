@@ -14,20 +14,22 @@ import {
   DateFormat,
   getDateCellStr,
   getFieldName,
-  getFormatValue, isDate,
-  NumberFormat, safeParseTimestamp,
+  isDate,
+  NumberFormat,
+  safeParseTimestamp,
   SelectOption,
   SelectTypeOption,
   TimeFormat,
 } from '@/application/database-yjs/fields';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
+import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { createSelectOptionCell, getColorByFirstChar } from '@/application/database-yjs/fields/select-option/utils';
 import { createTextField } from '@/application/database-yjs/fields/text/utils';
 import { filterFillData } from '@/application/database-yjs/filter';
 import { getGroupColumns } from '@/application/database-yjs/group';
 import { getOptionsFromRow, initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON } from '@/application/database-yjs/row_meta';
-import { useFieldSelector } from '@/application/database-yjs/selector';
+import { useFieldSelector, useFieldType } from '@/application/database-yjs/selector';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 
 import {
@@ -37,6 +39,7 @@ import {
   UpdatePagePayload,
   ViewLayout,
   YDatabase,
+  YDatabaseCalculation,
   YDatabaseCalculations,
   YDatabaseCell,
   YDatabaseField,
@@ -59,7 +62,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import dayjs from 'dayjs';
-import { countBy, meanBy, sortBy, sumBy } from 'lodash-es';
+import { countBy } from 'lodash-es';
 import { nanoid } from 'nanoid';
 import { useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
@@ -316,6 +319,7 @@ export function useDeleteRowDispatch () {
 export function useCalculateFieldDispatch (fieldId: string) {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
+  const fieldType = useFieldType(fieldId);
 
   return useCallback((cells: Map<string, unknown>) => {
     const calculations = view?.get(YjsDatabaseKey.calculations);
@@ -327,7 +331,17 @@ export function useCalculateFieldDispatch (fieldId: string) {
       return;
     }
 
-    const countEmptyResult = countBy(Object.values(cells), (data) => {
+    const cellValues = Array.from(cells.values());
+
+    const countEmptyResult = countBy(cellValues, (data) => {
+      if (fieldType === FieldType.Checkbox) {
+        if (data === 'Yes') {
+          return CalculationType.CountNonEmpty;
+        }
+
+        return CalculationType.CountEmpty;
+      }
+
       if (!data) {
         return CalculationType.CountEmpty;
       } else {
@@ -337,50 +351,39 @@ export function useCalculateFieldDispatch (fieldId: string) {
 
     const itemMap = (data: unknown) => {
       if (typeof data === 'number') {
-        return data;
+        return data.toString();
       }
 
       if (typeof data === 'string') {
-        return parseFloat(data);
+        return EnhancedBigStats.parse(data);
       }
 
-      return 0;
+      return null;
     };
 
+    const nums = cellValues.map(itemMap).filter(item => !!item) as string[];
+    const stats = new EnhancedBigStats(nums);
+
     const getSum = () => {
-      return sumBy(Object.values(cells), itemMap);
+
+      return stats.sum().toString();
     };
 
     const getAverage = () => {
-      return meanBy(Object.values(cells), itemMap);
+
+      return stats.average().toString();
     };
 
     const getMedian = () => {
-      const array = Object.values(cells).map(itemMap);
-
-      if (!array || array.length === 0) return NaN;
-
-      const sorted = sortBy(array);
-      const mid = Math.floor(sorted.length / 2);
-
-      return sorted.length % 2 !== 0
-        ? sorted[mid]
-        : (sorted[mid - 1] + sorted[mid]) / 2;
+      return stats.median().toString();
     };
 
     const getMin = () => {
-      const array = Object.values(cells).map(itemMap);
-
-      if (!array || array.length === 0) return NaN;
-
-      return Math.min(...array);
+      return stats.min().toString();
     };
 
     const getMax = () => {
-      const array = Object.values(cells).map(itemMap);
-
-      if (!array || array.length === 0) return NaN;
-      return Math.max(...array);
+      return stats.max().toString();
     };
 
     const item = calculations.get(index);
@@ -397,7 +400,8 @@ export function useCalculateFieldDispatch (fieldId: string) {
         newValue = countEmptyResult[CalculationType.CountNonEmpty];
         break;
       case CalculationType.Count:
-        newValue = cells.size;
+        newValue = countEmptyResult[CalculationType.CountNonEmpty];
+
         break;
       case CalculationType.Sum:
         newValue = getSum();
@@ -420,11 +424,65 @@ export function useCalculateFieldDispatch (fieldId: string) {
 
     if (newValue !== oldValue) {
       executeOperations(sharedRoot, [() => {
+
         item.set(YjsDatabaseKey.calculation_value, newValue);
       }], 'calculateFieldDispatch');
     }
 
-  }, [fieldId, view, sharedRoot]);
+  }, [view, fieldId, fieldType, sharedRoot]);
+}
+
+export function useUpdateCalculate (fieldId: string) {
+  const sharedRoot = useSharedRoot();
+  const view = useDatabaseView();
+
+  return useCallback((type: CalculationType) => {
+    if (!view) return;
+    executeOperations(sharedRoot, [() => {
+      let calculations = view?.get(YjsDatabaseKey.calculations);
+
+      if (!calculations) {
+        calculations = new Y.Array() as YDatabaseCalculations;
+        view.set(YjsDatabaseKey.calculations, calculations);
+      }
+
+      let item = calculations.toArray().find((calculation) => {
+        return calculation.get(YjsDatabaseKey.field_id) === fieldId;
+      });
+
+      if (!item) {
+        item = new Y.Map() as YDatabaseCalculation;
+        item.set(YjsDatabaseKey.id, nanoid(6));
+        item.set(YjsDatabaseKey.field_id, fieldId);
+        calculations.push([item]);
+      }
+
+      item.set(YjsDatabaseKey.type, type);
+    }], 'updateCalculate');
+  }, [fieldId, sharedRoot, view]);
+}
+
+export function useClearCalculate (fieldId: string) {
+  const sharedRoot = useSharedRoot();
+  const view = useDatabaseView();
+
+  return useCallback(() => {
+    executeOperations(sharedRoot, [() => {
+      const calculations = view?.get(YjsDatabaseKey.calculations);
+
+      if (!calculations) {
+        throw new Error(`Calculations not found`);
+      }
+
+      const index = calculations.toArray().findIndex((calculation) => {
+        return calculation.get(YjsDatabaseKey.field_id) === fieldId;
+      });
+
+      if (index !== -1) {
+        calculations.delete(index);
+      }
+    }], 'clearCalculate');
+  }, [fieldId, sharedRoot, view]);
 }
 
 export function useUpdatePropertyNameDispatch (fieldId: string) {
@@ -1228,6 +1286,51 @@ export function useUpdateCellDispatch (rowId: string, fieldId: string) {
   }, [field, fieldId, rowDocMap, rowId]);
 }
 
+function generateBoardGroup (database: YDatabase, fieldOrders: YDatabaseFieldOrders) {
+  const groups = new Y.Array() as YDatabaseGroups;
+  const group = new Y.Map() as YDatabaseGroup;
+  const id = `g:${nanoid(6)}`;
+  const columns = new Y.Array() as YDatabaseGroupColumns;
+
+  let groupField: YDatabaseField | undefined;
+
+  fieldOrders.toArray().some(({ id }) => {
+    const field = database.get(YjsDatabaseKey.fields)?.get(id);
+
+    if (!field) {
+      return;
+    }
+
+    const type = Number(field.get(YjsDatabaseKey.type));
+
+    if ([FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(type)) {
+      groupField = field;
+      return true;
+    }
+
+    return false;
+  });
+
+  if (groupField) {
+    group.set(YjsDatabaseKey.id, id);
+    group.set(YjsDatabaseKey.content, '');
+    group.set(YjsDatabaseKey.field_id, groupField.get(YjsDatabaseKey.id));
+    const groupColumns = getGroupColumns(groupField) || [];
+
+    groupColumns.forEach((column) => {
+      columns.push([{
+        id: column.id,
+        visible: true,
+      }]);
+    });
+
+    group.set(YjsDatabaseKey.groups, columns);
+    groups.push([group]);
+  }
+
+  return groups;
+}
+
 export function useAddDatabaseView () {
   const {
     iidIndex,
@@ -1273,7 +1376,7 @@ export function useAddDatabaseView () {
       const layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
       const filters = new Y.Array() as YDatabaseFilters;
       const sorts = new Y.Array() as YDatabaseSorts;
-      const groups = new Y.Array() as YDatabaseGroups;
+      let groups = new Y.Array() as YDatabaseGroups;
       const calculations = new Y.Array() as YDatabaseCalculations;
 
       refRowOrders.forEach(rowOrder => {
@@ -1293,45 +1396,7 @@ export function useAddDatabaseView () {
       });
 
       if (layout === DatabaseViewLayout.Board) {
-        const group = new Y.Map() as YDatabaseGroup;
-        const id = `g:${nanoid(6)}`;
-        const columns = new Y.Array() as YDatabaseGroupColumns;
-
-        let groupField: YDatabaseField | undefined;
-
-        refFieldOrders.toArray().some(({ id }) => {
-          const field = database.get(YjsDatabaseKey.fields)?.get(id);
-
-          if (!field) {
-            return;
-          }
-
-          const type = Number(field.get(YjsDatabaseKey.type));
-
-          if ([FieldType.SingleSelect, FieldType.MultiSelect, FieldType.Checkbox].includes(type)) {
-            groupField = field;
-            return true;
-          }
-
-          return false;
-        });
-
-        if (groupField) {
-          group.set(YjsDatabaseKey.id, id);
-          group.set(YjsDatabaseKey.content, '');
-          group.set(YjsDatabaseKey.field_id, groupField.get(YjsDatabaseKey.id));
-          const groupColumns = getGroupColumns(groupField) || [];
-
-          groupColumns.forEach((column) => {
-            columns.push([{
-              id: column.id,
-              visible: true,
-            }]);
-          });
-
-          group.set(YjsDatabaseKey.groups, columns);
-          groups.push([group]);
-        }
+        groups = generateBoardGroup(database, refFieldOrders);
       }
 
       newView.set(YjsDatabaseKey.database_id, databaseId);
@@ -1355,6 +1420,34 @@ export function useAddDatabaseView () {
   }, [createFolderView, database, iidIndex, sharedRoot]);
 }
 
+export function useUpdateDatabaseLayout (viewId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((layout: DatabaseViewLayout) => {
+    executeOperations(sharedRoot, [() => {
+      const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+
+      if (!view) {
+        throw new Error(`View not found`);
+      }
+
+      if (layout === DatabaseViewLayout.Board) {
+        const fieldOrders = view.get(YjsDatabaseKey.field_orders);
+        const groups = generateBoardGroup(database, fieldOrders);
+
+        view.set(YjsDatabaseKey.groups, groups);
+      }
+
+      if (Number(view.get(YjsDatabaseKey.layout)) === layout) {
+        return;
+      }
+
+      view.set(YjsDatabaseKey.layout, layout);
+    }], 'updateDatabaseLayout');
+  }, [database, sharedRoot, viewId]);
+}
+
 export function useUpdateDatabaseView () {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
@@ -1372,6 +1465,8 @@ export function useUpdateDatabaseView () {
       if (!view) {
         throw new Error(`View not found`);
       }
+
+      const name = payload.name || view.get(YjsDatabaseKey.name);
 
       view.set(YjsDatabaseKey.name, name);
     }], 'renameDatabaseView');
@@ -1529,7 +1624,7 @@ export function useSwitchPropertyType () {
                 case FieldType.Number: {
                   const format = Number(typeOption.get(YjsDatabaseKey.format)) as NumberFormat ?? NumberFormat.Num;
 
-                  newData = getFormatValue(data as string, format);
+                  newData = EnhancedBigStats.parse(data.toString(), format) || '';
                   break;
                 }
 
@@ -2012,4 +2107,3 @@ export function useUpdateRelationDatabaseId (fieldId: string) {
     }], 'updateRelationDatabaseId');
   }, [database, fieldId, sharedRoot]);
 }
-

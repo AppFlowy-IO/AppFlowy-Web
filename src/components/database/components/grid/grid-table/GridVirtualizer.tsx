@@ -76,7 +76,7 @@ function GridVirtualizer ({
       const rowIds = data.map(rowData => {
 
         return rowData.rowId;
-      }).filter(rowId => !!rowId);
+      }).filter(rowId => !!rowId) as string[];
 
       rowIds.forEach(resizeRow);
     }
@@ -158,7 +158,7 @@ function GridVirtualizer ({
               >
                 {rowData.type === RenderRowType.NewRow ? <div
                   style={{
-                    paddingLeft: columnItems[0].start,
+                    paddingLeft: columnItems[0]?.start,
                     paddingRight: PADDING_INLINE,
                     width: totalSize,
                   }}
