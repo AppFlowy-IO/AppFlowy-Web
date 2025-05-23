@@ -14,14 +14,22 @@ export enum DateFormat {
 }
 
 export enum DateFilterCondition {
-  DateIs = 0,
-  DateBefore = 1,
-  DateAfter = 2,
-  DateOnOrBefore = 3,
-  DateOnOrAfter = 4,
-  DateWithIn = 5,
-  DateIsEmpty = 6,
-  DateIsNotEmpty = 7,
+  DateStartsOn = 0,
+  DateStartsBefore = 1,
+  DateStartsAfter = 2,
+  DateStartsOnOrBefore = 3,
+  DateStartsOnOrAfter = 4,
+  DateStartsBetween = 5,
+  DateStartIsEmpty = 6,
+  DateStartIsNotEmpty = 7,
+  DateEndsOn = 8,
+  DateEndsBefore = 9,
+  DateEndsAfter = 10,
+  DateEndsOnOrBefore = 11,
+  DateEndsOnOrAfter = 12,
+  DateEndsBetween = 13,
+  DateEndIsEmpty = 14,
+  DateEndIsNotEmpty = 15,
 }
 
 export interface DateFilter extends Filter {

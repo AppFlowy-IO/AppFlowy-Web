@@ -75,7 +75,7 @@ describe('Database selector', () => {
   it('should select all filters', () => {
     const { result } = renderHook(() => useFiltersSelector(), { wrapper });
 
-    expect(result.current).toEqual(['filter_multi_select_field']);
+    expect(result.current).toEqual([{ id: 'filter_multi_select_field' }]);
   });
 
   it('should select a filter', () => {
@@ -94,7 +94,7 @@ describe('Database selector', () => {
   it('should select all sorts', () => {
     const { result } = renderHook(() => useSortsSelector(), { wrapper });
 
-    expect(result.current).toEqual(['sort_asc_text_field']);
+    expect(result.current).toEqual([{ id: 'sort_asc_text_field' }]);
   });
 
   it('should select a sort', () => {

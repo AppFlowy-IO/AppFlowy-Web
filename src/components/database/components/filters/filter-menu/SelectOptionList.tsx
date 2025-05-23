@@ -1,10 +1,15 @@
 import { parseSelectOptionTypeOptions, SelectOption, useFieldSelector } from '@/application/database-yjs';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap } from '@/components/database/components/cell/cell.const';
+import { DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
+import { cn } from '@/lib/utils';
 import React, { useCallback, useMemo } from 'react';
-import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 
-export function SelectOptionList ({ fieldId, selectedIds }: { fieldId: string; selectedIds: string[] }) {
+export function SelectOptionList ({ fieldId, selectedIds, onSelect }: {
+  fieldId: string;
+  selectedIds: string[];
+  onSelect: (optionId: string) => void;
+}) {
   const { field } = useFieldSelector(fieldId);
   const typeOption = useMemo(() => {
     if (!field) return null;
@@ -20,19 +25,23 @@ export function SelectOptionList ({ fieldId, selectedIds }: { fieldId: string; s
           key={option.id}
           data-testid={'select-option-list'}
           data-checked={isSelected}
-          className={'flex items-center justify-between gap-2 text-xs'}
+          className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
+          onClick={e => {
+            e.stopPropagation();
+            onSelect(option.id);
+          }}
         >
           <Tag
             label={option.name}
             color={SelectOptionColorMap[option.color]}
           />
-          {isSelected && <CheckIcon />}
+          {isSelected && <DropdownMenuItemTick />}
         </div>
       );
     },
-    [selectedIds],
+    [onSelect, selectedIds],
   );
 
   if (!field || !typeOption) return null;
-  return <div className={'flex flex-col gap-2'}>{typeOption.options.map(renderOption)}</div>;
+  return <div className={'flex flex-col'}>{typeOption.options.map(renderOption)}</div>;
 }

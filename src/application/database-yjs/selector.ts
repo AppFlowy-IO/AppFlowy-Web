@@ -229,7 +229,7 @@ export function useFieldSelector (fieldId: string) {
 export function useFiltersSelector () {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
-  const [filters, setFilters] = useState<string[]>([]);
+  const [filters, setFilters] = useState<{ id: string, fieldId: string }[]>([]);
 
   useEffect(() => {
     if (!viewId) return;
@@ -239,12 +239,19 @@ export function useFiltersSelector () {
     if (!filterOrders) return;
 
     const getFilters = () => {
-      return (filterOrders.toJSON() as { id: string }[]).map((item) => item.id);
+      return (filterOrders.toJSON() as { id: string, field_id: string }[]).map((item) => {
+        return {
+          id: item.id,
+          fieldId: item.field_id,
+        };
+      });
     };
 
-    const observerEvent = () => setFilters(getFilters());
+    const observerEvent = () => {
+      setFilters(getFilters());
+    };
 
-    setFilters(getFilters());
+    observerEvent();
 
     filterOrders.observe(observerEvent);
 
@@ -292,7 +299,7 @@ export function useFilterSelector (filterId: string) {
 export function useSortsSelector () {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
-  const [sorts, setSorts] = useState<string[]>([]);
+  const [sorts, setSorts] = useState<{ id: string, fieldId: string }[]>([]);
 
   useEffect(() => {
     if (!viewId) return;
@@ -302,7 +309,12 @@ export function useSortsSelector () {
     if (!sortOrders) return;
 
     const getSorts = () => {
-      return (sortOrders.toJSON() as { id: string }[]).map((item) => item.id);
+      return (sortOrders.toJSON() as { id: string, field_id: string }[]).map((item) => {
+        return {
+          id: item.id,
+          fieldId: item.field_id,
+        };
+      });
     };
 
     const observerEvent = () => setSorts(getSorts());
@@ -832,14 +844,14 @@ export const useFieldCellsSelector = (fieldId: string) => {
   };
 };
 
-export const usePropertiesSelector = () => {
-
+export const usePropertiesSelector = (isFilterHidden?: boolean) => {
+  const database = useDatabase();
   const view = useDatabaseView();
 
   const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
   const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
-
-  const [properties, setProperties] = useState<{ id: string, visible: boolean }[]>([]);
+  const fields = database?.get(YjsDatabaseKey.fields);
+  const [properties, setProperties] = useState<{ id: string, visible: boolean, name: string, type: FieldType }[]>([]);
 
   useEffect(() => {
     if (!fieldOrders) return;
@@ -848,15 +860,24 @@ export const usePropertiesSelector = () => {
       const newProperties: {
         id: string;
         visible: boolean;
+        name: string;
+        type: FieldType
       }[] = [];
 
       fieldOrders.toArray().forEach((item) => {
         const fieldSetting = fieldSettings?.get(item.id);
         const visible = fieldSetting ? Number(fieldSetting.get(YjsDatabaseKey.visibility)) !== FieldVisibility.AlwaysHidden : true;
+        const field = fields?.get(item.id);
+
+        if (isFilterHidden && !visible) {
+          return;
+        }
 
         newProperties.push({
           id: item.id,
+          name: field?.get(YjsDatabaseKey.name) || '',
           visible,
+          type: Number(field?.get(YjsDatabaseKey.type)) as FieldType,
         });
       });
 
@@ -872,7 +893,7 @@ export const usePropertiesSelector = () => {
       fieldOrders.unobserveDeep(observeEvent);
       fieldSettings?.unobserveDeep(observeEvent);
     };
-  }, [fieldOrders, fieldSettings]);
+  }, [fieldOrders, fieldSettings, fields, isFilterHidden]);
 
   return {
     properties,

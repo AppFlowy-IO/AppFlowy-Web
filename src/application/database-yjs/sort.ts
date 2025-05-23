@@ -20,6 +20,8 @@ export function sortBy (rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFie
   const iteratees = sortArray.map((sort) => {
     return (row: { id: string }) => {
       const fieldId = sort.get(YjsDatabaseKey.field_id);
+
+      if (!fieldId) return '';
       const field = fields.get(fieldId);
       const fieldType = Number(field.get(YjsDatabaseKey.type));
 

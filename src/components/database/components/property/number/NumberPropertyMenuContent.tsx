@@ -37,14 +37,25 @@ function NumberPropertyMenuContent ({ fieldId }: {
     });
   }, [searchValue]);
 
+  const [open, setOpen] = React.useState(false);
+
   return (
     <>
       <PropertySelectTrigger fieldId={fieldId} />
       <DropdownMenuSeparator />
       <DropdownMenuGroup>
         <DropdownMenuLabel>{t('grid.field.numberFormat')}</DropdownMenuLabel>
-        <DropdownMenuSub>
-          <DropdownMenuSubTrigger>
+        <DropdownMenuSub
+          open={open}
+          onOpenChange={setOpen}
+        >
+          <DropdownMenuSubTrigger
+            onPointerMove={e => {
+              if (open) {
+                e.preventDefault();
+              }
+            }}
+          >
             {selectFormatValue?.label}
           </DropdownMenuSubTrigger>
           <DropdownMenuPortal>

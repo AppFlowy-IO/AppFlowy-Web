@@ -1,5 +1,5 @@
 import { useReadOnly } from '@/application/database-yjs';
-import DropColumnIndicator from '@/components/database/components/grid/drag-and-drop/DropColumnIndicator';
+import DropColumnIndicator from '@/components/database/components/drag-and-drop/DropColumnIndicator';
 import {
   GridDragState,
   ItemState,

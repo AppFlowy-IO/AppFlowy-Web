@@ -1,9 +1,10 @@
 import { ChecklistFilter, ChecklistFilterCondition } from '@/application/database-yjs';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
+import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
 import React, { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function ChecklistFilterMenu({ filter }: { filter: ChecklistFilter }) {
+function ChecklistFilterMenu ({ filter }: { filter: ChecklistFilter }) {
   const { t } = useTranslation();
 
   const conditions = useMemo(
@@ -17,17 +18,17 @@ function ChecklistFilterMenu({ filter }: { filter: ChecklistFilter }) {
         text: t('grid.checklistFilter.isIncomplted'),
       },
     ],
-    [t]
+    [t],
   );
-  const selectedCondition = useMemo(() => {
-    return conditions.find((c) => c.value === filter.condition);
-  }, [filter.condition, conditions]);
 
-  return (
-    <div className={'p-2'}>
-      <FieldMenuTitle fieldId={filter.fieldId} selectedConditionText={selectedCondition?.text ?? ''} />
-    </div>
-  );
+  return <FieldMenuTitle
+    fieldId={filter.fieldId}
+    filterId={filter.id}
+    renderConditionSelect={<FilterConditionsSelect
+      filter={filter}
+      conditions={conditions}
+    />}
+  />;
 }
 
 export default ChecklistFilterMenu;

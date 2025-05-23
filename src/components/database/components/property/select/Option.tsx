@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils';
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { DropRowIndicator } from '@/components/database/components/grid/drag-and-drop/DropRowIndicator';
+import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';

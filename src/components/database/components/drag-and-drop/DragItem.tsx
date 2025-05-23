@@ -1,6 +1,5 @@
-import {
-  useTaskDragContext,
-} from '@/components/database/components/cell/checklist/useTaskDragContext';
+import DropColumnIndicator from '@/components/database/components/drag-and-drop/DropColumnIndicator';
+import { useDragContext } from '@/components/database/components/drag-and-drop/useDragContext';
 import { cn } from '@/lib/utils';
 
 import { attachClosestEdge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
@@ -26,13 +25,17 @@ export type ItemState =
 const idleState: ItemState = { type: DragState.IDLE };
 const draggingState: ItemState = { type: DragState.DRAGGING };
 
-function DragTask ({ id, children }: { id: string, children: React.ReactNode }) {
+function DragItem ({ id, children, direction = 'vertical' }: {
+  id: string,
+  children: React.ReactNode;
+  direction?: 'horizontal' | 'vertical'
+}) {
   const dragHandleRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const {
-    registerTask,
+    registerItem,
     instanceId,
-  } = useTaskDragContext();
+  } = useDragContext();
 
   const [state, setState] = useState<ItemState>(idleState);
 
@@ -48,7 +51,7 @@ function DragTask ({ id, children }: { id: string, children: React.ReactNode }) 
     };
 
     return combine(
-      registerTask({ id, element }),
+      registerItem({ id, element }),
       draggable({
         element,
         dragHandle,
@@ -74,7 +77,7 @@ function DragTask ({ id, children }: { id: string, children: React.ReactNode }) 
           return attachClosestEdge(data, {
             element,
             input,
-            allowedEdges: ['top', 'bottom'],
+            allowedEdges: direction === 'vertical' ? ['top', 'bottom'] : ['left', 'right'],
           });
         },
         onDrag ({ self }) {
@@ -96,7 +99,7 @@ function DragTask ({ id, children }: { id: string, children: React.ReactNode }) 
         },
       }),
     );
-  }, [instanceId, registerTask, id]);
+  }, [instanceId, registerItem, id, direction]);
   return (
     <div
       ref={innerRef}
@@ -106,6 +109,7 @@ function DragTask ({ id, children }: { id: string, children: React.ReactNode }) 
         onMouseDown={e => {
           e.stopPropagation();
         }}
+        className={'cursor-pointer'}
         ref={dragHandleRef}
       >
         <DragIcon className={'w-5 h-5 text-icon-secondary'} />
@@ -113,13 +117,14 @@ function DragTask ({ id, children }: { id: string, children: React.ReactNode }) 
 
       <div className={'flex items-center'}>{children}</div>
 
-      {state.type === DragState.IS_OVER && state.closestEdge && (
-        <DropRowIndicator
-          edge={state.closestEdge}
-        />
-      )}
+      {state.type === DragState.IS_OVER && state.closestEdge &&
+        (direction === 'vertical' ? <DropRowIndicator
+            edge={state.closestEdge}
+          /> :
+          <DropColumnIndicator edge={state.closestEdge} />)
+      }
     </div>
   );
 }
 
-export default DragTask;
+export default DragItem;

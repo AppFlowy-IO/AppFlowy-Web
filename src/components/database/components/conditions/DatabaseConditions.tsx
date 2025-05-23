@@ -7,6 +7,7 @@ import {
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { AFScroller } from '@/components/_shared/scroller';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
+import { Separator } from '@/components/ui/separator';
 import React, { useMemo } from 'react';
 import Filters from 'src/components/database/components/filters/Filters';
 import Sorts from 'src/components/database/components/sorts/Sorts';
@@ -46,10 +47,13 @@ export function DatabaseConditions () {
     >
       <AFScroller
         overflowYHidden
-        className={`flex items-center gap-2  border-b border-border-primary`}
+        className={`flex items-center border-b border-border-primary`}
       >
         <Sorts />
-        {sorts.length > 0 && filters.length > 0 && <div className="h-[20px] w-0 border border-line-divider" />}
+        {sorts.length > 0 && filters.length > 0 && <Separator
+          orientation={'vertical'}
+          className={'!h-5 !mx-2'}
+        />}
         <Filters />
       </AFScroller>
     </div>

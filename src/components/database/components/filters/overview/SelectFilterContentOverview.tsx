@@ -8,7 +8,7 @@ import React, { useMemo } from 'react';
 
 import { useTranslation } from 'react-i18next';
 
-function SelectFilterContentOverview({ filter, field }: { filter: SelectOptionFilter; field: YDatabaseField }) {
+function SelectFilterContentOverview ({ filter, field }: { filter: SelectOptionFilter; field: YDatabaseField }) {
   const typeOption = parseSelectOptionTypeOptions(field);
   const { t } = useTranslation();
   const value = useMemo(() => {
@@ -19,12 +19,12 @@ function SelectFilterContentOverview({ filter, field }: { filter: SelectOptionFi
         const option = typeOption?.options?.find((option) => option.id === optionId);
 
         return option?.name;
-      })
+      }).filter(Boolean)
       .join(', ');
 
     switch (filter.condition) {
       case SelectOptionFilterCondition.OptionIs:
-        return `: ${options}`;
+        return `: ${t('grid.textFilter.is')} ${options}`;
       case SelectOptionFilterCondition.OptionIsNot:
         return `: ${t('grid.textFilter.choicechipPrefix.isNot')} ${options}`;
       case SelectOptionFilterCondition.OptionIsEmpty:

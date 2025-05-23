@@ -1,3 +1,5 @@
+import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
+import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import {
   RowId, YDatabaseField,
@@ -15,7 +17,7 @@ import {
   CheckboxFilterCondition,
   ChecklistFilter,
   ChecklistFilterCondition,
-  DateFilter,
+  DateFilter, DateFilterCondition,
   NumberFilter,
   NumberFilterCondition,
   parseChecklistData,
@@ -25,6 +27,8 @@ import {
   TextFilterCondition,
 } from '@/application/database-yjs/fields';
 import { Row } from '@/application/database-yjs/selector';
+import { isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
+import dayjs from 'dayjs';
 import { every, filter, some } from 'lodash-es';
 
 export function parseFilter (fieldType: FieldType, filter: YDatabaseFilter) {
@@ -64,7 +68,21 @@ export function parseFilter (fieldType: FieldType, filter: YDatabaseFilter) {
     case FieldType.DateTime:
     case FieldType.CreatedTime:
     case FieldType.LastEditedTime:
-      return value as DateFilter;
+      try {
+        const data = JSON.parse(content) as DateFilter;
+
+        return {
+          ...value,
+          ...data,
+        };
+      } catch (e) {
+        console.error('Error parsing date filter content:', e);
+        return {
+          ...value,
+          timestamp: dayjs().startOf('day').unix(),
+          condition: DateFilterCondition.DateStartsOn,
+        };
+      }
   }
 
   return value;
@@ -98,22 +116,27 @@ export function filterBy (rows: Row[], filters: YDatabaseFilters, fields: YDatab
       const cells = meta.get(YjsDatabaseKey.cells);
       const cell = cells.get(fieldId);
 
-      if (!cell) return false;
       const { condition, content } = filterValue;
+
+      const cellData = (cell?.get(YjsDatabaseKey.data) as string) || '';
 
       switch (fieldType) {
         case FieldType.URL:
         case FieldType.RichText:
-          return textFilterCheck(cell.get(YjsDatabaseKey.data) as string, content, condition);
+          return textFilterCheck(cellData, content, condition);
         case FieldType.Number:
-          return numberFilterCheck(cell.get(YjsDatabaseKey.data) as string, content, condition);
+          return numberFilterCheck(cellData, content, condition);
         case FieldType.Checkbox:
-          return checkboxFilterCheck(cell.get(YjsDatabaseKey.data) as string, condition);
+          return checkboxFilterCheck(cellData, condition);
         case FieldType.SingleSelect:
         case FieldType.MultiSelect:
-          return selectOptionFilterCheck(cell.get(YjsDatabaseKey.data) as string, content, condition);
+          return selectOptionFilterCheck(cellData, content, condition);
         case FieldType.Checklist:
-          return checklistFilterCheck(cell.get(YjsDatabaseKey.data) as string, content, condition);
+          return checklistFilterCheck(cellData, content, condition);
+        case FieldType.DateTime:
+        case FieldType.CreatedTime:
+        case FieldType.LastEditedTime:
+          return dateFilterCheck(cell ? parseYDatabaseDateTimeCellToCell(cell) : null, filterValue as DateFilter);
         default:
           return true;
       }
@@ -195,6 +218,48 @@ export function checklistFilterCheck (data: string, content: string, condition: 
   }
 
   return percentage !== 1;
+}
+
+export function dateFilterCheck (cell: DateTimeCell | null, filter: DateFilter) {
+  const { condition, end = '', start = '', timestamp = '' } = filter;
+
+  const { data = '', endTimestamp = '' } = cell || {};
+
+  switch (condition) {
+    case DateFilterCondition.DateEndIsEmpty:
+    case DateFilterCondition.DateStartIsEmpty:
+      return !data;
+    case DateFilterCondition.DateEndIsNotEmpty:
+    case DateFilterCondition.DateStartIsNotEmpty:
+      return !!data;
+    case DateFilterCondition.DateStartsOn:
+      return isTimestampInSameDay(data, timestamp.toString());
+    case DateFilterCondition.DateEndsOn:
+      return isTimestampInSameDay(endTimestamp, timestamp.toString());
+    case DateFilterCondition.DateStartsBefore:
+      return isTimestampBefore(data, timestamp.toString());
+    case DateFilterCondition.DateEndsBefore:
+      return isTimestampBefore(endTimestamp, timestamp.toString());
+    case DateFilterCondition.DateStartsAfter:
+      return isTimestampBefore(timestamp.toString(), data);
+    case DateFilterCondition.DateEndsAfter:
+      return isTimestampBefore(timestamp.toString(), endTimestamp);
+    case DateFilterCondition.DateStartsOnOrBefore:
+      return isTimestampBefore(data, timestamp.toString()) || isTimestampInSameDay(data, timestamp.toString());
+    case DateFilterCondition.DateEndsOnOrBefore:
+      return isTimestampBefore(endTimestamp, timestamp.toString()) || isTimestampInSameDay(endTimestamp, timestamp.toString());
+    case DateFilterCondition.DateStartsOnOrAfter:
+      return isTimestampBefore(timestamp.toString(), data) || isTimestampInSameDay(timestamp.toString(), data);
+    case DateFilterCondition.DateEndsOnOrAfter:
+      return isTimestampBefore(timestamp.toString(), endTimestamp) || isTimestampInSameDay(timestamp.toString(), endTimestamp);
+    case DateFilterCondition.DateStartsBetween:
+      return isTimestampBetweenRange(data, start.toString(), end.toString());
+    case DateFilterCondition.DateEndsBetween:
+      return isTimestampBetweenRange(endTimestamp, start.toString(), end.toString());
+    default:
+      return false;
+  }
+
 }
 
 export function selectOptionFilterCheck (data: string, content: string, condition: number) {
@@ -324,7 +389,6 @@ export function filterFillData (filter: YDatabaseFilter, field: YDatabaseField) 
 
   const fieldType = Number(field.get(YjsDatabaseKey.type));
 
-  console.log('filterFillData', fieldType, condition, content);
   switch (fieldType) {
     case FieldType.URL:
     case FieldType.RichText:
@@ -343,3 +407,45 @@ export function filterFillData (filter: YDatabaseFilter, field: YDatabaseField) 
   }
 }
 
+export function getDefaultFilterCondition (fieldType: FieldType) {
+  switch (fieldType) {
+    case FieldType.RichText:
+    case FieldType.URL:
+      return {
+        condition: TextFilterCondition.TextContains,
+        content: '',
+      };
+    case FieldType.Checkbox:
+      return {
+        condition: CheckboxFilterCondition.IsChecked,
+      };
+    case FieldType.Checklist:
+      return {
+        condition: ChecklistFilterCondition.IsIncomplete,
+      };
+    case FieldType.SingleSelect:
+      return {
+        condition: SelectOptionFilterCondition.OptionIs,
+        content: '',
+      };
+    case FieldType.MultiSelect:
+      return {
+        condition: SelectOptionFilterCondition.OptionContains,
+        content: '',
+      };
+    case FieldType.Number:
+      return {
+        condition: NumberFilterCondition.Equal,
+        value: '',
+      };
+    case FieldType.DateTime:
+    case FieldType.CreatedTime:
+    case FieldType.LastEditedTime:
+      return {
+        condition: DateFilterCondition.DateStartsOn,
+        content: JSON.stringify({
+          timestamp: dayjs().startOf('day').unix(),
+        }),
+      };
+  }
+}

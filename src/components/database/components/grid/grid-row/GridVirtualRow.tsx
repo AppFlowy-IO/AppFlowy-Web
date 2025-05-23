@@ -1,6 +1,6 @@
 import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import ClearSortingConfirm from '@/components/database/components/sorts/ClearSortingConfirm';
-import { DropRowIndicator } from '@/components/database/components/grid/drag-and-drop/DropRowIndicator';
+import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import {
   GridDragState,
   ItemState,

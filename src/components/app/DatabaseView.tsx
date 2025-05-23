@@ -100,7 +100,7 @@ function DatabaseView ({ viewMeta, uploadFile, ...props }: ViewComponentProps) {
           showActions={true}
           visibleViewIds={visibleViewIds}
           onChangeView={handleChangeView}
-          onOpenRow={handleNavigateToRow}
+          onOpenRowPage={handleNavigateToRow}
         />
       </Suspense>
     </div>

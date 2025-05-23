@@ -10,6 +10,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import DatabaseRow from '@/components/database/DatabaseRow';
+import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { debounce } from 'lodash-es';
@@ -29,7 +30,7 @@ export interface Database2Props {
   rowId?: string;
   appendBreadcrumb?: AppendBreadcrumb;
   onChangeView: (viewId: string) => void;
-  onOpenRow?: (rowId: string) => void;
+  onOpenRowPage?: (rowId: string) => void;
   visibleViewIds: string[];
   iidIndex: string;
   variant?: UIVariant;
@@ -54,7 +55,7 @@ function Database ({
   visibleViewIds,
   rowId,
   onChangeView,
-  onOpenRow,
+  onOpenRowPage,
   appendBreadcrumb,
   onRendered,
   readOnly = true,
@@ -138,6 +139,17 @@ function Database ({
     };
   }, [handleUpdateRowDocMap, rowOrders]);
 
+  const [openModalRowId, setOpenModalRowId] = useState<string | null>(null);
+
+  const handleOpenRow = useCallback((rowId: string) => {
+    if (readOnly) {
+      onOpenRowPage?.(rowId);
+      return;
+    }
+
+    setOpenModalRowId(rowId);
+  }, [onOpenRowPage, readOnly]);
+
   if (!rowDocMap || !viewId) {
     return null;
   }
@@ -147,7 +159,7 @@ function Database ({
       <DatabaseContextProvider
         workspaceId={workspaceId}
         isDatabaseRowPage={!!rowId}
-        navigateToRow={onOpenRow}
+        navigateToRow={handleOpenRow}
         iidIndex={iidIndex}
         viewId={viewId}
         databaseDoc={doc}
@@ -181,6 +193,18 @@ function Database ({
             />
           </div>
         )}
+        {openModalRowId && <DatabaseRowModal
+          rowId={openModalRowId}
+          open={Boolean(openModalRowId)}
+          openPage={onOpenRowPage}
+          onOpenChange={(status) => {
+            if (!status) {
+              setOpenModalRowId(null);
+            } else {
+              setOpenModalRowId(openModalRowId);
+            }
+          }}
+        />}
       </DatabaseContextProvider>
     </div>
   );

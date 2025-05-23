@@ -1,12 +1,24 @@
 import { NumberFilter, NumberFilterCondition, useReadOnly } from '@/application/database-yjs';
+import { useUpdateFilter } from '@/application/database-yjs/dispatch';
 import FieldMenuTitle from '@/components/database/components/filters/filter-menu/FieldMenuTitle';
-import { TextField } from '@mui/material';
-import React, { useMemo } from 'react';
+import FilterConditionsSelect from '@/components/database/components/filters/filter-menu/FilterConditionsSelect';
+import { Input } from '@/components/ui/input';
+import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-function NumberFilterMenu({ filter }: { filter: NumberFilter }) {
+function NumberFilterMenu ({ filter }: { filter: NumberFilter }) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
+  const updateFilter = useUpdateFilter();
+  const [value, setValue] = useState<string>(filter.content);
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setValue(e.target.value);
+    updateFilter({
+      filterId: filter.id,
+      content: e.target.value,
+    });
+  };
+
   const conditions = useMemo(() => {
     return [
       {
@@ -43,28 +55,30 @@ function NumberFilterMenu({ filter }: { filter: NumberFilter }) {
       },
     ];
   }, [t]);
-
-  const selectedCondition = useMemo(() => {
-    return conditions.find((c) => c.value === filter.condition);
-  }, [filter.condition, conditions]);
-
+  
   const displayTextField = useMemo(() => {
     return ![NumberFilterCondition.NumberIsEmpty, NumberFilterCondition.NumberIsNotEmpty].includes(filter.condition);
   }, [filter.condition]);
 
   return (
     <div className={'flex flex-col gap-2 p-2'}>
-      <FieldMenuTitle fieldId={filter.fieldId} selectedConditionText={selectedCondition?.text ?? ''} />
+      <FieldMenuTitle
+        fieldId={filter.fieldId}
+        filterId={filter.id}
+        renderConditionSelect={<FilterConditionsSelect
+          filter={filter}
+          conditions={conditions}
+        />}
+      />
       {displayTextField && (
-        <TextField
+        <Input
+          autoFocus
+          data-testid="text-filter-input"
           disabled={readOnly}
-          data-testid={'number-filter-input'}
           spellCheck={false}
-          inputProps={{
-            className: 'text-xs p-1.5',
-          }}
-          size={'small'}
-          value={filter.content}
+          size={'sm'}
+          value={value}
+          onChange={handleChange}
           placeholder={t('grid.settings.typeAValue')}
         />
       )}

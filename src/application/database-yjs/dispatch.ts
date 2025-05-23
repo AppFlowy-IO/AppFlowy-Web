@@ -2,14 +2,20 @@ import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cel
 import {
   useCreateRow,
   useDatabase,
-  useDatabaseContext,
+  useDatabaseContext, useDatabaseFields,
   useDatabaseView,
   useDatabaseViewId,
   useDocGuid,
   useRowDocMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
-import { CalculationType, FieldType, FieldVisibility, RowMetaKey } from '@/application/database-yjs/database.type';
+import {
+  CalculationType,
+  FieldType,
+  FieldVisibility, FilterType,
+  RowMetaKey,
+  SortCondition,
+} from '@/application/database-yjs/database.type';
 import {
   DateFormat,
   getDateCellStr,
@@ -25,7 +31,7 @@ import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/u
 import EnhancedBigStats from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { createSelectOptionCell, getColorByFirstChar } from '@/application/database-yjs/fields/select-option/utils';
 import { createTextField } from '@/application/database-yjs/fields/text/utils';
-import { filterFillData } from '@/application/database-yjs/filter';
+import { filterFillData, getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { getGroupColumns } from '@/application/database-yjs/group';
 import { getOptionsFromRow, initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON } from '@/application/database-yjs/row_meta';
@@ -46,14 +52,14 @@ import {
   YDatabaseFieldOrders,
   YDatabaseFieldSetting,
   YDatabaseFieldSettings,
-  YDatabaseFieldTypeOption,
+  YDatabaseFieldTypeOption, YDatabaseFilter,
   YDatabaseFilters,
   YDatabaseGroup,
   YDatabaseGroupColumns,
   YDatabaseGroups,
   YDatabaseLayoutSettings,
   YDatabaseRow,
-  YDatabaseRowOrders,
+  YDatabaseRowOrders, YDatabaseSort,
   YDatabaseSorts,
   YDatabaseView,
   YjsDatabaseKey,
@@ -2106,4 +2112,243 @@ export function useUpdateRelationDatabaseId (fieldId: string) {
 
     }], 'updateRelationDatabaseId');
   }, [database, fieldId, sharedRoot]);
+}
+
+export function useAddSort () {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((fieldId: string) => {
+    if (!view) return;
+    executeOperations(sharedRoot, [() => {
+      let sorts = view.get(YjsDatabaseKey.sorts);
+
+      if (!sorts) {
+        sorts = new Y.Array() as YDatabaseSorts;
+        view.set(YjsDatabaseKey.sorts, sorts);
+      }
+
+      const isExist = sorts.toArray().some((sort) => {
+        const sortFieldId = sort.get(YjsDatabaseKey.field_id);
+
+        if (sortFieldId === fieldId) {
+          return true;
+        }
+
+        return false;
+      });
+
+      if (isExist) {
+        return;
+      }
+
+      const sort = new Y.Map() as YDatabaseSort;
+      const id = `${nanoid(6)}`;
+
+      sort.set(YjsDatabaseKey.id, id);
+      sort.set(YjsDatabaseKey.field_id, fieldId);
+      sort.set(YjsDatabaseKey.condition, SortCondition.Ascending);
+
+      sorts.push([sort]);
+    }], 'addSort');
+  }, [view, sharedRoot]);
+}
+
+export function useRemoveSort () {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((sortId: string) => {
+    if (!view) return;
+    executeOperations(sharedRoot, [() => {
+      const sorts = view.get(YjsDatabaseKey.sorts);
+
+      if (!sorts) {
+        return;
+      }
+
+      const index = sorts.toArray().findIndex((sort) => sort.get(YjsDatabaseKey.id) === sortId);
+
+      if (index === -1) {
+        return;
+      }
+
+      sorts.delete(index);
+    }], 'removeSort');
+  }, [view, sharedRoot]);
+}
+
+export function useUpdateSort () {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(({
+    sortId,
+    fieldId,
+    condition,
+  }: {
+    sortId: string, fieldId?: string, condition?: SortCondition
+  }) => {
+    if (!view) return;
+    executeOperations(sharedRoot, [() => {
+      const sorts = view.get(YjsDatabaseKey.sorts);
+
+      if (!sorts) {
+        return;
+      }
+
+      const sort = sorts.toArray().find((sort) => sort.get(YjsDatabaseKey.id) === sortId);
+
+      if (!sort) {
+        return;
+      }
+
+      if (fieldId) {
+        sort.set(YjsDatabaseKey.field_id, fieldId);
+      }
+
+      if (condition !== undefined) {
+        sort.set(YjsDatabaseKey.condition, condition);
+      }
+    }], 'updateSort');
+  }, [view, sharedRoot]);
+}
+
+export function useReorderSorts () {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((sortId: string, beforeId?: string) => {
+    if (!view) return;
+    executeOperations(sharedRoot, [() => {
+      const sorts = view.get(YjsDatabaseKey.sorts);
+
+      if (!sorts) {
+        return;
+      }
+
+      const sortArray = sorts.toJSON() as {
+        id: string;
+      }[];
+
+      const sourceIndex = sortArray.findIndex(sort => sort.id === sortId);
+      const targetIndex = beforeId !== undefined ? (sortArray.findIndex(sort => sort.id === beforeId) + 1) : 0;
+
+      const sort = sorts.get(sourceIndex).clone() as YDatabaseSort;
+
+      sorts.delete(sourceIndex);
+
+      let adjustedTargetIndex = targetIndex;
+
+      if (targetIndex > sourceIndex) {
+        adjustedTargetIndex -= 1;
+      }
+
+      sorts.insert(adjustedTargetIndex, [sort]);
+    }], 'reorderSort');
+  }, [view, sharedRoot]);
+}
+
+export function useAddFilter () {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+  const fields = useDatabaseFields();
+
+  return useCallback((fieldId: string) => {
+    if (!view) return;
+    executeOperations(sharedRoot, [() => {
+      const field = fields.get(fieldId);
+      const fieldType = Number(field.get(YjsDatabaseKey.type));
+      let filters = view.get(YjsDatabaseKey.filters);
+
+      if (!filters) {
+        filters = new Y.Array() as YDatabaseFilters;
+        view.set(YjsDatabaseKey.filters, filters);
+      }
+
+      const filter = new Y.Map() as YDatabaseFilter;
+      const id = `${nanoid(6)}`;
+
+      filter.set(YjsDatabaseKey.id, id);
+      filter.set(YjsDatabaseKey.field_id, fieldId);
+      const conditionData = getDefaultFilterCondition(fieldType);
+
+      if (!conditionData) return;
+
+      filter.set(YjsDatabaseKey.condition, conditionData.condition);
+      if (conditionData.content !== undefined) {
+        filter.set(YjsDatabaseKey.content, conditionData.content);
+      }
+
+      filter.set(YjsDatabaseKey.type, fieldType);
+      filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
+
+      filters.push([filter]);
+    }], 'addFilter');
+  }, [view, sharedRoot, fields]);
+}
+
+export function useRemoveFilter () {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback((filterId: string) => {
+    if (!view) return;
+    executeOperations(sharedRoot, [() => {
+      const filters = view.get(YjsDatabaseKey.filters);
+
+      if (!filters) {
+        return;
+      }
+
+      const index = filters.toArray().findIndex((filter) => filter.get(YjsDatabaseKey.id) === filterId);
+
+      if (index === -1) {
+        return;
+      }
+
+      filters.delete(index);
+    }], 'removeFilter');
+  }, [view, sharedRoot]);
+}
+
+export function useUpdateFilter () {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(({
+    filterId,
+    fieldId,
+    condition,
+    content,
+  }: {
+    filterId: string, fieldId?: string, condition?: number, content?: string
+  }) => {
+    if (!view) return;
+    executeOperations(sharedRoot, [() => {
+      const filters = view.get(YjsDatabaseKey.filters);
+
+      if (!filters) {
+        return;
+      }
+
+      const filter = filters.toArray().find((filter) => filter.get(YjsDatabaseKey.id) === filterId);
+
+      if (!filter) {
+        return;
+      }
+
+      if (fieldId) {
+        filter.set(YjsDatabaseKey.field_id, fieldId);
+      }
+
+      if (condition !== undefined) {
+        filter.set(YjsDatabaseKey.condition, condition);
+      }
+
+      if (content !== undefined) {
+        filter.set(YjsDatabaseKey.content, content);
+      }
+    }], 'updateFilter');
+  }, [view, sharedRoot]);
 }

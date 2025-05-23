@@ -1,15 +1,75 @@
-import { useSortsSelector } from '@/application/database-yjs';
+import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
+import { useReorderSorts } from '@/application/database-yjs/dispatch';
+import DragItem from '@/components/database/components/drag-and-drop/DragItem';
+import { useDragContextValue, DragContext } from '@/components/database/components/drag-and-drop/useDragContext';
 import Sort from '@/components/database/components/sorts/Sort';
-import React from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 
-function SortList() {
+function SortList () {
   const sorts = useSortsSelector();
+  const readOnly = useReadOnly();
+
+  const reorderSorts = useReorderSorts();
+  const data = useMemo(() => {
+    return sorts.map((sort) => ({
+      id: sort.id,
+    }));
+  }, [sorts]);
+
+  const onReorder = useCallback(({
+    oldData,
+    newData,
+    startIndex,
+    finishIndex,
+  }: {
+    oldData: {
+      id: string
+    }[]
+    newData: {
+      id: string
+    }[]
+    startIndex: number
+    finishIndex: number
+  }) => {
+    const optionId = oldData[startIndex].id;
+
+    if (!optionId) {
+      throw new Error('No optionId provided');
+    }
+
+    const beforeId = newData[finishIndex - 1]?.id;
+
+    reorderSorts(optionId, beforeId);
+  }, [reorderSorts]);
+
+  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const dragContentValue = useDragContextValue({
+    enabled: !readOnly,
+    data,
+    reorderAction: onReorder,
+    container,
+  });
 
   return (
-    <div className={'flex w-fit flex-col gap-2 p-2'}>
-      {sorts.map((sortId) => (
-        <Sort sortId={sortId} key={sortId} />
-      ))}
+    <div
+      ref={setContainer}
+      className={'flex w-fit flex-col gap-2'}
+    >
+      <DragContext.Provider value={dragContentValue}>
+        {sorts.map((sort) => readOnly ? (
+          <Sort
+            sortId={sort.id}
+            key={sort.id}
+          />
+        ) : (
+          <DragItem
+            id={sort.id}
+            key={sort.id}
+          >
+            <Sort sortId={sort.id} />
+          </DragItem>
+        ))}
+      </DragContext.Provider>
     </div>
   );
 }

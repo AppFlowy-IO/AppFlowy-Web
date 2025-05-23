@@ -12,15 +12,26 @@ export function DatabaseRow ({ appendBreadcrumb, rowId }: { rowId: string; appen
     <div className={'flex w-full justify-center'}>
       <div className={'max-w-screen w-[964px] min-w-0'}>
         <div className={' relative flex  flex-col gap-4'}>
-          <DatabaseRowHeader appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
+          <DatabaseRowHeader
+            appendBreadcrumb={appendBreadcrumb}
+            rowId={rowId}
+          />
 
           <div className={'flex flex-1 flex-col gap-4'}>
-            <Suspense fallback={<TableSkeleton columns={2} rows={4} />}>
+            <Suspense
+              fallback={<TableSkeleton
+                columns={2}
+                rows={4}
+              />}
+            >
               <DatabaseRowProperties rowId={rowId} />
             </Suspense>
             <Divider className={'w-full'} />
             <Suspense fallback={<EditorSkeleton />}>
-              <DatabaseRowSubDocument rowId={rowId} />
+              <div className={'min-h-[300px]'}>
+                <DatabaseRowSubDocument rowId={rowId} />
+              </div>
+
             </Suspense>
           </div>
         </div>

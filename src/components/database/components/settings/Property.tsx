@@ -1,7 +1,7 @@
 import { useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { useHidePropertyDispatch, useShowPropertyDispatch } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
-import { DropRowIndicator } from '@/components/database/components/grid/drag-and-drop/DropRowIndicator';
+import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import { usePropertyDragContext } from '@/components/database/components/settings/usePropertyDragContext';
 import { Button } from '@/components/ui/button';
 import { DropdownMenuItem } from '@/components/ui/dropdown-menu';

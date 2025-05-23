@@ -1,43 +1,115 @@
-import { useSortsSelector } from '@/application/database-yjs';
-import { Popover } from '@/components/_shared/popover';
+import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
+import { useAddSort, useClearSortingDispatch } from '@/application/database-yjs/dispatch';
+import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
+import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import SortList from '@/components/database/components/sorts/SortList';
-import React, { useState } from 'react';
+import { Button } from '@/components/ui/button';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ReactComponent as SortSvg } from '@/assets/icons/sort_ascending.svg';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
+import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 
-export function Sorts() {
+export function Sorts () {
   const { t } = useTranslation();
-  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
-  const open = Boolean(anchorEl);
+  const [open, setOpen] = useState(false);
   const sorts = useSortsSelector();
+
+  const sortFieldIds = useMemo(() => {
+    return sorts.map(sort => sort.fieldId);
+  }, [sorts]);
+
+  const addSort = useAddSort();
+  const deleteAllSorts = useClearSortingDispatch();
+  const [openPropertiesMenu, setOpenPropertiesMenu] = useState(false);
+
+  const readOnly = useReadOnly();
+
+  useEffect(() => {
+    if (!open) {
+      setOpenPropertiesMenu(false);
+    }
+  }, [open]);
 
   if (sorts.length === 0) return null;
   return (
-    <>
-      <div
+    <div className={'relative h-7'}>
+      <Button
+        variant={'outline'}
+        size={'sm'}
+        className={'rounded-full'}
         onClick={(e) => {
-          setAnchorEl(e.currentTarget);
+          e.stopPropagation();
+          if (readOnly) return;
+          setOpen(!open);
         }}
         data-testid={'database-sort-condition'}
-        className='flex cursor-pointer items-center gap-1 rounded-full border border-line-divider px-2 py-1 text-xs hover:border-fill-default hover:text-fill-default hover:shadow-sm'
       >
-        <SortSvg />
+        <SortSvg className={'w-5 h-5'} />
         {t('grid.settings.sort')}
-        <ArrowDown />
-      </div>
+        <ArrowDown className={'w-5 h-5'} />
+
+      </Button>
       {open && (
         <Popover
           open={open}
-          anchorEl={anchorEl}
-          onClose={() => {
-            setAnchorEl(null);
-          }}
+          onOpenChange={setOpen}
+          modal
         >
-          <SortList />
+          <PopoverTrigger asChild>
+            <div className={'absolute top-0 left-0 w-full h-full z-[-1]'} />
+          </PopoverTrigger>
+          <PopoverContent
+            onOpenAutoFocus={e => e.preventDefault()}
+            className={'p-2 max-h-[360px] appflowy-scroller overflow-y-auto'}
+            onClick={e => {
+              e.stopPropagation();
+            }}
+          >
+            <SortList />
+            {!readOnly && <div className={'flex pt-2 items-center justify-between'}>
+              <div className={'relative'}>
+                <PropertiesMenu
+                  searchPlaceholder={t('grid.settings.sortBy')}
+                  onSelect={fieldId => {
+                    addSort(fieldId);
+                  }}
+                  filteredOut={sortFieldIds}
+                  open={openPropertiesMenu}
+                  onOpenChange={setOpenPropertiesMenu}
+                >
+                  <Button
+                    size={'sm'}
+                    onClick={() => setOpenPropertiesMenu(!openPropertiesMenu)}
+                    variant={'ghost'}
+                  >
+                    <AddIcon className={'w-5 h-5'} />
+                    {t('grid.sort.addSort')}
+                  </Button>
+                </PropertiesMenu>
+
+              </div>
+
+              <Button
+                size={'sm'}
+                onClick={() => {
+                  deleteAllSorts();
+                  setOpen(false);
+                }}
+                className={'hover:text-text-error'}
+                variant={'ghost'}
+              >
+                <DeleteIcon className={'w-5 h-5'} />
+                {t('grid.sort.deleteAllSorts')}
+              </Button>
+            </div>}
+
+          </PopoverContent>
+
         </Popover>
       )}
-    </>
+    </div>
   );
 }
 

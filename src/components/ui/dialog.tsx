@@ -65,6 +65,7 @@ const dialogVariants = cva(
     'fixed top-[50%] left-[50%] z-50',
     'translate-x-[-50%] translate-y-[-50%]', // Center perfectly
     'max-w-[calc(100%-2rem)] sm:max-w-lg', // Responsive width
+    'max-h-[85vh]',
 
     // Internal layout
     'grid px-5 py-4',
@@ -95,9 +96,11 @@ function DialogContent ({
   className,
   children,
   size,
+  showCloseButton = true,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  size?: 'xs' | 'sm' | 'md'
+  size?: 'xs' | 'sm' | 'md';
+  showCloseButton?: boolean;
 }) {
   return (
     <DialogPortal data-slot="dialog-portal">
@@ -108,7 +111,7 @@ function DialogContent ({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close
+        {showCloseButton && <DialogPrimitive.Close
           className={cn(
             // Positioning
             'absolute top-3.5 right-5',
@@ -137,7 +140,8 @@ function DialogContent ({
             <XIcon />
           </Button>
 
-        </DialogPrimitive.Close>
+        </DialogPrimitive.Close>}
+
       </DialogPrimitive.Content>
     </DialogPortal>
   );
