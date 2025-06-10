@@ -96,11 +96,11 @@
     },
     "success-thick": {
       "$type": "color",
-      "$value": "{Green.600}"
+      "$value": "{Green.500}"
     },
     "success-thick-hover": {
       "$type": "color",
-      "$value": "{Green.700}"
+      "$value": "{Green.600}"
     },
     "warning-thick": {
       "$type": "color",
@@ -304,6 +304,14 @@
       "$type": "color",
       "$value": "{Green.200}"
     },
+    "success-thick": {
+      "$type": "color",
+      "$value": "{Green.500}"
+    },
+    "success-thick-hover": {
+      "$type": "color",
+      "$value": "{Green.600}"
+    },
     "warning-light": {
       "$type": "color",
       "$value": "{Orange.100}"
@@ -334,7 +342,7 @@
     },
     "featured-light": {
       "$type": "color",
-      "$value": "{Purple.100}"
+      "$value": "{Purple.alpha-purple-100-60}"
     },
     "featured-light-hover": {
       "$type": "color",
@@ -370,7 +378,7 @@
     "layer-02": {
       "$type": "color",
       "$value": "{Neutral.white}",
-      "$description": "Settings Side Panel, Modal Window"
+      "$description": "Modal Window"
     },
     "layer-02-hover": {
       "$type": "color",
@@ -410,7 +418,8 @@
   "Surface_Container": {
     "layer-01": {
       "$type": "color",
-      "$value": "{Neutral.100}"
+      "$value": "{Neutral.100}",
+      "$description": "Settings Side Panel"
     },
     "layer-02": {
       "$type": "color",

@@ -214,6 +214,14 @@
     "1000": {
       "$type": "color",
       "$value": "#380758"
+    },
+    "alpha-purple-900-60": {
+      "$type": "color",
+      "$value": "#470c7299"
+    },
+    "alpha-purple-100-60": {
+      "$type": "color",
+      "$value": "#f1e0ff99"
     }
   },
   "Magenta": {

@@ -62,11 +62,11 @@
     },
     "featured": {
       "$type": "color",
-      "$value": "{Purple.500}"
+      "$value": "{Neutral.white}"
     },
     "featured-hover": {
       "$type": "color",
-      "$value": "{Purple.400}"
+      "$value": "{Purple.200}"
     }
   },
   "Icon": {
@@ -96,11 +96,11 @@
     },
     "success-thick": {
       "$type": "color",
-      "$value": "{Green.600}"
+      "$value": "{Green.500}"
     },
     "success-thick-hover": {
       "$type": "color",
-      "$value": "{Green.500}"
+      "$value": "{Green.600}"
     },
     "warning-thick": {
       "$type": "color",
@@ -304,6 +304,14 @@
       "$type": "color",
       "$value": "{Green.100}"
     },
+    "success-thick": {
+      "$type": "color",
+      "$value": "{Green.500}"
+    },
+    "success-thick-hover": {
+      "$type": "color",
+      "$value": "{Green.600}"
+    },
     "warning-light": {
       "$type": "color",
       "$value": "{Orange.200}"
@@ -334,11 +342,11 @@
     },
     "featured-light": {
       "$type": "color",
-      "$value": "{Purple.200}"
+      "$value": "{Purple.alpha-purple-900-60}"
     },
     "featured-light-hover": {
       "$type": "color",
-      "$value": "{Purple.100}"
+      "$value": "{Purple.900}"
     },
     "featured-thick": {
       "$type": "color",
@@ -370,7 +378,7 @@
     "layer-02": {
       "$type": "color",
       "$value": "{Neutral.850}",
-      "$description": "Settings Side Panel, Modal Window"
+      "$description": "Modal Window"
     },
     "layer-02-hover": {
       "$type": "color",
@@ -410,7 +418,8 @@
   "Surface_Container": {
     "layer-01": {
       "$type": "color",
-      "$value": "{Neutral.900}"
+      "$value": "{Neutral.850}",
+      "$description": "Settings Side Panel"
     },
     "layer-02": {
       "$type": "color",
@@ -431,521 +440,521 @@
     "color-1": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Rose.100}"
+        "$value": "{Subtle_Color.Rose.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Rose.200}"
+        "$value": "{Subtle_Color.Rose.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Rose.300}"
+        "$value": "{Subtle_Color.Rose.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Rose.400}"
+        "$value": "{Subtle_Color.Rose.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Rose.500}"
+        "$value": "{Subtle_Color.Rose.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Rose.600}"
+        "$value": "{Subtle_Color.Rose.300}"
       }
     },
     "color-2": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Papaya.100}"
+        "$value": "{Subtle_Color.Papaya.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Papaya.200}"
+        "$value": "{Subtle_Color.Papaya.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Papaya.300}"
+        "$value": "{Subtle_Color.Papaya.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Papaya.400}"
+        "$value": "{Subtle_Color.Papaya.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Papaya.500}"
+        "$value": "{Subtle_Color.Papaya.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Papaya.600}"
+        "$value": "{Subtle_Color.Papaya.300}"
       }
     },
     "color-3": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Tangerine.100}"
+        "$value": "{Subtle_Color.Tangerine.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Tangerine.200}"
+        "$value": "{Subtle_Color.Tangerine.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Tangerine.300}"
+        "$value": "{Subtle_Color.Tangerine.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Tangerine.400}"
+        "$value": "{Subtle_Color.Tangerine.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Tangerine.500}"
+        "$value": "{Subtle_Color.Tangerine.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Tangerine.600}"
+        "$value": "{Subtle_Color.Tangerine.300}"
       }
     },
     "color-4": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mango.100}"
+        "$value": "{Subtle_Color.Mango.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mango.200}"
+        "$value": "{Subtle_Color.Mango.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mango.300}"
+        "$value": "{Subtle_Color.Mango.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mango.400}"
+        "$value": "{Subtle_Color.Mango.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mango.500}"
+        "$value": "{Subtle_Color.Mango.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mango.600}"
+        "$value": "{Subtle_Color.Mango.300}"
       }
     },
     "color-5": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lemon.100}"
+        "$value": "{Subtle_Color.Lemon.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lemon.200}"
+        "$value": "{Subtle_Color.Lemon.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lemon.300}"
+        "$value": "{Subtle_Color.Lemon.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lemon.400}"
+        "$value": "{Subtle_Color.Lemon.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lemon.500}"
+        "$value": "{Subtle_Color.Lemon.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lemon.600}"
+        "$value": "{Subtle_Color.Lemon.300}"
       }
     },
     "color-6": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Olive.100}"
+        "$value": "{Subtle_Color.Olive.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Olive.200}"
+        "$value": "{Subtle_Color.Olive.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Olive.300}"
+        "$value": "{Subtle_Color.Olive.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Olive.400}"
+        "$value": "{Subtle_Color.Olive.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Olive.500}"
+        "$value": "{Subtle_Color.Olive.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Olive.600}"
+        "$value": "{Subtle_Color.Olive.300}"
       }
     },
     "color-7": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lime.100}"
+        "$value": "{Subtle_Color.Lime.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lime.200}"
+        "$value": "{Subtle_Color.Lime.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lime.300}"
+        "$value": "{Subtle_Color.Lime.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lime.400}"
+        "$value": "{Subtle_Color.Lime.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lime.500}"
+        "$value": "{Subtle_Color.Lime.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lime.600}"
+        "$value": "{Subtle_Color.Lime.300}"
       }
     },
     "color-8": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Grass.100}"
+        "$value": "{Subtle_Color.Grass.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Grass.200}"
+        "$value": "{Subtle_Color.Grass.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Grass.300}"
+        "$value": "{Subtle_Color.Grass.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Grass.400}"
+        "$value": "{Subtle_Color.Grass.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Grass.500}"
+        "$value": "{Subtle_Color.Grass.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Grass.600}"
+        "$value": "{Subtle_Color.Grass.300}"
       }
     },
     "color-9": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Forest.100}"
+        "$value": "{Subtle_Color.Forest.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Forest.200}"
+        "$value": "{Subtle_Color.Forest.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Forest.300}"
+        "$value": "{Subtle_Color.Forest.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Forest.400}"
+        "$value": "{Subtle_Color.Forest.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Forest.500}"
+        "$value": "{Subtle_Color.Forest.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Forest.600}"
+        "$value": "{Subtle_Color.Forest.300}"
       }
     },
     "color-10": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Jade.100}"
+        "$value": "{Subtle_Color.Jade.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Jade.200}"
+        "$value": "{Subtle_Color.Jade.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Jade.300}"
+        "$value": "{Subtle_Color.Jade.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Jade.400}"
+        "$value": "{Subtle_Color.Jade.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Jade.500}"
+        "$value": "{Subtle_Color.Jade.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Jade.600}"
+        "$value": "{Subtle_Color.Jade.300}"
       }
     },
     "color-11": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Aqua.100}"
+        "$value": "{Subtle_Color.Aqua.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Aqua.200}"
+        "$value": "{Subtle_Color.Aqua.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Aqua.300}"
+        "$value": "{Subtle_Color.Aqua.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Aqua.400}"
+        "$value": "{Subtle_Color.Aqua.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Aqua.500}"
+        "$value": "{Subtle_Color.Aqua.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Aqua.600}"
+        "$value": "{Subtle_Color.Aqua.300}"
       }
     },
     "color-12": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Azure.100}"
+        "$value": "{Subtle_Color.Azure.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Azure.200}"
+        "$value": "{Subtle_Color.Azure.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Azure.300}"
+        "$value": "{Subtle_Color.Azure.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Azure.400}"
+        "$value": "{Subtle_Color.Azure.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Azure.500}"
+        "$value": "{Subtle_Color.Azure.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Azure.600}"
+        "$value": "{Subtle_Color.Azure.300}"
       }
     },
     "color-13": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Denim.100}"
+        "$value": "{Subtle_Color.Denim.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Denim.200}"
+        "$value": "{Subtle_Color.Denim.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Denim.300}"
+        "$value": "{Subtle_Color.Denim.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Denim.400}"
+        "$value": "{Subtle_Color.Denim.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Denim.500}"
+        "$value": "{Subtle_Color.Denim.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Denim.600}"
+        "$value": "{Subtle_Color.Denim.300}"
       }
     },
     "color-14": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mauve.100}"
+        "$value": "{Subtle_Color.Mauve.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mauve.200}"
+        "$value": "{Subtle_Color.Mauve.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mauve.300}"
+        "$value": "{Subtle_Color.Mauve.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mauve.400}"
+        "$value": "{Subtle_Color.Mauve.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mauve.500}"
+        "$value": "{Subtle_Color.Mauve.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mauve.600}"
+        "$value": "{Subtle_Color.Mauve.300}"
       }
     },
     "color-15": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lavender.100}"
+        "$value": "{Subtle_Color.Lavender.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lavender.200}"
+        "$value": "{Subtle_Color.Lavender.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lavender.300}"
+        "$value": "{Subtle_Color.Lavender.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lavender.400}"
+        "$value": "{Subtle_Color.Lavender.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lavender.500}"
+        "$value": "{Subtle_Color.Lavender.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lavender.600}"
+        "$value": "{Subtle_Color.Lavender.300}"
       }
     },
     "color-16": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lilac.100}"
+        "$value": "{Subtle_Color.Lilac.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lilac.200}"
+        "$value": "{Subtle_Color.Lilac.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lilac.300}"
+        "$value": "{Subtle_Color.Lilac.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lilac.400}"
+        "$value": "{Subtle_Color.Lilac.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lilac.500}"
+        "$value": "{Subtle_Color.Lilac.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Lilac.600}"
+        "$value": "{Subtle_Color.Lilac.300}"
       }
     },
     "color-17": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mallow.100}"
+        "$value": "{Subtle_Color.Mallow.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mallow.200}"
+        "$value": "{Subtle_Color.Mallow.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mallow.300}"
+        "$value": "{Subtle_Color.Mallow.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mallow.400}"
+        "$value": "{Subtle_Color.Mallow.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mallow.500}"
+        "$value": "{Subtle_Color.Mallow.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Mallow.600}"
+        "$value": "{Subtle_Color.Mallow.300}"
       }
     },
     "color-18": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Camellia.100}"
+        "$value": "{Subtle_Color.Camellia.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Camellia.200}"
+        "$value": "{Subtle_Color.Camellia.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Camellia.300}"
+        "$value": "{Subtle_Color.Camellia.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Camellia.400}"
+        "$value": "{Subtle_Color.Camellia.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Camellia.500}"
+        "$value": "{Subtle_Color.Camellia.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Camellia.600}"
+        "$value": "{Subtle_Color.Smoke.300}"
       }
     },
     "color-19": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Smoke.100}"
+        "$value": "{Subtle_Color.Smoke.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Smoke.200}"
+        "$value": "{Subtle_Color.Smoke.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Smoke.300}"
+        "$value": "{Subtle_Color.Smoke.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Smoke.400}"
+        "$value": "{Subtle_Color.Smoke.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Smoke.500}"
+        "$value": "{Subtle_Color.Smoke.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Smoke.600}"
+        "$value": "{Subtle_Color.Smoke.300}"
       }
     },
     "color-20": {
       "light-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Iron.100}"
+        "$value": "{Subtle_Color.Iron.400}"
       },
       "light-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Iron.200}"
+        "$value": "{Subtle_Color.Iron.500}"
       },
       "light-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Iron.300}"
+        "$value": "{Subtle_Color.Iron.600}"
       },
       "thick-1": {
         "$type": "color",
-        "$value": "{Subtle_Color.Iron.400}"
+        "$value": "{Subtle_Color.Iron.100}"
       },
       "thick-2": {
         "$type": "color",
-        "$value": "{Subtle_Color.Iron.500}"
+        "$value": "{Subtle_Color.Iron.200}"
       },
       "thick-3": {
         "$type": "color",
-        "$value": "{Subtle_Color.Iron.600}"
+        "$value": "{Subtle_Color.Iron.300}"
       }
     }
   },
