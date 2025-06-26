@@ -19,8 +19,12 @@ Bring projects, wikis, and teams together with AI
 
 
 ![appflowy_web](https://github.com/user-attachments/assets/beb79630-b134-4de0-b464-d164cd0f9adf)
-![appflowy_web_quickly_add_a_page](https://github.com/user-attachments/assets/364f6419-c214-46aa-92ff-bfcc0a4f93d6)
-![appflowy_web_quick_note](https://github.com/user-attachments/assets/b67285df-6f89-416d-94e0-d0b82eb22359)
+![appflowy_web_property_types](https://github.com/user-attachments/assets/074f859d-2e7e-4bf0-ac00-ba0b36e808e5)
+![appflowy_web_grid_view](https://github.com/user-attachments/assets/e1b8a950-5b57-4279-90aa-3917aae2f83b)
+![appflowy_web_kanban_board_dark_mode](https://github.com/user-attachments/assets/3a6fda95-e57b-45d0-ae88-f2df362675ce)
+![appflowy_web_open_row](https://github.com/user-attachments/assets/1c5a2891-90e0-4831-bfd5-89229235bbb4)
+![appflowy_web_open_row_in_full_page](https://github.com/user-attachments/assets/011a9408-7ae4-4144-b114-3613e699f6b5)
+![appflowy_web_quick_note_small_window](https://github.com/user-attachments/assets/8b72462c-00a2-4398-8d5d-6ee982f6a30e)
 ![appflowy_web_quick_note_large](https://github.com/user-attachments/assets/5c633e60-6f34-454c-91db-236a1b78966a)
 ![appflowy_web_share](https://github.com/user-attachments/assets/64b9955d-b11f-4aa1-b32b-ea79ea7f3566)
 
@@ -28,7 +32,6 @@ Bring projects, wikis, and teams together with AI
 
 - [Use Cases](#use-cases)
 - [Features](#features) 
-- [AppFlowy Web Roadmap](#appflowy-web-roadmap)
 - [Installation](#installation)
 - [Development](#development)
 - [Deployment](#deployment)
@@ -43,10 +46,10 @@ Bring projects, wikis, and teams together with AI
 
 ## Features
 - Write beautiful documents with rich content types
+- Create custom Grid & Kanban Board-view to manage and digest data
 - Add a Quick Note to jot down lists, ideas, or to-dos
 - Invite members to your workspace for seamless collaboration
 - Create multiple public and private spaces to better organize your content
-
 
 ## Installation
 ### Cloud: we host AppFlowy for you
@@ -68,7 +71,7 @@ Join our <a href="https://discord.gg/FFmDE99bgA">Discord</a> server to get help!
 Check out the [development guide](./doc/DEVELOPMENT_GUIDE.md) for more details
 
 ## Deployment
-Once AppFlowy Cloud has been setup, you can follow the [deployment guide](https://appflowy.com/docs/self-host-appflowy-run-appflowy-web)
+Once AppFlowy Cloud has been setup, you can follow the [deployment guide](https://appflowy.com/docs)
 to deploy AppFlowy Web.
 
 ## Documentation
