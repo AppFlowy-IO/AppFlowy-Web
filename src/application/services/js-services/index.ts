@@ -567,7 +567,12 @@ export class AFClientService implements AFService {
   async importFile(file: File, onProgress: (progress: number) => void) {
     const task = await APIService.createImportTask(file);
 
-    await APIService.uploadImportFile(task.presignedUrl, file, onProgress);
+    await APIService.uploadImportFileAuto(file, {
+      uploadType: task.uploadType,
+      presignedUrl: task.presignedUrl,
+      workspaceId: task.workspaceId,
+      taskId: task.taskId,
+    }, onProgress);
   }
 
   async createSpace(workspaceId: string, payload: CreateSpacePayload) {

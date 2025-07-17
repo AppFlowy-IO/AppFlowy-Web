@@ -1411,16 +1411,20 @@ export async function getActiveSubscription(workspaceId: string) {
   return Promise.reject(response?.data);
 }
 
+interface CreateImportTaskResponseData {
+  task_id: string;
+  presigned_url?: string; // Present for small files
+  upload_type: 'presigned_url' | 'multipart';
+  workspace_id?: string; // Present for large files
+}
+
 export async function createImportTask(file: File) {
   const url = `/api/import/create`;
   const fileName = file.name.split('.').slice(0, -1).join('.') || crypto.randomUUID();
 
   const res = await axiosInstance?.post<{
     code: number;
-    data: {
-      task_id: string;
-      presigned_url: string;
-    };
+    data: CreateImportTaskResponseData;
     message: string;
   }>(url, {
     workspace_name: fileName,
@@ -1430,11 +1434,35 @@ export async function createImportTask(file: File) {
   if (res?.data.code === 0) {
     return {
       taskId: res?.data.data.task_id,
+      uploadType: res?.data.data.upload_type,
       presignedUrl: res?.data.data.presigned_url,
+      workspaceId: res?.data.data.workspace_id,
     };
   }
 
   return Promise.reject(res?.data);
+}
+
+export async function uploadImportFileAuto(
+  file: File,
+  uploadInfo: {
+    uploadType: 'presigned_url' | 'multipart';
+    presignedUrl?: string;
+    workspaceId?: string;
+    taskId: string;
+  },
+  onProgress: (progress: number) => void
+) {
+  if (uploadInfo.uploadType === 'presigned_url' && uploadInfo.presignedUrl) {
+    return uploadImportFile(uploadInfo.presignedUrl, file, onProgress);
+  } else if (uploadInfo.uploadType === 'multipart' && uploadInfo.workspaceId) {
+    return uploadImportFileMultipart(file, uploadInfo.workspaceId, uploadInfo.taskId, onProgress);
+  } else {
+    return Promise.reject({
+      code: -1,
+      message: 'Invalid upload configuration',
+    });
+  }
 }
 
 export async function uploadImportFile(presignedUrl: string, file: File, onProgress: (progress: number) => void) {
@@ -1458,6 +1486,90 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
     code: -1,
     message: `Upload file failed. ${response.statusText}`,
   });
+}
+
+async function uploadImportFileMultipart(file: File, workspaceId: string, taskId: string, onProgress: (progress: number) => void) {
+  const CHUNK_SIZE = 100 * 1024 * 1024; // 100MB chunks
+  const fileId = `import_presigned_url_${taskId}`;
+
+  try {
+    // Step 1: Create multipart upload session
+    const createResponse = await axiosInstance?.post<{
+      code: number;
+      data: { upload_id: string; file_id: string };
+    }>(`/api/file_storage/${workspaceId}/create_upload`, {
+      parent_dir: 'import',
+      file_id: fileId,
+      content_type: 'application/zip',
+      file_size: file.size,
+    });
+
+    if (createResponse?.data.code !== 0) {
+      throw new Error('Failed to create multipart upload');
+    }
+
+    const uploadId = createResponse.data.data.upload_id;
+
+    // Step 2: Upload file in chunks directly to AppFlowy-Cloud
+    const parts: { e_tag: string; part_number: number }[] = [];
+    let partNumber = 1;
+    let uploadedBytes = 0;
+
+    for (let offset = 0; offset < file.size; offset += CHUNK_SIZE) {
+      const chunk = file.slice(offset, offset + CHUNK_SIZE);
+
+      const partResponse = await axiosInstance?.put<{
+        code: number;
+        data: { e_tag: string; part_num: number };
+      }>(
+        `/api/file_storage/${workspaceId}/upload_part/import/${fileId}/${uploadId}/${partNumber}`,
+        chunk, // Send the chunk directly as body
+        {
+          headers: {
+            'Content-Type': 'application/octet-stream',
+          },
+          onUploadProgress: (progressEvent) => {
+            uploadedBytes = offset + (progressEvent.loaded || 0);
+            const progress = Math.min(uploadedBytes / file.size, 1);
+            onProgress(progress);
+          }
+        }
+      );
+
+      if (partResponse?.data.code !== 0) {
+        throw new Error(`Failed to upload part ${partNumber}`);
+      }
+
+      parts.push({
+        e_tag: partResponse.data.data.e_tag,
+        part_number: partResponse.data.data.part_num,
+      });
+
+      partNumber++;
+    }
+
+    // Step 3: Complete the multipart upload
+    const completeResponse = await axiosInstance?.put<{
+      code: number;
+    }>(`/api/file_storage/${workspaceId}/complete_upload`, {
+      file_id: fileId,
+      parent_dir: 'import',
+      upload_id: uploadId,
+      parts: parts,
+    });
+
+    if (completeResponse?.data.code !== 0) {
+      throw new Error('Failed to complete multipart upload');
+    }
+
+    console.log('Multipart upload completed successfully');
+    return;
+  } catch (error) {
+    return Promise.reject({
+      code: -1,
+      message: `Multipart upload failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+  }
 }
 
 export async function addAppPage(workspaceId: string, parentViewId: string, {
