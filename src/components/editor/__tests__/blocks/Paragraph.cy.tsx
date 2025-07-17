@@ -12,7 +12,7 @@ describe('<Paragraph />', () => {
       const documentTest = new DocumentTest();
 
       documentTest.fromJSON(data);
-      mountEditor({ readOnly: true, doc: documentTest.doc, viewId: '' });
+      mountEditor({ readOnly: true, doc: documentTest.doc, viewId: '', workspaceId: 'test-workspace' });
     }).as('render');
     cy.get('[role="textbox"]').should('exist');
     cy.get('[data-block-type="paragraph"]').should('have.length', 7);
@@ -273,4 +273,4 @@ describe('<Paragraph />', () => {
 
 });
 
-export {};
+export { };
