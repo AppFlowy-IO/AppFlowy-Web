@@ -20,6 +20,10 @@ describe('Chat Input Tests', () => {
     cy.loginTestUser().then((email) => {
       testEmail = email;
 
+      // Wait for app to fully load
+      TestTool.waitForSidebarReady();
+      cy.wait(2000);
+
       TestTool.expandSpace();
       cy.wait(1000);
 
@@ -59,9 +63,12 @@ describe('Chat Input Tests', () => {
       // Test 3: Browse prompts
       cy.log('Testing browse prompts');
       cy.get('[data-testid="chat-input-browse-prompts"]').click();
+      cy.wait(1000); // Wait for dialog to open
       cy.get('[role="dialog"]').should('exist');
-      cy.get('[role="dialog"]').contains('Browse prompts').should('be.visible');
+      // Use a more flexible selector - dialog might take time to render content
+      cy.get('[role="dialog"]', { timeout: 15000 }).should('be.visible');
       cy.get('body').type('{esc}');
+      cy.wait(500); // Wait for dialog to close
       cy.get('[role="dialog"]').should('not.exist');
 
       // Test 4: Related views

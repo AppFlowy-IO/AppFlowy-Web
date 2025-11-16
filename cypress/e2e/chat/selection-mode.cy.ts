@@ -105,6 +105,10 @@ describe('Chat Selection Mode Tests', () => {
         cy.loginTestUser().then((email) => {
             testEmail = email;
 
+            // Wait for app to fully load
+            TestTool.waitForSidebarReady();
+            cy.wait(2000);
+
             TestTool.expandSpace();
             cy.wait(1000);
 

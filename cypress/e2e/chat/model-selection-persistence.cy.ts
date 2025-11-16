@@ -23,10 +23,14 @@ describe('Chat Model Selection Persistence Tests', () => {
 
             cy.loginTestUser().then((email) => {
                 testEmail = email;
-                
+
+                // Wait for app to fully load
+                TestTool.waitForSidebarReady();
+                cy.wait(2000);
+
                 // Step 2: Create an AI Chat
                 cy.task('log', '=== Step 2: Creating AI Chat ===');
-                
+
                 // Expand the first space to see its pages
                 TestTool.expandSpace();
                 cy.wait(1000);

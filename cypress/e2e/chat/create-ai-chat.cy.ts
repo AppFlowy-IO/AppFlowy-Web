@@ -26,6 +26,10 @@ describe('AI Chat Creation and Navigation Tests', () => {
             cy.loginTestUser().then((email) => {
                 testEmail = email;
 
+                // Wait for app to fully load
+                TestTool.waitForSidebarReady();
+                cy.wait(2000);
+
                 // Now wait for the new page button to be available
                 cy.task('log', 'Looking for new page button...');
                 PageSelectors.newPageButton()
