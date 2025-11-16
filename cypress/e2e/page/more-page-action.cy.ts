@@ -1,10 +1,9 @@
-import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { logTestEnvironment } from '../../support/test-config';
 import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, waitForReactUpdate } from '../../support/selectors';
 
 describe('More Page Actions', () => {
-    const { apiUrl, gotrueUrl } = TestConfig;
     const newPageName = 'Renamed Test Page';
     let testEmail: string;
 

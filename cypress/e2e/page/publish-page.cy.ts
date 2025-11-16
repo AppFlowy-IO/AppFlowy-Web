@@ -1,10 +1,9 @@
-import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { logTestEnvironment } from '../../support/test-config';
 import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
 
 describe('Publish Page Test', () => {
-    const { apiUrl, gotrueUrl } = TestConfig;
     let testEmail: string;
     const pageName = 'publish page';
     const pageContent = 'This is a publish page content';

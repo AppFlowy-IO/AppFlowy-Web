@@ -19,11 +19,16 @@ import 'cypress-plugin-api';
 import 'cypress-real-events';
 import './commands';
 
-// Global hooks for console logging
+// Global hooks for console logging and setup
 beforeEach(() => {
+  // Set global viewport size for all tests
+  // This provides consistent viewport across all E2E tests
+  // Individual tests can override if needed with cy.viewport()
+  cy.viewport(1280, 720);
+
   // Start capturing console logs for each test
   cy.startConsoleCapture();
-  
+
   // Mock billing endpoints to prevent 502 errors in console
   cy.intercept('GET', '**/billing/api/v1/active-subscription/**', {
     statusCode: 200,
@@ -32,7 +37,7 @@ beforeEach(() => {
       status: 'free'
     }
   }).as('billingSubscription');
-  
+
   // Mock other billing endpoints
   cy.intercept('GET', '**/billing/api/**', {
     statusCode: 200,
