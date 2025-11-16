@@ -34,6 +34,7 @@ import {
   UploadTemplatePayload,
 } from '@/application/template.type';
 import {
+  AccessLevel,
   CreateFolderViewPayload,
   CreatePagePayload,
   CreateSpacePayload,
@@ -52,10 +53,10 @@ import {
   UpdateSpacePayload,
   UpdateWorkspacePayload,
   UploadPublishNamespacePayload,
-  WorkspaceMember,
-  YjsEditorKey,
   ViewIconType,
-  AccessLevel
+  WorkspaceMember,
+  YDoc,
+  YjsEditorKey
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 
@@ -513,32 +514,56 @@ export class AFClientService implements AFService {
 
     const isLoaded = this.viewLoaded.has(name);
 
-    const { doc } = await getPageDoc(
-      async () => {
-        try {
-          return await fetchPageCollab(workspaceId, viewId);
-          // eslint-disable-next-line
-        } catch (e: any) {
-          console.error(e);
+    let cachedDoc: YDoc | null = null;
 
-          errorCallback?.(e);
+    try {
+      // Load document from cache first
+      const { doc } = await getPageDoc(
+        async () => {
+          try {
+            return await fetchPageCollab(workspaceId, viewId);
+            // eslint-disable-next-line
+          } catch (e: any) {
+            console.error(e);
+
+            errorCallback?.(e);
+            return Promise.reject(e);
+          }
+        },
+        name,
+        StrategyType.CACHE_ONLY
+      );
+
+      cachedDoc = doc;
+
+      if (!isLoaded) {
+        this.viewLoaded.add(name);
+      }
+
+      return doc;
+    } catch (e: any) {
+      // If error occurred and we have a cached doc, check if it has content
+      // This prevents deleting local edits when server returns not found
+      if (cachedDoc) {
+        const { hasCollabCache } = await import('@/application/services/js-services/cache');
+        const docHasContent = hasCollabCache(cachedDoc);
+
+        if (!docHasContent) {
+          // Only delete cache if document has no content
           void (async () => {
             this.viewLoaded.delete(name);
             void deleteView(name);
           })();
-
-          return Promise.reject(e);
+        } else {
+          console.warn(`Document ${name} has local content, preserving cache despite server error`);
+          // Return the cached doc even though server request failed
+          return cachedDoc;
         }
-      },
-      name,
-      StrategyType.CACHE_ONLY
-    );
+      }
 
-    if (!isLoaded) {
-      this.viewLoaded.add(name);
+      // Re-throw the error if no cached content exists
+      throw e;
     }
-
-    return doc;
   }
 
   async getInvitation(invitationId: string) {
