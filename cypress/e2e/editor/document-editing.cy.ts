@@ -1,25 +1,27 @@
 import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 import { EditorSelectors } from '../../support/selectors';
 
 describe('Document Editing with Formatting', () => {
+  const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
   const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
 
+  before(() => {
+    logTestEnvironment();
+  });
+
   beforeEach(() => {
-    cy.on('uncaught:exception', () => false);
+    setupCommonExceptionHandlers();
     cy.viewport(1280, 720);
   });
 
   it('should handle text with headings', () => {
-    const testEmail = generateRandomEmail();
+    let testEmail: string;
 
-    // Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
+    // Login using centralized login command
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
       cy.wait(3000);
 
       // Navigate to Getting started page
@@ -72,15 +74,11 @@ describe('Document Editing with Formatting', () => {
   });
 
   it('should handle lists', () => {
-    const testEmail = generateRandomEmail();
+    let testEmail: string;
 
-    // Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
+    // Login using centralized login command
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
       cy.wait(3000);
 
       // Navigate to Getting started page
@@ -143,15 +141,11 @@ describe('Document Editing with Formatting', () => {
   });
 
   it('should handle numbered lists and todos', () => {
-    const testEmail = generateRandomEmail();
+    let testEmail: string;
 
-    // Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
+    // Login using centralized login command
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
       cy.wait(3000);
 
       // Navigate to Getting started page

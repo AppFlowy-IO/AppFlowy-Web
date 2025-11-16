@@ -6,22 +6,14 @@ import {
   AuthSelectors,
   waitForReactUpdate
 } from '../../support/selectors';
+import { TestConfig } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 
 describe('Login and Logout Flow', () => {
-  const baseUrl = Cypress.config('baseUrl') || 'http://localhost:3000';
-  const gotrueUrl = Cypress.env('APPFLOWY_GOTRUE_BASE_URL') || 'http://localhost/gotrue';
-  const apiUrl = Cypress.env('APPFLOWY_BASE_URL') || 'http://localhost';
+  const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
 
   beforeEach(() => {
-    // Handle uncaught exceptions
-    cy.on('uncaught:exception', (err) => {
-      if (err.message.includes('Minified React error') ||
-          err.message.includes('View not found') ||
-          err.message.includes('No workspace or service found')) {
-        return false;
-      }
-      return true;
-    });
+    setupCommonExceptionHandlers();
     cy.viewport(1280, 720);
   });
 
@@ -54,8 +46,8 @@ describe('Login and Logout Flow', () => {
 
         // Step 5: Verify workspace is loaded by checking dropdown trigger
         cy.log('[STEP 5] Verifying workspace loaded');
-        WorkspaceSelectors.dropdownTrigger({ timeout: 15000 })
-          .should('be.visible');
+        WorkspaceSelectors.dropdownTrigger()
+          .should('be.visible', { timeout: 15000 });
 
         // Step 6: Open workspace dropdown
         cy.log('[STEP 6] Opening workspace dropdown');
@@ -124,8 +116,8 @@ describe('Login and Logout Flow', () => {
 
         // Step 4: Verify user is logged in
         cy.log('[STEP 4] Verifying user is logged in');
-        WorkspaceSelectors.dropdownTrigger({ timeout: 15000 })
-          .should('be.visible');
+        WorkspaceSelectors.dropdownTrigger()
+          .should('be.visible', { timeout: 15000 });
 
         // Step 5: Open workspace dropdown
         cy.log('[STEP 5] Opening workspace dropdown');
@@ -188,8 +180,8 @@ describe('Login and Logout Flow', () => {
 
         // Step 4: Open workspace dropdown
         cy.log('[STEP 4] Opening workspace dropdown');
-        WorkspaceSelectors.dropdownTrigger({ timeout: 15000 })
-          .should('be.visible');
+        WorkspaceSelectors.dropdownTrigger()
+          .should('be.visible', { timeout: 15000 });
         TestTool.openWorkspaceDropdown();
 
         // Verify dropdown is open

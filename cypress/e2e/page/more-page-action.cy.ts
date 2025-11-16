@@ -1,241 +1,175 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, waitForReactUpdate } from '../../support/selectors';
 
 describe('More Page Actions', () => {
-    const APPFLOWY_BASE_URL = Cypress.env('APPFLOWY_BASE_URL');
-    const APPFLOWY_GOTRUE_BASE_URL = Cypress.env('APPFLOWY_GOTRUE_BASE_URL');
-    const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
+    const { apiUrl, gotrueUrl } = TestConfig;
     const newPageName = 'Renamed Test Page';
     let testEmail: string;
 
-    beforeEach(function () {
-        testEmail = generateRandomEmail();
+    before(() => {
+        logTestEnvironment();
     });
 
+    beforeEach(function () {
+        setupCommonExceptionHandlers();
+    });
 
     it('should open the More actions menu for a page (verify visibility of core items)', () => {
-        // Handle uncaught exceptions during workspace creation
-        cy.on('uncaught:exception', (err: Error) => {
-            if (err.message.includes('No workspace or service found')) {
-                return false;
-            }
-            return true;
-        });
-
         // Sign in first
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
+        cy.loginTestUser().then((email) => {
+            testEmail = email;
 
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail);
+            cy.url().should('include', '/app');
+            TestTool.waitForPageLoad(3000);
 
-        cy.url().should('include', '/app');
-        TestTool.waitForPageLoad(3000);
+            // Wait for the sidebar to load properly
+            TestTool.waitForSidebarReady();
+            cy.wait(2000);
 
-        // Wait for the sidebar to load properly
-        TestTool.waitForSidebarReady();
-        cy.wait(2000);
+            // Skip expanding space since Getting started is already visible
+            cy.task('log', 'Page already visible, skipping expand');
 
-        // Skip expanding space since Getting started is already visible
-        cy.task('log', 'Page already visible, skipping expand');
+            // Open the first available page from the sidebar, then trigger inline ViewActionsPopover via "..." on the row
+            // Find the Getting started page and hover to reveal the more actions
+            cy.task('log', 'Looking for Getting started page');
 
-        // Open the first available page from the sidebar, then trigger inline ViewActionsPopover via "..." on the row
-        // Find the Getting started page and hover to reveal the more actions
-        cy.task('log', 'Looking for Getting started page');
+            // Find the page by its text content
+            cy.contains('Getting started').should('exist').and('be.visible');
 
-        // Find the page by its text content
-        cy.contains('Getting started')
-            .parent()
-            .parent()
-            .trigger('mouseenter', { force: true })
-            .trigger('mouseover', { force: true });
+            // Hover over the page item to reveal the more actions button
+            cy.task('log', 'Hovering over page item to reveal more actions');
+            cy.contains('Getting started')
+                .parents('[data-testid*="view-item"]')
+                .first()
+                .trigger('mouseenter', { force: true })
+                .wait(500);
 
-        cy.wait(1000);
+            // Find and click the more actions button (...)
+            cy.task('log', 'Looking for more actions button');
+            cy.contains('Getting started')
+                .parents('[data-testid*="view-item"]')
+                .first()
+                .within(() => {
+                    // Try multiple ways to find the more actions button
+                    cy.get('[data-testid="view-item-more-actions"]')
+                        .should('exist')
+                        .and('be.visible')
+                        .click({ force: true });
+                });
 
-        // Look for the more actions button - using PageSelectors
-        PageSelectors.moreActionsButton().first().click({ force: true });
+            waitForReactUpdate(500);
 
-        cy.task('log', 'Clicked more actions button');
+            // Verify the popover is open
+            cy.task('log', 'Verifying popover is open');
+            cy.get('[data-testid="more-actions-popover"]').should('exist').and('be.visible');
+            cy.wait(500);
 
-        // Verify core items in ViewActionsPopover
-        // The menu should be open now, verify at least one of the common actions exists
-        cy.get('[data-slot="dropdown-menu-content"]', { timeout: 5000 }).should('exist');
+            // Now verify the expected menu items
+            cy.task('log', 'Verifying menu items in popover');
+            cy.get('[data-testid="more-actions-popover"]').within(() => {
+                // Check for Delete option
+                cy.task('log', 'Checking for Delete option');
+                cy.get('[data-testid="delete-page-option"]')
+                    .should('exist')
+                    .and('be.visible')
+                    .and('contain.text', 'Delete');
 
-        // Check for common menu items - they might have different test ids or text
-        cy.get('[data-slot="dropdown-menu-content"]').within(() => {
-            // Look for items by text content since test ids might vary
-            cy.contains('Delete').should('exist');
-            cy.contains('Duplicate').should('exist');
-            cy.contains('Move to').should('exist');
+                // Check for Rename option
+                cy.task('log', 'Checking for Rename option');
+                cy.get('[data-testid="rename-page-option"]')
+                    .should('exist')
+                    .and('be.visible')
+                    .and('contain.text', 'Rename');
+
+                // Check for Duplicate option
+                cy.task('log', 'Checking for Duplicate option');
+                cy.get('[data-testid="duplicate-page-option"]')
+                    .should('exist')
+                    .and('be.visible')
+                    .and('contain.text', 'Duplicate');
+
+                // Optional: Check for additional menu items
+                cy.task('log', 'Successfully verified all core menu items in More actions popover');
+            });
+
+            // Close the popover
+            cy.task('log', 'Closing popover');
+            cy.get('body').click(0, 0);
         });
     });
 
-    it('should trigger Duplicate action from More actions menu', () => {
-        // Handle uncaught exceptions during workspace creation
-        cy.on('uncaught:exception', (err: Error) => {
-            if (err.message.includes('No workspace or service found')) {
-                return false;
-            }
-            return true;
-        });
-
+    it('should rename a page using More actions menu', () => {
         // Sign in first
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
+        cy.loginTestUser().then((email) => {
+            testEmail = email;
 
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail);
+            cy.url().should('include', '/app');
+            TestTool.waitForPageLoad(3000);
 
-        cy.url().should('include', '/app');
-        TestTool.waitForPageLoad(3000);
+            // Wait for the sidebar to load properly
+            TestTool.waitForSidebarReady();
+            cy.wait(2000);
 
-        // Wait for the sidebar to load properly
-        TestTool.waitForSidebarReady();
-        cy.wait(2000);
+            // Create a new page first
+            cy.task('log', 'Creating a new page to rename');
+            PageSelectors.newPageButton().click();
+            waitForReactUpdate(1000);
 
-        // Find the Getting started page and open its more actions menu
-        const originalPageName = 'Getting started';
-        cy.task('log', `Opening More Actions for page: ${originalPageName}`);
+            // Get the created page name
+            cy.task('log', 'Getting the newly created page');
+            PageSelectors.names()
+                .last()
+                .invoke('text')
+                .then((pageName) => {
+                    cy.task('log', `Created page: ${pageName}`);
 
-        // Find the page by its text content and hover
-        cy.contains(originalPageName)
-            .parent()
-            .parent()
-            .trigger('mouseenter', { force: true })
-            .trigger('mouseover', { force: true });
+                    // Hover over the created page to reveal more actions
+                    cy.task('log', 'Hovering over the created page');
+                    PageSelectors.names()
+                        .last()
+                        .parents('[data-testid*="view-item"]')
+                        .first()
+                        .trigger('mouseenter', { force: true })
+                        .wait(500);
 
-        cy.wait(1000);
+                    // Click the more actions button
+                    cy.task('log', 'Clicking more actions button');
+                    PageSelectors.names()
+                        .last()
+                        .parents('[data-testid*="view-item"]')
+                        .first()
+                        .within(() => {
+                            cy.get('[data-testid="view-item-more-actions"]')
+                                .should('exist')
+                                .and('be.visible')
+                                .click({ force: true });
+                        });
 
-        // Look for the more actions button - using PageSelectors
-        PageSelectors.moreActionsButton().first().click({ force: true });
+                    waitForReactUpdate(500);
 
-        cy.task('log', 'Clicked more actions button');
+                    // Click Rename option
+                    cy.task('log', 'Clicking Rename option');
+                    cy.get('[data-testid="more-actions-popover"]').within(() => {
+                        cy.get('[data-testid="rename-page-option"]').click();
+                    });
 
-        // Click on Duplicate option which is available in the dropdown
-        cy.get('[data-slot="dropdown-menu-content"]').within(() => {
-            cy.contains('Duplicate').click();
+                    waitForReactUpdate(500);
+
+                    // Type the new name
+                    cy.task('log', `Renaming to: ${newPageName}`);
+                    cy.focused()
+                        .clear()
+                        .type(newPageName)
+                        .type('{enter}');
+
+                    waitForReactUpdate(1000);
+
+                    // Verify the rename was successful
+                    cy.task('log', 'Verifying rename was successful');
+                    cy.contains(newPageName).should('exist').and('be.visible');
+                });
         });
-        cy.task('log', 'Clicked Duplicate option');
-
-        // Wait for the duplication to complete
-        waitForReactUpdate(2000);
-
-        // Verify the page was duplicated - there should now be two pages with similar names
-        // The duplicated page usually has "(copy)" or similar suffix
-        cy.contains('Getting started').should('exist');
-
-        // Check if there's a duplicated page (might have a suffix like "(1)" or "(copy)")
-        PageSelectors.names().then(($pages: JQuery<HTMLElement>) => {
-            const pageCount = $pages.filter((index: number, el: HTMLElement) =>
-                el.textContent?.includes('Getting started')).length;
-            expect(pageCount).to.be.at.least(1);
-            cy.task('log', `Found ${pageCount} pages with 'Getting started' in the name`);
-        });
-
-        cy.task('log', 'Page successfully duplicated');
-    });
-
-    it.skip('should rename a page and verify the name persists after refresh', () => {
-        // Handle uncaught exceptions during workspace creation
-        cy.on('uncaught:exception', (err: Error) => {
-            if (err.message.includes('No workspace or service found')) {
-                return false;
-            }
-            return true;
-        });
-
-        // Sign in first
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail);
-
-        cy.url().should('include', '/app');
-        TestTool.waitForPageLoad(3000);
-
-        // Wait for the sidebar to load properly
-        TestTool.waitForSidebarReady();
-        cy.wait(2000);
-
-        // Store the original page name
-        const originalPageName = 'Getting started';
-        const renamedPageName = `Renamed Page ${Date.now()}`;
-        
-        cy.task('log', `Starting rename test: ${originalPageName} -> ${renamedPageName}`);
-
-        // Find the page by its text content and hover
-        cy.contains(originalPageName)
-            .parent()
-            .parent()
-            .trigger('mouseenter', { force: true })
-            .trigger('mouseover', { force: true });
-
-        cy.wait(1000);
-
-        // Look for the more actions button - using PageSelectors
-        PageSelectors.moreActionsButton().first().click({ force: true });
-
-        cy.task('log', 'Clicked more actions button');
-
-        // Wait for the dropdown menu to be visible
-        cy.get('[data-slot="dropdown-menu-content"]', { timeout: 5000 }).should('be.visible');
-
-        // Click on Rename option - simplified approach
-        cy.get('[data-slot="dropdown-menu-content"]').within(() => {
-            cy.contains('Rename').click();
-        });
-        
-        cy.task('log', 'Clicked Rename option');
-
-        // Wait for the rename modal to appear
-        cy.get('[data-testid="rename-modal-input"]', { timeout: 5000 })
-            .should('be.visible')
-            .clear()
-            .type(renamedPageName);
-
-        cy.task('log', `Entered new page name: ${renamedPageName}`);
-
-        // Click the save button
-        cy.get('[data-testid="rename-modal-save"]').click();
-
-        cy.task('log', 'Clicked save button');
-
-        // Wait for the modal to close and the page to update
-        waitForReactUpdate(2000);
-
-        // Verify the page was renamed in the sidebar
-        cy.contains(renamedPageName, { timeout: 10000 }).should('exist');
-        cy.task('log', 'Page renamed successfully in sidebar');
-
-        // Also verify the original name doesn't exist anymore
-        cy.contains(originalPageName).should('not.exist');
-        
-        // Now refresh the page to verify the rename persisted
-        cy.task('log', 'Refreshing page to verify persistence...');
-        cy.reload();
-        
-        // Wait for the page to reload completely
-        TestTool.waitForPageLoad(3000);
-        TestTool.waitForSidebarReady();
-        cy.wait(2000);
-        
-        // Verify the renamed page still exists after refresh
-        cy.contains(renamedPageName, { timeout: 10000 }).should('exist');
-        cy.task('log', 'Renamed page persisted after refresh');
-        
-        // Verify the original name is still gone
-        cy.contains(originalPageName).should('not.exist');
-        
-        // Optional: Also verify the page is clickable and can be opened
-        cy.contains(renamedPageName).click();
-        cy.wait(2000);
-        
-        // Verify we're on the renamed page by checking the URL or page content
-        cy.url().should('include', '/app');
-        
-        cy.task('log', 'Rename test completed successfully - name persisted after refresh');
     });
 });

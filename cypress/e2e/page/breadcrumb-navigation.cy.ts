@@ -1,56 +1,28 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, SpaceSelectors, SidebarSelectors, waitForReactUpdate } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
+
+const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
 
 describe('Breadcrumb Navigation Complete Tests', () => {
-    const APPFLOWY_BASE_URL = Cypress.env('APPFLOWY_BASE_URL');
-    const APPFLOWY_GOTRUE_BASE_URL = Cypress.env('APPFLOWY_GOTRUE_BASE_URL');
-    const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
     let testEmail: string;
 
     before(() => {
-        // Log environment configuration for debugging
-        cy.task('log', `Test Environment Configuration:
-          - APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}
-          - APPFLOWY_GOTRUE_BASE_URL: ${APPFLOWY_GOTRUE_BASE_URL}`);
+        logTestEnvironment();
     });
 
     beforeEach(() => {
-        // Generate unique test data for each test
-        testEmail = generateRandomEmail();
-        
-        // Handle uncaught exceptions
-        cy.on('uncaught:exception', (err: Error) => {
-            if (err.message.includes('No workspace or service found')) {
-                return false;
-            }
-            // Handle View not found errors
-            if (err.message.includes('View not found')) {
-                return false;
-            }
-            return true;
-        });
+        setupCommonExceptionHandlers();
     });
 
     describe('Basic Navigation Tests', () => {
         it('should navigate through space and check for breadcrumb availability', { timeout: 60000 }, () => {
             // Login
             cy.task('log', '=== Step 1: Login ===');
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.wait(2000);
 
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
-                cy.url().should('include', '/app');
-                
-                // Wait for app to load
-                cy.task('log', 'Waiting for app to fully load...');
-                cy.get('body', { timeout: 30000 }).should('not.contain', 'Welcome!');
-                SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-                PageSelectors.names().should('exist', { timeout: 30000 });
-                cy.wait(2000);
-
+            cy.loginTestUser().then((email) => {
+                testEmail = email;
                 cy.task('log', 'App loaded successfully');
 
                 // Step 2: Expand first space
@@ -99,18 +71,8 @@ describe('Breadcrumb Navigation Complete Tests', () => {
 
         it('should navigate to nested pages and use breadcrumb to go back', { timeout: 60000 }, () => {
             // Login
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.wait(2000);
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
-                cy.url().should('include', '/app');
-                
-                // Wait for app to load
-                cy.get('body', { timeout: 30000 }).should('not.contain', 'Welcome!');
-                SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-                PageSelectors.names().should('exist', { timeout: 30000 });
-                cy.wait(2000);
+            cy.loginTestUser().then((email) => {
+                testEmail = email;
 
                 cy.task('log', '=== Step 1: Expand first space ===');
                 TestTool.expandSpace(0);
@@ -162,18 +124,8 @@ describe('Breadcrumb Navigation Complete Tests', () => {
     describe('Full Breadcrumb Flow Test', () => {
         it('should navigate through General > Get Started > Desktop Guide flow (if available)', { timeout: 60000 }, () => {
             // Login
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.wait(2000);
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
-                cy.url().should('include', '/app');
-                
-                // Wait for app to load
-                cy.get('body', { timeout: 30000 }).should('not.contain', 'Welcome!');
-                SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-                PageSelectors.names().should('exist', { timeout: 30000 });
-                cy.wait(2000);
+            cy.loginTestUser().then((email) => {
+                testEmail = email;
 
                 // Step 1: Find and expand General space or first space
                 cy.task('log', '=== Step 1: Looking for General space ===');

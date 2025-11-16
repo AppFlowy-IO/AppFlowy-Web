@@ -1,43 +1,33 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import {
   AddPageSelectors,
   DatabaseGridSelectors,
   RowControlsSelectors,
   waitForReactUpdate
 } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 
 describe('Database Row Duplication', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
+  before(() => {
+    logTestEnvironment();
+  });
 
   beforeEach(() => {
-    cy.on('uncaught:exception', (err) => {
-      if (err.message.includes('Minified React error') ||
-        err.message.includes('View not found') ||
-        err.message.includes('No workspace or service found')) {
-        return false;
-      }
-      return true;
-    });
-
+    setupCommonExceptionHandlers();
     cy.viewport(1280, 720);
   });
 
   it('should create a new grid, add content to first row, and duplicate it', () => {
-    const testEmail = generateRandomEmail();
+    let testEmail: string;
     const testContent = `Test Content ${Date.now()}`;
 
-    cy.log(`[TEST START] Testing row duplication - Test email: ${testEmail}`);
+    cy.log(`[TEST START] Testing row duplication`);
 
     // Login
-    cy.log('[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    cy.log('[STEP 2] Starting authentication');
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.log('[STEP 3] Authentication successful');
+    cy.log('[STEP 1] Starting authentication');
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
+      cy.log('[STEP 2] Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 

@@ -1,52 +1,28 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { WorkspaceSelectors, SidebarSelectors, PageSelectors } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 
 describe('User Feature Tests', () => {
-    const APPFLOWY_BASE_URL = Cypress.env('APPFLOWY_BASE_URL');
-    const APPFLOWY_GOTRUE_BASE_URL = Cypress.env('APPFLOWY_GOTRUE_BASE_URL');
-    const APPFLOWY_WS_BASE_URL = Cypress.env('APPFLOWY_WS_BASE_URL');
-    const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
+    const { apiUrl, gotrueUrl, wsUrl } = TestConfig;
 
     before(() => {
-        cy.task('log', `Test Environment Configuration:
-          - APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}
-          - APPFLOWY_GOTRUE_BASE_URL: ${APPFLOWY_GOTRUE_BASE_URL}
-          - APPFLOWY_WS_BASE_URL: ${APPFLOWY_WS_BASE_URL}
-         `);
-
+        logTestEnvironment();
     });
 
     beforeEach(() => {
+        setupCommonExceptionHandlers();
         // Ensure viewport is set to MacBook Pro size for each test
         cy.viewport(1440, 900);
     });
 
     describe('User Login Tests', () => {
         it('should show AppFlowy Web login page, authenticate, and verify workspace', () => {
-            // Handle uncaught exceptions during workspace creation
-            cy.on('uncaught:exception', (err: Error) => {
-                // Ignore transient pre-initialization errors during E2E
-                if (
-                    err.message.includes('No workspace or service found') ||
-                    err.message.includes('Failed to fetch dynamically imported module')
-                ) {
-                    return false;
-                }
-                // Let other errors fail the test
-                return true;
-            });
+            let randomEmail: string;
 
-            cy.visit('/login', { failOnStatusCode: false });
-
-            cy.wait(2000);
-
-            // Now test the authentication flow using signInWithTestUrl
-            const randomEmail = generateRandomEmail();
-            const authUtils = new AuthTestUtils();
-
-            authUtils.signInWithTestUrl(randomEmail).then(() => {
+            // Now test the authentication flow
+            cy.loginTestUser().then((email) => {
+                randomEmail = email;
                 // Verify we're on the app page
                 cy.url().should('include', '/app');
 

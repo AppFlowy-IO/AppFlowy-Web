@@ -1,34 +1,33 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
+
+
 import { waitForReactUpdate } from '../../support/selectors';
 
 describe('Slash Menu - List Actions', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
+  
+
+  before(() => {
+    logTestEnvironment();
+  });
 
   beforeEach(() => {
-    cy.on('uncaught:exception', (err) => {
-      if (err.message.includes('Minified React error') ||
-        err.message.includes('View not found') ||
-        err.message.includes('No workspace or service found')) {
-        return false;
-      }
-      return true;
-    });
-
+    setupCommonExceptionHandlers();
     cy.viewport(1280, 720);
   });
 
   it('should show list options in slash menu', () => {
-    const testEmail = generateRandomEmail();
+    let testEmail: string;
 
     cy.log(`[TEST START] Testing list options - Test email: ${testEmail}`);
 
     // Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
+    
+    
 
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
@@ -60,16 +59,17 @@ describe('Slash Menu - List Actions', () => {
   });
 
   it('should allow selecting Bulleted list from slash menu', () => {
-    const testEmail = generateRandomEmail();
+    let testEmail: string;
 
     cy.log(`[TEST START] Testing Bulleted list selection - Test email: ${testEmail}`);
 
     // Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
+    
+    
 
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 

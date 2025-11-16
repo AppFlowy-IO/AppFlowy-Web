@@ -7,30 +7,21 @@ import { AuthTestUtils } from '../../../support/auth-utils';
 import { AvatarSelectors } from '../../../support/avatar-selectors';
 import { dbUtils } from '../../../support/db-utils';
 import { WorkspaceSelectors } from '../../../support/selectors';
+import { TestConfig } from '../../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../../support/exception-handlers';
 
 /**
  * Shared utilities and setup for avatar tests
  */
 export const avatarTestUtils = {
   generateRandomEmail: () => `${uuidv4()}@appflowy.io`,
-  APPFLOWY_BASE_URL: Cypress.env('APPFLOWY_BASE_URL'),
+  APPFLOWY_BASE_URL: TestConfig.apiUrl,
 
   /**
    * Common beforeEach setup for avatar tests
    */
   setupBeforeEach: () => {
-    // Suppress known transient errors
-    cy.on('uncaught:exception', (err) => {
-      if (
-        err.message.includes('Minified React error') ||
-        err.message.includes('View not found') ||
-        err.message.includes('No workspace or service found')
-      ) {
-        return false;
-      }
-
-      return true;
-    });
+    setupCommonExceptionHandlers();
     cy.viewport(1280, 720);
   },
 

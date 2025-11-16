@@ -1,45 +1,29 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, ModalSelectors, SidebarSelectors, waitForReactUpdate } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 
 describe('Delete Page, Verify in Trash, and Restore Tests', () => {
-    const APPFLOWY_BASE_URL = Cypress.env('APPFLOWY_BASE_URL');
-    const APPFLOWY_GOTRUE_BASE_URL = Cypress.env('APPFLOWY_GOTRUE_BASE_URL');
-    const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
+    const { apiUrl, gotrueUrl } = TestConfig;
     let testEmail: string;
     let testPageName: string;
 
     before(() => {
-        // Log environment configuration for debugging
-        cy.task('log', `Test Environment Configuration:
-          - APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}
-          - APPFLOWY_GOTRUE_BASE_URL: ${APPFLOWY_GOTRUE_BASE_URL}`);
+        logTestEnvironment();
     });
 
     beforeEach(() => {
+        setupCommonExceptionHandlers();
         // Generate unique test data for each test
-        testEmail = generateRandomEmail();
         testPageName = `test-page-${Date.now()}`;
     });
 
     describe('Delete Page, Verify in Trash, and Restore', () => {
         it('should create a page, delete it, verify in trash, restore it, and verify it is back in sidebar', () => {
-            // Handle uncaught exceptions during workspace creation
-            cy.on('uncaught:exception', (err: Error) => {
-                if (err.message.includes('No workspace or service found')) {
-                    return false;
-                }
-                return true;
-            });
-
             // Step 1: Login
             cy.task('log', '=== Step 1: Login ===');
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.wait(2000);
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.loginTestUser().then((email) => {
+                testEmail = email;
                 cy.url().should('include', '/app');
                 
                 // Wait for the app to fully load

@@ -1,13 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 
 describe('Password Login Flow', () => {
-  const baseUrl = Cypress.config('baseUrl') || 'http://localhost:3000';
-  const gotrueUrl = Cypress.env('APPFLOWY_GOTRUE_BASE_URL') || 'http://localhost/gotrue';
-  const apiUrl = Cypress.env('APPFLOWY_BASE_URL') || 'http://localhost';
+  const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
+
+  before(() => {
+    logTestEnvironment();
+  });
 
   beforeEach(() => {
-    // Handle uncaught exceptions
-    cy.on('uncaught:exception', () => false);
+    setupCommonExceptionHandlers();
     cy.viewport(1280, 720);
   });
 

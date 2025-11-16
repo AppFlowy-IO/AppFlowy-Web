@@ -1,65 +1,28 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, SidebarSelectors, ModelSelectorSelectors } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
+
+const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
 
 describe('Chat Model Selection Persistence Tests', () => {
-    const APPFLOWY_BASE_URL = Cypress.env('APPFLOWY_BASE_URL');
-    const APPFLOWY_GOTRUE_BASE_URL = Cypress.env('APPFLOWY_GOTRUE_BASE_URL');
-    const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
     let testEmail: string;
 
     before(() => {
-        // Log environment configuration for debugging
-        cy.task('log', `Test Environment Configuration:
-          - APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}
-          - APPFLOWY_GOTRUE_BASE_URL: ${APPFLOWY_GOTRUE_BASE_URL}`);
+        logTestEnvironment();
     });
 
     beforeEach(() => {
-        // Generate unique test data for each test
-        testEmail = generateRandomEmail();
+        setupCommonExceptionHandlers();
     });
 
     describe('Model Selection Persistence', () => {
         it('should persist selected model after page reload', () => {
-            // Handle uncaught exceptions during workspace creation
-            cy.on('uncaught:exception', (err: Error) => {
-                if (err.message.includes('No workspace or service found')) {
-                    return false;
-                }
-                if (err.message.includes('View not found')) {
-                    return false;
-                }
-                if (err.message.includes('WebSocket') || err.message.includes('connection')) {
-                    return false;
-                }
-                return true;
-            });
-
             // Step 1: Login
             cy.task('log', '=== Step 1: Login ===');
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.wait(2000);
 
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
-                cy.url().should('include', '/app');
-                
-                // Wait for the app to fully load
-                cy.task('log', 'Waiting for app to fully load...');
-                
-                // Wait for the loading screen to disappear and main app to appear
-                cy.get('body', { timeout: 30000 }).should('not.contain', 'Welcome!');
-                
-                // Wait for the sidebar to be visible (indicates app is loaded)
-                SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-                
-                // Wait for at least one page to exist in the sidebar
-                PageSelectors.names().should('exist', { timeout: 30000 });
-                
-                // Additional wait for stability
-                cy.wait(2000);
+            cy.loginTestUser().then((email) => {
+                testEmail = email;
                 
                 // Step 2: Create an AI Chat
                 cy.task('log', '=== Step 2: Creating AI Chat ===');

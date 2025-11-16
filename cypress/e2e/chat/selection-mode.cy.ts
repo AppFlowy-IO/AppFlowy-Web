@@ -1,7 +1,9 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, SidebarSelectors } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
+
+const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
 
 const STUBBED_MESSAGE_ID = 101;
 const STUBBED_MESSAGE_CONTENT = 'Stubbed AI answer ready for export';
@@ -88,44 +90,20 @@ function setupChatApiStubs() {
 }
 
 describe('Chat Selection Mode Tests', () => {
-    const APPFLOWY_BASE_URL = Cypress.env('APPFLOWY_BASE_URL');
-    const APPFLOWY_GOTRUE_BASE_URL = Cypress.env('APPFLOWY_GOTRUE_BASE_URL');
-    const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
     let testEmail: string;
 
     before(() => {
-        cy.task('log', `Test Environment Configuration:\n          - APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}\n          - APPFLOWY_GOTRUE_BASE_URL: ${APPFLOWY_GOTRUE_BASE_URL}`);
+        logTestEnvironment();
     });
 
     beforeEach(() => {
-        testEmail = generateRandomEmail();
+        setupCommonExceptionHandlers();
         setupChatApiStubs();
     });
 
     it('enables message selection mode and toggles message selection', () => {
-        cy.on('uncaught:exception', (err: Error) => {
-            if (err.message.includes('No workspace or service found')) {
-                return false;
-            }
-            if (err.message.includes('View not found')) {
-                return false;
-            }
-            if (err.message.includes('WebSocket') || err.message.includes('connection')) {
-                return false;
-            }
-            return true;
-        });
-
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
-            cy.url().should('include', '/app');
-
-            SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-            PageSelectors.items().should('exist', { timeout: 30000 });
-            cy.wait(2000);
+        cy.loginTestUser().then((email) => {
+            testEmail = email;
 
             TestTool.expandSpace();
             cy.wait(1000);

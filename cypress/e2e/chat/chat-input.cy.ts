@@ -1,48 +1,24 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, SidebarSelectors } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
+
+const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
 
 describe('Chat Input Tests', () => {
-  const APPFLOWY_BASE_URL = Cypress.env('APPFLOWY_BASE_URL');
-  const APPFLOWY_GOTRUE_BASE_URL = Cypress.env('APPFLOWY_GOTRUE_BASE_URL');
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   let testEmail: string;
 
   before(() => {
-    cy.task(
-      'log',
-      `Test Environment Configuration:\n          - APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}\n          - APPFLOWY_GOTRUE_BASE_URL: ${APPFLOWY_GOTRUE_BASE_URL}`
-    );
+    logTestEnvironment();
   });
 
   beforeEach(() => {
-    testEmail = generateRandomEmail();
+    setupCommonExceptionHandlers();
   });
 
   it('tests chat input UI controls', () => {
-    cy.on('uncaught:exception', (err: Error) => {
-      if (err.message.includes('No workspace or service found') ||
-          err.message.includes('View not found') ||
-          err.message.includes('WebSocket') ||
-          err.message.includes('connection') ||
-          err.message.includes('Failed to load models') ||
-          err.message.includes('Minified React error')) {
-        return false;
-      }
-      return true;
-    });
-
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url().should('include', '/app');
-
-      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-      PageSelectors.items().should('exist', { timeout: 30000 });
-      cy.wait(2000);
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
 
       TestTool.expandSpace();
       cy.wait(1000);
@@ -98,28 +74,8 @@ describe('Chat Input Tests', () => {
   });
 
   it('tests chat input message handling', () => {
-    cy.on('uncaught:exception', (err: Error) => {
-      if (err.message.includes('No workspace or service found') ||
-          err.message.includes('View not found') ||
-          err.message.includes('WebSocket') ||
-          err.message.includes('connection') ||
-          err.message.includes('Failed to load models') ||
-          err.message.includes('Minified React error')) {
-        return false;
-      }
-      return true;
-    });
-
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url().should('include', '/app');
-
-      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-      PageSelectors.items().should('exist', { timeout: 30000 });
-      cy.wait(2000);
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
 
       TestTool.expandSpace();
       cy.wait(1000);

@@ -1,4 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 
 /**
  * OAuth Login Flow Tests
@@ -19,23 +21,14 @@ import { v4 as uuidv4 } from 'uuid';
  * - Context initialization timing
  */
 describe('OAuth Login Flow', () => {
-    const baseUrl = Cypress.config('baseUrl') || 'http://localhost:3000';
-    const gotrueUrl = Cypress.env('APPFLOWY_GOTRUE_BASE_URL') || 'http://localhost/gotrue';
-    const apiUrl = Cypress.env('APPFLOWY_BASE_URL') || 'http://localhost';
+    const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
+
+    before(() => {
+        logTestEnvironment();
+    });
 
     beforeEach(() => {
-        // Handle uncaught exceptions
-        cy.on('uncaught:exception', (err) => {
-            if (
-                err.message.includes('Minified React error') ||
-                err.message.includes('View not found') ||
-                err.message.includes('No workspace or service found') ||
-                err.message.includes('Cannot read properties of undefined')
-            ) {
-                return false;
-            }
-            return true;
-        });
+        setupCommonExceptionHandlers();
         cy.viewport(1280, 720);
 
         // Clear localStorage before each test

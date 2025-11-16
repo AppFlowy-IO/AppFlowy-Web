@@ -1,23 +1,21 @@
 import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, ModalSelectors, SidebarSelectors, waitForReactUpdate } from '../../support/selectors';
 
 describe('Page Create and Delete Tests', () => {
-    const APPFLOWY_BASE_URL = Cypress.env('APPFLOWY_BASE_URL');
-    const APPFLOWY_GOTRUE_BASE_URL = Cypress.env('APPFLOWY_GOTRUE_BASE_URL');
+    const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
     const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
     let testEmail: string;
     let testPageName: string;
 
     before(() => {
-        // Log environment configuration for debugging
-        cy.task('log', `Test Environment Configuration:
-          - APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}
-          - APPFLOWY_GOTRUE_BASE_URL: ${APPFLOWY_GOTRUE_BASE_URL}`);
+        logTestEnvironment();
     });
 
     beforeEach(() => {
+        setupCommonExceptionHandlers();
         // Generate unique test data for each test
         testEmail = generateRandomEmail();
         testPageName = 'e2e test-create page';
@@ -25,34 +23,22 @@ describe('Page Create and Delete Tests', () => {
 
     describe('Page Management Tests', () => {
         it('should login, create a page, reload and verify page exists, delete page, reload and verify page is gone', () => {
-            // Handle uncaught exceptions during workspace creation
-            cy.on('uncaught:exception', (err: Error) => {
-                if (err.message.includes('No workspace or service found')) {
-                    return false;
-                }
-                return true;
-            });
+            // Step 1: Login using centralized login command
+            cy.loginTestUser().then((email) => {
+                testEmail = email;
 
-            // Step 1: Login
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.wait(2000);
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
-                cy.url().should('include', '/app');
-                
                 // Wait for the app to fully load
                 cy.task('log', 'Waiting for app to fully load...');
-                
+
                 // Wait for the loading screen to disappear and main app to appear
                 cy.get('body', { timeout: 30000 }).should('not.contain', 'Welcome!');
-                
+
                 // Wait for the sidebar to be visible (indicates app is loaded)
                 SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-                
+
                 // Wait for at least one page to exist in the sidebar
                 PageSelectors.names().should('exist', { timeout: 30000 });
-                
+
                 // Additional wait for stability
                 cy.wait(2000);
                 

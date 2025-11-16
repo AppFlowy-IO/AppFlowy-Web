@@ -1,5 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import {
   AddPageSelectors,
   DatabaseGridSelectors,
@@ -11,36 +9,29 @@ import {
   byTestId,
   waitForReactUpdate
 } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 
 describe('Single Select Column Type', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const SINGLE_SELECT_FIELD_TYPE = 3; // From FieldType enum
 
-  beforeEach(() => {
-    cy.on('uncaught:exception', (err) => {
-      if (err.message.includes('Minified React error') ||
-        err.message.includes('View not found') ||
-        err.message.includes('No workspace or service found')) {
-        return false;
-      }
-      return true;
-    });
+  before(() => {
+    logTestEnvironment();
+  });
 
+  beforeEach(() => {
+    setupCommonExceptionHandlers();
     cy.viewport(1280, 720);
   });
 
   it('should create and edit basic grid cells', () => {
-    const testEmail = generateRandomEmail();
-    cy.log(`[TEST START] Third test - Test email: ${testEmail}`);
+    let testEmail: string;
+    cy.log(`[TEST START] Third test`);
 
-    cy.log('[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    cy.log('[STEP 2] Starting authentication');
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.log('[STEP 3] Authentication successful');
+    cy.log('[STEP 1] Starting authentication');
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
+      cy.log('[STEP 2] Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(5000); // Increased wait for CI environment
       
@@ -121,18 +112,13 @@ describe('Single Select Column Type', () => {
   });
 
   it('should convert SingleSelect to RichText and back preserving options', () => {
-    const testEmail = generateRandomEmail();
-    cy.log(`[TEST START] Testing field type conversion - Test email: ${testEmail}`);
+    let testEmail: string;
+    cy.log('[TEST START] Testing field type conversion');
 
-    cy.log('[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    cy.log('[STEP 2] Starting authentication');
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.log('[STEP 3] Authentication successful');
-      cy.url({ timeout: 30000 }).should('include', '/app');
+    cy.log('[STEP 1] Logging in');
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
+      cy.log('[STEP 2] Authentication successful');
       cy.wait(5000); // Increased wait for CI environment
       
       // Ensure we're on the right page before proceeding

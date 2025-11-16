@@ -1,24 +1,23 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate } from '../../support/selectors';
+import { TestConfig, logTestEnvironment } from '../../support/test-config';
+import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 
 describe('Text Formatting - Selection and Formatting', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
+  before(() => {
+    logTestEnvironment();
+  });
 
   beforeEach(() => {
-    cy.on('uncaught:exception', () => false);
+    setupCommonExceptionHandlers();
     cy.viewport(1280, 720);
   });
 
   it('should apply all formatting styles to text', () => {
-    const testEmail = generateRandomEmail();
+    let testEmail: string;
 
     // Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.loginTestUser().then((email) => {
+      testEmail = email;
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
