@@ -61,7 +61,8 @@ export function useWorkspaceData() {
           }
         } catch (error) {
           console.error('Failed to load shareWithMe data:', error);
-          // Continue with original outline if shareWithMe fails
+          // In self-hosted environments the sharing API may be disabled or unconfigured.
+          // Treat failures here as non-fatal and continue with the main workspace outline.
         }
 
         stableOutlineRef.current = outlineWithShareWithMe;
