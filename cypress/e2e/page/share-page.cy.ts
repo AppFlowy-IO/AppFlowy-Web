@@ -3,7 +3,7 @@ import { setupCommonExceptionHandlers } from '../../support/exception-handlers';
 import { v4 as uuidv4 } from 'uuid';
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { PageSelectors, WorkspaceSelectors, waitForReactUpdate } from '../../support/selectors';
+import { PageSelectors, WorkspaceSelectors, ShareSelectors, waitForReactUpdate } from '../../support/selectors';
 
 describe('Share Page Test', () => {
     const { apiUrl, gotrueUrl } = TestConfig;
@@ -57,31 +57,31 @@ describe('Share Page Test', () => {
 
                 // 5. Open share dialog
                 cy.task('log', 'Opening share dialog');
-                cy.get('[data-testid="share-button"]').first().click({ force: true });
+                ShareSelectors.shareButton().click();
                 waitForReactUpdate(500);
 
                 // 6. Input user B's email
                 cy.task('log', `Inviting ${userBEmail} to the page`);
-                cy.get('[data-testid="share-input"]').type(userBEmail);
+                ShareSelectors.shareInput().type(userBEmail);
                 waitForReactUpdate(500);
 
                 // 7. Select permission level
-                cy.get('[data-testid="permission-dropdown"]').click();
-                cy.get('[data-testid="permission-can-edit"]').click();
+                ShareSelectors.permissionDropdown().click();
+                ShareSelectors.permissionCanEdit().click();
                 waitForReactUpdate(500);
 
                 // 8. Click invite button
-                cy.get('[data-testid="share-invite-button"]').click();
+                ShareSelectors.shareInviteButton().click();
                 cy.wait(2000); // Wait for invitation to be sent
 
                 // 9. Verify user B appears in the share list
                 cy.task('log', 'Verifying user B appears in share list');
-                cy.get('[data-testid="share-member-list"]').should('contain', userBEmail);
+                ShareSelectors.shareMemberList().should('contain', userBEmail);
 
                 // 10. Sign out as user A
                 cy.task('log', 'Signing out as user A');
                 WorkspaceSelectors.dropdownTrigger().click();
-                cy.get('[data-testid="logout-button"]').click();
+                ShareSelectors.logoutButton().click();
                 cy.wait(2000);
 
                 // 11. Sign in as user B
@@ -98,7 +98,7 @@ describe('Share Page Test', () => {
 
                     // 13. Look for the shared page in the sidebar
                     cy.task('log', 'Looking for shared page');
-                    cy.get('[data-testid="shared-with-me-section"]').click();
+                    ShareSelectors.sharedWithMeSection().click();
                     cy.wait(1000);
                     cy.contains(pageTitle).should('exist');
                     cy.task('log', 'Shared page found');
@@ -106,7 +106,7 @@ describe('Share Page Test', () => {
                     // 14. Sign out as user B
                     cy.task('log', 'Signing out as user B');
                     WorkspaceSelectors.dropdownTrigger().click();
-                    cy.get('[data-testid="logout-button"]').click();
+                    ShareSelectors.logoutButton().click();
                     cy.wait(2000);
 
                     // 15. Sign back in as user A
@@ -127,20 +127,20 @@ describe('Share Page Test', () => {
 
                         // 18. Open share dialog again
                         cy.task('log', 'Opening share dialog to remove user B');
-                        cy.get('[data-testid="share-button"]').click();
+                        ShareSelectors.shareButton().click();
                         waitForReactUpdate(500);
 
                         // 19. Remove user B's access
                         cy.task('log', 'Removing user B access');
-                        cy.get(`[data-testid="remove-member-${userBEmail}"]`).click();
+                        ShareSelectors.removeMemberButton(userBEmail).click();
                         cy.wait(2000);
 
                         // 20. Verify user B is removed from the share list
                         cy.task('log', 'Verifying user B is removed from share list');
-                        cy.get('[data-testid="share-member-list"]').should('not.contain', userBEmail);
+                        ShareSelectors.shareMemberList().should('not.contain', userBEmail);
 
                         // 21. Close the share dialog
-                        cy.get('[data-testid="share-dialog-close"]').click();
+                        ShareSelectors.shareDialogClose().click();
                         cy.task('log', 'Test completed successfully');
                     });
                 });

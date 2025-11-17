@@ -160,6 +160,33 @@ export const ShareSelectors = {
 
   // Visit Site button
   visitSiteButton: () => cy.get(byTestId('visit-site-button')),
+
+  // Share input field
+  shareInput: () => cy.get(byTestId('share-input')),
+
+  // Permission dropdown
+  permissionDropdown: () => cy.get(byTestId('permission-dropdown')),
+
+  // Permission options
+  permissionCanEdit: () => cy.get(byTestId('permission-can-edit')),
+
+  // Share invite button
+  shareInviteButton: () => cy.get(byTestId('share-invite-button')),
+
+  // Share member list
+  shareMemberList: () => cy.get(byTestId('share-member-list')),
+
+  // Share dialog close button
+  shareDialogClose: () => cy.get(byTestId('share-dialog-close')),
+
+  // Remove member button (dynamic)
+  removeMemberButton: (email: string) => cy.get(byTestId(`remove-member-${email}`)),
+
+  // Shared with me section
+  sharedWithMeSection: () => cy.get(byTestId('shared-with-me-section')),
+
+  // Logout button
+  logoutButton: () => cy.get(byTestId('logout-button')),
 };
 
 /**
