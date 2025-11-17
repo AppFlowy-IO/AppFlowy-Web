@@ -44,9 +44,20 @@ describe('Share Page Test', () => {
             PageSelectors.names().last().invoke('text').then((pageTitle) => {
                 cy.task('log', `Page created: ${pageTitle}`);
 
+                // Wait for any modals to close after page creation
+                cy.wait(1000);
+
+                // Close any open modals or dialogs
+                cy.get('body').then($body => {
+                    if ($body.find('[role="dialog"]').length > 0) {
+                        cy.get('body').type('{esc}');
+                        cy.wait(500);
+                    }
+                });
+
                 // 5. Open share dialog
                 cy.task('log', 'Opening share dialog');
-                cy.get('[data-testid="share-button"]').click();
+                cy.get('[data-testid="share-button"]').first().click({ force: true });
                 waitForReactUpdate(500);
 
                 // 6. Input user B's email

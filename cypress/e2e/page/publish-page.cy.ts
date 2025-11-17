@@ -45,12 +45,12 @@ describe('Publish Page Test', () => {
 
             // 6. Click Publish tab
             cy.task('log', 'Clicking Publish tab');
-            ShareSelectors.publishTab().click();
+            ShareSelectors.publishTabButton().click();
             cy.wait(1000);
 
             // 7. Publish the page
             cy.task('log', 'Publishing the page');
-            ShareSelectors.publishButton().click();
+            ShareSelectors.publishConfirmButton().click();
             cy.wait(3000); // Wait for publish action to complete
 
             // 8. Copy the publish URL

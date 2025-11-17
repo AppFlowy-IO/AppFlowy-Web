@@ -152,7 +152,29 @@ export class TestTool {
     }
     
     // Additional custom methods used in tests
-    
+
+    /**
+     * Edits the page title
+     * Used in publish-page.cy.ts and other tests
+     */
+    static editPageTitle(title: string) {
+        cy.task('log', `Editing page title to: ${title}`);
+        PageSelectors.titleInput()
+            .clear()
+            .type(title);
+        cy.wait(500); // Wait for title to be saved
+    }
+
+    /**
+     * Adds a paragraph to the current page
+     * Used in publish-page.cy.ts and other tests
+     */
+    static addParagraph(content: string) {
+        cy.task('log', `Adding paragraph: ${content}`);
+        cy.get('[role="textbox"]').first().type(content);
+        cy.wait(500); // Wait for content to be saved
+    }
+
     /**
      * Verifies that a page exists in the sidebar
      * Used in create-delete-page.cy.ts
@@ -163,7 +185,7 @@ export class TestTool {
             .should('exist')
             .should('be.visible');
     }
-    
+
     /**
      * Verifies that a page does not exist in the sidebar
      * Used in create-delete-page.cy.ts

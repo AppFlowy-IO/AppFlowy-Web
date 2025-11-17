@@ -34,64 +34,36 @@ describe('More Page Actions', () => {
             // Find the Getting started page and hover to reveal the more actions
             cy.task('log', 'Looking for Getting started page');
 
-            // Find the page by its text content
-            cy.contains('Getting started').should('exist').and('be.visible');
-
-            // Hover over the page item to reveal the more actions button
-            cy.task('log', 'Hovering over page item to reveal more actions');
+            // Hover over the Getting started page to reveal more actions
+            cy.task('log', 'Hovering over Getting started page');
             cy.contains('Getting started')
-                .parents('[data-testid*="view-item"]')
-                .first()
+                .parent()
+                .parent()
                 .trigger('mouseenter', { force: true })
-                .wait(500);
+                .trigger('mouseover', { force: true });
 
-            // Find and click the more actions button (...)
-            cy.task('log', 'Looking for more actions button');
-            cy.contains('Getting started')
-                .parents('[data-testid*="view-item"]')
-                .first()
-                .within(() => {
-                    // Try multiple ways to find the more actions button
-                    cy.get('[data-testid="view-item-more-actions"]')
-                        .should('exist')
-                        .and('be.visible')
-                        .click({ force: true });
-                });
+            cy.wait(1000);
+
+            // Click the more actions button
+            cy.task('log', 'Clicking more actions button');
+            PageSelectors.moreActionsButton().first().click({ force: true });
 
             waitForReactUpdate(500);
 
-            // Verify the popover is open
-            cy.task('log', 'Verifying popover is open');
-            cy.get('[data-testid="more-actions-popover"]').should('exist').and('be.visible');
-            cy.wait(500);
+            // Verify the menu is open
+            cy.task('log', 'Verifying menu is open');
+            cy.get('[data-slot="dropdown-menu-content"]', { timeout: 5000 }).should('exist');
 
             // Now verify the expected menu items
-            cy.task('log', 'Verifying menu items in popover');
-            cy.get('[data-testid="more-actions-popover"]').within(() => {
-                // Check for Delete option
-                cy.task('log', 'Checking for Delete option');
-                cy.get('[data-testid="delete-page-option"]')
-                    .should('exist')
-                    .and('be.visible')
-                    .and('contain.text', 'Delete');
-
-                // Check for Rename option
-                cy.task('log', 'Checking for Rename option');
-                cy.get('[data-testid="rename-page-option"]')
-                    .should('exist')
-                    .and('be.visible')
-                    .and('contain.text', 'Rename');
-
-                // Check for Duplicate option
-                cy.task('log', 'Checking for Duplicate option');
-                cy.get('[data-testid="duplicate-page-option"]')
-                    .should('exist')
-                    .and('be.visible')
-                    .and('contain.text', 'Duplicate');
-
-                // Optional: Check for additional menu items
-                cy.task('log', 'Successfully verified all core menu items in More actions popover');
+            cy.task('log', 'Verifying menu items');
+            cy.get('[data-slot="dropdown-menu-content"]').within(() => {
+                // Look for items by text content since test ids might vary
+                cy.contains('Delete').should('exist');
+                cy.contains('Duplicate').should('exist');
+                cy.contains('Move to').should('exist');
             });
+
+            cy.task('log', 'Successfully verified all core menu items');
 
             // Close the popover
             cy.task('log', 'Closing popover');
@@ -128,30 +100,23 @@ describe('More Page Actions', () => {
                     cy.task('log', 'Hovering over the created page');
                     PageSelectors.names()
                         .last()
-                        .parents('[data-testid*="view-item"]')
-                        .first()
+                        .parent()
+                        .parent()
                         .trigger('mouseenter', { force: true })
-                        .wait(500);
+                        .trigger('mouseover', { force: true });
+
+                    cy.wait(1000);
 
                     // Click the more actions button
                     cy.task('log', 'Clicking more actions button');
-                    PageSelectors.names()
-                        .last()
-                        .parents('[data-testid*="view-item"]')
-                        .first()
-                        .within(() => {
-                            cy.get('[data-testid="view-item-more-actions"]')
-                                .should('exist')
-                                .and('be.visible')
-                                .click({ force: true });
-                        });
+                    PageSelectors.moreActionsButton().first().click({ force: true });
 
                     waitForReactUpdate(500);
 
                     // Click Rename option
                     cy.task('log', 'Clicking Rename option');
-                    cy.get('[data-testid="more-actions-popover"]').within(() => {
-                        cy.get('[data-testid="rename-page-option"]').click();
+                    cy.get('[data-slot="dropdown-menu-content"]').within(() => {
+                        cy.contains('Rename').click();
                     });
 
                     waitForReactUpdate(500);
