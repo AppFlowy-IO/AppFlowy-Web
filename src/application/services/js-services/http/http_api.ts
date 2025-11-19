@@ -1041,7 +1041,7 @@ export async function deleteCollabVersion(workspaceId: string, objectId: string,
 export async function revertCollabVersion(workspaceId: string, objectId: string, collabType: Types, version: string) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/revert`;
   const response = await axiosInstance?.post<{
-    data : {
+    data: {
       state_vector: number[],
       doc_state: number[],
       collab_version: string | null,
@@ -1977,7 +1977,7 @@ export async function uploadFile(
     });
 
     if (response?.data.code === 0) {
-    Log.debug('[UploadFile] completed', { url });
+      Log.debug('[UploadFile] completed', { url });
       return getAppFlowyFileUrl(workspaceId, viewId, response?.data.data.file_id);
     }
 

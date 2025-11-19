@@ -57,10 +57,10 @@ export function useViewOperations() {
   // Register workspace database document for sync
   const registerWorkspaceDatabaseDoc = useCallback(
     async (workspaceId: string, databaseStorageId: string) => {
-      const doc = await openCollabDB(databaseStorageId);
+      const { doc, version } = await openCollabDB(databaseStorageId);
 
       doc.guid = databaseStorageId;
-      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase });
+      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase, version });
 
       workspaceDatabaseDocMapRef.current.clear();
       workspaceDatabaseDocMapRef.current.set(workspaceId, workspaceDatabaseDoc);

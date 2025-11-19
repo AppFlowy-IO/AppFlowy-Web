@@ -51,6 +51,7 @@ import {
   UploadPublishNamespacePayload,
   User,
   UserWorkspaceInfo,
+  VersionedDoc,
   View,
   ViewIconType,
   Workspace,
@@ -122,7 +123,7 @@ export interface WorkspaceService {
 }
 
 export interface AppService {
-  getPageDoc: (workspaceId: string, viewId: string, errorCallback?: (error: { code: number }) => void) => Promise<YDoc>;
+  getPageDoc: (workspaceId: string, viewId: string, errorCallback?: (error: { code: number }) => void) => Promise<VersionedDoc>;
   createRowDoc: (rowKey: string) => Promise<YDoc>;
   deleteRowDoc: (rowKey: string) => void;
   getAppDatabaseViewRelations: (workspaceId: string, databaseStorageId: string) => Promise<DatabaseRelations>;

@@ -28,6 +28,7 @@ export interface RegisterSyncContext {
   doc: YDoc;
   awareness?: awarenessProtocol.Awareness;
   collabType: Types;
+  version: string | null;
   emit?: (reply: messages.IMessage) => void;
 }
 

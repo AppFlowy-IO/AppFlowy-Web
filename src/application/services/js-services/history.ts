@@ -1,4 +1,3 @@
-
 import { getCollabVersions } from '@/application/services/js-services/http/http_api';
 
 interface DeleteItem {

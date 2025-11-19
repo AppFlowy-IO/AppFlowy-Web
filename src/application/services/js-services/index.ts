@@ -91,7 +91,7 @@ export class AFClientService implements AFService {
     throw new Error('Not implemented');
   }
 
-  deleteRowDoc(rowKey: string){
+  deleteRowDoc(rowKey: string) {
     throw new Error('Not implemented');
   }
 
@@ -202,7 +202,7 @@ export class AFClientService implements AFService {
   }
 
   async getPublishRowDocument(viewId: string) {
-    const doc = await openCollabDB(viewId);
+    const { doc } = await openCollabDB(viewId);
 
     if (hasCollabCache(doc)) {
       return doc;
@@ -628,7 +628,7 @@ export class AFClientService implements AFService {
       this.viewLoaded.add(name);
     }
 
-    return doc;
+    return { doc, version };
   }
 
   async getInvitation(invitationId: string) {

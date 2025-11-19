@@ -194,7 +194,7 @@ export async function getPublishView<
 ) {
   const name = `${namespace}_${publishName}`;
 
-  const doc = await openCollabDB(name);
+  const { doc } = await openCollabDB(name);
 
   const exist = (await hasViewMetaCache(name)) && hasCollabCache(doc);
   let didRevalidate = false;
@@ -251,7 +251,7 @@ export async function getPageDoc<
     rows?: Record<RowId, number[]>;
   }
 >(fetcher: Fetcher<T>, name: string, strategy: StrategyType = StrategyType.CACHE_AND_NETWORK) {
-  const doc = await openCollabDB(name);
+  const { doc, version } = await openCollabDB(name);
 
   const exist = hasCollabCache(doc);
   let didRevalidate = false;
@@ -399,7 +399,7 @@ export async function revalidatePublishView<
 
   if (subDocuments) {
     for (const [key, value] of Object.entries(subDocuments)) {
-      const doc = await openCollabDB(key);
+      const { doc } = await openCollabDB(key);
 
       applyYDoc(doc, new Uint8Array(value));
     }
@@ -658,23 +658,23 @@ export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
   const whenSynced = provider.synced
     ? Promise.resolve()
     : new Promise<void>((resolve) => {
-        provider.on('synced', () => {
-          const syncedSharedRoot = doc.getMap(YjsEditorKey.data_section);
-          const hasDocAfterSync = syncedSharedRoot.has(YjsEditorKey.document);
-          const textAfterSync = getDocTextSummary(doc);
+      provider.on('synced', () => {
+        const syncedSharedRoot = doc.getMap(YjsEditorKey.data_section);
+        const hasDocAfterSync = syncedSharedRoot.has(YjsEditorKey.document);
+        const textAfterSync = getDocTextSummary(doc);
 
-          Log.debug('[RowSubDoc] IndexedDB synced', {
-            documentId,
-            durationMs: Date.now() - startedAt,
-            hasDocumentAfterSync: hasDocAfterSync,
-            hadDocumentBeforeSync: hasDocument,
-            textBefore: textBeforeSync,
-            textAfter: textAfterSync,
-          });
-
-          resolve();
+        Log.debug('[RowSubDoc] IndexedDB synced', {
+          documentId,
+          durationMs: Date.now() - startedAt,
+          hasDocumentAfterSync: hasDocAfterSync,
+          hadDocumentBeforeSync: hasDocument,
+          textBefore: textBeforeSync,
+          textAfter: textAfterSync,
         });
+
+        resolve();
       });
+    });
 
   const entry = { doc, whenSynced };
 

@@ -127,6 +127,20 @@ export interface OpenCollabOptions {
   currentUser?: string;
 }
 
+export interface OpenCollabOptions {
+  /**
+   * Define what version collab should have when loaded from IndexedDB.
+   * If the persisted version is different, it will be removed as outdated.
+   */
+  expectedVersion?: string;
+  /**
+   * Define current user UID. If provided that value will be written into
+   * the document data itself and used in the future for associating Yjs document
+   * changes with specific users.
+   */
+  currentUser?: string;
+}
+
 /**
  * Open the collaboration database, and return a function to close it
  */
@@ -163,7 +177,7 @@ export async function openCollabDB(name: string, options: OpenCollabOptions = {}
 
 export async function openCollabDBWithProvider(
   name: string,
-  options?: { awaitSync?: boolean }
+  options?: { awaitSync?: boolean, expectedVersion?: string }
 ): Promise<{ doc: YDoc; provider: IndexeddbPersistence }> {
   const startedAt = Date.now();
 
@@ -175,7 +189,8 @@ export async function openCollabDBWithProvider(
 
   const doc = new Y.Doc({
     guid: name,
-  });
+  }) as YDoc;
+  doc.version = options?.expectedVersion;
 
   await ensureYjsStores(name);
 
@@ -184,12 +199,20 @@ export async function openCollabDBWithProvider(
     ensureDurationMs: Date.now() - startedAt,
   });
 
-  const provider = new IndexeddbPersistence(name, doc);
+  let provider = new IndexeddbPersistence(name, doc);
+  let version = await provider.get(name + '/version');
 
   let resolve: (value: unknown) => void;
   const promise = new Promise((resolveFn) => {
     resolve = resolveFn;
   });
+
+  if (options?.expectedVersion && version !== options.expectedVersion) {
+    // version was provided and it differs from the one we persisted
+    await provider.clearData();
+    provider = new IndexeddbPersistence(name, doc);
+    await provider.set(name + '/version', options.expectedVersion);
+  }
 
   provider.on('synced', () => {
     Log.debug('[DB] openCollabDBWithProvider synced', {
@@ -201,8 +224,6 @@ export async function openCollabDBWithProvider(
     if (!openedSet.has(name)) {
       openedSet.add(name);
     }
-
-    resolve(true);
   });
 
   if (options?.awaitSync !== false) {
