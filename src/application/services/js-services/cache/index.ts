@@ -194,7 +194,7 @@ export async function getPublishView<
 ) {
   const name = `${namespace}_${publishName}`;
 
-  const doc = await openCollabDB(name);
+  const { doc } = await openCollabDB(name);
 
   const exist = (await hasViewMetaCache(name)) && hasCollabCache(doc);
   let didRevalidate = false;
@@ -251,7 +251,7 @@ export async function getPageDoc<
     rows?: Record<RowId, number[]>;
   }
 >(fetcher: Fetcher<T>, name: string, strategy: StrategyType = StrategyType.CACHE_AND_NETWORK) {
-  const doc = await openCollabDB(name);
+  const { doc, version } = await openCollabDB(name);
 
   const exist = hasCollabCache(doc);
   let didRevalidate = false;
@@ -295,7 +295,7 @@ export async function getPageDoc<
     });
   }
 
-  return { doc };
+  return { doc, version };
 }
 
 async function updateRows(collab: YDoc, rows: Record<RowId, number[]>) {
@@ -399,7 +399,7 @@ export async function revalidatePublishView<
 
   if (subDocuments) {
     for (const [key, value] of Object.entries(subDocuments)) {
-      const doc = await openCollabDB(key);
+      const { doc } = await openCollabDB(key);
 
       applyYDoc(doc, new Uint8Array(value));
     }
@@ -481,23 +481,23 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   const whenSynced = provider.synced
     ? Promise.resolve()
     : new Promise<void>((resolve) => {
-        provider.on('synced', () => {
-          if (rowSyncLogCount < ROW_SYNC_LOG_LIMIT) {
-            rowSyncLogCount += 1;
-            const rowSharedRoot = doc.getMap(YjsEditorKey.data_section);
-            const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
+      provider.on('synced', () => {
+        if (rowSyncLogCount < ROW_SYNC_LOG_LIMIT) {
+          rowSyncLogCount += 1;
+          const rowSharedRoot = doc.getMap(YjsEditorKey.data_section);
+          const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
 
-            Log.debug('[Database] row doc IndexedDB synced', {
-              rowKey,
-              durationMs: Date.now() - startedAt,
-              hasRowDataAfterSync: hasRowData,
-              hadRowDataBeforeSync: initialHasRowData,
-            });
-          }
+          Log.debug('[Database] row doc IndexedDB synced', {
+            rowKey,
+            durationMs: Date.now() - startedAt,
+            hasRowDataAfterSync: hasRowData,
+            hadRowDataBeforeSync: initialHasRowData,
+          });
+        }
 
-          resolve();
-        });
+        resolve();
       });
+    });
   const entry = { doc, whenSynced };
 
   rowDocs.set(rowKey, entry);

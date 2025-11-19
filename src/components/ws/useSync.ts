@@ -1,18 +1,24 @@
 import EventEmitter from 'events';
 
+import { deleteDB } from 'lib0/indexeddb';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { validate as uuidValidate } from 'uuid';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
-import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
+import { openCollabDB } from '@/application/db';
+import * as http from '@/application/services/js-services/http/http_api';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
-import { Types } from '@/application/types';
+import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
+import { Types, User } from '@/application/types';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
-import { messages } from '@/proto/messages';
+import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
+
+import ICollabMessage = collab.ICollabMessage;
 
 export interface RegisterSyncContext {
   /**
@@ -22,6 +28,7 @@ export interface RegisterSyncContext {
   doc: Y.Doc;
   awareness?: awarenessProtocol.Awareness;
   collabType: Types;
+  version: string | null;
   emit?: (reply: messages.IMessage) => void;
 }
 
@@ -55,7 +62,18 @@ export type SyncContextType = {
    * @returns Promise that resolves when all syncs are complete
    */
   syncAllToServer: (workspaceId: string) => Promise<void>;
+  revertCollabVersion: (viewId: string, versionId: string) => Promise<void>;
 };
+
+const versionChanged = (context: SyncContext, message: collab.ICollabMessage): boolean => {
+  const version = message.update?.version || message.syncRequest?.version || null;
+
+  if (version && uuidValidate(version)) {
+    return version !== context.version;
+  } else {
+    return false;
+  }
+}
 
 export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eventEmitter?: EventEmitter): SyncContextType => {
   const { sendMessage, lastMessage } = ws;
@@ -105,6 +123,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
     setLastUpdatedCollab({ objectId, publishedAt, collabType: bcCollabMessage.collabType as Types });
   }, [bcCollabMessage]);
+  const currentUser = useCurrentUser();
 
   // Handle workspace notifications from WebSocket
   // This handles notifications received directly from the server via WebSocket connection.
@@ -270,12 +289,19 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
         registeredContexts.current.delete(context.doc.guid);
       });
 
+      if (context.collabType === Types.Document && currentUser) {
+        const userMappings = new Y.PermanentUserData(context.doc);
+
+        userMappings.setUserMapping(context.doc, context.doc.clientID, currentUser.uid);
+        syncContext.userMappings = userMappings;
+      }
+
       // Initialize the sync process for the new context
       initSync(syncContext);
 
       return syncContext;
     },
-    [registeredContexts, sendMessage, postMessage]
+    [currentUser, sendMessage, postMessage]
   );
 
   /**
@@ -347,5 +373,105 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     }
   }, [flushAllSync]);
 
-  return { registerSyncContext, lastUpdatedCollab, flushAllSync, syncAllToServer };
+  useEffect(() => {
+    const message = lastMessage?.collabMessage;
+    let stop = false;
+
+    const applyMessage = async (message: ICollabMessage, user?: User) => {
+      const objectId = message.objectId!;
+      let context = registeredContexts.current.get(objectId);
+
+      if (context) {
+        // if version has changed, we need to reset document state
+        if (versionChanged(context, message)) {
+          const newVersion = message.update?.version || message.syncRequest?.version || undefined;
+
+          Log.debug('Collab version changed:', objectId, context.version, newVersion);
+          context.doc.emit('reset', [context, newVersion])
+          context.doc.destroy();
+
+          if (stop) {
+            return;
+          }
+
+          // remove stale persisted data for older version and reinitialize it
+          await deleteDB(context.doc.guid);
+          const { doc } = await openCollabDB(context.doc.guid, { expectedVersion: newVersion, currentUser: user?.uid });
+          const awareness = new awarenessProtocol.Awareness(doc);
+
+          context = registerSyncContext({
+            doc: awareness.doc,
+            awareness,
+            collabType: context.collabType,
+            version: newVersion || null,
+          });
+        }
+
+        handleMessage(context, message);
+      }
+
+      const updateTimestamp = message.update?.messageId?.timestamp;
+      const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
+
+      Log.debug('Received collab message:', message.collabType, publishedAt, message);
+
+      setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
+    };
+
+    if (message) {
+      applyMessage(message, currentUser).catch(console.error);
+    }
+
+    return () => {
+      stop = true;
+    };
+  }, [lastMessage, registeredContexts, setLastUpdatedCollab, registerSyncContext, currentUser]);
+
+  useEffect(() => {
+    const message = lastBroadcastMessage?.collabMessage;
+
+    if (message) {
+      const objectId = message.objectId!;
+      const context = registeredContexts.current.get(objectId);
+
+      if (context) {
+        handleMessage(context, message);
+      }
+
+      const updateTimestamp = message.update?.messageId?.timestamp;
+      const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
+
+      Log.debug('Received broadcasted collab message:', message.collabType, publishedAt, message);
+
+      setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
+    }
+  }, [lastBroadcastMessage, registeredContexts, setLastUpdatedCollab]);
+
+  const revertCollabVersion = useCallback(async (viewId: string, version: string) => {
+    await deleteDB(viewId);
+
+    const context = registeredContexts.current.get(viewId);
+
+    if (currentUser && context) {
+      const { docState } = await http.revertCollabVersion(currentUser.latestWorkspaceId, viewId, context.collabType, version);
+
+      Log.debug('Collab version changed:', viewId, context.version, version);
+      context.doc.emit('reset', [context, version])
+      context.doc.destroy();
+
+      const { doc } = await openCollabDB(context.doc.guid, { expectedVersion: version, currentUser: currentUser.uid });
+
+      Y.applyUpdate(doc, docState);
+      const awareness = new awarenessProtocol.Awareness(doc);
+
+      registerSyncContext({
+        doc: awareness.doc,
+        awareness,
+        collabType: context.collabType,
+        version,
+      });
+    }
+  }, [registeredContexts, currentUser, registerSyncContext]);
+
+  return { registerSyncContext, lastUpdatedCollab, revertCollabVersion, flushAllSync, syncAllToServer };
 };

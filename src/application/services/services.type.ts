@@ -1,5 +1,6 @@
 import { AxiosInstance } from 'axios';
 
+import { CollabVersionRecord, EncodedCollab } from '@/application/collab-version.type';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { ViewMeta } from '@/application/db/tables/view_metas';
 import {
@@ -42,6 +43,7 @@ import {
   SubscriptionInterval,
   SubscriptionPlan,
   Subscriptions,
+  Types,
   UpdatePagePayload,
   UpdatePublishConfigPayload,
   UpdateSpacePayload,
@@ -49,6 +51,7 @@ import {
   UploadPublishNamespacePayload,
   User,
   UserWorkspaceInfo,
+  VersionedDoc,
   View,
   ViewIconType,
   Workspace,
@@ -62,7 +65,8 @@ export type AFService = PublishService &
   WorkspaceService &
   TemplateService &
   QuickNoteService &
-  AIChatService & {
+  AIChatService &
+  CollabHistoryService & {
     getClientId: () => number;
     getDeviceId: () => string;
     getAxiosInstance: () => AxiosInstance | null;
@@ -119,9 +123,9 @@ export interface WorkspaceService {
 }
 
 export interface AppService {
-  getPageDoc: (workspaceId: string, viewId: string, errorCallback?: (error: { code: number }) => void) => Promise<YDoc>;
-  createRow: (rowKey: string) => Promise<YDoc>;
-  deleteRow: (rowKey: string) => void;
+  getPageDoc: (workspaceId: string, viewId: string, errorCallback?: (error: { code: number }) => void) => Promise<VersionedDoc>;
+  createRowDoc: (rowKey: string) => Promise<YDoc>;
+  deleteRowDoc: (rowKey: string) => void;
   getAppDatabaseViewRelations: (workspaceId: string, databaseStorageId: string) => Promise<DatabaseRelations>;
   getAppOutline: (workspaceId: string) => Promise<AppOutlineResponse>;
   getAppView: (workspaceId: string, viewId: string) => Promise<View>;
@@ -285,4 +289,11 @@ export interface PublishService {
 
 export interface AIChatService {
   getChatMessages: (workspaceId: string, chatId: string, limit?: number | undefined) => Promise<RepeatedChatMessage>;
+}
+
+export interface CollabHistoryService {
+  getCollabHistory: (workspaceId: string, viewId: string, since?: Date) => Promise<CollabVersionRecord[]>;
+  createCollabVersion: (workspaceId: string, viewId: string, name: string, snapshot: Uint8Array) => Promise<string>;
+  deleteCollabVersion: (workspaceId: string, viewId: string, versionId: string) => Promise<void>;
+  revertCollabVersion: (workspaceId: string, viewId: string, collabType: Types, versionId: string) => Promise<EncodedCollab>;
 }
