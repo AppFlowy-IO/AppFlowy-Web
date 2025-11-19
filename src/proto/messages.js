@@ -3440,6 +3440,353 @@ export const collab = $root.collab = (() => {
         return CollabBatchSyncResponse;
     })();
 
+    /**
+     * PayloadCompressionType enum.
+     * @name collab.PayloadCompressionType
+     * @enum {number}
+     * @property {number} NONE=0 NONE value
+     * @property {number} ZSTD=1 ZSTD value
+     */
+    collab.PayloadCompressionType = (function () {
+        const valuesById = {}, values = Object.create(valuesById);
+        values[valuesById[0] = "NONE"] = 0;
+        values[valuesById[1] = "ZSTD"] = 1;
+        return values;
+    })();
+
+    collab.CollabDocStateParams = (function () {
+
+        /**
+         * Properties of a CollabDocStateParams.
+         * @memberof collab
+         * @interface ICollabDocStateParams
+         * @property {string|null} [objectId] CollabDocStateParams objectId
+         * @property {number|null} [collabType] CollabDocStateParams collabType
+         * @property {collab.PayloadCompressionType|null} [compression] CollabDocStateParams compression
+         * @property {Uint8Array|null} [sv] CollabDocStateParams sv
+         * @property {Uint8Array|null} [docState] CollabDocStateParams docState
+         */
+
+        /**
+         * Constructs a new CollabDocStateParams.
+         * @memberof collab
+         * @classdesc Represents a CollabDocStateParams.
+         * @implements ICollabDocStateParams
+         * @constructor
+         * @param {collab.ICollabDocStateParams=} [properties] Properties to set
+         */
+        function CollabDocStateParams(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabDocStateParams objectId.
+         * @member {string} objectId
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.objectId = "";
+
+        /**
+         * CollabDocStateParams collabType.
+         * @member {number} collabType
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.collabType = 0;
+
+        /**
+         * CollabDocStateParams compression.
+         * @member {collab.PayloadCompressionType} compression
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.compression = 0;
+
+        /**
+         * CollabDocStateParams sv.
+         * @member {Uint8Array} sv
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.sv = $util.newBuffer([]);
+
+        /**
+         * CollabDocStateParams docState.
+         * @member {Uint8Array} docState
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.docState = $util.newBuffer([]);
+
+        /**
+         * Creates a new CollabDocStateParams instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams=} [properties] Properties to set
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams instance
+         */
+        CollabDocStateParams.create = function create(properties) {
+            return new CollabDocStateParams(properties);
+        };
+
+        /**
+         * Encodes the specified CollabDocStateParams message. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams} message CollabDocStateParams message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabDocStateParams.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.objectId != null && Object.hasOwnProperty.call(message, "objectId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.objectId);
+            if (message.collabType != null && Object.hasOwnProperty.call(message, "collabType"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.collabType);
+            if (message.compression != null && Object.hasOwnProperty.call(message, "compression"))
+                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.compression);
+            if (message.sv != null && Object.hasOwnProperty.call(message, "sv"))
+                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.sv);
+            if (message.docState != null && Object.hasOwnProperty.call(message, "docState"))
+                writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.docState);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabDocStateParams message, length delimited. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams} message CollabDocStateParams message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabDocStateParams.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabDocStateParams message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabDocStateParams.decode = function decode(reader, length) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabDocStateParams();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                switch (tag >>> 3) {
+                    case 1: {
+                        message.objectId = reader.string();
+                        break;
+                    }
+                    case 2: {
+                        message.collabType = reader.int32();
+                        break;
+                    }
+                    case 3: {
+                        message.compression = reader.int32();
+                        break;
+                    }
+                    case 4: {
+                        message.sv = reader.bytes();
+                        break;
+                    }
+                    case 5: {
+                        message.docState = reader.bytes();
+                        break;
+                    }
+                    default:
+                        reader.skipType(tag & 7);
+                        break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabDocStateParams message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabDocStateParams.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabDocStateParams message.
+         * @function verify
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabDocStateParams.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                if (!$util.isString(message.objectId))
+                    return "objectId: string expected";
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                if (!$util.isInteger(message.collabType))
+                    return "collabType: integer expected";
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                switch (message.compression) {
+                    default:
+                        return "compression: enum value expected";
+                    case 0:
+                    case 1:
+                        break;
+                }
+            if (message.sv != null && message.hasOwnProperty("sv"))
+                if (!(message.sv && typeof message.sv.length === "number" || $util.isString(message.sv)))
+                    return "sv: buffer expected";
+            if (message.docState != null && message.hasOwnProperty("docState"))
+                if (!(message.docState && typeof message.docState.length === "number" || $util.isString(message.docState)))
+                    return "docState: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a CollabDocStateParams message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         */
+        CollabDocStateParams.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabDocStateParams)
+                return object;
+            let message = new $root.collab.CollabDocStateParams();
+            if (object.objectId != null)
+                message.objectId = String(object.objectId);
+            if (object.collabType != null)
+                message.collabType = object.collabType | 0;
+            switch (object.compression) {
+                default:
+                    if (typeof object.compression === "number") {
+                        message.compression = object.compression;
+                        break;
+                    }
+                    break;
+                case "NONE":
+                case 0:
+                    message.compression = 0;
+                    break;
+                case "ZSTD":
+                case 1:
+                    message.compression = 1;
+                    break;
+            }
+            if (object.sv != null)
+                if (typeof object.sv === "string")
+                    $util.base64.decode(object.sv, message.sv = $util.newBuffer($util.base64.length(object.sv)), 0);
+                else if (object.sv.length >= 0)
+                    message.sv = object.sv;
+            if (object.docState != null)
+                if (typeof object.docState === "string")
+                    $util.base64.decode(object.docState, message.docState = $util.newBuffer($util.base64.length(object.docState)), 0);
+                else if (object.docState.length >= 0)
+                    message.docState = object.docState;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabDocStateParams message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.CollabDocStateParams} message CollabDocStateParams
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabDocStateParams.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.objectId = "";
+                object.collabType = 0;
+                object.compression = options.enums === String ? "NONE" : 0;
+                if (options.bytes === String)
+                    object.sv = "";
+                else {
+                    object.sv = [];
+                    if (options.bytes !== Array)
+                        object.sv = $util.newBuffer(object.sv);
+                }
+                if (options.bytes === String)
+                    object.docState = "";
+                else {
+                    object.docState = [];
+                    if (options.bytes !== Array)
+                        object.docState = $util.newBuffer(object.docState);
+                }
+            }
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                object.objectId = message.objectId;
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                object.collabType = message.collabType;
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                object.compression = options.enums === String ? $root.collab.PayloadCompressionType[message.compression] === undefined ? message.compression : $root.collab.PayloadCompressionType[message.compression] : message.compression;
+            if (message.sv != null && message.hasOwnProperty("sv"))
+                object.sv = options.bytes === String ? $util.base64.encode(message.sv, 0, message.sv.length) : options.bytes === Array ? Array.prototype.slice.call(message.sv) : message.sv;
+            if (message.docState != null && message.hasOwnProperty("docState"))
+                object.docState = options.bytes === String ? $util.base64.encode(message.docState, 0, message.docState.length) : options.bytes === Array ? Array.prototype.slice.call(message.docState) : message.docState;
+            return object;
+        };
+
+        /**
+         * Converts this CollabDocStateParams to JSON.
+         * @function toJSON
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabDocStateParams.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabDocStateParams
+         * @function getTypeUrl
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabDocStateParams.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabDocStateParams";
+        };
+
+        return CollabDocStateParams;
+    })();
+
     return collab;
 })();
 
