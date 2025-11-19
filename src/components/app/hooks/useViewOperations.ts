@@ -39,10 +39,10 @@ export function useViewOperations() {
   // Register workspace database document for sync
   const registerWorkspaceDatabaseDoc = useCallback(
     async (workspaceId: string, databaseStorageId: string) => {
-      const doc = await openCollabDB(databaseStorageId);
+      const { doc, version } = await openCollabDB(databaseStorageId);
 
       doc.guid = databaseStorageId;
-      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase });
+      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase, version });
 
       workspaceDatabaseDocMapRef.current.clear();
       workspaceDatabaseDocMapRef.current.set(workspaceId, workspaceDatabaseDoc);
@@ -233,10 +233,9 @@ export function useViewOperations() {
           throw new Error('Service or workspace not found');
         }
 
-        const workspaceId = currentWorkspaceId;
-        const res = await service?.getPageDoc(workspaceId, id);
+        let { doc, version } = await service.getPageDoc(currentWorkspaceId, id);
 
-        if (!res) {
+        if (!doc) {
           throw new Error('View not found');
         }
 
@@ -275,7 +274,7 @@ export function useViewOperations() {
           console.warn('[useViewOperations] View not found in outline, checking Yjs document', { viewId: id });
 
           // Check if the document has a database section (database views)
-          const sharedRoot = res.getMap(YjsEditorKey.data_section) as YSharedRoot;
+          const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
           const hasDatabase = sharedRoot?.has(YjsEditorKey.database);
           const hasDocument = sharedRoot?.has(YjsEditorKey.document);
 
@@ -306,12 +305,13 @@ export function useViewOperations() {
                 return prev;
               }
 
-              awareness = new Awareness(res);
+              awareness = new Awareness(doc);
               return { ...prev, [id]: awareness };
             });
           }
 
-          const { doc } = registerSyncContext({ doc: res, collabType, awareness });
+          const ctx = registerSyncContext({ doc, collabType, awareness, version });
+          doc = ctx.doc;
 
           // Set the view ID on the doc for React state tracking
           doc.object_id = id;
@@ -321,7 +321,7 @@ export function useViewOperations() {
         let databaseId = await getDatabaseId(id);
 
         if (!databaseId) {
-          const sharedRoot = res.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+          const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
           const database = sharedRoot?.get(YjsEditorKey.database);
           const fallbackDatabaseId = database?.get(YjsDatabaseKey.id);
 
@@ -339,15 +339,9 @@ export function useViewOperations() {
           throw new Error('Database not found');
         }
 
-        const resolvedDatabaseId = databaseId;
-
-        res.guid = resolvedDatabaseId;
-        const { doc } = registerSyncContext({ doc: res, collabType });
-
-        // Set the view ID on the doc for React state tracking
+        doc.guid = databaseId;
         doc.object_id = id;
-
-        return doc;
+        return registerSyncContext({ doc: doc, collabType, version }).doc;
       } catch (e) {
         return Promise.reject(e);
       }
@@ -385,6 +379,7 @@ export function useViewOperations() {
         const syncContext = registerSyncContext({
           doc,
           collabType: Types.DatabaseRow,
+          version: null, // atm. versions are not used for database rows
         });
 
         createdRowKeys.current.push(rowKey);
