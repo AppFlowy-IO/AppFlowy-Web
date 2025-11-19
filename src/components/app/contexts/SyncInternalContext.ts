@@ -3,21 +3,18 @@ import EventEmitter from 'events';
 import { createContext, useContext } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
-import { YDoc, Types } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
-import { UpdateCollabInfo } from '@/components/ws/useSync';
+import { RegisterSyncContext, UpdateCollabInfo } from '@/components/ws/useSync';
 
 // Internal context for synchronization layer
 // This context is only used within the app provider layers
 export interface SyncInternalContextType {
   webSocket: AppflowyWebSocketType; // WebSocket connection from useAppflowyWebSocket
   broadcastChannel: BroadcastChannelType; // BroadcastChannel from useBroadcastChannel
-  registerSyncContext: (params: {
-    doc: YDoc;
-    collabType: Types;
-    awareness?: Awareness;
-  }) => { doc: YDoc };
+  registerSyncContext: (params: RegisterSyncContext) => SyncContext;
+  revertCollabVersion: (viewId: string, version: string) => void;
   eventEmitter: EventEmitter;
   awarenessMap: Record<string, Awareness>;
   lastUpdatedCollab: UpdateCollabInfo | null;
