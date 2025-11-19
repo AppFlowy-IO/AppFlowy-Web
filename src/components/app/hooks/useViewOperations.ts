@@ -11,10 +11,10 @@ import {
   ViewId,
   ViewLayout,
   YDoc,
-  YjsEditorKey,
+  YjsEditorKey
 } from '@/application/types';
-import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import { getDatabaseIdFromDoc, openView } from '@/application/view-loader';
+import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
@@ -57,10 +57,10 @@ export function useViewOperations() {
   // Register workspace database document for sync
   const registerWorkspaceDatabaseDoc = useCallback(
     async (workspaceId: string, databaseStorageId: string) => {
-      const doc = await openCollabDB(databaseStorageId);
+      const { doc, version } = await openCollabDB(databaseStorageId);
 
       doc.guid = databaseStorageId;
-      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase });
+      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase, version });
 
       workspaceDatabaseDocMapRef.current.clear();
       workspaceDatabaseDocMapRef.current.set(workspaceId, workspaceDatabaseDoc);
@@ -316,7 +316,7 @@ export function useViewOperations() {
             throw new Error('Database not found');
           }
 
-          doc.guid = databaseId;
+          doc.guid = id;
         }
 
         // Store metadata on doc for deferred sync binding
@@ -393,7 +393,7 @@ export function useViewOperations() {
         hasAwareness: !!awareness,
       });
 
-      const syncContext = registerSyncContext({ doc, collabType, awareness });
+      const syncContext = registerSyncContext({ doc, collabType, awareness, version });
 
       docWithMeta._syncBound = true;
 
@@ -437,6 +437,7 @@ export function useViewOperations() {
         const syncContext = registerSyncContext({
           doc,
           collabType: Types.DatabaseRow,
+          version: null, // atm. versions are not used for database rows
         });
 
         createdRowKeys.current.push(rowKey);

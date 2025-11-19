@@ -1093,6 +1093,11 @@ export interface View {
   access_level?: AccessLevel;
 }
 
+export interface VersionedDoc {
+  doc: Y.Doc;
+  version: string | null;
+}
+
 export interface UpdatePublishConfigPayload {
   comments_enabled?: boolean;
   duplicate_enabled?: boolean;

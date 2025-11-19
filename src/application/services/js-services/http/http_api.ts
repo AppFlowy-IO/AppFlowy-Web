@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import dayjs from 'dayjs';
+import { fromBase64, toBase64 } from 'lib0/buffer';
 import { omit } from 'lodash-es';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
@@ -959,6 +960,97 @@ export async function databaseBlobDiff(
   const bytes = new Uint8Array(response.data);
 
   return database_blob.DatabaseBlobDiffResponse.decode(bytes);
+}
+
+export async function getCollabVersions(workspaceId: string, objectId: string, since: Date | undefined) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
+  const from = since?.getTime() || null;
+  const response = await axiosInstance?.get<{
+    code: number;
+    data: {
+      version: string,
+      parent: string | null,
+      name: string | null,
+      created_at: string,
+      created_by: number | null,
+      snapshot: string, // base64
+    }[];
+    message: string;
+  }>(url, {
+    params: {
+      since: from
+    }
+  });
+
+  if (!response) {
+    return Promise.reject('No response');
+  }
+
+  return response.data.data.map((data) => {
+    return {
+      versionId: data.version,
+      parentId: data.parent,
+      name: data.name,
+      createdAt: new Date(data.created_at),
+      snapshot: fromBase64(data.snapshot),
+    };
+  });
+}
+
+export async function createCollabVersion(workspaceId: string, objectId: string, name: string, ySnapshot: Uint8Array) {
+  const snapshot = toBase64(ySnapshot);
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
+  const response = await axiosInstance?.post<{
+    code: number;
+    message: string;
+    data: string;
+  }>(url, {
+    snapshot, name
+  });
+
+  if (!response) {
+    return Promise.reject('No response');
+  }
+
+  return response.data.data;
+}
+
+export async function deleteCollabVersion(workspaceId: string, objectId: string, version: string) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
+  const response = await axiosInstance?.delete(url, { data: version });
+
+  if (!response) {
+    return Promise.reject('No response');
+  } else {
+    return;
+  }
+}
+
+export async function revertCollabVersion(workspaceId: string, objectId: string, collabType: Types, version: string) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/revert`;
+  const response = await axiosInstance?.post<{
+    state_vector: number[],
+    doc_state: number[],
+    collab_version: string | null,
+    version: number, // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
+  }>(url, {
+    data: {
+      version,
+      collabType
+    }
+  });
+
+  if (!response) {
+    return Promise.reject('No response');
+  } else {
+    const data = response.data;
+
+    return {
+      stateVector: new Uint8Array(data.state_vector),
+      docState: new Uint8Array(data.doc_state),
+      version: data.collab_version,
+    };
+  }
 }
 
 export async function getPublishView(publishNamespace: string, publishName: string) {

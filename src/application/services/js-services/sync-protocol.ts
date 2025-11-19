@@ -16,6 +16,8 @@ export interface SyncContext {
   awareness?: awarenessProtocol.Awareness;
   collabType: Types;
   lastMessageId?: collab.IRid;
+  version: string | null;
+  userMappings?: Y.PermanentUserData;
   /**
    * Emit function to send messages back to the server.
    */
@@ -59,6 +61,7 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
       update: {
         flags: UpdateFlags.Lib0v1,
         payload: update,
+        version: ctx.version
       },
     },
   });
@@ -106,6 +109,7 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
         syncRequest: {
           stateVector: Y.encodeStateVector(doc),
           lastMessageId: ctx.lastMessageId || { timestamp: 0, counter: 0 },
+          version: ctx.version,
         },
       },
     });
@@ -149,6 +153,7 @@ export const initSync = (ctx: SyncContext) => {
         update: {
           flags: UpdateFlags.Lib0v1,
           payload: mergedUpdates,
+          version: ctx.version,
         },
       },
     });
@@ -168,7 +173,14 @@ export const initSync = (ctx: SyncContext) => {
     debounced();
   };
 
+  const onDestroy = () => {
+    // when switching versions, we destroy previous instance of the document
+    // at this point all stashed updates are no longer valid
+    updates.length = 0;
+  }
+
   doc.on('update', onUpdate);
+  doc.on('destroy', onDestroy);
 
   // emit initial sync request to the server
   emit({
@@ -178,6 +190,7 @@ export const initSync = (ctx: SyncContext) => {
       syncRequest: {
         stateVector: Y.encodeStateVector(ctx.doc),
         lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
+        version: ctx.version,
       },
     },
   });
