@@ -918,7 +918,11 @@ export interface View {
   publish_timestamp?: string;
   parent_view_id?: string;
   access_level?: AccessLevel;
-  
+}
+
+export interface VersionedDoc {
+  doc: Y.Doc;
+  version: string|null;
 }
 
 export interface UpdatePublishConfigPayload {
