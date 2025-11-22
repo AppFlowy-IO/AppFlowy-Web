@@ -45,6 +45,7 @@ function DatabaseViews({
   const viewContainerRef = useRef<HTMLDivElement | null>(null);
   const [lockedHeight, setLockedHeight] = useState<number | null>(fixedHeight ?? null);
   const lastScrollRef = useRef<number | null>(null);
+  const heightLockTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const value = useMemo(() => {
     return Math.max(
       0,
@@ -79,7 +80,6 @@ function DatabaseViews({
     };
 
     observerEvent();
-
     activeView.observe(observerEvent);
 
     return () => {
@@ -95,6 +95,12 @@ function DatabaseViews({
       logDebug('[DatabaseViews] captured scroll before view change', {
         scrollTop: lastScrollRef.current,
       });
+
+      // Clear any pending height lock timeout from previous transition
+      if (heightLockTimeoutRef.current) {
+        clearTimeout(heightLockTimeoutRef.current);
+        heightLockTimeoutRef.current = null;
+      }
 
       const currentHeight = viewContainerRef.current?.offsetHeight;
       const heightToLock = fixedHeight ?? currentHeight ?? null;
@@ -114,7 +120,14 @@ function DatabaseViews({
 
 
   const view = useMemo(() => {
-    if (isLoading) return null;
+    // IMPORTANT: Don't return null during loading to prevent unmounting
+    //
+    // Previously: `if (isLoading) return null;` caused the Grid to unmount
+    // Problem: This reset the virtualizer's parentOffsetRef from 955px → 0px
+    // Result: Scroll position jumped from 617px → 467px (150px jump)
+    //
+    // Solution: Keep components mounted but hide with opacity/visibility
+    // This preserves virtualizer state and prevents scroll jumps
     switch (layout) {
       case DatabaseViewLayout.Grid:
         return <Grid />;
@@ -122,8 +135,11 @@ function DatabaseViews({
         return <Board />;
       case DatabaseViewLayout.Calendar:
         return <Calendar />;
+      default:
+        // Return null only when layout is truly not set
+        return null;
     }
-  }, [layout, isLoading]);
+  }, [layout]);
 
   useEffect(() => {
     if (!isLoading && viewContainerRef.current) {
@@ -140,8 +156,7 @@ function DatabaseViews({
     }
   }, [isLoading, viewVisible, layout, viewId, iidIndex]);
 
-  // Scroll restoration with RAF enforcement
-  // Board's autoScrollForElements interferes with scroll, so we enforce for multiple frames
+  // Enhanced scroll restoration with better timing coordination
   useEffect(() => {
     if (isLoading) return;
     if (lastScrollRef.current === null) return;
@@ -155,61 +170,61 @@ function DatabaseViews({
 
     const targetScroll = lastScrollRef.current;
     let rafCount = 0;
-    let rafId: number;
+    const maxRAFs = 3; // Wait 3 animation frames (≈50ms at 60fps) for layout to settle
+    const rafIds: number[] = [];
 
-    // Temporarily prevent scroll events during restoration
-    const preventScroll = (e: Event) => {
-      if (scrollElement.scrollTop !== targetScroll) {
-        e.preventDefault();
-        scrollElement.scrollTop = targetScroll;
-      }
-    };
-
-    scrollElement.addEventListener('scroll', preventScroll, { passive: false });
-
-    // Use RAF loop to enforce scroll position
-    const enforceScroll = () => {
-      const currentScroll = scrollElement.scrollTop;
-      const delta = Math.abs(currentScroll - targetScroll);
-
-      if (delta > 0.5) {
-        scrollElement.scrollTop = targetScroll;
-        logDebug('[DatabaseViews] RAF restore scroll', {
-          frame: rafCount,
-          target: targetScroll,
-          current: currentScroll,
-          delta,
-        });
-      }
-
+    const restoreScroll = () => {
       rafCount++;
-      // Run for 5 frames (~80ms) to catch delayed scroll changes from Board mount
-      if (rafCount < 5) {
-        rafId = requestAnimationFrame(enforceScroll);
-      } else {
-        logDebug('[DatabaseViews] scroll restoration completed', {
-          final: scrollElement.scrollTop,
+
+      if (rafCount < maxRAFs) {
+        // Continue waiting for layout to stabilize
+        // Each RAF waits for the next browser paint (~16ms at 60fps)
+        const id = requestAnimationFrame(restoreScroll);
+        rafIds.push(id);
+        return;
+      }
+
+      // After layout has settled (3 RAFs), restore scroll position
+      // By this time:
+      // - New view component has rendered
+      // - Virtualizer has initialized and measured parentOffset
+      // - ResizeObserver has fired and stabilized
+      // - CSS transitions have started
+      if (Math.abs(scrollElement.scrollTop - targetScroll) > 1) {
+        scrollElement.scrollTop = targetScroll;
+        logDebug('[DatabaseViews] restored scroll position after layout settled', {
           target: targetScroll,
+          current: scrollElement.scrollTop,
+          rafCount,
         });
-        // Remove scroll listener and clean up
-        scrollElement.removeEventListener('scroll', preventScroll);
-        lastScrollRef.current = null;
-        setViewVisible(true);
-        // Release height lock to allow view to resize to its natural height
-        if (!fixedHeight) {
+      }
+
+      // Clean up and show view
+      lastScrollRef.current = null;
+      setViewVisible(true);
+
+      // Release height lock after a small delay to allow content to settle
+      if (!fixedHeight) {
+        heightLockTimeoutRef.current = setTimeout(() => {
           setLockedHeight(null);
-        }
+          heightLockTimeoutRef.current = null;
+        }, 100);
       }
     };
 
-    rafId = requestAnimationFrame(enforceScroll);
+    // Start the RAF chain
+    const firstId = requestAnimationFrame(restoreScroll);
+    rafIds.push(firstId);
 
     return () => {
-      if (rafId) {
-        cancelAnimationFrame(rafId);
-      }
+      // Cancel all pending RAFs on cleanup
+      rafIds.forEach(id => cancelAnimationFrame(id));
 
-      scrollElement.removeEventListener('scroll', preventScroll);
+      // Cancel pending height lock timeout to prevent stale releases
+      if (heightLockTimeoutRef.current) {
+        clearTimeout(heightLockTimeoutRef.current);
+        heightLockTimeoutRef.current = null;
+      }
     };
   }, [isLoading, viewId, fixedHeight]);
 
@@ -267,11 +282,14 @@ function DatabaseViews({
         >
           <div
             className='h-full w-full'
-            style={
-              effectiveHeight !== null
+            style={{
+              ...(effectiveHeight !== null
                 ? { height: `${effectiveHeight}px`, maxHeight: `${effectiveHeight}px` }
-                : {}
-            }
+                : {}),
+              opacity: viewVisible && !isLoading ? 1 : 0,
+              visibility: viewVisible && !isLoading ? 'visible' : 'hidden',
+              transition: 'opacity 150ms ease-in-out',
+            }}
           >
             <Suspense fallback={null}>
               <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>

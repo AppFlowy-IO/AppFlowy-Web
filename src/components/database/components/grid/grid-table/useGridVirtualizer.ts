@@ -20,10 +20,10 @@ const logDebug = (...args: Parameters<typeof console.debug>) => {
 export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[]; data: RenderRow[] }) {
   const { isDocumentBlock, paddingStart, paddingEnd } = useDatabaseContext();
   const parentRef = useRef<HTMLDivElement | null>(null);
-
-  const parentOffsetRef = useRef(0);
+  const parentOffsetRef = useRef<number | null>(null);
   const [parentOffset, setParentOffset] = useState(0);
   const rafIdRef = useRef<number>();
+  const isInitialMountRef = useRef(true);
 
   const getScrollElement = useCallback(() => {
     if (!parentRef.current) return null;
@@ -48,10 +48,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
       cancelAnimationFrame(rafIdRef.current);
     }
 
-    // Triple RAF to avoid transient measurements during layout thrash when views switch.
-    // First frame: Initial measurement (may be unstable)
-    // Second frame: Browser has processed initial layout
-    // Third frame: Layout is fully settled
+    // For embedded databases, measure offset more carefully
     const first = measureParentOffset();
 
     if (first === null) {
@@ -62,38 +59,78 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
       return;
     }
 
-    rafIdRef.current = requestAnimationFrame(() => {
-      rafIdRef.current = requestAnimationFrame(() => {
-        rafIdRef.current = requestAnimationFrame(() => {
-          const second = measureParentOffset();
-          const nextOffset = second ?? first;
-          const delta = Math.abs(nextOffset - parentOffsetRef.current);
+    // Use multiple RAFs during initial mount to ensure layout is stable
+    // This helps prevent scroll jumps during view transitions
+    const rafCount = isInitialMountRef.current ? 3 : 1;
+    let currentRaf = 0;
 
-          // Only update if change is significant (>1px) to avoid micro-adjustments
-          if (delta < 1) {
-            logDebug('[GridVirtualizer] parent offset stable (delta < 1px)', {
-              current: parentOffsetRef.current,
-              measured: nextOffset,
-              delta,
-            });
-            return;
-          }
+    const performUpdate = () => {
+      currentRaf++;
 
-          parentOffsetRef.current = nextOffset;
-          setParentOffset(nextOffset);
-          logDebug('[GridVirtualizer] parent offset updated', {
-            nextOffset,
-            previous: parentOffset,
-            delta,
-          });
+      if (currentRaf < rafCount) {
+        rafIdRef.current = requestAnimationFrame(performUpdate);
+        return;
+      }
+
+      const measured = measureParentOffset();
+      const nextOffset = measured ?? first;
+
+      // If this is the first measurement, always accept it without threshold check
+      // This prevents rejecting valid initial offsets (e.g., 955px) that would fail
+      // the delta check if we started from 0.
+      if (parentOffsetRef.current === null) {
+        parentOffsetRef.current = nextOffset;
+        setParentOffset(nextOffset);
+        logDebug('[GridVirtualizer] initial parent offset set', {
+          nextOffset,
+          isInitialMount: isInitialMountRef.current,
         });
+        isInitialMountRef.current = false;
+        return;
+      }
+
+      const delta = Math.abs(nextOffset - parentOffsetRef.current);
+
+      // Only update if change is significant (>10px for initial, >5px after)
+      // Increased threshold for embedded databases to prevent flashing
+      const threshold = isInitialMountRef.current ? 10 : 5;
+
+      if (delta < threshold) {
+        logDebug('[GridVirtualizer] parent offset stable', {
+          current: parentOffsetRef.current,
+          measured: nextOffset,
+          delta,
+          threshold,
+          isInitialMount: isInitialMountRef.current,
+        });
+        isInitialMountRef.current = false;
+        return;
+      }
+
+      parentOffsetRef.current = nextOffset;
+      setParentOffset(nextOffset);
+      logDebug('[GridVirtualizer] parent offset updated', {
+        nextOffset,
+        previous: parentOffset,
+        delta,
+        isInitialMount: isInitialMountRef.current,
       });
-    });
+      isInitialMountRef.current = false;
+    };
+
+    rafIdRef.current = requestAnimationFrame(performUpdate);
   }, [measureParentOffset, getScrollElement, parentOffset]);
 
   useLayoutEffect(() => {
+    // IMPORTANT: We don't reset isInitialMountRef here
+    //
+    // The Grid component now stays mounted during view switches (it's just hidden),
+    // so isInitialMountRef stays false after the first mount. This prevents the
+    // parentOffsetRef from being reset to null, which would cause scroll jumps.
+    //
+    // We watch data.length to detect when the view has changed and needs remeasurement.
     updateParentOffset();
-  }, [updateParentOffset]);
+  }, [updateParentOffset, data.length]); // Watch data.length for view changes
 
   const virtualizer = useVirtualizer({
     count: data.length,
