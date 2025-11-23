@@ -142,6 +142,7 @@ export function smartPaste(
     // Strategy 2: Merge single block inline
     if (shouldMergeInline(context, blocks.length)) {
       const firstBlock = blocks[0];
+
       // Only merge if types match or pasting paragraph
       if (firstBlock.type === BlockType.Paragraph || firstBlock.type === context.blockType) {
         return inlineMergePaste(editor, firstBlock);
@@ -151,6 +152,7 @@ export function smartPaste(
     // Strategy 3: Merge first block and append rest
     if (shouldMergeAndAppend(context, blocks.length)) {
       const firstBlock = blocks[0];
+
       // Only merge if types match or pasting paragraph
       if (firstBlock.type === BlockType.Paragraph || firstBlock.type === context.blockType) {
         return mergeAndAppendPaste(editor, blocks);
