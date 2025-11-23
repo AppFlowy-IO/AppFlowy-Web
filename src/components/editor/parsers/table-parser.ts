@@ -2,7 +2,7 @@
 import { BlockData, BlockType } from '@/application/types';
 
 import { extractInlineFormatsFromHAST, extractTextFromHAST } from './inline-converters';
-import { extractFormats, extractText } from './markdown-parser';
+import { extractInlineFormatsFromMDAST, extractTextFromMDAST } from './mdast-utils';
 import { ParsedBlock } from './types';
 
 import type { Element as HastElement } from 'hast';
@@ -136,7 +136,7 @@ export function parseMarkdownTable(node: MdastTable): ParsedBlock | null {
 
     rowNode.children.forEach((cellNode: TableCell) => {
       // Extract text from cell
-      const text = extractText(cellNode);
+      const text = extractTextFromMDAST(cellNode);
 
       cells.push({
         type: BlockType.SimpleTableCellBlock,
@@ -148,7 +148,7 @@ export function parseMarkdownTable(node: MdastTable): ParsedBlock | null {
             type: BlockType.Paragraph,
             data: {},
             text,
-            formats: extractFormats(cellNode),
+            formats: extractInlineFormatsFromMDAST(cellNode),
             children: [],
           },
         ],
