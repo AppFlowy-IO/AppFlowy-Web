@@ -37,7 +37,8 @@ export function parseMarkdown(markdown: string, options: MarkdownParseOptions = 
 
   // Pre-process: Replace • with - to support bullet character as list marker
   // We consume following whitespace (including newlines) to ensure text is on the same line
-  const normalizedMarkdown = markdown.replace(/^[ \t]*•\s*/gm, '- ');
+  // Support various bullet characters: • (Bullet), ◦ (White Bullet), ▪ (Black Small Square), ⁃ (Hyphen Bullet), – (En Dash), — (Em Dash)
+  const normalizedMarkdown = markdown.replace(/^[ \t]*[•◦▪⁃–—]\s*/gm, '- ');
 
   const {
     gfm = true,

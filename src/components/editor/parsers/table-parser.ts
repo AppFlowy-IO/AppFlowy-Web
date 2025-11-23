@@ -177,3 +177,59 @@ export function parseMarkdownTable(node: MdastTable): ParsedBlock | null {
   };
 }
 
+/**
+ * Parses TSV string into SimpleTable structure
+ * @param text TSV string
+ * @returns Parsed table block
+ */
+export function parseTSVTable(text: string): ParsedBlock | null {
+  const lines = text.split(/\r\n|\r|\n/).filter((line) => line.trim().length > 0);
+
+  if (lines.length === 0) return null;
+
+  const rows: ParsedBlock[] = [];
+
+  lines.forEach((line, rowIndex) => {
+    const cells: ParsedBlock[] = [];
+    const values = line.split('\t');
+
+    values.forEach((value) => {
+      cells.push({
+        type: BlockType.SimpleTableCellBlock,
+        data: { isHeader: rowIndex === 0 } as BlockData,
+        text: '',
+        formats: [],
+        children: [
+          {
+            type: BlockType.Paragraph,
+            data: {},
+            text: value.trim(),
+            formats: [],
+            children: [],
+          },
+        ],
+      });
+    });
+
+    if (cells.length > 0) {
+      rows.push({
+        type: BlockType.SimpleTableRowBlock,
+        data: {},
+        text: '',
+        formats: [],
+        children: cells,
+      });
+    }
+  });
+
+  if (rows.length === 0) return null;
+
+  return {
+    type: BlockType.SimpleTableBlock,
+    data: {},
+    text: '',
+    formats: [],
+    children: rows,
+  };
+}
+

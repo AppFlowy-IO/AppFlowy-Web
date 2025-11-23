@@ -15,7 +15,7 @@ export function detectMarkdown(text: string): boolean {
     /\*[^*]+\*/,        // Italic: *text*
     /_[^_]+_/,          // Italic alternative: _text_
     /~~[^~]+~~/,        // Strikethrough: ~~text~~
-    /^\s*[-*+•]\s+/m,    // Unordered list: - item or * item or • item
+    /^\s*[-*+•◦▪⁃–—]\s+/m,    // Unordered list: - item or * item or • item (and other bullets)
     /^\s*\d+\.\s+/m,    // Ordered list: 1. item
     /^\s*>\s+/m,        // Blockquote: > quote
     /^\s*```/m,         // Code block: ```
@@ -88,4 +88,25 @@ export function getMarkdownDensity(text: string): number {
  */
 export function isPlainText(text: string): boolean {
   return !detectMarkdown(text);
+}
+
+/**
+ * Detects if plain text is likely TSV (Tab Separated Values)
+ * @param text Plain text string
+ * @returns True if text is likely TSV
+ */
+export function detectTSV(text: string): boolean {
+  if (!text || text.trim().length === 0) return false;
+
+  const lines = text.split(/\r\n|\r|\n/).filter((line) => line.trim().length > 0);
+
+  // Must have at least 2 lines for a table (header + data)
+  if (lines.length < 2) return false;
+
+  // Count lines with tabs
+  const linesWithTabs = lines.filter((line) => line.includes('\t'));
+
+  // Should have consistent column count (roughly)
+  // But simple check: at least 75% of lines have tabs
+  return linesWithTabs.length >= lines.length * 0.75;
 }

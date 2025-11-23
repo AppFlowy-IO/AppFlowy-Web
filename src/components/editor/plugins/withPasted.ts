@@ -9,8 +9,9 @@ import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate
 import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, YjsEditorKey } from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
+import { parseTSVTable } from '@/components/editor/parsers/table-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
-import { detectMarkdown } from '@/components/editor/utils/markdown-detector';
+import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
 import { processUrl } from '@/utils/url';
 
 /**
@@ -111,8 +112,31 @@ function handlePlainTextPaste(editor: ReactEditor, text: string): boolean {
     return handleMarkdownPaste(editor, text);
   }
 
+  // Check for TSV
+  if (detectTSV(text)) {
+    return handleTSVPaste(editor, text);
+  }
+
   // Plain multi-line text: Create paragraphs
   return handleMultiLinePlainText(editor, lines);
+}
+
+/**
+ * Handles TSV paste
+ */
+function handleTSVPaste(editor: ReactEditor, tsv: string): boolean {
+  try {
+    const block = parseTSVTable(tsv);
+
+    if (!block) {
+      return false;
+    }
+
+    return insertParsedBlocks(editor, [block]);
+  } catch (error) {
+    console.error('Error handling TSV paste:', error);
+    return false;
+  }
 }
 
 /**
