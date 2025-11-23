@@ -29,7 +29,7 @@ describe('Paste Complex Content Tests', () => {
       cy.wait(2000);
 
       // Verify structural elements
-      cy.get('[contenteditable="true"]').find('.heading.level-1').scrollIntoView().should('contain', 'Project Documentation');
+      cy.get('[contenteditable="true"]').contains('.heading.level-1', 'Project Documentation').scrollIntoView();
       cy.get('[contenteditable="true"]').find('[data-block-type="bulleted_list"]').should('have.length.at.least', 3);
       cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'console.log');
       cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'Remember to test');
@@ -63,7 +63,7 @@ describe('Paste Complex Content Tests', () => {
 
       cy.wait(2000);
 
-      cy.get('[contenteditable="true"]').find('.heading.level-1').scrollIntoView().should('contain', 'My Project');
+      cy.get('[contenteditable="true"]').contains('.heading.level-1', 'My Project').scrollIntoView();
       cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'npm install');
       cy.get('[contenteditable="true"]').find('[data-block-type="todo_list"]').should('have.length.at.least', 3);
       cy.get('[contenteditable="true"]').find('[data-block-type="todo_list"]').filter(':has(.checked)').should('contain', 'Feature 1');
@@ -97,7 +97,7 @@ describe('Paste Complex Content Tests', () => {
       cy.wait(2000);
 
       // Verify content exists (markdown may or may not be parsed depending on implementation)
-      cy.get('[contenteditable="true"]').find('.heading.level-1').scrollIntoView().should('contain', 'Main Title');
+      cy.get('[contenteditable="true"]').contains('.heading.level-1', 'Main Title').scrollIntoView();
       cy.get('[contenteditable="true"]').find('strong').should('contain', 'bold');
       cy.get('[contenteditable="true"]').find('[data-block-type="bulleted_list"]').should('contain', 'List item 1');
       cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'const x = 10');
@@ -141,7 +141,7 @@ describe('Paste Complex Content Tests', () => {
 
       cy.get('body').then(() => {
         // Check that content is present
-        cy.get('[contenteditable="true"]').find('.heading.level-1').scrollIntoView().should('contain', 'Title');
+        cy.get('[contenteditable="true"]').contains('.heading.level-1', 'Title').scrollIntoView();
         cy.get('[contenteditable="true"]').find('div').contains('Paragraph').should('exist');
         cy.get('[contenteditable="true"]').find('[data-block-type="bulleted_list"]').should('contain', 'Item 1');
 

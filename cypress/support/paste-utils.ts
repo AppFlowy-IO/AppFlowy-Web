@@ -16,83 +16,102 @@ export const pasteContent = (html: string, plainText: string) => {
   // Wait for editors to be available
   cy.get('[contenteditable="true"]').should('have.length.at.least', 1);
 
-  // Find the main editor (not the title) and trigger paste
+  // Find the index of the main editor (not the title)
   cy.get('[contenteditable="true"]').then($editors => {
-    // Find the main content editor (not title)
-    let targetEditor: HTMLElement | null = null;
+    let targetIndex = -1;
 
-    $editors.each((_index: number, el: HTMLElement) => {
+    $editors.each((index: number, el: HTMLElement) => {
       const $el = Cypress.$(el);
       if (!$el.attr('data-testid')?.includes('title') && !$el.hasClass('editor-title')) {
-        targetEditor = el;
+        targetIndex = index;
         return false; // break
       }
     });
 
     // Fallback to last editor if no content editor found
-    if (!targetEditor && $editors.length > 0) {
-      targetEditor = $editors.last()[0];
+    if (targetIndex === -1 && $editors.length > 0) {
+      targetIndex = $editors.length - 1;
     }
 
-    if (!targetEditor) {
+    if (targetIndex === -1) {
       throw new Error('No editor found');
     }
 
-    // Click and focus the editor first
-    cy.wrap(targetEditor).click({ force: true }).focus();
+    // Click the editor to ensure it's active. Splitting this from the next block
+    // handles cases where click might trigger a re-render.
+    cy.get('[contenteditable="true"]').eq(targetIndex).click({ force: true });
 
-    // Access the Slate editor instance and call insertData directly
-    cy.window().then((win) => {
-      // Slate React stores editor reference on the DOM node
-      const editorKey = Object.keys(targetEditor!).find(key =>
-        key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-      );
+    // Re-query to get the fresh element for Slate instance extraction
+    cy.get('[contenteditable="true"]').eq(targetIndex).then(($el) => {
+      const targetEditor = $el[0];
 
-      if (editorKey) {
-        // Get React fiber node
-        const fiber = (targetEditor as any)[editorKey];
+      // Access the Slate editor instance and call insertData directly
+      cy.window().then((win) => {
+        // Slate React stores editor reference on the DOM node
+        const editorKey = Object.keys(targetEditor!).find(key =>
+          key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
+        );
 
-        // Traverse up to find Slate context with editor
-        let currentFiber = fiber;
-        let slateEditor = null;
+        if (editorKey) {
+          // Get React fiber node
+          const fiber = (targetEditor as any)[editorKey];
 
-        // We need to find the element that has the editor instance
-        // This is usually provided via context or props in the tree
-        // Try traversing up the fiber tree
-        let depth = 0;
-        while (currentFiber && !slateEditor && depth < 50) {
-          // Check pendingProps or memoizedProps for editor
-          if (currentFiber.memoizedProps && currentFiber.memoizedProps.editor) {
-            slateEditor = currentFiber.memoizedProps.editor;
-          } else if (currentFiber.stateNode && currentFiber.stateNode.editor) {
-            slateEditor = currentFiber.stateNode.editor;
+          // Traverse up to find Slate context with editor
+          let currentFiber = fiber;
+          let slateEditor = null;
+
+          // We need to find the element that has the editor instance
+          // This is usually provided via context or props in the tree
+          // Try traversing up the fiber tree
+          let depth = 0;
+          while (currentFiber && !slateEditor && depth < 50) {
+            // Check pendingProps or memoizedProps for editor
+            if (currentFiber.memoizedProps && currentFiber.memoizedProps.editor) {
+              slateEditor = currentFiber.memoizedProps.editor;
+            } else if (currentFiber.stateNode && currentFiber.stateNode.editor) {
+              slateEditor = currentFiber.stateNode.editor;
+            }
+
+            currentFiber = currentFiber.return;
+            depth++;
           }
 
-          currentFiber = currentFiber.return;
-          depth++;
-        }
+          if (slateEditor && typeof slateEditor.insertData === 'function') {
+            // Create DataTransfer object and call editor.insertData
+            const dataTransfer = new win.DataTransfer();
 
-        if (slateEditor && typeof slateEditor.insertData === 'function') {
-          // Create DataTransfer object and call editor.insertData
-          const dataTransfer = new win.DataTransfer();
+            if (html) {
+              dataTransfer.setData('text/html', html);
+            }
 
-          if (html) {
-            dataTransfer.setData('text/html', html);
+            if (plainText) {
+              dataTransfer.setData('text/plain', plainText);
+            } else if (!html) {
+              // Ensure empty string if both are empty (though unusual)
+              dataTransfer.setData('text/plain', '');
+            }
+
+            // Call insertData directly on the Slate editor
+            // This bypasses the React event system and goes straight to Slate's internal handler
+            slateEditor.insertData(dataTransfer);
+          } else {
+            // Fallback: use Cypress trigger if we can't find the Slate instance
+            // This is less reliable but better than failing outright
+            cy.wrap(targetEditor).trigger('paste', {
+              clipboardData: {
+                getData: (type: string) => {
+                  if (type === 'text/html') return html;
+                  if (type === 'text/plain') return plainText;
+                  return '';
+                },
+                types: ['text/html', 'text/plain']
+              },
+              bubbles: true,
+              cancelable: true
+            });
           }
-
-          if (plainText) {
-            dataTransfer.setData('text/plain', plainText);
-          } else if (!html) {
-            // Ensure empty string if both are empty (though unusual)
-            dataTransfer.setData('text/plain', '');
-          }
-
-          // Call insertData directly on the Slate editor
-          // This bypasses the React event system and goes straight to Slate's internal handler
-          slateEditor.insertData(dataTransfer);
         } else {
-          // Fallback: use Cypress trigger if we can't find the Slate instance
-          // This is less reliable but better than failing outright
+          // Fallback: use Cypress trigger
           cy.wrap(targetEditor).trigger('paste', {
             clipboardData: {
               getData: (type: string) => {
@@ -106,21 +125,7 @@ export const pasteContent = (html: string, plainText: string) => {
             cancelable: true
           });
         }
-      } else {
-        // Fallback: use Cypress trigger
-        cy.wrap(targetEditor).trigger('paste', {
-          clipboardData: {
-            getData: (type: string) => {
-              if (type === 'text/html') return html;
-              if (type === 'text/plain') return plainText;
-              return '';
-            },
-            types: ['text/html', 'text/plain']
-          },
-          bubbles: true,
-          cancelable: true
-        });
-      }
+      });
     });
   });
 
@@ -206,8 +211,16 @@ export const createTestPage = () => {
  * Verify content exists in the editor using DevTools
  */
 export const verifyEditorContent = (expectedContent: string) => {
-  cy.get('[contenteditable="true"]').then($editor => {
-    const editorHTML = $editor[0].innerHTML;
+  cy.get('[contenteditable="true"]').then($editors => {
+    // Find the main content editor (not the title)
+    let editorHTML = '';
+    $editors.each((_index: number, el: HTMLElement) => {
+      const $el = Cypress.$(el);
+      // Skip title editors
+      if (!$el.attr('data-testid')?.includes('title') && !$el.hasClass('editor-title')) {
+        editorHTML += el.innerHTML;
+      }
+    });
 
     testLog.info(`Editor HTML: ${editorHTML.substring(0, 200)}...`);
     expect(editorHTML).to.include(expectedContent);

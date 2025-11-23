@@ -1,13 +1,16 @@
-import { BasePoint, Transforms } from 'slate';
+import { BasePoint, Editor, Element, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 import isURL from 'validator/lib/isURL';
 
-import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData } from '@/application/types';
+import { YjsEditor } from '@/application/slate-yjs';
+import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
+import { getBlockEntry, getSharedRoot } from '@/application/slate-yjs/utils/editor';
+import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
+import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, YjsEditorKey } from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
+import { ParsedBlock } from '@/components/editor/parsers/types';
 import { detectMarkdown } from '@/components/editor/utils/markdown-detector';
-import { analyzePasteContext } from '@/components/editor/utils/paste-context';
-import { smartPaste } from '@/components/editor/utils/paste-merger';
 import { processUrl } from '@/utils/url';
 
 /**
@@ -64,13 +67,8 @@ function handleHTMLPaste(editor: ReactEditor, html: string, fallbackText?: strin
       return false;
     }
 
-    // Analyze paste context
-    const context = analyzePasteContext(editor);
-
-    if (!context) return false;
-
-    // Execute smart paste
-    return smartPaste(editor, blocks, context);
+    // Insert blocks through YJS
+    return insertParsedBlocks(editor, blocks);
   } catch (error) {
     console.error('Error handling HTML paste:', error);
     return false;
@@ -129,13 +127,8 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
       return false;
     }
 
-    // Analyze paste context
-    const context = analyzePasteContext(editor);
-
-    if (!context) return false;
-
-    // Execute smart paste
-    return smartPaste(editor, blocks, context);
+    // Insert blocks directly
+    return insertParsedBlocks(editor, blocks);
   } catch (error) {
     console.error('Error handling Markdown paste:', error);
     return false;
@@ -213,11 +206,7 @@ function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean
       children: [],
     }));
 
-  const context = analyzePasteContext(editor);
-
-  if (!context) return false;
-
-  return smartPaste(editor, blocks, context);
+  return insertParsedBlocks(editor, blocks);
 }
 
 /**
@@ -237,6 +226,139 @@ function insertBlock(editor: ReactEditor, block: unknown): boolean {
     return true;
   } catch (error) {
     console.error('Error inserting block:', error);
+    return false;
+  }
+}
+
+/**
+ * Converts ParsedBlock to Slate Element with proper text wrapper
+ */
+function parsedBlockToSlateElement(block: ParsedBlock): Element {
+  const { text, formats, type, data, children } = block;
+
+  // Convert text + formats to Slate text nodes
+  const textNodes = parsedBlockToTextNodes(block);
+
+  // Create children - text wrapper + any nested blocks
+  const slateChildren: (Element | Text)[] = [
+    { type: YjsEditorKey.text, children: textNodes } as Element,
+    ...children.map(parsedBlockToSlateElement),
+  ];
+
+  return {
+    type,
+    data,
+    children: slateChildren,
+  } as Element;
+}
+
+/**
+ * Converts ParsedBlock text to Slate text nodes with formats
+ */
+function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
+  const { text, formats } = block;
+
+  if (formats.length === 0) {
+    return [{ text }];
+  }
+
+  // Create segments based on format boundaries
+  const boundaries = new Set<number>([0, text.length]);
+
+  formats.forEach((format) => {
+    boundaries.add(format.start);
+    boundaries.add(format.end);
+  });
+
+  const positions = Array.from(boundaries).sort((a, b) => a - b);
+  const nodes: Text[] = [];
+
+  for (let i = 0; i < positions.length - 1; i++) {
+    const start = positions[i];
+    const end = positions[i + 1];
+    const segment = text.slice(start, end);
+
+    if (segment.length === 0) continue;
+
+    // Find all formats that apply to this segment
+    const activeFormats = formats.filter((format) => format.start <= start && format.end >= end);
+
+    // Build attributes object
+    const attributes: Record<string, unknown> = {};
+
+    activeFormats.forEach((format) => {
+      switch (format.type) {
+        case 'bold':
+          attributes.bold = true;
+          break;
+        case 'italic':
+          attributes.italic = true;
+          break;
+        case 'underline':
+          attributes.underline = true;
+          break;
+        case 'strikethrough':
+          attributes.strikethrough = true;
+          break;
+        case 'code':
+          attributes.code = true;
+          break;
+        case 'link':
+          attributes.href = format.data?.href;
+          break;
+        case 'color':
+          attributes.font_color = format.data?.color;
+          break;
+        case 'bgColor':
+          attributes.bg_color = format.data?.bgColor;
+          break;
+      }
+    });
+
+    nodes.push({ text: segment, ...attributes } as Text);
+  }
+
+  return nodes;
+}
+
+/**
+ * Inserts parsed blocks into the editor using YJS
+ */
+function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean {
+  if (blocks.length === 0) return false;
+
+  try {
+    const point = editor.selection?.anchor;
+
+    if (!point) return false;
+
+    const entry = getBlockEntry(editor as YjsEditor, point);
+
+    if (!entry) return false;
+
+    const [node] = entry;
+    const blockId = (node as { blockId?: string }).blockId;
+
+    if (!blockId) return false;
+
+    const sharedRoot = getSharedRoot(editor as YjsEditor);
+    const block = getBlock(blockId, sharedRoot);
+    const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
+    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
+    const index = parentChildren.toArray().findIndex((id) => id === blockId);
+    const doc = assertDocExists(sharedRoot);
+
+    // Convert parsed blocks to Slate elements with proper text wrapper
+    const slateNodes = blocks.map(parsedBlockToSlateElement);
+
+    // Insert into YJS document
+    doc.transact(() => {
+      slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error inserting parsed blocks:', error);
     return false;
   }
 }
