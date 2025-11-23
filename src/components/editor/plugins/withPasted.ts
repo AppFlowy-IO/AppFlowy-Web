@@ -1,4 +1,4 @@
-import { BasePoint, Editor, Element, Text, Transforms } from 'slate';
+import { BasePoint, Element, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 import isURL from 'validator/lib/isURL';
 
@@ -234,7 +234,7 @@ function insertBlock(editor: ReactEditor, block: unknown): boolean {
  * Converts ParsedBlock to Slate Element with proper text wrapper
  */
 function parsedBlockToSlateElement(block: ParsedBlock): Element {
-  const { text, formats, type, data, children } = block;
+  const { type, data, children } = block;
 
   // Convert text + formats to Slate text nodes
   const textNodes = parsedBlockToTextNodes(block);

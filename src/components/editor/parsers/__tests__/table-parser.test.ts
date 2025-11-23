@@ -176,9 +176,10 @@ describe('table-parser', () => {
       expect(block).not.toBeNull();
       // Check that formatting is preserved
       const firstCell = block?.children[0]?.children[0];
+      const firstCellContent = firstCell?.children[0]; // Paragraph inside the cell
 
-      expect(firstCell?.text).toBe('Text with bold');
-      expect(firstCell?.formats.some((f) => f.type === 'bold')).toBe(true);
+      expect(firstCellContent?.text).toBe('Text with bold');
+      expect(firstCellContent?.formats.some((f) => f.type === 'bold')).toBe(true);
     });
 
     it('should return null for non-table element', () => {
@@ -267,8 +268,8 @@ describe('table-parser', () => {
       const block = parseHTMLTable(node);
 
       expect(block).not.toBeNull();
-      expect(block?.children[0]?.children[0]?.text).toBe('');
-      expect(block?.children[0]?.children[1]?.text).toBe('Content');
+      expect(block?.children[0]?.children[0]?.children[0]?.text).toBe('');
+      expect(block?.children[0]?.children[1]?.children[0]?.text).toBe('Content');
     });
   });
 
@@ -404,11 +405,13 @@ describe('table-parser', () => {
       expect(block).not.toBeNull();
       const firstCell = block?.children[0]?.children[0];
       const secondCell = block?.children[0]?.children[1];
+      const firstCellContent = firstCell?.children[0]; // Paragraph inside the cell
+      const secondCellContent = secondCell?.children[0]; // Paragraph inside the cell
 
-      expect(firstCell?.text).toBe('Text with bold');
-      expect(firstCell?.formats.some((f) => f.type === 'bold')).toBe(true);
-      expect(secondCell?.text).toBe('Text with italic');
-      expect(secondCell?.formats.some((f) => f.type === 'italic')).toBe(true);
+      expect(firstCellContent?.text).toBe('Text with bold');
+      expect(firstCellContent?.formats.some((f) => f.type === 'bold')).toBe(true);
+      expect(secondCellContent?.text).toBe('Text with italic');
+      expect(secondCellContent?.formats.some((f) => f.type === 'italic')).toBe(true);
     });
 
     it('should handle empty table cells', () => {
@@ -434,8 +437,8 @@ describe('table-parser', () => {
 
       const block = parseMarkdownTable(node);
 
-      expect(block?.children[0]?.children[0]?.text).toBe('');
-      expect(block?.children[0]?.children[1]?.text).toBe('Content');
+      expect(block?.children[0]?.children[0]?.children[0]?.text).toBe('');
+      expect(block?.children[0]?.children[1]?.children[0]?.text).toBe('Content');
     });
 
     it('should handle table with single column', () => {

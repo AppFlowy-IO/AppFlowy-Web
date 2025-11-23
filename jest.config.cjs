@@ -1,6 +1,6 @@
 const { compilerOptions } = require('./tsconfig.json');
 const { pathsToModuleNameMapper } = require('ts-jest');
-const esModules = ['lodash-es', 'nanoid', 'unified', 'rehype-parse', 'remark-parse', 'remark-gfm', 'hast-.*', 'mdast-.*', 'unist-.*', 'vfile', 'bail', 'is-plain-obj', 'trough', 'micromark', 'decode-named-character-reference', 'character-entities'].join('|');
+const esModules = ['lodash-es', 'nanoid', 'unified', 'rehype-parse', 'remark-parse', 'remark-gfm', 'hast-.*', 'mdast-.*', 'unist-.*', 'vfile', 'bail', 'is-plain-obj', 'trough', 'micromark', 'decode-named-character-reference', 'character-entities', 'mdast-util-.*', 'micromark-.*', 'ccount', 'escape-string-regexp', 'markdown-table', 'devlop', 'zwitch', 'longest-streak', 'trim-lines'].join('|');
 
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
@@ -15,10 +15,17 @@ module.exports = {
     '^dayjs$': '<rootDir>/node_modules/dayjs/dayjs.min.js',
   },
   'transform': {
-    '^.+\\.(j|t)sx?$': 'ts-jest',
+    '^.+\\.(j|t)sx?$': ['ts-jest', {
+      tsconfig: {
+        esModuleInterop: true,
+        allowSyntheticDefaultImports: true,
+      },
+    }],
     '(.*)/node_modules/nanoid/.+\\.(j|t)sx?$': 'ts-jest',
   },
-  'transformIgnorePatterns': [`/node_modules/(?!${esModules})`],
+  'transformIgnorePatterns': [
+    `node_modules/(?!.pnpm|${esModules})`,
+  ],
   testMatch: ['**/*.test.ts', '**/*.test.tsx'],
   testPathIgnorePatterns: ['/node_modules/', '\\.integration\\.test\\.ts$'],
   coverageDirectory: '<rootDir>/coverage/jest',

@@ -224,12 +224,14 @@ code here
       `.trim();
       const blocks = parseMarkdown(markdown);
 
-      expect(blocks).toHaveLength(1);
+      // List items are returned as separate blocks (flattened)
+      expect(blocks).toHaveLength(3);
       expect(blocks[0].type).toBe(BlockType.BulletedListBlock);
-      expect(blocks[0].children).toHaveLength(3);
-      expect(blocks[0].children[0].text).toBe('Item 1');
-      expect(blocks[0].children[1].text).toBe('Item 2');
-      expect(blocks[0].children[2].text).toBe('Item 3');
+      expect(blocks[0].text).toBe('Item 1');
+      expect(blocks[1].type).toBe(BlockType.BulletedListBlock);
+      expect(blocks[1].text).toBe('Item 2');
+      expect(blocks[2].type).toBe(BlockType.BulletedListBlock);
+      expect(blocks[2].text).toBe('Item 3');
     });
 
     it('should parse unordered list with asterisk', () => {
@@ -239,8 +241,10 @@ code here
       `.trim();
       const blocks = parseMarkdown(markdown);
 
+      // List items are returned as separate blocks (flattened)
+      expect(blocks).toHaveLength(2);
       expect(blocks[0].type).toBe(BlockType.BulletedListBlock);
-      expect(blocks[0].children).toHaveLength(2);
+      expect(blocks[1].type).toBe(BlockType.BulletedListBlock);
     });
 
     it('should parse ordered list', () => {
@@ -251,10 +255,14 @@ code here
       `.trim();
       const blocks = parseMarkdown(markdown);
 
-      expect(blocks).toHaveLength(1);
+      // List items are returned as separate blocks (flattened)
+      expect(blocks).toHaveLength(3);
       expect(blocks[0].type).toBe(BlockType.NumberedListBlock);
-      expect(blocks[0].children).toHaveLength(3);
-      expect(blocks[0].children[0].text).toBe('First');
+      expect(blocks[0].text).toBe('First');
+      expect(blocks[1].type).toBe(BlockType.NumberedListBlock);
+      expect(blocks[1].text).toBe('Second');
+      expect(blocks[2].type).toBe(BlockType.NumberedListBlock);
+      expect(blocks[2].text).toBe('Third');
     });
 
     it('should parse task list (GFM)', () => {
@@ -264,11 +272,12 @@ code here
       `.trim();
       const blocks = parseMarkdown(markdown, { gfm: true });
 
-      expect(blocks[0].children).toHaveLength(2);
-      expect(blocks[0].children[0].type).toBe(BlockType.TodoListBlock);
-      expect(blocks[0].children[0].data).toEqual({ checked: true });
-      expect(blocks[0].children[1].type).toBe(BlockType.TodoListBlock);
-      expect(blocks[0].children[1].data).toEqual({ checked: false });
+      // List items are returned as separate blocks (flattened)
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0].type).toBe(BlockType.TodoListBlock);
+      expect(blocks[0].data).toEqual({ checked: true });
+      expect(blocks[1].type).toBe(BlockType.TodoListBlock);
+      expect(blocks[1].data).toEqual({ checked: false });
     });
 
     it('should parse table (GFM)', () => {
@@ -347,8 +356,11 @@ More content here.
       `.trim();
       const blocks = parseMarkdown(markdown);
 
+      // List items are returned as separate blocks (flattened)
+      expect(blocks).toHaveLength(3);
       expect(blocks[0].type).toBe(BlockType.BulletedListBlock);
-      expect(blocks[0].children).toHaveLength(3);
+      expect(blocks[1].type).toBe(BlockType.BulletedListBlock);
+      expect(blocks[2].type).toBe(BlockType.BulletedListBlock);
     });
 
     it('should disable GFM when option is false', () => {
@@ -376,9 +388,10 @@ More content here.
       `.trim();
       const blocks = parseMarkdown(markdown);
 
-      expect(blocks[0].children[0].formats.some((f) => f.type === 'bold')).toBe(true);
-      expect(blocks[0].children[1].formats.some((f) => f.type === 'italic')).toBe(true);
-      expect(blocks[0].children[2].formats.some((f) => f.type === 'code')).toBe(true);
+      // Each list item is a separate block
+      expect(blocks[0].formats.some((f) => f.type === 'bold')).toBe(true);
+      expect(blocks[1].formats.some((f) => f.type === 'italic')).toBe(true);
+      expect(blocks[2].formats.some((f) => f.type === 'code')).toBe(true);
     });
 
     it('should parse real-world GitHub markdown', () => {
