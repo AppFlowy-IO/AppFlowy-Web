@@ -8,8 +8,10 @@ import type { Element as HastElement, Text as HastText } from 'hast';
  */
 function parseInlineStyle(style: string): Record<string, string> {
   const styles: Record<string, string> = {};
+
   style.split(';').forEach((part) => {
     const [key, value] = part.split(':');
+
     if (key && value) {
       styles[key.trim().toLowerCase()] = value.trim().toLowerCase();
     }
@@ -55,12 +57,14 @@ export function extractInlineFormatsFromHAST(node: HastElement, baseOffset = 0):
 
       // Check inline styles for formatting
       const style = elem.properties?.style as string;
+
       if (style) {
         const styles = parseInlineStyle(style);
 
         // Font Weight (Bold)
         if (styles['font-weight']) {
           const weight = styles['font-weight'];
+
           if (weight === 'bold' || weight === 'bolder' || parseInt(weight) >= 700) {
             newFormats.add('bold');
           }
@@ -74,9 +78,11 @@ export function extractInlineFormatsFromHAST(node: HastElement, baseOffset = 0):
         // Text Decoration (Underline, Strikethrough)
         if (styles['text-decoration']) {
           const decoration = styles['text-decoration'];
+
           if (decoration.includes('underline')) {
             newFormats.add('underline');
           }
+
           if (decoration.includes('line-through')) {
             newFormats.add('strikethrough');
           }

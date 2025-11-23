@@ -52,6 +52,7 @@ function handleHTMLPaste(editor: ReactEditor, html: string, fallbackText?: strin
   try {
     // Parse HTML to structured blocks
     const blocks = parseHTML(html);
+
     console.log('[AppFlowy] Parsed HTML blocks:', JSON.stringify(blocks, null, 2));
 
     if (blocks.length === 0) {
