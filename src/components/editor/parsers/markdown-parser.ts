@@ -4,19 +4,17 @@ import { unified } from 'unified';
 
 import { BlockData, BlockType } from '@/application/types';
 
+import { extractInlineFormatsFromMDAST, extractTextFromMDAST } from './mdast-utils';
 import { parseMarkdownTable } from './table-parser';
-import { InlineFormat, MarkdownParseOptions, ParsedBlock } from './types';
+import { MarkdownParseOptions, ParsedBlock } from './types';
 
 import type {
   BlockContent,
   Code,
   Heading,
-  InlineCode,
-  Link,
   List,
   ListItem,
   Root as MdastRoot,
-  Text as MdastText,
   Paragraph,
 } from 'mdast';
 
@@ -108,8 +106,8 @@ function convertMarkdownNode(node: BlockContent): ParsedBlock | ParsedBlock[] | 
       return {
         type: BlockType.QuoteBlock,
         data: {},
-        text: extractText(node),
-        formats: extractFormats(node),
+        text: extractTextFromMDAST(node),
+        formats: extractInlineFormatsFromMDAST(node),
         children: [],
       };
 
@@ -137,8 +135,8 @@ function buildHeadingBlock(node: Heading): ParsedBlock {
   return {
     type: BlockType.HeadingBlock,
     data: { level: node.depth } as BlockData,
-    text: extractText(node),
-    formats: extractFormats(node),
+    text: extractTextFromMDAST(node),
+    formats: extractInlineFormatsFromMDAST(node),
     children: [],
   };
 }
@@ -147,7 +145,7 @@ function buildHeadingBlock(node: Heading): ParsedBlock {
  * Builds AppFlowy paragraph block from Markdown paragraph node
  */
 function buildParagraphBlock(node: Paragraph): ParsedBlock {
-  const text = extractText(node);
+  const text = extractTextFromMDAST(node);
 
   // Check for special patterns
   if (text === '---' || text === '***' || text === '___') {
@@ -164,7 +162,7 @@ function buildParagraphBlock(node: Paragraph): ParsedBlock {
     type: BlockType.Paragraph,
     data: {},
     text,
-    formats: extractFormats(node),
+    formats: extractInlineFormatsFromMDAST(node),
     children: [],
   };
 }
@@ -186,16 +184,16 @@ function buildListBlock(node: List): ParsedBlock[] {
       children.push({
         type: BlockType.TodoListBlock,
         data: { checked: item.checked === true } as BlockData,
-        text: extractText(item),
-        formats: extractFormats(item),
+        text: extractTextFromMDAST(item),
+        formats: extractInlineFormatsFromMDAST(item),
         children: [],
       });
     } else {
       children.push({
         type,
         data: (isOrdered ? { number: index + 1 } : {}) as BlockData,
-        text: extractText(item),
-        formats: extractFormats(item),
+        text: extractTextFromMDAST(item),
+        formats: extractInlineFormatsFromMDAST(item),
         children: [],
       });
     }
@@ -216,124 +214,4 @@ function buildCodeBlock(node: Code): ParsedBlock {
     formats: [], // No inline formatting in code blocks
     children: [],
   };
-}
-
-/**
- * Extracts plain text from MDAST node
- */
-export function extractText(node: unknown): string {
-  if (!node || typeof node !== 'object') return '';
-
-  const n = node as { type: string; value?: string; children?: unknown[] };
-
-  if (n.type === 'text') {
-    return (n as MdastText).value;
-  }
-
-  if (n.type === 'inlineCode') {
-    return (n as InlineCode).value;
-  }
-
-  if (n.children) {
-    return n.children.map(extractText).join('');
-  }
-
-  return '';
-}
-
-/**
- * Extracts inline formatting from MDAST node
- */
-export function extractFormats(node: unknown, baseOffset = 0): InlineFormat[] {
-  const formats: InlineFormat[] = [];
-
-  let currentOffset = baseOffset;
-
-  function walk(n: unknown, parentTypes: Set<InlineFormat['type']> = new Set()): string {
-    if (!n || typeof n !== 'object') return '';
-
-    const obj = n as {
-      type: string;
-      value?: string;
-      children?: unknown[];
-      url?: string;
-    };
-
-    // Text node
-    if (obj.type === 'text') {
-      const text = (obj as MdastText).value;
-      const textLength = text.length;
-
-      // Apply all parent formats
-      parentTypes.forEach((formatType) => {
-        formats.push({
-          start: currentOffset,
-          end: currentOffset + textLength,
-          type: formatType,
-        });
-      });
-
-      currentOffset += textLength;
-      return text;
-    }
-
-    // Inline code
-    if (obj.type === 'inlineCode') {
-      const text = (obj as InlineCode).value;
-      const startOffset = currentOffset;
-
-      currentOffset += text.length;
-
-      formats.push({
-        start: startOffset,
-        end: currentOffset,
-        type: 'code',
-      });
-
-      return text;
-    }
-
-    // Formatting nodes
-    const newTypes = new Set(parentTypes);
-
-    switch (obj.type) {
-      case 'strong':
-        newTypes.add('bold');
-        break;
-
-      case 'emphasis':
-        newTypes.add('italic');
-        break;
-
-      case 'delete':
-        newTypes.add('strikethrough');
-        break;
-
-      case 'link': {
-        const linkNode = obj as Link;
-        const startOffset = currentOffset;
-        const text = (obj.children || []).map((child) => walk(child, newTypes)).join('');
-
-        formats.push({
-          start: startOffset,
-          end: currentOffset,
-          type: 'link',
-          data: { href: linkNode.url },
-        });
-
-        return text;
-      }
-    }
-
-    // Process children
-    if (obj.children) {
-      return obj.children.map((child) => walk(child, newTypes)).join('');
-    }
-
-    return '';
-  }
-
-  walk(node);
-
-  return formats;
 }
