@@ -220,13 +220,13 @@ describe('block-converters', () => {
         ],
       };
 
-      const block = parseList(node);
+      const blocks = parseList(node);
 
-      expect(block).not.toBeNull();
-      expect(block?.type).toBe(BlockType.BulletedListBlock);
-      expect(block?.children).toHaveLength(2);
-      expect(block?.children[0].text).toBe('Item 1');
-      expect(block?.children[1].text).toBe('Item 2');
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0].type).toBe(BlockType.BulletedListBlock);
+      expect(blocks[0].text).toBe('Item 1');
+      expect(blocks[1].type).toBe(BlockType.BulletedListBlock);
+      expect(blocks[1].text).toBe('Item 2');
     });
 
     it('should parse ordered list', () => {
@@ -250,10 +250,11 @@ describe('block-converters', () => {
         ],
       };
 
-      const block = parseList(node);
+      const blocks = parseList(node);
 
-      expect(block?.type).toBe(BlockType.NumberedListBlock);
-      expect(block?.children).toHaveLength(2);
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0].type).toBe(BlockType.NumberedListBlock);
+      expect(blocks[1].type).toBe(BlockType.NumberedListBlock);
     });
 
     it('should parse todo list with checkboxes', () => {
@@ -293,13 +294,13 @@ describe('block-converters', () => {
         ],
       };
 
-      const block = parseList(node);
+      const blocks = parseList(node);
 
-      expect(block?.children).toHaveLength(2);
-      expect(block?.children[0].type).toBe(BlockType.TodoListBlock);
-      expect(block?.children[0].data).toEqual({ checked: true });
-      expect(block?.children[1].type).toBe(BlockType.TodoListBlock);
-      expect(block?.children[1].data).toEqual({ checked: false });
+      expect(blocks).toHaveLength(2);
+      expect(blocks[0].type).toBe(BlockType.TodoListBlock);
+      expect(blocks[0].data).toEqual({ checked: true });
+      expect(blocks[1].type).toBe(BlockType.TodoListBlock);
+      expect(blocks[1].data).toEqual({ checked: false });
     });
 
     it('should handle nested lists', () => {
@@ -332,11 +333,13 @@ describe('block-converters', () => {
         ],
       };
 
-      const block = parseList(node);
+      const blocks = parseList(node);
 
-      expect(block?.children).toHaveLength(1);
-      // Text extraction includes nested list content
-      expect(block?.children[0].text).toBe('Parent itemChild item');
+      expect(blocks).toHaveLength(1);
+      // Text extraction includes nested list content because parseList flattens structure for now
+      // or extracts text recursively. Adjust expectation based on current extractText behavior.
+      // Current extractText recursively joins all text.
+      expect(blocks[0].text).toBe('Parent itemChild item');
     });
   });
 
@@ -352,7 +355,7 @@ describe('block-converters', () => {
       const block = elementToBlock(node);
 
       expect(block).not.toBeNull();
-      expect(block?.type).toBe(BlockType.HeadingBlock);
+      expect((block as any).type).toBe(BlockType.HeadingBlock);
     });
 
     it('should convert paragraph element', () => {
@@ -366,7 +369,7 @@ describe('block-converters', () => {
       const block = elementToBlock(node);
 
       expect(block).not.toBeNull();
-      expect(block?.type).toBe(BlockType.Paragraph);
+      expect((block as any).type).toBe(BlockType.Paragraph);
     });
 
     it('should convert blockquote element', () => {
@@ -380,7 +383,7 @@ describe('block-converters', () => {
       const block = elementToBlock(node);
 
       expect(block).not.toBeNull();
-      expect(block?.type).toBe(BlockType.QuoteBlock);
+      expect((block as any).type).toBe(BlockType.QuoteBlock);
     });
 
     it('should convert divider element', () => {
@@ -394,8 +397,8 @@ describe('block-converters', () => {
       const block = elementToBlock(node);
 
       expect(block).not.toBeNull();
-      expect(block?.type).toBe(BlockType.DividerBlock);
-      expect(block?.text).toBe('');
+      expect((block as any).type).toBe(BlockType.DividerBlock);
+      expect((block as any).text).toBe('');
     });
 
     it('should convert unordered list', () => {
@@ -413,10 +416,11 @@ describe('block-converters', () => {
         ],
       };
 
-      const block = elementToBlock(node);
+      const blocks = elementToBlock(node);
 
-      expect(block).not.toBeNull();
-      expect(block?.type).toBe(BlockType.BulletedListBlock);
+      expect(Array.isArray(blocks)).toBe(true);
+      expect(blocks).toHaveLength(1);
+      expect((blocks as any)[0].type).toBe(BlockType.BulletedListBlock);
     });
 
     it('should convert ordered list', () => {
@@ -434,10 +438,11 @@ describe('block-converters', () => {
         ],
       };
 
-      const block = elementToBlock(node);
+      const blocks = elementToBlock(node);
 
-      expect(block).not.toBeNull();
-      expect(block?.type).toBe(BlockType.NumberedListBlock);
+      expect(Array.isArray(blocks)).toBe(true);
+      expect(blocks).toHaveLength(1);
+      expect((blocks as any)[0].type).toBe(BlockType.NumberedListBlock);
     });
 
     it('should convert code block', () => {
