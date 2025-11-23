@@ -26,7 +26,7 @@ export const withElement = (editor: ReactEditor) => {
         depth: 2,
       }) as NodeEntry<Element>;
 
-      const readOnlyTypes = [BlockType.SimpleTableBlock, BlockType.TableBlock];
+      const readOnlyTypes = [BlockType.TableBlock];
 
       if (readOnlyTypes.includes(parent[0].type as BlockType)) {
         return true;

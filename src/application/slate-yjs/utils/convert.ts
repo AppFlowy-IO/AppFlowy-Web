@@ -56,6 +56,15 @@ export function traverseBlock(id: string, sharedRoot: YSharedRoot): Element | un
 
   let textId = block.external_id as string;
 
+  // SimpleTable and SimpleTableRow are containers but should not have text content directly
+  if (
+    slateNode.type === BlockType.SimpleTableBlock ||
+    slateNode.type === BlockType.SimpleTableRowBlock ||
+    slateNode.type === BlockType.SimpleTableCellBlock
+  ) {
+    textId = '';
+  }
+
   let delta;
 
   const yText = textId ? textMap.get(textId) : undefined;

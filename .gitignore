@@ -34,6 +34,7 @@ coverage
 
 cypress/snapshots/**/__diff_output__/
 .claude
+.gemini*
 cypress/screenshots
 cypress/videos
 cypress/downloads

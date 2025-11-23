@@ -180,6 +180,7 @@ function DatabaseViews({
         // Continue waiting for layout to stabilize
         // Each RAF waits for the next browser paint (~16ms at 60fps)
         const id = requestAnimationFrame(restoreScroll);
+
         rafIds.push(id);
         return;
       }
@@ -214,6 +215,7 @@ function DatabaseViews({
 
     // Start the RAF chain
     const firstId = requestAnimationFrame(restoreScroll);
+
     rafIds.push(firstId);
 
     return () => {
