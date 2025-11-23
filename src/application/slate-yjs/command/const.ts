@@ -15,6 +15,9 @@ export const CONTAINER_BLOCK_TYPES = [
   BlockType.NumberedListBlock,
   BlockType.Page,
   BlockType.CalloutBlock,
+  BlockType.SimpleTableBlock,
+  BlockType.SimpleTableRowBlock,
+  BlockType.SimpleTableCellBlock,
 ];
 export const SOFT_BREAK_TYPES = [BlockType.CodeBlock];
 
@@ -28,6 +31,7 @@ export const TEXT_BLOCK_TYPES = [
   BlockType.CalloutBlock,
   BlockType.CodeBlock,
   BlockType.HeadingBlock,
+  BlockType.SimpleTableCellBlock,
 ];
 
 export const isEmbedBlockTypes = (type: BlockType) => {
