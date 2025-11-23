@@ -168,7 +168,7 @@ export function parseList(node: HastElement): ParsedBlock[] {
           children.push({
             type: BlockType.TodoListBlock,
             data: { checked } as BlockData,
-            text: extractTextFromHAST(elem),
+            text: extractTextFromHAST(elem).trim(),
             formats: extractInlineFormatsFromHAST(elem),
             children: [],
           });
@@ -177,7 +177,7 @@ export function parseList(node: HastElement): ParsedBlock[] {
           children.push({
             type,
             data: (isOrdered ? { number: children.length + 1 } : {}) as BlockData,
-            text: extractTextFromHAST(elem),
+            text: extractTextFromHAST(elem).trim(),
             formats: extractInlineFormatsFromHAST(elem),
             children: [],
           });
