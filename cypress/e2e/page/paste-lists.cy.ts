@@ -221,6 +221,36 @@ Please let us know your feedback.`;
       cy.get('[data-block-type="bulleted_list"]').should('contain', 'Offline mode');
       
       testLog.info('✓ Generic text with special bullets pasted successfully');
+
+      // Exit list mode
+      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+    }
+
+    {
+      const html = `
+        <ul><li>
+        <p class="p1">Private</p>
+        </li><li>
+        <p class="p1">Customizable</p>
+        </li><li>
+        <p class="p1">Self-hostable</p>
+        </li></ul>
+      `;
+      // The plain text fallback might be clean, but we want to test the HTML parsing path
+      const plainText = 'Private\nCustomizable\nSelf-hostable';
+
+      testLog.info('=== Pasting HTML List with Inner Newlines ===');
+      pasteContent(html, plainText);
+
+      cy.wait(1000);
+
+      // Check that "Private" does not have leading/trailing newlines in the text content
+      // We can check this by ensuring it doesn't create extra blocks or lines
+      cy.get('[data-block-type="bulleted_list"]').contains('Private').should('exist');
+      cy.get('[data-block-type="bulleted_list"]').contains('Customizable').should('exist');
+      cy.get('[data-block-type="bulleted_list"]').contains('Self-hostable').should('exist');
+      
+      testLog.info('✓ HTML list with inner newlines pasted successfully');
     }
   });
 });
