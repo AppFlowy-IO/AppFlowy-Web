@@ -1,6 +1,6 @@
-import { AuthTestUtils } from '../../support/auth-utils';
-import { EditorSelectors, waitForReactUpdate } from '../../support/selectors';
-import { generateRandomEmail } from '../../support/test-config';
+import { AuthTestUtils } from '../../../support/auth-utils';
+import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
+import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Text Formatting - Selection and Formatting', () => {
   beforeEach(() => {

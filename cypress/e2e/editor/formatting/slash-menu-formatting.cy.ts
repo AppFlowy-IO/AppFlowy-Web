@@ -1,8 +1,8 @@
-import { AuthTestUtils } from '../../support/auth-utils';
-import { waitForReactUpdate } from '../../support/selectors';
-import { generateRandomEmail } from '../../support/test-config';
+import { AuthTestUtils } from '../../../support/auth-utils';
+import { waitForReactUpdate } from '../../../support/selectors';
+import { generateRandomEmail } from '../../../support/test-config';
 
-describe('Slash Menu - Media Actions', () => {
+describe('Slash Menu - Text Formatting', () => {
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
       if (err.message.includes('Minified React error') ||
@@ -16,10 +16,10 @@ describe('Slash Menu - Media Actions', () => {
     cy.viewport(1280, 720);
   });
 
-  it('should show media options in slash menu', () => {
+  it('should show text formatting options in slash menu', () => {
     const testEmail = generateRandomEmail();
 
-    cy.log(`[TEST START] Testing media options - Test email: ${testEmail}`);
+    cy.log(`[TEST START] Testing text formatting options - Test email: ${testEmail}`);
 
     // Login
     cy.visit('/login', { failOnStatusCode: false });
@@ -42,25 +42,31 @@ describe('Slash Menu - Media Actions', () => {
       cy.focused().type('/');
       waitForReactUpdate(1000);
 
-      // Verify media options are visible
-      cy.log('Verifying Image option');
-      cy.contains('Image').should('be.visible');
+      // Verify text formatting options are visible
+      cy.log('Verifying Text option');
+      cy.contains('Text').should('be.visible');
 
-      cy.log('Verifying Embed video option');
-      cy.contains('Embed video').should('be.visible');
+      cy.log('Verifying Heading 1 option');
+      cy.contains('Heading 1').should('be.visible');
+
+      cy.log('Verifying Heading 2 option');
+      cy.contains('Heading 2').should('be.visible');
+
+      cy.log('Verifying Heading 3 option');
+      cy.contains('Heading 3').should('be.visible');
 
       // Close menu
       cy.get('body').type('{esc}');
       waitForReactUpdate(500);
 
-      cy.log('Media options verified successfully');
+      cy.log('Text formatting options verified successfully');
     });
   });
 
-  it('should allow selecting Image from slash menu', () => {
+  it('should allow selecting Heading 1 from slash menu', () => {
     const testEmail = generateRandomEmail();
 
-    cy.log(`[TEST START] Testing Image selection - Test email: ${testEmail}`);
+    cy.log(`[TEST START] Testing Heading 1 selection - Test email: ${testEmail}`);
 
     // Login
     cy.visit('/login', { failOnStatusCode: false });
@@ -85,11 +91,18 @@ describe('Slash Menu - Media Actions', () => {
       cy.focused().type('/');
       waitForReactUpdate(1000);
 
-      // Click Image
-      cy.contains('Image').should('be.visible').click();
+      // Click Heading 1
+      cy.contains('Heading 1').should('be.visible').click();
       waitForReactUpdate(1000);
 
-      cy.log('Image option clicked successfully');
+      // Type some text
+      cy.focused().type('Test Heading');
+      waitForReactUpdate(500);
+
+      // Verify the text was added
+      cy.get('[data-slate-editor="true"]').should('contain.text', 'Test Heading');
+
+      cy.log('Heading 1 added successfully');
     });
   });
 });

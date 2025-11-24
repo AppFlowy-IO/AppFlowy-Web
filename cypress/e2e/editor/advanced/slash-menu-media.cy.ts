@@ -1,8 +1,8 @@
-import { AuthTestUtils } from '../../support/auth-utils';
-import { waitForReactUpdate } from '../../support/selectors';
-import { generateRandomEmail } from '../../support/test-config';
+import { AuthTestUtils } from '../../../support/auth-utils';
+import { waitForReactUpdate } from '../../../support/selectors';
+import { generateRandomEmail } from '../../../support/test-config';
 
-describe('Slash Menu - List Actions', () => {
+describe('Slash Menu - Media Actions', () => {
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
       if (err.message.includes('Minified React error') ||
@@ -16,10 +16,10 @@ describe('Slash Menu - List Actions', () => {
     cy.viewport(1280, 720);
   });
 
-  it('should show list options in slash menu', () => {
+  it('should show media options in slash menu', () => {
     const testEmail = generateRandomEmail();
 
-    cy.log(`[TEST START] Testing list options - Test email: ${testEmail}`);
+    cy.log(`[TEST START] Testing media options - Test email: ${testEmail}`);
 
     // Login
     cy.visit('/login', { failOnStatusCode: false });
@@ -42,25 +42,25 @@ describe('Slash Menu - List Actions', () => {
       cy.focused().type('/');
       waitForReactUpdate(1000);
 
-      // Verify list options are visible
-      cy.log('Verifying Bulleted list option');
-      cy.contains('Bulleted list').should('be.visible');
+      // Verify media options are visible
+      cy.log('Verifying Image option');
+      cy.contains('Image').should('be.visible');
 
-      cy.log('Verifying Numbered list option');
-      cy.contains('Numbered list').should('be.visible');
+      cy.log('Verifying Embed video option');
+      cy.contains('Embed video').should('be.visible');
 
       // Close menu
       cy.get('body').type('{esc}');
       waitForReactUpdate(500);
 
-      cy.log('List options verified successfully');
+      cy.log('Media options verified successfully');
     });
   });
 
-  it('should allow selecting Bulleted list from slash menu', () => {
+  it('should allow selecting Image from slash menu', () => {
     const testEmail = generateRandomEmail();
 
-    cy.log(`[TEST START] Testing Bulleted list selection - Test email: ${testEmail}`);
+    cy.log(`[TEST START] Testing Image selection - Test email: ${testEmail}`);
 
     // Login
     cy.visit('/login', { failOnStatusCode: false });
@@ -85,19 +85,11 @@ describe('Slash Menu - List Actions', () => {
       cy.focused().type('/');
       waitForReactUpdate(1000);
 
-      // Click Bulleted list
-      cy.contains('Bulleted list').should('be.visible').click();
+      // Click Image
+      cy.contains('Image').should('be.visible').click();
       waitForReactUpdate(1000);
 
-      // Type some text
-      cy.focused().type('Test bullet item');
-      waitForReactUpdate(500);
-
-      // Verify the text was added
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'Test bullet item');
-
-      cy.log('Bulleted list added successfully');
+      cy.log('Image option clicked successfully');
     });
   });
-
 });

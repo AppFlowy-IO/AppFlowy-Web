@@ -1,6 +1,6 @@
-import { AuthTestUtils } from '../../support/auth-utils';
-import { EditorSelectors } from '../../support/selectors';
-import { generateRandomEmail } from '../../support/test-config';
+import { AuthTestUtils } from '../../../support/auth-utils';
+import { EditorSelectors } from '../../../support/selectors';
+import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Document Editing with Formatting', () => {
   beforeEach(() => {

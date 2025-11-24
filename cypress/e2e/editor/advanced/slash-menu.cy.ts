@@ -1,6 +1,6 @@
-import { AuthTestUtils } from '../../support/auth-utils';
-import { EditorSelectors, PageSelectors, waitForReactUpdate } from '../../support/selectors';
-import { generateRandomEmail } from '../../support/test-config';
+import { AuthTestUtils } from '../../../support/auth-utils';
+import { EditorSelectors, PageSelectors, waitForReactUpdate } from '../../../support/selectors';
+import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Editor Slash Menu', () => {
   beforeEach(() => {
