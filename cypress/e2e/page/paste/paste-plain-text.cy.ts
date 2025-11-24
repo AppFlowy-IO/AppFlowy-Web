@@ -1,5 +1,5 @@
-import { createTestPage, pasteContent } from '../../support/paste-utils';
-import { testLog } from '../../support/test-helpers';
+import { createTestPage, pasteContent } from '../../../support/paste-utils';
+import { testLog } from '../../../support/test-helpers';
 
 describe('Paste Plain Text Tests', () => {
   it('should paste all plain text formats correctly', () => {
