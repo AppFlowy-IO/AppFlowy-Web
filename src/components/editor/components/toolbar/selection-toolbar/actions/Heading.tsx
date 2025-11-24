@@ -110,6 +110,7 @@ export function Heading() {
     <div className={'flex items-center justify-center'}>
       <ActionButton
         ref={ref}
+        data-testid="heading-button"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
@@ -135,13 +136,13 @@ export function Heading() {
           {...popoverProps}
         >
           <div className={'flex h-[32px] items-center justify-center px-2'}>
-            <ActionButton active={isActivated(1)} tooltip={t('editor.heading1')} onClick={toHeading(1)}>
+            <ActionButton active={isActivated(1)} tooltip={t('editor.heading1')} onClick={toHeading(1)} data-testid="heading-1-button">
               <Heading1 className='h-4 w-4' />
             </ActionButton>
-            <ActionButton active={isActivated(2)} tooltip={t('editor.heading2')} onClick={toHeading(2)}>
+            <ActionButton active={isActivated(2)} tooltip={t('editor.heading2')} onClick={toHeading(2)} data-testid="heading-2-button">
               <Heading2 className='h-4 w-4' />
             </ActionButton>
-            <ActionButton active={isActivated(3)} tooltip={t('editor.heading3')} onClick={toHeading(3)}>
+            <ActionButton active={isActivated(3)} tooltip={t('editor.heading3')} onClick={toHeading(3)} data-testid="heading-3-button">
               <Heading3 className='h-4 w-4' />
             </ActionButton>
           </div>
