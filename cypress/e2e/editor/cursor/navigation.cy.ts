@@ -1,10 +1,12 @@
 import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
-import { generateRandomEmail } from '../../../support/test-config';
+import { generateRandomEmail, getCmdKey, getWordJumpKey } from '../../../support/test-config';
 
 describe('Cursor Navigation & Selection', () => {
   const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
+  const cmdKey = getCmdKey();
+  const wordJumpKey = getWordJumpKey();
 
   before(() => {
     cy.viewport(1280, 720);
@@ -29,10 +31,8 @@ describe('Cursor Navigation & Selection', () => {
     cy.focused().type('Start Middle End');
     waitForReactUpdate(500);
     
-    // Move to Start
-    cy.focused().type('{selectall}');
-    waitForReactUpdate(100);
-    cy.focused().type('{leftArrow}');
+    // Move to Start (Collapse selection to start)
+    cy.focused().type('{selectall}{leftArrow}');
     waitForReactUpdate(200);
     
     cy.focused().type('X');
@@ -41,15 +41,11 @@ describe('Cursor Navigation & Selection', () => {
     // Verify 'X' is at the start
     cy.get('[data-slate-editor="true"]').should('contain.text', 'XStart Middle End');
     
-    // Move to End
-    cy.focused().type('{selectall}');
-    waitForReactUpdate(100);
-    cy.focused().type('{rightArrow}');
+    // Move to End (Collapse selection to end)
+    cy.focused().type('{selectall}{rightArrow}');
     waitForReactUpdate(200);
     
     cy.focused().type('Y');
-    waitForReactUpdate(200);
-    
     cy.get('[data-slate-editor="true"]').should('contain.text', 'XStart Middle EndY');
   });
 
@@ -58,25 +54,23 @@ describe('Cursor Navigation & Selection', () => {
     waitForReactUpdate(500);
     
     // Go to start
-    cy.focused().type('{selectall}');
-    cy.focused().type('{leftArrow}');
-    waitForReactUpdate(200);
+    cy.focused().type('{selectall}{leftArrow}');
     
-    // Move right one word (Alt+Right)
-    cy.focused().type('{alt}{rightArrow}');
+    // Move right one word
+    // Use platform specific key for word jump
+    cy.focused().type(`${wordJumpKey}{rightArrow}`);
     waitForReactUpdate(200);
     cy.focused().type('-');
     
-    // Expect "Word1-..."
+    // Expect "Word1-..." (cursor should be after "Word1")
     cy.get('[data-slate-editor="true"]').should('contain.text', 'Word1-');
   });
 
   it('should select word on double click', () => {
     cy.focused().type('SelectMe');
-    waitForReactUpdate(200);
+    waitForReactUpdate(500);
     
-    // Double click is flaky in headless. Use select all to simulate full word selection
-    // as SelectMe is the only content in this block.
+    // Use select all to simulate full word selection for robust headless testing
     cy.focused().type('{selectall}');
     waitForReactUpdate(200);
     

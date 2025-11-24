@@ -74,3 +74,21 @@ export const logAppFlowyEnvironment = () => {
  * Shared email generator for e2e specs.
  */
 export const generateRandomEmail = (domain = 'appflowy.io') => `${uuidv4()}@${domain}`;
+
+/**
+ * Returns the platform-specific Command modifier key.
+ * Mac: {cmd} (Meta)
+ * Windows/Linux: {ctrl}
+ */
+export const getCmdKey = () => {
+  return Cypress.platform === 'darwin' ? '{cmd}' : '{ctrl}';
+};
+
+/**
+ * Returns the platform-specific modifier for word-by-word navigation.
+ * Mac: {alt} (Option)
+ * Windows/Linux: {ctrl}
+ */
+export const getWordJumpKey = () => {
+  return Cypress.platform === 'darwin' ? '{alt}' : '{ctrl}';
+};

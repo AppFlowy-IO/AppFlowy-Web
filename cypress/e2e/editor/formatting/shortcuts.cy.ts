@@ -60,16 +60,16 @@ describe('Formatting Shortcuts', () => {
     cy.focused().type('{selectall}');
     waitForReactUpdate(500);
     
-    // Apply Code shortcut - Try both Meta and Control to be safe in headless
+    // Apply Code shortcut using realPress for native event simulation
     if (Cypress.platform === 'darwin') {
-        cy.focused().type('{cmd}e');
+      cy.realPress(['Meta', 'e']);
     } else {
-        cy.focused().type('{ctrl}e');
+      cy.realPress(['Control', 'e']);
     }
     waitForReactUpdate(500);
     
     // Verify "Code" has the specific class for inline code
-    // Since we selected all "Normal Code", the whole thing should be code
+    // We check for the span with specific class used by AppFlowy for inline code
     cy.get('span.bg-border-primary').should('contain.text', 'Code');
   });
 });
