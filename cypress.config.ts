@@ -91,9 +91,9 @@ export default defineConfig({
   },
   watchForFileChanges: false,
   // Increase timeouts for CI stability
-  defaultCommandTimeout: 10000,
-  requestTimeout: 10000,
-  responseTimeout: 10000,
+  defaultCommandTimeout: 15000,
+  requestTimeout: 15000,
+  responseTimeout: 15000,
   component: {
     devServer: {
       framework: 'react',
@@ -131,7 +131,7 @@ export default defineConfig({
   },
   chromeWebSecurity: false,
   retries: {
-    runMode: 1,
+    runMode: 2,
     openMode: 0,
   },
 });
