@@ -118,39 +118,36 @@ describe('Editor Navigation & Interaction', () => {
 
       // Test Up Navigation: List -> Paragraph
       cy.contains('List Block').click({ force: true });
-      // Move to start using robust selectall+left
-      cy.focused().type('{selectall}{leftArrow}');
+      // Move to start
+      cy.focused().type('{home}');
       waitForReactUpdate(200);
-      
-      // Move up using realPress
-      if (Cypress.platform === 'darwin') {
-        cy.realPress('ArrowUp');
-      } else {
-        cy.realPress('ArrowUp');
-      }
+      // Move up
+      cy.realPress('ArrowUp');
       waitForReactUpdate(500);
       
       cy.focused().type('UpTest');
-      // Expect 'UpTest' to be present
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'UpTest');
+      // Verify 'UpTest' appears in Paragraph block and NOT in List Block
+      // Checking containment in the block is sufficient proof of navigation
+      cy.get('[data-block-type="paragraph"]').should('contain.text', 'UpTest');
+      cy.get('[data-block-type="bulleted_list"]').should('not.contain.text', 'UpTest');
 
       // Test Down Navigation: Heading -> Paragraph
       cy.contains('Heading Block').click({ force: true });
       // Move to end
-      cy.focused().type('{selectall}{rightArrow}');
-      waitForReactUpdate(200);
-      
-      // Move down using realPress
+      cy.focused().type('{end}');
+      // On Mac {end} might be document end, {meta}{rightArrow} is line end.
       if (Cypress.platform === 'darwin') {
-        cy.realPress('ArrowDown');
-      } else {
-        cy.realPress('ArrowDown');
+        cy.focused().type('{meta}{rightArrow}');
       }
+      waitForReactUpdate(200);
+      // Move down
+      cy.realPress('ArrowDown');
       waitForReactUpdate(500);
       
       cy.focused().type('DownTest');
-      // Expect 'DownTest' to be present
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'DownTest');
+      // Verify 'DownTest' appears in Paragraph block and NOT in Heading Block
+      cy.get('[data-block-type="paragraph"]').should('contain.text', 'DownTest');
+      cy.get('[data-block-type="heading"]').should('not.contain.text', 'DownTest');
     });
   });
 
