@@ -1,5 +1,5 @@
-import { createTestPage, pasteContent } from '../../support/paste-utils';
-import { testLog } from '../../support/test-helpers';
+import { createTestPage, pasteContent } from '../../../support/paste-utils';
+import { testLog } from '../../../support/test-helpers';
 
 describe('Paste Table Tests', () => {
   it('should paste all table formats correctly', () => {

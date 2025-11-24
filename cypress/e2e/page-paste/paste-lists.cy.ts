@@ -1,5 +1,5 @@
-import { createTestPage, pasteContent } from '../../support/paste-utils';
-import { testLog } from '../../support/test-helpers';
+import { createTestPage, pasteContent } from '../../../support/paste-utils';
+import { testLog } from '../../../support/test-helpers';
 
 describe('Paste List Tests', () => {
   it('should paste all list formats correctly', () => {
@@ -214,12 +214,12 @@ Please let us know your feedback.`;
 
       cy.contains('Project Launch').should('exist');
       cy.contains('We are excited to announce').should('exist');
-      
+
       // Verify special bullets are converted to BulletedListBlock
       cy.get('[data-block-type="bulleted_list"]').should('contain', 'Fast performance');
       cy.get('[data-block-type="bulleted_list"]').should('contain', 'Secure encryption');
       cy.get('[data-block-type="bulleted_list"]').should('contain', 'Offline mode');
-      
+
       testLog.info('✓ Generic text with special bullets pasted successfully');
 
       // Exit list mode
@@ -249,7 +249,7 @@ Please let us know your feedback.`;
       cy.get('[data-block-type="bulleted_list"]').contains('Private').should('exist');
       cy.get('[data-block-type="bulleted_list"]').contains('Customizable').should('exist');
       cy.get('[data-block-type="bulleted_list"]').contains('Self-hostable').should('exist');
-      
+
       testLog.info('✓ HTML list with inner newlines pasted successfully');
     }
   });

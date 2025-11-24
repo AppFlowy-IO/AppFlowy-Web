@@ -11,10 +11,10 @@ import { useCheckboxTree } from '@/components/chat/hooks/use-checkbox-tree';
 import { MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
 import { searchViews } from '@/components/chat/lib/views';
 import { View } from '@/components/chat/types';
+import { useWriterContext } from '@/components/chat/writer/context';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Separator } from '@/components/ui/separator';
-import { useWriterContext } from '@/components/chat/writer/context';
 
 import { Spaces } from './spaces';
 

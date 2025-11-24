@@ -1,6 +1,8 @@
-import { YDatabaseView } from '@/application/types';
 import { useCallback } from 'react';
 import * as Y from 'yjs';
+
+import { YDatabaseView } from '@/application/types';
+
 import { SYNC_MAX_ATTEMPTS, SYNC_POLL_INTERVAL } from './constants';
 
 export const useDatabaseViewSync = (views: Y.Map<YDatabaseView> | undefined) => {

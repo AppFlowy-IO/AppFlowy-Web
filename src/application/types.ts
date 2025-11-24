@@ -729,6 +729,8 @@ export enum CollabOrigin {
   Local = 'local',
   // from remote changes and never sync to remote.
   Remote = 'remote',
+  // from local changes manually applied to Yjs
+  LocalManual = 'local_manual',
 }
 
 export interface PublishViewPayload {

@@ -5,13 +5,12 @@ import { useTranslation } from 'react-i18next';
 import { ReactComponent as Error } from '@/assets/icons/error.svg';
 import { Alert, AlertDescription } from '@/components/chat/components/ui/alert';
 import LoadingDots from '@/components/chat/components/ui/loading-dots';
-
-
 import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { useChatMessagesContext } from '@/components/chat/provider/messages-provider';
 import { useResponseFormatContext } from '@/components/chat/provider/response-format-provider';
 import { useSuggestionsContext } from '@/components/chat/provider/suggestions-provider';
 import { ChatInputMode } from '@/components/chat/types';
+
 import { AnswerMd } from '../chat-messages/answer-md';
 import { MessageActions } from '../chat-messages/message-actions';
 import MessageSources from '../chat-messages/message-sources';

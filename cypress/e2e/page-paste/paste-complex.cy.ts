@@ -1,5 +1,5 @@
-import { createTestPage, pasteContent, verifyEditorContent } from '../../support/paste-utils';
-import { testLog } from '../../support/test-helpers';
+import { createTestPage, pasteContent, verifyEditorContent } from '../../../support/paste-utils';
+import { testLog } from '../../../support/test-helpers';
 
 describe('Paste Complex Content Tests', () => {
   it('should paste all complex document types correctly', () => {

@@ -1,8 +1,9 @@
+import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { Skeleton } from '@mui/material';
-import React, { lazy, Suspense, useCallback } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { BaseRange, Editor, Element as SlateElement, NodeEntry, Range, Text } from 'slate';
-import { Editable, RenderElementProps, useSlate } from 'slate-react';
+import { Editable, ReactEditor, RenderElementProps, useSlate } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -17,6 +18,7 @@ import { RemoteSelectionsLayer } from '@/components/editor/components/remote-sel
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { useShortcuts } from '@/components/editor/shortcut.hooks';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
+import { getScrollParent } from '@/components/global-comment/utils';
 import { cn } from '@/lib/utils';
 
 import { Element } from './components/element';
@@ -110,6 +112,21 @@ const EditorEditable = () => {
   const handleCloseLinkPopover = useCallback(() => {
     setLinkOpen(undefined);
   }, []);
+
+  useEffect(() => {
+    try {
+      const editorDom = ReactEditor.toDOMNode(editor, editor);
+      const scrollContainer = getScrollParent(editorDom);
+
+      if (!scrollContainer) return;
+
+      return autoScrollForElements({
+        element: scrollContainer,
+      });
+    } catch (e) {
+      console.error('Error initializing auto-scroll:', e);
+    }
+  }, [editor]);
 
   return (
     <PanelProvider editor={editor}>

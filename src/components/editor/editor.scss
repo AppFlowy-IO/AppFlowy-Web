@@ -18,6 +18,15 @@
 
 }
 
+.block-element--dragging {
+  @apply opacity-50;
+  cursor: grabbing;
+}
+
+.block-element.block-drop-target {
+  @apply bg-fill-list-hover;
+}
+
 .block-element[data-block-type="table/cell"] {
   .block-element .text-placeholder {
     @apply hidden;

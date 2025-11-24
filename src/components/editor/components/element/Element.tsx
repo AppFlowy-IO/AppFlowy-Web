@@ -1,7 +1,10 @@
+import { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { DropIndicator } from '@atlaskit/pragmatic-drag-and-drop-react-drop-indicator/box';
 import React, { FC, useCallback, useEffect, useLayoutEffect, useMemo } from 'react';
 import { ErrorBoundary, FallbackProps } from 'react-error-boundary';
 import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'slate-react';
 
+import { YjsEditor } from '@/application/slate-yjs';
 import { CONTAINER_BLOCK_TYPES, SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockData, BlockType, ColumnNodeData, YjsEditorKey } from '@/application/types';
 import { BulletedList } from '@/components/editor/components/blocks/bulleted-list';
@@ -27,6 +30,8 @@ import SimpleTableRow from '@/components/editor/components/blocks/simple-table/S
 import { TableBlock, TableCellBlock } from '@/components/editor/components/blocks/table';
 import { Text } from '@/components/editor/components/blocks/text';
 import { VideoBlock } from '@/components/editor/components/blocks/video';
+import { handleBlockDrop } from '@/components/editor/components/drag-drop/handleBlockDrop';
+import { useBlockDrop } from '@/components/editor/components/drag-drop/useBlockDrop';
 import { BlockNotFound } from '@/components/editor/components/element/BlockNotFound';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -73,6 +78,16 @@ export const Element = ({
 
   const editor = useSlateStatic();
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout>();
+  const [blockElement, setBlockElement] = React.useState<HTMLElement | null>(null);
+  const allowBlockDrop = useMemo(() => {
+    if (type === YjsEditorKey.text) {
+      return false;
+    }
+
+    const blockType = node.type as BlockType;
+
+    return ![BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(blockType);
+  }, [node.type, type]);
 
   const scrollAndHighlight = useCallback(async (element: HTMLElement) => {
     element.scrollIntoView({ block: 'start' });
@@ -104,6 +119,41 @@ export const Element = ({
       }
     };
   }, []);
+
+  useLayoutEffect(() => {
+    if (!allowBlockDrop) {
+      setBlockElement(null);
+      return;
+    }
+
+    try {
+      const domNode = ReactEditor.toDOMNode(editor, node);
+
+      setBlockElement((current) => (current === domNode ? current : domNode));
+    } catch {
+      setBlockElement(null);
+    }
+  }, [allowBlockDrop, editor, node]);
+
+  const onDropBlock = useCallback(
+    ({ sourceBlockId, targetBlockId, edge }: { sourceBlockId: string; targetBlockId: string; edge: Edge }) => {
+      if (!allowBlockDrop) return;
+
+      handleBlockDrop({
+        editor: editor as YjsEditor,
+        sourceBlockId,
+        targetBlockId,
+        edge,
+      });
+    },
+    [allowBlockDrop, editor]
+  );
+
+  const { isDraggingOver, dropEdge } = useBlockDrop({
+    blockId: allowBlockDrop ? (blockId ?? undefined) : undefined,
+    element: allowBlockDrop ? blockElement : null,
+    onDrop: onDropBlock,
+  });
   const Component = useMemo(() => {
     switch (type) {
       case BlockType.HeadingBlock:
@@ -254,9 +304,12 @@ export const Element = ({
       <div
         {...attributes}
         data-block-type={type}
-        className={className}
+        className={`${className} ${allowBlockDrop && isDraggingOver ? 'block-drop-target' : ''}`}
         style={blockStyle}
       >
+        {allowBlockDrop && isDraggingOver && dropEdge === 'top' && (
+          <DropIndicator edge="top" gap="8px" />
+        )}
         <Component
           style={style}
           className={`flex w-full flex-col`}
@@ -264,6 +317,9 @@ export const Element = ({
         >
           {children}
         </Component>
+        {allowBlockDrop && isDraggingOver && dropEdge === 'bottom' && (
+          <DropIndicator edge="bottom" gap="8px" />
+        )}
       </div>
     </ErrorBoundary>
   );

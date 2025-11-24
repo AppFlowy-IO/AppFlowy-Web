@@ -113,13 +113,18 @@ export function assertDocExists(sharedRoot: YSharedRoot): YDoc {
   return doc;
 }
 
-export function executeOperations(sharedRoot: YSharedRoot, operations: (() => void)[], operationName: string) {
+export function executeOperations(
+  sharedRoot: YSharedRoot,
+  operations: (() => void)[],
+  operationName: string,
+  origin?: unknown
+) {
   console.time(operationName);
   const doc = assertDocExists(sharedRoot);
 
   doc.transact(() => {
     operations.forEach((op) => op());
-  });
+  }, origin);
 
   console.timeEnd(operationName);
 }
