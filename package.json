@@ -57,6 +57,7 @@
     "@atlaskit/primitives": "^5.5.3",
     "@emoji-mart/data": "^1.1.2",
     "@emoji-mart/react": "^1.1.1",
+    "@emotion/is-prop-valid": "^1.4.0",
     "@emotion/react": "^11.10.6",
     "@emotion/styled": "^11.10.6",
     "@floating-ui/react": "^0.26.27",

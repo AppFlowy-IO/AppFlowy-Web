@@ -8,18 +8,18 @@ import { ReactComponent as ImageTextIcon } from '@/assets/icons/text_image.svg';
 import { ModelSelector } from '@/components/chat/components/chat-input/model-selector';
 import { PromptModal } from '@/components/chat/components/chat-input/prompt-modal';
 import { FormatGroup } from '@/components/chat/components/ui/format-group';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-
-import { WritingMore } from '../ai-writer/writing-more';
 import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import { Textarea } from '@/components/chat/components/ui/textarea';
-import { cn } from '@/lib/utils';
 import { usePromptModal } from '@/components/chat/provider/prompt-modal-provider';
 import { ChatInputMode } from '@/components/chat/types';
 import { AiPrompt } from '@/components/chat/types/prompt';
 import { useWriterContext } from '@/components/chat/writer/context';
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { cn } from '@/lib/utils';
+
 import { ViewTree } from '../ai-writer/view-tree';
+import { WritingMore } from '../ai-writer/writing-more';
 
 const MAX_HEIGHT = 200;
 // Prevent focus on page load and cause the page to scroll

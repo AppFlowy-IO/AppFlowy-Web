@@ -1,4 +1,5 @@
 import download from 'downloadjs';
+
 import { getTokenParsed } from '@/application/session/token';
 import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
 

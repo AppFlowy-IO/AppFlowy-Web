@@ -16,10 +16,10 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { flattenViews } from '@/components/_shared/outline/utils';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
+import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import PageIcon from '@/components/_shared/view-icon/PageIcon';
 
 enum MentionTag {
   Reminder = 'reminder',

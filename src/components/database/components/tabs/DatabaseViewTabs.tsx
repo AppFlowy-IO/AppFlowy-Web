@@ -1,3 +1,7 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import * as Y from 'yjs';
+
+import { YDatabaseView } from '@/application/types';
 import { ReactComponent as ChevronLeft } from '@/assets/icons/alt_arrow_left.svg';
 import { ReactComponent as ChevronRight } from '@/assets/icons/alt_arrow_right.svg';
 import { AFScroller } from '@/components/_shared/scroller';
@@ -6,9 +10,7 @@ import { DatabaseTabItem } from '@/components/database/components/tabs/DatabaseT
 import { useTabScroller } from '@/components/database/components/tabs/useTabScroller';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList } from '@/components/ui/tabs';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import * as Y from 'yjs';
-import { YDatabaseView } from '@/application/types';
+
 
 export interface DatabaseViewTabsProps {
   viewIds: string[];

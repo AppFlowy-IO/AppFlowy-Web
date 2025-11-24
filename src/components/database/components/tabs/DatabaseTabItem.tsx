@@ -1,3 +1,6 @@
+import { memo, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+
 import {
     DatabaseViewLayout,
     View,
@@ -14,8 +17,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { TabLabel, TabsTrigger } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { memo, useMemo } from 'react';
-import { useTranslation } from 'react-i18next';
 
 export interface DatabaseTabItemProps {
     viewId: string;

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Editor, Element, Range } from 'slate';
+import { Editor, Element, Range, Path } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -13,6 +13,7 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
   const editor = useSlateStatic() as YjsEditor;
   const ref = useRef<HTMLDivElement>(null);
   const [hoveredBlockId, setHoveredBlockId] = useState<string | null>(null);
+  const [hoveredBlockParentId, setHoveredBlockParentId] = useState<string | null>(null);
   const [cssProperty, setCssProperty] = useState<string>('');
 
   const recalculatePosition = useCallback(
@@ -37,8 +38,43 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
     el.style.opacity = '0';
     el.style.pointerEvents = 'none';
     setHoveredBlockId(null);
+    setHoveredBlockParentId(null);
     setCssProperty('');
   }, [ref]);
+
+  const updateParentId = useCallback((blockId: string | null) => {
+    if (!blockId) {
+      setHoveredBlockParentId(null);
+      return;
+    }
+
+    try {
+      const entry = findSlateEntryByBlockId(editor, blockId);
+
+      if (!entry) {
+        setHoveredBlockParentId(null);
+        return;
+      }
+
+      const [, path] = entry;
+
+      if (!path || path.length === 0) {
+        setHoveredBlockParentId(null);
+        return;
+      }
+
+      const parentPath = Path.parent(path);
+      const parentEntry = Editor.node(editor, parentPath);
+
+      if (Element.isElement(parentEntry[0]) && parentEntry[0].blockId) {
+        setHoveredBlockParentId(parentEntry[0].blockId);
+      } else {
+        setHoveredBlockParentId(null);
+      }
+    } catch {
+      setHoveredBlockParentId(null);
+    }
+  }, [editor]);
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -107,6 +143,7 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
 
         setCssProperty(getBlockCssProperty(node));
         setHoveredBlockId(node.blockId as string);
+        updateParentId(node.blockId as string);
       }
     };
 
@@ -116,6 +153,19 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
       dom.addEventListener('mousemove', handleMouseMove);
       dom.parentElement?.addEventListener('mouseleave', close);
       getScrollParent(dom)?.addEventListener('scroll', close);
+
+      // Check if the hovered block still exists (e.g. after a drag-and-drop operation where the ID changed)
+      if (hoveredBlockId) {
+        try {
+          const entry = findSlateEntryByBlockId(editor, hoveredBlockId);
+
+          if (!entry) {
+            close();
+          }
+        } catch {
+          close();
+        }
+      }
     }
 
     return () => {
@@ -123,7 +173,7 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
       dom.parentElement?.removeEventListener('mouseleave', close);
       getScrollParent(dom)?.removeEventListener('scroll', close);
     };
-  }, [close, editor, ref, recalculatePosition, disabled]);
+  }, [close, editor, ref, recalculatePosition, disabled, updateParentId, hoveredBlockId]);
 
   useEffect(() => {
     let observer: MutationObserver | null = null;
@@ -140,7 +190,11 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
         const dom = ReactEditor.toDOMNode(editor, node);
 
         if (dom.parentElement) {
-          observer = new MutationObserver(close);
+          observer = new MutationObserver(() => {
+            if (!disabled) {
+              close();
+            }
+          });
 
           observer.observe(dom.parentElement, {
             childList: true,
@@ -154,10 +208,11 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
     return () => {
       observer?.disconnect();
     };
-  }, [close, editor, hoveredBlockId]);
+  }, [close, editor, hoveredBlockId, disabled]);
 
   return {
     hoveredBlockId,
+    hoveredBlockParentId,
     ref,
     cssProperty,
   };

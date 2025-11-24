@@ -51,7 +51,6 @@ import { getOptionsFromRow, initialDatabaseRow } from '@/application/database-yj
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useDatabaseViewLayout, useFieldSelector, useFieldType } from '@/application/database-yjs/selector';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
-import { applyYDoc } from '@/application/ydoc/apply';
 import {
   DatabaseViewLayout,
   DateFormat,
@@ -87,6 +86,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { DefaultTimeSetting } from '@/application/user-metadata';
+import { applyYDoc } from '@/application/ydoc/apply';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
 export function useResizeColumnWidthDispatch() {

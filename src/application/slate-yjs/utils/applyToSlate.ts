@@ -13,6 +13,11 @@ import { YBlock, YjsEditorKey } from '@/application/types';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type BlockMapEvent = YMapEvent<any>;
 
+interface YBlockChange {
+  action: string;
+  oldValue: unknown;
+}
+
 /**
  * Translates Yjs events to Slate editor operations
  * This function processes different types of Yjs events and applies corresponding changes to the Slate editor
@@ -126,8 +131,9 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
   });
 
   const keyPath: Record<string, number[]> = {};
+  const updates: { key: string; action: string; value: YBlockChange }[] = [];
 
-  keysChanged?.forEach((key: string, index: number) => {
+  keysChanged?.forEach((key: string) => {
     const value = keys.get(key);
 
     if (!value) {
@@ -135,19 +141,30 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
       return;
     }
 
-    console.debug(`📋 Processing block change ${index + 1}/${keysChanged.size}:`, {
+    updates.push({ key, action: value.action, value: value as YBlockChange });
+  });
+
+  // Sort updates: delete first, then add/update
+  updates.sort((a, b) => {
+    if (a.action === 'delete' && b.action !== 'delete') return -1;
+    if (a.action !== 'delete' && b.action === 'delete') return 1;
+    return 0;
+  });
+
+  updates.forEach(({ key, action, value }, index) => {
+    console.debug(`📋 Processing block change ${index + 1}/${updates.length}:`, {
       key,
-      action: value.action,
+      action,
       oldValue: value.oldValue,
     });
 
-    if (value.action === 'add') {
+    if (action === 'add') {
       console.debug(`➕ Adding new block: ${key}`);
       handleNewBlock(editor, key, keyPath);
-    } else if (value.action === 'delete') {
+    } else if (action === 'delete') {
       console.debug(`🗑️ Deleting block: ${key}`);
       handleDeleteNode(editor, key);
-    } else if (value.action === 'update') {
+    } else if (action === 'update') {
       console.debug(`🔄 Updating block: ${key}`);
       // TODO: Implement block update logic
     }

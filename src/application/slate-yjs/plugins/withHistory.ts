@@ -52,7 +52,7 @@ export function withYHistory<T extends YjsEditor>(editor: T): T & YHistoryEditor
   }
 
   e.undoManager = new Y.UndoManager(document, {
-    trackedOrigins: new Set([CollabOrigin.Local, null]),
+    trackedOrigins: new Set([CollabOrigin.Local, CollabOrigin.LocalManual, null]),
     captureTimeout: 200,
   });
 

@@ -9,8 +9,8 @@ import {
 } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import * as liveRegion from '@atlaskit/pragmatic-drag-and-drop-live-region';
 import { Virtualizer } from '@tanstack/react-virtual';
-
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+
 import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
 import { useReorderColumnDispatch, useReorderRowDispatch } from '@/application/database-yjs/dispatch';
 import {

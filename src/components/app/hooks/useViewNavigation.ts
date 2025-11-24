@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+
 import { SCROLL_DELAY, SCROLL_FALLBACK_DELAY } from './constants';
 
 export const useDatabaseViewNavigation = (
