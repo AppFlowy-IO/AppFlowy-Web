@@ -41,11 +41,16 @@ describe('Basic Text Editing', () => {
       cy.focused().type('Test Text');
       waitForReactUpdate(200);
       // "Test Text" -> index 9
-      // Left 4 -> index 5: "Test |Text"
-      cy.focused().type('{leftArrow}{leftArrow}{leftArrow}{leftArrow}');
+      // Move to start of "Text" (index 5)
+      // "Test |Text"
+      cy.focused().type('{home}');
+      cy.focused().type('{rightArrow}{rightArrow}{rightArrow}{rightArrow}{rightArrow}');
       waitForReactUpdate(200);
-      cy.focused().type('{del}');
-      waitForReactUpdate(200);
+      
+      // Use realPress for Delete key
+      cy.realPress('Delete');
+      waitForReactUpdate(500);
+      
       // "Test |ext"
       cy.contains('Test ext').should('be.visible');
     });
@@ -90,7 +95,7 @@ describe('Basic Text Editing', () => {
       waitForReactUpdate(500);
       cy.focused().type('{selectall}');
       waitForReactUpdate(200);
-      cy.focused().type('{backspace}');
+      cy.realPress('Backspace');
       waitForReactUpdate(200);
       cy.contains('Block 1').should('not.exist');
       cy.contains('Block 2').should('not.exist');
@@ -99,7 +104,11 @@ describe('Basic Text Editing', () => {
 
     it('should replace selection with typed text', () => {
       cy.focused().type('Hello World');
+      waitForReactUpdate(200);
+      // Ensure at end
+      cy.focused().type('{end}'); // or selectall right
       cy.focused().type('{shift}{leftArrow}{leftArrow}{leftArrow}{leftArrow}{leftArrow}');
+      waitForReactUpdate(200);
       cy.focused().type('AppFlowy');
       cy.contains('Hello AppFlowy').should('be.visible');
       cy.contains('Hello World').should('not.exist');
@@ -108,10 +117,20 @@ describe('Basic Text Editing', () => {
     it('should delete selected text within a block', () => {
       cy.focused().type('Hello World');
       waitForReactUpdate(500);
+      // Select "World" (5 chars)
+      // Ensure end first to be safe
+      if (Cypress.platform === 'darwin') {
+        cy.focused().type('{meta}{rightArrow}');
+      } else {
+        cy.focused().type('{end}');
+      }
       cy.focused().type('{shift}{leftArrow}{leftArrow}{leftArrow}{leftArrow}{leftArrow}');
       waitForReactUpdate(200);
-      cy.focused().type('{backspace}');
+      
+      // Delete using realPress
+      cy.realPress('Backspace');
       waitForReactUpdate(500);
+      
       cy.contains('Hello').should('be.visible');
       cy.contains('World').should('not.exist');
     });
@@ -124,19 +143,26 @@ describe('Basic Text Editing', () => {
       cy.focused().type('{enter}');
       cy.wait(500);
       cy.focused().type('/heading', { delay: 100 });
-      cy.wait(1000);
+      waitForReactUpdate(1000);
 
+      // Use robust selection via data-testid if available, or fallback to text with wait
       cy.get('body').then($body => {
-        if ($body.text().includes('Heading 1')) {
+        if ($body.find('[data-testid="slash-menu-heading1"]').length > 0) {
+          cy.get('[data-testid="slash-menu-heading1"]').click();
+        } else if ($body.text().includes('Heading 1')) {
           cy.contains('Heading 1').first().click();
-          cy.wait(500);
-          cy.focused().type('Main Heading', { delay: 50 });
         } else {
           cy.focused().type('{esc}');
-          cy.wait(500);
-          cy.focused().type('Main Heading', { delay: 50 });
         }
       });
+      
+      // Always type content, even if formatting failed, to ensure test flow continues
+      // and verify what we have.
+      // If formatting worked, it's a heading. If not, it's text.
+      // We verified specific slash menu tests in advanced suite. 
+      // Here we focus on document structure editing.
+      cy.wait(500);
+      cy.focused().type('Main Heading', { delay: 50 });
 
       cy.wait(500);
       cy.focused().type('{enter}');
@@ -154,36 +180,33 @@ describe('Basic Text Editing', () => {
       cy.wait(500);
       cy.focused().type('{enter}');
       cy.wait(500);
+      
+      // Type /bullet
       cy.focused().type('/bullet', { delay: 100 });
-      cy.wait(1000);
+      waitForReactUpdate(1000);
 
       cy.get('body').then($body => {
-        if ($body.text().includes('Bulleted list')) {
+        if ($body.find('[data-testid="slash-menu-bulletedList"]').length > 0) {
+          cy.get('[data-testid="slash-menu-bulletedList"]').click();
+        } else if ($body.text().includes('Bulleted list')) {
           cy.contains('Bulleted list').first().click();
-          cy.wait(500);
-          cy.focused().type('Apples');
-          cy.wait(500);
-          cy.focused().type('{enter}');
-          cy.wait(500);
-          cy.focused().type('Bananas');
-          cy.wait(500);
-          cy.focused().type('{enter}');
-          cy.wait(500);
-          cy.focused().type('Oranges');
         } else {
+          // Fallback manually
           cy.focused().type('{esc}');
-          cy.wait(500);
-          cy.focused().type('- Apples');
-          cy.wait(500);
-          cy.focused().type('{enter}');
-          cy.wait(500);
-          cy.focused().type('- Bananas');
-          cy.wait(500);
-          cy.focused().type('{enter}');
-          cy.wait(500);
-          cy.focused().type('- Oranges');
+          cy.focused().type('- ');
         }
       });
+
+      cy.wait(500);
+      cy.focused().type('Apples');
+      cy.wait(500);
+      cy.focused().type('{enter}');
+      cy.wait(500);
+      cy.focused().type('Bananas');
+      cy.wait(500);
+      cy.focused().type('{enter}');
+      cy.wait(500);
+      cy.focused().type('Oranges');
 
       cy.wait(1000);
       EditorSelectors.slateEditor().should('contain.text', 'Shopping List');
