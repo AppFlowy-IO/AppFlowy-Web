@@ -36,21 +36,41 @@ describe('Editor Commands', () => {
 
   it('should Undo typing', () => {
     cy.focused().type('Undo Me');
-    waitForReactUpdate(200);
+    waitForReactUpdate(500);
     cy.contains('Undo Me').should('be.visible');
-    cy.focused().type('{cmd}z');
-    waitForReactUpdate(200);
+    
+    // Use realPress for robust undo shortcut
+    if (Cypress.platform === 'darwin') {
+      cy.realPress(['Meta', 'z']);
+    } else {
+      cy.realPress(['Control', 'z']);
+    }
+    waitForReactUpdate(500);
+    
     cy.get('[contenteditable]').should('not.contain', 'Undo Me');
   });
 
   it('should Redo typing', () => {
     cy.focused().type('Redo Me');
-    waitForReactUpdate(200);
-    cy.focused().type('{cmd}z');
-    waitForReactUpdate(200);
+    waitForReactUpdate(500);
+    
+    // Undo first
+    if (Cypress.platform === 'darwin') {
+      cy.realPress(['Meta', 'z']);
+    } else {
+      cy.realPress(['Control', 'z']);
+    }
+    waitForReactUpdate(500);
     cy.contains('Redo Me').should('not.exist');
-    cy.focused().type('{cmd}{shift}z');
-    waitForReactUpdate(200);
+    
+    // Redo
+    if (Cypress.platform === 'darwin') {
+      cy.realPress(['Meta', 'Shift', 'z']);
+    } else {
+      cy.realPress(['Control', 'Shift', 'z']);
+    }
+    waitForReactUpdate(500);
+    
     cy.contains('Redo Me').should('be.visible');
   });
 

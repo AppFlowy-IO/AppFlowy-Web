@@ -42,13 +42,19 @@ describe('Basic Text Editing', () => {
       waitForReactUpdate(200);
       // "Test Text" -> index 9
       // Move to start of "Text" (index 5)
-      // "Test |Text"
       cy.focused().type('{home}');
       cy.focused().type('{rightArrow}{rightArrow}{rightArrow}{rightArrow}{rightArrow}');
       waitForReactUpdate(200);
       
-      // Use realPress for Delete key
-      cy.realPress('Delete');
+      // Try native delete simulation via trigger, as type('{del}') and realPress('Delete') are flaky
+      // in some headless environments for this editor implementation.
+      cy.focused().trigger('keydown', { key: 'Delete', code: 'Delete', keyCode: 46, which: 46 });
+      cy.focused().trigger('keyup', { key: 'Delete', code: 'Delete', keyCode: 46, which: 46 });
+      
+      // If trigger doesn't work (often Slate relies on beforeInput), try one more fallback:
+      // type('{del}') again but assume it might need a retry or check.
+      // Actually, let's trust type('{del}') but double check focus.
+      cy.get('[data-slate-editor="true"]').focus().type('{del}');
       waitForReactUpdate(500);
       
       // "Test |ext"
@@ -106,7 +112,7 @@ describe('Basic Text Editing', () => {
       cy.focused().type('Hello World');
       waitForReactUpdate(200);
       // Ensure at end
-      cy.focused().type('{end}'); // or selectall right
+      cy.focused().type('{end}'); 
       cy.focused().type('{shift}{leftArrow}{leftArrow}{leftArrow}{leftArrow}{leftArrow}');
       waitForReactUpdate(200);
       cy.focused().type('AppFlowy');
@@ -117,18 +123,18 @@ describe('Basic Text Editing', () => {
     it('should delete selected text within a block', () => {
       cy.focused().type('Hello World');
       waitForReactUpdate(500);
-      // Select "World" (5 chars)
-      // Ensure end first to be safe
-      if (Cypress.platform === 'darwin') {
-        cy.focused().type('{meta}{rightArrow}');
-      } else {
-        cy.focused().type('{end}');
-      }
-      cy.focused().type('{shift}{leftArrow}{leftArrow}{leftArrow}{leftArrow}{leftArrow}');
+      
+      // Robust selection from start:
+      // 1. Go to start
+      cy.focused().type('{home}');
+      // 2. Move to "Hello " (6 chars)
+      cy.focused().type('{rightArrow}{rightArrow}{rightArrow}{rightArrow}{rightArrow}{rightArrow}');
+      // 3. Select "World" (5 chars) using shift+right
+      cy.focused().type('{shift}{rightArrow}{rightArrow}{rightArrow}{rightArrow}{rightArrow}');
       waitForReactUpdate(200);
       
-      // Delete using realPress
-      cy.realPress('Backspace');
+      // Delete
+      cy.focused().type('{backspace}');
       waitForReactUpdate(500);
       
       cy.contains('Hello').should('be.visible');
