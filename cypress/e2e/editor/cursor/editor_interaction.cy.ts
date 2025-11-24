@@ -76,6 +76,82 @@ describe('Editor Navigation & Interaction', () => {
       cy.get('[data-slate-editor="true"]').should('contain.text', 'Replaced');
       cy.get('[data-slate-editor="true"]').should('not.contain.text', 'SelectMe');
     });
+
+    it('should navigate up/down between blocks', () => {
+      // Setup 3 blocks
+      cy.focused().type('Block 1{enter}Block 2{enter}Block 3');
+      waitForReactUpdate(500);
+
+      // Cursor is at end of Block 3
+      // Move Up to Block 2
+      cy.focused().type('{upArrow}');
+      waitForReactUpdate(200);
+      cy.focused().type(' Modified');
+      cy.contains('Block 2 Modified').should('be.visible');
+
+      // Move Up to Block 1
+      cy.focused().type('{upArrow}');
+      waitForReactUpdate(200);
+      cy.focused().type(' Top');
+      cy.contains('Block 1 Top').should('be.visible');
+
+      // Move Down to Block 2 (now modified)
+      cy.focused().type('{downArrow}');
+      waitForReactUpdate(200);
+      // Move Down to Block 3
+      cy.focused().type('{downArrow}');
+      waitForReactUpdate(200);
+      cy.focused().type(' Bottom');
+      cy.contains('Block 3 Bottom').should('be.visible');
+    });
+
+    it('should navigate between different block types', () => {
+      // Setup: Heading, Paragraph, Bullet List
+      cy.focused().type('/heading{enter}');
+      cy.contains('Heading 1').click();
+      cy.focused().type('Heading Block{enter}');
+      cy.focused().type('Paragraph Block{enter}');
+      cy.focused().type('/bullet{enter}');
+      cy.contains('Bulleted list').click();
+      cy.focused().type('List Block');
+      waitForReactUpdate(500);
+
+      // Test Up Navigation: List -> Paragraph
+      cy.contains('List Block').click({ force: true });
+      // Move to start using robust selectall+left
+      cy.focused().type('{selectall}{leftArrow}');
+      waitForReactUpdate(200);
+      
+      // Move up using realPress
+      if (Cypress.platform === 'darwin') {
+        cy.realPress('ArrowUp');
+      } else {
+        cy.realPress('ArrowUp');
+      }
+      waitForReactUpdate(500);
+      
+      cy.focused().type('UpTest');
+      // Expect 'UpTest' to be present
+      cy.get('[data-slate-editor="true"]').should('contain.text', 'UpTest');
+
+      // Test Down Navigation: Heading -> Paragraph
+      cy.contains('Heading Block').click({ force: true });
+      // Move to end
+      cy.focused().type('{selectall}{rightArrow}');
+      waitForReactUpdate(200);
+      
+      // Move down using realPress
+      if (Cypress.platform === 'darwin') {
+        cy.realPress('ArrowDown');
+      } else {
+        cy.realPress('ArrowDown');
+      }
+      waitForReactUpdate(500);
+      
+      cy.focused().type('DownTest');
+      // Expect 'DownTest' to be present
+      cy.get('[data-slate-editor="true"]').should('contain.text', 'DownTest');
+    });
   });
 
   describe('Block Interaction', () => {
