@@ -105,3 +105,39 @@ export const checkImage = async (url: string) => {
     img.src = url;
   });
 };
+
+export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
+  if (isAppFlowyFileStorageUrl(url)) {
+    const token = getTokenParsed();
+
+    if (!token) return null;
+
+    const fullUrl = resolveImageUrl(url);
+
+    try {
+      const response = await fetch(fullUrl, {
+        headers: {
+          Authorization: `Bearer ${token.access_token}`,
+        },
+      });
+
+      if (response.ok) {
+        return await response.blob();
+      }
+    } catch (error) {
+      return null;
+    }
+  } else {
+    try {
+      const response = await fetch(url);
+
+      if (response.ok) {
+        return await response.blob();
+      }
+    } catch (error) {
+      return null;
+    }
+  }
+
+  return null;
+};
