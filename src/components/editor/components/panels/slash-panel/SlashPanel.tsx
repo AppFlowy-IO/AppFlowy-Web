@@ -2,6 +2,7 @@ import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -180,7 +181,7 @@ export function SlashPanel({
 }: {
   setEmojiPosition: (position: { top: number; left: number }) => void;
 }) {
-  const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, savedScrollPosition } = usePanelContext();
+  const { isPanelOpen, panelPosition, closePanel, searchText, removeContent } = usePanelContext();
   const {
     addPage,
     openPageModal,
@@ -298,29 +299,19 @@ export function SlashPanel({
 
       if (newBlockId && isEmbedBlockTypes(type)) {
         // Skip selection for database blocks (Grid, Board, Calendar) as they open in a modal
-        // and don't need cursor positioning
+        // and don't need cursor positioning. Explicitly deselect to prevent Slate from scrolling.
         const isDatabaseBlock = [BlockType.GridBlock, BlockType.BoardBlock, BlockType.CalendarBlock].includes(type);
 
-        if (!isDatabaseBlock) {
+        if (isDatabaseBlock) {
+          Transforms.deselect(editor);
+        } else {
           const entry = findSlateEntryByBlockId(editor, newBlockId);
 
           if (!entry) return;
 
           const [, path] = entry;
 
-          // Store the current scroll position before selecting
-          const scrollContainer = document.querySelector('.appflowy-scroll-container');
-          const initialScrollTop = scrollContainer?.scrollTop ?? 0;
-
           editor.select(editor.start(path));
-
-          // Restore the scroll position after selection
-          // Use requestAnimationFrame to ensure DOM has updated
-          requestAnimationFrame(() => {
-            if (scrollContainer) {
-              scrollContainer.scrollTop = initialScrollTop;
-            }
-          });
         }
       }
 
@@ -731,23 +722,19 @@ export function SlashPanel({
         onClick: async () => {
           if (!viewId || !addPage || !openPageModal) return;
 
-          // Use the scroll position saved from panel context (saved BEFORE typing "/" or opening panel)
-          const scrollContainer = document.querySelector('.appflowy-scroll-container');
-          const savedScrollTop = savedScrollPosition ?? 0;
-
-          // Prevent scroll events from causing visible jumps
-          let scrollLocked = true;
-          const preventScroll = () => {
-            if (scrollLocked && scrollContainer) {
-              scrollContainer.scrollTop = savedScrollTop;
-            }
-          };
-
-          if (scrollContainer) {
-            // Immediately set scroll to target to prevent any jump
-            scrollContainer.scrollTop = savedScrollTop;
-            scrollContainer.addEventListener('scroll', preventScroll);
+          let scrollContainer: Element | null = null;
+          try {
+            const domNode = ReactEditor.toDOMNode(editor, editor);
+            scrollContainer = domNode.closest('.appflowy-scroll-container');
+          } catch (e) {
+            // Ignore
           }
+
+          if (!scrollContainer) {
+            scrollContainer = document.querySelector('.appflowy-scroll-container');
+          }
+          
+          const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
             const newViewId = await addPage(viewId, {
@@ -762,29 +749,15 @@ export function SlashPanel({
 
             openPageModal(newViewId);
 
-            // Keep forcing scroll position for 1000ms to handle any async changes
-            if (scrollContainer) {
-              console.log('[GRID] Using saved scroll position from panel context:', savedScrollTop);
-              let restoreCount = 0;
-
-              const intervalId = setInterval(() => {
-                const currentScroll = scrollContainer.scrollTop;
-
-                if (currentScroll !== savedScrollTop) {
-                  console.log(`[GRID] Restoring scroll from ${currentScroll} to ${savedScrollTop} (attempt ${restoreCount + 1})`);
-                  scrollContainer.scrollTop = savedScrollTop;
-                  restoreCount++;
+            if (savedScrollTop !== undefined) {
+              const restoreScroll = () => {
+                const currentContainer = document.querySelector('.appflowy-scroll-container');
+                if (currentContainer) {
+                  currentContainer.scrollTop = savedScrollTop;
                 }
-              }, 16); // Check every frame (~60fps)
+              };
 
-              setTimeout(() => {
-                clearInterval(intervalId);
-                scrollLocked = false;
-                if (scrollContainer) {
-                  scrollContainer.removeEventListener('scroll', preventScroll);
-                }
-                console.log(`[GRID] Scroll restoration stopped after ${restoreCount} corrections. Final position: ${scrollContainer.scrollTop}`);
-              }, 1000);
+              setTimeout(restoreScroll, 50);
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
@@ -809,23 +782,19 @@ export function SlashPanel({
         onClick: async () => {
           if (!viewId || !addPage || !openPageModal) return;
 
-          // Use the scroll position saved from panel context (saved BEFORE typing "/" or opening panel)
-          const scrollContainer = document.querySelector('.appflowy-scroll-container');
-          const savedScrollTop = savedScrollPosition ?? 0;
-
-          // Prevent scroll events from causing visible jumps
-          let scrollLocked = true;
-          const preventScroll = () => {
-            if (scrollLocked && scrollContainer) {
-              scrollContainer.scrollTop = savedScrollTop;
-            }
-          };
-
-          if (scrollContainer) {
-            // Immediately set scroll to target to prevent any jump
-            scrollContainer.scrollTop = savedScrollTop;
-            scrollContainer.addEventListener('scroll', preventScroll);
+          let scrollContainer: Element | null = null;
+          try {
+            const domNode = ReactEditor.toDOMNode(editor, editor);
+            scrollContainer = domNode.closest('.appflowy-scroll-container');
+          } catch (e) {
+            // Ignore
           }
+
+          if (!scrollContainer) {
+            scrollContainer = document.querySelector('.appflowy-scroll-container');
+          }
+          
+          const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
             const newViewId = await addPage(viewId, {
@@ -840,36 +809,18 @@ export function SlashPanel({
 
             openPageModal(newViewId);
 
-            // Aggressive scroll restoration with setInterval
-            if (scrollContainer) {
-              console.log('[BOARD] Using saved scroll position from panel context:', savedScrollTop);
-              let restoreCount = 0;
-
-              const intervalId = setInterval(() => {
-                const currentScroll = scrollContainer.scrollTop;
-
-                if (currentScroll !== savedScrollTop) {
-                  console.log(`[BOARD] Restoring scroll from ${currentScroll} to ${savedScrollTop} (attempt ${restoreCount + 1})`);
-                  scrollContainer.scrollTop = savedScrollTop;
-                  restoreCount++;
+            if (savedScrollTop !== undefined) {
+              const restoreScroll = () => {
+                const currentContainer = document.querySelector('.appflowy-scroll-container');
+                if (currentContainer) {
+                  currentContainer.scrollTop = savedScrollTop;
                 }
-              }, 16); // Check every frame
+              };
 
-              setTimeout(() => {
-                clearInterval(intervalId);
-                scrollLocked = false;
-                if (scrollContainer) {
-                  scrollContainer.removeEventListener('scroll', preventScroll);
-                }
-                console.log(`[BOARD] Scroll restoration stopped after ${restoreCount} corrections. Final position: ${scrollContainer.scrollTop}`);
-              }, 1000);
+              setTimeout(restoreScroll, 50);
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
-            scrollLocked = false;
-            if (scrollContainer) {
-              scrollContainer.removeEventListener('scroll', preventScroll);
-            }
             notify.error(e.message);
           }
         },
@@ -891,23 +842,19 @@ export function SlashPanel({
         onClick: async () => {
           if (!viewId || !addPage || !openPageModal) return;
 
-          // Use the scroll position saved from panel context (saved BEFORE typing "/" or opening panel)
-          const scrollContainer = document.querySelector('.appflowy-scroll-container');
-          const savedScrollTop = savedScrollPosition ?? 0;
-
-          // Prevent scroll events from causing visible jumps
-          let scrollLocked = true;
-          const preventScroll = () => {
-            if (scrollLocked && scrollContainer) {
-              scrollContainer.scrollTop = savedScrollTop;
-            }
-          };
-
-          if (scrollContainer) {
-            // Immediately set scroll to target to prevent any jump
-            scrollContainer.scrollTop = savedScrollTop;
-            scrollContainer.addEventListener('scroll', preventScroll);
+          let scrollContainer: Element | null = null;
+          try {
+            const domNode = ReactEditor.toDOMNode(editor, editor);
+            scrollContainer = domNode.closest('.appflowy-scroll-container');
+          } catch (e) {
+            // Ignore
           }
+
+          if (!scrollContainer) {
+            scrollContainer = document.querySelector('.appflowy-scroll-container');
+          }
+          
+          const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
             const newViewId = await addPage(viewId, {
@@ -922,36 +869,18 @@ export function SlashPanel({
 
             openPageModal(newViewId);
 
-            // Aggressive scroll restoration with setInterval
-            if (scrollContainer) {
-              console.log('[CALENDAR] Using saved scroll position from panel context:', savedScrollTop);
-              let restoreCount = 0;
-
-              const intervalId = setInterval(() => {
-                const currentScroll = scrollContainer.scrollTop;
-
-                if (currentScroll !== savedScrollTop) {
-                  console.log(`[CALENDAR] Restoring scroll from ${currentScroll} to ${savedScrollTop} (attempt ${restoreCount + 1})`);
-                  scrollContainer.scrollTop = savedScrollTop;
-                  restoreCount++;
+            if (savedScrollTop !== undefined) {
+              const restoreScroll = () => {
+                const currentContainer = document.querySelector('.appflowy-scroll-container');
+                if (currentContainer) {
+                  currentContainer.scrollTop = savedScrollTop;
                 }
-              }, 16); // Check every frame
+              };
 
-              setTimeout(() => {
-                clearInterval(intervalId);
-                scrollLocked = false;
-                if (scrollContainer) {
-                  scrollContainer.removeEventListener('scroll', preventScroll);
-                }
-                console.log(`[CALENDAR] Scroll restoration stopped after ${restoreCount} corrections. Final position: ${scrollContainer.scrollTop}`);
-              }, 1000);
+              setTimeout(restoreScroll, 50);
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
-            scrollLocked = false;
-            if (scrollContainer) {
-              scrollContainer.removeEventListener('scroll', preventScroll);
-            }
             notify.error(e.message);
           }
         },

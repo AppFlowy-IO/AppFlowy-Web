@@ -21,7 +21,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { handleResizeStart, isResizing } = useColumnResize(columns);
   const { isDocumentBlock, paddingEnd } = useDatabaseContext();
 
-  const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop } = useGridVirtualizer({
+  const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady } = useGridVirtualizer({
     data,
     columns,
   });
@@ -148,6 +148,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
           style={{
             height: virtualizer.getTotalSize(),
             position: 'relative',
+            opacity: isReady ? 1 : 0, // Hide content until parent offset is stable to prevent scroll jumps
           }}
         >
           {rowItems.map((row) => {

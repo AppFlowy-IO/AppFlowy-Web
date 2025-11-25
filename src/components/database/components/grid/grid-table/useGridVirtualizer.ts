@@ -24,6 +24,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
   const [parentOffset, setParentOffset] = useState(0);
   const rafIdRef = useRef<number>();
   const isInitialMountRef = useRef(true);
+  const [isReady, setIsReady] = useState(false);
 
   const getScrollElement = useCallback(() => {
     if (!parentRef.current) return null;
@@ -81,6 +82,7 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
       if (parentOffsetRef.current === null) {
         parentOffsetRef.current = nextOffset;
         setParentOffset(nextOffset);
+        setIsReady(true);
         logDebug('[GridVirtualizer] initial parent offset set', {
           nextOffset,
           isInitialMount: isInitialMountRef.current,
@@ -104,11 +106,13 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
           isInitialMount: isInitialMountRef.current,
         });
         isInitialMountRef.current = false;
+        setIsReady(true);
         return;
       }
 
       parentOffsetRef.current = nextOffset;
       setParentOffset(nextOffset);
+      setIsReady(true);
       logDebug('[GridVirtualizer] parent offset updated', {
         nextOffset,
         previous: parentOffset,
@@ -202,5 +206,6 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     virtualizer,
     columnVirtualizer,
     scrollMarginTop: parentOffset,
+    isReady,
   };
 }
