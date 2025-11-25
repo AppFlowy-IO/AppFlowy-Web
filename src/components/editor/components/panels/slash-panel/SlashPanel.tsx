@@ -180,7 +180,7 @@ export function SlashPanel({
 }: {
   setEmojiPosition: (position: { top: number; left: number }) => void;
 }) {
-  const { isPanelOpen, panelPosition, closePanel, searchText, removeContent } = usePanelContext();
+  const { isPanelOpen, panelPosition, closePanel, searchText, removeContent, savedScrollPosition } = usePanelContext();
   const {
     addPage,
     openPageModal,
@@ -213,6 +213,7 @@ export function SlashPanel({
   const [transformOrigin, setTransformOrigin] = React.useState<PopoverOrigin | undefined>(undefined);
   const selectedOptionRef = React.useRef<string | null>(null);
   const { openPopover } = usePopoverContext();
+
   const open = useMemo(() => {
     return isPanelOpen(PanelType.Slash);
   }, [isPanelOpen]);
@@ -296,13 +297,31 @@ export function SlashPanel({
       }
 
       if (newBlockId && isEmbedBlockTypes(type)) {
-        const entry = findSlateEntryByBlockId(editor, newBlockId);
+        // Skip selection for database blocks (Grid, Board, Calendar) as they open in a modal
+        // and don't need cursor positioning
+        const isDatabaseBlock = [BlockType.GridBlock, BlockType.BoardBlock, BlockType.CalendarBlock].includes(type);
 
-        if (!entry) return;
+        if (!isDatabaseBlock) {
+          const entry = findSlateEntryByBlockId(editor, newBlockId);
 
-        const [, path] = entry;
+          if (!entry) return;
 
-        editor.select(editor.start(path));
+          const [, path] = entry;
+
+          // Store the current scroll position before selecting
+          const scrollContainer = document.querySelector('.appflowy-scroll-container');
+          const initialScrollTop = scrollContainer?.scrollTop ?? 0;
+
+          editor.select(editor.start(path));
+
+          // Restore the scroll position after selection
+          // Use requestAnimationFrame to ensure DOM has updated
+          requestAnimationFrame(() => {
+            if (scrollContainer) {
+              scrollContainer.scrollTop = initialScrollTop;
+            }
+          });
+        }
       }
 
       if ([BlockType.FileBlock, BlockType.ImageBlock, BlockType.EquationBlock, BlockType.VideoBlock].includes(type)) {
@@ -711,6 +730,25 @@ export function SlashPanel({
         keywords: ['grid', 'table', 'database'],
         onClick: async () => {
           if (!viewId || !addPage || !openPageModal) return;
+
+          // Use the scroll position saved from panel context (saved BEFORE typing "/" or opening panel)
+          const scrollContainer = document.querySelector('.appflowy-scroll-container');
+          const savedScrollTop = savedScrollPosition ?? 0;
+
+          // Prevent scroll events from causing visible jumps
+          let scrollLocked = true;
+          const preventScroll = () => {
+            if (scrollLocked && scrollContainer) {
+              scrollContainer.scrollTop = savedScrollTop;
+            }
+          };
+
+          if (scrollContainer) {
+            // Immediately set scroll to target to prevent any jump
+            scrollContainer.scrollTop = savedScrollTop;
+            scrollContainer.addEventListener('scroll', preventScroll);
+          }
+
           try {
             const newViewId = await addPage(viewId, {
               layout: ViewLayout.Grid,
@@ -723,6 +761,31 @@ export function SlashPanel({
             } as DatabaseNodeData);
 
             openPageModal(newViewId);
+
+            // Keep forcing scroll position for 1000ms to handle any async changes
+            if (scrollContainer) {
+              console.log('[GRID] Using saved scroll position from panel context:', savedScrollTop);
+              let restoreCount = 0;
+
+              const intervalId = setInterval(() => {
+                const currentScroll = scrollContainer.scrollTop;
+
+                if (currentScroll !== savedScrollTop) {
+                  console.log(`[GRID] Restoring scroll from ${currentScroll} to ${savedScrollTop} (attempt ${restoreCount + 1})`);
+                  scrollContainer.scrollTop = savedScrollTop;
+                  restoreCount++;
+                }
+              }, 16); // Check every frame (~60fps)
+
+              setTimeout(() => {
+                clearInterval(intervalId);
+                scrollLocked = false;
+                if (scrollContainer) {
+                  scrollContainer.removeEventListener('scroll', preventScroll);
+                }
+                console.log(`[GRID] Scroll restoration stopped after ${restoreCount} corrections. Final position: ${scrollContainer.scrollTop}`);
+              }, 1000);
+            }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
             notify.error(e.message);
@@ -745,6 +808,25 @@ export function SlashPanel({
         keywords: ['board', 'kanban', 'database'],
         onClick: async () => {
           if (!viewId || !addPage || !openPageModal) return;
+
+          // Use the scroll position saved from panel context (saved BEFORE typing "/" or opening panel)
+          const scrollContainer = document.querySelector('.appflowy-scroll-container');
+          const savedScrollTop = savedScrollPosition ?? 0;
+
+          // Prevent scroll events from causing visible jumps
+          let scrollLocked = true;
+          const preventScroll = () => {
+            if (scrollLocked && scrollContainer) {
+              scrollContainer.scrollTop = savedScrollTop;
+            }
+          };
+
+          if (scrollContainer) {
+            // Immediately set scroll to target to prevent any jump
+            scrollContainer.scrollTop = savedScrollTop;
+            scrollContainer.addEventListener('scroll', preventScroll);
+          }
+
           try {
             const newViewId = await addPage(viewId, {
               layout: ViewLayout.Board,
@@ -757,8 +839,37 @@ export function SlashPanel({
             } as DatabaseNodeData);
 
             openPageModal(newViewId);
+
+            // Aggressive scroll restoration with setInterval
+            if (scrollContainer) {
+              console.log('[BOARD] Using saved scroll position from panel context:', savedScrollTop);
+              let restoreCount = 0;
+
+              const intervalId = setInterval(() => {
+                const currentScroll = scrollContainer.scrollTop;
+
+                if (currentScroll !== savedScrollTop) {
+                  console.log(`[BOARD] Restoring scroll from ${currentScroll} to ${savedScrollTop} (attempt ${restoreCount + 1})`);
+                  scrollContainer.scrollTop = savedScrollTop;
+                  restoreCount++;
+                }
+              }, 16); // Check every frame
+
+              setTimeout(() => {
+                clearInterval(intervalId);
+                scrollLocked = false;
+                if (scrollContainer) {
+                  scrollContainer.removeEventListener('scroll', preventScroll);
+                }
+                console.log(`[BOARD] Scroll restoration stopped after ${restoreCount} corrections. Final position: ${scrollContainer.scrollTop}`);
+              }, 1000);
+            }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
+            scrollLocked = false;
+            if (scrollContainer) {
+              scrollContainer.removeEventListener('scroll', preventScroll);
+            }
             notify.error(e.message);
           }
         },
@@ -779,6 +890,25 @@ export function SlashPanel({
         keywords: ['calendar', 'date', 'database'],
         onClick: async () => {
           if (!viewId || !addPage || !openPageModal) return;
+
+          // Use the scroll position saved from panel context (saved BEFORE typing "/" or opening panel)
+          const scrollContainer = document.querySelector('.appflowy-scroll-container');
+          const savedScrollTop = savedScrollPosition ?? 0;
+
+          // Prevent scroll events from causing visible jumps
+          let scrollLocked = true;
+          const preventScroll = () => {
+            if (scrollLocked && scrollContainer) {
+              scrollContainer.scrollTop = savedScrollTop;
+            }
+          };
+
+          if (scrollContainer) {
+            // Immediately set scroll to target to prevent any jump
+            scrollContainer.scrollTop = savedScrollTop;
+            scrollContainer.addEventListener('scroll', preventScroll);
+          }
+
           try {
             const newViewId = await addPage(viewId, {
               layout: ViewLayout.Calendar,
@@ -791,8 +921,37 @@ export function SlashPanel({
             } as DatabaseNodeData);
 
             openPageModal(newViewId);
+
+            // Aggressive scroll restoration with setInterval
+            if (scrollContainer) {
+              console.log('[CALENDAR] Using saved scroll position from panel context:', savedScrollTop);
+              let restoreCount = 0;
+
+              const intervalId = setInterval(() => {
+                const currentScroll = scrollContainer.scrollTop;
+
+                if (currentScroll !== savedScrollTop) {
+                  console.log(`[CALENDAR] Restoring scroll from ${currentScroll} to ${savedScrollTop} (attempt ${restoreCount + 1})`);
+                  scrollContainer.scrollTop = savedScrollTop;
+                  restoreCount++;
+                }
+              }, 16); // Check every frame
+
+              setTimeout(() => {
+                clearInterval(intervalId);
+                scrollLocked = false;
+                if (scrollContainer) {
+                  scrollContainer.removeEventListener('scroll', preventScroll);
+                }
+                console.log(`[CALENDAR] Scroll restoration stopped after ${restoreCount} corrections. Final position: ${scrollContainer.scrollTop}`);
+              }, 1000);
+            }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
+            scrollLocked = false;
+            if (scrollContainer) {
+              scrollContainer.removeEventListener('scroll', preventScroll);
+            }
             notify.error(e.message);
           }
         },
@@ -947,10 +1106,23 @@ export function SlashPanel({
     if (!selectedOption) return;
     const el = optionsRef.current?.querySelector(`[data-option-key="${selectedOption}"]`) as HTMLButtonElement | null;
 
-    el?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'nearest',
-    });
+    // Scroll the option into view within the menu only, without affecting parent scroll containers
+    if (el && optionsRef.current) {
+      const menu = optionsRef.current;
+      const elOffsetTop = el.offsetTop;
+      const elHeight = el.offsetHeight;
+      const menuScrollTop = menu.scrollTop;
+      const menuHeight = menu.clientHeight;
+
+      // Scroll the menu container (not the entire page) to show the selected option
+      if (elOffsetTop < menuScrollTop) {
+        // Element is above visible area
+        menu.scrollTop = elOffsetTop;
+      } else if (elOffsetTop + elHeight > menuScrollTop + menuHeight) {
+        // Element is below visible area
+        menu.scrollTop = elOffsetTop + elHeight - menuHeight;
+      }
+    }
   }, [selectedOption]);
 
   useEffect(() => {

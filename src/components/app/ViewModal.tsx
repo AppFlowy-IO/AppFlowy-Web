@@ -289,9 +289,11 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       onClose={handleClose}
       fullWidth={true}
       keepMounted={false}
-      disableAutoFocus={false}
+      disableAutoFocus={true}
       disableEnforceFocus={false}
       disableRestoreFocus={true}
+      disableScrollLock={true}
+      disablePortal={false}
       TransitionComponent={Transition}
       PaperProps={{
         ref,
