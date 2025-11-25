@@ -21,6 +21,7 @@ function InviteCode() {
   const [hasJoined, setHasJoined] = useState(false);
 
   const [isInValid, setIsInValid] = useState(false);
+  const [invalidMessage, setInvalidMessage] = useState<string>();
   const [workspace, setWorkspace] = useState<Workspace>();
   const [isError, setIsError] = useState(false);
 
@@ -50,6 +51,7 @@ function InviteCode() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInValid(true);
       } else {
         setIsError(true);
@@ -79,6 +81,7 @@ function InviteCode() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (e: any) {
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInValid(true);
       } else {
         setIsError(true);
@@ -101,7 +104,7 @@ function InviteCode() {
   );
 
   if (isInValid) {
-    return <InvalidLink />;
+    return <InvalidLink message={invalidMessage} />;
   }
 
   if (isError) {

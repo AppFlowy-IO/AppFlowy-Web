@@ -24,6 +24,7 @@ export function AsGuest() {
   const [page, setPage] = useState<{ view_id: string; name: string } | null>(null);
 
   const [isInvalid, setIsInvalid] = useState(false);
+  const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const [notInvitee, setNotInvitee] = useState(false);
 
@@ -63,6 +64,7 @@ export function AsGuest() {
       // eslint-disable-next-line
     } catch (e: any) {
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInvalid(true);
       } else if (e.code === ERROR_CODE.ALREADY_JOINED) {
         // do nothing
@@ -81,7 +83,7 @@ export function AsGuest() {
   }, [loadInvitation]);
 
   if (isInvalid) {
-    return <InvalidLink />;
+    return <InvalidLink message={invalidMessage} />;
   }
 
   if (notInvitee) {

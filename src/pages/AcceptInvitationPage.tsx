@@ -27,6 +27,7 @@ function AcceptInvitationPage() {
   const [loading, setLoading] = useState(false);
   const [notInvitee, setNotInvitee] = useState(false);
   const [isError, setIsError] = useState(false);
+  const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const loadInvitation = useCallback(async () => {
     if (!service) return;
@@ -51,6 +52,7 @@ function AcceptInvitationPage() {
       }
 
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInValid(true);
         return;
       }
@@ -98,6 +100,7 @@ function AcceptInvitationPage() {
       // eslint-disable-next-line
     } catch (e: any) {
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInValid(true);
         return;
       }
@@ -126,7 +129,7 @@ function AcceptInvitationPage() {
   );
 
   if (isInValid) {
-    return <InvalidLink />;
+    return <InvalidLink message={invalidMessage} />;
   }
 
   if (notInvitee) {

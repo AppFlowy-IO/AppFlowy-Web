@@ -29,6 +29,7 @@ export function ApproveConversion() {
   const [guestName, setGuestName] = useState<string>();
 
   const [isInvalid, setIsInvalid] = useState(false);
+  const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const [notInvitee, setNotInvitee] = useState(false);
 
@@ -67,6 +68,7 @@ export function ApproveConversion() {
       // eslint-disable-next-line
     } catch (e: any) {
       if (e.code === ERROR_CODE.INVALID_LINK) {
+        setInvalidMessage(e.message);
         setIsInvalid(true);
       } else if (e.code === ERROR_CODE.ALREADY_JOINED) {
         setIsAlreadyMember(true);
@@ -145,7 +147,7 @@ export function ApproveConversion() {
   }
 
   if (isInvalid) {
-    return <InvalidLink />;
+    return <InvalidLink message={invalidMessage} />;
   }
 
   if (notInvitee) {
