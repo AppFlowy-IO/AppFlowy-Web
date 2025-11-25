@@ -128,6 +128,11 @@ const EditorEditable = () => {
     }
   }, [editor]);
 
+  // Override scrollSelectionIntoView to prevent automatic scrolling
+  const scrollSelectionIntoView = useCallback(() => {
+    // Do nothing - prevent automatic scroll behavior
+  }, []);
+
   return (
     <PanelProvider editor={editor}>
       <BlockPopoverProvider editor={editor}>
@@ -163,6 +168,7 @@ const EditorEditable = () => {
               onKeyDown={onKeyDown}
               onMouseDown={handleMouseDown}
               onClick={handleClick}
+              scrollSelectionIntoView={scrollSelectionIntoView}
             />
           </ErrorBoundary>
 

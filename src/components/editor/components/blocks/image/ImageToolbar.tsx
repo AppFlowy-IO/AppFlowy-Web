@@ -15,7 +15,7 @@ import ActionButton from '@/components/editor/components/toolbar/selection-toolb
 import Align from '@/components/editor/components/toolbar/selection-toolbar/actions/Align';
 import { ImageBlockNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { copyTextToClipboard } from '@/utils/copy';
+import { fetchImageBlob } from '@/utils/image';
 
 function ImageToolbar({ node }: { node: ImageBlockNode }) {
   const editor = useSlateStatic() as YjsEditor;
@@ -28,8 +28,22 @@ function ImageToolbar({ node }: { node: ImageBlockNode }) {
   };
 
   const onCopy = async () => {
-    await copyTextToClipboard(node.data.url || '');
-    notify.success(t('document.plugins.image.copiedToPasteBoard'));
+    try {
+      const blob = await fetchImageBlob(node.data.url || '');
+
+      if (!blob) {
+        throw new Error('Failed to fetch image blob');
+      }
+
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          [blob.type]: blob,
+        }),
+      ]);
+      notify.success(t('document.plugins.image.copiedToPasteBoard'));
+    } catch (error) {
+      notify.error(t('document.plugins.image.copyFailed', { defaultValue: 'Failed to copy image' }));
+    }
   };
 
   const onDelete = () => {

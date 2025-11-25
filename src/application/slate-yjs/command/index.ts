@@ -724,10 +724,30 @@ export const CustomEditor = {
       const [, path] = entry;
 
       if (path) {
-        ReactEditor.focus(editor);
+        // Store the current scroll position before focusing
+        const scrollContainer = document.querySelector('.appflowy-scroll-container');
+        const initialScrollTop = scrollContainer?.scrollTop ?? 0;
+
+        // Focus the editor without scrolling
+        try {
+          const domNode = ReactEditor.toDOMNode(editor, editor);
+          domNode.focus({ preventScroll: true });
+        } catch {
+          ReactEditor.focus(editor);
+        }
+
         const point = editor.start(path);
 
         Transforms.select(editor, point);
+
+        // Restore the scroll position after selection
+        // Use requestAnimationFrame to ensure DOM has updated
+        requestAnimationFrame(() => {
+          if (scrollContainer) {
+            scrollContainer.scrollTop = initialScrollTop;
+          }
+        });
+
         return newBlockId;
       }
     } catch (e) {
@@ -755,6 +775,14 @@ export const CustomEditor = {
       return;
     }
 
+    // Skip focus and selection for database blocks (Grid, Board, Calendar)
+    // as they open in a modal and don't need cursor positioning
+    const isDatabaseBlock = [BlockType.GridBlock, BlockType.BoardBlock, BlockType.CalendarBlock].includes(type);
+
+    if (isDatabaseBlock) {
+      return newBlockId;
+    }
+
     try {
       const entry = findSlateEntryByBlockId(editor, newBlockId);
 
@@ -763,10 +791,30 @@ export const CustomEditor = {
       const [, path] = entry;
 
       if (path) {
-        ReactEditor.focus(editor);
+        // Store the current scroll position before focusing
+        const scrollContainer = document.querySelector('.appflowy-scroll-container');
+        const initialScrollTop = scrollContainer?.scrollTop ?? 0;
+
+        // Focus the editor without scrolling
+        try {
+          const domNode = ReactEditor.toDOMNode(editor, editor);
+          domNode.focus({ preventScroll: true });
+        } catch {
+          ReactEditor.focus(editor);
+        }
+
         const point = editor.start(path);
 
         Transforms.select(editor, point);
+
+        // Restore the scroll position after selection
+        // Use requestAnimationFrame to ensure DOM has updated
+        requestAnimationFrame(() => {
+          if (scrollContainer) {
+            scrollContainer.scrollTop = initialScrollTop;
+          }
+        });
+
         return newBlockId;
       }
     } catch (e) {
