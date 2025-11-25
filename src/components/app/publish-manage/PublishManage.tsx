@@ -12,6 +12,7 @@ import PublishedPages from '@/components/app/publish-manage/PublishedPages';
 import PublishPagesSkeleton from '@/components/app/publish-manage/PublishPagesSkeleton';
 import UpdateNamespace from '@/components/app/publish-manage/UpdateNamespace';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { isOfficialHost } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
 
 export function PublishManage({ onClose }: { onClose?: () => void }) {
@@ -175,6 +176,11 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
   const { getSubscriptions } = useAppHandlers();
   const [activeSubscription, setActiveSubscription] = React.useState<SubscriptionPlan | null>(null);
   const loadSubscription = useCallback(async () => {
+    if (!isOfficialHost()) {
+      setActiveSubscription(SubscriptionPlan.Pro);
+      return;
+    }
+
     try {
       const subscriptions = await getSubscriptions?.();
 
