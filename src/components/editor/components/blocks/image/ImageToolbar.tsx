@@ -57,7 +57,7 @@ function ImageToolbar({ node }: { node: ImageBlockNode }) {
           </ActionButton>
         )}
 
-        <ActionButton onClick={onCopyImage} tooltip={t('button.copy')}>
+        <ActionButton onClick={onCopyImage} tooltip={t('button.copy')} data-testid="copy-image-button">
           <CopyIcon />
         </ActionButton>
 
