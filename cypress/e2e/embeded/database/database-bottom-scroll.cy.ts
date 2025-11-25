@@ -28,10 +28,10 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
     cy.viewport(1280, 720);
   });
 
-  it('should preserve scroll position when creating grid database at bottom of long document', () => {
+  const runScrollPreservationTest = (databaseType: 'grid' | 'board' | 'calendar', selector: string) => {
     const testEmail = generateRandomEmail();
 
-    cy.task('log', `[TEST START] Testing scroll preservation when creating database at bottom - Test email: ${testEmail}`);
+    cy.task('log', `[TEST START] Testing scroll preservation for ${databaseType} at bottom - Test email: ${testEmail}`);
 
     // Step 1: Login
     cy.task('log', '[STEP 1] Visiting login page');
@@ -82,15 +82,15 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
       EditorSelectors.firstEditor().click({ force: true });
       waitForReactUpdate(500);
 
-      // Build text content with 30 lines (enough to exceed viewport)
+      // Build text content with 50 lines (increased from 30 to ensure it exceeds screen height)
       let textContent = '';
-      for (let i = 1; i <= 30; i++) {
-        textContent += `Line ${i} - This is a longer line of text to ensure we have enough content to scroll{enter}`;
+      for (let i = 1; i <= 50; i++) {
+        textContent += `Line ${i} - This is a longer line of text to ensure we have enough content to scroll and exceed screen height{enter}`;
       }
 
-      cy.task('log', '[STEP 6.1] Typing 30 lines of content');
+      cy.task('log', '[STEP 6.1] Typing 50 lines of content');
       // Use cy.focused() to type - more stable than re-querying editor element
-      cy.focused().type(textContent, { delay: 1 });
+      cy.focused().type(textContent, { delay: 0 }); // Faster typing
 
       cy.task('log', '[STEP 6.2] Content added successfully');
       waitForReactUpdate(2000);
@@ -132,9 +132,14 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
 
       // Step 8: Open slash menu at the bottom
       cy.task('log', '[STEP 10] Opening slash menu at bottom');
-      // Click editor at the end and type slash
-      EditorSelectors.firstEditor().click().type('{enter}/');
+      
+      // Ensure we click near the bottom of the visible editor area
+      EditorSelectors.firstEditor().click('bottom', { force: true });
       waitForReactUpdate(500);
+      
+      // Type enter to ensure we are on a new line, then slash
+      EditorSelectors.firstEditor().type('{enter}/', { force: true, delay: 100 });
+      waitForReactUpdate(1000);
 
       // Step 9: Verify slash menu is visible
       cy.task('log', '[STEP 11] Verifying slash menu is visible');
@@ -152,24 +157,23 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
         // The scroll should not jump to the top (which would be < 1000)
         // It should stay near the bottom
         expect(scrollAfterSlashMenu).to.be.greaterThan(scrollPositionBeforeSlashMenu - 200);
-
-        if (scrollDifference > 100) {
-          cy.task('log', `[WARNING] Scroll position changed by ${scrollDifference}px when opening slash menu`);
-        }
       });
 
-      // Step 11: Select Grid option from slash menu
-      cy.task('log', '[STEP 12] Selecting Grid option from slash menu');
-      let scrollBeforeGridCreation = 0;
+      // Step 11: Select database option from slash menu
+      cy.task('log', `[STEP 12] Selecting ${databaseType} option from slash menu`);
+      let scrollBeforeDbCreation = 0;
 
       cy.get('@scrollContainer').then(($container) => {
-        scrollBeforeGridCreation = $container[0].scrollTop;
-        cy.task('log', `[STEP 12.1] Scroll position before creating grid: ${scrollBeforeGridCreation}`);
+        scrollBeforeDbCreation = $container[0].scrollTop;
+        cy.task('log', `[STEP 12.1] Scroll position before creating database: ${scrollBeforeDbCreation}`);
       });
 
       SlashCommandSelectors.slashPanel().within(() => {
-        SlashCommandSelectors.slashMenuItem(getSlashMenuItemName('grid')).first().as('gridMenuItem');
-        cy.get('@gridMenuItem').should('be.visible').click();
+        // specific handling for board -> kanban mapping
+        const itemKey = databaseType === 'board' ? 'kanban' : databaseType;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        SlashCommandSelectors.slashMenuItem(getSlashMenuItemName(itemKey as any)).first().as('dbMenuItem');
+        cy.get('@dbMenuItem').should('exist').click({ force: true });
       });
 
       waitForReactUpdate(2000);
@@ -181,27 +185,27 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
       // Step 13: CRITICAL CHECK - Verify scroll position is preserved after creating database
       cy.task('log', '[STEP 14] CRITICAL: Verifying scroll position after creating database');
       cy.get('@scrollContainer').then(($container) => {
-        const scrollAfterGridCreation = $container[0].scrollTop;
+        const scrollAfterDbCreation = $container[0].scrollTop;
         const scrollHeight = $container[0].scrollHeight;
         const clientHeight = $container[0].clientHeight;
 
-        cy.task('log', `[STEP 14.1] Scroll position after creating grid: ${scrollAfterGridCreation}`);
+        cy.task('log', `[STEP 14.1] Scroll position after creating ${databaseType}: ${scrollAfterDbCreation}`);
         cy.task('log', `[STEP 14.2] scrollHeight: ${scrollHeight}, clientHeight: ${clientHeight}`);
 
-        const scrollDifference = Math.abs(scrollAfterGridCreation - scrollBeforeGridCreation);
-        cy.task('log', `[STEP 14.3] Scroll difference after grid creation: ${scrollDifference}px`);
+        const scrollDifference = Math.abs(scrollAfterDbCreation - scrollBeforeDbCreation);
+        cy.task('log', `[STEP 14.3] Scroll difference after ${databaseType} creation: ${scrollDifference}px`);
 
         // CRITICAL ASSERTION: The document should NOT scroll to the top
-        // If it scrolled to top, scrollAfterGridCreation would be close to 0
+        // If it scrolled to top, scrollAfterDbCreation would be close to 0
         // We expect it to stay near the bottom
-        expect(scrollAfterGridCreation).to.be.greaterThan(scrollBeforeGridCreation - 300);
+        expect(scrollAfterDbCreation).to.be.greaterThan(scrollBeforeDbCreation - 300);
 
         // Also verify it's not at the very top
-        expect(scrollAfterGridCreation).to.be.greaterThan(500);
+        expect(scrollAfterDbCreation).to.be.greaterThan(500);
 
-        if (scrollAfterGridCreation < 500) {
-          cy.task('log', `[CRITICAL FAILURE] Document scrolled to top! Position: ${scrollAfterGridCreation}`);
-          throw new Error(`Document scrolled to top (position: ${scrollAfterGridCreation}) when creating grid at bottom`);
+        if (scrollAfterDbCreation < 500) {
+          cy.task('log', `[CRITICAL FAILURE] Document scrolled to top! Position: ${scrollAfterDbCreation}`);
+          throw new Error(`Document scrolled to top (position: ${scrollAfterDbCreation}) when creating ${databaseType} at bottom`);
         }
 
         if (scrollDifference > 300) {
@@ -219,13 +223,29 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
 
       waitForReactUpdate(1000);
 
-      // Step 15: Verify the grid database was actually created in the document
-      cy.task('log', '[STEP 16] Verifying grid database exists in document');
+      // Step 15: Verify the database was actually created in the document
+      cy.task('log', `[STEP 16] Verifying ${databaseType} database exists in document`);
       cy.get('[class*="appflowy-database"]').should('exist');
 
-      DatabaseGridSelectors.grid().should('exist');
+      if (selector.startsWith('data-testid')) {
+        cy.get(`[${selector}]`).should('exist');
+      } else {
+        cy.get(selector).should('exist');
+      }
 
-      cy.task('log', '[TEST COMPLETE] Scroll preservation test passed successfully');
+      cy.task('log', `[TEST COMPLETE] Scroll preservation test for ${databaseType} passed successfully`);
     });
+  };
+
+  it('should preserve scroll position when creating grid database at bottom', () => {
+    runScrollPreservationTest('grid', 'data-testid="database-grid"');
+  });
+
+  it('should preserve scroll position when creating board database at bottom', () => {
+    runScrollPreservationTest('board', '.database-board');
+  });
+
+  it('should preserve scroll position when creating calendar database at bottom', () => {
+    runScrollPreservationTest('calendar', '.calendar-wrapper');
   });
 });

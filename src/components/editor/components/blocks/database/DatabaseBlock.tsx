@@ -1,6 +1,6 @@
 import { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Element } from 'slate';
-import { useReadOnly, useSlateStatic } from 'slate-react';
+import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
 import { DatabaseContextState } from '@/application/database-yjs';
 import { YjsEditorKey, YSharedRoot } from '@/application/types';
@@ -31,6 +31,80 @@ export const DatabaseBlock = memo(
       loadViewMeta: context?.loadViewMeta,
     });
 
+    // Track latest valid scroll position to restore if layout shift resets it
+    const latestScrollTop = useRef<number>(0);
+
+    useEffect(() => {
+      // Find scroll container
+      let scrollContainer: Element | null = null;
+      
+      try {
+        const domNode = ReactEditor.toDOMNode(editor, editor);
+        
+        scrollContainer = domNode.closest('.appflowy-scroll-container');
+      } catch {
+        // ignore
+      }
+
+      if (!scrollContainer) {
+        scrollContainer = document.querySelector('.appflowy-scroll-container');
+      }
+
+      if (!scrollContainer) return;
+
+      // Initialize with current scroll position if already scrolled
+      if (scrollContainer.scrollTop > 0) {
+        latestScrollTop.current = scrollContainer.scrollTop;
+      }
+
+      const handleScroll = () => {
+        if (scrollContainer && scrollContainer.scrollTop > 0) {
+          latestScrollTop.current = scrollContainer.scrollTop;
+        }
+      };
+
+      scrollContainer.addEventListener('scroll', handleScroll);
+      return () => {
+        scrollContainer?.removeEventListener('scroll', handleScroll);
+      };
+    }, [editor]);
+
+    const handleRendered = useCallback(() => {
+      const restore = () => {
+        try {
+          let scrollContainer: Element | null = null;
+          
+          try {
+            const domNode = ReactEditor.toDOMNode(editor, editor);
+            
+            scrollContainer = domNode.closest('.appflowy-scroll-container');
+          } catch {
+            // fallback
+          }
+
+          if (!scrollContainer) {
+            scrollContainer = document.querySelector('.appflowy-scroll-container');
+          }
+          
+          // Only restore if scroll position was reset to 0 (or close to 0) and we had a previous scroll
+          if (scrollContainer && scrollContainer.scrollTop < 10 && latestScrollTop.current > 50) {
+            scrollContainer.scrollTop = latestScrollTop.current;
+          }
+        } catch {
+          // Ignore
+        }
+      };
+
+      restore();
+      // Try next tick in case of layout shifts
+      setTimeout(restore, 50);
+      
+      // Clear the ref only after attempts to allow future 0-scrolls if valid
+      setTimeout(() => {
+        latestScrollTop.current = 0;
+      }, 1000);
+    }, [editor]);
+
     const handleNavigateToRow = useCallback(
       async (rowId: string) => {
         if (!viewId) return;
@@ -53,11 +127,6 @@ export const DatabaseBlock = memo(
         const hasDb = !!sharedRoot.get(YjsEditorKey.database);
 
         setHasDatabase(hasDb);
-        if (hasDb) {
-          console.debug('[DatabaseBlock] database found in doc', { viewId });
-        } else {
-          console.warn('[DatabaseBlock] database missing in doc', { viewId });
-        }
       };
 
       setStatus();
@@ -96,6 +165,7 @@ export const DatabaseBlock = memo(
             iidName={iidName}
             visibleViewIds={visibleViewIds}
             onChangeView={onChangeView}
+            onRendered={handleRendered}
             // eslint-disable-next-line
             context={context as DatabaseContextState}
           />

@@ -247,7 +247,7 @@ function Database(props: Database2Props) {
   }, []);
 
   if (!rowDocMap || !viewId) {
-    return null;
+    return <div className={'min-h-[120px] w-full'} />;
   }
 
   return (
