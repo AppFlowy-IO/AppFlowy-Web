@@ -6,15 +6,12 @@ import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as DownloadIcon } from '@/assets/icons/save_as.svg';
 import { NormalModal } from '@/components/_shared/modal';
-import { notify } from '@/components/_shared/notify';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { FileNode } from '@/components/editor/editor.type';
-import { copyTextToClipboard } from '@/utils/copy';
 import { downloadFile } from '@/utils/download';
 
 function FileToolbar({ node }: { node: FileNode }) {
@@ -25,10 +22,6 @@ function FileToolbar({ node }: { node: FileNode }) {
   const name = node.data.name || '';
   const [open, setOpen] = useState<boolean>(false);
   const [fileName, setFileName] = useState<string>(name);
-  const onCopy = async () => {
-    await copyTextToClipboard(node.data.url || '');
-    notify.success(t('publish.copy.fileBlock'));
-  };
 
   const onDelete = () => {
     CustomEditor.deleteBlock(editor, node.blockId);
@@ -59,10 +52,6 @@ function FileToolbar({ node }: { node: FileNode }) {
       <div className={'flex space-x-1 rounded-[8px] border border-border-primary bg-fill-toolbar p-1 shadow '}>
         <ActionButton onClick={onDownload} tooltip={t('button.download')}>
           <DownloadIcon />
-        </ActionButton>
-
-        <ActionButton onClick={onCopy} tooltip={t('button.copyLinkOriginal')}>
-          <CopyIcon />
         </ActionButton>
 
         {!readOnly && (
