@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 
 import { AppContext } from '@/components/app/app.hooks';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 import { hostnameArgType, openArgType } from '../../../.storybook/argTypes';
-import { mockHostname } from '../../../.storybook/decorators';
+import { useHostnameMock } from '../../../.storybook/decorators';
 import { mockAFConfigValue, mockAppContextValue } from '../../../.storybook/mocks';
 
 import UpgradePlan from './UpgradePlan';
@@ -23,17 +23,7 @@ const meta = {
       const hostname = context.args.hostname || 'beta.appflowy.cloud';
       const [open, setOpen] = useState(context.args.open ?? false);
 
-      // Set mock hostname synchronously before render
-      mockHostname(hostname);
-
-      useEffect(() => {
-        // Update if hostname changes
-        mockHostname(hostname);
-        // Cleanup
-        return () => {
-          delete window.__STORYBOOK_MOCK_HOSTNAME__;
-        };
-      }, [hostname]);
+      useHostnameMock(hostname);
 
       return (
         <AFConfigContext.Provider value={mockAFConfigValue}>
@@ -96,4 +86,3 @@ export const SelfHosted: Story = {
     },
   },
 };
-

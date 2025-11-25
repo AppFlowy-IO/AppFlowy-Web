@@ -1,21 +1,48 @@
 /**
- * Check if the current host is an official AppFlowy host
- * Official hosts are beta.appflowy.cloud, test.appflowy.cloud, and localhost (for development)
- * Self-hosted instances are not official hosts
+ * Check if the current host is an official AppFlowy host by looking at the backend base URL.
+ * Official hosts are beta.appflowy.cloud and test.appflowy.cloud.
+ * Self-hosted instances are not official hosts.
  */
-export function isOfficialHost(): boolean {
-    if (typeof window === 'undefined') return false;
+import { getConfigValue } from '@/utils/runtime-config';
 
-    // Support Storybook mocking via global variable
-    const hostname = (window as Window & { __STORYBOOK_MOCK_HOSTNAME__?: string }).__STORYBOOK_MOCK_HOSTNAME__ || window.location.hostname;
+const OFFICIAL_HOSTNAMES = new Set(['beta.appflowy.cloud', 'test.appflowy.cloud', "localhost:8000"]);
 
-    return (
-        hostname === 'beta.appflowy.cloud' ||
-        hostname === 'test.appflowy.cloud'
-        // hostname === 'localhost' ||
-        // hostname === '127.0.0.1' ||
-        // hostname.startsWith('localhost:') ||
-        // hostname.startsWith('127.0.0.1:')
-    );
+function getBaseUrlHostname(): string | null {
+    const baseUrl = getConfigValue('APPFLOWY_BASE_URL', '').trim();
+
+    if (!baseUrl) return null;
+
+    try {
+        return new URL(baseUrl).hostname;
+    } catch (primaryError) {
+        // Allow hostnames without a protocol, e.g. "beta.appflowy.cloud"
+        try {
+            return new URL(`https://${baseUrl}`).hostname;
+        } catch (secondaryError) {
+            console.warn('Invalid APPFLOWY_BASE_URL provided:', secondaryError);
+            return null;
+        }
+    }
 }
 
+function isOfficialHostname(hostname: string | undefined | null): boolean {
+    if (!hostname) return false;
+    return OFFICIAL_HOSTNAMES.has(hostname);
+}
+
+function resolveHostname(): string | null {
+    const baseUrlHostname = getBaseUrlHostname();
+    if (baseUrlHostname) {
+        return baseUrlHostname;
+    }
+
+    if (typeof window === 'undefined') {
+        return null;
+    }
+
+    return window.location.hostname;
+}
+
+export function isOfficialHost(): boolean {
+    return isOfficialHostname(resolveHostname());
+}

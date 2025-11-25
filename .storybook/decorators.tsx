@@ -5,7 +5,7 @@
  * Import and use these decorators in your stories.
  */
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 
 import { AppContext } from '@/components/app/app.hooks';
 import { AFConfigContext } from '@/components/main/app.hooks';
@@ -16,12 +16,80 @@ import { mockAFConfigValue, mockAFConfigValueMinimal, mockAppContextValue } from
  */
 declare global {
   interface Window {
-    __STORYBOOK_MOCK_HOSTNAME__?: string;
+    __APP_CONFIG__?: {
+      APPFLOWY_BASE_URL?: string;
+      APPFLOWY_GOTRUE_BASE_URL?: string;
+      APPFLOWY_WS_BASE_URL?: string;
+    };
   }
 }
 
-export const mockHostname = (hostname: string) => {
-  window.__STORYBOOK_MOCK_HOSTNAME__ = hostname;
+type CleanupFn = () => void;
+
+const normalizeHostnameToBaseUrl = (hostname: string): string => {
+  const trimmed = hostname.trim();
+
+  if (!trimmed) {
+    return '';
+  }
+
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+
+  return `https://${trimmed}`;
+};
+
+export const mockHostname = (hostname: string): CleanupFn => {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  const previousConfig = window.__APP_CONFIG__ ? { ...window.__APP_CONFIG__ } : undefined;
+  const formattedHostname = hostname?.trim();
+
+  if (!formattedHostname) {
+    delete window.__APP_CONFIG__;
+    return () => {
+      if (previousConfig) {
+        window.__APP_CONFIG__ = previousConfig;
+      }
+    };
+  }
+
+  const baseUrl = normalizeHostnameToBaseUrl(formattedHostname);
+
+  window.__APP_CONFIG__ = {
+    ...(window.__APP_CONFIG__ ?? {}),
+    APPFLOWY_BASE_URL: baseUrl,
+  };
+
+  return () => {
+    if (previousConfig) {
+      window.__APP_CONFIG__ = previousConfig;
+    } else {
+      delete window.__APP_CONFIG__;
+    }
+  };
+};
+
+export const useHostnameMock = (hostname: string) => {
+  const cleanupRef = useRef<CleanupFn | null>(null);
+  const appliedHostnameRef = useRef<string>();
+
+  if (appliedHostnameRef.current !== hostname) {
+    cleanupRef.current?.();
+    cleanupRef.current = mockHostname(hostname);
+    appliedHostnameRef.current = hostname;
+  }
+
+  useEffect(() => {
+    return () => {
+      cleanupRef.current?.();
+      cleanupRef.current = null;
+      appliedHostnameRef.current = undefined;
+    };
+  }, []);
 };
 
 /**
@@ -89,17 +157,7 @@ export const withHostnameMocking = () => {
   return (Story: React.ComponentType, context: { args: { hostname?: string } }) => {
     const hostname = context.args.hostname || 'beta.appflowy.cloud';
 
-    // Set mock hostname synchronously before render
-    mockHostname(hostname);
-
-    useEffect(() => {
-      // Update if hostname changes
-      mockHostname(hostname);
-      // Cleanup
-      return () => {
-        delete (window as any).__STORYBOOK_MOCK_HOSTNAME__;
-      };
-    }, [hostname]);
+    useHostnameMock(hostname);
 
     return <Story />;
   };
@@ -123,15 +181,7 @@ export const withHostnameAndContexts = (options?: {
   return (Story: React.ComponentType, context: { args: { hostname?: string } }) => {
     const hostname = context.args.hostname || 'beta.appflowy.cloud';
 
-    // Set mock hostname synchronously before render
-    mockHostname(hostname);
-
-    useEffect(() => {
-      mockHostname(hostname);
-      return () => {
-        delete (window as any).__STORYBOOK_MOCK_HOSTNAME__;
-      };
-    }, [hostname]);
+    useHostnameMock(hostname);
 
     const afConfigValue = minimalAFConfig ? mockAFConfigValueMinimal : mockAFConfigValue;
 
