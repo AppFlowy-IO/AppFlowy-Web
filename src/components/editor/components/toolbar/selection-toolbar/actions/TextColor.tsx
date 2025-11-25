@@ -371,6 +371,7 @@ function TextColor({
         <ActionButton
           active={!!singleColor}
           tooltip={t('editor.textColor')}
+          data-testid="text-color-button"
           onClick={(e) => {
             e.stopPropagation();
             e.preventDefault();

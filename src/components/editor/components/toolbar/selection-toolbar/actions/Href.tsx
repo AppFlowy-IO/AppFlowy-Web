@@ -94,7 +94,7 @@ export function Href() {
 
   return (
     <>
-      <ActionButton disabled={disabled} onClick={onClick} active={isActivated} tooltip={tooltip}>
+      <ActionButton disabled={disabled} onClick={onClick} active={isActivated} tooltip={tooltip} data-testid="link-button">
         <LinkSvg className='h-4 w-4' />
       </ActionButton>
 
