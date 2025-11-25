@@ -8,11 +8,12 @@ function CurrentWorkspace({
   selectedWorkspace,
   onChangeWorkspace,
   changeLoading,
+  avatarSize = 'xs',
 }: {
   userWorkspaceInfo?: UserWorkspaceInfo;
   selectedWorkspace?: Workspace;
   onChangeWorkspace: (selectedId: string) => void;
-  avatarSize?: number;
+  avatarSize?: 'xs' | 'sm' | 'md' | 'xl';
   changeLoading?: boolean;
 }) {
   if (!userWorkspaceInfo || !selectedWorkspace) {
@@ -33,19 +34,21 @@ function CurrentWorkspace({
   }
 
   return (
-    <>
-      <Avatar shape={'square'} size={'xs'}>
-        <AvatarImage src={selectedWorkspace.icon} alt={''} />
-        <AvatarFallback name={selectedWorkspace.name}>
-          {selectedWorkspace.icon ? <span className='text-lg'>{selectedWorkspace.icon}</span> : selectedWorkspace.name}
-        </AvatarFallback>
-      </Avatar>
+    <div className={'flex w-full min-h-[48px] items-center gap-2'}>
+      {(
+        <Avatar shape={'square'} size={avatarSize}>
+          <AvatarImage src={selectedWorkspace.icon} alt={''} />
+          <AvatarFallback name={selectedWorkspace.name}>
+            {selectedWorkspace.icon ? <span className='text-lg'>{selectedWorkspace.icon}</span> : selectedWorkspace.name}
+          </AvatarFallback>
+        </Avatar>
+      )}
 
       <div data-testid='current-workspace-name' className={'flex-1 truncate font-medium text-text-primary'}>
         {selectedWorkspace.name}
       </div>
       {changeLoading && <Progress variant={'primary'} />}
-    </>
+    </div>
   );
 }
 

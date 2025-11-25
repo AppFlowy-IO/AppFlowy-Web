@@ -146,7 +146,7 @@ export function Workspaces() {
                 userWorkspaceInfo={userWorkspaceInfo}
                 selectedWorkspace={currentWorkspace}
                 onChangeWorkspace={handleChange}
-                avatarSize={24}
+                avatarSize='sm'
                 changeLoading={changeLoading ? true : false}
               />
 

@@ -13,6 +13,7 @@ function WorkspaceList({
   onUpdate,
   onDelete,
   onLeave,
+  useDropdownItem = true,
 }: {
   currentWorkspaceId?: string;
   changeLoading?: string;
@@ -23,6 +24,7 @@ function WorkspaceList({
   onUpdate?: (workspace: Workspace) => void;
   onDelete?: (workspace: Workspace) => void;
   onLeave?: (workspace: Workspace) => void;
+  useDropdownItem?: boolean;
 }) {
   const service = useService();
   const [workspaces, setWorkspaces] = useState<Workspace[]>(defaultWorkspaces || []);
@@ -55,6 +57,7 @@ function WorkspaceList({
             onDelete={onDelete}
             onLeave={onLeave}
             showActions={showActions}
+            useDropdownItem={useDropdownItem}
           />
         );
       })}

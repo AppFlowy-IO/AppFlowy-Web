@@ -104,6 +104,7 @@ function MobileWorkspaces({ onClose }: { onClose: () => void }) {
               onChange={handleChange}
               changeLoading={changeLoading || undefined}
               showActions={false}
+              useDropdownItem={false}
             />
           )}
         </div>

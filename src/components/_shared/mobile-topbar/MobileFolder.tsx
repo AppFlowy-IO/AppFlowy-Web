@@ -29,8 +29,8 @@ function MobileFolder({ onClose }: { onClose: () => void }) {
   return (
     <AFScroller overflowXHidden className={'flex w-full flex-1 flex-col gap-2'}>
       <div className={'sticky top-0 z-[10] w-full bg-background-primary p-2 pb-0'}>
-        <div className={'mb-2 flex items-center justify-between'}>
-          <div className={'flex-1 p-2'}>
+        <div className={'mb-2 flex items-start justify-between gap-2'}>
+          <div className={'flex-1'}>
             <MobileWorkspaces onClose={onClose} />
           </div>
           <MobileMore onClose={onClose} />

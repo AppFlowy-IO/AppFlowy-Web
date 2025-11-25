@@ -1,11 +1,11 @@
 import { CircularProgress } from '@mui/material';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Role, Workspace } from '@/application/types';
 import MoreActions from '@/components/app/workspaces/MoreActions';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { DropdownMenuItem, DropdownMenuItemTick } from '@/components/ui/dropdown-menu';
+import { DropdownMenuItem, DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 export function WorkspaceItem({
@@ -17,6 +17,7 @@ export function WorkspaceItem({
   onUpdate,
   onDelete,
   onLeave,
+  useDropdownItem = true,
 }: {
   showActions?: boolean;
   workspace: Workspace;
@@ -26,6 +27,7 @@ export function WorkspaceItem({
   onUpdate?: (workspace: Workspace) => void;
   onDelete?: (workspace: Workspace) => void;
   onLeave?: (workspace: Workspace) => void;
+  useDropdownItem?: boolean;
 }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
@@ -69,18 +71,13 @@ export function WorkspaceItem({
     );
   }, [changeLoading, currentWorkspaceId, hovered, onDelete, onLeave, onUpdate, showActions, workspace]);
 
-  return (
-    <DropdownMenuItem
-      key={workspace.id}
-      data-testid='workspace-item'
-      className={'relative'}
-      onSelect={async () => {
-        if (workspace.id === currentWorkspaceId) return;
-        void onChange(workspace.id);
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+  const handleSelect = useCallback(() => {
+    if (workspace.id === currentWorkspaceId) return;
+    void onChange(workspace.id);
+  }, [currentWorkspaceId, onChange, workspace.id]);
+
+  const content = (
+    <>
       <Avatar shape={'square'} size={'xs'}>
         <AvatarFallback name={workspace.name}>
           {workspace.icon ? <span className='text-lg'>{workspace.icon}</span> : workspace.name}
@@ -112,6 +109,35 @@ export function WorkspaceItem({
         )}
       </div>
       {renderActions}
-    </DropdownMenuItem>
+    </>
+  );
+
+  if (useDropdownItem) {
+    return (
+      <DropdownMenuItem
+        key={workspace.id}
+        data-testid='workspace-item'
+        className={'relative'}
+        onSelect={handleSelect}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      >
+        {content}
+      </DropdownMenuItem>
+    );
+  }
+
+  return (
+    <button
+      type='button'
+      key={workspace.id}
+      data-testid='workspace-item'
+      className={dropdownMenuItemVariants({ variant: 'default', className: 'relative w-full text-left' })}
+      onClick={handleSelect}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      {content}
+    </button>
   );
 }
