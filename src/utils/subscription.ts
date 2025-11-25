@@ -1,11 +1,12 @@
 /**
  * Check if the current host is an official AppFlowy host by looking at the backend base URL.
  * Official hosts are beta.appflowy.cloud and test.appflowy.cloud.
+ * Include localhost:8000 to cover the default dev backend when APPFLOWY_BASE_URL isn't updated.
  * Self-hosted instances are not official hosts.
  */
 import { getConfigValue } from '@/utils/runtime-config';
 
-const OFFICIAL_HOSTNAMES = new Set(['beta.appflowy.cloud', 'test.appflowy.cloud', "localhost:8000"]);
+const OFFICIAL_HOSTNAMES = new Set(['beta.appflowy.cloud', 'test.appflowy.cloud', 'localhost:8000']);
 
 function getBaseUrlHostname(): string | null {
     const baseUrl = getConfigValue('APPFLOWY_BASE_URL', '').trim();
@@ -32,6 +33,7 @@ function isOfficialHostname(hostname: string | undefined | null): boolean {
 
 function resolveHostname(): string | null {
     const baseUrlHostname = getBaseUrlHostname();
+
     if (baseUrlHostname) {
         return baseUrlHostname;
     }
