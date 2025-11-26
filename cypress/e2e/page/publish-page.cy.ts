@@ -693,6 +693,45 @@ describe('Publish Page Test', () => {
         });
     });
 
+    it('opens publish manage modal from namespace caret and closes share popover first', () => {
+        cy.on('uncaught:exception', (err: Error) => {
+            if (err.message.includes('No workspace or service found') ||
+                err.message.includes('createThemeNoVars_default is not a function') ||
+                err.message.includes('View not found')) {
+                return false;
+            }
+            return true;
+        });
+
+        cy.visit('/login', { failOnStatusCode: false });
+        cy.wait(1000);
+        const authUtils = new AuthTestUtils();
+        authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.url().should('include', '/app');
+            SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
+            PageSelectors.names().should('exist', { timeout: 30000 });
+            cy.wait(2000);
+
+            TestTool.openSharePopover();
+            cy.contains('Publish').should('exist').click({ force: true });
+            cy.wait(1000);
+
+            ShareSelectors.publishConfirmButton().should('be.visible').click({ force: true });
+            cy.wait(5000);
+            ShareSelectors.publishNamespace().should('be.visible', { timeout: 10000 });
+
+            ShareSelectors.sharePopover().should('exist');
+            ShareSelectors.openPublishSettingsButton().should('be.visible').click({ force: true });
+
+            ShareSelectors.sharePopover().should('not.exist');
+            ShareSelectors.publishManageModal().should('be.visible');
+            ShareSelectors.publishManagePanel().should('be.visible').contains('Namespace');
+
+            cy.get('body').type('{esc}');
+            ShareSelectors.publishManageModal().should('not.exist');
+        });
+    });
+
     it('publish database (To-dos) and visit published link', () => {
         cy.on('uncaught:exception', (err: Error) => {
             if (err.message.includes('No workspace or service found') ||

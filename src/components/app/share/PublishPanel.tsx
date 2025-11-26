@@ -13,7 +13,17 @@ import { useAppHandlers } from '@/components/app/app.hooks';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
 
-function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: () => void; opened: boolean }) {
+function PublishPanel({
+  viewId,
+  opened,
+  onClose,
+  onOpenPublishManage,
+}: {
+  viewId: string;
+  onClose: () => void;
+  opened: boolean;
+  onOpenPublishManage?: () => void;
+}) {
   const { t } = useTranslation();
   const { publish, unpublish } = useAppHandlers();
   const { url, loadPublishInfo, view, publishInfo, loading, isOwner, isPublisher, updatePublishConfig } =
@@ -92,6 +102,7 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
           isOwner={isOwner}
           isPublisher={isPublisher}
           onClose={onClose}
+          onOpenPublishManage={onOpenPublishManage}
         />
         <div className={'flex w-full items-center justify-end gap-4'}>
           <Button
@@ -157,6 +168,7 @@ function PublishPanel({ viewId, opened, onClose }: { viewId: string; onClose: ()
     duplicateEnabled,
     updatePublishConfig,
     viewId,
+    onOpenPublishManage,
   ]);
 
   const layout = view?.layout;

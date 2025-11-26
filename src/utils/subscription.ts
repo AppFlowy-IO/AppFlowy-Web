@@ -6,7 +6,7 @@
  */
 import { getConfigValue } from '@/utils/runtime-config';
 
-const OFFICIAL_HOSTNAMES = new Set(['beta.appflowy.cloud', 'test.appflowy.cloud', 'localhost:8000']);
+const OFFICIAL_HOSTNAMES = new Set(['beta.appflowy.cloud', 'test.appflowy.cloud', 'localhost']);
 
 function getBaseUrlHostname(): string | null {
     const baseUrl = getConfigValue('APPFLOWY_BASE_URL', '').trim();

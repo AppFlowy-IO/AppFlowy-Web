@@ -5,9 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { UpdatePublishConfigPayload } from '@/application/types';
 import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as DownIcon } from '@/assets/icons/toggle_list.svg';
-import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { PublishManage } from '@/components/app/publish-manage';
 import { PublishNameSetting } from '@/components/app/publish-manage/PublishNameSetting';
 import { copyTextToClipboard } from '@/utils/copy';
 
@@ -20,6 +18,7 @@ function PublishLinkPreview({
   isOwner,
   isPublisher,
   onClose,
+  onOpenPublishManage,
 }: {
   viewId: string;
   publishInfo: { namespace: string; publishName: string };
@@ -29,8 +28,8 @@ function PublishLinkPreview({
   isOwner: boolean;
   isPublisher: boolean;
   onClose?: () => void;
+  onOpenPublishManage?: () => void;
 }) {
-  const [siteOpen, setSiteOpen] = React.useState<boolean>(false);
   const [renameOpen, setRenameOpen] = React.useState<boolean>(false);
   const { t } = useTranslation();
   const [publishName, setPublishName] = React.useState<string>(publishInfo.publishName);
@@ -78,8 +77,8 @@ function PublishLinkPreview({
               <IconButton
                 size={'small'}
                 onClick={() => {
-                  setSiteOpen(true);
                   onClose?.();
+                  onOpenPublishManage?.();
                 }}
                 data-testid={'open-publish-settings'}
               >
@@ -161,32 +160,6 @@ function PublishLinkPreview({
             url={url}
           />
         )}
-        <NormalModal
-          okButtonProps={{
-            className: 'hidden',
-          }}
-          cancelButtonProps={{
-            className: 'hidden',
-          }}
-          classes={{
-            paper: 'w-[700px] appflowy-scroller max-w-[90vw] max-h-[90vh] h-[600px] overflow-hidden',
-          }}
-          overflowHidden
-          onClose={() => {
-            setSiteOpen(false);
-          }}
-          scroll={'paper'}
-          open={siteOpen}
-          title={<div className={'flex items-center justify-start'}>{t('settings.sites.title')}</div>}
-        >
-          <div className={'h-full w-full overflow-y-auto overflow-x-hidden'}>
-            <PublishManage
-              onClose={() => {
-                setSiteOpen(false);
-              }}
-            />
-          </div>
-        </NormalModal>
       </div>
     </>
   );

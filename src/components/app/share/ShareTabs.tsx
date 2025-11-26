@@ -17,7 +17,17 @@ enum TabKey {
   TEMPLATE = 'template',
 }
 
-function ShareTabs({ opened, viewId, onClose }: { opened: boolean; viewId: string; onClose: () => void }) {
+function ShareTabs({
+  opened,
+  viewId,
+  onClose,
+  onOpenPublishManage,
+}: {
+  opened: boolean;
+  viewId: string;
+  onClose: () => void;
+  onOpenPublishManage?: () => void;
+}) {
   const { t } = useTranslation();
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
@@ -43,12 +53,19 @@ function ShareTabs({ opened, viewId, onClose }: { opened: boolean; viewId: strin
           icon: <Templates className={'mb-0 h-5 w-5'} />,
           Panel: TemplatePanel,
         },
-    ].filter(Boolean) as {
-      value: TabKey;
-      label: string;
-      icon?: React.JSX.Element;
-      Panel: React.FC<{ viewId: string; onClose: () => void; opened: boolean }>;
-    }[];
+    ].filter(Boolean) as Array<
+      {
+        value: TabKey;
+        label: string;
+        icon?: React.JSX.Element;
+        Panel: React.FC<{
+          viewId: string;
+          onClose: () => void;
+          opened: boolean;
+          onOpenPublishManage?: () => void;
+        }>;
+      }
+    >;
   }, [currentUser?.email, t, view?.is_published]);
 
   useEffect(() => {
@@ -76,7 +93,12 @@ function ShareTabs({ opened, viewId, onClose }: { opened: boolean; viewId: strin
       <Separator className='my-0' />
       {options.map((option) => (
         <TabsContent key={option.value} value={option.value}>
-          <option.Panel viewId={viewId} onClose={onClose} opened={opened} />
+          <option.Panel
+            viewId={viewId}
+            onClose={onClose}
+            opened={opened}
+            onOpenPublishManage={onOpenPublishManage}
+          />
         </TabsContent>
       ))}
     </Tabs>

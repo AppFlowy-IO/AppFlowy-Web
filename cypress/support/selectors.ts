@@ -177,6 +177,7 @@ export const ShareSelectors = {
   // Publish namespace and name inputs
   publishNamespace: () => cy.get(byTestId('publish-namespace')),
   publishNameInput: () => cy.get(byTestId('publish-name-input')),
+  openPublishSettingsButton: () => cy.get(byTestId('open-publish-settings')),
 
   // Page settings button
   pageSettingsButton: () => cy.get(byTestId('page-settings-button')),
@@ -195,6 +196,8 @@ export const ShareSelectors = {
 
   // Visit Site button
   visitSiteButton: () => cy.get(byTestId('visit-site-button')),
+  publishManageModal: () => cy.get(byTestId('publish-manage-modal')),
+  publishManagePanel: () => cy.get(byTestId('publish-manage-panel')),
 };
 
 /**

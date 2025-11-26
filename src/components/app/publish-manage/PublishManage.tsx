@@ -209,7 +209,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
   const url = `${window.location.origin}/${namespace}`;
 
   return (
-    <div className={'flex flex-col gap-2'}>
+    <div className={'flex flex-col gap-2'} data-testid='publish-manage-panel'>
       <div className={'px-1  text-base font-medium'}>{t('namespace')}</div>
       <div className={'px-1  text-xs text-text-secondary'}>{t('manageNamespaceDescription')}</div>
       <Divider className={'mb-2'} />
