@@ -10,14 +10,76 @@ import { totalBundleSize } from 'vite-plugin-total-bundle-size';
 import { stripTestIdPlugin } from './vite-plugin-strip-testid';
 
 const resourcesPath = path.resolve(__dirname, '../resources');
-const isDev = process.env.NODE_ENV === 'development';
+const isDev = process.env.NODE_ENV ? process.env.NODE_ENV === 'development' : true;
 const isProd = process.env.NODE_ENV === 'production';
 const isTest = process.env.NODE_ENV === 'test' || process.env.COVERAGE === 'true';
+
+// Namespace redirect plugin for dev mode - mirrors deploy/server.ts behavior
+function namespaceRedirectPlugin() {
+  const baseURL = process.env.APPFLOWY_BASE_URL || 'http://localhost:8000';
+
+  return {
+    name: 'namespace-redirect',
+    apply: 'serve' as const,
+    configureServer(server: { middlewares: { use: (fn: (req: { url?: string; method?: string }, res: { statusCode: number; setHeader: (name: string, value: string) => void; end: () => void }, next: () => void) => void) => void } }) {
+      const ignoredPrefixes = ['/app', '/login', '/import', '/after-payment', '/as-template', '/accept-invitation', '/404'];
+
+      server.middlewares.use(async (req, res, next) => {
+        if (!req.url || req.method !== 'GET') {
+          return next();
+        }
+
+        const url = new URL(req.url, 'http://localhost');
+        const pathname = url.pathname;
+
+        // Skip ignored prefixes and root
+        if (pathname === '/' || ignoredPrefixes.some((prefix) => pathname.startsWith(prefix))) {
+          return next();
+        }
+
+        const parts = pathname.split('/').filter(Boolean);
+
+        // Skip if not a single-segment path (namespace only) or if it's a static asset/dev file
+        const isStaticAsset = /\.(js|css|html|map|json|png|jpg|jpeg|gif|svg|woff2?|ttf)$/i.test(pathname);
+        if (parts.length !== 1 || isStaticAsset || pathname.includes('@') || pathname.includes('node_modules') || pathname.startsWith('/src/')) {
+          return next();
+        }
+
+        try {
+          // Fetch publish info for this namespace (same API as deploy/server.ts)
+          const apiUrl = `${baseURL}/api/workspace/published/${parts[0]}`;
+          const response = await fetch(apiUrl);
+
+          if (!response.ok) {
+            return next();
+          }
+
+          const data = await response.json();
+          const publishInfo = data?.data?.info;
+
+          if (publishInfo?.namespace && publishInfo?.publish_name) {
+            const redirectUrl = `/${encodeURIComponent(publishInfo.namespace)}/${encodeURIComponent(publishInfo.publish_name)}`;
+            res.statusCode = 302;
+            res.setHeader('Location', redirectUrl);
+            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+            res.end();
+            return;
+          }
+        } catch {
+          // Silently fail and let the request continue
+        }
+
+        next();
+      });
+    },
+  };
+}
 
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
+    isDev ? namespaceRedirectPlugin() : undefined,
     // Strip data-testid attributes in production builds
     isProd ? stripTestIdPlugin() : undefined,
     createHtmlPlugin({

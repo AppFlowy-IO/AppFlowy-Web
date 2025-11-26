@@ -26,10 +26,9 @@ const logger = pino({
     options: {
       colorize: true,
       translateTime: 'SYS:standard',
-      destination: `${__dirname}/pino-logger.log`,
     },
   },
-  level: 'info',
+  level: process.env.LOG_LEVEL || 'info',
 });
 
 const logRequestTimer = (req: Request) => {
@@ -51,7 +50,7 @@ const fetchMetaData = async (namespace: string, publishName?: string) => {
     url = `${baseURL}/api/workspace/v1/published/${namespace}/${publishName}`;
   }
 
-  logger.info(`Fetching meta data from ${url}`);
+  logger.debug(`Fetching meta data from ${url}`);
   try {
     const response = await fetch(url, {
       verbose: true,
@@ -63,11 +62,11 @@ const fetchMetaData = async (namespace: string, publishName?: string) => {
 
     const data = await response.json();
 
-    logger.info(`Fetched meta data from ${url}: ${JSON.stringify(data)}`);
+    logger.debug(`Fetched meta data from ${url}: ${JSON.stringify(data)}`);
 
     return data;
   } catch (error) {
-    logger.error(`Error fetching meta data ${error}`);
+    logger.error(`Failed to fetch meta data from ${url}: ${error}`);
     return null;
   }
 };
@@ -130,24 +129,27 @@ const createServer = async (req: Request) => {
     }
 
     let metaData;
+    let redirectAttempted = false;
 
     try {
       const data = await fetchMetaData(namespace, publishName);
 
       if (publishName) {
-        if (data.code === 0) {
+        if (data && data.code === 0) {
           metaData = data.data;
         } else {
-          logger.error(`Error fetching meta data: ${JSON.stringify(data)}`);
+          logger.error(
+            `Publish view lookup failed for namespace="${namespace}" publishName="${publishName}" response=${JSON.stringify(data)}`
+          );
         }
       } else {
-
         const publishInfo = data?.data?.info;
 
-        if (publishInfo) {
+        if (publishInfo?.namespace && publishInfo?.publish_name) {
           const newURL = `/${encodeURIComponent(publishInfo.namespace)}/${encodeURIComponent(publishInfo.publish_name)}`;
 
           logger.info(`Redirecting to default page in: ${JSON.stringify(publishInfo)}`);
+          redirectAttempted = true;
           timer();
           return new Response(null, {
             status: 302,
@@ -155,6 +157,8 @@ const createServer = async (req: Request) => {
               Location: newURL,
             },
           });
+        } else {
+          logger.warn(`Namespace "${namespace}" has no default publish page. response=${JSON.stringify(data)}`);
         }
       }
     } catch (error) {
@@ -217,6 +221,12 @@ const createServer = async (req: Request) => {
       }
     } catch (error) {
       logger.error(`Error injecting meta data: ${error}`);
+    }
+
+    if (!metaData) {
+      logger.warn(
+        `Serving fallback landing page for namespace="${namespace}" publishName="${publishName ?? ''}". redirectAttempted=${redirectAttempted}`
+      );
     }
 
     $('title').text(title);
