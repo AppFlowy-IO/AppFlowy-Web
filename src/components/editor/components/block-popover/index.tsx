@@ -85,7 +85,7 @@ function BlockPopover() {
           top: panelPosition.bottom,
           left: panelPosition.left,
         },
-        type === BlockType.ImageBlock || type === BlockType.VideoBlock ? 400 : 560,
+        400,
         type === BlockType.ImageBlock || type === BlockType.VideoBlock ? 366 : 200,
         defaultOrigins,
         16

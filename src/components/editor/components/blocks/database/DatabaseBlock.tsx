@@ -35,8 +35,7 @@ export const DatabaseBlock = memo(
     const latestScrollTop = useRef<number>(0);
 
     useEffect(() => {
-      // Find scroll container
-      let scrollContainer: Element | null = null;
+      let scrollContainer: HTMLElement | null = null;
       
       try {
         const domNode = ReactEditor.toDOMNode(editor, editor);
@@ -72,7 +71,7 @@ export const DatabaseBlock = memo(
     const handleRendered = useCallback(() => {
       const restore = () => {
         try {
-          let scrollContainer: Element | null = null;
+          let scrollContainer: HTMLElement | null = null;
           
           try {
             const domNode = ReactEditor.toDOMNode(editor, editor);

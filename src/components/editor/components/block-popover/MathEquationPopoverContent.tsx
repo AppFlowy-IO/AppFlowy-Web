@@ -57,7 +57,7 @@ function MathEquationPopoverContent({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   return (
-    <div className={'flex flex-col p-4 gap-3 w-[560px] max-w-[964px]'}>
+    <div className={'flex flex-col p-4 gap-3 w-[400px]'}>
       <TextField
         inputRef={(input: HTMLTextAreaElement) => {
           if (!input) return;
