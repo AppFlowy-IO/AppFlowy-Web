@@ -20,14 +20,16 @@ const setOrUpdateMetaTag = ($: CheerioAPI, selector: string, attribute: string, 
   }
 };
 
-const logger = pino({
-  transport: {
-    target: 'pino-pretty',
-    options: {
-      colorize: true,
-      translateTime: 'SYS:standard',
-    },
+const prettyTransport = {
+  target: 'pino-pretty',
+  options: {
+    colorize: true,
+    translateTime: 'SYS:standard',
   },
+};
+
+const logger = pino({
+  transport: process.env.NODE_ENV === 'production' ? undefined : prettyTransport,
   level: process.env.LOG_LEVEL || 'info',
 });
 
@@ -35,11 +37,16 @@ const logRequestTimer = (req: Request) => {
   const start = Date.now();
   const pathname = new URL(req.url).pathname;
 
-  logger.info(`Incoming request: ${pathname}`);
+  if (!pathname.startsWith('/health')) {
+    logger.info(`Incoming request: ${pathname}`);
+  }
+  
   return () => {
     const duration = Date.now() - start;
 
-    logger.info(`Request for ${pathname} took ${duration}ms`);
+    if (!pathname.startsWith('/health')) {
+      logger.info(`Request for ${pathname} took ${duration}ms`);
+    }
   };
 };
 
@@ -76,7 +83,9 @@ const createServer = async (req: Request) => {
   const reqUrl = new URL(req.url);
   const hostname = req.headers.get('host');
 
-  logger.info(`Request URL: ${hostname}${reqUrl.pathname}`);
+  if (!reqUrl.pathname.startsWith('/health')) {
+    logger.info(`Request URL: ${hostname}${reqUrl.pathname}`);
+  }
 
   if (reqUrl.pathname === '/') {
     timer();
