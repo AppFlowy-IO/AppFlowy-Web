@@ -38,14 +38,14 @@ const logRequestTimer = (req: Request) => {
   const pathname = new URL(req.url).pathname;
 
   if (!pathname.startsWith('/health')) {
-    logger.info(`Incoming request: ${pathname}`);
+    logger.debug(`Incoming request: ${pathname}`);
   }
-  
+
   return () => {
     const duration = Date.now() - start;
 
     if (!pathname.startsWith('/health')) {
-      logger.info(`Request for ${pathname} took ${duration}ms`);
+      logger.debug(`Request for ${pathname} took ${duration}ms`);
     }
   };
 };
@@ -60,7 +60,7 @@ const fetchMetaData = async (namespace: string, publishName?: string) => {
   logger.debug(`Fetching meta data from ${url}`);
   try {
     const response = await fetch(url, {
-      verbose: true,
+      verbose: false,
     });
 
     if (!response.ok) {
@@ -124,7 +124,7 @@ const createServer = async (req: Request) => {
 
   const [namespace, publishName] = reqUrl.pathname.slice(1).split('/');
 
-  logger.info(`Namespace: ${namespace}, Publish Name: ${publishName}`);
+  logger.debug(`Namespace: ${namespace}, Publish Name: ${publishName}`);
 
   if (req.method === 'GET') {
     if (namespace === '') {
@@ -157,7 +157,7 @@ const createServer = async (req: Request) => {
         if (publishInfo?.namespace && publishInfo?.publish_name) {
           const newURL = `/${encodeURIComponent(publishInfo.namespace)}/${encodeURIComponent(publishInfo.publish_name)}`;
 
-          logger.info(`Redirecting to default page in: ${JSON.stringify(publishInfo)}`);
+          logger.debug(`Redirecting to default page in: ${JSON.stringify(publishInfo)}`);
           redirectAttempted = true;
           timer();
           return new Response(null, {
