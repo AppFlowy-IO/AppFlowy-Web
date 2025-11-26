@@ -33,10 +33,9 @@ describe('Editor - Drag and Drop Blocks', () => {
     getSource().closest('[data-block-type]').scrollIntoView().should('be.visible').click().then(($sourceBlock) => {
       // Use realHover to simulate user interaction which updates elementFromPoint
       cy.wrap($sourceBlock).realHover({ position: 'center' });
-      cy.wait(1000); // Wait for hover controls to appear
 
       // 2. Get the drag handle
-      cy.get('[data-testid="drag-block"]').should('exist').then(($handle) => {
+      cy.get('[data-testid="drag-block"]').should('be.visible').then(($handle) => {
         const dataTransfer = new DataTransfer();
 
         // 3. Start dragging
