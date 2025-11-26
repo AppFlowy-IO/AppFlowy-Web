@@ -2,6 +2,7 @@
 # Build stage - Build the React application
 FROM node:20.12.0-alpine AS builder
 
+ARG VERSION=dev
 ENV NODE_ENV=production
 
 WORKDIR /app
@@ -45,6 +46,10 @@ COPY docker/entrypoint-ssr.sh /docker-entrypoint.sh
 
 # Make entrypoint executable
 RUN chmod +x /docker-entrypoint.sh
+
+# Set version as environment variable (from build arg)
+ARG VERSION
+ENV APP_VERSION=${VERSION}
 
 # Expose port 80
 EXPOSE 80
