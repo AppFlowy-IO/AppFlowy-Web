@@ -723,8 +723,10 @@ export function SlashPanel({
           if (!viewId || !addPage || !openPageModal) return;
 
           let scrollContainer: Element | null = null;
+
           try {
             const domNode = ReactEditor.toDOMNode(editor, editor);
+
             scrollContainer = domNode.closest('.appflowy-scroll-container');
           } catch (e) {
             // Ignore
@@ -752,6 +754,7 @@ export function SlashPanel({
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
                 const currentContainer = document.querySelector('.appflowy-scroll-container');
+
                 if (currentContainer) {
                   currentContainer.scrollTop = savedScrollTop;
                 }
@@ -783,8 +786,10 @@ export function SlashPanel({
           if (!viewId || !addPage || !openPageModal) return;
 
           let scrollContainer: Element | null = null;
+
           try {
             const domNode = ReactEditor.toDOMNode(editor, editor);
+
             scrollContainer = domNode.closest('.appflowy-scroll-container');
           } catch (e) {
             // Ignore
@@ -812,6 +817,7 @@ export function SlashPanel({
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
                 const currentContainer = document.querySelector('.appflowy-scroll-container');
+
                 if (currentContainer) {
                   currentContainer.scrollTop = savedScrollTop;
                 }
@@ -843,8 +849,10 @@ export function SlashPanel({
           if (!viewId || !addPage || !openPageModal) return;
 
           let scrollContainer: Element | null = null;
+
           try {
             const domNode = ReactEditor.toDOMNode(editor, editor);
+
             scrollContainer = domNode.closest('.appflowy-scroll-container');
           } catch (e) {
             // Ignore
@@ -872,6 +880,7 @@ export function SlashPanel({
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
                 const currentContainer = document.querySelector('.appflowy-scroll-container');
+
                 if (currentContainer) {
                   currentContainer.scrollTop = savedScrollTop;
                 }
@@ -1026,6 +1035,7 @@ export function SlashPanel({
     setEmojiPosition,
     searchText,
     handleOpenLinkedDatabasePicker,
+    editor,
   ]);
 
   const resultLength = options.length;
