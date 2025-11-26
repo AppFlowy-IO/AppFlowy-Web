@@ -264,4 +264,101 @@ describe('Editor - Drag and Drop Blocks', () => {
     });
   });
 
+  it('should drag and drop an image block', () => {
+    const testEmail = generateRandomEmail();
+    const authUtils = new AuthTestUtils();
+
+    cy.visit('/login', { failOnStatusCode: false });
+    authUtils.signInWithTestUrl(testEmail).then(() => {
+      cy.url({ timeout: 30000 }).should('include', '/app');
+      cy.contains('Getting started').click();
+      
+      cy.get('[data-slate-editor="true"]').click().type('{selectall}{backspace}');
+      waitForReactUpdate(500);
+
+      // Create text blocks
+      cy.focused().type('Top Text{enter}');
+      cy.focused().type('Bottom Text{enter}');
+      
+      // Create Image Block
+      cy.focused().type('/image');
+      waitForReactUpdate(1000);
+      cy.contains('Image').should('be.visible').click();
+      waitForReactUpdate(1000);
+
+      // Close the image upload popover/modal if it appears
+      cy.get('body').type('{esc}');
+      waitForReactUpdate(500);
+      
+      // Verify image block exists
+      cy.get('[data-block-type="image"]').should('exist');
+
+      // Initial State: Top Text, Bottom Text, Image (at bottom)
+      // Drag Image between Top and Bottom
+      dragBlock('[data-block-type="image"]', 'Top Text', 'bottom');
+
+      // Verify: Top Text, Image, Bottom Text
+      cy.get('[data-block-type]').then($blocks => {
+         const relevant = $blocks.filter((i, el) => 
+            el.textContent?.includes('Top Text') || 
+            el.textContent?.includes('Bottom Text') || 
+            el.getAttribute('data-block-type') === 'image'
+         );
+         expect(relevant[0]).to.contain.text('Top Text');
+         expect(relevant[1]).to.have.attr('data-block-type', 'image');
+         expect(relevant[2]).to.contain.text('Bottom Text');
+      });
+    });
+  });
+
+  it('should drag and drop a grid block', () => {
+    const testEmail = generateRandomEmail();
+    const authUtils = new AuthTestUtils();
+
+    cy.visit('/login', { failOnStatusCode: false });
+    authUtils.signInWithTestUrl(testEmail).then(() => {
+      cy.url({ timeout: 30000 }).should('include', '/app');
+      cy.contains('Getting started').click();
+      
+      cy.get('[data-slate-editor="true"]').click().type('{selectall}{backspace}');
+      waitForReactUpdate(500);
+
+      // Create text blocks
+      cy.focused().type('Top Text{enter}');
+      cy.focused().type('Bottom Text{enter}');
+      
+      // Create Grid Block
+      cy.focused().type('/grid');
+      waitForReactUpdate(1000);
+      // Note: "Grid" might be the label. Adjust if "Table" or "Database" is used in UI.
+      // Based on SlashPanel code, it is "Grid".
+      cy.get('[data-testid="slash-menu-grid"]').should('be.visible').click();
+      waitForReactUpdate(2000);
+      
+      // Grid creation usually opens a modal. We need to close it to interact with the editor.
+      // Pressing ESC is a robust way to close modals.
+      cy.get('body').type('{esc}');
+      waitForReactUpdate(1000);
+
+      // Verify grid block exists
+      cy.get('[data-block-type="grid"]').should('exist');
+
+      // Initial State: Top Text, Bottom Text, Grid
+      // Drag Grid between Top and Bottom
+      dragBlock('[data-block-type="grid"]', 'Top Text', 'bottom');
+
+      // Verify: Top Text, Grid, Bottom Text
+      cy.get('[data-block-type]').then($blocks => {
+         const relevant = $blocks.filter((i, el) => 
+            el.textContent?.includes('Top Text') || 
+            el.textContent?.includes('Bottom Text') || 
+            el.getAttribute('data-block-type') === 'grid'
+         );
+         expect(relevant[0]).to.contain.text('Top Text');
+         expect(relevant[1]).to.have.attr('data-block-type', 'grid');
+         expect(relevant[2]).to.contain.text('Bottom Text');
+      });
+    });
+  });
+
 });
