@@ -1,5 +1,5 @@
 import { AuthTestUtils } from '../../../support/auth-utils';
-import { waitForReactUpdate } from '../../../support/selectors';
+import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Slash Menu - Text Formatting', () => {
@@ -35,7 +35,7 @@ describe('Slash Menu - Text Formatting', () => {
       cy.wait(5000); // Give page time to fully load
 
       // Focus on editor
-      cy.get('[data-slate-editor="true"]').should('exist').click();
+      EditorSelectors.slateEditor().should('exist').click();
       waitForReactUpdate(1000);
 
       // Type slash to open menu
@@ -82,7 +82,7 @@ describe('Slash Menu - Text Formatting', () => {
       cy.wait(5000);
 
       // Focus on editor and move to end
-      cy.get('[data-slate-editor="true"]').should('exist').click();
+      EditorSelectors.slateEditor().should('exist').click();
       cy.focused().type('{end}');
       cy.focused().type('{enter}{enter}'); // Add some space
       waitForReactUpdate(1000);
@@ -100,7 +100,7 @@ describe('Slash Menu - Text Formatting', () => {
       waitForReactUpdate(500);
 
       // Verify the text was added
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'Test Heading');
+      EditorSelectors.slateEditor().should('contain.text', 'Test Heading');
 
       cy.log('Heading 1 added successfully');
     });

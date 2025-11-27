@@ -370,6 +370,9 @@ export const SlashCommandSelectors = {
   // Slash menu item
   slashMenuItem: (name: string) => cy.get('[data-testid^="slash-menu-"]').filter(`:contains("${name}")`),
 
+  heading1: () => cy.get(byTestId('slash-menu-heading1')),
+  bulletedList: () => cy.get(byTestId('slash-menu-bulletedList')),
+
   // Database selection modal (legacy - kept for backward compatibility)
   promptModal: () => cy.get(byTestId('prompt-modal')),
 
@@ -566,6 +569,11 @@ export const EditorSelectors = {
   underlineButton: () => cy.get(byTestId('toolbar-underline-button')),
   strikethroughButton: () => cy.get(byTestId('toolbar-strikethrough-button')),
   codeButton: () => cy.get(byTestId('toolbar-code-button')),
+  linkButton: () => cy.get(byTestId('link-button')),
+  textColorButton: () => cy.get(byTestId('text-color-button')),
+  bgColorButton: () => cy.get(byTestId('bg-color-button')),
+  headingButton: () => cy.get(byTestId('heading-button')),
+  heading1Button: () => cy.get(byTestId('heading-1-button')),
 };
 
 /**
@@ -688,6 +696,17 @@ export const AccountSelectors = {
  */
 export const AvatarUiSelectors = {
   image: () => cy.get(byTestId('avatar-image')),
+};
+
+/**
+ * Block-related selectors
+ */
+export const BlockSelectors = {
+  dragHandle: () => cy.get(byTestId('drag-block')),
+  hoverControls: () => cy.get(byTestId('hover-controls')),
+  slashMenuGrid: () => cy.get(byTestId('slash-menu-grid')),
+  blockByType: (type: string) => cy.get(`[data-block-type="${type}"]`),
+  allBlocks: () => cy.get('[data-block-type]'),
 };
 
 export function waitForReactUpdate(ms: number = 500) {

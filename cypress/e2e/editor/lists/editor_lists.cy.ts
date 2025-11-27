@@ -78,7 +78,7 @@ describe('Editor Lists Manipulation', () => {
       waitForReactUpdate(1000);
       cy.focused().type('Test bullet item');
       waitForReactUpdate(500);
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'Test bullet item');
+      EditorSelectors.slateEditor().should('contain.text', 'Test bullet item');
     });
   });
 });

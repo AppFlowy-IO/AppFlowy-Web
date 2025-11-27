@@ -1,5 +1,5 @@
 import { AuthTestUtils } from '../../../support/auth-utils';
-import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
+import { EditorSelectors, waitForReactUpdate, byTestId } from '../../../support/selectors';
 import { generateRandomEmail, getCmdKey, getWordJumpKey } from '../../../support/test-config';
 
 describe('Basic Text Editing', () => {
@@ -54,7 +54,7 @@ describe('Basic Text Editing', () => {
       // If trigger doesn't work (often Slate relies on beforeInput), try one more fallback:
       // type('{del}') again but assume it might need a retry or check.
       // Actually, let's trust type('{del}') but double check focus.
-      cy.get('[data-slate-editor="true"]').focus().type('{del}');
+      EditorSelectors.slateEditor().focus().type('{del}');
       waitForReactUpdate(500);
 
       // "Test |ext"
@@ -153,8 +153,8 @@ describe('Basic Text Editing', () => {
 
       // Use robust selection via data-testid if available, or fallback to text with wait
       cy.get('body').then($body => {
-        if ($body.find('[data-testid="slash-menu-heading1"]').length > 0) {
-          cy.get('[data-testid="slash-menu-heading1"]').click();
+        if ($body.find(byTestId('slash-menu-heading1')).length > 0) {
+          cy.get(byTestId('slash-menu-heading1')).click();
         } else if ($body.text().includes('Heading 1')) {
           cy.contains('Heading 1').first().click();
         } else {
@@ -192,8 +192,8 @@ describe('Basic Text Editing', () => {
       waitForReactUpdate(1000);
 
       cy.get('body').then($body => {
-        if ($body.find('[data-testid="slash-menu-bulletedList"]').length > 0) {
-          cy.get('[data-testid="slash-menu-bulletedList"]').click();
+        if ($body.find(byTestId('slash-menu-bulletedList')).length > 0) {
+          cy.get(byTestId('slash-menu-bulletedList')).click();
         } else if ($body.text().includes('Bulleted list')) {
           cy.contains('Bulleted list').first().click();
         } else {

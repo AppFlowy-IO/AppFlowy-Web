@@ -1,5 +1,5 @@
 import { AuthTestUtils } from '../../../support/auth-utils';
-import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
+import { BlockSelectors, EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail, getCmdKey } from '../../../support/test-config';
 
 describe('Editor Navigation & Interaction', () => {
@@ -43,11 +43,11 @@ describe('Editor Navigation & Interaction', () => {
       waitForReactUpdate(200);
       cy.focused().type('X');
       waitForReactUpdate(200);
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'XStart Middle End');
+      EditorSelectors.slateEditor().should('contain.text', 'XStart Middle End');
       cy.focused().type('{selectall}{rightArrow}');
       waitForReactUpdate(200);
       cy.focused().type('Y');
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'XStart Middle EndY');
+      EditorSelectors.slateEditor().should('contain.text', 'XStart Middle EndY');
     });
 
     it('should navigate character by character', () => {
@@ -64,7 +64,7 @@ describe('Editor Navigation & Interaction', () => {
       cy.focused().type('-');
 
       // Expect "W-ord"
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'W-ord');
+      EditorSelectors.slateEditor().should('contain.text', 'W-ord');
     });
 
     it('should select word on double click', () => {
@@ -80,8 +80,8 @@ describe('Editor Navigation & Interaction', () => {
       cy.focused().type('Replaced');
 
       // 'SelectMe' should be gone, 'Replaced' should be present
-      cy.get('[data-slate-editor="true"]').should('contain.text', 'Replaced');
-      cy.get('[data-slate-editor="true"]').should('not.contain.text', 'SelectMe');
+      EditorSelectors.slateEditor().should('contain.text', 'Replaced');
+      EditorSelectors.slateEditor().should('not.contain.text', 'SelectMe');
     });
 
     it('should navigate up/down between blocks', () => {
@@ -131,8 +131,8 @@ describe('Editor Navigation & Interaction', () => {
       // Type to verify focus
       cy.focused().type(' UpTest');
       // Verify 'UpTest' appears in Paragraph block and NOT in List Block
-      cy.get('[data-block-type="paragraph"]').should('contain.text', 'UpTest');
-      cy.get('[data-block-type="bulleted_list"]').should('not.contain.text', 'UpTest');
+      BlockSelectors.blockByType('paragraph').should('contain.text', 'UpTest');
+      BlockSelectors.blockByType('bulleted_list').should('not.contain.text', 'UpTest');
 
       // Test Navigation: Heading -> Paragraph
       // Click Heading first to change focus
@@ -144,8 +144,8 @@ describe('Editor Navigation & Interaction', () => {
 
       cy.focused().type(' DownTest');
       // Verify 'DownTest' appears in Paragraph block and NOT in Heading Block
-      cy.get('[data-block-type="paragraph"]').should('contain.text', 'DownTest');
-      cy.get('[data-block-type="heading"]').should('not.contain.text', 'DownTest');
+      BlockSelectors.blockByType('paragraph').should('contain.text', 'DownTest');
+      BlockSelectors.blockByType('heading').should('not.contain.text', 'DownTest');
     });
   });
 
@@ -187,7 +187,7 @@ describe('Editor Navigation & Interaction', () => {
   describe('Style Interaction', () => {
     it.skip('should persist bold style when typing inside bold text', () => {
       cy.focused().type('Normal ');
-      cy.get('[data-slate-editor="true"]').click();
+      EditorSelectors.slateEditor().click();
       cy.focused().type(`${cmdKey}b`);
       waitForReactUpdate(200);
       cy.focused().type('Bold');
@@ -198,7 +198,7 @@ describe('Editor Navigation & Interaction', () => {
     });
 
     it('should reset style when creating a new paragraph', () => {
-      cy.get('[data-slate-editor="true"]').click();
+      EditorSelectors.slateEditor().click();
       cy.focused().type(`${cmdKey}b`);
       waitForReactUpdate(200);
       cy.focused().type('Heading Bold');

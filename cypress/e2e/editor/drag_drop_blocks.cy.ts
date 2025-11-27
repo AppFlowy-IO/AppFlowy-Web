@@ -1,5 +1,5 @@
 import { AuthTestUtils } from '../../support/auth-utils';
-import { waitForReactUpdate } from '../../support/selectors';
+import { BlockSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
 describe('Editor - Drag and Drop Blocks', () => {
@@ -36,10 +36,10 @@ describe('Editor - Drag and Drop Blocks', () => {
       cy.wrap($sourceBlock).realHover({ position: 'center' });
       
       // Force visibility of hover controls to avoid flakiness
-      cy.get('[data-testid="hover-controls"]').invoke('css', 'opacity', '1');
+      BlockSelectors.hoverControls().invoke('css', 'opacity', '1');
 
       // 2. Get the drag handle
-      cy.get('[data-testid="drag-block"]').should('be.visible').then(($handle) => {
+      BlockSelectors.dragHandle().should('be.visible').then(($handle) => {
         const dataTransfer = new DataTransfer();
 
         // 3. Start dragging
@@ -140,7 +140,7 @@ describe('Editor - Drag and Drop Blocks', () => {
 
       // Verify final order (Should be 1, 2, 3, 4, 5)
       items.forEach((item, index) => {
-        cy.get('[data-block-type="numbered_list"]').eq(index).should('contain.text', item);
+        BlockSelectors.blockByType('numbered_list').eq(index).should('contain.text', item);
       });
 
       // Reload and verify
@@ -150,7 +150,7 @@ describe('Editor - Drag and Drop Blocks', () => {
       waitForReactUpdate(2000);
 
       items.forEach((item, index) => {
-        cy.get('[data-block-type="numbered_list"]').eq(index).should('contain.text', item);
+        BlockSelectors.blockByType('numbered_list').eq(index).should('contain.text', item);
       });
       */
     });
@@ -182,14 +182,14 @@ describe('Editor - Drag and Drop Blocks', () => {
       waitForReactUpdate(1000);
 
       // Verify initial order: Header, Paragraph
-      cy.get('[data-block-type="heading"]').should('exist');
-      cy.get('[data-block-type="paragraph"]').should('exist');
+      BlockSelectors.blockByType('heading').should('exist');
+      BlockSelectors.blockByType('paragraph').should('exist');
       
       // Drag Header below Paragraph
       dragBlock('Header Block', 'Paragraph Block', 'bottom');
 
       // Verify Order: Paragraph, Header
-      cy.get('[data-block-type]').then($blocks => {
+      BlockSelectors.allBlocks().then($blocks => {
          const textBlocks = $blocks.filter((i, el) => 
             el.textContent?.includes('Header Block') || el.textContent?.includes('Paragraph Block')
          );
@@ -244,14 +244,18 @@ describe('Editor - Drag and Drop Blocks', () => {
       waitForReactUpdate(500);
       
       // Verify callout block exists
-      cy.get('[data-block-type="callout"]').should('exist');
+      BlockSelectors.blockByType('callout').should('exist');
 
       // Initial State: Top Text, Callout, Bottom Text
       // Action: Drag Callout below Bottom Text
+      // Note: dragBlock supports selectors, so we can pass the data-block-type selector string
+      // Ideally we'd use a helper if dragBlock supported it, but it expects string.
+      // We can construct the string using the same logic or just pass literal for now.
+      // Or update dragBlock to take an element? dragBlock logic: if sourceText starts with [, use cy.get.
       dragBlock('[data-block-type="callout"]', 'Bottom Text', 'bottom');
 
       // Verify: Top Text, Bottom Text, Callout
-      cy.get('[data-block-type]').then($blocks => {
+      BlockSelectors.allBlocks().then($blocks => {
          const relevant = $blocks.filter((i, el) => 
             el.textContent?.includes('Top Text') || 
             el.textContent?.includes('Bottom Text') || 
@@ -291,14 +295,14 @@ describe('Editor - Drag and Drop Blocks', () => {
       waitForReactUpdate(500);
       
       // Verify image block exists
-      cy.get('[data-block-type="image"]').should('exist');
+      BlockSelectors.blockByType('image').should('exist');
 
       // Initial State: Top Text, Bottom Text, Image (at bottom)
       // Drag Image between Top and Bottom
       dragBlock('[data-block-type="image"]', 'Top Text', 'bottom');
 
       // Verify: Top Text, Image, Bottom Text
-      cy.get('[data-block-type]').then($blocks => {
+      BlockSelectors.allBlocks().then($blocks => {
          const relevant = $blocks.filter((i, el) => 
             el.textContent?.includes('Top Text') || 
             el.textContent?.includes('Bottom Text') || 
@@ -332,7 +336,7 @@ describe('Editor - Drag and Drop Blocks', () => {
       waitForReactUpdate(1000);
       // Note: "Grid" might be the label. Adjust if "Table" or "Database" is used in UI.
       // Based on SlashPanel code, it is "Grid".
-      cy.get('[data-testid="slash-menu-grid"]').should('be.visible').click();
+      BlockSelectors.slashMenuGrid().should('be.visible').click();
       waitForReactUpdate(2000);
       
       // Grid creation usually opens a modal. We need to close it to interact with the editor.
@@ -341,14 +345,14 @@ describe('Editor - Drag and Drop Blocks', () => {
       waitForReactUpdate(1000);
 
       // Verify grid block exists
-      cy.get('[data-block-type="grid"]').should('exist');
+      BlockSelectors.blockByType('grid').should('exist');
 
       // Initial State: Top Text, Bottom Text, Grid
       // Drag Grid between Top and Bottom
       dragBlock('[data-block-type="grid"]', 'Top Text', 'bottom');
 
       // Verify: Top Text, Grid, Bottom Text
-      cy.get('[data-block-type]').then($blocks => {
+      BlockSelectors.allBlocks().then($blocks => {
          const relevant = $blocks.filter((i, el) => 
             el.textContent?.includes('Top Text') || 
             el.textContent?.includes('Bottom Text') || 

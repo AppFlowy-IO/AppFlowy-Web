@@ -73,7 +73,7 @@ describe('Editor Tab Synchronization', () => {
     // 1. Type in Main Window
     cy.log('Typing in Main Window');
     // Click topLeft to avoid iframe overlay at bottom right
-    cy.get('[data-slate-editor="true"]').first().click('topLeft', { force: true }).type('Hello from Main');
+    EditorSelectors.slateEditor().first().click('topLeft', { force: true }).type('Hello from Main');
     waitForReactUpdate(2000); // Wait longer for sync
 
     // 2. Verify in Iframe with longer timeout
@@ -86,6 +86,6 @@ describe('Editor Tab Synchronization', () => {
     waitForReactUpdate(2000);
 
     // 4. Verify in Main Window with longer timeout
-    cy.get('[data-slate-editor="true"]', { timeout: 15000 }).should('contain.text', 'Hello from Main and Iframe');
+    EditorSelectors.slateEditor({ timeout: 15000 }).should('contain.text', 'Hello from Main and Iframe');
   });
 });

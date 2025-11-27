@@ -1,5 +1,5 @@
 import { AuthTestUtils } from '../../../support/auth-utils';
-import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
+import { BlockSelectors, EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Editor Commands', () => {
@@ -79,7 +79,7 @@ describe('Editor Commands', () => {
     cy.focused().type('{shift}{enter}');
     waitForReactUpdate(200);
     cy.focused().type('Line 2');
-    cy.get('[data-block-type="paragraph"]').should('have.length', 1);
+    BlockSelectors.blockByType('paragraph').should('have.length', 1);
     cy.contains('Line 1').should('be.visible');
     cy.contains('Line 2').should('be.visible');
   });

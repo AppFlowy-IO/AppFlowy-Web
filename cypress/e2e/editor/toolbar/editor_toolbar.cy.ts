@@ -1,5 +1,5 @@
 import { AuthTestUtils } from '../../../support/auth-utils';
-import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
+import { BlockSelectors, EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Toolbar Interaction', () => {
@@ -45,8 +45,8 @@ describe('Toolbar Interaction', () => {
     cy.focused().type('Link text');
     showToolbar('Link text');
     
-    cy.get('[data-testid="selection-toolbar"]').within(() => {
-      cy.get('[data-testid="link-button"]').click({ force: true });
+    EditorSelectors.selectionToolbar().within(() => {
+      EditorSelectors.linkButton().click({ force: true });
     });
     
     waitForReactUpdate(200);
@@ -58,8 +58,8 @@ describe('Toolbar Interaction', () => {
     cy.focused().type('Colored text');
     showToolbar('Colored text');
     
-    cy.get('[data-testid="selection-toolbar"]').within(() => {
-      cy.get('[data-testid="text-color-button"]').click({ force: true });
+    EditorSelectors.selectionToolbar().within(() => {
+      EditorSelectors.textColorButton().click({ force: true });
     });
     
     waitForReactUpdate(200);
@@ -71,8 +71,8 @@ describe('Toolbar Interaction', () => {
     cy.focused().type('Highlighted text');
     showToolbar('Highlighted text');
     
-    cy.get('[data-testid="selection-toolbar"]').within(() => {
-      cy.get('[data-testid="bg-color-button"]').click({ force: true });
+    EditorSelectors.selectionToolbar().within(() => {
+      EditorSelectors.bgColorButton().click({ force: true });
     });
     
     waitForReactUpdate(200);
@@ -84,13 +84,13 @@ describe('Toolbar Interaction', () => {
     cy.focused().type('Convert me');
     showToolbar('Convert me');
     
-    cy.get('[data-testid="selection-toolbar"]').within(() => {
-      cy.get('[data-testid="heading-button"]').click({ force: true });
+    EditorSelectors.selectionToolbar().within(() => {
+      EditorSelectors.headingButton().click({ force: true });
     });
     
     waitForReactUpdate(200);
     cy.get('.MuiPopover-root').should('exist').should('be.visible');
-    cy.get('[data-testid="heading-1-button"]').should('exist');
+    EditorSelectors.heading1Button().should('exist');
   });
 
   // New Tests for Alignment
@@ -105,7 +105,7 @@ describe('Toolbar Interaction', () => {
     cy.focused().type('List Item');
     showToolbar('List Item');
     
-    cy.get('[data-testid="selection-toolbar"]').within(() => {
+    EditorSelectors.selectionToolbar().within(() => {
       // Find BulletedList button. Assuming standard icon or tooltip
       // We need a way to identify it. Assuming order or tooltip.
       // Let's try to find by svg name if possible or tooltip.
@@ -114,23 +114,24 @@ describe('Toolbar Interaction', () => {
     });
     
     waitForReactUpdate(200);
-    cy.get('[data-slate-editor="true"]').should('contain.text', 'List Item');
+    EditorSelectors.slateEditor().should('contain.text', 'List Item');
     // Verify list structure (ul/li or AppFlowy specific block)
     // AppFlowy uses specific block types.
     // We can check for the presence of the bullet marker in the DOM
-    cy.get('.bullet-list-marker, [data-block-type="bulleted_list"]').should('exist');
+    cy.get('.bullet-list-marker').should('exist');
+    BlockSelectors.blockByType('bulleted_list').should('exist');
   });
 
   it('should apply Numbered List via toolbar', () => {
     cy.focused().type('Numbered Item');
     showToolbar('Numbered Item');
     
-    cy.get('[data-testid="selection-toolbar"]').within(() => {
+    EditorSelectors.selectionToolbar().within(() => {
       cy.get('button[aria-label*="Numbered list"], button[title*="Numbered list"]').click({ force: true });
     });
     
     waitForReactUpdate(200);
-    cy.get('[data-block-type="numbered_list"]').should('exist');
+    BlockSelectors.blockByType('numbered_list').should('exist');
   });
 
   // New Test for Quote via Toolbar
@@ -138,12 +139,12 @@ describe('Toolbar Interaction', () => {
     cy.focused().type('Quote Text');
     showToolbar('Quote Text');
     
-    cy.get('[data-testid="selection-toolbar"]').within(() => {
+    EditorSelectors.selectionToolbar().within(() => {
       cy.get('button[aria-label*="Quote"], button[title*="Quote"]').click({ force: true });
     });
     
     waitForReactUpdate(200);
-    cy.get('[data-block-type="quote"]').should('exist');
+    BlockSelectors.blockByType('quote').should('exist');
   });
 
   // New Test for Inline Code via Toolbar
