@@ -144,6 +144,20 @@ export const ModalSelectors = {
   // Rename modal inputs
   renameInput: () => cy.get(byTestId('rename-modal-input')),
   renameSaveButton: () => cy.get(byTestId('rename-modal-save')),
+  
+  // Generic dialog selectors
+  dialogContainer: () => cy.get('.MuiDialog-container'),
+  dialogRole: () => cy.get('[role="dialog"]'),
+  addButton: () => cy.contains('button', 'Add'),
+};
+
+/**
+ * Dropdown/Menu selectors
+ */
+export const DropdownSelectors = {
+  content: (options?: any) => cy.get('[data-slot="dropdown-menu-content"]', options),
+  menu: (options?: any) => cy.get('[role="menu"]', options),
+  menuItem: (options?: any) => cy.get('[role="menuitem"]', options),
 };
 
 /**
@@ -164,6 +178,10 @@ export const ShareSelectors = {
 
   // Share popover
   sharePopover: () => cy.get(byTestId('share-popover')),
+  
+  // Share inputs
+  emailTagInput: () => cy.get('[data-slot="email-tag-input"]'),
+  inviteButton: () => cy.contains('button', /invite/i),
 
   // Publish tab button
   publishTabButton: () => cy.get(byTestId('publish-tab-button')),
@@ -235,6 +253,7 @@ export const TrashSelectors = {
   sidebarTrashButton: () => cy.get(byTestId('sidebar-trash-button')),
   table: () => cy.get(byTestId('trash-table')),
   rows: () => cy.get(byTestId('trash-table-row')),
+  cell: () => cy.get('td'),
   restoreButton: () => cy.get(byTestId('trash-restore-button')),
   deleteButton: () => cy.get(byTestId('trash-delete-button')),
 };
@@ -706,6 +725,7 @@ export const BlockSelectors = {
   hoverControls: () => cy.get(byTestId('hover-controls')),
   slashMenuGrid: () => cy.get(byTestId('slash-menu-grid')),
   blockByType: (type: string) => cy.get(`[data-block-type="${type}"]`),
+  blockSelector: (type: string) => `[data-block-type="${type}"]`,
   allBlocks: () => cy.get('[data-block-type]'),
 };
 

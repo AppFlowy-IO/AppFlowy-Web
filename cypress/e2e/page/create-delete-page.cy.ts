@@ -73,7 +73,7 @@ describe('Page Create and Delete Tests', () => {
                     ModalSelectors.spaceItemInModal().first().click();
                     waitForReactUpdate(500);
                     // Click Add button
-                    cy.contains('button', 'Add').click();
+                    ModalSelectors.addButton().click();
                 });
                 
                 // Wait for navigation to the new page

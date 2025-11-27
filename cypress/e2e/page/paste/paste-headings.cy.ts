@@ -1,4 +1,5 @@
 import { createTestPage, pasteContent } from '../../../support/paste-utils';
+import { EditorSelectors } from '../../../support/selectors';
 import { testLog } from '../../../support/test-helpers';
 
 describe('Paste Heading Tests', () => {
@@ -16,7 +17,7 @@ describe('Paste Heading Tests', () => {
       cy.wait(1000);
 
       // AppFlowy renders H1 as div.heading.level-1
-      cy.get('[contenteditable="true"]').find('.heading.level-1').should('contain', 'Main Heading');
+      EditorSelectors.slateEditor().find('.heading.level-1').should('contain', 'Main Heading');
       testLog.info('✓ HTML H1 pasted successfully');
 
       // Add a new line to separate content, targeting the last editor or focused editor
@@ -32,7 +33,7 @@ describe('Paste Heading Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('.heading.level-2').should('contain', 'Section Title');
+      EditorSelectors.slateEditor().find('.heading.level-2').should('contain', 'Section Title');
       testLog.info('✓ HTML H2 pasted successfully');
 
       // Add a new line to separate content
@@ -52,9 +53,9 @@ describe('Paste Heading Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('.heading.level-1').should('contain', 'Main Title');
-      cy.get('[contenteditable="true"]').find('.heading.level-2').should('contain', 'Subtitle');
-      cy.get('[contenteditable="true"]').find('.heading.level-3').should('contain', 'Section');
+      EditorSelectors.slateEditor().find('.heading.level-1').should('contain', 'Main Title');
+      EditorSelectors.slateEditor().find('.heading.level-2').should('contain', 'Subtitle');
+      EditorSelectors.slateEditor().find('.heading.level-3').should('contain', 'Section');
       testLog.info('✓ HTML multiple headings pasted successfully');
 
       // Add a new line to separate content
@@ -70,7 +71,7 @@ describe('Paste Heading Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('.heading.level-1').should('contain', 'Main Heading');
+      EditorSelectors.slateEditor().find('.heading.level-1').should('contain', 'Main Heading');
       testLog.info('✓ Markdown H1 pasted successfully');
 
       // Add a new line to separate content
@@ -85,7 +86,7 @@ describe('Paste Heading Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('.heading.level-2').should('contain', 'Section Title');
+      EditorSelectors.slateEditor().find('.heading.level-2').should('contain', 'Section Title');
       testLog.info('✓ Markdown H2 pasted successfully');
 
       // Add a new line to separate content
@@ -103,10 +104,10 @@ describe('Paste Heading Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('.heading.level-3').should('contain', 'Heading 3');
-      cy.get('[contenteditable="true"]').find('.heading.level-4').should('contain', 'Heading 4');
-      cy.get('[contenteditable="true"]').find('.heading.level-5').should('contain', 'Heading 5');
-      cy.get('[contenteditable="true"]').find('.heading.level-6').should('contain', 'Heading 6');
+      EditorSelectors.slateEditor().find('.heading.level-3').should('contain', 'Heading 3');
+      EditorSelectors.slateEditor().find('.heading.level-4').should('contain', 'Heading 4');
+      EditorSelectors.slateEditor().find('.heading.level-5').should('contain', 'Heading 5');
+      EditorSelectors.slateEditor().find('.heading.level-6').should('contain', 'Heading 6');
       testLog.info('✓ Markdown H3-H6 pasted successfully');
 
       // Add a new line to separate content
@@ -123,9 +124,9 @@ describe('Paste Heading Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('.heading.level-1').should('contain', 'Heading with').find('strong').should('contain', 'bold');
-      cy.get('[contenteditable="true"]').find('.heading.level-2').should('contain', 'Heading with').find('em').should('contain', 'italic');
-      cy.get('[contenteditable="true"]').find('.heading.level-3').should('contain', 'Heading with').find('span.bg-border-primary').should('contain', 'code');
+      EditorSelectors.slateEditor().find('.heading.level-1').should('contain', 'Heading with').find('strong').should('contain', 'bold');
+      EditorSelectors.slateEditor().find('.heading.level-2').should('contain', 'Heading with').find('em').should('contain', 'italic');
+      EditorSelectors.slateEditor().find('.heading.level-3').should('contain', 'Heading with').find('span.bg-border-primary').should('contain', 'code');
       testLog.info('✓ Markdown headings with formatting pasted successfully');
     }
   });

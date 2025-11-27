@@ -1,4 +1,5 @@
 import { createTestPage, pasteContent } from '../../../support/paste-utils';
+import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { testLog } from '../../../support/test-helpers';
 
 describe('Paste Code Block Tests', () => {
@@ -16,7 +17,7 @@ describe('Paste Code Block Tests', () => {
       cy.wait(1000);
 
       // CodeBlock component structure: .relative.w-full > pre > code
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'const x = 10');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'const x = 10');
       testLog.info('✓ HTML code block pasted successfully');
     }
 
@@ -29,7 +30,7 @@ describe('Paste Code Block Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'function hello');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'function hello');
       testLog.info('✓ HTML code block with language pasted successfully');
     }
 
@@ -46,8 +47,8 @@ describe('Paste Code Block Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'def greet');
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'const greeting');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'def greet');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'const greeting');
       testLog.info('✓ HTML multiple language code blocks pasted successfully');
     }
 
@@ -61,7 +62,7 @@ describe('Paste Code Block Tests', () => {
       cy.wait(1000);
 
       // AppFlowy renders blockquote as div with data-block-type="quote"
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'This is a quoted text');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'This is a quoted text');
       testLog.info('✓ HTML blockquote pasted successfully');
     }
 
@@ -79,8 +80,8 @@ describe('Paste Code Block Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'First level quote');
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'Second level quote');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'First level quote');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'Second level quote');
       testLog.info('✓ HTML nested blockquotes pasted successfully');
     }
 
@@ -96,7 +97,7 @@ console.log(x);
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'const x = 10');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'const x = 10');
       testLog.info('✓ Markdown code block with language pasted successfully');
     }
 
@@ -112,7 +113,7 @@ function hello() {
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'function hello');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'function hello');
       testLog.info('✓ Markdown code block without language pasted successfully');
     }
 
@@ -125,7 +126,7 @@ function hello() {
       cy.wait(1000);
 
       // Inline code is usually a span with specific style
-      cy.get('[contenteditable="true"]').find('span.bg-border-primary').should('contain', 'console.log');
+      EditorSelectors.slateEditor().find('span.bg-border-primary').should('contain', 'console.log');
       testLog.info('✓ Markdown inline code pasted successfully');
     }
 
@@ -148,9 +149,9 @@ echo "Hello World"
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'def greet');
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'const greeting');
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'echo');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'def greet');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'const greeting');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'echo');
       testLog.info('✓ Markdown multiple language code blocks pasted successfully');
     }
 
@@ -162,7 +163,7 @@ echo "Hello World"
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'This is a quoted text');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'This is a quoted text');
       testLog.info('✓ Markdown blockquote pasted successfully');
     }
 
@@ -176,9 +177,9 @@ echo "Hello World"
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'First level quote');
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'Second level quote');
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'Third level quote');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'First level quote');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'Second level quote');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'Third level quote');
       testLog.info('✓ Markdown nested blockquotes pasted successfully');
     }
 
@@ -190,9 +191,9 @@ echo "Hello World"
 
       cy.wait(1000);
 
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').find('strong').should('contain', 'Important');
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').find('em').should('contain', 'quoted');
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').find('span.bg-border-primary').should('contain', 'code');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).find('strong').should('contain', 'Important');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).find('em').should('contain', 'quoted');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).find('span.bg-border-primary').should('contain', 'code');
       testLog.info('✓ Markdown blockquote with formatting pasted successfully');
     }
   });

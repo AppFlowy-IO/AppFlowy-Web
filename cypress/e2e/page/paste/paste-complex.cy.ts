@@ -1,4 +1,5 @@
 import { createTestPage, pasteContent, verifyEditorContent } from '../../../support/paste-utils';
+import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { testLog } from '../../../support/test-helpers';
 
 describe('Paste Complex Content Tests', () => {
@@ -29,11 +30,11 @@ describe('Paste Complex Content Tests', () => {
       cy.wait(2000);
 
       // Verify structural elements
-      cy.get('[contenteditable="true"]').contains('.heading.level-1', 'Project Documentation').scrollIntoView();
-      cy.get('[contenteditable="true"]').find('[data-block-type="bulleted_list"]').should('have.length.at.least', 3);
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'console.log');
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'Remember to test');
-      cy.get('[contenteditable="true"]').find('span.cursor-pointer.underline').should('contain', 'our website');
+      EditorSelectors.slateEditor().contains('.heading.level-1', 'Project Documentation').scrollIntoView();
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('bulleted_list')).should('have.length.at.least', 3);
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'console.log');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'Remember to test');
+      EditorSelectors.slateEditor().find('span.cursor-pointer.underline').should('contain', 'our website');
 
       testLog.info('✓ Complex document pasted successfully');
     }
@@ -63,10 +64,10 @@ describe('Paste Complex Content Tests', () => {
 
       cy.wait(2000);
 
-      cy.get('[contenteditable="true"]').contains('.heading.level-1', 'My Project').scrollIntoView();
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'npm install');
-      cy.get('[contenteditable="true"]').find('[data-block-type="todo_list"]').should('have.length.at.least', 3);
-      cy.get('[contenteditable="true"]').find('[data-block-type="todo_list"]').filter(':has(.checked)').should('contain', 'Feature 1');
+      EditorSelectors.slateEditor().contains('.heading.level-1', 'My Project').scrollIntoView();
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'npm install');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('todo_list')).should('have.length.at.least', 3);
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('todo_list')).filter(':has(.checked)').should('contain', 'Feature 1');
 
       testLog.info('✓ GitHub README pasted successfully');
     }
@@ -97,11 +98,11 @@ describe('Paste Complex Content Tests', () => {
       cy.wait(2000);
 
       // Verify content exists (markdown may or may not be parsed depending on implementation)
-      cy.get('[contenteditable="true"]').contains('.heading.level-1', 'Main Title').scrollIntoView();
-      cy.get('[contenteditable="true"]').find('strong').should('contain', 'bold');
-      cy.get('[contenteditable="true"]').find('[data-block-type="bulleted_list"]').should('contain', 'List item 1');
-      cy.get('[contenteditable="true"]').find('pre').find('code').should('contain', 'const x = 10');
-      cy.get('[contenteditable="true"]').find('[data-block-type="quote"]').should('contain', 'A quote');
+      EditorSelectors.slateEditor().contains('.heading.level-1', 'Main Title').scrollIntoView();
+      EditorSelectors.slateEditor().find('strong').should('contain', 'bold');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('bulleted_list')).should('contain', 'List item 1');
+      EditorSelectors.slateEditor().find('pre').find('code').should('contain', 'const x = 10');
+      EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('quote')).should('contain', 'A quote');
 
       testLog.info('✓ Markdown-like text pasted');
     }
@@ -141,9 +142,9 @@ describe('Paste Complex Content Tests', () => {
 
       cy.get('body').then(() => {
         // Check that content is present
-        cy.get('[contenteditable="true"]').contains('.heading.level-1', 'Title').scrollIntoView();
-        cy.get('[contenteditable="true"]').find('div').contains('Paragraph').should('exist');
-        cy.get('[contenteditable="true"]').find('[data-block-type="bulleted_list"]').should('contain', 'Item 1');
+        EditorSelectors.slateEditor().contains('.heading.level-1', 'Title').scrollIntoView();
+        EditorSelectors.slateEditor().find('div').contains('Paragraph').should('exist');
+        EditorSelectors.slateEditor().find(BlockSelectors.blockSelector('bulleted_list')).should('contain', 'Item 1');
 
         testLog.info('✓ Complex structure verified');
       });

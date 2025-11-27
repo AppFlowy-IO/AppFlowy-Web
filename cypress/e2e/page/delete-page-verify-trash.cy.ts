@@ -74,7 +74,7 @@ describe('Delete Page, Verify in Trash, and Restore Tests', () => {
                     ModalSelectors.spaceItemInModal().first().click();
                     waitForReactUpdate(500);
                     // Click Add button
-                    cy.contains('button', 'Add').click();
+                    ModalSelectors.addButton().click();
                 });
 
                 // Wait for navigation to the new page
@@ -225,7 +225,7 @@ describe('Delete Page, Verify in Trash, and Restore Tests', () => {
                 // Click the restore button on the first row (our deleted page)
                 TrashSelectors.rows().first().within(() => {
                     // Get the page name before restoring
-                    cy.get('td').first().invoke('text').then((text) => {
+                    TrashSelectors.cell().first().invoke('text').then((text) => {
                         restoredPageName = text.trim() || 'Untitled';
                         testLog.info(`Restoring page: ${restoredPageName}`);
                     });

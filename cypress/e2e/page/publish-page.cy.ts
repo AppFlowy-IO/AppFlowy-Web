@@ -1,6 +1,6 @@
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
+import { EditorSelectors, PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
 
@@ -394,20 +394,7 @@ describe('Publish Page Test', () => {
 
             // Add initial content to the page
             testLog.info('Adding initial content to page');
-            cy.get('[contenteditable="true"]').then(($editors) => {
-                let editorFound = false;
-                $editors.each((index: number, el: HTMLElement) => {
-                    const $el = Cypress.$(el);
-                    if (!$el.attr('data-testid')?.includes('title') && !$el.hasClass('editor-title')) {
-                        cy.wrap(el).click({ force: true }).clear().type(initialContent, { force: true });
-                        editorFound = true;
-                        return false;
-                    }
-                });
-                if (!editorFound && $editors.length > 0) {
-                    cy.wrap($editors.last()).click({ force: true }).clear().type(initialContent, { force: true });
-                }
-            });
+            EditorSelectors.firstEditor().click({ force: true }).clear().type(initialContent, { force: true });
             cy.wait(2000);
 
             // First publish
@@ -448,20 +435,7 @@ describe('Publish Page Test', () => {
 
                         // Modify the page content
                         testLog.info('Modifying page content');
-                        cy.get('[contenteditable="true"]').then(($editors) => {
-                            let editorFound = false;
-                            $editors.each((index: number, el: HTMLElement) => {
-                                const $el = Cypress.$(el);
-                                if (!$el.attr('data-testid')?.includes('title') && !$el.hasClass('editor-title')) {
-                                    cy.wrap(el).click({ force: true }).clear().type(updatedContent, { force: true });
-                                    editorFound = true;
-                                    return false;
-                                }
-                            });
-                            if (!editorFound && $editors.length > 0) {
-                                cy.wrap($editors.last()).click({ force: true }).clear().type(updatedContent, { force: true });
-                            }
-                        });
+                        EditorSelectors.firstEditor().click({ force: true }).clear().type(updatedContent, { force: true });
                         cy.wait(5000); // Wait for content to save
 
                         // Republish to sync the updated content

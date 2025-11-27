@@ -1,6 +1,6 @@
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { PageSelectors, ModalSelectors, waitForReactUpdate } from '../../support/selectors';
+import { DropdownSelectors, ModalSelectors, PageSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
 
@@ -59,10 +59,10 @@ describe('More Page Actions', () => {
 
         // Verify core items in ViewActionsPopover
         // The menu should be open now, verify at least one of the common actions exists
-        cy.get('[data-slot="dropdown-menu-content"]', { timeout: 5000 }).should('exist');
+        DropdownSelectors.content().should('exist');
 
         // Check for common menu items - they might have different test ids or text
-        cy.get('[data-slot="dropdown-menu-content"]').within(() => {
+        DropdownSelectors.content().within(() => {
             // Look for items by text content since test ids might vary
             cy.contains('Delete').should('exist');
             cy.contains('Duplicate').should('exist');
@@ -112,7 +112,7 @@ describe('More Page Actions', () => {
         testLog.info( 'Clicked more actions button');
 
         // Click on Duplicate option which is available in the dropdown
-        cy.get('[data-slot="dropdown-menu-content"]').within(() => {
+        DropdownSelectors.content().within(() => {
             cy.contains('Duplicate').click();
         });
         testLog.info( 'Clicked Duplicate option');
@@ -179,10 +179,10 @@ describe('More Page Actions', () => {
         testLog.info( 'Clicked more actions button');
 
         // Wait for the dropdown menu to be visible
-        cy.get('[data-slot="dropdown-menu-content"]', { timeout: 5000 }).should('be.visible');
+        DropdownSelectors.content().should('be.visible');
 
         // Click on Rename option - simplified approach
-        cy.get('[data-slot="dropdown-menu-content"]').within(() => {
+        DropdownSelectors.content().within(() => {
             cy.contains('Rename').click();
         });
         

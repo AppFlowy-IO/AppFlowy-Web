@@ -1,6 +1,6 @@
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { PageSelectors, SidebarSelectors, ShareSelectors, waitForReactUpdate } from '../../support/selectors';
+import { DropdownSelectors, PageSelectors, SidebarSelectors, ShareSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
 
@@ -66,7 +66,7 @@ describe('Share Page Test', () => {
             testLog.info( `Inviting user B: ${userBEmail}`);
             ShareSelectors.sharePopover().within(() => {
                 // Find the input field inside the email-tag-input container
-                cy.get('[data-slot="email-tag-input"]')
+                ShareSelectors.emailTagInput()
                     .find('input[type="text"]')
                     .should('be.visible')
                     .clear()
@@ -75,14 +75,14 @@ describe('Share Page Test', () => {
                 waitForReactUpdate(500);
 
                 // Press Enter to add the email tag
-                cy.get('[data-slot="email-tag-input"]')
+                ShareSelectors.emailTagInput()
                     .find('input[type="text"]')
                     .type('{enter}', { force: true });
 
                 waitForReactUpdate(1000);
 
                 // Click the Invite button to send the invitation
-                cy.contains('button', /invite/i)
+                ShareSelectors.inviteButton()
                     .should('be.visible')
                     .should('not.be.disabled')
                     .click({ force: true });
@@ -197,17 +197,17 @@ describe('Share Page Test', () => {
             });
 
             ShareSelectors.sharePopover().within(() => {
-                cy.get('[data-slot="email-tag-input"]')
+                ShareSelectors.emailTagInput()
                     .find('input[type="text"]')
                     .should('be.visible')
                     .clear()
                     .type(userBEmail, { force: true });
                 waitForReactUpdate(500);
-                cy.get('[data-slot="email-tag-input"]')
+                ShareSelectors.emailTagInput()
                     .find('input[type="text"]')
                     .type('{enter}', { force: true });
                 waitForReactUpdate(1000);
-                cy.contains('button', /invite/i)
+                ShareSelectors.inviteButton()
                     .should('be.visible')
                     .should('not.be.disabled')
                     .click({ force: true });
@@ -308,20 +308,20 @@ describe('Share Page Test', () => {
                 const emails = [userBEmail, userCEmail, userDEmail];
 
                 emails.forEach((email, index) => {
-                    cy.get('[data-slot="email-tag-input"]')
+                    ShareSelectors.emailTagInput()
                         .find('input[type="text"]')
                         .should('be.visible')
                         .clear()
                         .type(email, { force: true });
                     waitForReactUpdate(300);
-                    cy.get('[data-slot="email-tag-input"]')
+                    ShareSelectors.emailTagInput()
                         .find('input[type="text"]')
                         .type('{enter}', { force: true });
                     waitForReactUpdate(500);
                 });
 
                 // Click Invite button
-                cy.contains('button', /invite/i)
+                ShareSelectors.inviteButton()
                     .should('be.visible')
                     .should('not.be.disabled')
                     .click({ force: true });
@@ -384,7 +384,7 @@ describe('Share Page Test', () => {
                         waitForReactUpdate(500);
 
                         // Select "Can edit" from dropdown
-                        cy.get('[role="menu"]').within(() => {
+                        DropdownSelectors.menu().within(() => {
                             cy.contains(/can edit|edit/i).click({ force: true });
                         });
                         waitForReactUpdate(500);
@@ -403,7 +403,7 @@ describe('Share Page Test', () => {
                     .find('input[type="text"]')
                     .type('{enter}', { force: true });
                 waitForReactUpdate(1000);
-                cy.contains('button', /invite/i)
+                ShareSelectors.inviteButton()
                     .should('be.visible')
                     .should('not.be.disabled')
                     .click({ force: true });
@@ -455,17 +455,17 @@ describe('Share Page Test', () => {
 
             // Invite user B
             ShareSelectors.sharePopover().within(() => {
-                cy.get('[data-slot="email-tag-input"]')
+                ShareSelectors.emailTagInput()
                     .find('input[type="text"]')
                     .should('be.visible')
                     .clear()
                     .type(userBEmail, { force: true });
                 waitForReactUpdate(500);
-                cy.get('[data-slot="email-tag-input"]')
+                ShareSelectors.emailTagInput()
                     .find('input[type="text"]')
                     .type('{enter}', { force: true });
                 waitForReactUpdate(1000);
-                cy.contains('button', /invite/i)
+                ShareSelectors.inviteButton()
                     .should('be.visible')
                     .should('not.be.disabled')
                     .click({ force: true });
@@ -533,19 +533,19 @@ describe('Share Page Test', () => {
             testLog.info( `Inviting users: ${userBEmail}, ${userCEmail}`);
             ShareSelectors.sharePopover().within(() => {
                 [userBEmail, userCEmail].forEach((email) => {
-                    cy.get('[data-slot="email-tag-input"]')
+                    ShareSelectors.emailTagInput()
                         .find('input[type="text"]')
                         .should('be.visible')
                         .clear()
                         .type(email, { force: true });
                     waitForReactUpdate(300);
-                    cy.get('[data-slot="email-tag-input"]')
+                    ShareSelectors.emailTagInput()
                         .find('input[type="text"]')
                         .type('{enter}', { force: true });
                     waitForReactUpdate(500);
                 });
 
-                cy.contains('button', /invite/i)
+                ShareSelectors.inviteButton()
                     .should('be.visible')
                     .should('not.be.disabled')
                     .click({ force: true });
@@ -675,21 +675,20 @@ describe('Share Page Test', () => {
                 // Invite user B
                 testLog.info( `Inviting user B: ${userBEmail}`);
                 ShareSelectors.sharePopover().within(() => {
-                    cy.get('[data-slot="email-tag-input"]')
+                    ShareSelectors.emailTagInput()
                         .find('input[type="text"]')
                         .should('be.visible')
                         .clear()
                         .type(userBEmail, { force: true });
                     waitForReactUpdate(500);
-                    cy.get('[data-slot="email-tag-input"]')
+                    ShareSelectors.emailTagInput()
                         .find('input[type="text"]')
                         .type('{enter}', { force: true });
                     waitForReactUpdate(1000);
-                    cy.contains('button', /invite/i)
-                        .should('be.visible')
-                        .should('not.be.disabled')
-                        .click({ force: true });
-                });
+                                    ShareSelectors.inviteButton()
+                                        .should('be.visible')
+                                        .should('not.be.disabled')
+                                        .click({ force: true });                });
 
                 waitForReactUpdate(3000);
 
@@ -784,21 +783,20 @@ describe('Share Page Test', () => {
                 // Invite user B
                 testLog.info( `Inviting user B: ${userBEmail}`);
                 ShareSelectors.sharePopover().within(() => {
-                    cy.get('[data-slot="email-tag-input"]')
+                    ShareSelectors.emailTagInput()
                         .find('input[type="text"]')
                         .should('be.visible')
                         .clear()
                         .type(userBEmail, { force: true });
                     waitForReactUpdate(500);
-                    cy.get('[data-slot="email-tag-input"]')
+                    ShareSelectors.emailTagInput()
                         .find('input[type="text"]')
                         .type('{enter}', { force: true });
                     waitForReactUpdate(1000);
-                    cy.contains('button', /invite/i)
-                        .should('be.visible')
-                        .should('not.be.disabled')
-                        .click({ force: true });
-                });
+                                    ShareSelectors.inviteButton()
+                                        .should('be.visible')
+                                        .should('not.be.disabled')
+                                        .click({ force: true });                });
 
                 waitForReactUpdate(3000);
 

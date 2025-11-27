@@ -1,4 +1,5 @@
 import { createTestPage, pasteContent } from '../../../support/paste-utils';
+import { EditorSelectors } from '../../../support/selectors';
 import { testLog } from '../../../support/test-helpers';
 
 describe('Paste Table Tests', () => {
@@ -35,10 +36,10 @@ describe('Paste Table Tests', () => {
       cy.wait(1500);
 
       // AppFlowy uses SimpleTable which renders as a table within a specific container
-      cy.get('[contenteditable="true"]').find('.simple-table').find('table').should('exist');
-      cy.get('[contenteditable="true"]').find('.simple-table').find('tr').should('have.length.at.least', 3);
-      cy.get('[contenteditable="true"]').find('.simple-table').contains('Name');
-      cy.get('[contenteditable="true"]').find('.simple-table').contains('John');
+      EditorSelectors.slateEditor().find('.simple-table').find('table').should('exist');
+      EditorSelectors.slateEditor().find('.simple-table').find('tr').should('have.length.at.least', 3);
+      EditorSelectors.slateEditor().find('.simple-table').contains('Name');
+      EditorSelectors.slateEditor().find('.simple-table').contains('John');
       testLog.info('✓ HTML table pasted successfully');
     }
 
@@ -70,8 +71,8 @@ describe('Paste Table Tests', () => {
 
       cy.wait(1500);
 
-      cy.get('[contenteditable="true"]').find('.simple-table').find('strong').should('contain', 'Authentication');
-      cy.get('[contenteditable="true"]').find('.simple-table').find('em').should('contain', 'Complete');
+      EditorSelectors.slateEditor().find('.simple-table').find('strong').should('contain', 'Authentication');
+      EditorSelectors.slateEditor().find('.simple-table').find('em').should('contain', 'Complete');
       testLog.info('✓ HTML table with formatting pasted successfully');
     }
 
@@ -88,9 +89,9 @@ describe('Paste Table Tests', () => {
 
       cy.wait(1500);
 
-      cy.get('[contenteditable="true"]').find('.simple-table').should('contain', 'Product');
-      cy.get('[contenteditable="true"]').find('.simple-table').should('contain', 'Apple');
-      cy.get('[contenteditable="true"]').find('.simple-table').should('contain', 'Banana');
+      EditorSelectors.slateEditor().find('.simple-table').should('contain', 'Product');
+      EditorSelectors.slateEditor().find('.simple-table').should('contain', 'Apple');
+      EditorSelectors.slateEditor().find('.simple-table').should('contain', 'Banana');
       testLog.info('✓ Markdown table pasted successfully');
     }
 
@@ -105,8 +106,8 @@ describe('Paste Table Tests', () => {
 
       cy.wait(1500);
 
-      cy.get('[contenteditable="true"]').find('.simple-table').should('contain', 'Left Align');
-      cy.get('[contenteditable="true"]').find('.simple-table').should('contain', 'Center Align');
+      EditorSelectors.slateEditor().find('.simple-table').should('contain', 'Left Align');
+      EditorSelectors.slateEditor().find('.simple-table').should('contain', 'Center Align');
       testLog.info('✓ Markdown table with alignment pasted successfully');
     }
 
@@ -121,8 +122,8 @@ describe('Paste Table Tests', () => {
 
       cy.wait(1500);
 
-      cy.get('[contenteditable="true"]').find('.simple-table').find('strong').should('contain', 'Bold Feature');
-      cy.get('[contenteditable="true"]').find('.simple-table').find('em').should('contain', 'In Progress');
+      EditorSelectors.slateEditor().find('.simple-table').find('strong').should('contain', 'Bold Feature');
+      EditorSelectors.slateEditor().find('.simple-table').find('em').should('contain', 'In Progress');
       testLog.info('✓ Markdown table with inline formatting pasted successfully');
     }
 
@@ -139,9 +140,9 @@ Bob\tbob@example.com\t555-5678`;
 
       // TSV might be pasted as a table or plain text depending on implementation
       // Assuming table based on previous tests
-      cy.get('[contenteditable="true"]').find('.simple-table').should('exist');
-      cy.get('[contenteditable="true"]').find('.simple-table').should('contain', 'Alice');
-      cy.get('[contenteditable="true"]').find('.simple-table').should('contain', 'alice@example.com');
+      EditorSelectors.slateEditor().find('.simple-table').should('exist');
+      EditorSelectors.slateEditor().find('.simple-table').should('contain', 'Alice');
+      EditorSelectors.slateEditor().find('.simple-table').should('contain', 'alice@example.com');
       testLog.info('✓ TSV data pasted successfully');
     }
   });

@@ -1,4 +1,5 @@
 import { createTestPage, pasteContent } from '../../../support/paste-utils';
+import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { testLog } from '../../../support/test-helpers';
 
 describe('Paste List Tests', () => {
@@ -22,14 +23,14 @@ describe('Paste List Tests', () => {
       cy.wait(1000);
 
       // AppFlowy renders bulleted lists as div elements with data-block-type="bulleted_list"
-      cy.get('[data-block-type="bulleted_list"]').should('have.length.at.least', 3);
+      BlockSelectors.blockByType('bulleted_list').should('have.length.at.least', 3);
       cy.contains('First item').should('exist');
       cy.contains('Second item').should('exist');
       cy.contains('Third item').should('exist');
       testLog.info('✓ HTML unordered list pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -48,14 +49,14 @@ describe('Paste List Tests', () => {
       cy.wait(1000);
 
       // AppFlowy renders numbered lists as div elements with data-block-type="numbered_list"
-      cy.get('[data-block-type="numbered_list"]').should('have.length.at.least', 3);
+      BlockSelectors.blockByType('numbered_list').should('have.length.at.least', 3);
       cy.contains('Step one').should('exist');
       cy.contains('Step two').should('exist');
       cy.contains('Step three').should('exist');
       testLog.info('✓ HTML ordered list pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -74,13 +75,13 @@ describe('Paste List Tests', () => {
 
       // AppFlowy renders todo lists as div elements with data-block-type="todo_list"
       // The checked state is rendered as a class on the inner div
-      cy.get('[data-block-type="todo_list"]').should('have.length.at.least', 2);
+      BlockSelectors.blockByType('todo_list').should('have.length.at.least', 2);
       cy.contains('Completed task').should('exist');
       cy.contains('Incomplete task').should('exist');
       testLog.info('✓ HTML todo list pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     // Markdown Lists
@@ -94,12 +95,12 @@ describe('Paste List Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[data-block-type="bulleted_list"]').should('have.length.at.least', 3);
+      BlockSelectors.blockByType('bulleted_list').should('have.length.at.least', 3);
       cy.contains('First item').should('exist');
       testLog.info('✓ Markdown unordered list (dash) pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -112,12 +113,12 @@ describe('Paste List Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[data-block-type="bulleted_list"]').should('have.length.at.least', 3);
+      BlockSelectors.blockByType('bulleted_list').should('have.length.at.least', 3);
       cy.contains('Apple').should('exist');
       testLog.info('✓ Markdown unordered list (asterisk) pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -130,12 +131,12 @@ describe('Paste List Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[data-block-type="numbered_list"]').should('have.length.at.least', 3);
+      BlockSelectors.blockByType('numbered_list').should('have.length.at.least', 3);
       cy.contains('First step').should('exist');
       testLog.info('✓ Markdown ordered list pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -148,13 +149,13 @@ describe('Paste List Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[data-block-type="todo_list"]').should('have.length.at.least', 3);
+      BlockSelectors.blockByType('todo_list').should('have.length.at.least', 3);
       cy.contains('Completed task').should('exist');
       cy.contains('Incomplete task').should('exist');
       testLog.info('✓ Markdown task list pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -169,12 +170,12 @@ describe('Paste List Tests', () => {
 
       cy.wait(1000);
 
-      cy.get('[data-block-type="bulleted_list"]').should('contain', 'Parent item 1');
-      cy.get('[data-block-type="bulleted_list"]').should('contain', 'Child item 1.1');
+      BlockSelectors.blockByType('bulleted_list').should('contain', 'Parent item 1');
+      BlockSelectors.blockByType('bulleted_list').should('contain', 'Child item 1.1');
       testLog.info('✓ Markdown nested lists pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -194,7 +195,7 @@ describe('Paste List Tests', () => {
       testLog.info('✓ Markdown list with formatting pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -216,14 +217,14 @@ Please let us know your feedback.`;
       cy.contains('We are excited to announce').should('exist');
 
       // Verify special bullets are converted to BulletedListBlock
-      cy.get('[data-block-type="bulleted_list"]').should('contain', 'Fast performance');
-      cy.get('[data-block-type="bulleted_list"]').should('contain', 'Secure encryption');
-      cy.get('[data-block-type="bulleted_list"]').should('contain', 'Offline mode');
+      BlockSelectors.blockByType('bulleted_list').should('contain', 'Fast performance');
+      BlockSelectors.blockByType('bulleted_list').should('contain', 'Secure encryption');
+      BlockSelectors.blockByType('bulleted_list').should('contain', 'Offline mode');
 
       testLog.info('✓ Generic text with special bullets pasted successfully');
 
       // Exit list mode
-      cy.get('[contenteditable="true"]').last().type('{enter}{enter}');
+      EditorSelectors.slateEditor().last().type('{enter}{enter}');
     }
 
     {
@@ -246,9 +247,9 @@ Please let us know your feedback.`;
 
       // Check that "Private" does not have leading/trailing newlines in the text content
       // We can check this by ensuring it doesn't create extra blocks or lines
-      cy.get('[data-block-type="bulleted_list"]').contains('Private').should('exist');
-      cy.get('[data-block-type="bulleted_list"]').contains('Customizable').should('exist');
-      cy.get('[data-block-type="bulleted_list"]').contains('Self-hostable').should('exist');
+      BlockSelectors.blockByType('bulleted_list').contains('Private').should('exist');
+      BlockSelectors.blockByType('bulleted_list').contains('Customizable').should('exist');
+      BlockSelectors.blockByType('bulleted_list').contains('Self-hostable').should('exist');
 
       testLog.info('✓ HTML list with inner newlines pasted successfully');
     }

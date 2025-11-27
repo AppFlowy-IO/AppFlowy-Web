@@ -1,6 +1,6 @@
 import { AuthTestUtils } from './auth-utils';
 import { TestTool } from './page-utils';
-import { AddPageSelectors, ModalSelectors, PageSelectors, SpaceSelectors, waitForReactUpdate } from './selectors';
+import { AddPageSelectors, DropdownSelectors, EditorSelectors, ModalSelectors, PageSelectors, SpaceSelectors, waitForReactUpdate } from './selectors';
 import { generateRandomEmail } from './test-config';
 import { testLog } from './test-helpers';
 
@@ -14,10 +14,10 @@ import { testLog } from './test-helpers';
  */
 export const pasteContent = (html: string, plainText: string) => {
   // Wait for editors to be available
-  cy.get('[contenteditable="true"]').should('have.length.at.least', 1);
+  EditorSelectors.slateEditor().should('have.length.at.least', 1);
 
   // Find the index of the main editor (not the title)
-  cy.get('[contenteditable="true"]').then($editors => {
+  EditorSelectors.slateEditor().then($editors => {
     let targetIndex = -1;
 
     $editors.each((index: number, el: HTMLElement) => {
@@ -39,10 +39,10 @@ export const pasteContent = (html: string, plainText: string) => {
 
     // Click the editor to ensure it's active. Splitting this from the next block
     // handles cases where click might trigger a re-render.
-    cy.get('[contenteditable="true"]').eq(targetIndex).click({ force: true });
+    EditorSelectors.slateEditor().eq(targetIndex).click({ force: true });
 
     // Re-query to get the fresh element for Slate instance extraction
-    cy.get('[contenteditable="true"]').eq(targetIndex).then(($el) => {
+    EditorSelectors.slateEditor().eq(targetIndex).then(($el) => {
       const targetEditor = $el[0];
 
       // Access the Slate editor instance and call insertData directly
@@ -177,7 +177,7 @@ export const createTestPage = () => {
   waitForReactUpdate(1000);
 
   // Select first item (Page) from the menu
-  cy.get('[role="menuitem"]').first().click();
+  DropdownSelectors.menuItem().first().click();
   waitForReactUpdate(1000);
 
   // Handle the new page modal if it appears (defensive)
@@ -187,7 +187,7 @@ export const createTestPage = () => {
       ModalSelectors.newPageModal().should('be.visible').within(() => {
         ModalSelectors.spaceItemInModal().first().click();
         waitForReactUpdate(500);
-        cy.contains('button', 'Add').click();
+        ModalSelectors.addButton().click();
       });
       cy.wait(3000);
     }
@@ -211,7 +211,7 @@ export const createTestPage = () => {
  * Verify content exists in the editor using DevTools
  */
 export const verifyEditorContent = (expectedContent: string) => {
-  cy.get('[contenteditable="true"]').then($editors => {
+  EditorSelectors.slateEditor().then($editors => {
     // Find the main content editor (not the title)
     let editorHTML = '';
     $editors.each((_index: number, el: HTMLElement) => {

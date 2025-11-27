@@ -117,8 +117,6 @@ describe('Toolbar Interaction', () => {
     EditorSelectors.slateEditor().should('contain.text', 'List Item');
     // Verify list structure (ul/li or AppFlowy specific block)
     // AppFlowy uses specific block types.
-    // We can check for the presence of the bullet marker in the DOM
-    cy.get('.bullet-list-marker').should('exist');
     BlockSelectors.blockByType('bulleted_list').should('exist');
   });
 

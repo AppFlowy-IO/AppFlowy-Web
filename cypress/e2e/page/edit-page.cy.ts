@@ -1,6 +1,6 @@
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { AddPageSelectors, EditorSelectors, ModalSelectors, PageSelectors, SpaceSelectors, waitForReactUpdate } from '../../support/selectors';
+import { AddPageSelectors, DropdownSelectors, EditorSelectors, ModalSelectors, PageSelectors, SpaceSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
 
@@ -63,7 +63,7 @@ describe('Page Edit Tests', () => {
             waitForReactUpdate(1000);
 
             // Select first item (Page) from the menu
-            cy.get('[role="menuitem"]').first().click();
+            DropdownSelectors.menuItem().first().click();
             waitForReactUpdate(1000);
 
             // Handle the new page modal if it appears (defensive)
@@ -73,7 +73,7 @@ describe('Page Edit Tests', () => {
                     ModalSelectors.newPageModal().should('be.visible').within(() => {
                         ModalSelectors.spaceItemInModal().first().click();
                         waitForReactUpdate(500);
-                        cy.contains('button', 'Add').click();
+                        ModalSelectors.addButton().click();
                     });
                     cy.wait(3000);
                 }
