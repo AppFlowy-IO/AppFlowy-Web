@@ -10,3 +10,4 @@ src/proto/**/*
 cypress/e2e/
 cypress/support/
 deploy/*.test.ts
+deploy/*.integration.test.ts

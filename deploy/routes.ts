@@ -1,3 +1,4 @@
+import { defaultSite } from './config';
 import { fetchPublishMetadata } from './api';
 import { renderMarketingPage, renderPublishPage } from './html';
 import { logger } from './logger';
@@ -8,7 +9,11 @@ type RouteHandler = (context: RequestContext) => Promise<Response | undefined>;
 
 const MARKETING_PATHS = ['/after-payment', '/login', '/as-template', '/app', '/accept-invitation', '/import'];
 
-const marketingRoute = async ({ url }: RequestContext) => {
+const marketingRoute = async ({ req, url }: RequestContext) => {
+  if (req.method !== 'GET') {
+    return;
+  }
+
   if (MARKETING_PATHS.some(path => url.pathname.startsWith(path))) {
     const html = renderMarketingPage(url.pathname);
 
@@ -24,8 +29,22 @@ const publishRoute = async ({ req, url, hostname }: RequestContext) => {
   }
 
   const [rawNamespace, rawPublishName] = url.pathname.slice(1).split('/');
-  const namespace = decodeURIComponent(rawNamespace);
-  const publishName = rawPublishName ? decodeURIComponent(rawPublishName) : undefined;
+  let namespace: string;
+  let publishName: string | undefined;
+
+  try {
+    namespace = rawNamespace ? decodeURIComponent(rawNamespace) : '';
+    publishName = rawPublishName ? decodeURIComponent(rawPublishName) : undefined;
+  } catch {
+    return new Response('Not Found', { status: 404 });
+  }
+
+  if (namespace === '') {
+    return new Response(null, {
+      status: 302,
+      headers: { Location: defaultSite },
+    });
+  }
 
   let metaData;
   let redirectAttempted = false;

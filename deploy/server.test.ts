@@ -598,4 +598,271 @@ describe('deploy/server', () => {
 
     expect($('link[rel="icon"]').attr('href')).toContain('data:image/svg+xml;base64,');
   });
+
+  // Additional HTTP method tests
+  it('returns 405 for PUT requests', async () => {
+    const response = await createServer(makeRequest('/space/page', { method: 'PUT' }));
+
+    expect(response.status).toBe(405);
+  });
+
+  it('returns 405 for DELETE requests', async () => {
+    const response = await createServer(makeRequest('/space/page', { method: 'DELETE' }));
+
+    expect(response.status).toBe(405);
+  });
+
+  it('returns 405 for PATCH requests', async () => {
+    const response = await createServer(makeRequest('/space/page', { method: 'PATCH' }));
+
+    expect(response.status).toBe(405);
+  });
+
+  // Content-Type header tests
+  it('returns text/html Content-Type for marketing routes', async () => {
+    const response = await createServer(makeRequest('/login'));
+
+    expect(response.headers.get('Content-Type')).toBe('text/html');
+  });
+
+  it('returns text/html Content-Type for publish routes', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: 'Test' } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/space/page'));
+
+    expect(response.headers.get('Content-Type')).toBe('text/html');
+  });
+
+  // Canonical URL tests
+  it('sets correct canonical URL for publish pages', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: 'Test' } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/workspace/my-page'));
+    const html = await getHtml(response);
+    const $ = load(html);
+
+    expect($('link[rel="canonical"]').attr('href')).toBe('https://appflowy.test/workspace/my-page');
+  });
+
+  // OG meta tags tests
+  it('sets correct og:url for publish pages', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: 'Test' } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/workspace/page'));
+    const html = await getHtml(response);
+    const $ = load(html);
+
+    expect($('meta[property="og:url"]').attr('content')).toBe('https://appflowy.test/workspace/page');
+  });
+
+  it('sets og:site_name to AppFlowy', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: 'Test' } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/workspace/page'));
+    const html = await getHtml(response);
+    const $ = load(html);
+
+    expect($('meta[property="og:site_name"]').attr('content')).toBe('AppFlowy');
+  });
+
+  it('sets og:type to website', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: 'Test' } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/workspace/page'));
+    const html = await getHtml(response);
+    const $ = load(html);
+
+    expect($('meta[property="og:type"]').attr('content')).toBe('website');
+  });
+
+  // Twitter card tests
+  it('sets twitter:card to summary_large_image', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: 'Test' } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/workspace/page'));
+    const html = await getHtml(response);
+    const $ = load(html);
+
+    expect($('meta[name="twitter:card"]').attr('content')).toBe('summary_large_image');
+  });
+
+  it('sets twitter:site to @appflowy', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: 'Test' } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/workspace/page'));
+    const html = await getHtml(response);
+    const $ = load(html);
+
+    expect($('meta[name="twitter:site"]').attr('content')).toBe('@appflowy');
+  });
+
+  // Edge case tests
+  it('handles special characters in namespace', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: {} }),
+    });
+
+    const response = await createServer(makeRequest('/test%2Fnamespace'));
+    const html = await getHtml(response);
+
+    expect(response.status).toBe(200);
+    expect(html).toContain('NO_DEFAULT_PAGE');
+  });
+
+  it('handles emoji in publish name', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: '📝 My Notes' } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/space/%F0%9F%93%9D-notes'));
+    const html = await getHtml(response);
+    const $ = load(html);
+
+    expect(response.status).toBe(200);
+    expect($('title').text()).toBe('📝 My Notes | AppFlowy');
+  });
+
+  it('handles very long page names', async () => {
+    const longName = 'A'.repeat(200);
+
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: longName } },
+      }),
+    });
+
+    const response = await createServer(makeRequest('/space/page'));
+    const html = await getHtml(response);
+    const $ = load(html);
+
+    expect(response.status).toBe(200);
+    expect($('title').text()).toBe(`${longName} | AppFlowy`);
+  });
+
+  // API endpoint verification
+  it('uses v1 API for publish page lookup', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        code: 0,
+        data: { view: { name: 'Test' } },
+      }),
+    });
+
+    await createServer(makeRequest('/myspace/mypage'));
+
+    expect(mockBunFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/workspace/v1/published/myspace/mypage',
+      { verbose: false }
+    );
+  });
+
+  it('uses non-v1 API for namespace lookup', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: {} }),
+    });
+
+    await createServer(makeRequest('/myspace'));
+
+    expect(mockBunFetch).toHaveBeenCalledWith(
+      'https://api.example.com/api/workspace/published/myspace',
+      { verbose: false }
+    );
+  });
+
+  // Error message content tests
+  it('includes user-friendly message for NO_DEFAULT_PAGE error', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ data: {} }),
+    });
+
+    const response = await createServer(makeRequest('/space'));
+    const html = await getHtml(response);
+
+    expect(html).toContain("doesn't have a default published page");
+  });
+
+  it('includes user-friendly message for PUBLISH_VIEW_LOOKUP_FAILED error', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 404 }),
+    });
+
+    const response = await createServer(makeRequest('/space/page'));
+    const html = await getHtml(response);
+
+    expect(html).toContain("page you're looking for doesn't exist");
+  });
+
+  it('includes user-friendly message for FETCH_ERROR', async () => {
+    mockBunFetch.mockRejectedValue(new Error('timeout'));
+
+    const response = await createServer(makeRequest('/space/page'));
+    const html = await getHtml(response);
+
+    expect(html).toContain('Unable to load this page');
+  });
+
+  it('includes user-friendly message for UNKNOWN_FALLBACK', async () => {
+    mockBunFetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ code: 0, data: null }),
+    });
+
+    const response = await createServer(makeRequest('/space/page'));
+    const html = await getHtml(response);
+
+    expect(html).toContain("couldn't load this page");
+  });
 });
