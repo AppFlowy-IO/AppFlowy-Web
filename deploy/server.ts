@@ -12,9 +12,31 @@ const indexPath = path.join(distDir, 'index.html');
 const baseURL = process.env.APPFLOWY_BASE_URL as string;
 const defaultSite = 'https://appflowy.com';
 
+type PublishErrorPayload = {
+  code: 'NO_DEFAULT_PAGE' | 'PUBLISH_VIEW_LOOKUP_FAILED' | 'FETCH_ERROR' | 'UNKNOWN_FALLBACK';
+  message: string;
+  namespace?: string;
+  publishName?: string;
+  response?: unknown;
+  detail?: string;
+};
+
+const appendPublishErrorScript = ($: CheerioAPI, error: PublishErrorPayload) => {
+  const serialized = JSON.stringify(error)
+    .replace(/</g, '\\u003c')
+    .replace(/>/g, '\\u003e');
+
+  $('head').append(
+    `<script id="appflowy-publish-error">window.__APPFLOWY_PUBLISH_ERROR__ = ${serialized};</script>`
+  );
+};
+
 const setOrUpdateMetaTag = ($: CheerioAPI, selector: string, attribute: string, content: string) => {
   if ($(selector).length === 0) {
-    $('head').append(`<meta ${attribute}="${selector.match(/\[(.*?)\]/)?.[1]}" content="${content}">`);
+    const valueMatch = selector.match(/\[.*?="([^"]+)"\]/);
+    const value = valueMatch?.[1] ?? '';
+
+    $('head').append(`<meta ${attribute}="${value}" content="${content}">`);
   } else {
     $(selector).attr('content', content);
   }
@@ -58,27 +80,23 @@ const fetchMetaData = async (namespace: string, publishName?: string) => {
   }
 
   logger.debug(`Fetching meta data from ${url}`);
-  try {
-    const response = await fetch(url, {
-      verbose: false,
-    });
 
-    if (!response.ok) {
-      throw new Error(`HTTP error! Status: ${response.status}`);
-    }
+  const response = await fetch(url, {
+    verbose: false,
+  });
 
-    const data = await response.json();
-
-    logger.debug(`Fetched meta data from ${url}: ${JSON.stringify(data)}`);
-
-    return data;
-  } catch (error) {
-    logger.error(`Failed to fetch meta data from ${url}: ${error}`);
-    return null;
+  if (!response.ok) {
+    throw new Error(`HTTP error! Status: ${response.status}`);
   }
+
+  const data = await response.json();
+
+  logger.debug(`Fetched meta data from ${url}: ${JSON.stringify(data)}`);
+
+  return data;
 };
 
-const createServer = async (req: Request) => {
+export const createServer = async (req: Request) => {
   const timer = logRequestTimer(req);
   const reqUrl = new URL(req.url);
   const hostname = req.headers.get('host');
@@ -122,7 +140,9 @@ const createServer = async (req: Request) => {
     });
   }
 
-  const [namespace, publishName] = reqUrl.pathname.slice(1).split('/');
+  const [rawNamespace, rawPublishName] = reqUrl.pathname.slice(1).split('/');
+  const namespace = decodeURIComponent(rawNamespace);
+  const publishName = rawPublishName ? decodeURIComponent(rawPublishName) : undefined;
 
   logger.debug(`Namespace: ${namespace}, Publish Name: ${publishName}`);
 
@@ -139,6 +159,7 @@ const createServer = async (req: Request) => {
 
     let metaData;
     let redirectAttempted = false;
+    let publishError: PublishErrorPayload | null = null;
 
     try {
       const data = await fetchMetaData(namespace, publishName);
@@ -150,6 +171,13 @@ const createServer = async (req: Request) => {
           logger.error(
             `Publish view lookup failed for namespace="${namespace}" publishName="${publishName}" response=${JSON.stringify(data)}`
           );
+          publishError = {
+            code: 'PUBLISH_VIEW_LOOKUP_FAILED',
+            message: 'The page you\'re looking for doesn\'t exist or has been unpublished.',
+            namespace,
+            publishName,
+            response: data,
+          };
         }
       } else {
         const publishInfo = data?.data?.info;
@@ -168,10 +196,23 @@ const createServer = async (req: Request) => {
           });
         } else {
           logger.warn(`Namespace "${namespace}" has no default publish page. response=${JSON.stringify(data)}`);
+          publishError = {
+            code: 'NO_DEFAULT_PAGE',
+            message: 'This workspace doesn\'t have a default published page. Please check the URL or contact the workspace owner.',
+            namespace,
+            response: data,
+          };
         }
       }
     } catch (error) {
       logger.error(`Error fetching meta data: ${error}`);
+      publishError = {
+        code: 'FETCH_ERROR',
+        message: 'Unable to load this page. Please check your internet connection and try again.',
+        namespace,
+        publishName,
+        detail: error instanceof Error ? error.message : String(error),
+      };
     }
 
     const htmlData = fs.readFileSync(indexPath, 'utf8');
@@ -236,6 +277,14 @@ const createServer = async (req: Request) => {
       logger.warn(
         `Serving fallback landing page for namespace="${namespace}" publishName="${publishName ?? ''}". redirectAttempted=${redirectAttempted}`
       );
+      if (!publishError) {
+        publishError = {
+          code: 'UNKNOWN_FALLBACK',
+          message: 'We couldn\'t load this page. Please try again later.',
+          namespace,
+          publishName,
+        };
+      }
     }
 
     $('title').text(title);
@@ -254,6 +303,10 @@ const createServer = async (req: Request) => {
     setOrUpdateMetaTag($, 'meta[name="twitter:image"]', 'name', image);
     setOrUpdateMetaTag($, 'meta[name="twitter:site"]', 'name', '@appflowy');
 
+    if (publishError) {
+      appendPublishErrorScript($, publishError);
+    }
+
     timer();
     return new Response($.html(), {
       headers: { 'Content-Type': 'text/html' },
@@ -269,7 +322,7 @@ declare const Bun: {
   serve: (options: { port: number; fetch: typeof createServer; error: (err: Error) => Response }) => void;
 };
 
-const start = () => {
+export const start = () => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     Bun.serve({
@@ -288,9 +341,9 @@ const start = () => {
   }
 };
 
-start();
-
-export { };
+if (process.env.NODE_ENV !== 'test') {
+  start();
+}
 
 function getIconBase64(svgText: string, color: string) {
   let newSvgText = svgText.replace(/fill="[^"]*"/g, ``);
