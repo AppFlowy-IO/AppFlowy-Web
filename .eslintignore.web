@@ -9,3 +9,4 @@ coverage/
 src/proto/**/*
 cypress/e2e/
 cypress/support/
+deploy/*.test.ts
