@@ -25,8 +25,11 @@ enum CloseCode {
   TLSHandshakeFailed = 1015,
 }
 
-const RECONNECT_ATTEMPTS = 10;
-const RECONNECT_INTERVAL = 1000;
+const RECONNECT_ATTEMPTS = 30; // Match desktop: 30 attempts for resilience
+const RECONNECT_INTERVAL = 5000; // Match desktop: 5s initial delay
+const MAX_RECONNECT_DELAY = 180000; // 3 minutes max (match desktop)
+const FIRST_ATTEMPT_MAX_DELAY = 5000; // Random 5-10s before first attempt (thundering herd prevention)
+const JITTER_FACTOR = 0.3; // 30% jitter to prevent thundering herd
 
 export type AppflowyWebSocketType = {
   /**
@@ -108,8 +111,8 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     heartbeat: {
       message: 'echo',
       returnMessage: 'echo',
-      timeout: 60000, // disconnect after 60 seconds of no response
-      interval: 25000, // send ping every 25 seconds
+      timeout: 45000, // Match desktop: 45s = 3x server heartbeat (15s) for silent death detection
+      interval: 30000, // Match desktop: 30s ping interval (balances NAT keep-alive with power efficiency)
     },
     // Reconnect configuration
     shouldReconnect: (closeEvent) => {
@@ -139,13 +142,29 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
 
     reconnectAttempts: RECONNECT_ATTEMPTS,
 
-    // Exponential backoff reconnect interval
+    // Exponential backoff reconnect interval with jitter (match desktop PR #294)
     reconnectInterval: (attemptNumber) => {
       setReconnectAttempt(attemptNumber);
-      const delay = Math.min(RECONNECT_INTERVAL * Math.pow(1.5, attemptNumber), 30000);
 
-      console.info(`Reconnect attempt ${attemptNumber}, delay ${delay}ms`);
-      return delay;
+      // First attempt: random 5-10s delay (thundering herd prevention)
+      if (attemptNumber === 1) {
+        const firstDelay = 5000 + Math.random() * FIRST_ATTEMPT_MAX_DELAY;
+
+        console.info(`Reconnect attempt ${attemptNumber}, first attempt delay ${Math.round(firstDelay)}ms`);
+
+        return firstDelay;
+      }
+
+      // Exponential backoff with 2x multiplier (was 1.5x)
+      const baseDelay = RECONNECT_INTERVAL * Math.pow(2, attemptNumber - 1);
+      const cappedDelay = Math.min(baseDelay, MAX_RECONNECT_DELAY);
+
+      // Add 30% jitter to prevent thundering herd
+      const jitter = cappedDelay * JITTER_FACTOR * (Math.random() * 2 - 1);
+      const finalDelay = Math.max(0, cappedDelay + jitter);
+
+      console.info(`Reconnect attempt ${attemptNumber}, delay ${Math.round(finalDelay)}ms (base: ${cappedDelay}ms)`);
+      return finalDelay;
     },
 
     // Connection event callback
