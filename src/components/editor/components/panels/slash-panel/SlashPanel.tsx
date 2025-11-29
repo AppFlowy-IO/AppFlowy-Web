@@ -189,8 +189,6 @@ export function SlashPanel({
     loadViewMeta,
     getMoreAIContext,
     createFolderView,
-    createDatabaseView,
-    getViewIdFromDatabaseId,
     loadViews,
     databaseRelations,
   } = useEditorContext();
@@ -455,7 +453,8 @@ export function SlashPanel({
     async (targetViewId: string) => {
       if (!linkedPicker) return;
 
-      if (!createDatabaseView || !viewId) {
+      // Use createFolderView to create linked view under the document (matching desktop behavior)
+      if (!createFolderView || !viewId) {
         notify.error(
           t('document.slashMenu.linkedDatabase.actionUnavailable', {
             defaultValue: 'Linking databases is not available right now',
@@ -473,8 +472,6 @@ export function SlashPanel({
       }
 
       try {
-        const baseViewId =
-          (await getViewIdFromDatabaseId?.(option.databaseId)) || option.view.view_id;
         const baseName =
           option.view.name ||
           t('document.view.placeholder', { defaultValue: 'Untitled' });
@@ -499,24 +496,29 @@ export function SlashPanel({
         })();
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
 
-        // Use new createDatabaseView endpoint - server handles all Yjs initialization
-        const response = await createDatabaseView(baseViewId, {
+        // Create linked view under the document (not the database) so it appears in folder tree
+        // This matches desktop behavior from commit 48beb55 ("use document as parent id")
+        const newViewId = await createFolderView({
+          parentViewId: viewId,  // Document ID - linked view will be child of document
           layout: linkedPicker.layout,
           name: referencedName,
+          databaseId: option.databaseId,  // Link to the selected database
+          embedded: true,  // Mark as embedded since it's created inside a document block
         });
 
-        console.debug('[SlashPanel] created linked database', {
+        console.debug('[SlashPanel] created linked database view under document', {
           optionKey: linkedPicker.layout,
-          baseViewId,
+          documentViewId: viewId,
           databaseId: option.databaseId,
-          newViewId: response.view_id,
+          newViewId,
           referencedName,
         });
 
+        // Use document viewId as parent_id in block data (matching desktop behavior)
         turnInto(blockType, createDatabaseNodeData({
-          parentId: baseViewId,
-          viewIds: [response.view_id],
-          databaseId: response.database_id,
+          parentId: viewId,  // Document ID
+          viewIds: [newViewId],
+          databaseId: option.databaseId,
         }));
       } catch (e) {
         const error = e as Error;
@@ -528,11 +530,10 @@ export function SlashPanel({
     },
     [
       linkedPicker,
-      createDatabaseView,
+      createFolderView,
       viewId,
       databaseOptions,
       blockTypeByLayout,
-      getViewIdFromDatabaseId,
       turnInto,
       t,
     ]

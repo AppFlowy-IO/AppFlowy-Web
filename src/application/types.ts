@@ -1137,6 +1137,8 @@ export interface CreateFolderViewPayload {
   name?: string;
   viewId?: string;
   databaseId?: string;
+  /** Whether this view is embedded inside a document (e.g., database block). Defaults to false. */
+  embedded?: boolean;
 }
 
 export interface CreateDatabaseViewPayload {

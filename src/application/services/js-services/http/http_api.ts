@@ -1409,6 +1409,7 @@ export async function createFolderView(workspaceId: string, payload: CreateFolde
       name: payload.name,
       view_id: payload.viewId,
       database_id: payload.databaseId,
+      embedded: payload.embedded,
     })
   ).then((data) => data.view_id);
 }
