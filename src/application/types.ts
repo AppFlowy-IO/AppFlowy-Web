@@ -197,7 +197,8 @@ export interface TableCellBlockData extends BlockData {
 }
 
 export interface DatabaseNodeData extends BlockData {
-  view_id: ViewId;
+  view_id?: ViewId;
+  view_ids?: ViewId[];
   parent_id?: ViewId;
   database_id?: string;
 }

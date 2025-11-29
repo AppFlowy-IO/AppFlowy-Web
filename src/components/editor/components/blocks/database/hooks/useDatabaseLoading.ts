@@ -6,11 +6,12 @@ import { useRetryFunction } from './useRetryFunction';
 
 interface UseDatabaseLoadingProps {
   viewId: string;
+  allowedViewIds?: string[];
   loadView?: (viewId: string) => Promise<YDoc | null>;
   loadViewMeta?: (viewId: string, callback?: (meta: View | null) => void) => Promise<View | null>;
 }
 
-export const useDatabaseLoading = ({ viewId, loadView, loadViewMeta }: UseDatabaseLoadingProps) => {
+export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewMeta }: UseDatabaseLoadingProps) => {
   const [notFound, setNotFound] = useState(false);
   const [doc, setDoc] = useState<YDoc | null>(null);
   const [selectedViewId, setSelectedViewId] = useState<string>(viewId);
@@ -18,6 +19,12 @@ export const useDatabaseLoading = ({ viewId, loadView, loadViewMeta }: UseDataba
   const [iidName, setIidName] = useState<string>('');
 
   const viewIdsRef = useRef<string[]>([viewId]);
+  const allowedViewIdsRef = useRef<string[] | undefined>(allowedViewIds);
+
+  // Keep the ref updated
+  useEffect(() => {
+    allowedViewIdsRef.current = allowedViewIds;
+  }, [allowedViewIds]);
 
   const handleError = useCallback(() => {
     setNotFound(true);
@@ -31,6 +38,16 @@ export const useDatabaseLoading = ({ viewId, loadView, loadViewMeta }: UseDataba
       return;
     }
 
+    // Use allowedViewIds directly if provided (embedded database block)
+    // This comes from view_ids in block data, with backward compatibility for view_id
+    if (allowedViewIdsRef.current && allowedViewIdsRef.current.length > 0) {
+      setIidName(meta.name);
+      setVisibleViewIds(allowedViewIdsRef.current);
+
+      return;
+    }
+
+    // Fallback: load all child views (standalone database view, not embedded)
     const viewIds = meta.children.map((v) => v.view_id) || [];
 
     viewIds.unshift(meta.view_id);

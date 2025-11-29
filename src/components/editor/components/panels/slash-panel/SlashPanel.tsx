@@ -14,7 +14,6 @@ import {
   BlockData,
   BlockType,
   CalloutBlockData,
-  DatabaseNodeData,
   HeadingBlockData,
   ImageBlockData,
   SubpageNodeData,
@@ -58,6 +57,7 @@ import { flattenViews } from '@/components/_shared/outline/utils';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIWriter } from '@/components/chat';
+import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
@@ -513,11 +513,11 @@ export function SlashPanel({
           referencedName,
         });
 
-        turnInto(blockType, {
-          view_id: response.view_id,
-          parent_id: baseViewId,
-          database_id: response.database_id,
-        } as DatabaseNodeData);
+        turnInto(blockType, createDatabaseNodeData({
+          parentId: baseViewId,
+          viewIds: [response.view_id],
+          databaseId: response.database_id,
+        }));
       } catch (e) {
         const error = e as Error;
 
@@ -745,11 +745,11 @@ export function SlashPanel({
               name: t('document.slashMenu.name.grid'),
             });
 
-            turnInto(BlockType.GridBlock, {
-              view_id: response.view_id,
-              parent_id: viewId,
-              database_id: response.database_id,
-            } as DatabaseNodeData);
+            turnInto(BlockType.GridBlock, createDatabaseNodeData({
+              parentId: viewId,
+              viewIds: [response.view_id],
+              databaseId: response.database_id,
+            }));
 
             openPageModal(response.view_id);
 
@@ -809,11 +809,11 @@ export function SlashPanel({
               name: t('document.slashMenu.name.kanban'),
             });
 
-            turnInto(BlockType.BoardBlock, {
-              view_id: response.view_id,
-              parent_id: viewId,
-              database_id: response.database_id,
-            } as DatabaseNodeData);
+            turnInto(BlockType.BoardBlock, createDatabaseNodeData({
+              parentId: viewId,
+              viewIds: [response.view_id],
+              databaseId: response.database_id,
+            }));
 
             openPageModal(response.view_id);
 
@@ -873,11 +873,11 @@ export function SlashPanel({
               name: t('document.slashMenu.name.calendar'),
             });
 
-            turnInto(BlockType.CalendarBlock, {
-              view_id: response.view_id,
-              parent_id: viewId,
-              database_id: response.database_id,
-            } as DatabaseNodeData);
+            turnInto(BlockType.CalendarBlock, createDatabaseNodeData({
+              parentId: viewId,
+              viewIds: [response.view_id],
+              databaseId: response.database_id,
+            }));
 
             openPageModal(response.view_id);
 

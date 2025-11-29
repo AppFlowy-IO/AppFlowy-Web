@@ -10,10 +10,13 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { DatabaseContent } from './components/DatabaseContent';
 import { useDatabaseLoading } from './hooks/useDatabaseLoading';
 import { useResizePositioning } from './hooks/useResizePositioning';
+import { getViewIds } from './utils/databaseBlockUtils';
 
 export const DatabaseBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<DatabaseNode>>(({ node, children, ...attributes }, ref) => {
-    const viewId = node.data.view_id;
+    const viewIds = getViewIds(node.data);
+    const viewId = viewIds.length > 0 ? viewIds[0] : '';
+    const allowedViewIds = Array.isArray(node.data?.view_ids) ? node.data.view_ids : undefined;
     const context = useEditorContext();
     const workspaceId = context.workspaceId;
     const navigateToView = context?.navigateToView;
@@ -27,6 +30,7 @@ export const DatabaseBlock = memo(
 
     const { notFound, doc, selectedViewId, visibleViewIds, iidName, onChangeView, loadViewMeta } = useDatabaseLoading({
       viewId,
+      allowedViewIds,
       loadView,
       loadViewMeta: context?.loadViewMeta,
     });
@@ -172,7 +176,15 @@ export const DatabaseBlock = memo(
       </div>
     );
   }),
-  (prevProps, nextProps) => prevProps.node.data.view_id === nextProps.node.data.view_id
+  (prevProps, nextProps) => {
+    const prevViewIds = getViewIds(prevProps.node.data);
+    const nextViewIds = getViewIds(nextProps.node.data);
+
+    return (
+      prevViewIds.length === nextViewIds.length &&
+      prevViewIds.every((id, index) => id === nextViewIds[index])
+    );
+  }
 );
 
 export default DatabaseBlock;
