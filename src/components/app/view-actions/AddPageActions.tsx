@@ -16,13 +16,13 @@ function AddPageActions({ view }: { view: View }) {
       if (!addPage) return;
       toast.loading(t('document.creating'));
       try {
-        const viewId = await addPage(view.view_id, { layout, name });
+        const response = await addPage(view.view_id, { layout, name });
 
         if (layout === ViewLayout.Document) {
-          void openPageModal?.(viewId);
+          void openPageModal?.(response.view_id);
         } else {
-          console.log('viewId', viewId, toView);
-          void toView(viewId);
+          console.log('viewId', response.view_id, toView);
+          void toView(response.view_id);
         }
 
         toast.dismiss();

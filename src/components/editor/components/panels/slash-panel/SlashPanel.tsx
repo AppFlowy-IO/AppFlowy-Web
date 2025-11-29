@@ -516,6 +516,7 @@ export function SlashPanel({
         turnInto(blockType, {
           view_id: response.view_id,
           parent_id: baseViewId,
+          database_id: response.database_id,
         } as DatabaseNodeData);
       } catch (e) {
         const error = e as Error;
@@ -699,15 +700,15 @@ export function SlashPanel({
         onClick: async () => {
           if (!viewId || !addPage || !openPageModal) return;
           try {
-            const newViewId = await addPage(viewId, {
+            const response = await addPage(viewId, {
               layout: ViewLayout.Document,
             });
 
             turnInto(BlockType.SubpageBlock, {
-              view_id: newViewId,
+              view_id: response.view_id,
             } as SubpageNodeData);
 
-            openPageModal(newViewId);
+            openPageModal(response.view_id);
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
             notify.error(e.message);
@@ -739,17 +740,18 @@ export function SlashPanel({
           const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
-            const newViewId = await addPage(viewId, {
+            const response = await addPage(viewId, {
               layout: ViewLayout.Grid,
               name: t('document.slashMenu.name.grid'),
             });
 
             turnInto(BlockType.GridBlock, {
-              view_id: newViewId,
+              view_id: response.view_id,
               parent_id: viewId,
+              database_id: response.database_id,
             } as DatabaseNodeData);
 
-            openPageModal(newViewId);
+            openPageModal(response.view_id);
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
@@ -802,17 +804,18 @@ export function SlashPanel({
           const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
-            const newViewId = await addPage(viewId, {
+            const response = await addPage(viewId, {
               layout: ViewLayout.Board,
               name: t('document.slashMenu.name.kanban'),
             });
 
             turnInto(BlockType.BoardBlock, {
-              view_id: newViewId,
+              view_id: response.view_id,
               parent_id: viewId,
+              database_id: response.database_id,
             } as DatabaseNodeData);
 
-            openPageModal(newViewId);
+            openPageModal(response.view_id);
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
@@ -865,17 +868,18 @@ export function SlashPanel({
           const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
-            const newViewId = await addPage(viewId, {
+            const response = await addPage(viewId, {
               layout: ViewLayout.Calendar,
               name: t('document.slashMenu.name.calendar'),
             });
 
             turnInto(BlockType.CalendarBlock, {
-              view_id: newViewId,
+              view_id: response.view_id,
               parent_id: viewId,
+              database_id: response.database_id,
             } as DatabaseNodeData);
 
-            openPageModal(newViewId);
+            openPageModal(response.view_id);
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {

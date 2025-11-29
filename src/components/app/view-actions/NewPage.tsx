@@ -44,11 +44,11 @@ function NewPage() {
       if (!addPage || !openPageModal) return;
       setLoading(true);
       try {
-        const viewId = await addPage(parentId, {
+        const response = await addPage(parentId, {
           layout: ViewLayout.Document,
         });
 
-        openPageModal(viewId);
+        openPageModal(response.view_id);
         onClose();
         // eslint-disable-next-line
       } catch (e: any) {

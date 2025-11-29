@@ -196,10 +196,10 @@ export function MentionPanel() {
     async (type = MentionType.PageRef) => {
       if (!addPage || !viewId) return;
       try {
-        const newViewId = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
+        const response = await addPage(viewId, { name: searchText, layout: ViewLayout.Document });
 
-        handleSelectedPage(newViewId, type);
-        openPageModal?.(newViewId);
+        handleSelectedPage(response.view_id, type);
+        openPageModal?.(response.view_id);
       } catch (e) {
         console.error(e);
       }

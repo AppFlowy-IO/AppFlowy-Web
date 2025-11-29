@@ -90,7 +90,7 @@ describe('HTTP API - View Operations', () => {
 
             const outline = await APIService.getAppOutline(testWorkspaceId);
             const rootViewId = outline[0]?.view_id || testWorkspaceId;
-            const pageId = await APIService.addAppPage(testWorkspaceId, rootViewId, {
+            const { view_id: pageId } = await APIService.addAppPage(testWorkspaceId, rootViewId, {
                 layout: 0,
                 name: `Test Page ${Date.now()}`,
             });

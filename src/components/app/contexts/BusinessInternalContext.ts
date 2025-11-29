@@ -8,6 +8,7 @@ import {
   LoadViewMeta,
   CreateRowDoc,
   CreatePagePayload,
+  CreatePageResponse,
   UpdatePagePayload,
   ViewIconType,
   CreateSpacePayload,
@@ -51,7 +52,7 @@ export interface BusinessInternalContextType {
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
 
   // Page operations
-  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<string>;
+  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   updatePageIcon?: (viewId: string, icon: { ty: ViewIconType; value: string }) => Promise<void>;

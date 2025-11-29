@@ -9,6 +9,7 @@ import {
   CreateDatabaseViewResponse,
   CreateFolderViewPayload,
   CreatePagePayload,
+  CreatePageResponse,
   CreateRowDoc,
   CreateSpacePayload,
   DatabaseRelations,
@@ -61,7 +62,7 @@ export interface AppContextType {
   onRendered?: () => void;
   notFound?: boolean;
   viewHasBeenDeleted?: boolean;
-  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<string>;
+  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   updatePageIcon?: (viewId: string, icon: { ty: ViewIconType; value: string }) => Promise<void>;

@@ -36,10 +36,10 @@ export function usePageOperations({ outline, loadOutline }: { outline?: View[], 
       }
 
       try {
-        const viewId = await service?.addAppPage(currentWorkspaceId, parentViewId, payload);
+        const response = await service?.addAppPage(currentWorkspaceId, parentViewId, payload);
 
         await loadOutline?.(currentWorkspaceId, false);
-        return viewId;
+        return response;
       } catch (e) {
         return Promise.reject(e);
       }

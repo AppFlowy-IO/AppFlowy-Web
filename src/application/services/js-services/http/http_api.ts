@@ -27,6 +27,7 @@ import {
   CreateDatabaseViewResponse,
   CreateFolderViewPayload,
   CreatePagePayload,
+  CreatePageResponse,
   CreateSpacePayload,
   CreateWorkspacePayload,
   DatabaseId,
@@ -1430,13 +1431,13 @@ export async function createDatabaseView(
 export async function addAppPage(workspaceId: string, parentViewId: string, { layout, name }: CreatePagePayload) {
   const url = `/api/workspace/${workspaceId}/page-view`;
 
-  return executeAPIRequest<{ view_id: string }>(() =>
-    axiosInstance?.post<APIResponse<{ view_id: string }>>(url, {
+  return executeAPIRequest<CreatePageResponse>(() =>
+    axiosInstance?.post<APIResponse<CreatePageResponse>>(url, {
       parent_view_id: parentViewId,
       layout,
       name,
     })
-  ).then((data) => data.view_id);
+  );
 }
 
 export async function updatePage(workspaceId: string, viewId: string, data: UpdatePagePayload) {

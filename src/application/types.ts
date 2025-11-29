@@ -199,6 +199,7 @@ export interface TableCellBlockData extends BlockData {
 export interface DatabaseNodeData extends BlockData {
   view_id: ViewId;
   parent_id?: ViewId;
+  database_id?: string;
 }
 
 export interface SubpageNodeData extends BlockData {
@@ -1093,7 +1094,7 @@ export interface ViewComponentProps {
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
-  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<string>;
+  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   variant?: UIVariant;
@@ -1122,6 +1123,11 @@ export interface ViewComponentProps {
 export interface CreatePagePayload {
   layout: ViewLayout;
   name?: string;
+}
+
+export interface CreatePageResponse {
+  view_id: string;
+  database_id?: string;
 }
 
 export interface CreateFolderViewPayload {

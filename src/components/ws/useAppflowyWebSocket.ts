@@ -147,7 +147,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       setReconnectAttempt(attemptNumber);
 
       // First attempt: random 5-10s delay (thundering herd prevention)
-      if (attemptNumber === 1) {
+      if (attemptNumber === 0) {
         const firstDelay = 5000 + Math.random() * FIRST_ATTEMPT_MAX_DELAY;
 
         console.info(`Reconnect attempt ${attemptNumber}, first attempt delay ${Math.round(firstDelay)}ms`);

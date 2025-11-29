@@ -14,6 +14,7 @@ import {
   UIVariant,
   View,
   CreatePagePayload,
+  CreatePageResponse,
   CreateFolderViewPayload,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
@@ -64,7 +65,7 @@ export interface EditorContextState {
   removeDecorate?: (type: string) => void;
   selectedBlockIds?: string[];
   setSelectedBlockIds?: React.Dispatch<React.SetStateAction<string[]>>;
-  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<string>;
+  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
