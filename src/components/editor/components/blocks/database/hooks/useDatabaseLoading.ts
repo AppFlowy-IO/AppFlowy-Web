@@ -26,6 +26,16 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
     allowedViewIdsRef.current = allowedViewIds;
   }, [allowedViewIds]);
 
+  // When allowedViewIds change without the primary view changing, keep visible tabs in sync
+  useEffect(() => {
+    if (!allowedViewIds || allowedViewIds.length === 0) {
+      return;
+    }
+
+    setVisibleViewIds(allowedViewIds);
+    setSelectedViewId((current) => (allowedViewIds.includes(current) ? current : allowedViewIds[0] ?? current));
+  }, [allowedViewIds]);
+
   const handleError = useCallback(() => {
     setNotFound(true);
   }, []);

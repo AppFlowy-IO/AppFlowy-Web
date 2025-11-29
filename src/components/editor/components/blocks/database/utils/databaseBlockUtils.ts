@@ -41,15 +41,19 @@ export function hasViewIds(data: DatabaseNodeData): boolean {
 
 /**
  * Create database node data with view_ids array format.
+ * Automatically deduplicates view IDs while preserving order.
  */
 export function createDatabaseNodeData(params: {
   parentId: string;
   viewIds: string[];
   databaseId?: string;
 }): DatabaseNodeData {
+  // Deduplicate view IDs while preserving order
+  const uniqueViewIds = [...new Set(params.viewIds)];
+
   return {
     parent_id: params.parentId,
-    view_ids: params.viewIds,
+    view_ids: uniqueViewIds,
     database_id: params.databaseId,
   };
 }
