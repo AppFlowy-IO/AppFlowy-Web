@@ -799,7 +799,7 @@ export type AppendBreadcrumb = (view?: View) => void;
 export type CreateRowDoc = (rowKey: string) => Promise<YDoc>;
 export type LoadView = (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc>;
 
-export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View>;
+export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
 
 export type DatabaseRelations = Record<DatabaseId, ViewId>;
 
@@ -1118,6 +1118,7 @@ export interface ViewComponentProps {
   updatePageName?: (viewId: string, name: string) => Promise<void>;
   currentUser?: User;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
+  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
 }
 
 export interface CreatePagePayload {

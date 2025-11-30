@@ -21,10 +21,15 @@ export interface DatabaseTabBarProps {
    */
   databasePageId: string;
   hideConditions?: boolean;
+  /**
+   * Callback when view IDs change (views added or removed).
+   * Used to update the block data in embedded database blocks.
+   */
+  onViewIdsChanged?: (viewIds: string[]) => void;
 }
 
 export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
-  ({ viewIds, databasePageId, selectedViewId, setSelectedViewId }, ref) => {
+  ({ viewIds, databasePageId, selectedViewId, setSelectedViewId, onViewIdsChanged }, ref) => {
     const views = useDatabase()?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
     const { loadViewMeta, readOnly, showActions = true, eventEmitter } = context;
@@ -147,6 +152,13 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
               setPendingScrollToViewId(viewId);
               void reloadView();
+
+              // Update the block data with the new view ID
+              if (onViewIdsChanged) {
+                const newViewIds = [...viewIds, viewId];
+
+                onViewIdsChanged(newViewIds);
+              }
             }}
           />
 
@@ -186,6 +198,13 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             }
 
             void reloadView();
+
+            // Update the block data with the view ID removed
+            if (onViewIdsChanged && deleteConfirmOpen) {
+              const newViewIds = viewIds.filter((id) => id !== deleteConfirmOpen);
+
+              onViewIdsChanged(newViewIds);
+            }
           }}
         />
       </div>

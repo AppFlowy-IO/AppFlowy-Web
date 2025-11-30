@@ -190,7 +190,7 @@ export function SlashPanel({
     getMoreAIContext,
     createDatabaseView,
     loadViews,
-    databaseRelations,
+    loadDatabaseRelations,
   } = useEditorContext();
   const [viewName, setViewName] = useState('');
   const [linkedPicker, setLinkedPicker] = useState<{
@@ -220,7 +220,9 @@ export function SlashPanel({
   useEffect(() => {
     if (documentId && open) {
       void loadViewMeta?.(documentId).then((view) => {
-        setViewName(view.name);
+        if (view) {
+          setViewName(view.name);
+        }
       });
     }
   }, [documentId, loadViewMeta, open]);
@@ -354,7 +356,6 @@ export function SlashPanel({
       const flatViews = flattenViews(views);
 
       // Identify databases by their layout type (Grid, Board, Calendar)
-      // This ensures newly created databases appear even if databaseRelations is stale
       // ViewLayout enum values: Grid=1, Board=2, Calendar=3
       const databaseLayouts = [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar];
       const databaseViews = flatViews.filter((view) => {
@@ -362,44 +363,17 @@ export function SlashPanel({
         return databaseLayouts.includes(view.layout);
       });
 
-      // Use databaseRelations if available to get databaseId, otherwise use view_id
-      let relations = databaseRelations;
-
-      if ((!relations || Object.keys(relations).length === 0) && loadViewMeta && documentId) {
-        try {
-          const meta = await loadViewMeta(documentId);
-
-          relations = meta?.database_relations;
-        } catch (e) {
-          console.error(e);
-        }
-      }
-
-      const options: DatabaseOption[] = databaseViews.map((view) => {
-        // Try to find databaseId from relations, otherwise use view_id
-        let databaseId = view.view_id;
-
-        if (relations) {
-          // Find the databaseId that maps to this view_id
-          const relationEntry = Object.entries(relations).find(([_, baseViewId]) => baseViewId === view.view_id);
-
-          if (relationEntry) {
-            databaseId = relationEntry[0];
-          }
-        }
-
-        return {
-          databaseId,
-          view,
-        };
-      });
+      // Build options - databaseId will be fetched from viewMeta when user selects
+      // The outline API doesn't include database_relations, so we set empty string here
+      const options: DatabaseOption[] = databaseViews.map((view) => ({
+        databaseId: '', // Will be fetched from loadViewMeta in handleSelectDatabase
+        view,
+      }));
 
       console.debug('[SlashPanel] loadDatabasesForPicker:', {
         totalViews: flatViews.length,
         databaseViews: databaseViews.length,
         databaseViewNames: databaseViews.map(v => v.name),
-        optionsCount: options.length,
-        usingRelations: !!relations && Object.keys(relations).length > 0,
       });
 
       setDatabaseOptions(options);
@@ -415,7 +389,7 @@ export function SlashPanel({
     } finally {
       setDatabaseLoading(false);
     }
-  }, [databaseRelations, loadViewMeta, loadViews, documentId]);
+  }, [loadViews]);
 
   const handleOpenLinkedDatabasePicker = useCallback(
     async (layout: ViewLayout, optionKey: string) => {
@@ -476,6 +450,76 @@ export function SlashPanel({
           option.view.name ||
           t('document.view.placeholder', { defaultValue: 'Untitled' });
 
+        // Fetch the view's metadata to get the correct database_id
+        // The outline API doesn't include database_relations, so we MUST fetch it here
+        if (!loadViewMeta) {
+          notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
+            defaultValue: 'Unable to fetch database information',
+          }));
+          return;
+        }
+
+        const viewMeta = await loadViewMeta(databaseViewId);
+
+        console.debug('[SlashPanel] viewMeta for database:', {
+          viewId: databaseViewId,
+          viewName: baseName,
+          database_relations: viewMeta?.database_relations,
+          fullMeta: viewMeta,
+        });
+
+        if (!viewMeta?.database_relations) {
+          notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
+            defaultValue: 'Database relations not found',
+          }));
+          return;
+        }
+
+        // database_relations is Record<DatabaseId, ViewId>
+        // Find the entry where the value (base view id) matches this view
+        let relationEntry = Object.entries(viewMeta.database_relations).find(
+          ([_, baseViewId]) => baseViewId === databaseViewId
+        );
+
+        // If not found, try refreshing database relations (for newly created databases)
+        if (!relationEntry && loadDatabaseRelations) {
+          console.debug('[SlashPanel] database_id not found in cache, refreshing relations...', {
+            viewId: databaseViewId,
+          });
+
+          // Refresh and get fresh relations directly (don't rely on React state update)
+          const freshRelations = await loadDatabaseRelations();
+
+          console.debug('[SlashPanel] Fresh relations after refresh:', {
+            viewId: databaseViewId,
+            freshRelations,
+          });
+
+          if (freshRelations) {
+            relationEntry = Object.entries(freshRelations).find(
+              ([_, baseViewId]) => baseViewId === databaseViewId
+            );
+          }
+        }
+
+        if (!relationEntry) {
+          console.error('[SlashPanel] Could not find database_id for view:', {
+            viewId: databaseViewId,
+            database_relations: viewMeta.database_relations,
+          });
+          notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
+            defaultValue: 'Could not find database ID',
+          }));
+          return;
+        }
+
+        const databaseId = relationEntry[0];
+
+        console.debug('[SlashPanel] Found database_id:', {
+          viewId: databaseViewId,
+          databaseId,
+        });
+
         const prefix = (() => {
           switch (linkedPicker.layout) {
             case ViewLayout.Grid:
@@ -496,10 +540,9 @@ export function SlashPanel({
         })();
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
 
-        // Use createDatabaseView endpoint with embedded flag for views inside documents
-        const response = await createDatabaseView(databaseViewId, {
+        const response = await createDatabaseView(documentId, {
           parent_view_id: documentId,
-          database_id: option.databaseId,
+          database_id: databaseId,
           layout: linkedPicker.layout,
           name: referencedName,
           embedded: true,
@@ -533,6 +576,8 @@ export function SlashPanel({
       blockTypeByLayout,
       turnInto,
       t,
+      loadViewMeta,
+      loadDatabaseRelations,
     ]
   );
 

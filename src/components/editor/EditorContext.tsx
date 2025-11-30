@@ -84,6 +84,7 @@ export interface EditorContextState {
   toggleCollapsed?: (blockId: string) => void;
   databaseRelations?: DatabaseRelations;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
+  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
 }
 
 export const EditorContext = createContext<EditorContextState>({

@@ -1,5 +1,5 @@
 import { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Element } from 'slate';
+import { Element, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
 import { DatabaseContextState } from '@/application/database-yjs';
@@ -10,7 +10,7 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { DatabaseContent } from './components/DatabaseContent';
 import { useDatabaseLoading } from './hooks/useDatabaseLoading';
 import { useResizePositioning } from './hooks/useResizePositioning';
-import { getViewIds } from './utils/databaseBlockUtils';
+import { addViewId, getViewIds, removeViewId } from './utils/databaseBlockUtils';
 
 export const DatabaseBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<DatabaseNode>>(({ node, children, ...attributes }, ref) => {
@@ -116,6 +116,58 @@ export const DatabaseBlock = memo(
       [navigateToView, viewId]
     );
 
+    /**
+     * Callback to update view_ids in the block data when views are added or removed.
+     * Similar to Flutter's onViewIdsChanged callback in database_view_widget.dart.
+     */
+    const handleViewIdsChanged = useCallback(
+      (currentViewIds: string[]) => {
+        if (readOnly) return;
+
+        const existingViewIds = getViewIds(node.data);
+
+        // Find new view IDs (additions)
+        const addedViewIds = currentViewIds.filter((id) => !existingViewIds.includes(id));
+
+        // Find removed view IDs (deletions)
+        const removedViewIds = existingViewIds.filter((id) => !currentViewIds.includes(id));
+
+        if (addedViewIds.length === 0 && removedViewIds.length === 0) return;
+
+        console.debug('[DatabaseBlock] View IDs changed', {
+          addedViewIds,
+          removedViewIds,
+          existingViewIds,
+          currentViewIds,
+        });
+
+        // Build the new data object
+        let updatedData = { ...node.data };
+
+        for (const id of addedViewIds) {
+          updatedData = addViewId(updatedData, id);
+        }
+
+        for (const id of removedViewIds) {
+          updatedData = removeViewId(updatedData, id);
+        }
+
+        // Update the Slate node
+        try {
+          const path = ReactEditor.findPath(editor, node as unknown as Element);
+
+          Transforms.setNodes(
+            editor,
+            { data: updatedData },
+            { at: path }
+          );
+        } catch (e) {
+          console.error('[DatabaseBlock] Error updating view_ids:', e);
+        }
+      },
+      [editor, node, readOnly]
+    );
+
     const { paddingStart, paddingEnd, width } = useResizePositioning({
       editor,
       node: node as unknown as Element,
@@ -168,6 +220,7 @@ export const DatabaseBlock = memo(
             visibleViewIds={visibleViewIds}
             onChangeView={onChangeView}
             onRendered={handleRendered}
+            onViewIdsChanged={handleViewIdsChanged}
             // EditorContextState shares common fields with DatabaseContextState but not all
             // The missing fields (databaseDoc, databasePageId, activeViewId, rowDocMap) are
             // explicitly set by DatabaseContent via selectedViewId and doc props

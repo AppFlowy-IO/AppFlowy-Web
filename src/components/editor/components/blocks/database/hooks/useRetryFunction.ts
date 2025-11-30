@@ -2,9 +2,8 @@ import { useCallback } from 'react';
 
 const RETRY_CONFIG = {
   maxAttempts: 5,
-  // Exponential backoff: 100ms, 300ms, 1s, 3s, 5s
   getRetryDelay: (attempt: number) => {
-    const delays = [100, 300, 1000, 3000, 5000];
+    const delays = [1000, 3000, 6000, 10000];
 
     return delays[Math.min(attempt - 1, delays.length - 1)];
   },

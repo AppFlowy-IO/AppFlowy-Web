@@ -152,7 +152,9 @@ async function executeAPIRequest<TResponseData = unknown>(
         ? `${response.config.baseURL}${response.config.url}`
         : response.config?.url)
       || 'unknown';
+
     const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
+
     console.debug('[executeAPIRequest]', { method, url: requestUrl });
 
     if (!response.data) {

@@ -57,6 +57,11 @@ export interface Database2Props {
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   embeddedHeight?: number;
+  /**
+   * Callback when view IDs change (views added or removed).
+   * Used to update the block data in embedded database blocks.
+   */
+  onViewIdsChanged?: (viewIds: string[]) => void;
 }
 
 function Database(props: Database2Props) {
@@ -77,6 +82,7 @@ function Database(props: Database2Props) {
     modalRowId,
     isDocumentBlock: _isDocumentBlock,
     embeddedHeight,
+    onViewIdsChanged,
   } = props;
 
   const database = doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | null;
@@ -264,6 +270,7 @@ function Database(props: Database2Props) {
               onChangeView={onChangeView}
               activeViewId={activeViewId}
               fixedHeight={embeddedHeight}
+              onViewIdsChanged={onViewIdsChanged}
             />
           </div>
         )}

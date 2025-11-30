@@ -22,6 +22,7 @@ interface DatabaseContentProps {
   databaseName: string;
   visibleViewIds: string[];
   onChangeView: (viewId: string) => void;
+  onViewIdsChanged?: (viewIds: string[]) => void;
   context: DatabaseContextState;
   fixedHeight?: number;
   onRendered?: () => void;
@@ -44,6 +45,7 @@ export const DatabaseContent = ({
   databaseName,
   visibleViewIds,
   onChangeView,
+  onViewIdsChanged,
   context,
   fixedHeight,
   onRendered,
@@ -67,20 +69,21 @@ export const DatabaseContent = ({
             databasePageId={selectedViewId}
             activeViewId={selectedViewId}
             createRowDoc={createRowDoc}
-          loadView={loadView}
-          navigateToView={navigateToView}
-          onOpenRowPage={onOpenRowPage}
-          loadViewMeta={loadViewMeta}
-          databaseName={databaseName}
-          visibleViewIds={visibleViewIds}
-          onChangeView={onChangeView}
-          showActions={true}
-          paddingStart={paddingStart}
-          paddingEnd={paddingEnd}
-          isDocumentBlock={true}
-          embeddedHeight={fixedHeight}
-          onRendered={onRendered}
-        />
+            loadView={loadView}
+            navigateToView={navigateToView}
+            onOpenRowPage={onOpenRowPage}
+            loadViewMeta={loadViewMeta}
+            databaseName={databaseName}
+            visibleViewIds={visibleViewIds}
+            onChangeView={onChangeView}
+            onViewIdsChanged={onViewIdsChanged}
+            showActions={true}
+            paddingStart={paddingStart}
+            paddingEnd={paddingEnd}
+            isDocumentBlock={true}
+            embeddedHeight={fixedHeight}
+            onRendered={onRendered}
+          />
       </div>
     );
   }

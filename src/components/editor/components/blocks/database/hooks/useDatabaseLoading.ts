@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { View, YDoc } from '@/application/types';
 
+import { createLoadingStrategy, isEmbeddedDatabase, DatabaseLoadingConfig } from './loadingStrategies';
 import { useRetryFunction } from './useRetryFunction';
 
 interface UseDatabaseLoadingProps {
@@ -21,6 +22,20 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
   const viewIdsRef = useRef<string[]>([viewId]);
   const allowedViewIdsRef = useRef<string[] | undefined>(allowedViewIds);
 
+  // Create loading strategy based on configuration
+  const config: DatabaseLoadingConfig = useMemo(
+    () => ({
+      viewId,
+      allowedViewIds,
+      loadView,
+      loadViewMeta,
+    }),
+    [viewId, allowedViewIds, loadView, loadViewMeta]
+  );
+
+  const strategy = useMemo(() => createLoadingStrategy(config), [config]);
+  const isEmbedded = isEmbeddedDatabase(allowedViewIds);
+
   // Keep the ref updated
   useEffect(() => {
     allowedViewIdsRef.current = allowedViewIds;
@@ -37,46 +52,62 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
   }, [allowedViewIds]);
 
   const handleError = useCallback(() => {
+    // Use strategy to determine if notFound should be set
+    if (!strategy.shouldSetNotFoundOnMetaError()) {
+      console.debug('[useDatabaseLoading] Ignoring meta load error (strategy)');
+      return;
+    }
+
     setNotFound(true);
-  }, []);
+  }, [strategy]);
 
   const retryLoadView = useRetryFunction(loadView, handleError);
   const retryLoadViewMeta = useRetryFunction(loadViewMeta, handleError);
 
-  const updateVisibleViewIds = useCallback(async (meta: View | null) => {
-    // Use allowedViewIds directly if provided (embedded database block)
-    // This comes from view_ids in block data, with backward compatibility for view_id
-    if (allowedViewIdsRef.current && allowedViewIdsRef.current.length > 0) {
-      // Use meta.name if available, otherwise use empty string (embedded databases don't need name)
-      setDatabaseName(meta?.name ?? '');
-      setVisibleViewIds(allowedViewIdsRef.current);
+  const updateVisibleViewIds = useCallback(
+    async (meta: View | null) => {
+      const viewIds = strategy.getVisibleViewIds(meta);
+      const name = strategy.getDatabaseName(meta);
 
-      return;
-    }
-
-    // Fallback: load all child views (standalone database view, not embedded)
-    // This requires meta to be available
-    if (!meta) {
-      return;
-    }
-
-    const viewIds = meta.children.map((v) => v.view_id) || [];
-
-    viewIds.unshift(meta.view_id);
-
-    setDatabaseName(meta.name);
-    setVisibleViewIds(viewIds);
-  }, []);
+      setDatabaseName(name);
+      setVisibleViewIds(viewIds);
+    },
+    [strategy]
+  );
 
   const loadViewMetaWithCallback = useCallback(
     async (id: string, callback?: (meta: View | null) => void) => {
-      if (id === viewId) {
-        const meta = await retryLoadViewMeta(viewId, updateVisibleViewIds);
+      // Use strategy to determine if we should skip loading
+      if (strategy.shouldSkipMetaLoad(id)) {
+        console.debug('[useDatabaseLoading] Skipping meta load (strategy)', { id, viewId });
+        return null;
+      }
 
-        if (meta) {
-          await updateVisibleViewIds(meta);
-          setNotFound(false);
-          return meta;
+      if (id === viewId) {
+        try {
+          const meta = await retryLoadViewMeta(viewId, updateVisibleViewIds);
+
+          if (meta) {
+            await updateVisibleViewIds(meta);
+            setNotFound(false);
+            return meta;
+          }
+        } catch (error) {
+          // For embedded databases, return null instead of rejecting
+          if (isEmbedded) {
+            console.debug('[useDatabaseLoading] Meta load failed for embedded base view, continuing', {
+              viewId,
+              error,
+            });
+            return null;
+          }
+
+          throw error;
+        }
+
+        // For embedded databases, return null instead of rejecting
+        if (isEmbedded) {
+          return null;
         }
 
         return Promise.reject(new Error('View not found'));
@@ -91,16 +122,17 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
         return Promise.reject(new Error('View not found'));
       }
     },
-    [retryLoadViewMeta, updateVisibleViewIds, viewId]
+    [isEmbedded, retryLoadViewMeta, strategy, updateVisibleViewIds, viewId]
   );
 
   const onChangeView = useCallback((viewId: string) => {
     setSelectedViewId(viewId);
   }, []);
 
+  // Load the view document
   useEffect(() => {
     if (!viewId) return;
-    
+
     const loadViewData = async () => {
       try {
         const view = await retryLoadView(viewId);
@@ -122,45 +154,46 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
     viewIdsRef.current = visibleViewIds;
   }, [visibleViewIds]);
 
+  // Initial load of view meta
   useLayoutEffect(() => {
     // For embedded databases with allowedViewIds, we can proceed even if meta loading fails
     // The view_ids from block data are sufficient
-    const hasAllowedViewIds = allowedViewIdsRef.current && allowedViewIdsRef.current.length > 0;
-
-    if (hasAllowedViewIds) {
+    if (isEmbedded && allowedViewIdsRef.current) {
       // Set visible view IDs immediately from block data, don't wait for meta
-      setVisibleViewIds(allowedViewIdsRef.current!);
-      setSelectedViewId(allowedViewIdsRef.current!.includes(viewId) ? viewId : allowedViewIdsRef.current![0]);
+      setVisibleViewIds(allowedViewIdsRef.current);
+      setSelectedViewId(allowedViewIdsRef.current.includes(viewId) ? viewId : allowedViewIdsRef.current[0]);
     }
 
-    void loadViewMetaWithCallback(viewId).then((meta) => {
-      if (!viewIdsRef.current.includes(viewId) && viewIdsRef.current.length > 0) {
-        setSelectedViewId(viewIdsRef.current[0]);
-        console.debug('[DatabaseBlock] selected first child view', { viewId, selected: viewIdsRef.current[0] });
-      } else {
-        setSelectedViewId(viewId);
-        console.debug('[DatabaseBlock] selected requested view', { viewId });
-      }
+    void loadViewMetaWithCallback(viewId)
+      .then((meta) => {
+        if (!viewIdsRef.current.includes(viewId) && viewIdsRef.current.length > 0) {
+          setSelectedViewId(viewIdsRef.current[0]);
+          console.debug('[DatabaseBlock] selected first child view', { viewId, selected: viewIdsRef.current[0] });
+        } else {
+          setSelectedViewId(viewId);
+          console.debug('[DatabaseBlock] selected requested view', { viewId });
+        }
 
-      if (meta) {
-        console.debug('[DatabaseBlock] loaded view meta', {
-          viewId,
-          children: meta.children?.map((c) => c.view_id),
-          name: meta.name,
-        });
-      }
+        if (meta) {
+          console.debug('[DatabaseBlock] loaded view meta', {
+            viewId,
+            children: meta.children?.map((c) => c.view_id),
+            name: meta.name,
+          });
+        }
 
-      setNotFound(false);
-    }).catch((error) => {
-      console.error('[DatabaseBlock] failed to load view meta', { viewId, error });
+        setNotFound(false);
+      })
+      .catch((error) => {
+        console.error('[DatabaseBlock] failed to load view meta', { viewId, error });
 
-      // For embedded databases, don't set notFound if we have allowedViewIds
-      // The doc loading is what matters, meta is optional
-      if (!hasAllowedViewIds) {
-        setNotFound(true);
-      }
-    });
-  }, [loadViewMetaWithCallback, viewId]);
+        // For embedded databases, don't set notFound if we have allowedViewIds
+        // The doc loading is what matters, meta is optional
+        if (!isEmbedded) {
+          setNotFound(true);
+        }
+      });
+  }, [loadViewMetaWithCallback, viewId, isEmbedded]);
 
   return {
     notFound,

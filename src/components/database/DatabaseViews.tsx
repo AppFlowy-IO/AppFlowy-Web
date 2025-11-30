@@ -29,6 +29,7 @@ function DatabaseViews({
   viewName,
   visibleViewIds,
   fixedHeight,
+  onViewIdsChanged,
 }: {
   onChangeView: (viewId: string) => void;
   /**
@@ -44,6 +45,11 @@ function DatabaseViews({
   viewName?: string;
   visibleViewIds?: string[];
   fixedHeight?: number;
+  /**
+   * Callback when view IDs change (views added or removed).
+   * Used to update the block data in embedded database blocks.
+   */
+  onViewIdsChanged?: (viewIds: string[]) => void;
 }) {
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
 
@@ -277,6 +283,7 @@ function DatabaseViews({
           selectedViewId={activeViewId}
           setSelectedViewId={handleViewChange}
           viewIds={viewIds}
+          onViewIdsChanged={onViewIdsChanged}
         />
 
         <DatabaseConditions />
