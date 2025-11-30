@@ -193,6 +193,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
             setSelectedViewId(viewId);
             console.debug('[DatabaseBlock] selected requested view', { viewId });
           }
+
           initialSelectionDoneRef.current = true;
         }
 
