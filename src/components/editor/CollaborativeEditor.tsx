@@ -91,9 +91,34 @@ function CollaborativeEditor({
     setIsConnected(true);
     onEditorConnected?.(editor);
 
+    // Expose editor and doc for E2E testing in development/test mode
+    if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+      const testWindow = window as Window & {
+        __TEST_EDITOR__?: YjsEditor;
+        __TEST_DOC__?: Y.Doc;
+        Y?: typeof Y;
+      };
+
+      testWindow.__TEST_EDITOR__ = editor;
+      testWindow.__TEST_DOC__ = doc;
+      testWindow.Y = Y; // Expose Yjs module for creating test blocks
+    }
+
     return () => {
       console.debug('disconnect');
       editor.disconnect();
+      // Clean up test references
+      if (import.meta.env.DEV || import.meta.env.MODE === 'test') {
+        const testWindow = window as Window & {
+          __TEST_EDITOR__?: YjsEditor;
+          __TEST_DOC__?: Y.Doc;
+          Y?: typeof Y;
+        };
+
+        delete testWindow.__TEST_EDITOR__;
+        delete testWindow.__TEST_DOC__;
+        // Keep Y exposed as it might be needed for other editors
+      }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
