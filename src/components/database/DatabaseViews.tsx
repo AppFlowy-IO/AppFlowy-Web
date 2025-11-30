@@ -24,6 +24,7 @@ const getScrollElement = () =>
 
 function DatabaseViews({
   onChangeView,
+  onViewAdded,
   activeViewId,
   databasePageId,
   viewName,
@@ -32,6 +33,11 @@ function DatabaseViews({
   onViewIdsChanged,
 }: {
   onChangeView: (viewId: string) => void;
+  /**
+   * Called when a new view is added via the + button.
+   * Used by embedded databases to immediately update state before Yjs sync.
+   */
+  onViewAdded?: (viewId: string) => void;
   /**
    * The currently active/selected view tab ID (Grid, Board, or Calendar).
    * Changes when the user switches between different view tabs.
@@ -283,6 +289,7 @@ function DatabaseViews({
           selectedViewId={activeViewId}
           setSelectedViewId={handleViewChange}
           viewIds={viewIds}
+          onViewAddedToDatabase={onViewAdded}
           onViewIdsChanged={onViewIdsChanged}
         />
 

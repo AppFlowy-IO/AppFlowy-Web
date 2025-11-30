@@ -21,6 +21,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
 
   const viewIdsRef = useRef<string[]>([viewId]);
   const allowedViewIdsRef = useRef<string[] | undefined>(allowedViewIds);
+  const initialSelectionDoneRef = useRef(false);
 
   // Create loading strategy based on configuration
   const config: DatabaseLoadingConfig = useMemo(
@@ -129,6 +130,22 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
     setSelectedViewId(viewId);
   }, []);
 
+  /**
+   * Called when a new view is added to the database.
+   * Updates visibleViewIds immediately to ensure the new tab renders
+   * before the selection change takes effect.
+   */
+  const onViewAdded = useCallback((newViewId: string) => {
+    setVisibleViewIds((current) => {
+      if (current.includes(newViewId)) {
+        return current;
+      }
+
+      return [...current, newViewId];
+    });
+    setSelectedViewId(newViewId);
+  }, []);
+
   // Load the view document
   useEffect(() => {
     if (!viewId) return;
@@ -158,7 +175,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
   useLayoutEffect(() => {
     // For embedded databases with allowedViewIds, we can proceed even if meta loading fails
     // The view_ids from block data are sufficient
-    if (isEmbedded && allowedViewIdsRef.current) {
+    if (isEmbedded && allowedViewIdsRef.current && !initialSelectionDoneRef.current) {
       // Set visible view IDs immediately from block data, don't wait for meta
       setVisibleViewIds(allowedViewIdsRef.current);
       setSelectedViewId(allowedViewIdsRef.current.includes(viewId) ? viewId : allowedViewIdsRef.current[0]);
@@ -166,12 +183,17 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
 
     void loadViewMetaWithCallback(viewId)
       .then((meta) => {
-        if (!viewIdsRef.current.includes(viewId) && viewIdsRef.current.length > 0) {
-          setSelectedViewId(viewIdsRef.current[0]);
-          console.debug('[DatabaseBlock] selected first child view', { viewId, selected: viewIdsRef.current[0] });
-        } else {
-          setSelectedViewId(viewId);
-          console.debug('[DatabaseBlock] selected requested view', { viewId });
+        // Only set selectedViewId on initial load, not on subsequent re-runs
+        // This prevents overwriting user's view selection when allowedViewIds changes
+        if (!initialSelectionDoneRef.current) {
+          if (!viewIdsRef.current.includes(viewId) && viewIdsRef.current.length > 0) {
+            setSelectedViewId(viewIdsRef.current[0]);
+            console.debug('[DatabaseBlock] selected first child view', { viewId, selected: viewIdsRef.current[0] });
+          } else {
+            setSelectedViewId(viewId);
+            console.debug('[DatabaseBlock] selected requested view', { viewId });
+          }
+          initialSelectionDoneRef.current = true;
         }
 
         if (meta) {
@@ -202,6 +224,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
     visibleViewIds,
     databaseName,
     onChangeView,
+    onViewAdded,
     loadViewMeta: loadViewMetaWithCallback,
   };
 };

@@ -22,6 +22,11 @@ export interface DatabaseTabBarProps {
   databasePageId: string;
   hideConditions?: boolean;
   /**
+   * Callback when a new view is added to the database.
+   * Used by embedded databases to update state immediately before Yjs sync.
+   */
+  onViewAddedToDatabase?: (viewId: string) => void;
+  /**
    * Callback when view IDs change (views added or removed).
    * Used to update the block data in embedded database blocks.
    */
@@ -29,7 +34,7 @@ export interface DatabaseTabBarProps {
 }
 
 export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
-  ({ viewIds, databasePageId, selectedViewId, setSelectedViewId, onViewIdsChanged }, ref) => {
+  ({ viewIds, databasePageId, selectedViewId, setSelectedViewId, onViewAddedToDatabase, onViewIdsChanged }, ref) => {
     const views = useDatabase()?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
     const { loadViewMeta, readOnly, showActions = true, eventEmitter } = context;
@@ -146,19 +151,28 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             pendingScrollToViewId={pendingScrollToViewId}
             setPendingScrollToViewId={setPendingScrollToViewId}
             onViewAdded={(viewId) => {
+              // For embedded databases, first update visibleViewIds immediately
+              // This ensures the tab is rendered before we try to select it
+              if (onViewAddedToDatabase) {
+                onViewAddedToDatabase(viewId);
+              }
+
+              // Update the block data with the new view ID BEFORE selecting
+              // This ensures allowedViewIds includes the new view when selection happens
+              if (onViewIdsChanged) {
+                const newViewIds = [...viewIds, viewId];
+
+                onViewIdsChanged(newViewIds);
+              }
+
+              // Always call setSelectedViewId to trigger the view change flow
+              // This handles both embedded and standalone databases
               if (setSelectedViewId) {
                 setSelectedViewId(viewId);
               }
 
               setPendingScrollToViewId(viewId);
               void reloadView();
-
-              // Update the block data with the new view ID
-              if (onViewIdsChanged) {
-                const newViewIds = [...viewIds, viewId];
-
-                onViewIdsChanged(newViewIds);
-              }
             }}
           />
 

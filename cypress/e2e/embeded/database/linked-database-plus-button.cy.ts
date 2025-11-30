@@ -168,7 +168,8 @@ describe('Embedded Database - Plus Button View Creation', () => {
 
         // Step 9: Verify the new Board tab is selected (active) and scrolled into view
         cy.task('log', '[STEP 11] Verifying Board tab is automatically selected and visible');
-        cy.contains('[data-testid^="view-tab-"]', 'Board')
+
+        cy.contains('[data-testid^="view-tab-"]', 'Board', { timeout: 10000 })
           .should('have.attr', 'data-state', 'active')
           .should('be.visible')
           .then(() => {

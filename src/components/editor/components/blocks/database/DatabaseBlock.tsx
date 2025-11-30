@@ -28,7 +28,7 @@ export const DatabaseBlock = memo(
     const editor = useSlateStatic();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 
-    const { notFound, doc, selectedViewId, visibleViewIds, databaseName, onChangeView, loadViewMeta } = useDatabaseLoading({
+    const { notFound, doc, selectedViewId, visibleViewIds, databaseName, onChangeView, onViewAdded, loadViewMeta } = useDatabaseLoading({
       viewId,
       allowedViewIds,
       loadView,
@@ -203,6 +203,7 @@ export const DatabaseBlock = memo(
           className='container-bg relative my-1 flex w-full select-none flex-col'
         >
           <DatabaseContent
+            baseViewId={viewId}
             selectedViewId={selectedViewId}
             hasDatabase={hasDatabase}
             notFound={notFound}
@@ -219,11 +220,12 @@ export const DatabaseBlock = memo(
             databaseName={databaseName}
             visibleViewIds={visibleViewIds}
             onChangeView={onChangeView}
+            onViewAdded={onViewAdded}
             onRendered={handleRendered}
             onViewIdsChanged={handleViewIdsChanged}
             // EditorContextState shares common fields with DatabaseContextState but not all
             // The missing fields (databaseDoc, databasePageId, activeViewId, rowDocMap) are
-            // explicitly set by DatabaseContent via selectedViewId and doc props
+            // explicitly set by DatabaseContent via baseViewId, selectedViewId, and doc props
             context={context as unknown as DatabaseContextState}
           />
         </div>

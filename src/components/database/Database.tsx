@@ -41,6 +41,7 @@ export interface Database2Props {
   modalRowId?: string;
   appendBreadcrumb?: AppendBreadcrumb;
   onChangeView: (viewId: string) => void;
+  onViewAdded?: (viewId: string) => void;
   onOpenRowPage?: (rowId: string) => void;
   visibleViewIds: string[];
   /**
@@ -74,6 +75,7 @@ function Database(props: Database2Props) {
     visibleViewIds,
     rowId,
     onChangeView,
+    onViewAdded,
     onOpenRowPage,
     appendBreadcrumb,
     readOnly = true,
@@ -268,6 +270,7 @@ function Database(props: Database2Props) {
               databasePageId={databasePageId}
               viewName={databaseName}
               onChangeView={onChangeView}
+              onViewAdded={onViewAdded}
               activeViewId={activeViewId}
               fixedHeight={embeddedHeight}
               onViewIdsChanged={onViewIdsChanged}

@@ -6,6 +6,15 @@ import { LoadView, LoadViewMeta, UIVariant, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
 
 interface DatabaseContentProps {
+  /**
+   * The base/primary view ID for the embedded database.
+   * This is the first view that was embedded and remains constant.
+   */
+  baseViewId: string;
+  /**
+   * The currently selected/active view tab ID.
+   * Changes when user switches between different view tabs.
+   */
   selectedViewId: string | null;
   hasDatabase: boolean;
   notFound: boolean;
@@ -22,6 +31,7 @@ interface DatabaseContentProps {
   databaseName: string;
   visibleViewIds: string[];
   onChangeView: (viewId: string) => void;
+  onViewAdded?: (viewId: string) => void;
   onViewIdsChanged?: (viewIds: string[]) => void;
   context: DatabaseContextState;
   fixedHeight?: number;
@@ -29,6 +39,7 @@ interface DatabaseContentProps {
 }
 
 export const DatabaseContent = ({
+  baseViewId,
   selectedViewId,
   hasDatabase,
   notFound,
@@ -45,6 +56,7 @@ export const DatabaseContent = ({
   databaseName,
   visibleViewIds,
   onChangeView,
+  onViewAdded,
   onViewIdsChanged,
   context,
   fixedHeight,
@@ -66,7 +78,7 @@ export const DatabaseContent = ({
             {...context}
             workspaceId={workspaceId}
             doc={doc}
-            databasePageId={selectedViewId}
+            databasePageId={baseViewId}
             activeViewId={selectedViewId}
             createRowDoc={createRowDoc}
             loadView={loadView}
@@ -76,6 +88,7 @@ export const DatabaseContent = ({
             databaseName={databaseName}
             visibleViewIds={visibleViewIds}
             onChangeView={onChangeView}
+            onViewAdded={onViewAdded}
             onViewIdsChanged={onViewIdsChanged}
             showActions={true}
             paddingStart={paddingStart}
