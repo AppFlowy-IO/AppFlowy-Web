@@ -8,6 +8,22 @@ import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAppHandlers, useAppViewId } from '@/components/app/app.hooks';
 
+// Check if a layout is a database view type
+function isDatabaseLayout(layout: ViewLayout): boolean {
+  return layout === ViewLayout.Grid ||
+    layout === ViewLayout.Board ||
+    layout === ViewLayout.Calendar;
+}
+
+// Check if this is a referenced database view (both view and parent are database views)
+function isReferencedDatabaseView(view: View, parentLayout?: ViewLayout): boolean {
+  if (parentLayout === undefined) {
+    return false;
+  }
+
+  return isDatabaseLayout(view.layout) && isDatabaseLayout(parentLayout);
+}
+
 function ViewItem({
   view,
   width,
@@ -16,6 +32,7 @@ function ViewItem({
   expandIds,
   toggleExpand,
   onClickView,
+  parentLayout,
 }: {
   view: View;
   width: number;
@@ -24,6 +41,7 @@ function ViewItem({
   expandIds: string[];
   toggleExpand: (id: string, isExpand: boolean) => void;
   onClickView?: (viewId: string) => void;
+  parentLayout?: ViewLayout;
 }) {
   const { t } = useTranslation();
   const selectedViewId = useAppViewId();
@@ -69,6 +87,15 @@ function ViewItem({
     );
   }, [isExpanded, level, toggleExpand, viewId]);
 
+  // Dot icon for referenced database views (like desktop)
+  const getDotIcon = useCallback(() => {
+    return (
+      <span className={'flex h-full w-2 items-center justify-center text-sm'}>
+        <span className={'h-1 w-1 rounded-full bg-text-caption'} />
+      </span>
+    );
+  }, []);
+
   const onUploadFile = useCallback(
     async (file: File) => {
       if (!uploadFile) return Promise.reject();
@@ -80,13 +107,34 @@ function ViewItem({
   const renderItem = useMemo(() => {
     if (!view) return null;
 
+    // Determine which left icon to show
+    const isRefDatabaseView = isReferencedDatabaseView(view, parentLayout);
+    const hasChildren = Boolean(view.children?.length);
+
+    // Calculate left padding based on icon presence
+    const showLeftIcon = isRefDatabaseView || hasChildren;
+    const leftPadding = showLeftIcon ? level * 16 : level * 16 + 24;
+
+    // Render left icon: dot for referenced database views, expand icon for views with children
+    const renderLeftIcon = () => {
+      if (isRefDatabaseView) {
+        return getDotIcon();
+      }
+
+      if (hasChildren) {
+        return getIcon();
+      }
+
+      return null;
+    };
+
     return (
       <div
         data-testid={`page-${view.view_id}`}
         style={{
           backgroundColor: selected ? 'var(--fill-content-hover)' : undefined,
           cursor: 'pointer',
-          paddingLeft: view.children?.length ? level * 16 + 'px' : level * 16 + 24 + 'px',
+          paddingLeft: leftPadding + 'px',
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => {
@@ -99,7 +147,7 @@ function ViewItem({
           'my-[1px] flex min-h-[30px] w-full cursor-pointer select-none items-center gap-1 overflow-hidden rounded-[8px] px-0.5 py-0.5 text-sm hover:bg-fill-content-hover focus:outline-none'
         }
       >
-        {view.children?.length ? getIcon() : null}
+        {renderLeftIcon()}
 
         <CustomIconPopover
           defaultActiveTab={view.icon?.ty === 1 ? 'upload' : view.icon?.ty === 2 ? 'icon' : 'emoji'}
@@ -147,6 +195,8 @@ function ViewItem({
     selected,
     level,
     getIcon,
+    getDotIcon,
+    parentLayout,
     onUploadFile,
     handleRemoveIcon,
     t,
@@ -159,10 +209,8 @@ function ViewItem({
 
   const renderChildren = useMemo(() => {
     // Don't pass renderExtra (more button) to children when parent is a database layout
-    const isDatabaseLayout = view.layout === ViewLayout.Grid ||
-      view.layout === ViewLayout.Board ||
-      view.layout === ViewLayout.Calendar;
-    const childRenderExtra = isDatabaseLayout ? undefined : renderExtra;
+    const parentIsDatabaseLayout = isDatabaseLayout(view.layout);
+    const childRenderExtra = parentIsDatabaseLayout ? undefined : renderExtra;
 
     return (
       <div
@@ -181,6 +229,7 @@ function ViewItem({
             expandIds={expandIds}
             toggleExpand={toggleExpand}
             onClickView={onClickView}
+            parentLayout={view.layout}
           />
         ))}
       </div>
