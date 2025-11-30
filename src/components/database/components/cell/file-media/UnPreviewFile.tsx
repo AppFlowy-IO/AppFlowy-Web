@@ -8,7 +8,7 @@ import { getFileUrl, isFileURL } from '@/utils/file-storage-url';
 import { openUrl } from '@/utils/url';
 
 function UnPreviewFile({ file }: { file: FileMediaCellDataItem }) {
-  const { workspaceId, viewId } = useDatabaseContext();
+  const { workspaceId, databasePageId } = useDatabaseContext();
 
   return (
     <Tooltip delayDuration={500} disableHoverableContent>
@@ -25,7 +25,7 @@ function UnPreviewFile({ file }: { file: FileMediaCellDataItem }) {
             }
 
             const fileId = file.url;
-            const newUrl = getFileUrl(workspaceId, viewId, fileId);
+            const newUrl = getFileUrl(workspaceId, databasePageId, fileId);
 
             void openUrl(newUrl, '_blank');
           }}

@@ -14,7 +14,6 @@ interface DatabaseContentProps {
   width: number;
   doc: YDoc | null;
   workspaceId: string;
-  viewId: string;
   createRowDoc?: (rowId: string) => Promise<YDoc>;
   loadView?: LoadView;
   navigateToView?: (viewId: string, rowId?: string) => Promise<void>;
@@ -37,7 +36,6 @@ export const DatabaseContent = ({
   width,
   doc,
   workspaceId,
-  viewId: _viewId,
   createRowDoc,
   loadView,
   navigateToView,

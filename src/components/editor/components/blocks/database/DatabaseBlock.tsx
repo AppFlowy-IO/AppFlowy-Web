@@ -159,7 +159,6 @@ export const DatabaseBlock = memo(
             width={width}
             doc={doc}
             workspaceId={workspaceId}
-            viewId={viewId}
             createRowDoc={createRowDoc}
             loadView={loadView}
             navigateToView={navigateToView}
@@ -169,8 +168,10 @@ export const DatabaseBlock = memo(
             visibleViewIds={visibleViewIds}
             onChangeView={onChangeView}
             onRendered={handleRendered}
-            // eslint-disable-next-line
-            context={context as DatabaseContextState}
+            // EditorContextState shares common fields with DatabaseContextState but not all
+            // The missing fields (databaseDoc, databasePageId, activeViewId, rowDocMap) are
+            // explicitly set by DatabaseContent via selectedViewId and doc props
+            context={context as unknown as DatabaseContextState}
           />
         </div>
       </div>

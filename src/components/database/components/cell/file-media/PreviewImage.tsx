@@ -6,14 +6,14 @@ import { useAuthenticatedImage } from '@/components/_shared/hooks/useAuthenticat
 import { getFileUrl, isFileURL } from '@/utils/file-storage-url';
 
 function PreviewImage({ file, onClick }: { file: FileMediaCellDataItem; onClick: () => void }) {
-  const { workspaceId, viewId } = useDatabaseContext();
+  const { workspaceId, databasePageId } = useDatabaseContext();
 
   const thumb = useMemo(() => {
     let fileUrl = file.url;
 
     if (!fileUrl) return '';
     if (!isFileURL(fileUrl)) {
-      fileUrl = getFileUrl(workspaceId, viewId, file.url);
+      fileUrl = getFileUrl(workspaceId, databasePageId, file.url);
     }
 
     const url = new URL(fileUrl);
@@ -22,7 +22,7 @@ function PreviewImage({ file, onClick }: { file: FileMediaCellDataItem; onClick:
     url.searchParams.set('fit', 'crop');
 
     return url.toString() + '&w=240&q=80';
-  }, [file.url, workspaceId, viewId]);
+  }, [file.url, workspaceId, databasePageId]);
 
   const authenticatedThumb = useAuthenticatedImage(thumb);
 

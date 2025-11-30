@@ -11,9 +11,9 @@ const MIN_HEIGHT = 36;
 
 export const PADDING_INLINE = getPlatform().isMobile ? 21 : 96;
 
-const logDebug = (...args: Parameters<typeof console.debug>) => {
+const logDebug = (..._args: Parameters<typeof console.debug>) => {
   if (import.meta.env.DEV) {
-    // console.debug(...args);
+    // console.debug(..._args);
   }
 };
 

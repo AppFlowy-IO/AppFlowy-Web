@@ -2,7 +2,7 @@ import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { View, ViewIconType } from '@/application/types';
+import { View, ViewIconType, ViewLayout } from '@/application/types';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
@@ -158,6 +158,12 @@ function ViewItem({
   ]);
 
   const renderChildren = useMemo(() => {
+    // Don't pass renderExtra (more button) to children when parent is a database layout
+    const isDatabaseLayout = view.layout === ViewLayout.Grid ||
+      view.layout === ViewLayout.Board ||
+      view.layout === ViewLayout.Calendar;
+    const childRenderExtra = isDatabaseLayout ? undefined : renderExtra;
+
     return (
       <div
         className={'flex w-full transform flex-col overflow-hidden transition-all'}
@@ -171,7 +177,7 @@ function ViewItem({
             key={child.view_id}
             view={child}
             width={width}
-            renderExtra={renderExtra}
+            renderExtra={childRenderExtra}
             expandIds={expandIds}
             toggleExpand={toggleExpand}
             onClickView={onClickView}
@@ -179,7 +185,7 @@ function ViewItem({
         ))}
       </div>
     );
-  }, [toggleExpand, onClickView, isExpanded, expandIds, level, renderExtra, view?.children, width]);
+  }, [toggleExpand, onClickView, isExpanded, expandIds, level, renderExtra, view?.children, view.layout, width]);
 
   return (
     <div

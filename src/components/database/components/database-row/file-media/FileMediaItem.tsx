@@ -26,7 +26,7 @@ function FileMediaItem({
   onDelete: () => void;
 }) {
   const readOnly = useReadOnly();
-  const { workspaceId, viewId } = useDatabaseContext();
+  const { workspaceId, databasePageId } = useDatabaseContext();
 
   const isImage = file.file_type === FileMediaType.Image;
   const mouseDownStartTimeRef = useRef<number | null>(null);
@@ -54,8 +54,8 @@ function FileMediaItem({
 
     const fileId = file.url;
 
-    return getFileUrl(workspaceId, viewId, fileId);
-  }, [file.url, workspaceId, viewId]);
+    return getFileUrl(workspaceId, databasePageId, fileId);
+  }, [file.url, workspaceId, databasePageId]);
 
   const authenticatedFileUrl = useAuthenticatedImage(fileUrl);
 
@@ -73,7 +73,7 @@ function FileMediaItem({
           }
 
           const fileId = file.url;
-          const newUrl = getFileUrl(workspaceId, viewId, fileId);
+          const newUrl = getFileUrl(workspaceId, databasePageId, fileId);
 
           void openUrl(newUrl, '_blank');
         }

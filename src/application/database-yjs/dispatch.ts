@@ -2267,8 +2267,7 @@ function useEnhanceCalendarLayoutByFieldExists() {
  */
 export function useAddDatabaseView() {
   // databasePageId: The main database page in folder (used as parent for new views)
-  // activeViewId: The currently selected view tab (not used here, but validated)
-  const { databasePageId, createDatabaseView, databaseDoc, activeViewId } = useDatabaseContext();
+  const { databasePageId, createDatabaseView, databaseDoc } = useDatabaseContext();
   const sharedRoot = useSharedRoot();
 
   const database = useMemo(() => {
@@ -2320,7 +2319,7 @@ export function useAddDatabaseView() {
 
       return response.view_id;
     },
-    [createDatabaseView, databaseDoc, databasePageId, databaseId, activeViewId]
+    [createDatabaseView, databaseDoc, databasePageId, databaseId]
   );
 }
 
