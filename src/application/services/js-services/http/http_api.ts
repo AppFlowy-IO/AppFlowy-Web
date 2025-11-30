@@ -1409,7 +1409,6 @@ export async function createFolderView(workspaceId: string, payload: CreateFolde
       name: payload.name,
       view_id: payload.viewId,
       database_id: payload.databaseId,
-      embedded: payload.embedded,
     })
   ).then((data) => data.view_id);
 }
@@ -1423,8 +1422,11 @@ export async function createDatabaseView(
 
   return executeAPIRequest<CreateDatabaseViewResponse>(() =>
     axiosInstance?.post<APIResponse<CreateDatabaseViewResponse>>(url, {
+      parent_view_id: payload.parent_view_id,
+      database_id: payload.database_id,
       layout: payload.layout,
       name: payload.name,
+      embedded: payload.embedded,
     })
   );
 }

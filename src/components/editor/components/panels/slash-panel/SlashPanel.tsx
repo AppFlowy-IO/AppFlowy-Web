@@ -57,9 +57,9 @@ import { flattenViews } from '@/components/_shared/outline/utils';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIWriter } from '@/components/chat';
-import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
+import { createDatabaseNodeData } from '@/components/editor/components/blocks/database/utils/databaseBlockUtils';
 import { usePanelContext } from '@/components/editor/components/panels/Panels.hooks';
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
@@ -185,10 +185,12 @@ export function SlashPanel({
   const {
     addPage,
     openPageModal,
-    viewId,
+    viewId: documentId,
     loadViewMeta,
     getMoreAIContext,
     createFolderView,
+    createDatabaseView,
+    getViewIdFromDatabaseId,
     loadViews,
     databaseRelations,
   } = useEditorContext();
@@ -218,12 +220,12 @@ export function SlashPanel({
   }, [isPanelOpen]);
 
   useEffect(() => {
-    if (viewId && open) {
-      void loadViewMeta?.(viewId).then((view) => {
+    if (documentId && open) {
+      void loadViewMeta?.(documentId).then((view) => {
         setViewName(view.name);
       });
     }
-  }, [viewId, loadViewMeta, open]);
+  }, [documentId, loadViewMeta, open]);
 
   const getBeforeContent = useCallback(() => {
     const { selection } = editor;
@@ -365,9 +367,9 @@ export function SlashPanel({
       // Use databaseRelations if available to get databaseId, otherwise use view_id
       let relations = databaseRelations;
 
-      if ((!relations || Object.keys(relations).length === 0) && loadViewMeta && viewId) {
+      if ((!relations || Object.keys(relations).length === 0) && loadViewMeta && documentId) {
         try {
-          const meta = await loadViewMeta(viewId);
+          const meta = await loadViewMeta(documentId);
 
           relations = meta?.database_relations;
         } catch (e) {
@@ -415,11 +417,11 @@ export function SlashPanel({
     } finally {
       setDatabaseLoading(false);
     }
-  }, [databaseRelations, loadViewMeta, loadViews, viewId]);
+  }, [databaseRelations, loadViewMeta, loadViews, documentId]);
 
   const handleOpenLinkedDatabasePicker = useCallback(
     async (layout: ViewLayout, optionKey: string) => {
-      if (!viewId || !createFolderView) return;
+      if (!documentId || !createFolderView) return;
       const rect = getRangeRect();
 
       if (!rect) return;
@@ -446,15 +448,14 @@ export function SlashPanel({
         layout,
       });
     },
-    [createFolderView, handleSelectOption, loadDatabasesForPicker, t, viewId]
+    [createFolderView, handleSelectOption, loadDatabasesForPicker, t, documentId]
   );
 
   const handleSelectDatabase = useCallback(
     async (targetViewId: string) => {
       if (!linkedPicker) return;
 
-      // Use createFolderView to create linked view under the document (matching desktop behavior)
-      if (!createFolderView || !viewId) {
+      if (!createDatabaseView || !documentId) {
         notify.error(
           t('document.slashMenu.linkedDatabase.actionUnavailable', {
             defaultValue: 'Linking databases is not available right now',
@@ -472,6 +473,7 @@ export function SlashPanel({
       }
 
       try {
+        const databaseViewId = option.view.view_id;
         const baseName =
           option.view.name ||
           t('document.view.placeholder', { defaultValue: 'Untitled' });
@@ -496,29 +498,26 @@ export function SlashPanel({
         })();
         const referencedName = prefix ? `${prefix} ${baseName}` : baseName;
 
-        // Create linked view under the document (not the database) so it appears in folder tree
-        // This matches desktop behavior from commit 48beb55 ("use document as parent id")
-        const newViewId = await createFolderView({
-          parentViewId: viewId,  // Document ID - linked view will be child of document
+        // Use createDatabaseView endpoint with embedded flag for views inside documents
+        const response = await createDatabaseView(databaseViewId, {
+          parent_view_id: documentId,
+          database_id: option.databaseId,
           layout: linkedPicker.layout,
           name: referencedName,
-          databaseId: option.databaseId,  // Link to the selected database
-          embedded: true,  // Mark as embedded since it's created inside a document block
+          embedded: true,
         });
 
-        console.debug('[SlashPanel] created linked database view under document', {
-          optionKey: linkedPicker.layout,
-          documentViewId: viewId,
-          databaseId: option.databaseId,
-          newViewId,
+        console.debug('[SlashPanel] {} created linked database', {
+          documentId,
+          databaseViewId,
+          newViewId: response.view_id,
           referencedName,
         });
 
-        // Use document viewId as parent_id in block data (matching desktop behavior)
         turnInto(blockType, createDatabaseNodeData({
-          parentId: viewId,  // Document ID
-          viewIds: [newViewId],
-          databaseId: option.databaseId,
+          parentId: documentId,
+          viewIds: [response.view_id],
+          databaseId: response.database_id,
         }));
       } catch (e) {
         const error = e as Error;
@@ -530,10 +529,11 @@ export function SlashPanel({
     },
     [
       linkedPicker,
-      createFolderView,
-      viewId,
+      createDatabaseView,
+      documentId,
       databaseOptions,
       blockTypeByLayout,
+      getViewIdFromDatabaseId,
       turnInto,
       t,
     ]
@@ -699,9 +699,9 @@ export function SlashPanel({
         icon: <DocumentIcon />,
         keywords: ['document', 'doc', 'page', 'create', 'add'],
         onClick: async () => {
-          if (!viewId || !addPage || !openPageModal) return;
+          if (!documentId || !addPage || !openPageModal) return;
           try {
-            const response = await addPage(viewId, {
+            const response = await addPage(documentId, {
               layout: ViewLayout.Document,
             });
 
@@ -722,7 +722,7 @@ export function SlashPanel({
         icon: <GridIcon />,
         keywords: ['grid', 'table', 'database'],
         onClick: async () => {
-          if (!viewId || !addPage || !openPageModal) return;
+          if (!documentId || !addPage || !openPageModal) return;
 
           let scrollContainer: Element | null = null;
 
@@ -737,17 +737,22 @@ export function SlashPanel({
           if (!scrollContainer) {
             scrollContainer = document.querySelector('.appflowy-scroll-container');
           }
-          
+
           const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
-            const response = await addPage(viewId, {
+            const response = await addPage(documentId, {
               layout: ViewLayout.Grid,
               name: t('document.slashMenu.name.grid'),
             });
 
+            console.debug('[SlashPanel] {} created grid', {
+              documentId,
+              databaseViewId: response.view_id,
+            });
+
             turnInto(BlockType.GridBlock, createDatabaseNodeData({
-              parentId: viewId,
+              parentId: documentId,
               viewIds: [response.view_id],
               databaseId: response.database_id,
             }));
@@ -786,7 +791,7 @@ export function SlashPanel({
         icon: <BoardIcon />,
         keywords: ['board', 'kanban', 'database'],
         onClick: async () => {
-          if (!viewId || !addPage || !openPageModal) return;
+          if (!documentId || !addPage || !openPageModal) return;
 
           let scrollContainer: Element | null = null;
 
@@ -801,17 +806,22 @@ export function SlashPanel({
           if (!scrollContainer) {
             scrollContainer = document.querySelector('.appflowy-scroll-container');
           }
-          
+
           const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
-            const response = await addPage(viewId, {
+            const response = await addPage(documentId, {
               layout: ViewLayout.Board,
               name: t('document.slashMenu.name.kanban'),
             });
 
+            console.debug('[SlashPanel] {} created kanban', {
+              documentId,
+              databaseViewId: response.view_id,
+            });
+
             turnInto(BlockType.BoardBlock, createDatabaseNodeData({
-              parentId: viewId,
+              parentId: documentId,
               viewIds: [response.view_id],
               databaseId: response.database_id,
             }));
@@ -850,7 +860,7 @@ export function SlashPanel({
         icon: <CalendarIcon />,
         keywords: ['calendar', 'date', 'database'],
         onClick: async () => {
-          if (!viewId || !addPage || !openPageModal) return;
+          if (!documentId || !addPage || !openPageModal) return;
 
           let scrollContainer: Element | null = null;
 
@@ -865,17 +875,22 @@ export function SlashPanel({
           if (!scrollContainer) {
             scrollContainer = document.querySelector('.appflowy-scroll-container');
           }
-          
+
           const savedScrollTop = scrollContainer?.scrollTop;
 
           try {
-            const response = await addPage(viewId, {
+            const response = await addPage(documentId, {
               layout: ViewLayout.Calendar,
               name: t('document.slashMenu.name.calendar'),
             });
 
+            console.debug('[SlashPanel] {} created calendar', {
+              documentId,
+              databaseViewId: response.view_id,
+            });
+
             turnInto(BlockType.CalendarBlock, createDatabaseNodeData({
-              parentId: viewId,
+              parentId: documentId,
               viewIds: [response.view_id],
               databaseId: response.database_id,
             }));
@@ -1034,7 +1049,7 @@ export function SlashPanel({
     continueWriting,
     turnInto,
     openPanel,
-    viewId,
+    documentId,
     addPage,
     openPageModal,
     setEmojiPosition,

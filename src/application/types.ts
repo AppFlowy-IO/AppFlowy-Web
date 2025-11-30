@@ -1137,13 +1137,15 @@ export interface CreateFolderViewPayload {
   name?: string;
   viewId?: string;
   databaseId?: string;
-  /** Whether this view is embedded inside a document (e.g., database block). Defaults to false. */
-  embedded?: boolean;
 }
 
 export interface CreateDatabaseViewPayload {
+  parent_view_id: string;
+  database_id: string;
   layout: ViewLayout;
   name?: string;
+  /** Whether this view is embedded inside a document (e.g., database block). Defaults to false. */
+  embedded?: boolean;
 }
 
 export interface CreateDatabaseViewResponse {
