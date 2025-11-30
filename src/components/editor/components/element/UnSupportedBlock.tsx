@@ -21,7 +21,7 @@ export const UnSupportedBlock = forwardRef<HTMLDivElement, EditorElementProps>((
     >
       <WarningIcon className="h-5 w-5 flex-shrink-0 text-function-warning" />
       <span className="text-sm">
-        This block type <span className="font-medium text-text-title">"{node.type}"</span> is not supported yet
+        This block type <span className="font-medium text-text-title">&ldquo;{node.type}&rdquo;</span> is not supported yet
       </span>
       {isDev && (
         <details className="ml-auto text-xs">
