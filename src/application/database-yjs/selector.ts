@@ -58,7 +58,12 @@ export interface Row {
 
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
-export function useDatabaseViewsSelector(_iidIndex: string, visibleViewIds?: string[]) {
+/**
+ * Hook to get all database views (tabs) for the database.
+ * @param databasePageId - The main database page ID in the folder structure
+ * @param visibleViewIds - Optional filter for embedded databases to show only specific views
+ */
+export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?: string[]) {
   const database = useDatabase();
 
   const views = database?.get(YjsDatabaseKey.views);
@@ -102,7 +107,7 @@ export function useDatabaseViewsSelector(_iidIndex: string, visibleViewIds?: str
     return () => {
       views.unobserveDeep(observerEvent);
     };
-  }, [views, visibleViewIds, _iidIndex]);
+  }, [views, visibleViewIds, databasePageId]);
 
   return {
     childViews,

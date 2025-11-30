@@ -13,7 +13,7 @@ export const PADDING_INLINE = getPlatform().isMobile ? 21 : 96;
 
 const logDebug = (...args: Parameters<typeof console.debug>) => {
   if (import.meta.env.DEV) {
-    console.debug(...args);
+    // console.debug(...args);
   }
 };
 

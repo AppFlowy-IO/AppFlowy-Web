@@ -15,12 +15,16 @@ export interface DatabaseTabBarProps {
   selectedViewId?: string;
   setSelectedViewId?: (viewId: string) => void;
   viewName?: string;
-  iidIndex: string;
+  /**
+   * The database's page ID in the folder/outline structure.
+   * This is the main entry point for the database and remains constant.
+   */
+  databasePageId: string;
   hideConditions?: boolean;
 }
 
 export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
-  ({ viewIds, iidIndex, selectedViewId, setSelectedViewId }, ref) => {
+  ({ viewIds, databasePageId, selectedViewId, setSelectedViewId }, ref) => {
     const views = useDatabase()?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
     const { loadViewMeta, readOnly, showActions = true, eventEmitter } = context;
@@ -37,7 +41,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const reloadView = useCallback(async () => {
       if (loadViewMeta) {
         try {
-          const meta = await loadViewMeta(iidIndex);
+          const meta = await loadViewMeta(databasePageId);
 
           setMeta(meta);
           return meta;
@@ -46,11 +50,11 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           // do nothing
         }
       }
-    }, [iidIndex, loadViewMeta]);
+    }, [databasePageId, loadViewMeta]);
 
     useEffect(() => {
       const handleOutlineLoaded = (outline: View[]) => {
-        const view = findView(outline, iidIndex);
+        const view = findView(outline, databasePageId);
 
         if (view) {
           setMeta(view);
@@ -66,12 +70,12 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
         }
       };
-    }, [iidIndex, eventEmitter, reloadView]);
+    }, [databasePageId, eventEmitter, reloadView]);
 
     const renameView = useMemo(() => {
-      if (renameViewId === iidIndex) return meta;
+      if (renameViewId === databasePageId) return meta;
       return meta?.children.find((v) => v.view_id === renameViewId);
-    }, [iidIndex, meta, renameViewId]);
+    }, [databasePageId, meta, renameViewId]);
 
     const visibleViewIds = useMemo(() => {
       return viewIds.filter((viewId) => {
@@ -126,7 +130,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             viewIds={viewIds}
             selectedViewId={selectedViewId}
             setSelectedViewId={setSelectedViewId}
-            iidIndex={iidIndex}
+            databasePageId={databasePageId}
             views={views}
             readOnly={!!readOnly}
             visibleViewIds={visibleViewIds}

@@ -190,7 +190,6 @@ export function SlashPanel({
     getMoreAIContext,
     createFolderView,
     createDatabaseView,
-    getViewIdFromDatabaseId,
     loadViews,
     databaseRelations,
   } = useEditorContext();
@@ -533,7 +532,6 @@ export function SlashPanel({
       documentId,
       databaseOptions,
       blockTypeByLayout,
-      getViewIdFromDatabaseId,
       turnInto,
       t,
     ]

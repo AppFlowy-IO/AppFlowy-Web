@@ -16,7 +16,11 @@ export interface DatabaseViewTabsProps {
   viewIds: string[];
   selectedViewId?: string;
   setSelectedViewId?: (viewId: string) => void;
-  iidIndex: string;
+  /**
+   * The database's page ID in the folder/outline structure.
+   * This is the main entry point for the database and remains constant.
+   */
+  databasePageId: string;
   views: Y.Map<YDatabaseView> | undefined;
   readOnly: boolean;
   visibleViewIds: string[];
@@ -33,7 +37,7 @@ export function DatabaseViewTabs({
   viewIds,
   selectedViewId,
   setSelectedViewId,
-  iidIndex,
+  databasePageId,
   views,
   readOnly,
   visibleViewIds,
@@ -179,7 +183,7 @@ export function DatabaseViewTabs({
           }}
         >
           <Tabs
-            value={selectedViewId || viewIds[0] || iidIndex}
+            value={selectedViewId || viewIds[0] || databasePageId}
             onValueChange={(viewId) => {
               if (setSelectedViewId) {
                 setSelectedViewId(viewId);
@@ -200,7 +204,7 @@ export function DatabaseViewTabs({
                     key={viewId}
                     viewId={viewId}
                     view={view}
-                    iidIndex={iidIndex}
+                    databasePageId={databasePageId}
                     menuViewId={menuViewId}
                     readOnly={!!readOnly}
                     visibleViewIds={visibleViewIds}

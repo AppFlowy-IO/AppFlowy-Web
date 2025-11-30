@@ -17,20 +17,30 @@ function DatabaseView(props: ViewComponentProps) {
   const { viewMeta, uploadFile } = props;
   const [search, setSearch] = useSearchParams();
   const outline = useAppOutline();
-  const iidIndex = viewMeta.viewId;
+
+  /**
+   * The database's page ID in the folder/outline structure.
+   * This is the main entry point for the database and remains constant.
+   */
+  const databasePageId = viewMeta.viewId;
+
   const view = useMemo(() => {
-    if (!outline || !iidIndex) return;
-    return findView(outline || [], iidIndex);
-  }, [outline, iidIndex]);
+    if (!outline || !databasePageId) return;
+    return findView(outline || [], databasePageId);
+  }, [outline, databasePageId]);
 
   const visibleViewIds = useMemo(() => {
     if (!view) return [];
     return [view.view_id, ...(view.children?.map((v) => v.view_id) || [])];
   }, [view]);
 
-  const viewId = useMemo(() => {
-    return search.get('v') || iidIndex;
-  }, [search, iidIndex]);
+  /**
+   * The currently active/selected view tab ID (Grid, Board, or Calendar).
+   * Comes from URL param 'v', defaults to databasePageId when not specified.
+   */
+  const activeViewId = useMemo(() => {
+    return search.get('v') || databasePageId;
+  }, [search, databasePageId]);
 
   const handleChangeView = useCallback(
     (viewId: string) => {
@@ -73,7 +83,7 @@ function DatabaseView(props: ViewComponentProps) {
     }
   }, [rowId, viewMeta.layout]);
 
-  if (!viewId || !doc || !database) return null;
+  if (!activeViewId || !doc || !database) return null;
 
   return (
     <div
@@ -96,9 +106,9 @@ function DatabaseView(props: ViewComponentProps) {
       <Suspense fallback={skeleton}>
         <Database
           iidName={viewMeta.name || ''}
-          iidIndex={iidIndex || ''}
+          databasePageId={databasePageId || ''}
           {...props}
-          viewId={viewId}
+          activeViewId={activeViewId}
           rowId={rowId}
           showActions={true}
           visibleViewIds={visibleViewIds}

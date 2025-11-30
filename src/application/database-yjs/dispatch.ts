@@ -2261,13 +2261,38 @@ function useEnhanceCalendarLayoutByFieldExists() {
 
 }
 
+/**
+ * Hook to add a new database view (Grid, Board, or Calendar tab).
+ * Creates a new view tab as a child of the main database page.
+ */
 export function useAddDatabaseView() {
-  const { iidIndex, createDatabaseView, databaseDoc } = useDatabaseContext();
+  // databasePageId: The main database page in folder (used as parent for new views)
+  // activeViewId: The currently selected view tab (not used here, but validated)
+  const { databasePageId, createDatabaseView, databaseDoc, activeViewId } = useDatabaseContext();
+  const sharedRoot = useSharedRoot();
+
+  const database = useMemo(() => {
+    const dataSection = sharedRoot || (databaseDoc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined);
+
+    return dataSection?.get(YjsEditorKey.database) as YDatabase | undefined;
+  }, [databaseDoc, sharedRoot]);
+
+  const databaseId = useMemo(() => {
+    return database?.get(YjsDatabaseKey.id);
+  }, [database]);
 
   return useCallback(
     async (layout: DatabaseViewLayout) => {
       if (!createDatabaseView) {
         throw new Error('createDatabaseView not found');
+      }
+
+      if (!databasePageId) {
+        throw new Error('databasePageId not found');
+      }
+
+      if (!databaseId) {
+        throw new Error('databaseId not found');
       }
 
       const viewLayout = {
@@ -2281,8 +2306,10 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Calendar]: 'Calendar',
       }[layout];
 
-      // Call the new API endpoint which handles all Yjs initialization on the server
-      const response = await createDatabaseView(iidIndex, {
+      // Create new view as a child of the main database page
+      const response = await createDatabaseView(databasePageId, {
+        parent_view_id: databasePageId,
+        database_id: databaseId,
         layout: viewLayout,
         name,
       });
@@ -2293,7 +2320,7 @@ export function useAddDatabaseView() {
 
       return response.view_id;
     },
-    [createDatabaseView, databaseDoc, iidIndex]
+    [createDatabaseView, databaseDoc, databasePageId, databaseId, activeViewId]
   );
 }
 

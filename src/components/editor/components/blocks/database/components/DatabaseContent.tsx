@@ -62,13 +62,13 @@ export const DatabaseContent = ({
           width,
         }}
       >
-        <Database
-          {...context}
-          workspaceId={workspaceId}
-          doc={doc}
-          iidIndex={selectedViewId}
-          viewId={selectedViewId}
-          createRowDoc={createRowDoc}
+          <Database
+            {...context}
+            workspaceId={workspaceId}
+            doc={doc}
+            databasePageId={selectedViewId}
+            activeViewId={selectedViewId}
+            createRowDoc={createRowDoc}
           loadView={loadView}
           navigateToView={navigateToView}
           onOpenRowPage={onOpenRowPage}

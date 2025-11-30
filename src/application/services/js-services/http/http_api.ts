@@ -148,6 +148,7 @@ async function executeAPIRequest<TResponseData = unknown>(
     }
 
     if (!response.data) {
+      console.error('[executeAPIRequest] No response data received', response);
       return Promise.reject({
         code: -1,
         message: 'No response data received',
@@ -1420,13 +1421,15 @@ export async function createDatabaseView(
 ) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/database-view`;
 
+  console.debug('[createDatabaseView]', { url, workspaceId, viewId, payload });
+
   return executeAPIRequest<CreateDatabaseViewResponse>(() =>
     axiosInstance?.post<APIResponse<CreateDatabaseViewResponse>>(url, {
       parent_view_id: payload.parent_view_id,
       database_id: payload.database_id,
       layout: payload.layout,
       name: payload.name,
-      embedded: payload.embedded,
+      embedded: payload.embedded ?? false,
     })
   );
 }

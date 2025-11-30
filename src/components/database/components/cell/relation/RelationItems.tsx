@@ -26,7 +26,8 @@ function RelationItems({
   wrap: boolean;
 }) {
   const context = useDatabaseContext();
-  const viewId = context.iidIndex;
+  // databasePageId: The main database page ID in the folder structure
+  const viewId = context.databasePageId;
   const relatedDatabaseId = useDatabaseIdFromField(fieldId);
 
   const createRowDoc = context.createRowDoc;

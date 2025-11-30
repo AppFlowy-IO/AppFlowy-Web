@@ -24,20 +24,28 @@ const getScrollElement = () =>
 
 function DatabaseViews({
   onChangeView,
-  viewId,
-  iidIndex,
+  activeViewId,
+  databasePageId,
   viewName,
   visibleViewIds,
   fixedHeight,
 }: {
   onChangeView: (viewId: string) => void;
-  viewId: string;
-  iidIndex: string;
+  /**
+   * The currently active/selected view tab ID (Grid, Board, or Calendar).
+   * Changes when the user switches between different view tabs.
+   */
+  activeViewId: string;
+  /**
+   * The database's page ID in the folder/outline structure.
+   * This is the main entry point for the database and remains constant.
+   */
+  databasePageId: string;
   viewName?: string;
   visibleViewIds?: string[];
   fixedHeight?: number;
 }) {
-  const { childViews, viewIds } = useDatabaseViewsSelector(iidIndex, visibleViewIds);
+  const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
 
   const [isLoading, setIsLoading] = useState(false);
   const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
@@ -49,9 +57,9 @@ function DatabaseViews({
   const value = useMemo(() => {
     return Math.max(
       0,
-      viewIds.findIndex((id) => id === viewId)
+      viewIds.findIndex((id) => id === activeViewId)
     );
-  }, [viewId, viewIds]);
+  }, [activeViewId, viewIds]);
 
   const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(false);
   const toggleExpanded = useCallback(() => {
@@ -73,8 +81,8 @@ function DatabaseViews({
 
       logDebug('[DatabaseViews] layout set', {
         layout: Number(activeView.get(YjsDatabaseKey.layout)),
-        viewId,
-        iidIndex,
+        activeViewId,
+        databasePageId,
         currentHeight,
       });
     };
@@ -85,7 +93,7 @@ function DatabaseViews({
     return () => {
       activeView.unobserve(observerEvent);
     };
-  }, [activeView, iidIndex, viewId]);
+  }, [activeView, databasePageId, activeViewId]);
 
   const handleViewChange = useCallback(
     (newViewId: string) => {
@@ -148,13 +156,13 @@ function DatabaseViews({
       if (h > 0) {
         logDebug('[DatabaseViews] measured container height', {
           height: h,
-          viewId,
-          iidIndex,
+          activeViewId,
+          databasePageId,
           layout,
         });
       }
     }
-  }, [isLoading, viewVisible, layout, viewId, iidIndex]);
+  }, [isLoading, viewVisible, layout, activeViewId, databasePageId]);
 
   // Enhanced scroll restoration with better timing coordination
   useEffect(() => {
@@ -228,7 +236,7 @@ function DatabaseViews({
         heightLockTimeoutRef.current = null;
       }
     };
-  }, [isLoading, viewId, fixedHeight]);
+  }, [isLoading, activeViewId, fixedHeight]);
 
   useEffect(() => {
     setLockedHeight(fixedHeight ?? null);
@@ -244,10 +252,10 @@ function DatabaseViews({
       fixedHeight,
       isLoading,
       viewVisible,
-      viewId,
+      activeViewId,
       layout,
     });
-  }, [lockedHeight, fixedHeight, isLoading, viewVisible, viewId, layout, iidIndex]);
+  }, [lockedHeight, fixedHeight, isLoading, viewVisible, activeViewId, layout, databasePageId]);
 
   // Only use locked height during transitions (isLoading) or if fixedHeight is explicitly set
   // This prevents the empty space issue when filters/sorts expand/collapse
@@ -265,8 +273,8 @@ function DatabaseViews({
       >
         <DatabaseTabs
           viewName={viewName}
-          iidIndex={iidIndex}
-          selectedViewId={viewId}
+          databasePageId={databasePageId}
+          selectedViewId={activeViewId}
           setSelectedViewId={handleViewChange}
           viewIds={viewIds}
         />

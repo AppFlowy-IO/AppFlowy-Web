@@ -21,7 +21,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 export interface DatabaseTabItemProps {
     viewId: string;
     view: YDatabaseView;
-    iidIndex: string;
+    /**
+     * The database's page ID in the folder/outline structure.
+     * This is the main entry point for the database and remains constant.
+     */
+    databasePageId: string;
     menuViewId: string | null;
     readOnly: boolean;
     visibleViewIds: string[];
@@ -35,7 +39,7 @@ export const DatabaseTabItem = memo(
     ({
         viewId,
         view,
-        iidIndex,
+        databasePageId,
         menuViewId,
         readOnly,
         visibleViewIds,
@@ -80,14 +84,14 @@ export const DatabaseTabItem = memo(
                 view_id: viewId,
                 name: name,
                 layout: computedLayout,
-                parent_view_id: iidIndex,
+                parent_view_id: databasePageId,
                 children: [],
                 icon: null,
                 extra: null,
                 is_published: false,
                 is_private: false,
             }),
-            [viewId, name, computedLayout, iidIndex]
+            [viewId, name, computedLayout, databasePageId]
         );
 
         return (
@@ -165,7 +169,7 @@ export const DatabaseTabItem = memo(
                             <DatabaseViewActions
                                 onOpenDeleteModal={onOpenDeleteModal}
                                 onOpenRenameModal={onOpenRenameModal}
-                                deleteDisabled={viewId === iidIndex && visibleViewIds.length > 1}
+                                deleteDisabled={viewId === databasePageId && visibleViewIds.length > 1}
                                 view={viewForActions}
                             />
                         )}
@@ -177,4 +181,3 @@ export const DatabaseTabItem = memo(
 );
 
 DatabaseTabItem.displayName = 'DatabaseTabItem';
-

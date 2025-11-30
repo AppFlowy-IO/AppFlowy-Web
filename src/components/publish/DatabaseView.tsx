@@ -40,10 +40,20 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
   const visibleViewIds = useMemo(() => viewMeta.visibleViewIds || [], [viewMeta]);
 
   const isTemplateThumb = usePublishContext()?.isTemplateThumb;
-  const iidIndex = viewMeta.viewId;
-  const viewId = useMemo(() => {
-    return search.get('v') || iidIndex;
-  }, [search, iidIndex]);
+
+  /**
+   * The database's page ID in the folder/outline structure.
+   * This is the main entry point for the database and remains constant.
+   */
+  const databasePageId = viewMeta.viewId;
+
+  /**
+   * The currently active/selected view tab ID (Grid, Board, or Calendar).
+   * Comes from URL param 'v', defaults to databasePageId when not specified.
+   */
+  const activeViewId = useMemo(() => {
+    return search.get('v') || databasePageId;
+  }, [search, databasePageId]);
 
   const handleChangeView = useCallback(
     (viewId: string) => {
@@ -86,7 +96,7 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
     }
   }, [rowId, viewMeta.layout]);
 
-  if (!viewId || !database) return null;
+  if (!activeViewId || !database) return null;
 
   return (
     <div
@@ -101,9 +111,9 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
       <Suspense fallback={skeleton}>
         <Database
           iidName={viewMeta.name || ''}
-          iidIndex={iidIndex || ''}
+          databasePageId={databasePageId || ''}
           {...props}
-          viewId={viewId}
+          activeViewId={activeViewId}
           rowId={rowId}
           visibleViewIds={visibleViewIds}
           onChangeView={handleChangeView}

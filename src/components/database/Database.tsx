@@ -32,7 +32,11 @@ export interface Database2Props {
   loadView?: LoadView;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
-  viewId: string;
+  /**
+   * The currently active/selected view tab ID (Grid, Board, or Calendar).
+   * Changes when the user switches between different view tabs.
+   */
+  activeViewId: string;
   iidName: string;
   rowId?: string;
   modalRowId?: string;
@@ -40,7 +44,11 @@ export interface Database2Props {
   onChangeView: (viewId: string) => void;
   onOpenRowPage?: (rowId: string) => void;
   visibleViewIds: string[];
-  iidIndex: string;
+  /**
+   * The database's page ID in the folder/outline structure.
+   * This is the main entry point for the database and remains constant.
+   */
+  databasePageId: string;
   variant?: UIVariant;
   onRendered?: () => void;
   isDocumentBlock?: boolean;
@@ -57,8 +65,8 @@ function Database(props: Database2Props) {
   const {
     doc,
     createRowDoc,
-    viewId,
-    iidIndex,
+    activeViewId,
+    databasePageId,
     iidName,
     visibleViewIds,
     rowId,
@@ -92,9 +100,9 @@ function Database(props: Database2Props) {
     for (const key of keys) {
       const v = viewsMap.get(key);
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const viewIid = v?.get?.(YjsDatabaseKey.iid as any);
+      const iidField = v?.get?.(YjsDatabaseKey.iid as any);
 
-      if (viewIid === targetIid) {
+      if (iidField === targetIid) {
         return v;
       }
     }
@@ -102,7 +110,7 @@ function Database(props: Database2Props) {
     return null;
   }, []);
 
-  const view = findViewByIid(views, iidIndex);
+  const view = findViewByIid(views, databasePageId);
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
 
   const [rowIds, setRowIds] = useState<RowId[]>([]);
@@ -164,13 +172,13 @@ function Database(props: Database2Props) {
     const ids = rowOrdersData.map(({ id }: { id: string }) => id);
 
     console.debug('[Database] row orders updated', {
-      viewId,
-      iidIndex,
+      activeViewId,
+      databasePageId,
       ids,
       raw: rowOrdersData,
     });
     setRowIds(ids);
-  }, [iidIndex, rowOrders, viewId]);
+  }, [databasePageId, rowOrders, activeViewId]);
 
   useEffect(() => {
     void handleUpdateRowDocMap();
@@ -182,7 +190,7 @@ function Database(props: Database2Props) {
   }, [handleUpdateRowDocMap, rowOrders]);
 
   const [openModalRowId, setOpenModalRowId] = useState<string | null>(() => modalRowId || null);
-  const [openModalViewId, setOpenModalViewId] = useState<string | null>(() => (modalRowId ? viewId : null));
+  const [openModalViewId, setOpenModalViewId] = useState<string | null>(() => (modalRowId ? activeViewId : null));
   const [openModalRowDatabaseDoc, setOpenModalRowDatabaseDoc] = useState<YDoc | null>(null);
   const [openModalRowDocMap, setOpenModalRowDocMap] = useState<Record<RowId, YDoc> | null>(null);
 
@@ -246,7 +254,7 @@ function Database(props: Database2Props) {
     setOpenModalViewId(null);
   }, []);
 
-  if (!rowDocMap || !viewId) {
+  if (!rowDocMap || !activeViewId) {
     return <div className={'min-h-[120px] w-full'} />;
   }
 
@@ -269,10 +277,10 @@ function Database(props: Database2Props) {
           <div className='appflowy-database relative flex w-full flex-1 select-text flex-col overflow-hidden'>
             <DatabaseViews
               visibleViewIds={visibleViewIds}
-              iidIndex={iidIndex}
+              databasePageId={databasePageId}
               viewName={iidName}
               onChangeView={onChangeView}
-              viewId={viewId}
+              activeViewId={activeViewId}
               fixedHeight={embeddedHeight}
             />
           </div>
@@ -281,8 +289,8 @@ function Database(props: Database2Props) {
       {openModalRowId && (
         <DatabaseContextProvider
           {...props}
-          viewId={openModalViewId || viewId}
-          iidIndex={openModalViewId || iidIndex}
+          activeViewId={openModalViewId || activeViewId}
+          databasePageId={openModalViewId || databasePageId}
           databaseDoc={openModalRowDatabaseDoc || doc}
           rowDocMap={openModalRowDocMap || rowDocMap}
           isDatabaseRowPage={false}
