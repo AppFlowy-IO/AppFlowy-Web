@@ -1104,7 +1104,6 @@ export interface ViewComponentProps {
   onWordCountChange?: (viewId: string, props: TextCount) => void;
   uploadFile?: (file: File) => Promise<string>;
   requestInstance?: AxiosInstance | null;
-  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabasePrompts?: (config: PromptDatabaseConfiguration) => Promise<{
@@ -1129,14 +1128,6 @@ export interface CreatePagePayload {
 export interface CreatePageResponse {
   view_id: string;
   database_id?: string;
-}
-
-export interface CreateFolderViewPayload {
-  parentViewId: string;
-  layout: ViewLayout;
-  name?: string;
-  viewId?: string;
-  databaseId?: string;
 }
 
 export interface CreateDatabaseViewPayload {

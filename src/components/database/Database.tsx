@@ -6,7 +6,6 @@ import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  CreateFolderViewPayload,
   CreateRowDoc,
   LoadView,
   LoadViewMeta,
@@ -55,7 +54,6 @@ export interface Database2Props {
   paddingStart?: number;
   paddingEnd?: number;
   showActions?: boolean;
-  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   embeddedHeight?: number;

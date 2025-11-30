@@ -7,7 +7,6 @@ import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  CreateFolderViewPayload,
   CreatePagePayload,
   CreatePageResponse,
   CreateRowDoc,
@@ -80,7 +79,6 @@ export interface AppContextType {
   publish?: (view: View, publishName?: string, visibleViewIds?: string[]) => Promise<void>;
   unpublish?: (viewId: string) => Promise<void>;
   refreshOutline?: () => Promise<void>;
-  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
@@ -271,7 +269,6 @@ export function useAppHandlers() {
     publish: context.publish,
     unpublish: context.unpublish,
     refreshOutline: context.refreshOutline,
-    createFolderView: context.createFolderView,
     createDatabaseView: context.createDatabaseView,
     generateAISummaryForRow: context.generateAISummaryForRow,
     generateAITranslateForRow: context.generateAITranslateForRow,

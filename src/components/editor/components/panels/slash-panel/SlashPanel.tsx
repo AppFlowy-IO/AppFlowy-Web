@@ -188,7 +188,6 @@ export function SlashPanel({
     viewId: documentId,
     loadViewMeta,
     getMoreAIContext,
-    createFolderView,
     createDatabaseView,
     loadViews,
     databaseRelations,
@@ -420,7 +419,7 @@ export function SlashPanel({
 
   const handleOpenLinkedDatabasePicker = useCallback(
     async (layout: ViewLayout, optionKey: string) => {
-      if (!documentId || !createFolderView) return;
+      if (!documentId || !createDatabaseView) return;
       const rect = getRangeRect();
 
       if (!rect) return;
@@ -447,7 +446,7 @@ export function SlashPanel({
         layout,
       });
     },
-    [createFolderView, handleSelectOption, loadDatabasesForPicker, t, documentId]
+    [createDatabaseView, handleSelectOption, loadDatabasesForPicker, t, documentId]
   );
 
   const handleSelectDatabase = useCallback(

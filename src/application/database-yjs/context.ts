@@ -6,7 +6,6 @@ import { createContext, useContext } from 'react';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  CreateFolderViewPayload,
   CreateRowDoc,
   DatabaseRelations,
   DateFormat,
@@ -62,7 +61,6 @@ export interface DatabaseContextState {
   onRendered?: () => void;
   showActions?: boolean;
   workspaceId: string;
-  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   deletePage?: (viewId: string) => Promise<void>;

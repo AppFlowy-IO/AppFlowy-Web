@@ -36,7 +36,6 @@ import {
   AccessLevel,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  CreateFolderViewPayload,
   CreatePagePayload,
   CreateSpacePayload,
   CreateWorkspacePayload,
@@ -599,10 +598,6 @@ export class AFClientService implements AFService {
 
   async addAppPage(workspaceId: string, parentViewId: string, payload: CreatePagePayload) {
     return APIService.addAppPage(workspaceId, parentViewId, payload);
-  }
-
-  async createFolderView(workspaceId: string, payload: CreateFolderViewPayload) {
-    return APIService.createFolderView(workspaceId, payload);
   }
 
   async createDatabaseView(workspaceId: string, viewId: string, payload: CreateDatabaseViewPayload): Promise<CreateDatabaseViewResponse> {

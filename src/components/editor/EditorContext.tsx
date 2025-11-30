@@ -15,7 +15,6 @@ import {
   View,
   CreatePagePayload,
   CreatePageResponse,
-  CreateFolderViewPayload,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   TextCount,
@@ -69,7 +68,6 @@ export interface EditorContextState {
   deletePage?: (viewId: string) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
-  createFolderView?: (payload: CreateFolderViewPayload) => Promise<string>;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   onWordCountChange?: (viewId: string, props: TextCount) => void;
   uploadFile?: (file: File) => Promise<string>;

@@ -25,7 +25,6 @@ import {
   AuthProvider,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  CreateFolderViewPayload,
   CreatePagePayload,
   CreatePageResponse,
   CreateSpacePayload,
@@ -1409,20 +1408,6 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
     code: -1,
     message: `Upload file failed. ${response.statusText}`,
   });
-}
-
-export async function createFolderView(workspaceId: string, payload: CreateFolderViewPayload) {
-  const url = `/api/workspace/${workspaceId}/folder-view`;
-
-  return executeAPIRequest<{ view_id: string }>(() =>
-    axiosInstance?.post<APIResponse<{ view_id: string }>>(url, {
-      parent_view_id: payload.parentViewId,
-      layout: payload.layout,
-      name: payload.name,
-      view_id: payload.viewId,
-      database_id: payload.databaseId,
-    })
-  ).then((data) => data.view_id);
 }
 
 export async function createDatabaseView(

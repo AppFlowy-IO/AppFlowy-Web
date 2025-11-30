@@ -16,7 +16,6 @@ import {
   AuthProvider,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  CreateFolderViewPayload,
   CreatePagePayload,
   CreatePageResponse,
   CreateSpacePayload,
@@ -148,7 +147,6 @@ export interface AppService {
   createSpace: (workspaceId: string, payload: CreateSpacePayload) => Promise<string>;
   updateSpace: (workspaceId: string, payload: UpdateSpacePayload) => Promise<void>;
   addAppPage: (workspaceId: string, parentViewId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
-  createFolderView: (workspaceId: string, payload: CreateFolderViewPayload) => Promise<string>;
   createDatabaseView: (workspaceId: string, viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   updateAppPage: (workspaceId: string, viewId: string, data: UpdatePagePayload) => Promise<void>;
   updateAppPageIcon: (workspaceId: string, viewId: string, icon: { ty: ViewIconType; value: string }) => Promise<void>;

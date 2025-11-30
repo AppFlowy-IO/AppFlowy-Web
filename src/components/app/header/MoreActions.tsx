@@ -46,7 +46,8 @@ function MoreActions({
   }, [setOpen]);
 
   const handleFetchChatMessages = useCallback(async () => {
-    if (!workspaceId || !service) {
+    // Only fetch chat messages for AI Chat views
+    if (!workspaceId || !service || view?.layout !== ViewLayout.AIChat) {
       return;
     }
 
@@ -57,7 +58,7 @@ function MoreActions({
     } catch {
       // do nothing
     }
-  }, [workspaceId, service, viewId]);
+  }, [workspaceId, service, viewId, view?.layout]);
 
   useEffect(() => {
     void handleFetchChatMessages();

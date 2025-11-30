@@ -3,7 +3,6 @@ import { toast } from 'sonner';
 
 import {
   CreateDatabaseViewPayload,
-  CreateFolderViewPayload,
   CreatePagePayload,
   CreateSpacePayload,
   Role,
@@ -224,25 +223,6 @@ export function usePageOperations({ outline, loadOutline }: { outline?: View[], 
     [currentWorkspaceId, service, loadOutline]
   );
 
-  // Create folder view
-  const createFolderView = useCallback(
-    async (payload: CreateFolderViewPayload) => {
-      if (!currentWorkspaceId || !service) {
-        throw new Error('No workspace or service found');
-      }
-
-      try {
-        const res = await service?.createFolderView(currentWorkspaceId, payload);
-
-        await loadOutline?.(currentWorkspaceId, false);
-        return res;
-      } catch (e) {
-        return Promise.reject(e);
-      }
-    },
-    [currentWorkspaceId, loadOutline, service]
-  );
-
   // Create database view (linked view using new endpoint)
   const createDatabaseView = useCallback(
     async (viewId: string, payload: CreateDatabaseViewPayload) => {
@@ -349,7 +329,6 @@ export function usePageOperations({ outline, loadOutline }: { outline?: View[], 
     restorePage,
     createSpace,
     updateSpace,
-    createFolderView,
     createDatabaseView,
     uploadFile,
     getSubscriptions,
