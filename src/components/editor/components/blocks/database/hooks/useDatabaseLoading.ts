@@ -16,7 +16,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
   const [doc, setDoc] = useState<YDoc | null>(null);
   const [selectedViewId, setSelectedViewId] = useState<string>(viewId);
   const [visibleViewIds, setVisibleViewIds] = useState<string[]>([]);
-  const [iidName, setIidName] = useState<string>('');
+  const [databaseName, setDatabaseName] = useState<string>('');
 
   const viewIdsRef = useRef<string[]>([viewId]);
   const allowedViewIdsRef = useRef<string[] | undefined>(allowedViewIds);
@@ -44,25 +44,27 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
   const retryLoadViewMeta = useRetryFunction(loadViewMeta, handleError);
 
   const updateVisibleViewIds = useCallback(async (meta: View | null) => {
-    if (!meta) {
-      return;
-    }
-
     // Use allowedViewIds directly if provided (embedded database block)
     // This comes from view_ids in block data, with backward compatibility for view_id
     if (allowedViewIdsRef.current && allowedViewIdsRef.current.length > 0) {
-      setIidName(meta.name);
+      // Use meta.name if available, otherwise use empty string (embedded databases don't need name)
+      setDatabaseName(meta?.name ?? '');
       setVisibleViewIds(allowedViewIdsRef.current);
 
       return;
     }
 
     // Fallback: load all child views (standalone database view, not embedded)
+    // This requires meta to be available
+    if (!meta) {
+      return;
+    }
+
     const viewIds = meta.children.map((v) => v.view_id) || [];
 
     viewIds.unshift(meta.view_id);
 
-    setIidName(meta.name);
+    setDatabaseName(meta.name);
     setVisibleViewIds(viewIds);
   }, []);
 
@@ -121,6 +123,16 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
   }, [visibleViewIds]);
 
   useLayoutEffect(() => {
+    // For embedded databases with allowedViewIds, we can proceed even if meta loading fails
+    // The view_ids from block data are sufficient
+    const hasAllowedViewIds = allowedViewIdsRef.current && allowedViewIdsRef.current.length > 0;
+
+    if (hasAllowedViewIds) {
+      // Set visible view IDs immediately from block data, don't wait for meta
+      setVisibleViewIds(allowedViewIdsRef.current!);
+      setSelectedViewId(allowedViewIdsRef.current!.includes(viewId) ? viewId : allowedViewIdsRef.current![0]);
+    }
+
     void loadViewMetaWithCallback(viewId).then((meta) => {
       if (!viewIdsRef.current.includes(viewId) && viewIdsRef.current.length > 0) {
         setSelectedViewId(viewIdsRef.current[0]);
@@ -141,7 +153,12 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
       setNotFound(false);
     }).catch((error) => {
       console.error('[DatabaseBlock] failed to load view meta', { viewId, error });
-      setNotFound(true);
+
+      // For embedded databases, don't set notFound if we have allowedViewIds
+      // The doc loading is what matters, meta is optional
+      if (!hasAllowedViewIds) {
+        setNotFound(true);
+      }
     });
   }, [loadViewMetaWithCallback, viewId]);
 
@@ -150,7 +167,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
     doc,
     selectedViewId,
     visibleViewIds,
-    iidName,
+    databaseName,
     onChangeView,
     loadViewMeta: loadViewMetaWithCallback,
   };

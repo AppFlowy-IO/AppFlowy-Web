@@ -110,7 +110,7 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
 
       <Suspense fallback={skeleton}>
         <Database
-          iidName={viewMeta.name || ''}
+          databaseName={viewMeta.name || ''}
           databasePageId={databasePageId || ''}
           {...props}
           activeViewId={activeViewId}

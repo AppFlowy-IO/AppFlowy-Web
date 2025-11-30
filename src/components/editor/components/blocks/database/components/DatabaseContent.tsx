@@ -19,7 +19,7 @@ interface DatabaseContentProps {
   navigateToView?: (viewId: string, rowId?: string) => Promise<void>;
   onOpenRowPage: (rowId: string) => Promise<void>;
   loadViewMeta: LoadViewMeta;
-  iidName: string;
+  databaseName: string;
   visibleViewIds: string[];
   onChangeView: (viewId: string) => void;
   context: DatabaseContextState;
@@ -41,7 +41,7 @@ export const DatabaseContent = ({
   navigateToView,
   onOpenRowPage,
   loadViewMeta,
-  iidName,
+  databaseName,
   visibleViewIds,
   onChangeView,
   context,
@@ -71,7 +71,7 @@ export const DatabaseContent = ({
           navigateToView={navigateToView}
           onOpenRowPage={onOpenRowPage}
           loadViewMeta={loadViewMeta}
-          iidName={iidName}
+          databaseName={databaseName}
           visibleViewIds={visibleViewIds}
           onChangeView={onChangeView}
           showActions={true}

@@ -28,7 +28,7 @@ export const DatabaseBlock = memo(
     const editor = useSlateStatic();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 
-    const { notFound, doc, selectedViewId, visibleViewIds, iidName, onChangeView, loadViewMeta } = useDatabaseLoading({
+    const { notFound, doc, selectedViewId, visibleViewIds, databaseName, onChangeView, loadViewMeta } = useDatabaseLoading({
       viewId,
       allowedViewIds,
       loadView,
@@ -164,7 +164,7 @@ export const DatabaseBlock = memo(
             navigateToView={navigateToView}
             onOpenRowPage={handleNavigateToRow}
             loadViewMeta={loadViewMeta}
-            iidName={iidName}
+            databaseName={databaseName}
             visibleViewIds={visibleViewIds}
             onChangeView={onChangeView}
             onRendered={handleRendered}

@@ -37,7 +37,7 @@ export interface Database2Props {
    * Changes when the user switches between different view tabs.
    */
   activeViewId: string;
-  iidName: string;
+  databaseName: string;
   rowId?: string;
   modalRowId?: string;
   appendBreadcrumb?: AppendBreadcrumb;
@@ -67,7 +67,7 @@ function Database(props: Database2Props) {
     createRowDoc,
     activeViewId,
     databasePageId,
-    iidName,
+    databaseName,
     visibleViewIds,
     rowId,
     onChangeView,
@@ -84,33 +84,17 @@ function Database(props: Database2Props) {
   const database = doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | null;
   const views = database?.get(YjsDatabaseKey.views);
 
-  // Find view by iid field (views map uses numeric keys like "0", "1", "2")
-  const findViewByIid = useCallback((viewsMap: typeof views, targetIid: string) => {
+  const findDatabaseViewByViewId = useCallback((viewsMap: typeof views, targetViewId: string) => {
     if (!viewsMap) return null;
 
-    // Try direct access first (for standalone databases)
-    const directView = viewsMap.get(targetIid);
+    const directView = viewsMap.get(targetViewId);
 
     if (directView) return directView;
-
-    // Search by iid field (for embedded databases)
-    const viewsData = viewsMap.toJSON();
-    const keys = Object.keys(viewsData);
-
-    for (const key of keys) {
-      const v = viewsMap.get(key);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const iidField = v?.get?.(YjsDatabaseKey.iid as any);
-
-      if (iidField === targetIid) {
-        return v;
-      }
-    }
 
     return null;
   }, []);
 
-  const view = findViewByIid(views, databasePageId);
+  const view = findDatabaseViewByViewId(views, databasePageId);
   const rowOrders = view?.get(YjsDatabaseKey.row_orders);
 
   const [rowIds, setRowIds] = useState<RowId[]>([]);
@@ -278,7 +262,7 @@ function Database(props: Database2Props) {
             <DatabaseViews
               visibleViewIds={visibleViewIds}
               databasePageId={databasePageId}
-              viewName={iidName}
+              viewName={databaseName}
               onChangeView={onChangeView}
               activeViewId={activeViewId}
               fixedHeight={embeddedHeight}

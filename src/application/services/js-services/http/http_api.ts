@@ -147,6 +147,15 @@ async function executeAPIRequest<TResponseData = unknown>(
       });
     }
 
+    // Get the actual URL that was requested
+    const requestUrl = response.request?.responseURL
+      || (response.config?.baseURL && response.config?.url
+        ? `${response.config.baseURL}${response.config.url}`
+        : response.config?.url)
+      || 'unknown';
+    const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
+    console.debug('[executeAPIRequest]', { method, url: requestUrl });
+
     if (!response.data) {
       console.error('[executeAPIRequest] No response data received', response);
       return Promise.reject({
@@ -188,6 +197,7 @@ async function executeAPIVoidRequest(
     const response = await request();
 
     if (!response?.data) {
+      console.error('[executeAPIVoidRequest] No response data received', response);
       return Promise.reject({
         code: -1,
         message: 'No response data received',
@@ -642,6 +652,7 @@ export async function getPublishViewBlob(namespace: string, publishName: string)
     });
 
     if (!response?.data) {
+      console.error('[getPublishViewBlob] No response data received', response);
       const error: APIError = {
         code: -1,
         message: 'No response data received',

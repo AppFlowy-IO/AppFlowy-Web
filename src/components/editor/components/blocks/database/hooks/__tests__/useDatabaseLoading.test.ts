@@ -112,7 +112,7 @@ describe('useDatabaseLoading', () => {
         expect(result.current.visibleViewIds).toEqual(['view-1', 'child-1', 'child-2']);
       });
 
-      expect(result.current.iidName).toBe('View view-1');
+      expect(result.current.databaseName).toBe('View view-1');
     });
 
     it('should select first child view when viewId not in visible views', async () => {
