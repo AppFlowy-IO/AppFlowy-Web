@@ -14,37 +14,27 @@ function getFileStorageBaseUrl(): string {
   return getConfigValue('APPFLOWY_BASE_URL', '') + '/api/file_storage';
 }
 
-let cachedAppflowyOrigin: string | null | undefined;
-let cachedFileStoragePathname: string | null | undefined;
-
 function resolveAppflowyOriginAndPathname(): { origin: string | null; pathname: string | null } {
-  if (cachedAppflowyOrigin !== undefined && cachedFileStoragePathname !== undefined) {
-    return { origin: cachedAppflowyOrigin, pathname: cachedFileStoragePathname };
-  }
-
   const baseUrl = getConfigValue('APPFLOWY_BASE_URL', '').trim();
 
   if (baseUrl) {
     try {
       const parsed = new URL(baseUrl);
 
-      cachedAppflowyOrigin = parsed.origin;
-      cachedFileStoragePathname = `${parsed.pathname.replace(/\/$/, '')}/api/file_storage`;
-      return { origin: cachedAppflowyOrigin, pathname: cachedFileStoragePathname };
+      return {
+        origin: parsed.origin,
+        pathname: `${parsed.pathname.replace(/\/$/, '')}/api/file_storage`,
+      };
     } catch (error) {
       console.warn('Invalid APPFLOWY_BASE_URL provided:', error);
     }
   }
 
   if (typeof window !== 'undefined' && window.location?.origin) {
-    cachedAppflowyOrigin = window.location.origin;
-    cachedFileStoragePathname = '/api/file_storage';
-    return { origin: cachedAppflowyOrigin, pathname: cachedFileStoragePathname };
+    return { origin: window.location.origin, pathname: '/api/file_storage' };
   }
 
-  cachedAppflowyOrigin = null;
-  cachedFileStoragePathname = null;
-  return { origin: cachedAppflowyOrigin, pathname: cachedFileStoragePathname };
+  return { origin: null, pathname: null };
 }
 
 
