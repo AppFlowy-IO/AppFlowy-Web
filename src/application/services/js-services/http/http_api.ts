@@ -1129,12 +1129,18 @@ export interface DuplicatePublishViewPayload {
   dest_view_id: string;
 }
 
-export async function duplicatePublishView(workspaceId: string, payload: DuplicatePublishViewPayload) {
+export interface DuplicatePublishViewResponse {
+  view_id: string;
+  /** Mapping of database_id -> list of view_ids for databases created during duplication */
+  database_mappings: Record<string, string[]>;
+}
+
+export async function duplicatePublishView(workspaceId: string, payload: DuplicatePublishViewPayload): Promise<DuplicatePublishViewResponse> {
   const url = `/api/workspace/${workspaceId}/published-duplicate`;
 
-  return executeAPIRequest<{ view_id: string }>(() =>
-    axiosInstance?.post<APIResponse<{ view_id: string }>>(url, payload)
-  ).then((data) => data.view_id);
+  return executeAPIRequest<DuplicatePublishViewResponse>(() =>
+    axiosInstance?.post<APIResponse<DuplicatePublishViewResponse>>(url, payload)
+  );
 }
 
 export async function createTemplate(template: UploadTemplatePayload) {

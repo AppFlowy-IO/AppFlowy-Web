@@ -874,6 +874,12 @@ export interface DuplicatePublishView {
   viewId: string;
 }
 
+export interface DuplicatePublishViewResponse {
+  viewId: string;
+  /** Mapping of database_id -> list of view_ids for databases created during duplication */
+  databaseMappings: Record<string, string[]>;
+}
+
 export enum ViewIconType {
   Emoji = 0,
   URL = 1,

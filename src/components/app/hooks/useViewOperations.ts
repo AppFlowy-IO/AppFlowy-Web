@@ -15,7 +15,7 @@ export function useViewOperations() {
   const { service, currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const { registerSyncContext } = useSyncInternal();
   const navigate = useNavigate();
-  
+
   const [awarenessMap, setAwarenessMap] = useState<Record<string, Awareness>>({});
   const workspaceDatabaseDocMapRef = useRef<Map<string, YDoc>>(new Map());
   const createdRowKeys = useRef<string[]>([]);
@@ -41,6 +41,53 @@ export function useViewOperations() {
   const getDatabaseId = useCallback(
     async (id: string) => {
       if (!currentWorkspaceId) return;
+
+      // First check URL params for database mappings (passed from template duplication)
+      // This allows immediate lookup without waiting for workspace database sync
+      try {
+        const urlParams = new URLSearchParams(window.location.search);
+        const dbMappingsParam = urlParams.get('db_mappings');
+
+        if (dbMappingsParam) {
+          const dbMappings: Record<string, string[]> = JSON.parse(decodeURIComponent(dbMappingsParam));
+          // Store in localStorage for persistence across page refreshes
+          const storageKey = `db_mappings_${currentWorkspaceId}`;
+          const existingMappings = JSON.parse(localStorage.getItem(storageKey) || '{}');
+          const mergedMappings = { ...existingMappings, ...dbMappings };
+
+          localStorage.setItem(storageKey, JSON.stringify(mergedMappings));
+          console.debug('[useViewOperations] stored db_mappings to localStorage', mergedMappings);
+
+          // Find the database ID that contains this view
+          for (const [databaseId, viewIds] of Object.entries(dbMappings)) {
+            if (viewIds.includes(id)) {
+              console.debug('[useViewOperations] found databaseId from URL params', { viewId: id, databaseId });
+              return databaseId;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[useViewOperations] failed to parse db_mappings from URL', e);
+      }
+
+      // Check localStorage for cached database mappings (persists across page refreshes)
+      try {
+        const storageKey = `db_mappings_${currentWorkspaceId}`;
+        const cachedMappings = localStorage.getItem(storageKey);
+
+        if (cachedMappings) {
+          const dbMappings: Record<string, string[]> = JSON.parse(cachedMappings);
+
+          for (const [databaseId, viewIds] of Object.entries(dbMappings)) {
+            if (viewIds.includes(id)) {
+              console.debug('[useViewOperations] found databaseId from localStorage', { viewId: id, databaseId });
+              return databaseId;
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[useViewOperations] failed to read db_mappings from localStorage', e);
+      }
 
       if (databaseStorageId && !workspaceDatabaseDocMapRef.current.has(currentWorkspaceId)) {
         await registerWorkspaceDatabaseDoc(currentWorkspaceId, databaseStorageId);
@@ -307,9 +354,9 @@ export function useViewOperations() {
     const rowKeys = createdRowKeys.current;
 
     createdRowKeys.current = [];
-    
+
     if (!rowKeys.length) return;
-    
+
     rowKeys.forEach((rowKey) => {
       try {
         service?.deleteRowDoc(rowKey);

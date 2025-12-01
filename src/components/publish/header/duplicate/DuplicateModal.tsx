@@ -33,6 +33,7 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
   const [loading, setLoading] = React.useState<boolean>(false);
   const [successModalOpen, setSuccessModalOpen] = React.useState<boolean>(false);
   const [newViewId, setNewViewId] = React.useState<string | undefined>(undefined);
+  const [databaseMappings, setDatabaseMappings] = React.useState<Record<string, string[]> | undefined>(undefined);
   const {
     workspaceList,
     spaceList,
@@ -66,7 +67,7 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
 
     setLoading(true);
     try {
-      const newViewId = await service?.duplicatePublishView({
+      const response = await service?.duplicatePublishView({
         workspaceId: selectedWorkspaceId,
         spaceViewId: selectedSpaceId,
         viewId,
@@ -75,9 +76,11 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
 
       onClose();
       setSuccessModalOpen(true);
-      setNewViewId(newViewId);
+      setNewViewId(response?.viewId);
+      setDatabaseMappings(response?.databaseMappings);
     } catch (e) {
       setNewViewId(undefined);
+      setDatabaseMappings(undefined);
       notify.error(t('publish.duplicateFailed'));
     } finally {
       setLoading(false);
@@ -124,7 +127,17 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
         cancelText={t('openInApp')}
         onOk={() => {
           if (!newViewId || !selectedWorkspaceId) return;
-          window.open(`/app/${selectedWorkspaceId}/${newViewId}`, '_self');
+          let url = `/app/${selectedWorkspaceId}/${newViewId}`;
+
+          // Pass database mappings as URL parameter so the app can use them immediately
+          // without waiting for workspace database sync
+          if (databaseMappings && Object.keys(databaseMappings).length > 0) {
+            const encodedMappings = encodeURIComponent(JSON.stringify(databaseMappings));
+
+            url += `?db_mappings=${encodedMappings}`;
+          }
+
+          window.open(url, '_self');
         }}
         onCancel={() => {
           window.open(openAppFlowySchema, '_self');

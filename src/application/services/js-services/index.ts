@@ -41,6 +41,7 @@ import {
   CreateWorkspacePayload,
   DatabaseRelations,
   DuplicatePublishView,
+  DuplicatePublishViewResponse,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   PublishViewPayload,
@@ -414,12 +415,18 @@ export class AFClientService implements AFService {
     };
   }
 
-  async duplicatePublishView(params: DuplicatePublishView) {
-    return APIService.duplicatePublishView(params.workspaceId, {
+  async duplicatePublishView(params: DuplicatePublishView): Promise<DuplicatePublishViewResponse> {
+    const response = await APIService.duplicatePublishView(params.workspaceId, {
       dest_view_id: params.spaceViewId,
       published_view_id: params.viewId,
       published_collab_type: params.collabType,
     });
+
+    // Transform snake_case API response to camelCase for frontend use
+    return {
+      viewId: response.view_id,
+      databaseMappings: response.database_mappings || {},
+    };
   }
 
   createCommentOnPublishView(viewId: string, content: string, replyCommentId: string | undefined): Promise<void> {

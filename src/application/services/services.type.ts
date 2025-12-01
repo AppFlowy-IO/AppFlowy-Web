@@ -22,6 +22,7 @@ import {
   CreateWorkspacePayload,
   DatabaseRelations,
   DuplicatePublishView,
+  DuplicatePublishViewResponse,
   FolderView,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
@@ -248,7 +249,7 @@ export interface PublishService {
   getPublishViewReactions: (viewId: string, commentId?: string) => Promise<Record<string, Reaction[]>>;
   addPublishViewReaction: (viewId: string, commentId: string, reactionType: string) => Promise<void>;
   removePublishViewReaction: (viewId: string, commentId: string, reactionType: string) => Promise<void>;
-  duplicatePublishView: (params: DuplicatePublishView) => Promise<string>;
+  duplicatePublishView: (params: DuplicatePublishView) => Promise<DuplicatePublishViewResponse>;
 }
 
 export interface AIChatService {
