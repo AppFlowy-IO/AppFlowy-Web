@@ -13,9 +13,11 @@ import { CodeBlock } from '@/components/editor/components/blocks/code';
 import { Column, Columns } from '@/components/editor/components/blocks/columns';
 import { DatabaseBlock } from '@/components/editor/components/blocks/database';
 import { DividerNode } from '@/components/editor/components/blocks/divider';
+import { AIMeetingBlock } from '@/components/editor/components/blocks/ai-meeting';
 import { FileBlock } from '@/components/editor/components/blocks/file';
 import { GalleryBlock } from '@/components/editor/components/blocks/gallery';
 import { Heading } from '@/components/editor/components/blocks/heading';
+import { PDFBlock } from '@/components/editor/components/blocks/pdf';
 import { ImageBlock } from '@/components/editor/components/blocks/image';
 import { LinkPreview } from '@/components/editor/components/blocks/link-preview';
 import { MathEquation } from '@/components/editor/components/blocks/math-equation';
@@ -212,6 +214,10 @@ export const Element = ({
         return Columns;
       case BlockType.ColumnBlock:
         return Column;
+      case BlockType.AIMeetingBlock:
+        return AIMeetingBlock;
+      case BlockType.PDFBlock:
+        return PDFBlock;
       default:
         return BlockNotFound;
     }

@@ -45,6 +45,8 @@ export enum BlockType {
   SimpleTableCellBlock = 'simple_table_cell',
   ColumnsBlock = 'simple_columns',
   ColumnBlock = 'simple_column',
+  AIMeetingBlock = 'ai_meeting',
+  PDFBlock = 'pdf',
 }
 
 export enum InlineBlockType {
@@ -143,6 +145,18 @@ export interface VideoBlockData extends BlockData {
   height?: number;
   align?: AlignType;
   video_type?: VideoType;
+}
+
+export interface AIMeetingBlockData extends BlockData {
+  title?: string;
+}
+
+export interface PDFBlockData extends BlockData {
+  name?: string;
+  uploaded_at?: number;
+  url?: string;
+  url_type?: FieldURLType;
+  retry_local_url?: string;
 }
 
 export enum GalleryLayout {
