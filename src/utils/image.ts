@@ -96,12 +96,14 @@ export const checkImage = async (url: string) => {
               });
             });
           } else {
+            console.error('Authenticated image fetch failed', response.status, response.statusText);
             // If authenticated fetch fails, fall back to Image() approach
             // This allows publicly-accessible URLs to still work
             checkImageWithImageElement(fullUrl, resolve);
           }
         })
-        .catch(() => {
+        .catch((error) => {
+          console.error('Failed to fetch authenticated image', error);
           // If fetch throws an error (CORS, network, etc.), fall back to Image() approach
           checkImageWithImageElement(fullUrl, resolve);
         });
