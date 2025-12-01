@@ -7,10 +7,10 @@ import { notify } from '@/components/_shared/notify';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import FileToolbar from '@/components/editor/components/blocks/file/FileToolbar';
-import { EditorElementProps, PDFNode } from '@/components/editor/editor.type';
+import { EditorElementProps, FileNode, PDFNode } from '@/components/editor/editor.type';
 import { FileHandler } from '@/utils/file';
 import { CircularProgress, IconButton, Tooltip } from '@mui/material';
-import React, { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'react';
 import { Element } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 
@@ -49,6 +49,7 @@ export const PDFBlock = memo(
 
       const openPDFInNewTab = useCallback(() => {
         const link = url || localUrl;
+
         if (link) {
           window.open(link, '_blank');
         }
@@ -62,8 +63,8 @@ export const PDFBlock = memo(
           }
 
           openPDFInNewTab();
-        } catch (e: any) {
-          notify.error(e.message);
+        } catch (e: unknown) {
+          notify.error((e as Error).message);
         }
       }, [url, needRetry, openUploadPopover, openPDFInNewTab]);
 
@@ -87,7 +88,7 @@ export const PDFBlock = memo(
             if (uploadFile) {
               return await uploadFile(file);
             }
-          } catch (e: any) {
+          } catch (e: unknown) {
             return;
           }
         },
@@ -124,8 +125,8 @@ export const PDFBlock = memo(
               url_type: FieldURLType.Upload,
               retry_local_url: '',
             } as PDFBlockData);
-          } catch (e: any) {
-            notify.error(e.message || 'Failed to retry upload. Please try again.');
+          } catch (e: unknown) {
+            notify.error((e as Error).message || 'Failed to retry upload. Please try again.');
           } finally {
             setLoading(false);
           }
@@ -173,13 +174,15 @@ export const PDFBlock = memo(
               ))}
             {showToolbar && url && (
               <FileToolbar
-                node={{
-                  ...node,
-                  data: {
-                    ...data,
-                    url,
-                  },
-                } as any}
+                node={
+                  {
+                    ...node,
+                    data: {
+                      ...data,
+                      url,
+                    },
+                  } as unknown as FileNode
+                }
               />
             )}
           </div>

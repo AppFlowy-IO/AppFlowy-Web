@@ -20,15 +20,18 @@ const mockEditorContext = {
 const mockPopoverContext = {
   open: false,
   anchorEl: null,
-  close: () => {},
-  openPopover: (blockId: string, type: any, anchor: HTMLElement) => {
+  close: () => {
+    // Mock close function
+  },
+  openPopover: (blockId: string, _type: unknown, _anchor: HTMLElement) => {
     console.log('Open popover for block:', blockId);
   },
   type: null,
   blockId: null,
 };
 
-const withEditorContexts = (Story: any) => {
+// eslint-disable-next-line react/display-name
+const WithEditorContexts = (Story: React.ComponentType) => {
   const editor = React.useMemo(() => createEditor(), []);
   const [value] = React.useState([
     {
@@ -39,7 +42,7 @@ const withEditorContexts = (Story: any) => {
 
   return (
     <Slate editor={editor} initialValue={value}>
-      <EditorContext.Provider value={mockEditorContext as any}>
+      <EditorContext.Provider value={mockEditorContext as unknown}>
         <BlockPopoverContext.Provider value={mockPopoverContext}>
           <Story />
         </BlockPopoverContext.Provider>
@@ -55,7 +58,7 @@ const meta = {
     layout: 'centered',
   },
   tags: ['autodocs'],
-  decorators: [withEditorContexts, withContainer({ padding: '20px', maxWidth: '800px' })],
+  decorators: [WithEditorContexts, withContainer({ padding: '20px', maxWidth: '800px' })],
   argTypes: {
     node: {
       description: 'The PDF block node',

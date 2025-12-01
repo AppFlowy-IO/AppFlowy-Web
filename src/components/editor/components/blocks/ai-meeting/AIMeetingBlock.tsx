@@ -3,7 +3,7 @@ import { forwardRef, memo } from 'react';
 
 export const AIMeetingBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<AIMeetingNode>>(
-    ({ node, children, ...attributes }, ref) => {
+    ({ node, children: _children, ...attributes }, ref) => {
       const { data } = node;
 
       const title = data?.title?.trim() || 'AI Meeting';

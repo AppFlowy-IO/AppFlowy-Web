@@ -17,6 +17,7 @@ export function getFileName(rawUrl: string) {
   try {
     const urlObj = new URL(rawUrl);
     const name = urlObj.pathname.split('/').filter(Boolean).pop();
+
     return name || rawUrl;
   } catch {
     return rawUrl;
@@ -62,7 +63,7 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
         if (uploadFile) {
           return await uploadFile(file);
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         return;
       }
     },
@@ -82,6 +83,7 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
       if (!url) {
         const fileHandler = new FileHandler();
         const res = await fileHandler.handleFileUpload(file);
+
         data.retry_local_url = res.id;
       }
 
@@ -103,6 +105,7 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
 
         for (const file of otherFiles.reverse()) {
           const data = await processFileUpload(file);
+
           CustomEditor.addBelowBlock(editor, blockId, BlockType.PDFBlock, data);
         }
 
