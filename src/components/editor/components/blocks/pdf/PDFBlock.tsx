@@ -145,7 +145,7 @@ export const PDFBlock = memo(
           onMouseLeave={() => setShowToolbar(false)}
           onClick={handleClick}
         >
-          <div contentEditable={false} className={'embed-block flex flex-row items-center gap-4 p-4 text-text-primary'}>
+          <div contentEditable={false} className={`embed-block flex flex-row items-center gap-4 p-4 ${url || needRetry ? 'text-text-primary' : ''}`}>
             <div className={'flex h-full items-start'}>
               <PDFIcon className={'h-6 w-6'} />
             </div>
