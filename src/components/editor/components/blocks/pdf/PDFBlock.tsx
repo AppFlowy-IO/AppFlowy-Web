@@ -21,63 +21,57 @@ export const PDFBlock = memo(
       const { uploadFile } = useEditorContext();
       const editor = useSlateStatic() as YjsEditor;
       const [needRetry, setNeedRetry] = useState(false);
-      const fileHandler = useMemo(() => new FileHandler(), []);
+      const fileHandlerRef = useRef(new FileHandler());
       const [localUrl, setLocalUrl] = useState<string | undefined>(undefined);
       const [loading, setLoading] = useState(false);
-      const { url: dataUrl, name, retry_local_url } = useMemo(() => data || {}, [data]);
+      const { url, name, retry_local_url } = data || {};
       const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
       const emptyRef = useRef<HTMLDivElement>(null);
       const [showToolbar, setShowToolbar] = useState(false);
 
-      const url = dataUrl;
+      const hasContent = url || needRetry;
 
-      const className = useMemo(() => {
-        const classList = ['w-full'];
-
-        if (url) {
-          classList.push('cursor-pointer');
-        } else {
-          classList.push('text-text-secondary');
-        }
-
-        if (attributes.className) {
-          classList.push(attributes.className);
-        }
-
-        if (!readOnly) {
-          classList.push('cursor-pointer');
-        }
-
-        return classList.join(' ');
-      }, [attributes.className, readOnly, url]);
+      const className = [
+        'w-full',
+        url || !readOnly ? 'cursor-pointer' : 'text-text-secondary',
+        attributes.className,
+      ]
+        .filter(Boolean)
+        .join(' ');
 
       const { openPopover } = usePopoverContext();
+
+      const openUploadPopover = useCallback(() => {
+        if (emptyRef.current && !readOnly) {
+          openPopover(blockId, BlockType.PDFBlock, emptyRef.current);
+        }
+      }, [blockId, openPopover, readOnly]);
+
+      const openPDFInNewTab = useCallback(() => {
+        const link = url || localUrl;
+        if (link) {
+          window.open(link, '_blank');
+        }
+      }, [url, localUrl]);
 
       const handleClick = useCallback(async () => {
         try {
           if (!url && !needRetry) {
-            if (emptyRef.current && !readOnly) {
-              openPopover(blockId, BlockType.PDFBlock, emptyRef.current);
-            }
-
+            openUploadPopover();
             return;
           }
 
-          const link = url || localUrl;
-
-          if (link) {
-            window.open(link, '_blank');
-          }
+          openPDFInNewTab();
         } catch (e: any) {
           notify.error(e.message);
         }
-      }, [url, needRetry, localUrl, readOnly, openPopover, blockId]);
+      }, [url, needRetry, openUploadPopover, openPDFInNewTab]);
 
       useEffect(() => {
         if (readOnly) return;
         void (async () => {
           if (retry_local_url) {
-            const fileData = await fileHandler.getStoredFile(retry_local_url);
+            const fileData = await fileHandlerRef.current.getStoredFile(retry_local_url);
 
             setLocalUrl(fileData?.url);
             setNeedRetry(!!fileData);
@@ -85,7 +79,7 @@ export const PDFBlock = memo(
             setNeedRetry(false);
           }
         })();
-      }, [readOnly, retry_local_url, fileHandler]);
+      }, [readOnly, retry_local_url]);
 
       const uploadFileRemote = useCallback(
         async (file: File) => {
@@ -104,20 +98,25 @@ export const PDFBlock = memo(
         async (e: React.MouseEvent) => {
           e.stopPropagation();
           if (!retry_local_url) return;
-          const fileData = await fileHandler.getStoredFile(retry_local_url);
-          const file = fileData?.file;
-
-          if (!file) return;
-
-          const url = await uploadFileRemote(file);
-
-          if (!url) {
-            return;
-          }
 
           setLoading(true);
           try {
-            await fileHandler.cleanup(retry_local_url);
+            const fileData = await fileHandlerRef.current.getStoredFile(retry_local_url);
+            const file = fileData?.file;
+
+            if (!file) {
+              notify.error('File not found. Please upload again.');
+              return;
+            }
+
+            const url = await uploadFileRemote(file);
+
+            if (!url) {
+              notify.error('Upload failed. Please try again.');
+              return;
+            }
+
+            await fileHandlerRef.current.cleanup(retry_local_url);
             CustomEditor.setBlockData(editor, blockId, {
               url,
               name,
@@ -125,12 +124,13 @@ export const PDFBlock = memo(
               url_type: FieldURLType.Upload,
               retry_local_url: '',
             } as PDFBlockData);
-          } catch (e) {
+          } catch (e: any) {
+            notify.error(e.message || 'Failed to retry upload. Please try again.');
           } finally {
             setLoading(false);
           }
         },
-        [blockId, editor, fileHandler, name, retry_local_url, uploadFileRemote]
+        [blockId, editor, name, retry_local_url, uploadFileRemote]
       );
 
       return (
@@ -145,13 +145,13 @@ export const PDFBlock = memo(
           onMouseLeave={() => setShowToolbar(false)}
           onClick={handleClick}
         >
-          <div contentEditable={false} className={`embed-block flex flex-row items-center gap-4 p-4 ${url || needRetry ? 'text-text-primary' : ''}`}>
+          <div contentEditable={false} className={`embed-block flex flex-row items-center gap-4 p-4 ${hasContent ? 'text-text-primary' : ''}`}>
             <div className={'flex h-full items-start'}>
               <PDFIcon className={'h-6 w-6'} />
             </div>
 
             <div ref={emptyRef} className={'flex flex-1 flex-col gap-2 overflow-hidden text-base font-medium'}>
-              {url || needRetry ? (
+              {hasContent ? (
                 <div className={'flex flex-col gap-2'}>
                   <div className={'w-full truncate'}>{name?.trim() || 'PDF Document'}</div>
                   {needRetry && <div className={'font-normal text-function-error'}>Upload failed</div>}
