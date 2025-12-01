@@ -20,12 +20,42 @@ export const checkImage = async (url: string) => {
       const token = getTokenParsed();
 
       if (!token) {
-        resolve({
-          ok: false,
-          status: 401,
-          statusText: 'Unauthorized',
-          error: 'No authentication token available',
-        });
+        // Allow browser to load publicly-accessible URLs without authentication
+        // Fall through to Image() approach with resolved URL
+        const resolvedUrl = resolveImageUrl(url);
+        const img = new Image();
+
+        // Set a timeout to handle very slow loads
+        const timeoutId = setTimeout(() => {
+          resolve({
+            ok: false,
+            status: 408,
+            statusText: 'Request Timeout',
+            error: 'Image loading timed out',
+          });
+        }, 10000); // 10 second timeout
+
+        img.onload = () => {
+          clearTimeout(timeoutId);
+          resolve({
+            ok: true,
+            status: 200,
+            statusText: 'OK',
+            validatedUrl: resolvedUrl,
+          });
+        };
+
+        img.onerror = () => {
+          clearTimeout(timeoutId);
+          resolve({
+            ok: false,
+            status: 404,
+            statusText: 'Image Not Found',
+            error: 'Failed to load image',
+          });
+        };
+
+        img.src = resolvedUrl;
         return;
       }
 
