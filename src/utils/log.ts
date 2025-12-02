@@ -7,11 +7,15 @@ export class Log {
   }
 
   static debug(...msg: unknown[]) {
-    console.debug(...msg);
+    if (process.env.NODE_ENV !== 'production') {
+      console.debug(...msg);
+    }
   }
 
   static trace(...msg: unknown[]) {
-    console.trace(...msg);
+    if (process.env.NODE_ENV !== 'production') {
+      console.trace(...msg);
+    }
   }
 
   static warn(...msg: unknown[]) {

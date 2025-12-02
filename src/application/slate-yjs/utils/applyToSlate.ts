@@ -9,6 +9,7 @@ import { blockToSlateNode, deltaInsertToSlateNode } from '@/application/slate-yj
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { dataStringTOJson, getBlock, getChildrenArray, getPageId, getText } from '@/application/slate-yjs/utils/yjs';
 import { YBlock, YjsEditorKey } from '@/application/types';
+import { Log } from '@/utils/log';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type BlockMapEvent = YMapEvent<any>;
@@ -137,7 +138,7 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
     const value = keys.get(key);
 
     if (!value) {
-      console.warn(`⚠️ No value found for key: ${key}`);
+      Log.warn(`⚠️ No value found for key: ${key}`);
       return;
     }
 
@@ -152,20 +153,20 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
   });
 
   updates.forEach(({ key, action, value }, index) => {
-    console.debug(`📋 Processing block change ${index + 1}/${updates.length}:`, {
+    Log.debug(`📋 Processing block change ${index + 1}/${updates.length}:`, {
       key,
       action,
       oldValue: value.oldValue,
     });
 
     if (action === 'add') {
-      console.debug(`➕ Adding new block: ${key}`);
+      Log.debug(`➕ Adding new block: ${key}`);
       handleNewBlock(editor, key, keyPath);
     } else if (action === 'delete') {
-      console.debug(`🗑️ Deleting block: ${key}`);
+      Log.debug(`🗑️ Deleting block: ${key}`);
       handleDeleteNode(editor, key);
     } else if (action === 'update') {
-      console.debug(`🔄 Updating block: ${key}`);
+      Log.debug(`🔄 Updating block: ${key}`);
       // TODO: Implement block update logic
     }
   });
@@ -185,14 +186,14 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
   const pageId = getPageId(editor.sharedRoot);
   const parent = getBlock(parentId, editor.sharedRoot);
 
-  console.debug(`🏗️ Creating new block: ${key}`, {
+  Log.debug(`🏗️ Creating new block: ${key}`, {
     parentId,
     pageId,
     parentFound: !!parent,
   });
 
   if (!parent) {
-    console.error(`❌ Parent block not found: ${parentId}`, {
+    Log.error(`❌ Parent block not found: ${parentId}`, {
       blockData: block.toJSON(),
       availableBlocks: Array.from(editor.nodes({ at: [] }))
         .filter(([node]) => !Editor.isEditor(node) && Element.isElement(node) && node.blockId)
@@ -209,7 +210,7 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
   const yText = getText(textId, editor.sharedRoot);
   let textNode: Element | undefined;
 
-  console.debug(`📊 Block creation details:`, {
+  Log.debug(`📊 Block creation details:`, {
     key,
     parentId,
     index,
@@ -234,7 +235,7 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
       children: slateDelta,
     };
 
-    console.debug(`📝 Text node created:`, {
+    Log.debug(`📝 Text node created:`, {
       textId,
       deltaLength: delta.length,
       slateDeltaLength: slateDelta.length,
@@ -253,9 +254,9 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
     if (!parentEntry) {
       if (keyPath[parentId]) {
         path = [...keyPath[parentId], index + 1];
-        console.debug(`📍 Using cached path for nested block:`, { parentId, path });
+        Log.debug(`📍 Using cached path for nested block:`, { parentId, path });
       } else {
-        console.error(`❌ Parent block not found in Slate editor: ${parentId}`, {
+        Log.error(`❌ Parent block not found in Slate editor: ${parentId}`, {
           keyPath,
           availableBlocks: Array.from(editor.nodes({ at: [] }))
             .filter(([node]) => !Editor.isEditor(node) && Element.isElement(node) && node.blockId)
@@ -271,17 +272,17 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
         childrenLength === 0 ? true : Element.isElement(silblings[0]) && silblings[0].type === YjsEditorKey.text;
 
       path = [...parentEntry[1], Math.min(index + (parentHasTextNode ? 1 : 0), childrenLength)];
-      console.debug(`📍 Calculated path for nested block:`, {
+      Log.debug(`📍 Calculated path for nested block:`, {
         parentPath: parentEntry[1],
         childrenLength,
         finalPath: path,
       });
     }
   } else {
-    console.debug(`📍 Using root-level path:`, { path });
+    Log.debug(`📍 Using root-level path:`, { path });
   }
 
-  console.debug(`✅ Inserting new block at path:`, {
+  Log.debug(`✅ Inserting new block at path:`, {
     key,
     path,
     hasTextNode: !!textNode,
@@ -298,7 +299,7 @@ function handleNewBlock(editor: YjsEditor, key: string, keyPath: Record<string, 
   });
 
   keyPath[key] = path;
-  console.debug(`💾 Cached path for block ${key}:`, keyPath[key]);
+  Log.debug(`💾 Cached path for block ${key}:`, keyPath[key]);
 }
 
 /**
@@ -315,7 +316,7 @@ function handleDeleteNode(editor: YjsEditor, key: string) {
   });
 
   if (!entry) {
-    console.error(`❌ Block not found for deletion: ${key}`, {
+    Log.error(`❌ Block not found for deletion: ${key}`, {
       availableBlocks: Array.from(editor.nodes({ at: [] }))
         .filter(([node]) => !Editor.isEditor(node) && Element.isElement(node) && node.blockId)
         .map(([node]) => (node as Element).blockId),
@@ -325,7 +326,7 @@ function handleDeleteNode(editor: YjsEditor, key: string) {
 
   const [node, path] = entry;
 
-  console.debug(`🗑️ Deleting block: ${key}`, {
+  Log.debug(`🗑️ Deleting block: ${key}`, {
     path,
     nodeType: (node as Element).type,
     childrenCount: (node as Element).children.length,
@@ -337,5 +338,5 @@ function handleDeleteNode(editor: YjsEditor, key: string) {
     node,
   });
 
-  console.debug(`✅ Block deleted successfully: ${key}`);
+  Log.debug(`✅ Block deleted successfully: ${key}`);
 }

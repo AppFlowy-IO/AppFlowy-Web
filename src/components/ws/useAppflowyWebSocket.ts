@@ -5,6 +5,7 @@ import useWebSocket from 'react-use-websocket';
 import { getTokenParsed } from '@/application/session/token';
 import { messages } from '@/proto/messages';
 import { getConfigValue } from '@/utils/runtime-config';
+import { Log } from '@/utils/log';
 
 const wsURL = getConfigValue('APPFLOWY_WS_BASE_URL', 'ws://localhost:8000/ws/v2');
 
@@ -116,23 +117,23 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     },
     // Reconnect configuration
     shouldReconnect: (closeEvent) => {
-      console.info('Connection closed, code:', closeEvent.code, 'reason:', closeEvent.reason);
+      Log.info('Connection closed, code:', closeEvent.code, 'reason:', closeEvent.reason);
 
       // Determine if reconnect is needed based on the close code
       if (closeEvent.code === CloseCode.NormalClose) {
         // Normal close, no reconnect
-        console.debug('✅ Normal close, no reconnect');
+        Log.debug('✅ Normal close, no reconnect');
         return false;
       }
 
       if (closeEvent.code === CloseCode.EndpointLeft) {
         // Endpoint left, reconnect
-        console.debug('✅ Endpoint left, reconnect');
+        Log.debug('✅ Endpoint left, reconnect');
         return true;
       }
 
       if (closeEvent.code >= CloseCode.ProtocolError && closeEvent.code <= CloseCode.TLSHandshakeFailed) {
-        console.debug('✅ Protocol error, reconnect');
+        Log.debug('✅ Protocol error, reconnect');
         // Protocol error, reconnect
         return true;
       }
@@ -150,7 +151,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       if (attemptNumber === 0) {
         const firstDelay = 5000 + Math.random() * FIRST_ATTEMPT_MAX_DELAY;
 
-        console.info(`Reconnect attempt ${attemptNumber}, first attempt delay ${Math.round(firstDelay)}ms`);
+        Log.info(`Reconnect attempt ${attemptNumber}, first attempt delay ${Math.round(firstDelay)}ms`);
 
         return firstDelay;
       }
@@ -163,13 +164,13 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       const jitter = cappedDelay * JITTER_FACTOR * (Math.random() * 2 - 1);
       const finalDelay = Math.max(0, cappedDelay + jitter);
 
-      console.info(`Reconnect attempt ${attemptNumber}, delay ${Math.round(finalDelay)}ms (base: ${cappedDelay}ms)`);
+      Log.info(`Reconnect attempt ${attemptNumber}, delay ${Math.round(finalDelay)}ms (base: ${cappedDelay}ms)`);
       return finalDelay;
     },
 
     // Connection event callback
     onOpen: () => {
-      console.info('✅ WebSocket connection opened');
+      Log.info('✅ WebSocket connection opened');
       setReconnectAttempt(0);
       const websocket = getWebSocket() as WebSocket | null;
 
@@ -179,21 +180,21 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     },
 
     onClose: (event) => {
-      console.info('❌ WebSocket connection closed', event);
+      Log.info('❌ WebSocket connection closed', event);
     },
 
     onError: (event) => {
-      console.error('❌ WebSocket error', { event, deviceId: options.deviceId });
+      Log.error('❌ WebSocket error', { event, deviceId: options.deviceId });
     },
 
     onReconnectStop: (numAttempts) => {
-      console.info('❌ Reconnect stopped, attempt number:', numAttempts);
+      Log.info('❌ Reconnect stopped, attempt number:', numAttempts);
     },
   });
 
   const sendProtobufMessage = useCallback(
     (message: messages.IMessage, keep = true): void => {
-      console.debug('sending sync message:', message);
+      Log.debug('sending sync message:', message);
 
       const protobufMessage = messages.Message.encode(message).finish();
 
@@ -203,7 +204,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   );
 
   const manualReconnect = useCallback(() => {
-    console.debug('Manual reconnect triggered');
+    Log.debug('Manual reconnect triggered');
     window.location.reload();
   }, []);
   const lastProtobufMessage = useMemo(

@@ -50,6 +50,7 @@ import {
   YjsEditorKey,
 } from '@/application/types';
 import { EditorInlineAttributes } from '@/slate-editor';
+import { Log } from '@/utils/log';
 import { renderDate } from '@/utils/time';
 
 export const CustomEditor = {
@@ -114,7 +115,7 @@ export const CustomEditor = {
     const entry = findSlateEntryByBlockId(editor, blockId);
 
     if (!entry) {
-      console.error('Block not found');
+      Log.error('Block not found');
       return;
     }
 
@@ -149,7 +150,7 @@ export const CustomEditor = {
   },
 
   deleteBlockBackward(editor: YjsEditor, at?: BaseRange) {
-    console.trace('deleteBlockBackward', editor.selection, at);
+    Log.trace('deleteBlockBackward', editor.selection, at);
 
     const sharedRoot = getSharedRoot(editor);
     const newAt = getSelectionOrThrow(editor, at);
@@ -162,7 +163,7 @@ export const CustomEditor = {
       const blockEntry = getBlockEntry(editor, point);
 
       if (!blockEntry) {
-        console.warn('Block not found', point);
+        Log.warn('Block not found', point);
         return;
       }
 
@@ -208,7 +209,7 @@ export const CustomEditor = {
       const blockEntry = getBlockEntry(editor, point);
 
       if (!blockEntry) {
-        console.warn('Block not found', point);
+        Log.warn('Block not found', point);
         return;
       }
 
@@ -327,7 +328,7 @@ export const CustomEditor = {
       const endResult = blockResults.find((r) => r.isEnd);
 
       if (!startResult?.newId || !endResult?.newId) {
-        console.warn('Failed to get new block IDs after tab operation');
+        Log.warn('Failed to get new block IDs after tab operation');
         return;
       }
 
@@ -335,7 +336,7 @@ export const CustomEditor = {
       const newEndBlockEntry = findSlateEntryByBlockId(editor, endResult.newId);
 
       if (!newStartBlockEntry || !newEndBlockEntry) {
-        console.warn('Failed to find new block entries after tab operation');
+        Log.warn('Failed to find new block entries after tab operation');
         // Try to restore selection using original selection
         const fallbackSelection = findNearestValidSelection(editor, originalSelection);
 
@@ -380,23 +381,23 @@ export const CustomEditor = {
         };
       }
     } catch (error) {
-      console.warn('Error constructing new selection paths:', error);
+      Log.warn('Error constructing new selection paths:', error);
       newSelection = null;
     }
 
     // Try to apply the new selection, with multiple fallback strategies
     if (newSelection && isValidSelection(editor, newSelection)) {
-      console.debug('✅ Using calculated selection:', newSelection);
+      Log.debug('✅ Using calculated selection:', newSelection);
       Transforms.select(editor, newSelection);
     } else {
-      console.warn('⚠️ Calculated selection invalid, trying fallback strategies');
+      Log.warn('⚠️ Calculated selection invalid, trying fallback strategies');
 
       // Strategy 1: Try to find nearest valid selection from our calculated selection
       if (newSelection) {
         const nearestFromCalculated = findNearestValidSelection(editor, newSelection);
 
         if (nearestFromCalculated) {
-          console.debug('✅ Using nearest from calculated:', nearestFromCalculated);
+          Log.debug('✅ Using nearest from calculated:', nearestFromCalculated);
           Transforms.select(editor, nearestFromCalculated);
           return;
         }
@@ -406,7 +407,7 @@ export const CustomEditor = {
       const nearestFromOriginal = findNearestValidSelection(editor, originalSelection);
 
       if (nearestFromOriginal) {
-        console.debug('✅ Using nearest from original:', nearestFromOriginal);
+        Log.debug('✅ Using nearest from original:', nearestFromOriginal);
         Transforms.select(editor, nearestFromOriginal);
         return;
       }
@@ -417,12 +418,12 @@ export const CustomEditor = {
           const startOfBlock = Editor.start(editor, newStartBlockPath);
 
           if (isValidSelection(editor, { anchor: startOfBlock, focus: startOfBlock })) {
-            console.debug('✅ Using start of block:', startOfBlock);
+            Log.debug('✅ Using start of block:', startOfBlock);
             Transforms.select(editor, startOfBlock);
             return;
           }
         } catch (error) {
-          console.warn('Failed to select start of block:', error);
+          Log.warn('Failed to select start of block:', error);
         }
       }
 
@@ -430,10 +431,10 @@ export const CustomEditor = {
       const documentSelection = findNearestValidSelection(editor, null);
 
       if (documentSelection) {
-        console.debug('✅ Using document fallback:', documentSelection);
+        Log.debug('✅ Using document fallback:', documentSelection);
         Transforms.select(editor, documentSelection);
       } else {
-        console.warn('❌ Could not establish any valid selection after tab operation');
+        Log.warn('❌ Could not establish any valid selection after tab operation');
       }
     }
   },
@@ -455,7 +456,7 @@ export const CustomEditor = {
       const blockEntry = getBlockEntry(editor, point);
 
       if (!blockEntry) {
-        console.warn('Block not found', point);
+        Log.warn('Block not found', point);
         return;
       }
 
@@ -615,7 +616,7 @@ export const CustomEditor = {
           return Boolean((attributes as Record<string, boolean | string>)[key]);
         });
       } catch (error) {
-        console.warn('Error checking mark in expanded selection:', error);
+        Log.warn('Error checking mark in expanded selection:', error);
         return false;
       }
     }
@@ -625,7 +626,7 @@ export const CustomEditor = {
 
       return marks ? !!marks[key] : false;
     } catch (error) {
-      console.warn('Error checking mark at collapsed selection:', error);
+      Log.warn('Error checking mark at collapsed selection:', error);
       return false;
     }
   },
@@ -650,7 +651,7 @@ export const CustomEditor = {
           return attributes as EditorInlineAttributes;
         });
       } catch (error) {
-        console.warn('Error getting all marks:', error);
+        Log.warn('Error getting all marks:', error);
         return [];
       }
     }
@@ -660,7 +661,7 @@ export const CustomEditor = {
 
       return [marks];
     } catch (error) {
-      console.warn('Error getting marks at collapsed selection:', error);
+      Log.warn('Error getting marks at collapsed selection:', error);
       return [];
     }
   },
@@ -697,7 +698,7 @@ export const CustomEditor = {
     const parent = getBlock(blockId, sharedRoot);
 
     if (!parent) {
-      console.warn('Parent block not found');
+      Log.warn('Parent block not found');
       return;
     }
 
@@ -712,7 +713,7 @@ export const CustomEditor = {
     );
 
     if (!newBlockId) {
-      console.warn('Failed to add block');
+      Log.warn('Failed to add block');
       return;
     }
 
@@ -731,7 +732,7 @@ export const CustomEditor = {
         return newBlockId;
       }
     } catch (e) {
-      console.error(e);
+      Log.error(e);
     }
   },
 
@@ -778,7 +779,7 @@ export const CustomEditor = {
         return newBlockId;
       }
     } catch (e) {
-      console.error(e);
+      Log.error(e);
     }
   },
 
@@ -795,7 +796,7 @@ export const CustomEditor = {
     const parent = getParent(blockId, sharedRoot);
 
     if (!parent) {
-      console.warn('Parent block not found');
+      Log.warn('Parent block not found');
       return;
     }
 
@@ -872,7 +873,7 @@ export const CustomEditor = {
     const prevIndex = getBlockIndex(prevId || blockId, sharedRoot);
 
     if (!parent) {
-      console.warn('Parent block not found');
+      Log.warn('Parent block not found');
       return;
     }
 
@@ -885,7 +886,7 @@ export const CustomEditor = {
           newBlockId = deepCopyBlock(sharedRoot, block);
 
           if (!newBlockId) {
-            console.warn('Copied block not found');
+            Log.warn('Copied block not found');
             return;
           }
 

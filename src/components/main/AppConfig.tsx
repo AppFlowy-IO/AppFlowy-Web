@@ -16,6 +16,7 @@ import { AFConfigContext, defaultConfig } from '@/components/main/app.hooks';
 import { useUserTimezone } from '@/components/main/hooks/useUserTimezone';
 import { useAppLanguage } from '@/components/main/useAppLanguage';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { Log } from '@/utils/log';
 
 function AppConfig({ children }: { children: React.ReactNode }) {
   const [appConfig] = useState<AFServiceConfig>(defaultConfig);
@@ -41,7 +42,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
       try {
         await db.users.put(user, user.uuid);
       } catch (e) {
-        console.error(e);
+        Log.error(e);
       }
     },
     [service, userId]
@@ -68,7 +69,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
       try {
         await service.getCurrentUser();
       } catch (e) {
-        console.error(e);
+        Log.error(e);
       }
     })();
   }, [isAuthenticated, service]);
@@ -98,7 +99,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const hasToken = isTokenValid();
 
-    console.debug('[AppConfig] sync check', {
+    Log.debug('[AppConfig] sync check', {
       hasToken,
       isAuthenticated,
       willSync: hasToken && !isAuthenticated,
@@ -106,12 +107,12 @@ function AppConfig({ children }: { children: React.ReactNode }) {
 
     // If token exists but state says not authenticated, sync the state
     if (hasToken && !isAuthenticated) {
-      console.debug('[AppConfig] syncing authentication state - token exists but state is false');
+      Log.debug('[AppConfig] syncing authentication state - token exists but state is false');
       setIsAuthenticated(true);
     }
     // If no token but state says authenticated, invalidate the session
     else if (!hasToken && isAuthenticated) {
-      console.debug('[AppConfig] token removed but state still authenticated - invalidating');
+      Log.debug('[AppConfig] token removed but state still authenticated - invalidating');
       setIsAuthenticated(false);
     }
   }, [isAuthenticated]);
@@ -121,13 +122,13 @@ function AppConfig({ children }: { children: React.ReactNode }) {
     const timeoutId = setTimeout(() => {
       const hasToken = isTokenValid();
 
-      console.debug('[AppConfig] mount sync check', {
+      Log.debug('[AppConfig] mount sync check', {
         hasToken,
         isAuthenticated,
       });
 
       if (hasToken && !isAuthenticated) {
-        console.debug('[AppConfig] mount sync - forcing authentication state to true');
+        Log.debug('[AppConfig] mount sync - forcing authentication state to true');
         setIsAuthenticated(true);
       }
     }, 100); // Small delay to allow all initialization to complete
@@ -169,14 +170,14 @@ function AppConfig({ children }: { children: React.ReactNode }) {
           };
 
           await service.updateUserProfile(metadata);
-          console.debug('Initial timezone set in user profile:', timezoneData);
+          Log.debug('Initial timezone set in user profile:', timezoneData);
         } else {
-          console.debug('User timezone already set, skipping update:', existingTimezone);
+          Log.debug('User timezone already set, skipping update:', existingTimezone);
         }
 
         setHasCheckedTimezone(true);
       } catch (e) {
-        console.error('Failed to check/update timezone:', e);
+        Log.error('Failed to check/update timezone:', e);
         // Still mark as checked to avoid repeated attempts
         setHasCheckedTimezone(true);
       }
