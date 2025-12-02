@@ -47,7 +47,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     recentViews,
     trashList,
     workspaceDatabases,
-    requestAccessOpened,
+    requestAccessError,
     loadOutline,
     loadFavoriteViews,
     loadRecentViews,
@@ -295,7 +295,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   return (
     <BusinessInternalContext.Provider value={businessContextValue}>
       <AppContextConsumer
-        requestAccessOpened={requestAccessOpened}
+        requestAccessError={requestAccessError}
         openModalViewId={openModalViewId}
         setOpenModalViewId={setOpenModalViewId}
         awarenessMap={awarenessMap}

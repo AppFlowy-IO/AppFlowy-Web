@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { ReactComponent as NoAccessLogo } from '@/assets/icons/no_access.svg';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -15,9 +16,10 @@ const REPEAT_REQUEST_CODE = 1043;
 interface RequestAccessContentProps {
   viewId?: string;
   workspaceId?: string;
+  error?: RequestAccessError;
 }
 
-export function RequestAccessContent({ viewId: propViewId, workspaceId: propWorkspaceId }: RequestAccessContentProps) {
+export function RequestAccessContent({ viewId: propViewId, workspaceId: propWorkspaceId, error: _error }: RequestAccessContentProps) {
   const { t } = useTranslation();
   const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();

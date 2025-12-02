@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS } from '@/application/constants';
+import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
 import { findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import { createDeduplicatedNoArgsRequest } from '@/utils/deduplicateRequest';
@@ -11,7 +12,13 @@ import { createDeduplicatedNoArgsRequest } from '@/utils/deduplicateRequest';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
 
-const USER_NO_ACCESS_CODE = [1024, 1012];
+const USER_NO_ACCESS_CODE = 1012;
+const USER_UNAUTHORIZED_CODE = 1024;
+
+export interface RequestAccessError {
+  code: number;
+  message: string;
+}
 
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
@@ -25,7 +32,7 @@ export function useWorkspaceData() {
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
-  const [requestAccessOpened, setRequestAccessOpened] = useState(false);
+  const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
 
@@ -110,8 +117,17 @@ export function useWorkspaceData() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         console.error('App outline not found');
-        if (USER_NO_ACCESS_CODE.includes(e.code)) {
-          setRequestAccessOpened(true);
+        if (e.code === USER_UNAUTHORIZED_CODE) {
+          invalidToken();
+          navigate('/login');
+          return;
+        }
+
+        if (e.code === USER_NO_ACCESS_CODE) {
+          setRequestAccessError({
+            code: e.code,
+            message: e.message,
+          });
           return;
         }
       }
@@ -320,7 +336,7 @@ export function useWorkspaceData() {
     recentViews,
     trashList,
     workspaceDatabases,
-    requestAccessOpened,
+    requestAccessError,
     loadOutline,
     loadFavoriteViews,
     loadRecentViews,
