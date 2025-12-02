@@ -2,6 +2,7 @@ import { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'reac
 import { Element, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
+import { Log } from '@/utils/log';
 import { DatabaseContextState } from '@/application/database-yjs';
 import { YjsEditorKey, YSharedRoot } from '@/application/types';
 import { DatabaseNode, EditorElementProps } from '@/components/editor/editor.type';
@@ -134,7 +135,7 @@ export const DatabaseBlock = memo(
 
         if (addedViewIds.length === 0 && removedViewIds.length === 0) return;
 
-        console.debug('[DatabaseBlock] View IDs changed', {
+        Log.debug('[DatabaseBlock] View IDs changed', {
           addedViewIds,
           removedViewIds,
           existingViewIds,

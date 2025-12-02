@@ -3,6 +3,7 @@ import { Editor, Element, Operation, Path, Text } from 'slate';
 import * as Y from 'yjs';
 
 import { YjsEditor } from '@/application/slate-yjs';
+import { Log } from '@/utils/log';
 
 interface Delta {
   retain?: number;
@@ -30,7 +31,7 @@ function applyTextYEvent(editor: YjsEditor, textId: string, event: Y.YTextEvent)
   const [targetElement, textPath] = entry as [Element, number[]];
   const delta = event.delta as Delta[];
 
-  console.debug('📝 Applying YText event', {
+  Log.debug('📝 Applying YText event', {
     textId,
     delta,
     targetPath: textPath,
@@ -39,10 +40,10 @@ function applyTextYEvent(editor: YjsEditor, textId: string, event: Y.YTextEvent)
   Editor.withoutNormalizing(editor, () => {
     const operations = applyDelta(targetElement, textPath, delta);
 
-    console.debug(`🔄 Generated ${operations.length} operations from delta:`, operations);
+    Log.debug(`🔄 Generated ${operations.length} operations from delta:`, operations);
 
     operations.forEach((op, index) => {
-      console.debug(`Applying operation ${index + 1}/${operations.length}:`, op);
+      Log.debug(`Applying operation ${index + 1}/${operations.length}:`, op);
       editor.apply(op);
     });
   });
@@ -121,7 +122,7 @@ function handleAttributeChange(
 ): Operation[] {
   const ops: Operation[] = [];
 
-  console.debug(`🎨 Applying attributes from offset ${startOffset} to ${endOffset}:`, attributes);
+  Log.debug(`🎨 Applying attributes from offset ${startOffset} to ${endOffset}:`, attributes);
 
   // Convert Y offsets to Slate path/text offsets
   const [startPathOffset, startTextOffset] = yOffsetToSlateOffsets(node, startOffset);
@@ -210,7 +211,7 @@ function handleAttributeChange(
 function handleDelete(node: Element, slatePath: Path, startOffset: number, endOffset: number): Operation[] {
   const ops: Operation[] = [];
 
-  console.debug(`➖ Deleting from offset ${startOffset} to ${endOffset}`);
+  Log.debug(`➖ Deleting from offset ${startOffset} to ${endOffset}`);
 
   const [startPathOffset, startTextOffset] = yOffsetToSlateOffsets(node, startOffset);
   const [endPathOffset, endTextOffset] = yOffsetToSlateOffsets(node, endOffset, { assoc: -1 });
@@ -282,7 +283,7 @@ function handleInsert(
 ): Operation[] {
   const ops: Operation[] = [];
 
-  console.debug(`➕ Inserting at offset ${offset}:`, insert, attributes);
+  Log.debug(`➕ Inserting at offset ${offset}:`, insert, attributes);
 
   const [pathOffset, textOffset] = yOffsetToSlateOffsets(node, offset, { insert: true });
 

@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
+import { Log } from '@/utils/log';
 import { invalidToken, isTokenValid } from '@/application/session/token';
 import { UserWorkspaceInfo } from '@/application/types';
 import { AFConfigContext, useService } from '@/components/main/app.hooks';
@@ -108,7 +109,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       // First check - token and auth state
       const hasToken = isTokenValid();
 
-      console.debug('[AppAuthLayer] auth check (initial)', {
+      Log.debug('[AppAuthLayer] auth check (initial)', {
         path: location.pathname,
         isAuthenticated,
         hasToken,
@@ -118,13 +119,13 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       // If token exists, trust it and wait for state to sync
       // This prevents logout during OAuth callback → /app navigation
       if (hasToken) {
-        console.debug('[AppAuthLayer] token exists, skipping logout check (waiting for state sync)');
+        Log.debug('[AppAuthLayer] token exists, skipping logout check (waiting for state sync)');
         return;
       }
 
       // If no token but we're not sure context is ready, don't logout yet
       if (!context) {
-        console.debug('[AppAuthLayer] context not ready, skipping logout check');
+        Log.debug('[AppAuthLayer] context not ready, skipping logout check');
         return;
       }
 
@@ -134,7 +135,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
         const hasTokenSecondCheck = isTokenValid();
         const isAuthenticatedSecondCheck = context?.isAuthenticated;
 
-        console.debug('[AppAuthLayer] auth check (second)', {
+        Log.debug('[AppAuthLayer] auth check (second)', {
           path: location.pathname,
           isAuthenticated: isAuthenticatedSecondCheck,
           hasToken: hasTokenSecondCheck,
@@ -154,7 +155,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
           });
           logout();
         } else if (hasTokenSecondCheck && !isAuthenticatedSecondCheck) {
-          console.debug('[AppAuthLayer] token exists but state not synced - will sync via AppConfig effect');
+          Log.debug('[AppAuthLayer] token exists but state not synced - will sync via AppConfig effect');
         }
       }, 100); // Additional 100ms delay for second check
     }, 50); // Initial delay to allow context to initialize

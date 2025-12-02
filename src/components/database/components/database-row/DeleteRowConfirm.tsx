@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 
+import { Log } from '@/utils/log';
 import { useDatabaseViewLayout } from '@/application/database-yjs';
 import { useBulkDeleteRowDispatch } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
@@ -50,7 +51,7 @@ export function DeleteRowConfirm({
         }}
         onKeyDown={(e) => {
           e.stopPropagation();
-          console.debug(e.key);
+          Log.debug(e.key);
           if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
             handleDelete();
           }

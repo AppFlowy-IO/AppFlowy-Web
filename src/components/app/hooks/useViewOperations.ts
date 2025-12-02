@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Awareness } from 'y-protocols/awareness';
 
+import { Log } from '@/utils/log';
 import { openCollabDB } from '@/application/db';
 import { AccessLevel, DatabaseId, Types, View, ViewId, ViewLayout, YDoc, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
@@ -56,12 +57,12 @@ export function useViewOperations() {
           const mergedMappings = { ...existingMappings, ...dbMappings };
 
           localStorage.setItem(storageKey, JSON.stringify(mergedMappings));
-          console.debug('[useViewOperations] stored db_mappings to localStorage', mergedMappings);
+          Log.debug('[useViewOperations] stored db_mappings to localStorage', mergedMappings);
 
           // Find the database ID that contains this view
           for (const [databaseId, viewIds] of Object.entries(dbMappings)) {
             if (viewIds.includes(id)) {
-              console.debug('[useViewOperations] found databaseId from URL params', { viewId: id, databaseId });
+              Log.debug('[useViewOperations] found databaseId from URL params', { viewId: id, databaseId });
               return databaseId;
             }
           }
@@ -80,7 +81,7 @@ export function useViewOperations() {
 
           for (const [databaseId, viewIds] of Object.entries(dbMappings)) {
             if (viewIds.includes(id)) {
-              console.debug('[useViewOperations] found databaseId from localStorage', { viewId: id, databaseId });
+              Log.debug('[useViewOperations] found databaseId from localStorage', { viewId: id, databaseId });
               return databaseId;
             }
           }
@@ -103,7 +104,7 @@ export function useViewOperations() {
           )?.database_id;
 
           if (databaseId) {
-            console.debug('[useViewOperations] mapped view to database', { viewId: id, databaseId });
+            Log.debug('[useViewOperations] mapped view to database', { viewId: id, databaseId });
             resolve(databaseId);
             return;
           }
@@ -240,7 +241,7 @@ export function useViewOperations() {
           }
         }
 
-        console.debug('[useViewOperations] loadView resolved layout', { viewId: id, layout: view?.layout, collabType });
+        Log.debug('[useViewOperations] loadView resolved layout', { viewId: id, layout: view?.layout, collabType });
 
         if (collabType === Types.Document) {
           let awareness: Awareness | undefined;

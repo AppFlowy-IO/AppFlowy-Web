@@ -1,6 +1,7 @@
 import { debounce } from 'lodash-es';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
+import { Log } from '@/utils/log';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   AppendBreadcrumb,
@@ -161,7 +162,7 @@ function Database(props: Database2Props) {
     const rowOrdersData = rowOrders?.toJSON() || [];
     const ids = rowOrdersData.map(({ id }: { id: string }) => id);
 
-    console.debug('[Database] row orders updated', {
+    Log.debug('[Database] row orders updated', {
       activeViewId,
       databasePageId,
       ids,

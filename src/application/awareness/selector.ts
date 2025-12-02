@@ -4,6 +4,7 @@ import { useSlate } from 'slate-react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { useService } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 import { AwarenessMetadata, AwarenessState, AwarenessUser, Cursor } from './types';
 import { convertAwarenessSelection } from './utils';
@@ -92,7 +93,7 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
             timestamp: state.timestamp,
           });
         } else {
-          console.debug(`🎯 No selection found for client ${clientId}`);
+          Log.debug(`🎯 No selection found for client ${clientId}`);
         }
       });
 
@@ -120,7 +121,7 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
       };
     });
 
-    console.debug('🎯 Final cursors array:', result);
+    Log.debug('🎯 Final cursors array:', result);
     return result;
   }, [cursors, editor]);
 

@@ -6,6 +6,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
+import { Log } from '@/utils/log';
 import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types } from '@/application/types';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
@@ -61,7 +62,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       const updateTimestamp = message.update?.messageId?.timestamp;
       const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
 
-      console.debug('Received collab message:', message.collabType, publishedAt, message);
+      Log.debug('Received collab message:', message.collabType, publishedAt, message);
 
       setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
     }
@@ -81,7 +82,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       const updateTimestamp = message.update?.messageId?.timestamp;
       const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
 
-      console.debug('Received broadcasted collab message:', message.collabType, publishedAt, message);
+      Log.debug('Received broadcasted collab message:', message.collabType, publishedAt, message);
 
       setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
     }
@@ -126,7 +127,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     const notification = lastMessage?.notification;
 
     if (notification && eventEmitter) {
-      console.debug('Received workspace notification:', notification);
+      Log.debug('Received workspace notification:', notification);
 
       // Emit specific notification events for each notification type
       // These events are consumed by AppProvider to update local state/database
@@ -177,7 +178,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     const notification = lastBroadcastMessage?.notification;
 
     if (notification && eventEmitter) {
-      console.debug('Received broadcasted workspace notification:', notification);
+      Log.debug('Received broadcasted workspace notification:', notification);
 
       // Process notifications identically to WebSocket notifications to ensure
       // consistent behavior across all tabs. Same event emissions = same UI updates.
@@ -224,7 +225,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
         return existingContext;
       }
 
-      console.debug(`Registering sync context for objectId ${context.doc.guid} with collabType ${context.collabType}`);
+      Log.debug(`Registering sync context for objectId ${context.doc.guid} with collabType ${context.collabType}`);
       context.emit = (message) => {
         sendMessage(message);
         postMessage(message);

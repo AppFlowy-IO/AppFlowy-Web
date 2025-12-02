@@ -1,5 +1,7 @@
 import { useCallback } from 'react';
 
+import { Log } from '@/utils/log';
+
 const RETRY_CONFIG = {
   maxAttempts: 5,
   getRetryDelay: (attempt: number) => {
@@ -35,7 +37,7 @@ export const useRetryFunction = <T extends any[], R>(
           if (attempt < RETRY_CONFIG.maxAttempts) {
             const delay = RETRY_CONFIG.getRetryDelay(attempt);
 
-            console.debug(`[useRetryFunction] Retry attempt ${attempt} after ${delay}ms`, error);
+            Log.debug(`[useRetryFunction] Retry attempt ${attempt} after ${delay}ms`, error);
             attempt++;
             await new Promise(resolve => setTimeout(resolve, delay));
 

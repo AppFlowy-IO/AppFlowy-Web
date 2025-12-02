@@ -2,6 +2,8 @@ import { debounce } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Log } from '@/utils/log';
+
 /**
  * Title Update Flow & Echo Prevention Mechanism:
  * 
@@ -112,7 +114,7 @@ function TitleEditable({
     for (const [value, timestamp] of sentValuesRef.current.entries()) {
       if (now - timestamp > maxAge) {
         sentValuesRef.current.delete(value);
-        console.debug('🧹 Cleaned old sent value:', value);
+        Log.debug('🧹 Cleaned old sent value:', value);
       }
     }
   }, []);
@@ -127,7 +129,7 @@ function TitleEditable({
 
   // Update functions - send changes to server and cache for echo detection
   const sendUpdate = useCallback((value: string, isImmediate = false) => {
-    console.debug(isImmediate ? '⚡ Immediate update:' : '⏰ Debounced update:', value);
+    Log.debug(isImmediate ? '⚡ Immediate update:' : '⏰ Debounced update:', value);
     
     const now = Date.now();
 
@@ -148,7 +150,7 @@ function TitleEditable({
 
   // Handle remote updates with echo prevention
   useEffect(() => {
-    console.debug('🌐 Remote name changed:', {
+    Log.debug('🌐 Remote name changed:', {
       name,
       isFocused,
       isCurrentlyTyping: isTyping(),
@@ -158,18 +160,18 @@ function TitleEditable({
 
     // Step 1: Ignore if user is actively interacting
     if (isTyping() || isRecentlyUpdated()) {
-      console.debug('✋ User activity detected, ignoring remote update');
+      Log.debug('✋ User activity detected, ignoring remote update');
       return;
     }
 
     // Step 2: Detect and ignore echo updates (values we recently sent)
     if (isPotentialEcho(name)) {
-      console.debug('🔄 Echo detected, ignoring remote update');
+      Log.debug('🔄 Echo detected, ignoring remote update');
       return;
     }
 
     // Step 3: Handle genuine remote updates
-    console.debug('✨ Genuine remote update detected');
+    Log.debug('✨ Genuine remote update detected');
     
     // Clean old cache entries (keep recent ones to prevent immediate re-acceptance)
     const now = Date.now();
@@ -185,7 +187,7 @@ function TitleEditable({
       const currentContent = contentRef.current.textContent || '';
 
       if (currentContent !== name) {
-        console.debug('✅ Applying remote update to UI');
+        Log.debug('✅ Applying remote update to UI');
         contentRef.current.textContent = name;
 
         // Preserve cursor position for focused input
@@ -235,7 +237,7 @@ function TitleEditable({
 
   // Event handlers with useCallback optimization
   const handleFocus = useCallback(() => {
-    console.debug('🎯 Input focused');
+    Log.debug('🎯 Input focused');
     
     if (blurTimerRef.current) {
       clearTimeout(blurTimerRef.current);
@@ -247,14 +249,14 @@ function TitleEditable({
   }, [onFocus]);
 
   const handleBlur = useCallback(() => {
-    console.debug('👋 Input blurred');
+    Log.debug('👋 Input blurred');
     const currentText = contentRef.current?.textContent || '';
     
     sendUpdateImmediately(currentText);
     setIsFocused(false);
     
     blurTimerRef.current = setTimeout(() => {
-      console.debug('🧹 Cleaning input state after blur');
+      Log.debug('🧹 Cleaning input state after blur');
       lastInputTimeRef.current = 0;
       if (inputTimerRef.current) {
         clearTimeout(inputTimerRef.current);
@@ -282,7 +284,7 @@ function TitleEditable({
     }
     
     inputTimerRef.current = setTimeout(() => {
-      console.debug('⏸️ User stopped typing');
+      Log.debug('⏸️ User stopped typing');
     }, 500);
   }, [debouncedUpdate]);
 

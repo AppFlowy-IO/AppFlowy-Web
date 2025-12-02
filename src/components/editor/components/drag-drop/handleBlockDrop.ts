@@ -1,5 +1,6 @@
 import { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 
+import { Log } from '@/utils/log';
 import { YjsEditor } from '@/application/slate-yjs';
 import {
   executeOperations,
@@ -63,7 +64,7 @@ export function handleBlockDrop({
     // Determine new index based on edge
     const newIndex = edge === 'top' ? targetIndex : targetIndex + 1;
 
-    console.debug('Moving block:', {
+    Log.debug('Moving block:', {
       sourceBlockId,
       targetBlockId,
       edge,

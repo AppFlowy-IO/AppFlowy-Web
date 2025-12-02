@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
+import { Log } from '@/utils/log';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
@@ -370,7 +371,7 @@ export function SlashPanel({
         view,
       }));
 
-      console.debug('[SlashPanel] loadDatabasesForPicker:', {
+      Log.debug('[SlashPanel] loadDatabasesForPicker:', {
         totalViews: flatViews.length,
         databaseViews: databaseViews.length,
         databaseViewNames: databaseViews.map(v => v.name),
@@ -461,7 +462,7 @@ export function SlashPanel({
 
         const viewMeta = await loadViewMeta(databaseViewId);
 
-        console.debug('[SlashPanel] viewMeta for database:', {
+        Log.debug('[SlashPanel] viewMeta for database:', {
           viewId: databaseViewId,
           viewName: baseName,
           database_relations: viewMeta?.database_relations,
@@ -483,14 +484,14 @@ export function SlashPanel({
 
         // If not found, try refreshing database relations (for newly created databases)
         if (!relationEntry && loadDatabaseRelations) {
-          console.debug('[SlashPanel] database_id not found in cache, refreshing relations...', {
+          Log.debug('[SlashPanel] database_id not found in cache, refreshing relations...', {
             viewId: databaseViewId,
           });
 
           // Refresh and get fresh relations directly (don't rely on React state update)
           const freshRelations = await loadDatabaseRelations();
 
-          console.debug('[SlashPanel] Fresh relations after refresh:', {
+          Log.debug('[SlashPanel] Fresh relations after refresh:', {
             viewId: databaseViewId,
             freshRelations,
           });
@@ -515,7 +516,7 @@ export function SlashPanel({
 
         const databaseId = relationEntry[0];
 
-        console.debug('[SlashPanel] Found database_id:', {
+        Log.debug('[SlashPanel] Found database_id:', {
           viewId: databaseViewId,
           databaseId,
         });
@@ -548,7 +549,7 @@ export function SlashPanel({
           embedded: true,
         });
 
-        console.debug('[SlashPanel] {} created linked database', {
+        Log.debug('[SlashPanel] {} created linked database', {
           documentId,
           databaseViewId,
           newViewId: response.view_id,
@@ -788,7 +789,7 @@ export function SlashPanel({
               name: t('document.slashMenu.name.grid'),
             });
 
-            console.debug('[SlashPanel] {} created grid', {
+            Log.debug('[SlashPanel] {} created grid', {
               documentId,
               databaseViewId: response.view_id,
             });
@@ -857,7 +858,7 @@ export function SlashPanel({
               name: t('document.slashMenu.name.kanban'),
             });
 
-            console.debug('[SlashPanel] {} created kanban', {
+            Log.debug('[SlashPanel] {} created kanban', {
               documentId,
               databaseViewId: response.view_id,
             });
@@ -926,7 +927,7 @@ export function SlashPanel({
               name: t('document.slashMenu.name.calendar'),
             });
 
-            console.debug('[SlashPanel] {} created calendar', {
+            Log.debug('[SlashPanel] {} created calendar', {
               documentId,
               databaseViewId: response.view_id,
             });

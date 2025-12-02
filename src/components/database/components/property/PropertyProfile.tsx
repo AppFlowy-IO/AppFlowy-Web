@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 
+import { Log } from '@/utils/log';
 import { useFieldSelector } from '@/application/database-yjs';
 import { useUpdatePropertyIconDispatch, useUpdatePropertyNameDispatch } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
@@ -49,7 +50,7 @@ function PropertyProfile({
           updateIcon('');
         }}
         onSelectIcon={(icon) => {
-          console.debug(icon);
+          Log.debug(icon);
           updateIcon(icon.value);
         }}
       >

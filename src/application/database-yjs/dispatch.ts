@@ -5,6 +5,7 @@ import { useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
+import { Log } from '@/utils/log';
 import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   useCreateRow,
@@ -2002,7 +2003,7 @@ function updateDateCell(
   }
 
   if (payload.includeTime !== undefined) {
-    console.debug('includeTime', payload.includeTime);
+    Log.debug('includeTime', payload.includeTime);
     cell.set(YjsDatabaseKey.include_time, payload.includeTime);
   }
 
@@ -3737,7 +3738,7 @@ export function useUpdateFileMediaTypeOption(fieldId: string) {
               );
               typeOptionMap.set(String(FieldType.FileMedia), newTypeOption);
             } else {
-              console.debug('Updating file media type option', typeOption.toJSON());
+              Log.debug('Updating file media type option', typeOption.toJSON());
               typeOption.set(
                 YjsDatabaseKey.content,
                 JSON.stringify({

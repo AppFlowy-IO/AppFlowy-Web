@@ -1,5 +1,7 @@
 import { Editor, Element as SlateElement, Operation, Point, Range, Text } from 'slate';
 
+import { Log } from '@/utils/log';
+
 /**
  * Transform selection/cursor position through Slate operations
  * @param editor - Slate editor instance
@@ -97,14 +99,14 @@ export function isValidSelection(editor: Editor, selection: Range): boolean {
  */
 export function findNearestValidSelection(editor: Editor, originalSelection: Range | null): Range | null {
   try {
-    console.debug('🎯 Finding nearest valid selection for:', originalSelection);
+    Log.debug('🎯 Finding nearest valid selection for:', originalSelection);
 
     // Strategy 1: Try to fix the original selection if it exists
     if (originalSelection) {
       const fixedSelection = tryFixSelection(editor, originalSelection);
 
       if (fixedSelection) {
-        console.debug('✅ Fixed original selection:', fixedSelection);
+        Log.debug('✅ Fixed original selection:', fixedSelection);
         return fixedSelection;
       }
     }
@@ -114,7 +116,7 @@ export function findNearestValidSelection(editor: Editor, originalSelection: Ran
       const nearestSelection = findNearestTextNode(editor, originalSelection.anchor.path);
 
       if (nearestSelection) {
-        console.debug('✅ Found nearest text node selection:', nearestSelection);
+        Log.debug('✅ Found nearest text node selection:', nearestSelection);
         return nearestSelection;
       }
     }
@@ -123,7 +125,7 @@ export function findNearestValidSelection(editor: Editor, originalSelection: Ran
     const startSelection = findDocumentStart(editor);
 
     if (startSelection) {
-      console.debug('✅ Using document start selection:', startSelection);
+      Log.debug('✅ Using document start selection:', startSelection);
       return startSelection;
     }
 
@@ -131,7 +133,7 @@ export function findNearestValidSelection(editor: Editor, originalSelection: Ran
     const endSelection = findDocumentEnd(editor);
 
     if (endSelection) {
-      console.debug('✅ Using document end selection:', endSelection);
+      Log.debug('✅ Using document end selection:', endSelection);
       return endSelection;
     }
 

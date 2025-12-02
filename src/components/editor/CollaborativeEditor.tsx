@@ -5,6 +5,7 @@ import { Slate, withReact } from 'slate-react';
 import * as Y from 'yjs';
 
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
+import { Log } from '@/utils/log';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { CollabOrigin } from '@/application/types';
 import EditorEditable from '@/components/editor/Editable';
@@ -105,7 +106,7 @@ function CollaborativeEditor({
     }
 
     return () => {
-      console.debug('disconnect');
+      Log.debug('disconnect');
       editor.disconnect();
       // Clean up test references
       if (import.meta.env.DEV || import.meta.env.MODE === 'test') {

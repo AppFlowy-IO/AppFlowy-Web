@@ -2,6 +2,7 @@ import { nanoid } from 'nanoid';
 import Delta, { Op } from 'quill-delta';
 import * as Y from 'yjs';
 
+import { Log } from '@/utils/log';
 import {
   CONTAINER_BLOCK_TYPES,
   isEmbedBlockTypes,
@@ -510,7 +511,7 @@ export function dataStringTOJson(data: string): object {
 }
 
 export function moveNode(sharedRoot: YSharedRoot, sourceBlock: YBlock, targetParent: YBlock, targetIndex: number) {
-  console.debug(
+  Log.debug(
     'moveNode:',
     sourceBlock.get(YjsEditorKey.block_id),
     'to',

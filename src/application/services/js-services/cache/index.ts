@@ -1,6 +1,7 @@
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { closeCollabDB, db, openCollabDB } from '@/application/db';
 import { Fetcher, StrategyType } from '@/application/services/js-services/cache/types';
+import { Log } from '@/utils/log';
 import {
   DatabaseId,
   PublishViewMetaData,
@@ -390,7 +391,7 @@ export async function deleteViewMeta(name: string) {
 }
 
 export async function deleteView(name: string) {
-  console.debug('deleteView', name);
+  Log.debug('deleteView', name);
   await deleteViewMeta(name);
   await closeCollabDB(name);
 

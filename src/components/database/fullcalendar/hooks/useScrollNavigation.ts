@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 
+import { Log } from '@/utils/log';
 import { getScrollParent } from '@/components/global-comment/utils';
 
 import { CalendarViewType } from '../types';
@@ -83,10 +84,10 @@ export function useScrollNavigation(currentView: CalendarViewType, calendarApi: 
     lastNavigationTime.current = now;
 
     if (direction === 'down') {
-      console.debug('📅 Scroll Navigation: Moving to next month');
+      Log.debug('📅 Scroll Navigation: Moving to next month');
       calendarApi?.next();
     } else {
-      console.debug('📅 Scroll Navigation: Moving to previous month');
+      Log.debug('📅 Scroll Navigation: Moving to previous month');
       calendarApi?.prev();
     }
 

@@ -100,7 +100,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   options.token = options.token || getTokenParsed()?.access_token;
   options.clientId = options.clientId || random.uint32();
   options.deviceId = options.deviceId || random.uuidv4();
-  console.debug('🔗 Start WebSocket connection', {
+  Log.debug('🔗 Start WebSocket connection', {
     url: options.url,
     workspaceId: options.workspaceId,
     deviceId: options.deviceId,

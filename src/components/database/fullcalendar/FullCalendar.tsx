@@ -1,6 +1,7 @@
 import dayjs from 'dayjs';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
+import { Log } from '@/utils/log';
 import { CalendarEvent, useDatabaseContext } from '@/application/database-yjs';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
 import { getPlatform } from '@/utils/platform';
@@ -48,12 +49,12 @@ function Calendar() {
 
   // Drag handlers
   const handleDragStart = useCallback((rowId: string) => {
-    console.debug('🎯 Drag started for rowId:', rowId);
+    Log.debug('🎯 Drag started for rowId:', rowId);
     setDraggingRowId(rowId);
   }, []);
 
   const handleDragEnd = useCallback(() => {
-    console.debug('🎯 Drag ended');
+    Log.debug('🎯 Drag ended');
     setDraggingRowId(null);
   }, []);
 

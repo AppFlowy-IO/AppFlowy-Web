@@ -3,6 +3,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 import { Types } from '@/application/types';
+import { Log } from '@/utils/log';
 import { collab, messages } from '@/proto/messages';
 
 /**
@@ -61,7 +62,7 @@ const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): 
 
 const handleAwarenessUpdate = (ctx: SyncContext, message: collab.IAwarenessUpdate): void => {
   if (!ctx.awareness) {
-    console.debug(`No awareness instance found in SyncContext for objectId ${ctx.doc.guid}`);
+    Log.debug(`No awareness instance found in SyncContext for objectId ${ctx.doc.guid}`);
   } else {
     awarenessProtocol.applyAwarenessUpdate(ctx.awareness, message.payload!, 'remote');
   }
@@ -81,12 +82,12 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
       throw new Error(`Unknown update flags: ${message.flags} at ${message.messageId?.timestamp}`);
   }
 
-  console.debug(`applied update to doc ${doc.guid}`);
+  Log.debug(`applied update to doc ${doc.guid}`);
   ctx.lastMessageId = message.messageId || ctx.lastMessageId;
 
   // check if there are any missing update data
   if (doc.store.pendingStructs || doc.store.pendingDs) {
-    console.debug(`Doc ${doc.guid} has missing dependencies. Sending sync request...`);
+    Log.debug(`Doc ${doc.guid} has missing dependencies. Sending sync request...`);
     emit({
       collabMessage: {
         objectId: doc.guid,
@@ -117,7 +118,7 @@ export const initSync = (ctx: SyncContext) => {
     throw new Error('SyncContext must have a Y.Doc instance.');
   }
 
-  console.debug(`Initializing sync for objectId ${doc.guid} with collabType ${collabType}`);
+  Log.debug(`Initializing sync for objectId ${doc.guid} with collabType ${collabType}`);
 
   let onAwarenessChange;
   const updates: Uint8Array[] = [];

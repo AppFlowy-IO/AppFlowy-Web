@@ -5,6 +5,7 @@ import { Editor } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
 import { getUserIconUrl } from '@/application/user-metadata';
+import { Log } from '@/utils/log';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
 
 import { AwarenessMetadata, AwarenessState } from './types';
@@ -49,7 +50,7 @@ export function useDispatchUserAwareness(awareness?: Awareness) {
       awareness.setLocalState(awarenessState);
 
       // Log successful user awareness dispatch
-      console.debug('📡 User awareness dispatched:', awarenessState);
+      Log.debug('📡 User awareness dispatched:', awarenessState);
     },
     [awareness]
   );
@@ -100,7 +101,7 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
       awareness.setLocalState(awarenessState);
 
       // Log successful cursor awareness sync
-      console.debug('🎯 Cursor awareness synced:', awarenessState);
+      Log.debug('🎯 Cursor awareness synced:', awarenessState);
     } catch (error) {
       // Log conversion errors for debugging
       console.warn('⚠️ Cursor awareness sync failed:', error);
@@ -149,7 +150,7 @@ export function useDispatchClearAwareness(awareness?: Awareness) {
     });
 
     // Log awareness clear
-    console.debug('🚫 Awareness cleared for current user');
+    Log.debug('🚫 Awareness cleared for current user');
   }, [awareness, service, currentUser]);
 
   const clearCursor = useCallback((workspaceAvatar?: string | null) => {
@@ -171,7 +172,7 @@ export function useDispatchClearAwareness(awareness?: Awareness) {
       }),
     });
 
-    console.debug('🚫 Cursor awareness cleared for current user');
+    Log.debug('🚫 Cursor awareness cleared for current user');
   }, [awareness, service, currentUser]);
 
   return { clearAwareness, clearCursor };

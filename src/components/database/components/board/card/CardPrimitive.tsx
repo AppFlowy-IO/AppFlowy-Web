@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useMemo, useState } from 'react';
 
+import { Log } from '@/utils/log';
 import {
   FieldVisibility,
   RowMeta,
@@ -109,7 +110,7 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
           if (editing) return;
           const target = e.target as HTMLElement;
 
-          console.debug('custom-icon', target);
+          Log.debug('custom-icon', target);
           if (target.closest('.custom-icon')) {
             e.stopPropagation();
             return;

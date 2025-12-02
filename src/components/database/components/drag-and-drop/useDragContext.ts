@@ -6,6 +6,7 @@ import { Edge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitb
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { Log } from '@/utils/log';
 import type { CleanupFn } from '@atlaskit/pragmatic-drag-and-drop/types';
 
 export interface ReorderPayload {
@@ -47,7 +48,7 @@ export function getRegistry() {
   }
 
   function getElement(id: string): HTMLElement | null {
-    console.debug(`getElement: ${id}`);
+    Log.debug(`getElement: ${id}`);
 
     return registry.get(id) ?? null;
   }

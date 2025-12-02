@@ -27,21 +27,21 @@ interface YBlockChange {
  * @param events - Array of Yjs events to process
  */
 export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
-  console.debug('=== Translating Yjs events to Slate operations ===', {
+  Log.debug('=== Translating Yjs events to Slate operations ===', {
     eventCount: events.length,
     eventTypes: events.map((e) => e.path.join('.')),
     timestamp: new Date().toISOString(),
   });
 
   events.forEach((event, index) => {
-    console.debug(`Processing event ${index + 1}/${events.length}:`, {
+    Log.debug(`Processing event ${index + 1}/${events.length}:`, {
       path: event.path,
       type: event.constructor.name,
     });
 
     // Handle block-level changes (document.blocks)
     if (isEqual(event.path, ['document', 'blocks'])) {
-      console.debug('→ Applying block map changes');
+      Log.debug('→ Applying block map changes');
       applyBlocksYEvent(editor, event as BlockMapEvent);
     }
 
@@ -49,7 +49,7 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
     if (isEqual(event.path, ['document', 'blocks', event.path[2]])) {
       const blockId = event.path[2] as string;
 
-      console.debug(`→ Applying block update for blockId: ${blockId}`);
+      Log.debug(`→ Applying block update for blockId: ${blockId}`);
       applyUpdateBlockYEvent(editor, blockId, event as YMapEvent<unknown>);
     }
 
@@ -57,12 +57,12 @@ export function translateYEvents(editor: YjsEditor, events: Array<YEvent>) {
     if (isEqual(event.path, ['document', 'meta', 'text_map', event.path[3]])) {
       const textId = event.path[3] as string;
 
-      console.debug(`→ Applying text content changes for textId: ${textId}`);
+      Log.debug(`→ Applying text content changes for textId: ${textId}`);
       applyTextYEvent(editor, textId, event as YTextEvent);
     }
   });
 
-  console.debug('=== Yjs events translation completed ===');
+  Log.debug('=== Yjs events translation completed ===');
 }
 
 /**
@@ -91,7 +91,7 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
   const [node, path] = entry;
   const oldData = node.data as Record<string, unknown>;
 
-  console.debug(`✅ Updating block data for blockId: ${blockId}`, {
+  Log.debug(`✅ Updating block data for blockId: ${blockId}`, {
     path,
     oldDataKeys: Object.keys(oldData),
     newDataKeys: Object.keys(newData),
@@ -121,7 +121,7 @@ function applyBlocksYEvent(editor: YjsEditor, event: BlockMapEvent) {
   const { changes, keysChanged } = event;
   const { keys } = changes;
 
-  console.debug('🔄 Processing block map changes:', {
+  Log.debug('🔄 Processing block map changes:', {
     keysChangedCount: keysChanged?.size ?? 0,
     keysChanged: Array.from(keysChanged ?? []),
     changes: Array.from(keys.entries()).map(([key, value]) => ({

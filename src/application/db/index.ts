@@ -3,6 +3,7 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
 
 import { databasePrefix } from '@/application/constants';
+import { Log } from '@/utils/log';
 import { rowSchema, rowTable } from '@/application/db/tables/rows';
 import { userSchema, UserTable } from '@/application/db/tables/users';
 import { viewMetasSchema, ViewMetasTable } from '@/application/db/tables/view_metas';
@@ -106,7 +107,7 @@ export async function clearData() {
         const deleteRequest = indexedDB.deleteDatabase(dbName);
 
         deleteRequest.onsuccess = () => {
-          console.debug(`Database ${dbName} deleted successfully`);
+          Log.debug(`Database ${dbName} deleted successfully`);
           resolve(true);
         };
 

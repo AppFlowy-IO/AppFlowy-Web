@@ -8,6 +8,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import './FullCalendar.styles.scss';
 
+import { Log } from '@/utils/log';
 import { useDatabaseContext } from '@/application/database-yjs';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { AddButton } from '@/components/database/fullcalendar/AddButton';
@@ -148,12 +149,12 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
 
   // Function to mark event as new (for duplicate functionality)
   const markEventAsNew = useCallback((rowId: string) => {
-    console.debug('[CalendarContent] Marking event as new:', rowId);
+    Log.debug('[CalendarContent] Marking event as new:', rowId);
     setNewEventRowIds((prev) => new Set(prev).add(rowId));
   }, []);
 
   const markEventAsUpdate = useCallback((rowId: string) => {
-    console.debug('[CalendarContent] Marking event as updated:', rowId);
+    Log.debug('[CalendarContent] Marking event as updated:', rowId);
     setUpdateEventRowIds((prev) => new Set(prev).add(rowId));
   }, []);
 
@@ -228,7 +229,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
   // Handle external event creation (FullCalendar eventReceive callback)
   const handleEventReceive = useCallback(
     (receiveInfo: EventReceiveArg) => {
-      console.debug('📅 FullCalendar eventReceive:', receiveInfo);
+      Log.debug('📅 FullCalendar eventReceive:', receiveInfo);
 
       try {
         const event = receiveInfo.event;
@@ -277,7 +278,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
         // Reset drag state after successful drop
         onDragEnd?.();
 
-        console.debug('📅 NoDateRow successfully converted to calendar event');
+        Log.debug('📅 NoDateRow successfully converted to calendar event');
       } catch (error) {
         console.error('❌ Failed to handle external event receive:', error);
         receiveInfo.revert();

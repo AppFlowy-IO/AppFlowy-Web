@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 
+import { Log } from '@/utils/log';
 import { useCalendarLayoutSetting } from '@/application/database-yjs';
 
 import { CalendarViewType } from '../types';
@@ -166,7 +167,7 @@ export function useCurrentTimeIndicator(calendarApi: CalendarApi | null, current
       const arrowRect = arrowElement.getBoundingClientRect();
 
       // Debug: Log positions to console
-      console.debug('Position Debug:', {
+      Log.debug('Position Debug:', {
         nowIndicatorLine: { top: lineRect.top, height: lineRect.height },
         arrow: { top: arrowRect.top, height: arrowRect.height },
         container: { top: containerRect.top }

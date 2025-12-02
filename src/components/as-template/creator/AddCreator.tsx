@@ -2,6 +2,7 @@ import MenuItem from '@mui/material/MenuItem';
 import React, { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Log } from '@/utils/log';
 import { TemplateCreatorFormValues } from '@/application/template.type';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { NormalModal } from '@/components/_shared/modal';
@@ -30,7 +31,7 @@ function AddCreator({ searchText, onCreated }: { searchText: string; onCreated: 
 
   const onSubmit = useCallback(
     async (data: TemplateCreatorFormValues) => {
-      console.debug('data', data);
+      Log.debug('data', data);
       try {
         await service?.createTemplateCreator(data);
         onCreated();

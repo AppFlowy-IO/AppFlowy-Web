@@ -4,6 +4,7 @@ import dayjs from 'dayjs';
 import { useCallback } from 'react';
 
 
+import { Log } from '@/utils/log';
 import { useCalendarLayoutSetting, useCreateCalendarEvent, useUpdateStartEndTimeCell } from '@/application/database-yjs';
 import { correctAllDayEndForStorage, dateToUnixTimestamp } from '@/utils/time';
 
@@ -23,7 +24,7 @@ export function useCalendarEvents() {
   // Create a function that can update any event's time directly
   const updateEventTime = useCallback(
     (rowId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
-      console.debug('📅 Updating event time:', { rowId, fieldId, startTimestamp, endTimestamp });
+      Log.debug('📅 Updating event time:', { rowId, fieldId, startTimestamp, endTimestamp });
 
       updateCell(rowId, fieldId, startTimestamp, endTimestamp, isAllDay);
     },
@@ -33,7 +34,7 @@ export function useCalendarEvents() {
   // Handle event drop (move event to different time)
   const handleEventDrop = useCallback(
     (dropInfo: EventDropArg) => {
-      console.debug('📅 Event dropped:', dropInfo.event);
+      Log.debug('📅 Event dropped:', dropInfo.event);
 
       try {
         // Parse event ID to get rowId
@@ -62,7 +63,7 @@ export function useCalendarEvents() {
         // Update the event time
         updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
 
-        console.debug('📅 Event time updated successfully');
+        Log.debug('📅 Event time updated successfully');
       } catch (error) {
         console.error('❌ Failed to update event time:', error);
         dropInfo.revert();
@@ -74,7 +75,7 @@ export function useCalendarEvents() {
   // Handle event resize (change event duration)
   const handleEventResize = useCallback(
     (resizeInfo: EventResizeDoneArg) => {
-      console.debug('📅 Event resized:', resizeInfo.event);
+      Log.debug('📅 Event resized:', resizeInfo.event);
 
       try {
         // Parse event ID to get rowId
@@ -96,7 +97,7 @@ export function useCalendarEvents() {
         // Update the event time
         updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
 
-        console.debug('📅 Event duration updated successfully');
+        Log.debug('📅 Event duration updated successfully');
       } catch (error) {
         console.error('❌ Failed to update event duration:', error);
         resizeInfo.revert();
@@ -108,7 +109,7 @@ export function useCalendarEvents() {
   // Handle date selection (create new event)
   const handleSelect = useCallback(
     async (selectInfo: DateSelectArg): Promise<string | null> => {
-      console.debug('📅 Date range selected:', selectInfo);
+      Log.debug('📅 Date range selected:', selectInfo);
 
 
       try {
@@ -132,13 +133,13 @@ export function useCalendarEvents() {
             endDate.setHours(startDate.getHours() + 1); // Add 1 hour
             
             endTimestamp = dateToUnixTimestamp(endDate);
-            console.debug('📅 Week view: Adjusted to 1-hour event for short selection', { 
+            Log.debug('📅 Week view: Adjusted to 1-hour event for short selection', { 
               originalDuration: `${selectionDuration / 1000 / 60} minutes`,
               original: selectInfo.end, 
               adjusted: endDate 
             });
           } else {
-            console.debug('📅 Week view: Keeping original selection duration', {
+            Log.debug('📅 Week view: Keeping original selection duration', {
               duration: `${selectionDuration / 1000 / 60} minutes`
             });
           }
@@ -148,7 +149,7 @@ export function useCalendarEvents() {
         // Create new calendar event
         const rowId = await createCalendarEvent({ startTimestamp, endTimestamp, includeTime: !selectInfo.allDay });
 
-        console.debug('📅 New event created successfully with rowId:', rowId);
+        Log.debug('📅 New event created successfully with rowId:', rowId);
 
         // Clear the selection
         selectInfo.view.calendar.unselect();
@@ -167,7 +168,7 @@ export function useCalendarEvents() {
   // Handle add button click for specific date
   const handleAdd = useCallback(
     async (date: Date): Promise<string | null> => {
-      console.debug('📅 Add button clicked for date:', date);
+      Log.debug('📅 Add button clicked for date:', date);
 
       try {
         // Create event for the selected date at current time or start of day
@@ -176,7 +177,7 @@ export function useCalendarEvents() {
         // Create new calendar event for the specific date
         const rowId = await createCalendarEvent({ startTimestamp });
 
-        console.debug('📅 New event created successfully with rowId:', rowId);
+        Log.debug('📅 New event created successfully with rowId:', rowId);
         return rowId;
       } catch (error) {
         console.error('❌ Failed to create new event:', error);

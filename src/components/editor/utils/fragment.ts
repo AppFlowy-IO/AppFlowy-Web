@@ -2,6 +2,7 @@ import { filter } from 'lodash-es';
 import { Op } from 'quill-delta';
 import { Element as SlateElement, Node as SlateNode, Text as SlateText } from 'slate';
 
+import { Log } from '@/utils/log';
 import { TEXT_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
 import {
@@ -159,7 +160,7 @@ function deserializeNode(node: Node, parentBlock: YBlock, sharedRoot: YSharedRoo
     const textContent = node.textContent || '';
 
     if (textContent.trim()) {
-      console.debug('===textContent', node, textContent);
+      Log.debug('===textContent', node, textContent);
       const { ops } = textContentToDelta(textContent || '');
 
       if (TEXT_BLOCK_TYPES.includes(currentBlock.get(YjsEditorKey.block_type))) {

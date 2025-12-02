@@ -3,6 +3,7 @@ import { uniqBy } from 'lodash-es';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Log } from '@/utils/log';
 import { FieldType, useFieldsSelector, useNavigateToRow, usePrimaryFieldId } from '@/application/database-yjs';
 import { Cell } from '@/application/database-yjs/cell.type';
 import { useReadOnly } from '@/application/database-yjs/context';
@@ -49,24 +50,24 @@ function EventPopoverContent({
 
   // Handle delete action
   const handleDelete = useCallback(() => {
-    console.debug('[EventPopoverContent] Delete button clicked for row:', rowId);
+    Log.debug('[EventPopoverContent] Delete button clicked for row:', rowId);
     setShowDeleteConfirm(true);
   }, [rowId]);
 
   // Handle delete confirmation
   const handleDeleteConfirm = useCallback(() => {
-    console.debug('[EventPopoverContent] Delete confirmed for row:', rowId);
+    Log.debug('[EventPopoverContent] Delete confirmed for row:', rowId);
     // Close the current popover after deletion
     onCloseEvent();
   }, [onCloseEvent, rowId]);
 
   // Handle duplicate action
   const handleDuplicate = useCallback(async () => {
-    console.debug('[EventPopoverContent] Duplicate button clicked for row:', rowId);
+    Log.debug('[EventPopoverContent] Duplicate button clicked for row:', rowId);
     try {
       const newRowId = await duplicateRowDispatch(rowId);
 
-      console.debug('[EventPopoverContent] Row duplicated successfully. New row ID:', newRowId);
+      Log.debug('[EventPopoverContent] Row duplicated successfully. New row ID:', newRowId);
 
       // Mark the new event as new to trigger auto-open popover
       markEventAsNew(newRowId);
@@ -74,7 +75,7 @@ function EventPopoverContent({
       // Close current popover
       setOpenEventRowId(null);
 
-      console.debug('[EventPopoverContent] New row marked as new and will auto-open popover');
+      Log.debug('[EventPopoverContent] New row marked as new and will auto-open popover');
     } catch (error) {
       console.error('[EventPopoverContent] Failed to duplicate row:', error);
     }

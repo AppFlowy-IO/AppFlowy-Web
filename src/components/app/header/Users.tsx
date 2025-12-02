@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Log } from '@/utils/log';
 import { useUsersSelector } from '@/application/awareness/selector';
 import { useAppAwareness } from '@/components/app/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -20,7 +21,7 @@ export function Users({ viewId }: { viewId?: string }) {
   const users = useUsersSelector(awareness);
 
   useEffect(() => {
-    console.debug('[Header.Users] users updated', users);
+    Log.debug('[Header.Users] users updated', users);
   }, [users]);
 
   const [isPopoverOpen, setIsPopoverOpen] = useState(false);

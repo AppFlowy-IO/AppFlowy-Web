@@ -1,6 +1,7 @@
 import { Draggable } from '@fullcalendar/interaction';
 import { useEffect, useRef } from 'react';
 
+import { Log } from '@/utils/log';
 import { useCellSelector, useDatabaseContext } from '@/application/database-yjs';
 import { useReadOnly } from '@/application/database-yjs/context';
 import { ReactComponent as DragIcon } from '@/assets/icons/drag.svg';
@@ -32,7 +33,7 @@ export function NoDateRow({ rowId, primaryFieldId, isWeekView, onDragStart, isDr
 
     if (!element || readOnly) return;
 
-    console.debug('🎯 Creating optimized Draggable for rowId:', rowId);
+    Log.debug('🎯 Creating optimized Draggable for rowId:', rowId);
 
     // Create individual Draggable for this row with performance optimizations
     const draggable = new Draggable(element, {
@@ -45,10 +46,10 @@ export function NoDateRow({ rowId, primaryFieldId, isWeekView, onDragStart, isDr
       },
     });
 
-    console.debug('✅ Optimized Draggable created for rowId:', rowId);
+    Log.debug('✅ Optimized Draggable created for rowId:', rowId);
 
     return () => {
-      console.debug('🎯 Destroying optimized Draggable for rowId:', rowId);
+      Log.debug('🎯 Destroying optimized Draggable for rowId:', rowId);
       draggable.destroy();
     };
   }, [rowId, cell?.data, isWeekView, readOnly]);
@@ -62,7 +63,7 @@ export function NoDateRow({ rowId, primaryFieldId, isWeekView, onDragStart, isDr
         'fc-event fc-nodate-event cursor-grab' // Required for FullCalendar dragging
       )}
       onMouseDown={() => {
-        console.debug('🎯 Mouse down on rowId:', rowId);
+        Log.debug('🎯 Mouse down on rowId:', rowId);
         onDragStart?.(rowId);
       }}
       style={{

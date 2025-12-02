@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 
+import { Log } from '@/utils/log';
 import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
 
 import { CalendarViewType } from '../types';
@@ -49,7 +50,7 @@ export function useCalendarHandlers() {
 
   // Handle more link clicks (when there are too many events in a day)
   const handleMoreLinkClick = useCallback((moreLinkInfo: MoreLinkArg) => {
-    console.debug('📅 More link clicked:', moreLinkInfo);
+    Log.debug('📅 More link clicked:', moreLinkInfo);
     setMorelinkInfo(moreLinkInfo);
 
     return 'null'; // Prevent FullCalendar's native popover

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { messages } from '@/proto/messages';
+import { Log } from '@/utils/log';
 
 export type BroadcastChannelType = {
   lastBroadcastMessage: messages.Message | null;
@@ -54,7 +55,7 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
     (msg: messages.IMessage) => {
       if (isChannelClosed) {
         // Fail silently instead of showing warning - this is normal during cleanup
-        console.debug('BroadcastChannel closed, skipping message send');
+        Log.debug('BroadcastChannel closed, skipping message send');
         return;
       }
 
@@ -63,7 +64,7 @@ export const useBroadcastChannel = (channelName: string): BroadcastChannelType =
       } catch (error) {
         if (error instanceof Error && error.name === 'InvalidStateError') {
           setIsChannelClosed(true);
-          console.debug('BroadcastChannel closed during send operation');
+          Log.debug('BroadcastChannel closed during send operation');
         } else {
           console.error('Failed to send message to BroadcastChannel:', error);
         }

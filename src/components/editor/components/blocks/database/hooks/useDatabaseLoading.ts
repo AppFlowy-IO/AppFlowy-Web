@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
+import { Log } from '@/utils/log';
 import { View, YDoc } from '@/application/types';
 
 import { createLoadingStrategy, isEmbeddedDatabase, DatabaseLoadingConfig } from './loadingStrategies';
@@ -55,7 +56,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
   const handleError = useCallback(() => {
     // Use strategy to determine if notFound should be set
     if (!strategy.shouldSetNotFoundOnMetaError()) {
-      console.debug('[useDatabaseLoading] Ignoring meta load error (strategy)');
+      Log.debug('[useDatabaseLoading] Ignoring meta load error (strategy)');
       return;
     }
 
@@ -80,7 +81,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
     async (id: string, callback?: (meta: View | null) => void) => {
       // Use strategy to determine if we should skip loading
       if (strategy.shouldSkipMetaLoad(id)) {
-        console.debug('[useDatabaseLoading] Skipping meta load (strategy)', { id, viewId });
+        Log.debug('[useDatabaseLoading] Skipping meta load (strategy)', { id, viewId });
         return null;
       }
 
@@ -96,7 +97,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
         } catch (error) {
           // For embedded databases, return null instead of rejecting
           if (isEmbedded) {
-            console.debug('[useDatabaseLoading] Meta load failed for embedded base view, continuing', {
+            Log.debug('[useDatabaseLoading] Meta load failed for embedded base view, continuing', {
               viewId,
               error,
             });
@@ -154,7 +155,7 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
       try {
         const view = await retryLoadView(viewId);
 
-        console.debug('[DatabaseBlock] loaded view doc', { viewId });
+        Log.debug('[DatabaseBlock] loaded view doc', { viewId });
 
         setDoc(view);
         setNotFound(false);
@@ -188,17 +189,17 @@ export const useDatabaseLoading = ({ viewId, allowedViewIds, loadView, loadViewM
         if (!initialSelectionDoneRef.current) {
           if (!viewIdsRef.current.includes(viewId) && viewIdsRef.current.length > 0) {
             setSelectedViewId(viewIdsRef.current[0]);
-            console.debug('[DatabaseBlock] selected first child view', { viewId, selected: viewIdsRef.current[0] });
+            Log.debug('[DatabaseBlock] selected first child view', { viewId, selected: viewIdsRef.current[0] });
           } else {
             setSelectedViewId(viewId);
-            console.debug('[DatabaseBlock] selected requested view', { viewId });
+            Log.debug('[DatabaseBlock] selected requested view', { viewId });
           }
 
           initialSelectionDoneRef.current = true;
         }
 
         if (meta) {
-          console.debug('[DatabaseBlock] loaded view meta', {
+          Log.debug('[DatabaseBlock] loaded view meta', {
             viewId,
             children: meta.children?.map((c) => c.view_id),
             name: meta.name,

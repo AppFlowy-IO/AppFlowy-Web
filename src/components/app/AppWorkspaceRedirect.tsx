@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import { Log } from '@/utils/log';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -18,7 +19,7 @@ export function AppWorkspaceRedirect() {
 
   useEffect(() => {
     if (!userWorkspaceInfo) {
-      console.debug('[AppWorkspaceRedirect] Waiting for workspace info to load...');
+      Log.debug('[AppWorkspaceRedirect] Waiting for workspace info to load...');
       return;
     }
 
@@ -31,7 +32,7 @@ export function AppWorkspaceRedirect() {
       return;
     }
 
-    console.debug('[AppWorkspaceRedirect] Redirecting to workspace', { workspaceId });
+    Log.debug('[AppWorkspaceRedirect] Redirecting to workspace', { workspaceId });
     navigate(`/app/${workspaceId}`, { replace: true });
   }, [userWorkspaceInfo, navigate]);
 

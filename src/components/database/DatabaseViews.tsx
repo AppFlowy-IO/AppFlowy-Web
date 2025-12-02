@@ -13,9 +13,11 @@ import { Progress } from '@/components/ui/progress';
 
 import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
 
-const logDebug = (...args: Parameters<typeof console.debug>) => {
+import { Log } from '@/utils/log';
+
+const logDebug = (...args: Parameters<typeof Log.debug>) => {
   if (import.meta.env.DEV) {
-    console.debug(...args);
+    Log.debug(...args);
   }
 };
 

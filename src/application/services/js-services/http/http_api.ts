@@ -4,6 +4,7 @@ import { omit } from 'lodash-es';
 import { nanoid } from 'nanoid';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
+import { Log } from '@/utils/log';
 import { ERROR_CODE } from '@/application/constants';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
 import { parseGoTrueErrorFromUrl } from '@/application/services/js-services/http/gotrue-error';
@@ -155,7 +156,7 @@ async function executeAPIRequest<TResponseData = unknown>(
 
     const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
 
-    console.debug('[executeAPIRequest]', { method, url: requestUrl });
+    Log.debug('[executeAPIRequest]', { method, url: requestUrl });
 
     if (!response.data) {
       console.error('[executeAPIRequest] No response data received', response);
@@ -238,7 +239,7 @@ export function initAPIService(config: AFCloudConfig) {
       const token = getTokenParsed();
 
       if (!token) {
-        console.debug('[initAPIService][request] no token found, sending request without auth header', {
+        Log.debug('[initAPIService][request] no token found, sending request without auth header', {
           url: config.url,
         });
         return config;
@@ -359,7 +360,7 @@ export async function signInWithUrl(url: string) {
   const hadOldToken = !!localStorage.getItem('token');
 
   if (hadOldToken) {
-    console.debug('[signInWithUrl] Clearing old token before processing OAuth callback to prevent race condition');
+    Log.debug('[signInWithUrl] Clearing old token before processing OAuth callback to prevent race condition');
     localStorage.removeItem('token');
   }
 
@@ -1400,7 +1401,7 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
     onUploadProgress: (progressEvent) => {
       const { progress = 0 } = progressEvent;
 
-      console.debug(`Upload progress: ${progress * 100}%`);
+      Log.debug(`Upload progress: ${progress * 100}%`);
       onProgress(progress);
     },
     headers: {
@@ -1425,7 +1426,7 @@ export async function createDatabaseView(
 ) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/database-view`;
 
-  console.debug('[createDatabaseView]', { url, workspaceId, viewId, payload });
+  Log.debug('[createDatabaseView]', { url, workspaceId, viewId, payload });
 
   return executeAPIRequest<CreateDatabaseViewResponse>(() =>
     axiosInstance?.post<APIResponse<CreateDatabaseViewResponse>>(url, {

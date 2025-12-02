@@ -1,6 +1,7 @@
 import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { Log } from '@/utils/log';
 import { TemplateCategory, TemplateCategoryFormValues } from '@/application/template.type';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
@@ -23,7 +24,7 @@ function EditCategory({
   const service = useService();
   const onSubmit = useCallback(
     async (data: TemplateCategoryFormValues) => {
-      console.debug('data', data);
+      Log.debug('data', data);
       try {
         await service?.updateTemplateCategory(category.id, data);
         onUpdated();
