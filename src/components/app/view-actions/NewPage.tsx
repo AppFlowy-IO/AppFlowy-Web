@@ -11,6 +11,7 @@ import CreateSpaceModal from '@/components/app/view-actions/CreateSpaceModal';
 import SpaceList from '@/components/publish/header/duplicate/SpaceList';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { Log } from '@/utils/log';
 
 function NewPage() {
   const { t } = useTranslation();
@@ -44,6 +45,7 @@ function NewPage() {
       if (!addPage || !openPageModal) return;
       setLoading(true);
       try {
+        Log.debug('[handleAddPage]', { parentId, layout: ViewLayout.Document });
         const response = await addPage(parentId, {
           layout: ViewLayout.Document,
         });

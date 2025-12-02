@@ -144,7 +144,7 @@ const DatabaseTreeItem: React.FC<{
           ) : (
             <div style={{ width: 16, height: 16 }} />
           )}
-          <PageIcon view={view} />
+          <PageIcon view={view} className={'flex h-5 w-5 min-w-5 items-center justify-center'} />
           <span className={'flex-1 truncate'}>{name}</span>
         </div>
         {isDatabase && (

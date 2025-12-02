@@ -156,7 +156,7 @@ async function executeAPIRequest<TResponseData = unknown>(
 
     const method = response.config?.method?.toUpperCase() || 'UNKNOWN';
 
-    Log.debug('[executeAPIRequest]', { method, url: requestUrl });
+    Log.debug('[executeAPIRequest]', { method, url: requestUrl, response_data: response.data?.data, response_code: response.data?.code, response_message: response.data?.message });
 
     if (!response.data) {
       console.error('[executeAPIRequest] No response data received', response);
@@ -1442,13 +1442,19 @@ export async function createDatabaseView(
 export async function addAppPage(workspaceId: string, parentViewId: string, { layout, name }: CreatePagePayload) {
   const url = `/api/workspace/${workspaceId}/page-view`;
 
-  return executeAPIRequest<CreatePageResponse>(() =>
+  Log.debug('[addAppPage] request', { url, workspaceId, parentViewId, layout, name });
+
+  const response = await executeAPIRequest<CreatePageResponse>(() =>
     axiosInstance?.post<APIResponse<CreatePageResponse>>(url, {
       parent_view_id: parentViewId,
       layout,
       name,
     })
   );
+
+  Log.debug('[addAppPage] response', { view_id: response.view_id, database_id: response.database_id });
+
+  return response;
 }
 
 export async function updatePage(workspaceId: string, viewId: string, data: UpdatePagePayload) {
