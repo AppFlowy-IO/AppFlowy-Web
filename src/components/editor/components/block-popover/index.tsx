@@ -8,6 +8,7 @@ import { calculateOptimalOrigins, Origins, Popover } from '@/components/_shared/
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import FileBlockPopoverContent from '@/components/editor/components/block-popover/FileBlockPopoverContent';
 import ImageBlockPopoverContent from '@/components/editor/components/block-popover/ImageBlockPopoverContent';
+import PDFBlockPopoverContent from '@/components/editor/components/block-popover/PDFBlockPopoverContent';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
 import MathEquationPopoverContent from './MathEquationPopoverContent';
@@ -50,6 +51,8 @@ function BlockPopover() {
     switch (type) {
       case BlockType.FileBlock:
         return <FileBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.PDFBlock:
+        return <PDFBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.ImageBlock:
         return <ImageBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.EquationBlock:

@@ -2,6 +2,7 @@ import { HTMLAttributes } from 'react';
 import { Element } from 'slate';
 
 import {
+  AIMeetingBlockData,
   BlockType,
   CalloutBlockData,
   CodeBlockData,
@@ -9,6 +10,7 @@ import {
   ImageBlockData,
   MathEquationBlockData,
   NumberedListBlockData,
+  PDFBlockData,
   TodoListBlockData,
   ToggleListBlockData,
   YjsEditorKey,
@@ -188,6 +190,16 @@ export interface ColumnNode extends BlockNode {
   type: BlockType.ColumnBlock;
   blockId: string;
   data: ColumnNodeData;
+}
+
+export interface AIMeetingNode extends BlockNode {
+  type: BlockType.AIMeetingBlock;
+  data: AIMeetingBlockData;
+}
+
+export interface PDFNode extends BlockNode {
+  type: BlockType.PDFBlock;
+  data: PDFBlockData;
 }
 
 export interface EditorElementProps<T = Element> extends HTMLAttributes<HTMLDivElement> {
