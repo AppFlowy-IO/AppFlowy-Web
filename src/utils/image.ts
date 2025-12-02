@@ -1,5 +1,6 @@
 import { getTokenParsed } from '@/application/session/token';
 import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
+import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
 const resolveImageUrl = (url: string): string => {
@@ -55,6 +56,32 @@ const validateImageLoad = (imageUrl: string): Promise<CheckImageResult> => {
   });
 };
 
+const validateImageBlob = async (blob: Blob, url?: string): Promise<Blob | null> => {
+  // Check if the response is actually JSON (e.g. error message with 200 status)
+  if (blob.type === 'application/json') {
+    try {
+      const text = await blob.text();
+
+      Log.error('Image fetch returned JSON instead of image:', text);
+    } catch (e) {
+      Log.error('Image fetch returned JSON blob');
+    }
+
+    return null;
+  }
+
+  // If the blob type is generic or missing, try to infer from URL
+  if ((!blob.type || blob.type === 'application/octet-stream') && url) {
+    const inferredType = getMimeTypeFromUrl(url);
+
+    if (inferredType) {
+      return blob.slice(0, blob.size, inferredType);
+    }
+  }
+
+  return blob;
+};
+
 export const checkImage = async (url: string): Promise<CheckImageResult> => {
   // If it's an AppFlowy file storage URL, try authenticated fetch first
   if (isAppFlowyFileStorageUrl(url)) {
@@ -71,7 +98,18 @@ export const checkImage = async (url: string): Promise<CheckImageResult> => {
 
         if (response.ok) {
           const blob = await response.blob();
-          const blobUrl = URL.createObjectURL(blob);
+          const validatedBlob = await validateImageBlob(blob, url);
+
+          if (!validatedBlob) {
+            return {
+              ok: false,
+              status: 406, // Not Acceptable
+              statusText: 'Not Acceptable',
+              error: 'Image fetch returned JSON instead of image',
+            };
+          }
+
+          const blobUrl = URL.createObjectURL(validatedBlob);
 
           return {
             ok: true,
@@ -97,11 +135,11 @@ export const checkImage = async (url: string): Promise<CheckImageResult> => {
 
 export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
   if (isAppFlowyFileStorageUrl(url)) {
-    console.debug("fetch appflowy image blob", url);
+    Log.debug("fetch appflowy image blob", url);
     const token = getTokenParsed();
 
     if (!token) {
-      console.error('No authentication token available for image fetch');
+      Log.error('No authentication token available for image fetch');
       return null;
     }
 
@@ -114,21 +152,10 @@ export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
         },
       });
 
-      console.debug("fetch image blob response", response);
-
       if (response.ok) {
         const blob = await response.blob();
 
-        // If the blob type is generic or missing, try to infer from URL
-        if ((!blob.type || blob.type === 'application/octet-stream') && url) {
-          const inferredType = getMimeTypeFromUrl(url);
-
-          if (inferredType) {
-            return blob.slice(0, blob.size, inferredType);
-          }
-        }
-
-        return blob;
+        return validateImageBlob(blob, url);
       }
     } catch (error) {
       return null;

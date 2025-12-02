@@ -85,7 +85,6 @@ export function withYjs<T extends Editor>(
   }
 ): T & YjsEditor {
   const {
-    id,
     uploadFile,
     localOrigin = CollabOrigin.Local,
     readSummary,
@@ -127,7 +126,6 @@ export function withYjs<T extends Editor>(
     }
 
     onContentChange?.(content.children);
-    console.debug('===initializeDocumentContent', e.children);
     Editor.normalize(e, { force: true });
   };
 
@@ -181,7 +179,6 @@ export function withYjs<T extends Editor>(
       throw new Error('Already connected');
     }
 
-    console.debug('===connect', id);
     initializeDocumentContent();
     e.sharedRoot.observeDeep(handleYEvents);
     connectSet.add(e);
