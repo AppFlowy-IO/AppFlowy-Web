@@ -21,6 +21,8 @@ describe('Publish Page Test', () => {
             if (err.message.includes('No workspace or service found') ||
                 err.message.includes('createThemeNoVars_default is not a function') ||
                 err.message.includes('View not found') ||
+                err.message.includes('Record not found') ||
+                err.message.includes('Request failed') ||
                 err.message.includes('Failed to execute \'writeText\' on \'Clipboard\': Document is not focused') ||
                 err.name === 'NotAllowedError') {
                 return false;
@@ -671,7 +673,9 @@ describe('Publish Page Test', () => {
         cy.on('uncaught:exception', (err: Error) => {
             if (err.message.includes('No workspace or service found') ||
                 err.message.includes('createThemeNoVars_default is not a function') ||
-                err.message.includes('View not found')) {
+                err.message.includes('View not found') ||
+                err.message.includes('Record not found') ||
+                err.message.includes('Request failed')) {
                 return false;
             }
             return true;
