@@ -100,9 +100,9 @@ export default defineConfig({
     }),
     isProd
       ? viteExternalsPlugin({
-          react: 'React',
-          'react-dom': 'ReactDOM',
-        })
+        react: 'React',
+        'react-dom': 'ReactDOM',
+      })
       : undefined,
     svgr({
       svgrOptions: {
@@ -143,22 +143,22 @@ export default defineConfig({
     // Enable istanbul for code coverage (active if isTest is true)
     isTest
       ? istanbul({
-          cypress: true,
-          requireEnv: false,
-          include: ['src/**/*'],
-          exclude: ['**/__tests__/**/*', 'cypress/**/*', 'node_modules/**/*'],
-        })
+        cypress: true,
+        requireEnv: false,
+        include: ['src/**/*'],
+        exclude: ['**/__tests__/**/*', 'cypress/**/*', 'node_modules/**/*'],
+      })
       : undefined,
     process.env.ANALYZE_MODE
       ? visualizer({
-          emitFile: true,
-        })
+        emitFile: true,
+      })
       : undefined,
     process.env.ANALYZE_MODE
       ? totalBundleSize({
-          fileNameRegex: /\.(js|css)$/,
-          calculateGzip: false,
-        })
+        fileNameRegex: /\.(js|css)$/,
+        calculateGzip: false,
+      })
       : undefined,
   ],
   // prevent vite from obscuring rust errors
@@ -180,7 +180,8 @@ export default defineConfig({
     sourcemap: true,
     minifyIdentifiers: false, // Disable identifier minification in development
     minifySyntax: false, // Disable syntax minification in development
-    drop: !isDev ? ['console', 'debugger'] : [],
+    drop: !isDev ? ['debugger'] : [],
+    pure: !isDev ? ['console.log', 'console.debug'] : [],
   },
   build: {
     target: `esnext`,
@@ -214,7 +215,7 @@ export default defineConfig({
             }
           },
         },
-        }
+      }
       : {},
   },
   resolve: {

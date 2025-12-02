@@ -15,7 +15,8 @@ import ActionButton from '@/components/editor/components/toolbar/selection-toolb
 import Align from '@/components/editor/components/toolbar/selection-toolbar/actions/Align';
 import { ImageBlockNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
-import { fetchImageBlob } from '@/utils/image';
+import { convertBlobToPng, fetchImageBlob } from '@/utils/image';
+import { Log } from '@/utils/log';
 
 function ImageToolbar({ node }: { node: ImageBlockNode }) {
   const editor = useSlateStatic() as YjsEditor;
@@ -28,10 +29,19 @@ function ImageToolbar({ node }: { node: ImageBlockNode }) {
   };
 
   const onCopyImage = async () => {
-    const blob = await fetchImageBlob(node.data.url || '');
+    let blob = await fetchImageBlob(node.data.url || '');
 
     if (blob) {
       try {
+        // Browser clipboard API often only supports PNG for images
+        if (blob.type !== 'image/png') {
+          try {
+            blob = await convertBlobToPng(blob);
+          } catch (conversionError) {
+            Log.warn('Failed to convert image to PNG, trying original format', conversionError);
+          }
+        }
+
         await navigator.clipboard.write([
           new ClipboardItem({
             [blob.type]: blob,
@@ -39,8 +49,12 @@ function ImageToolbar({ node }: { node: ImageBlockNode }) {
         ]);
         notify.success(t('document.plugins.image.copiedToPasteBoard'));
       } catch (error) {
-        notify.error('Failed to copy image');
+        Log.error("Failed to write to clipboard:", error);
+        notify.error('Failed to write image to clipboard');
       }
+    } else {
+      Log.error("Failed to fetch image blob for copying");
+      notify.error('Failed to download the image');
     }
   };
 
