@@ -24,7 +24,10 @@ export const AIMeetingBlock = memo(
           <div className="mx-0.5 mb-0.5 rounded-2xl bg-bg-body">
             <div className="flex flex-col items-center justify-center px-8 py-10">
               <p className="text-base text-text-secondary">
-                Please use the desktop or mobile application to view the meeting content.
+                This content isn't supported on the web version yet.
+              </p>
+              <p className="text-base text-text-secondary">
+                Please switch to the desktop or mobile app to view this content.
               </p>
             </div>
           </div>
