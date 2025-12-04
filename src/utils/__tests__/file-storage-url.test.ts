@@ -1,6 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, jest } from '@jest/globals';
+
+// Mock the runtime-config module BEFORE importing the module that uses it.
+// This prevents the "import.meta" syntax error because the actual file is never loaded.
+jest.mock('@/utils/runtime-config', () => ({
+    getConfigValue: jest.fn(),
+}));
+
+// Import the module under test
 import { isAppFlowyFileStorageUrl, resolveFileUrl } from '../file-storage-url';
-import * as runtimeConfig from '../runtime-config';
+// Import the mocked module to access the mock function
+import { getConfigValue } from '@/utils/runtime-config';
 
 describe('file-storage-url utils', () => {
     const mockBaseUrl = 'https://app.flowy.io';
@@ -8,16 +17,19 @@ describe('file-storage-url utils', () => {
     const mockViewId = 'view-456';
     const mockFileId = 'file-789';
 
+    // Cast the imported function to a Jest mock to access mock methods
+    const mockGetConfigValue = getConfigValue as jest.MockedFunction<typeof getConfigValue>;
+
     beforeEach(() => {
-        // Mock getConfigValue to return a predictable base URL
-        vi.spyOn(runtimeConfig, 'getConfigValue').mockImplementation((key) => {
+        // Default mock implementation
+        mockGetConfigValue.mockImplementation((key: string) => {
             if (key === 'APPFLOWY_BASE_URL') return mockBaseUrl;
             return '';
         });
     });
 
     afterEach(() => {
-        vi.restoreAllMocks();
+        jest.clearAllMocks();
     });
 
     describe('resolveFileUrl', () => {
@@ -67,27 +79,6 @@ describe('file-storage-url utils', () => {
             expect(isAppFlowyFileStorageUrl(url)).toBe(true);
         });
 
-        it('should return true even if the origin does not match, as long as the path structure is correct (per recent relaxation)', () => {
-            // We relaxed validation to ignore origin, but ensure path starts with /api/file_storage
-            // Wait, the implementation we just wrote:
-            // const isFirstParty = parsedUrl.origin === origin; 
-            // return isFirstParty && isFileStoragePath; <-- wait, did I revert it?
-
-            // Let's check the code again. The user accepted the change where I REMOVED isFirstParty check?
-            // Or did I mistakenly leave it in the "old_string" block?
-            // Let's write the test based on the INTENDED behavior (relaxed check).
-
-            const differentOriginUrl = 'http://other-server.com/api/file_storage/file-id';
-            // If the logic is purely path-based now:
-            // However, wait, the implementation I provided earlier:
-            // "return isFileStoragePath;" (relaxed)
-
-            // BUT, I should double check the implementation that was actually written.
-            // I will assume relaxed validation for now as that was the last instruction.
-
-            // Actually, let's strictly test the path prefix.
-        });
-
         it('should return false for URLs not matching the file storage path', () => {
             const url = `${mockBaseUrl}/api/other_endpoint`;
             expect(isAppFlowyFileStorageUrl(url)).toBe(false);
@@ -99,4 +90,3 @@ describe('file-storage-url utils', () => {
         });
     });
 });
-
