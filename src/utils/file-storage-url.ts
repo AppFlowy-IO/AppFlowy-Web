@@ -44,15 +44,14 @@ export function isFileURL(url: string): boolean {
     return true;
   }
 
-  const value = isURL(url);
-
-  Log.debug('[isFileURL] value', { url, value });
-
-  if (value) {
+  // validator/lib/isURL may fail for localhost if strict options are used,
+  // or simply return false for some valid internal URLs.
+  // We specifically allow localhost URLs.
+  if (url.startsWith('http://localhost') || url.startsWith('https://localhost')) {
     return true;
   }
 
-  return false;
+  return isURL(url);
 }
 
 /**
