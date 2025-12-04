@@ -1,4 +1,4 @@
-import { getFileUrl, isFileURL } from '@/utils/file-storage-url';
+import { resolveFileUrl } from '@/utils/file-storage-url';
 
 /**
  * Constructs the appropriate URL for file/image blocks
@@ -23,20 +23,5 @@ export function constructFileUrl(
     return '';
   }
 
-  // Case 1: Already a full URL (http/https)
-  // This is the format returned by uploadFile() function
-  if (isFileURL(dataUrl)) {
-    return dataUrl;
-  }
-
-  const fileId = dataUrl;
-
-  if (viewId) {
-    return getFileUrl(workspaceId, viewId, fileId);
-  }
-
-  // Fallback without viewId - this will likely fail to load
-  console.error('File URL construction: viewId not available, file may not load correctly', { fileId });
-  // Use empty string as viewId fallback, though this may not work
-  return getFileUrl(workspaceId, '', fileId);
+  return resolveFileUrl(dataUrl, workspaceId, viewId || '');
 }

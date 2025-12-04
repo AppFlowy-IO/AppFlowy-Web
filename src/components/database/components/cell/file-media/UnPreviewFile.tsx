@@ -4,7 +4,7 @@ import { FileMediaCellDataItem } from '@/application/database-yjs/cell.type';
 import FileIcon from '@/components/database/components/cell/file-media/FileIcon';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { getFileUrl, isFileURL } from '@/utils/file-storage-url';
+import { resolveFileUrl } from '@/utils/file-storage-url';
 import { openUrl } from '@/utils/url';
 
 function UnPreviewFile({ file }: { file: FileMediaCellDataItem }) {
@@ -19,15 +19,11 @@ function UnPreviewFile({ file }: { file: FileMediaCellDataItem }) {
           className={'cursor-pointer rounded-[4px] bg-fill-content-hover text-icon-secondary'}
           onClick={(e) => {
             e.stopPropagation();
-            if (file.url && isFileURL(file.url)) {
-              void openUrl(file.url, '_blank');
-              return;
+            const newUrl = resolveFileUrl(file.url, workspaceId, databasePageId);
+
+            if (newUrl) {
+              void openUrl(newUrl, '_blank');
             }
-
-            const fileId = file.url;
-            const newUrl = getFileUrl(workspaceId, databasePageId, fileId);
-
-            void openUrl(newUrl, '_blank');
           }}
         >
           <FileIcon fileType={file.file_type} />

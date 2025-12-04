@@ -9,6 +9,7 @@ import ImageResizer from '@/components/editor/components/blocks/image/ImageResiz
 import ImageToolbar from '@/components/editor/components/blocks/image/ImageToolbar';
 import Img from '@/components/editor/components/blocks/image/Img';
 import { ImageBlockNode } from '@/components/editor/editor.type';
+import { Log } from '@/utils/log';
 
 
 const MIN_WIDTH = 100;
@@ -30,11 +31,13 @@ function ImageRender({
 
   const { width: imageWidth } = useMemo(() => node.data || {}, [node.data]);
   const url = node.data.url || localUrl;
+
+  Log.debug('[ImageRender] url', { url, localUrl, node: node.data });
   const [initialWidth, setInitialWidth] = useState<number | null>(null);
   const [newWidth, setNewWidth] = useState<number | null>(imageWidth ?? null);
 
   useEffect(() => {
-    if(rendered && initialWidth === null && imgRef.current) {
+    if (rendered && initialWidth === null && imgRef.current) {
       setInitialWidth(imgRef.current.offsetWidth);
     }
   }, [initialWidth, rendered]);
@@ -55,7 +58,7 @@ function ImageRender({
     [debounceSubmitWidth],
   );
 
-  if(!url) return null;
+  if (!url) return null;
 
   return (
     <div

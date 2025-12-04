@@ -4,6 +4,7 @@ import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 import { getImageUrl, revokeBlobUrl } from '@/utils/authenticated-image';
+import { Log } from '@/utils/log';
 
 const avatarVariants = cva('relative flex aspect-square shrink-0 overflow-hidden', {
   variants: {
@@ -67,6 +68,7 @@ function AvatarImage({ className, src, ...props }: React.ComponentProps<typeof A
 
     setIsLoading(true);
 
+    Log.debug('[AvatarImage] src', src);
     getImageUrl(src)
       .then((url) => {
         if (isMounted) {

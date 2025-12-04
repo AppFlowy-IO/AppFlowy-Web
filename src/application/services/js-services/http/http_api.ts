@@ -4,7 +4,6 @@ import { omit } from 'lodash-es';
 import { nanoid } from 'nanoid';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
-import { Log } from '@/utils/log';
 import { ERROR_CODE } from '@/application/constants';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
 import { parseGoTrueErrorFromUrl } from '@/application/services/js-services/http/gotrue-error';
@@ -66,7 +65,8 @@ import {
 } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { RepeatedChatMessage } from '@/components/chat';
-import { getFileUploadUrl, getFileUrl } from '@/utils/file-storage-url';
+import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
+import { Log } from '@/utils/log';
 
 export * from './gotrue';
 
@@ -1552,7 +1552,7 @@ export async function uploadFile(
   file: File,
   onProgress?: (progress: number) => void
 ) {
-  const url = getFileUploadUrl(workspaceId, viewId);
+  const url = getAppFlowyFileUploadUrl(workspaceId, viewId);
 
   // Check file size, if over 7MB, check subscription plan
   if (file.size > 7 * 1024 * 1024) {
@@ -1587,7 +1587,7 @@ export async function uploadFile(
     });
 
     if (response?.data.code === 0) {
-      return getFileUrl(workspaceId, viewId, response?.data.data.file_id);
+      return getAppFlowyFileUrl(workspaceId, viewId, response?.data.data.file_id);
     }
 
     return Promise.reject(response?.data);

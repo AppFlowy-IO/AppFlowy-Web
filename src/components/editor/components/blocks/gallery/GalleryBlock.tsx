@@ -12,7 +12,7 @@ import ImageGallery from '@/components/editor/components/blocks/gallery/ImageGal
 import { EditorElementProps, GalleryBlockNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { copyTextToClipboard } from '@/utils/copy';
-import { getFileUrl, isFileURL } from '@/utils/file-storage-url';
+import { resolveFileUrl } from '@/utils/file-storage-url';
 
 const GalleryBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<GalleryBlockNode>>(({ node, children, ...attributes }, ref) => {
@@ -32,12 +32,9 @@ const GalleryBlock = memo(
     const photos = useMemo(() => {
       return images
         .map((image) => {
-          let imageUrl = image.url;
+          const imageUrl = resolveFileUrl(image.url, workspaceId, viewId);
 
           if (!imageUrl) return null;
-          if (!isFileURL(image.url)) {
-            imageUrl = getFileUrl(workspaceId, viewId, image.url);
-          }
 
           const url = new URL(imageUrl);
 

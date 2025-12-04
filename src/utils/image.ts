@@ -88,6 +88,8 @@ export const checkImage = async (url: string): Promise<CheckImageResult> => {
     const token = getTokenParsed();
     const fullUrl = resolveImageUrl(url);
 
+    Log.debug('[checkImage] fullUrl', fullUrl);
+
     if (token) {
       try {
         const response = await fetch(fullUrl, {
@@ -135,7 +137,7 @@ export const checkImage = async (url: string): Promise<CheckImageResult> => {
 
 export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
   if (isAppFlowyFileStorageUrl(url)) {
-    Log.debug("fetch appflowy image blob", url);
+    Log.debug('[fetchImageBlob] url', url);
     const token = getTokenParsed();
 
     if (!token) {

@@ -12,7 +12,7 @@ import { ReactComponent as ReloadIcon } from '@/assets/icons/reset.svg';
 import { ReactComponent as DownloadIcon } from '@/assets/icons/save_as.svg';
 import { notify } from '@/components/_shared/notify';
 import { copyTextToClipboard } from '@/utils/copy';
-import { getFileUrl, isFileURL } from '@/utils/file-storage-url';
+import { resolveFileUrl } from '@/utils/file-storage-url';
 
 export interface GalleryImage {
   src: string;
@@ -96,13 +96,7 @@ function GalleryPreview({ images, open, onClose, previewIndex, workspaceId, view
   }, [handleKeydown]);
 
   const imageUrl = useMemo(() => {
-    if (isFileURL(images[index].src)) {
-      return images[index].src;
-    }
-
-    const fileId = images[index].src;
-
-    return getFileUrl(workspaceId, viewId, fileId);
+    return resolveFileUrl(images[index].src, workspaceId, viewId);
   }, [images, index, workspaceId, viewId]);
 
   if (!open) {

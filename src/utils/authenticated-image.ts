@@ -1,5 +1,6 @@
 import { getTokenParsed } from '@/application/session/token';
 import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
+import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
 const resolveImageUrl = (url: string): string => {
@@ -59,6 +60,7 @@ export async function fetchAuthenticatedImage(url: string, token = getTokenParse
  */
 export async function getImageUrl(url: string | undefined): Promise<string> {
   if (!url) return '';
+  Log.debug('[getImageUrl] url', url);
 
   // If it's an AppFlowy file storage URL, fetch with authentication
   if (isAppFlowyFileStorageUrl(url)) {
