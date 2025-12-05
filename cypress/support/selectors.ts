@@ -60,6 +60,32 @@ export const PageSelectors = {
 };
 
 /**
+ * Page Icon-related selectors
+ * Used for testing page icon upload and display
+ */
+export const PageIconSelectors = {
+  // Page icon wrapper in sidebar (clickable to open popover)
+  pageIcon: () => cy.get(byTestId('page-icon')),
+
+  // Page icon image (for URL type icons)
+  pageIconImage: () => cy.get(byTestId('page-icon-image')),
+
+  // View meta hover area (hover to show Add icon button)
+  viewMetaHoverArea: () => cy.get(byTestId('view-meta-hover-area')),
+
+  // Add icon button in document header
+  addIconButton: () => cy.get(byTestId('add-icon-button')),
+
+  // Icon popover tabs
+  iconPopoverTabEmoji: () => cy.get(byTestId('icon-popover-tab-emoji')),
+  iconPopoverTabIcon: () => cy.get(byTestId('icon-popover-tab-icon')),
+  iconPopoverTabUpload: () => cy.get(byTestId('icon-popover-tab-upload')),
+
+  // File dropzone for image upload
+  fileDropzone: () => cy.get(byTestId('file-dropzone')),
+};
+
+/**
  * Space-related selectors
  */
 export const SpaceSelectors = {

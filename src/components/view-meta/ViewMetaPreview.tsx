@@ -168,7 +168,7 @@ export function ViewMetaPreview({
           layout={layout}
         />
       )}
-      <div ref={ref} className={'relative flex w-full flex-col overflow-hidden'}>
+      <div ref={ref} data-testid='view-meta-hover-area' className={'relative flex w-full flex-col overflow-hidden'}>
         <div
           style={{
             height: layout === ViewLayout.Document ? '40px' : '32px',

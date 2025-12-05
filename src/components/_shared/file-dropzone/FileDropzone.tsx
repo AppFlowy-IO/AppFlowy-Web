@@ -88,6 +88,7 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
   return (
     <div className='relative h-full'>
       <div
+        data-testid='file-dropzone'
         className='flex h-full min-h-[294px] w-full cursor-pointer flex-col justify-center rounded-[8px] bg-surface-primary px-4 text-center outline-dashed outline-2 outline-border-primary hover:bg-surface-primary-hover'
         onDrop={handleDrop}
         onDragOver={handleDragOver}

@@ -94,7 +94,7 @@ export function CustomIconPopover ({
           <div className='flex  items-center justify-between gap-3 border-b border-border-primary px-3'>
             <TabsList className='mt-2 flex w-full flex-1 justify-start'>
               {tabs.map((tab) => (
-                <TabsTrigger key={tab} value={tab}>
+                <TabsTrigger key={tab} value={tab} data-testid={`icon-popover-tab-${tab}`}>
                   <TabLabel>{tab.charAt(0).toUpperCase() + tab.slice(1)}</TabLabel>
                 </TabsTrigger>
               ))}

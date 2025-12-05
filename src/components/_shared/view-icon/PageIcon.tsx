@@ -57,8 +57,8 @@ function PageIcon({
   const img = useMemo(() => {
     if (imgSrc) {
       return (
-        <span className={cn('h-full w-full p-[2px]', className)}>
-          <img className={'h-full w-full'} src={imgSrc} alt='icon' />
+        <span className={cn('flex h-full w-full items-center justify-center p-[2px]', className)}>
+          <img data-testid='page-icon-image' className={'max-h-full max-w-full object-contain'} src={imgSrc} alt='icon' />
         </span>
       );
     }

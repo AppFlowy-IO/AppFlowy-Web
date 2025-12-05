@@ -171,6 +171,7 @@ function ViewItem({
           removeIcon={handleRemoveIcon}
         >
           <div
+            data-testid='page-icon'
             onClick={(e) => {
               e.stopPropagation();
             }}

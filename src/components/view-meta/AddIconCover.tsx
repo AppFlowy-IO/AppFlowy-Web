@@ -61,6 +61,7 @@ function AddIconCover ({
           }}
           onUploadFile={onUploadFile}
         ><Button
+          data-testid='add-icon-button'
           color={'inherit'}
           size={'small'}
           startIcon={<AddIcon />}
