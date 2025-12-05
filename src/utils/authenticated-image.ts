@@ -81,10 +81,42 @@ export async function getImageUrl(url: string | undefined): Promise<string> {
 }
 
 /**
- * Cleans up a blob URL created by fetchAuthenticatedImage
- * Should be called when the component unmounts or the URL is no longer needed
+ * Cleans up a blob URL created by fetchAuthenticatedImage.
  *
- * @param url - The blob URL to revoke
+ * ## Why this is needed
+ *
+ * When `fetchAuthenticatedImage` fetches an image with auth headers, it creates
+ * a Blob URL using `URL.createObjectURL()`. This URL holds a reference to the
+ * binary image data in browser memory.
+ *
+ * The browser keeps this data alive as long as the Blob URL exists - even if:
+ * - The `<img>` element is removed from the DOM
+ * - The React component unmounts
+ * - The URL is no longer referenced anywhere in code
+ *
+ * Without calling `revokeBlobUrl`, each authenticated image fetch causes a
+ * memory leak. For example, browsing 100 pages with 1MB icon images would
+ * accumulate ~100MB in memory that is never freed until page reload.
+ *
+ * ## Usage
+ *
+ * Call this function in a useEffect cleanup when the component unmounts
+ * or when the image URL changes:
+ *
+ * ```tsx
+ * useEffect(() => {
+ *   let blobUrl: string | undefined;
+ *   getImageUrl(url).then((result) => {
+ *     blobUrl = result;
+ *     setImgSrc(result);
+ *   });
+ *   return () => {
+ *     if (blobUrl) revokeBlobUrl(blobUrl);
+ *   };
+ * }, [url]);
+ * ```
+ *
+ * @param url - The blob URL to revoke. Safe to call with non-blob URLs (no-op).
  */
 export function revokeBlobUrl(url: string): void {
   if (url && url.startsWith('blob:')) {
