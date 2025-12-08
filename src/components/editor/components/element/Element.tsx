@@ -14,6 +14,9 @@ import { Column, Columns } from '@/components/editor/components/blocks/columns';
 import { DatabaseBlock } from '@/components/editor/components/blocks/database';
 import { DividerNode } from '@/components/editor/components/blocks/divider';
 import { AIMeetingBlock } from '@/components/editor/components/blocks/ai-meeting';
+import { AIMeetingNotes } from '@/components/editor/components/blocks/ai-meeting-notes';
+import { AIMeetingSummary } from '@/components/editor/components/blocks/ai-meeting-summary';
+import { AIMeetingTranscription } from '@/components/editor/components/blocks/ai-meeting-transcription';
 import { FileBlock } from '@/components/editor/components/blocks/file';
 import { GalleryBlock } from '@/components/editor/components/blocks/gallery';
 import { Heading } from '@/components/editor/components/blocks/heading';
@@ -29,6 +32,7 @@ import { Quote } from '@/components/editor/components/blocks/quote';
 import SimpleTable from '@/components/editor/components/blocks/simple-table/SimpleTable';
 import SimpleTableCell from '@/components/editor/components/blocks/simple-table/SimpleTableCell';
 import SimpleTableRow from '@/components/editor/components/blocks/simple-table/SimpleTableRow';
+import { SpeakerBlock } from '@/components/editor/components/blocks/speaker';
 import { TableBlock, TableCellBlock } from '@/components/editor/components/blocks/table';
 import { Text } from '@/components/editor/components/blocks/text';
 import { VideoBlock } from '@/components/editor/components/blocks/video';
@@ -216,6 +220,14 @@ export const Element = ({
         return Column;
       case BlockType.AIMeetingBlock:
         return AIMeetingBlock;
+      case BlockType.AIMeetingTranscription:
+        return AIMeetingTranscription;
+      case BlockType.AIMeetingSummary:
+        return AIMeetingSummary;
+      case BlockType.AIMeetingNotes:
+        return AIMeetingNotes;
+      case BlockType.SpeakerBlock:
+        return SpeakerBlock;
       case BlockType.PDFBlock:
         return PDFBlock;
       default:

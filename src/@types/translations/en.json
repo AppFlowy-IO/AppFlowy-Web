@@ -558,6 +558,46 @@
     "mediaField": "Add images, videos, or other media. Useful for rich content",
     "personField": "Select a person from your workspace. Useful for assigning tasks or ownership"
   },
+  "aiMeeting": {
+    "title": "AI Meeting",
+    "aiSummary": "AI summary",
+    "englishOnly": "We currently support English-only audio transcription.",
+    "notesPlaceholder": "Add your notes… AI will turn them into a clean, share-ready summary.",
+    "tabs": {
+      "transcript": "Transcript",
+      "summary": "Summary",
+      "notes": "Notes"
+    },
+    "empty": {
+      "title": "Get organized, share-ready notes from every meeting",
+      "newNotes": "New AI meeting notes",
+      "transcribeAudio": "Transcribe audio file",
+      "supportedTypes": "Supported file types: mp3, mp4, mpeg, mpga, m4a, wav, webm"
+    },
+    "summary": {
+      "aiTemplate": "AI template",
+      "detailLevel": "Summary detail",
+      "summaryLanguage": "Summary language",
+      "brief": "Brief",
+      "balanced": "Balanced",
+      "detailed": "Detailed",
+      "moreTemplates": "more templates",
+      "language": "Language",
+      "selectLanguage": "Language",
+      "selectTemplate": "Select Summary Template",
+      "templateDescription": "Choose a template and detail level for your meeting summary.",
+      "generate": "Generate Summary",
+      "noTemplates": "No templates available"
+    },
+    "actions": {
+      "regenerate": "Regenerate",
+      "regenerateWithTemplate": "Choose template...",
+      "copy": "Copy to clipboard",
+      "export": "Export",
+      "delete": "Delete"
+    },
+    "speaker": "Speaker {{id}}"
+  },
   "sideBar": {
     "closeSidebar": "Close sidebar",
     "openSidebar": "Open sidebar",
@@ -1989,7 +2029,8 @@
         "photoGallery": "Photo Gallery",
         "file": "File",
         "continueWriting": "Continue Writing",
-        "askAIAnything": "Ask AI Anything"
+        "askAIAnything": "Ask AI Anything",
+        "aiMeetingNote": "AI Meeting Note"
       },
       "linkedDatabase": {
         "title": "Link to an existing database",

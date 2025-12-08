@@ -588,6 +588,8 @@ export function SlashPanel({
     icon: React.ReactNode;
     keywords: string[];
     onClick?: () => void;
+    disabled?: boolean;
+    badge?: 'new';
   }[] = useMemo(() => {
     return [
       {
@@ -613,6 +615,20 @@ export function SlashPanel({
           void continueWriting(content);
         },
       },
+      // TODO(nathan): implement slash menu
+      // {
+      //   label: t('document.slashMenu.name.aiMeetingNote'),
+      //   key: 'aiMeetingNote',
+      //   icon: <AIMeetingIcon />,
+      //   keywords: ['ai', 'meeting', 'note', 'transcript', 'audio', 'transcription'],
+      //   badge: 'new' as const,
+      //   onClick: () => {
+      //     turnInto(BlockType.AIMeetingBlock, {
+      //       title: '',
+      //       date: new Date().toISOString(),
+      //     } as AIMeetingBlockData);
+      //   },
+      // },
       {
         label: t('document.slashMenu.name.text'),
         key: 'text',
@@ -1184,7 +1200,14 @@ export function SlashPanel({
       }
     };
 
-    const slateDom = ReactEditor.toDOMNode(editor, editor);
+    let slateDom: HTMLElement;
+
+    try {
+      slateDom = ReactEditor.toDOMNode(editor, editor);
+    } catch {
+      // Editor DOM not yet available
+      return;
+    }
 
     slateDom.addEventListener('keydown', handleKeyDown);
 
@@ -1264,7 +1287,14 @@ export function SlashPanel({
                 className={`scroll-m-2 justify-start hover:bg-fill-content-hover ${selectedOption === option.key ? 'bg-fill-content-hover' : ''
                   }`}
               >
-                {option.label}
+                <span className="flex flex-1 items-center justify-between">
+                  <span>{option.label}</span>
+                  {option.badge === 'new' && (
+                    <span className="ml-2 rounded-full bg-fill-featured-light px-2 py-0.5 text-xs text-text-featured-on-fill">
+                      NEW
+                    </span>
+                  )}
+                </span>
               </Button>
             ))
           ) : (

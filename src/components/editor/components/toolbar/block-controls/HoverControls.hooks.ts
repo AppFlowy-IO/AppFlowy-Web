@@ -131,9 +131,16 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
       const blockElement = ReactEditor.toDOMNode(editor, node);
 
       if (!blockElement) return;
-      const shouldSkipParentTypes = [BlockType.TableBlock, BlockType.SimpleTableBlock];
+      const shouldSkipParentTypes = [BlockType.TableBlock, BlockType.SimpleTableBlock, BlockType.AIMeetingBlock];
+      // Check if this block is nested inside a container type (not the container itself)
+      const isNestedInContainer = shouldSkipParentTypes.some((type) => {
+        const container = blockElement.closest(`[data-block-type="${type}"]`);
+        // Skip if found a container AND it's not the block itself
 
-      if (shouldSkipParentTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
+        return container && container !== blockElement;
+      });
+
+      if (isNestedInContainer) {
         close();
         return;
       } else {
@@ -147,7 +154,14 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
       }
     };
 
-    const dom = ReactEditor.toDOMNode(editor, editor);
+    let dom: HTMLElement;
+
+    try {
+      dom = ReactEditor.toDOMNode(editor, editor);
+    } catch {
+      // Editor DOM not yet available
+      return;
+    }
 
     if (!disabled) {
       dom.addEventListener('mousemove', handleMouseMove);

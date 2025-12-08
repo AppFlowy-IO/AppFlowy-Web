@@ -46,6 +46,10 @@ export enum BlockType {
   ColumnsBlock = 'simple_columns',
   ColumnBlock = 'simple_column',
   AIMeetingBlock = 'ai_meeting',
+  AIMeetingTranscription = 'ai_meeting_transcription',
+  AIMeetingSummary = 'ai_meeting_summary',
+  AIMeetingNotes = 'ai_meeting_notes',
+  SpeakerBlock = 'speaker',
   PDFBlock = 'pdf',
 }
 
@@ -149,7 +153,30 @@ export interface VideoBlockData extends BlockData {
 
 export interface AIMeetingBlockData extends BlockData {
   title?: string;
+  date?: string;
+  audio_file_path?: string;
+  recording_state?: string;
+  duration?: number;
+  summary_template?: string;
+  summary_detail?: string;
+  summary_language?: string;
+  transcription_provider?: string;
+  created_at?: string;
+  last_modified?: string;
+  selected_tab_index?: number;
+  speaker_name_map?: Record<string, string>;
 }
+
+export interface SpeakerBlockData extends BlockData {
+  speaker_id?: string;
+  speaker_name?: string;
+  timestamp?: number;
+}
+
+// Container block data types (no additional fields)
+export type AIMeetingTranscriptionData = BlockData;
+export type AIMeetingSummaryData = BlockData;
+export type AIMeetingNotesData = BlockData;
 
 export interface PDFBlockData extends BlockData {
   name?: string;

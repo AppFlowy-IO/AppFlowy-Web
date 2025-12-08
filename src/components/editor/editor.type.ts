@@ -3,6 +3,9 @@ import { Element } from 'slate';
 
 import {
   AIMeetingBlockData,
+  AIMeetingNotesData,
+  AIMeetingSummaryData,
+  AIMeetingTranscriptionData,
   BlockType,
   CalloutBlockData,
   CodeBlockData,
@@ -11,6 +14,7 @@ import {
   MathEquationBlockData,
   NumberedListBlockData,
   PDFBlockData,
+  SpeakerBlockData,
   TodoListBlockData,
   ToggleListBlockData,
   YjsEditorKey,
@@ -195,6 +199,26 @@ export interface ColumnNode extends BlockNode {
 export interface AIMeetingNode extends BlockNode {
   type: BlockType.AIMeetingBlock;
   data: AIMeetingBlockData;
+}
+
+export interface AIMeetingTranscriptionNode extends BlockNode {
+  type: BlockType.AIMeetingTranscription;
+  data: AIMeetingTranscriptionData;
+}
+
+export interface AIMeetingSummaryNode extends BlockNode {
+  type: BlockType.AIMeetingSummary;
+  data: AIMeetingSummaryData;
+}
+
+export interface AIMeetingNotesNode extends BlockNode {
+  type: BlockType.AIMeetingNotes;
+  data: AIMeetingNotesData;
+}
+
+export interface SpeakerNode extends BlockNode {
+  type: BlockType.SpeakerBlock;
+  data: SpeakerBlockData;
 }
 
 export interface PDFNode extends BlockNode {

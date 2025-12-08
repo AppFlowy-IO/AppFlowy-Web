@@ -722,11 +722,50 @@ export const AvatarUiSelectors = {
  */
 export const BlockSelectors = {
   dragHandle: () => cy.get(byTestId('drag-block')),
+  addBlock: () => cy.get(byTestId('add-block')),
   hoverControls: () => cy.get(byTestId('hover-controls')),
   slashMenuGrid: () => cy.get(byTestId('slash-menu-grid')),
   blockByType: (type: string) => cy.get(`[data-block-type="${type}"]`),
   blockSelector: (type: string) => `[data-block-type="${type}"]`,
   allBlocks: () => cy.get('[data-block-type]'),
+};
+
+/**
+ * AI Meeting Block selectors
+ */
+export const AIMeetingSelectors = {
+  // Main AI Meeting block container
+  block: () => cy.get('.ai-meeting-block'),
+  blockByType: () => cy.get('[data-block-type="ai_meeting_block"]'),
+
+  // Title input
+  titleInput: () => cy.get('.ai-meeting-block input[type="text"]'),
+
+  // Date display
+  dateDisplay: () => cy.get('.ai-meeting-block').find('span').contains('@').parent(),
+
+  // Tab buttons
+  tabButton: (tabName: string) => cy.get('.ai-meeting-block button').contains(tabName),
+  summaryTab: () => cy.get('.ai-meeting-block button').contains('Summary'),
+  notesTab: () => cy.get('.ai-meeting-block button').contains('Notes'),
+  transcriptTab: () => cy.get('.ai-meeting-block button').contains('Transcript'),
+
+  // Tab content areas
+  summaryContent: () => cy.get('[data-block-type="ai_meeting_summary"]'),
+  notesContent: () => cy.get('[data-block-type="ai_meeting_notes"]'),
+  transcriptContent: () => cy.get('[data-block-type="ai_meeting_transcription"]'),
+
+  // Actions
+  regenerateButton: () => cy.get('.ai-meeting-block').contains('Regenerate'),
+  copyButton: () => cy.get('.ai-meeting-block [data-testid="copy-button"]'),
+
+  // Empty state
+  emptyState: () => cy.get('.ai-meeting-block').contains('New notes'),
+  newNotesButton: () => cy.get('.ai-meeting-block').contains('New notes'),
+  uploadAudioButton: () => cy.get('.ai-meeting-block').contains('Upload audio'),
+
+  // Content area
+  contentArea: () => cy.get('.ai-meeting-content'),
 };
 
 export function waitForReactUpdate(ms: number = 500) {
