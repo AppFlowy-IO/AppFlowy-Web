@@ -69,7 +69,7 @@ export const AIAssistantProvider = ({
   const initialScrollTopRef = useRef<number | null>(null);
   const [selectedModelName, setSelectedModelName] = useState<string>('Auto');
 
-  const { currentPromptId, updateCurrentPromptId } = usePromptModal();
+  const { currentPromptId, updateCurrentPromptId, prompts } = usePromptModal();
 
   useEffect(() => {
     if (!assistantType) {
@@ -140,6 +140,10 @@ export const AIAssistantProvider = ({
       setError(null);
       try {
         setApplyingState(ApplyingState.analyzing);
+        // Find the selected prompt to get its content for custom_prompt
+        const selectedPrompt = currentPromptId
+          ? prompts.find((p) => p.id === currentPromptId)
+          : undefined;
         const { cancel, streamPromise } = await request.fetchAIAssistant(
           {
             inputText: content,
@@ -148,6 +152,7 @@ export const AIAssistantProvider = ({
             ragIds,
             completionHistory: completionHistoryRef.current,
             promptId: currentPromptId || undefined,
+            customPrompt: selectedPrompt?.content,
             modelName: selectedModelName,
           },
           handleMessageChange
@@ -175,6 +180,7 @@ export const AIAssistantProvider = ({
     [
       currentPromptId,
       handleMessageChange,
+      prompts,
       ragIds,
       request,
       responseFormat,

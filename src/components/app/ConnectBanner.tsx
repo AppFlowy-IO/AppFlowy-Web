@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
 import { useAppHandlers } from './app.hooks';
+import { Log } from '@/utils/log';
 
 // WebSocket readyState enum
 const READY_STATE = {
@@ -19,6 +20,7 @@ const READY_STATE = {
 export function ConnectBanner() {
   const [readyState, setReadyState] = useState<number>(READY_STATE.CONNECTING);
   const [isStableConnection, setIsStableConnection] = useState(false);
+  const autoReconnectAttemptedRef = useRef(false);
   const { eventEmitter } = useAppHandlers();
   const { t } = useTranslation();
 
@@ -64,6 +66,48 @@ export function ConnectBanner() {
   const isClosed = useMemo(() => {
     return readyState === READY_STATE.CLOSED;
   }, [readyState]);
+
+  useEffect(() => {
+    if (!isClosed) {
+      autoReconnectAttemptedRef.current = false;
+    }
+  }, [isClosed]);
+
+  // Automatically trigger reconnect when the user returns to the page and the socket is closed
+  useEffect(() => {
+    if (!isClosed || isLoading) return;
+    if (typeof window === 'undefined' || typeof document === 'undefined') return;
+
+    const tryAutoReconnect = () => {
+      if (autoReconnectAttemptedRef.current) return;
+      if (!isClosed || isLoading) return;
+      if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+      if (document.visibilityState !== 'visible') return;
+
+      autoReconnectAttemptedRef.current = true;
+
+      Log.debug('Trying to auto reconnect');
+      handleReconnect();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        tryAutoReconnect();
+      }
+    };
+
+    window.addEventListener('focus', tryAutoReconnect);
+    window.addEventListener('online', tryAutoReconnect);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    tryAutoReconnect();
+
+    return () => {
+      window.removeEventListener('focus', tryAutoReconnect);
+      window.removeEventListener('online', tryAutoReconnect);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [handleReconnect, isClosed, isLoading]);
 
   // Only hide the banner when the connection is stable
   if (isStableConnection && readyState === READY_STATE.OPEN) {

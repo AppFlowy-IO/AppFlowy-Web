@@ -5,7 +5,8 @@ export enum AIAssistantType {
   MakeLonger = 4,
   ContinueWriting = 5,
   Explain = 6,
-  AskAIAnything = 7
+  AskAIAnything = 7,
+  CustomPrompt = 8
 }
 
 export enum CompletionRole {

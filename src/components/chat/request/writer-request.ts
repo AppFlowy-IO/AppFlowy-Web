@@ -42,6 +42,7 @@ export class WriterRequest {
     ragIds: string[];
     completionHistory: CompletionResult[];
     promptId?: string;
+    customPrompt?: string;
     modelName?: string;
   }, onMessage: (text: string, comment: string, done?: boolean) => void) => {
     const baseUrl = this.axiosInstance.defaults.baseURL;
@@ -76,6 +77,7 @@ export class WriterRequest {
           rag_ids: payload.ragIds.length === 0 ? [this.viewId] : payload.ragIds,
           completion_history: payload.completionHistory,
           prompt_id: payload.promptId,
+          custom_prompt: payload.customPrompt ? { system: payload.customPrompt } : undefined,
         },
       }),
     });
