@@ -161,17 +161,25 @@ jobs:
       - name: Build project
         if: steps.cache-build.outputs.cache-hit != 'true'
         run: pnpm run build
-        
-      - name: Start preview server
-        run: |
-          pnpm run start &
-          echo $! > preview-server.pid
 
-          # Optimized preview server health check
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Bun SSR dependencies
+        run: bun install cheerio pino pino-pretty
+
+      - name: Start SSR server
+        run: |
+          pnpm run dev:server &
+          echo $! > ssr-server.pid
+
+          # SSR server health check
           timeout 60 bash -c 'until curl -sf http://localhost:3000 > /dev/null 2>&1; do
-            echo "Waiting for preview server... ($(date +%T))"
+            echo "Waiting for SSR server... ($(date +%T))"
             sleep 2
-          done' && echo "✓ Preview server is ready" || (echo "❌ Preview server failed to start" && exit 1)
+          done' && echo "✓ SSR server is ready" || (echo "❌ SSR server failed to start" && exit 1)
 
       - name: Run ${{ matrix.test-group.name }} tests
         run: |
@@ -193,11 +201,11 @@ jobs:
       - name: Cleanup
         if: always()
         run: |
-          # Kill preview server
-          if [ -f preview-server.pid ]; then
-            kill $(cat preview-server.pid) 2>/dev/null || true
+          # Kill SSR server
+          if [ -f ssr-server.pid ]; then
+            kill $(cat ssr-server.pid) 2>/dev/null || true
           fi
-          pkill -f "vite preview" 2>/dev/null || true
+          pkill -f "bun deploy/server.ts" 2>/dev/null || true
 
           # Stop Docker services
           cd AppFlowy-Cloud-Premium && docker compose down || true

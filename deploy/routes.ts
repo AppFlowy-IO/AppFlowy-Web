@@ -1,13 +1,73 @@
-import { defaultSite } from './config';
+import { defaultSite, distDir } from './config';
 import { fetchPublishMetadata } from './api';
 import { renderMarketingPage, renderPublishPage } from './html';
 import { logger } from './logger';
 import { type PublishErrorPayload } from './publish-error';
 import { type RequestContext } from './server';
+import path from 'path';
+import fs from 'fs';
 
 type RouteHandler = (context: RequestContext) => Promise<Response | undefined>;
 
 const MARKETING_PATHS = ['/after-payment', '/login', '/as-template', '/app', '/accept-invitation', '/import'];
+
+// Static file paths that should be served from dist
+const STATIC_PATHS = ['/static/', '/af_icons/', '/covers/', '/.well-known/'];
+const STATIC_FILES = ['/appflowy.ico', '/appflowy.svg', '/og-image.png'];
+
+const MIME_TYPES: Record<string, string> = {
+  '.html': 'text/html',
+  '.css': 'text/css',
+  '.js': 'application/javascript',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+  '.ttf': 'font/ttf',
+};
+
+const staticRoute = async ({ req, url }: RequestContext) => {
+  if (req.method !== 'GET') {
+    return;
+  }
+
+  const isStaticPath = STATIC_PATHS.some(p => url.pathname.startsWith(p));
+  const isStaticFile = STATIC_FILES.includes(url.pathname);
+
+  if (!isStaticPath && !isStaticFile) {
+    return;
+  }
+
+  // Strip leading slash and resolve the full path
+  const relativePath = url.pathname.slice(1);
+  const filePath = path.resolve(distDir, relativePath);
+
+  // Prevent path traversal attacks - ensure resolved path stays within distDir
+  const normalizedDistDir = path.resolve(distDir);
+
+  if (!filePath.startsWith(normalizedDistDir + path.sep) && filePath !== normalizedDistDir) {
+    logger.warn(`Path traversal attempt blocked: ${url.pathname}`);
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  try {
+    const file = fs.readFileSync(filePath);
+    const ext = path.extname(filePath);
+    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+
+    return new Response(file, {
+      headers: { 'Content-Type': contentType },
+    });
+  } catch {
+    logger.warn(`Static file not found: ${filePath}`);
+    return;
+  }
+};
 
 const marketingRoute = async ({ req, url }: RequestContext) => {
   if (req.method !== 'GET') {
@@ -137,4 +197,4 @@ const methodNotAllowed = async ({ req }: RequestContext) => {
 
 const notFound = async () => new Response('Not Found', { status: 404 });
 
-export const routes: RouteHandler[] = [marketingRoute, publishRoute, methodNotAllowed, notFound];
+export const routes: RouteHandler[] = [staticRoute, marketingRoute, publishRoute, methodNotAllowed, notFound];

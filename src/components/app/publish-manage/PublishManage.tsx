@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SubscriptionPlan, View } from '@/application/types';
+import { validate as uuidValidate } from 'uuid';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { notify } from '@/components/_shared/notify';
 import { flattenViews } from '@/components/_shared/outline/utils';
@@ -257,20 +258,22 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
             publishViews={publishViews}
             onRemoveHomePage={handleRemoveHomePage}
             onUpdateHomePage={handleUpdateHomePage}
+            canEdit={!uuidValidate(namespace)}
           />
           <Tooltip
             title={
-              isOwner
-                ? activeSubscription === SubscriptionPlan.Free
+              !isOwner
+                ? t('settings.sites.error.onlyWorkspaceOwnerCanUpdateNamespace')
+                : isOfficialHost() && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free)
                   ? t('settings.sites.error.onlyProCanUpdateNamespace')
                   : undefined
-                : t('settings.sites.error.onlyWorkspaceOwnerCanUpdateNamespace')
             }
           >
             <IconButton
               size={'small'}
               onClick={(e) => {
-                if (!isOwner || activeSubscription === SubscriptionPlan.Free) {
+                // Block if not owner, or if on official host with Free/unloaded subscription
+                if (!isOwner || (isOfficialHost() && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free))) {
                   return;
                 }
 

@@ -18,6 +18,7 @@ interface HomePageSettingProps {
   publishViews: View[];
   isOwner: boolean;
   activePlan: SubscriptionPlan | null;
+  canEdit?: boolean;
 }
 
 function HomePageSetting({
@@ -27,6 +28,7 @@ function HomePageSetting({
   homePage,
   publishViews,
   isOwner,
+  canEdit = true,
 }: HomePageSettingProps) {
   const [removeLoading, setRemoveLoading] = React.useState<boolean>(false);
   const [updateLoading, setUpdateLoading] = React.useState<boolean>(false);
@@ -47,6 +49,11 @@ function HomePageSetting({
       return prev;
     });
   }, [setSearch, isOwner]);
+
+  // Don't show homepage setting when namespace is not editable (e.g., UUID namespace)
+  if (!canEdit) {
+    return null;
+  }
 
   if (activePlan && activePlan !== SubscriptionPlan.Pro) {
     // Only show upgrade button on official hosts (self-hosted instances have Pro features enabled by default)

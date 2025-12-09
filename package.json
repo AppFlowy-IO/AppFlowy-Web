@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "dev:coverage": "cross-env COVERAGE=true vite",
+    "dev:server": "bun deploy/server.ts",
     "build": "vite build",
     "clean": "rm -rf dist storybook-static coverage .nyc_output node_modules/.vite node_modules/.cache",
     "type-check": "tsc --noEmit --project tsconfig.web.json",
