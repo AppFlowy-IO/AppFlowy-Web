@@ -10,7 +10,7 @@ import { InviteGuest } from '@/components/app/share/InviteGuest';
 import { PeopleWithAccess } from '@/components/app/share/PeopleWithAccess';
 import { UpgradeBanner } from '@/components/app/share/UpgradeBanner';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
-import { isOfficialHost } from '@/utils/subscription';
+import { isAppFlowyHosted } from '@/utils/subscription';
 
 function SharePanel({ viewId }: { viewId: string }) {
   const currentUser = useCurrentUser();
@@ -123,7 +123,7 @@ function SharePanel({ viewId }: { viewId: string }) {
   }, [getSubscriptions]);
 
   useEffect(() => {
-    if (!isOfficialHost()) {
+    if (!isAppFlowyHosted()) {
       setActiveSubscriptionPaln(SubscriptionPlan.Pro);
       return;
     }
@@ -147,7 +147,7 @@ function SharePanel({ viewId }: { viewId: string }) {
           hasFullAccess={hasFullAccess}
           activeSubscriptionPlan={activeSubscriptionPlan}
         />
-        {isOfficialHost() && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
+        {isAppFlowyHosted() && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
         <PeopleWithAccess viewId={viewId} people={people} isLoading={isLoading} onPeopleChange={refreshPeople} />
         <GeneralAccess viewId={viewId} />
         <CopyLink />

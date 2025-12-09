@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { isOfficialHost } from '@/utils/subscription';
+import { isAppFlowyHosted } from '@/utils/subscription';
 
 function InviteMember({
   workspace,
@@ -49,7 +49,7 @@ function InviteMember({
   const [activeSubscriptionPlan, setActiveSubscriptionPaln] = React.useState<SubscriptionPlan | null>(null);
 
   const loadSubscription = useCallback(async () => {
-    if (!isOfficialHost()) {
+    if (!isAppFlowyHosted()) {
       setActiveSubscriptionPaln(SubscriptionPlan.Pro);
       return;
     }

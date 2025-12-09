@@ -43,11 +43,30 @@ const staticRoute = async ({ req, url }: RequestContext) => {
     return;
   }
 
-  // Strip leading slash and resolve the full path
+  // Strip leading slash and decode the path
   const relativePath = url.pathname.slice(1);
-  const filePath = path.resolve(distDir, relativePath);
 
-  // Prevent path traversal attacks - ensure resolved path stays within distDir
+  // Decode URL-encoded characters to detect encoded path traversal attempts
+  let decodedPath: string;
+
+  try {
+    decodedPath = decodeURIComponent(relativePath);
+  } catch {
+    // Invalid URL encoding
+    logger.warn(`Invalid URL encoding blocked: ${url.pathname}`);
+    return new Response('Bad Request', { status: 400 });
+  }
+
+  // Check for path traversal patterns in the decoded path
+  if (decodedPath.includes('..')) {
+    logger.warn(`Path traversal attempt blocked: ${url.pathname}`);
+    return new Response('Forbidden', { status: 403 });
+  }
+
+  // Resolve the full path using the decoded path
+  const filePath = path.resolve(distDir, decodedPath);
+
+  // Defense in depth: ensure resolved path stays within distDir
   const normalizedDistDir = path.resolve(distDir);
 
   if (!filePath.startsWith(normalizedDistDir + path.sep) && filePath !== normalizedDistDir) {

@@ -280,7 +280,7 @@ Many components behave differently based on whether they're running on official 
 
 ### How It Works
 
-The `isOfficialHost()` function in `src/utils/subscription.ts` checks `window.location.hostname`. For Storybook, we mock this using a global variable.
+The `isAppFlowyHosted()` function in `src/utils/subscription.ts` checks `window.location.hostname`. For Storybook, we mock this using a global variable.
 
 ### Using Shared Hostname Decorators
 

@@ -9,7 +9,7 @@ import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import { Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { isOfficialHost } from '@/utils/subscription';
+import { isAppFlowyHosted } from '@/utils/subscription';
 
 interface HomePageSettingProps {
   onRemoveHomePage: () => Promise<void>;
@@ -57,7 +57,7 @@ function HomePageSetting({
 
   if (activePlan && activePlan !== SubscriptionPlan.Pro) {
     // Only show upgrade button on official hosts (self-hosted instances have Pro features enabled by default)
-    if (!isOfficialHost()) {
+    if (!isAppFlowyHosted()) {
       return null;
     }
 
@@ -69,6 +69,7 @@ function HomePageSetting({
           size={'small'}
           onClick={handleUpgrade}
           endIcon={<UpgradeIcon />}
+          data-testid="homepage-upgrade-button"
         >
           {t('subscribe.changePlan')}
         </Button>
@@ -77,7 +78,7 @@ function HomePageSetting({
   }
 
   return (
-    <div className={'flex flex-1 items-center overflow-hidden'}>
+    <div className={'flex flex-1 items-center overflow-hidden'} data-testid="homepage-setting">
       <Tooltip title={isOwner ? homePage?.name : t('settings.sites.error.onlyWorkspaceOwnerCanChangeHomepage')}>
         <Button
           onClick={(e) => {

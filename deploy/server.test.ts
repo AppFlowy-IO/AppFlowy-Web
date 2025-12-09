@@ -820,6 +820,8 @@ describe('deploy/server', () => {
     );
   });
 
+  // NOTE: Static file handling tests are in routes.test.ts
+
   // Error message content tests
   it('includes user-friendly message for NO_DEFAULT_PAGE error', async () => {
     mockBunFetch.mockResolvedValue({

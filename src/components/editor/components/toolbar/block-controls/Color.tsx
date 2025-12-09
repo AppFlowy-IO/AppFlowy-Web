@@ -13,7 +13,7 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { ColorEnum, renderColor } from '@/utils/color';
-import { isOfficialHost } from '@/utils/subscription';
+import { isAppFlowyHosted } from '@/utils/subscription';
 
 const origins: Origins = {
   anchorOrigin: {
@@ -39,7 +39,7 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
 
   const [activeSubscriptionPlan, setActiveSubscriptionPlan] = useState<SubscriptionPlan | null>(null);
   // Pro features are enabled by default on self-hosted instances
-  const isPro = activeSubscriptionPlan === SubscriptionPlan.Pro || !isOfficialHost();
+  const isPro = activeSubscriptionPlan === SubscriptionPlan.Pro || !isAppFlowyHosted();
 
   const loadSubscription = useCallback(async () => {
     try {

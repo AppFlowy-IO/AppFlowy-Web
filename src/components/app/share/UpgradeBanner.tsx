@@ -8,7 +8,7 @@ import { ReactComponent as InfoIcon } from '@/assets/icons/vector.svg';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
-import { isOfficialHost } from '@/utils/subscription';
+import { isAppFlowyHosted } from '@/utils/subscription';
 
 const CLOSE_UPGRADE_LOCAL_STORAGE_KEY = 'close_upgrade_banner';
 
@@ -29,7 +29,7 @@ export function UpgradeBanner({ activeSubscriptionPlan }: { activeSubscriptionPl
   }, [activeSubscriptionPlan]);
 
   const isOfficial = useMemo(() => {
-    return isOfficialHost();
+    return isAppFlowyHosted();
   }, []);
 
   const handleUpgrade = useCallback(async () => {
