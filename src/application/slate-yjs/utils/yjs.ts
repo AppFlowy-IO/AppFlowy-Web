@@ -488,7 +488,10 @@ export function turnToBlock<T extends BlockData>(
 
   updateBlockParent(sharedRoot, newBlock, parent, index);
 
-  if (CONTAINER_BLOCK_TYPES.includes(type)) {
+  // Special handling for AI Meeting blocks - create required child blocks and transfer content to Notes
+  if (type === BlockType.AIMeetingBlock) {
+    createAIMeetingChildren(sharedRoot, newBlock, sourceBlock);
+  } else if (CONTAINER_BLOCK_TYPES.includes(type)) {
     transferChildren(sharedRoot, sourceBlock, newBlock);
   } else {
     liftChildren(sharedRoot, sourceBlock, newBlock);
@@ -500,6 +503,93 @@ export function turnToBlock<T extends BlockData>(
   extendNextSiblingsToToggleHeading(sharedRoot, newBlock);
 
   return newBlockId;
+}
+
+/**
+ * Create required child blocks for AI Meeting block
+ * If sourceBlock has content, transfer it to the Notes block as a Paragraph child
+ */
+export function createAIMeetingChildren(sharedRoot: YSharedRoot, parentBlock: YBlock, sourceBlock?: YBlock) {
+  // Create Summary block
+  const summaryBlock = createBlock(sharedRoot, {
+    ty: BlockType.AIMeetingSummary,
+    data: {},
+  });
+
+  updateBlockParent(sharedRoot, summaryBlock, parentBlock, 0);
+
+  // Create Notes block
+  const notesBlock = createBlock(sharedRoot, {
+    ty: BlockType.AIMeetingNotes,
+    data: {},
+  });
+
+  // Attach notes block to meeting
+  updateBlockParent(sharedRoot, notesBlock, parentBlock, 1);
+
+  // If source block has text content, create a Paragraph child under Notes with that content
+  // This ensures the text is preserved (convert.ts ignores direct text on container blocks)
+  if (sourceBlock) {
+    const sourceTextId = sourceBlock.get(YjsEditorKey.block_external_id);
+    const sourceText = sourceTextId ? getText(sourceTextId, sharedRoot) : undefined;
+    const hasTextContent = sourceText && sourceText.length > 0;
+
+    if (hasTextContent) {
+      // Create a Paragraph block to hold the source text
+      const paragraphBlock = createBlock(sharedRoot, {
+        ty: BlockType.Paragraph,
+        data: {},
+      });
+
+      // Copy text content to the paragraph
+      copyBlockText(sharedRoot, sourceBlock, paragraphBlock);
+
+      // Add paragraph as first child of notes block
+      updateBlockParent(sharedRoot, paragraphBlock, notesBlock, 0);
+    }
+
+    // Transfer any existing children from source block to notes block
+    transferChildren(sharedRoot, sourceBlock, notesBlock);
+  } else {
+    // Always create an empty paragraph in notes block for user to start typing
+    // This matches Flutter's behavior where notes always has a paragraph child
+    const paragraphBlock = createBlock(sharedRoot, {
+      ty: BlockType.Paragraph,
+      data: {},
+    });
+
+    updateBlockParent(sharedRoot, paragraphBlock, notesBlock, 0);
+  }
+
+  // Create Transcription block
+  const transcriptionBlock = createBlock(sharedRoot, {
+    ty: BlockType.AIMeetingTranscription,
+    data: {},
+  });
+
+  updateBlockParent(sharedRoot, transcriptionBlock, parentBlock, 2);
+}
+
+/**
+ * Ensure AI Meeting container blocks (Notes, Summary, Transcription) have at least one paragraph child.
+ * This fixes existing blocks that were created without paragraph children.
+ */
+export function ensureAIMeetingContainerHasParagraph(sharedRoot: YSharedRoot, containerBlock: YBlock): void {
+  const containerChildrenId = containerBlock.get(YjsEditorKey.block_children);
+  const childrenArray = getChildrenArray(containerChildrenId, sharedRoot);
+
+  // If container already has children, don't add another paragraph
+  if (childrenArray.length > 0) {
+    return;
+  }
+
+  // Create an empty paragraph for the user to type in
+  const paragraphBlock = createBlock(sharedRoot, {
+    ty: BlockType.Paragraph,
+    data: {},
+  });
+
+  updateBlockParent(sharedRoot, paragraphBlock, containerBlock, 0);
 }
 
 export function dataStringTOJson(data: string): object {

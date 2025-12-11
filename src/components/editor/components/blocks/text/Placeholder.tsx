@@ -7,15 +7,19 @@ import { BlockType, ToggleListBlockData } from '@/application/types';
 import { HeadingNode, ToggleListNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
+import { usePlaceholderOverride } from './PlaceholderContext';
 
 function Placeholder({ node, ...attributes }: { node: Element; className?: string; style?: CSSProperties }) {
   const { t } = useTranslation();
-  const { readOnly } = useEditorContext();
+  const { readOnly, slashPlaceholder } = useEditorContext();
   const editor = useSlate();
   const focused = useFocused();
   const blockSelected = useSelected();
   const [isComposing, setIsComposing] = useState(false);
   const selected = focused && blockSelected && editor.selection && Range.isCollapsed(editor.selection);
+
+  // Get placeholder override from context (if a container provides one)
+  const placeholderOverride = usePlaceholderOverride();
 
   const getBlock = useCallback(() => {
     const path = ReactEditor.findPath(editor, node);
@@ -33,6 +37,25 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
 
   const block = getBlock();
 
+  // Check if this is the first child of the parent block (generic, no block-type knowledge)
+  const isFirstChildOfParent = useMemo(() => {
+    try {
+      const path = ReactEditor.findPath(editor, node);
+      const blockMatch = Editor.above(editor, {
+        at: path,
+        match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined,
+      });
+
+      if (!blockMatch) return true;
+
+      const [, blockPath] = blockMatch;
+
+      return blockPath[blockPath.length - 1] === 0;
+    } catch {
+      return true;
+    }
+  }, [editor, node]);
+
   const className = useMemo(() => {
     const classList = attributes.className?.split(' ') ?? [];
 
@@ -42,6 +65,15 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
   }, [attributes.className]);
 
   const unSelectedPlaceholder = useMemo(() => {
+    // Check context override first (from parent container)
+    if (placeholderOverride) {
+      if (placeholderOverride.onlyFirstChild && !isFirstChildOfParent) {
+        return '';
+      }
+
+      return placeholderOverride.unselected ?? '';
+    }
+
     switch(block?.type) {
       case BlockType.Paragraph: {
         return '';
@@ -102,9 +134,17 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block, t]);
+  }, [block, isFirstChildOfParent, placeholderOverride, t]);
 
   const selectedPlaceholder = useMemo(() => {
+    // Check context override first (from parent container)
+    if (placeholderOverride) {
+      if (placeholderOverride.onlyFirstChild && !isFirstChildOfParent) {
+        return '';
+      }
+
+      return placeholderOverride.selected ?? placeholderOverride.unselected ?? '';
+    }
 
     if(block?.type === BlockType.ToggleListBlock && (block?.data as ToggleListBlockData).level) {
       return unSelectedPlaceholder;
@@ -119,12 +159,12 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       case  BlockType.QuoteBlock:
       case  BlockType.BulletedListBlock:
       case  BlockType.NumberedListBlock:
-        return t('editor.slashPlaceHolder');
+        return slashPlaceholder ?? t('editor.slashPlaceHolder');
 
       default:
         return '';
     }
-  }, [block?.data, block?.type, t, unSelectedPlaceholder]);
+  }, [block?.data, block?.type, isFirstChildOfParent, placeholderOverride, t, unSelectedPlaceholder, slashPlaceholder]);
 
   useEffect(() => {
     if(!selected) return;
