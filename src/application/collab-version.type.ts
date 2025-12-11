@@ -1,17 +1,18 @@
 
 export interface CollabVersionInfo {
   viewId: string;
-  currentVersionId: string|null;
+  currentVersionId: string | null;
   history: CollabVersionRecord[]
 }
 
 export interface CollabVersionRecord {
   viewId?: string;
   versionId: string;
-  parentId: string|null;
-  name: string|null;
+  parentId: string | null;
+  name: string | null;
   createdAt: Date;
-  snapshot: Uint8Array|null;
+  snapshot: Uint8Array | null;
+  editors: number[]
 }
 
 export interface EncodedCollab {
