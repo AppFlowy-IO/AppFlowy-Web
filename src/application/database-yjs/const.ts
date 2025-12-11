@@ -1,4 +1,4 @@
-import { v5 as uuidv5, parse as uuidParse } from 'uuid';
+import { v4 as uuidv4, v5 as uuidv5, parse as uuidParse } from 'uuid';
 
 import { RowMetaKey } from '@/application/database-yjs/database.type';
 import { RowId, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -31,4 +31,4 @@ export const metaIdFromRowId = (rowId: string) => {
   return (key: RowMetaKey) => uuidv5(key, namespace).toString();
 };
 
-export const generateUUID = () => uuidv5(Date.now().toString(), uuidv5.URL);
+export const generateUUID = () => uuidv4();

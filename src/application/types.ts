@@ -368,6 +368,7 @@ export enum YjsDatabaseKey {
   calculations = 'calculations',
   field_id = 'field_id',
   calculation_value = 'calculation_value',
+  source_field_type = 'source_field_type', // Added this
   condition = 'condition',
   format = 'format',
   filter_type = 'filter_type',
@@ -416,7 +417,7 @@ export interface YDatabaseCell extends Y.Map<unknown> {
 
   get(key: YjsDatabaseKey.last_modified): LastModified;
 
-  get(key: YjsDatabaseKey.field_type): string;
+  get(key: YjsDatabaseKey.field_type | YjsDatabaseKey.source_field_type): string;
 
   get(key: YjsDatabaseKey.data): string | boolean | number | null | Y.Array<string> | object;
 

@@ -1,4 +1,4 @@
-import { FieldType } from '@/application/database-yjs';
+import { FieldType } from '@/application/database-yjs/database.type';
 
 export * from './type_option';
 export * from './date';

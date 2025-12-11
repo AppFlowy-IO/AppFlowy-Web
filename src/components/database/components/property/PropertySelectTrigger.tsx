@@ -32,6 +32,7 @@ const properties = [
   FieldType.AISummaries,
   FieldType.AITranslations,
   FieldType.Person,
+  FieldType.Time,
 ];
 
 export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; disabled?: boolean }) {
@@ -64,6 +65,7 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
       [FieldType.AITranslations]: t('tooltip.AITranslateField'),
       [FieldType.FileMedia]: t('tooltip.mediaField'),
       [FieldType.Person]: t('tooltip.personField'),
+      [FieldType.Time]: t('tooltip.timeField'), // Added FieldType.Time tooltip
     };
   }, [t]);
 
@@ -77,7 +79,7 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
           <FieldLabel type={type} />
         </DropdownMenuSubTrigger>
         <DropdownMenuPortal>
-          <DropdownMenuSubContent>
+          <DropdownMenuSubContent className="appflowy-scroller max-h-[450px] overflow-y-auto">
             {properties.map((property) => (
               <Tooltip key={property}>
                 <TooltipTrigger asChild>

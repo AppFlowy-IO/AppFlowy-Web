@@ -687,7 +687,9 @@ export const FieldType = {
   Relation: 10,
   AISummaries: 11,
   AITranslations: 12,
-  FileMedia: 14
+  FileMedia: 14,
+  Person: 15,
+  Time: 16,
 };
 
 /**

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { parseChecklistData } from '@/application/database-yjs';
+import { parseChecklistFlexible } from '@/application/database-yjs';
 import { CellProps, ChecklistCell as ChecklistCellType } from '@/application/database-yjs/cell.type';
 import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
 import { ReactComponent as ShowIcon } from '@/assets/icons/show.svg';
@@ -16,7 +16,7 @@ import { cn } from '@/lib/utils';
 
 function ChecklistCell({ cell, style, fieldId, rowId, readOnly }: CellProps<ChecklistCellType>) {
   const data = useMemo(() => {
-    return parseChecklistData(cell?.data ?? '');
+    return parseChecklistFlexible(cell?.data ?? '');
   }, [cell?.data]);
   const tasks = useMemo(() => data?.options || [], [data]);
   const selectedTasks = useMemo(() => data?.selectedOptionIds || [], [data]);

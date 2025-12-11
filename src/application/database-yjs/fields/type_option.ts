@@ -1,4 +1,4 @@
-import { FieldType } from '@/application/database-yjs';
+import { FieldType } from '@/application/database-yjs/database.type';
 import { YDatabaseField, YMapFieldTypeOption, YjsDatabaseKey } from '@/application/types';
 
 export function getTypeOptions(field?: YDatabaseField): YMapFieldTypeOption | undefined {

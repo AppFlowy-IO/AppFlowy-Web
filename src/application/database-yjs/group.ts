@@ -1,11 +1,12 @@
-import { getCellData } from '@/application/database-yjs/const';
+import { getCell } from '@/application/database-yjs/const';
 import { FieldType } from '@/application/database-yjs/database.type';
 import {
   CheckboxFilterCondition,
   parseSelectOptionTypeOptions,
   SelectOptionFilterCondition,
 } from '@/application/database-yjs/fields';
-import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
+import { parseChecklistFlexible } from '@/application/database-yjs/fields/checklist/parse';
+import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { checkboxFilterCheck, selectOptionFilterCheck } from '@/application/database-yjs/filter';
 import { Row } from '@/application/database-yjs/selector';
 import { RowId, YDatabaseField, YDatabaseFilter, YDoc, YjsDatabaseKey } from '@/application/types';
@@ -83,9 +84,9 @@ export function groupByCheckbox(
       return;
     }
 
-    const cellData = getCellData(row.id, fieldId, rowMetas);
-
-    const checked = getChecked(cellData as string);
+    const cell = getCell(row.id, fieldId, rowMetas);
+    const cellData = cell?.get(YjsDatabaseKey.data);
+    const checked = parseCheckboxValue(cellData as string);
     const groupName = checked ? 'Yes' : 'No';
 
     if (!result.has(groupName)) {
@@ -126,7 +127,7 @@ export function groupBySelectOption(
       const condition = Number(filter?.get(YjsDatabaseKey.condition)) as SelectOptionFilterCondition;
       const content = filter?.get(YjsDatabaseKey.content);
 
-      if (!selectOptionFilterCheck(groupName, content, condition)) {
+      if (!selectOptionFilterCheck(field, groupName, content, condition)) {
         result.delete(groupName);
         return;
       }
@@ -141,12 +142,28 @@ export function groupBySelectOption(
       return;
     }
 
-    const cellData = getCellData(row.id, fieldId, rowMetas) || '';
+    const cell = getCell(row.id, fieldId, rowMetas);
+    const cellData = cell?.get(YjsDatabaseKey.data);
+    const sourceType = Number(
+      cell?.get(YjsDatabaseKey.source_field_type) ?? cell?.get(YjsDatabaseKey.field_type)
+    ) as FieldType;
 
-    const selectedIds = (cellData as string)?.split(',') ?? [];
+    let selectedIds: string[] = [];
 
-    if (typeof cellData !== 'string') {
-      return;
+    if (sourceType === FieldType.Checklist && typeof cellData === 'string') {
+      const checklist = parseChecklistFlexible(cellData);
+
+      selectedIds =
+        checklist?.selectedOptionIds
+          ?.map((idOrName) => typeOption.options.find((opt) => opt.id === idOrName || opt.name === idOrName)?.id)
+          .filter((id): id is string => Boolean(id)) ?? [];
+    } else if (typeof cellData === 'string') {
+      selectedIds =
+        cellData
+          .split(',')
+          .map((v) => v.trim())
+          .map((idOrName) => typeOption.options.find((opt) => opt.id === idOrName || opt.name === idOrName)?.id)
+          .filter((id): id is string => Boolean(id)) ?? [];
     }
 
     if (selectedIds.length === 0) {

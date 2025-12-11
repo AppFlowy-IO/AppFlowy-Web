@@ -1,12 +1,8 @@
-import * as Y from 'yjs';
-
 import { FieldType, SortCondition } from '@/application/database-yjs/database.type';
-import { parseChecklistData, parseSelectOptionCellData } from '@/application/database-yjs/fields';
-import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
+import { decodeCellForSort } from '@/application/database-yjs/decode';
 import { Row } from '@/application/database-yjs/selector';
 import {
   RowId,
-  YDatabaseField,
   YDatabaseFields,
   YDatabaseRow,
   YDatabaseSorts,
@@ -64,7 +60,7 @@ export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFiel
       const rowMeta = rowMetas[rowId];
       const meta = rowMeta?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
 
-      const defaultData = parseCellDataForSort(field, '', Number(sort.get(YjsDatabaseKey.condition)));
+      const defaultData = defaultValueForSort(fieldType, Number(sort.get(YjsDatabaseKey.condition)));
 
       if (!meta) return defaultData;
 
@@ -78,10 +74,15 @@ export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFiel
 
       const cells = meta.get(YjsDatabaseKey.cells);
       const cell = cells.get(fieldId);
-      const data = cell?.get(YjsDatabaseKey.data);
 
-      if (!cell || !data) return defaultData;
-      return parseCellDataForSort(field, data, Number(sort.get(YjsDatabaseKey.condition)));
+      if (!cell) return defaultData;
+      const decoded = decodeCellForSort(cell, field);
+
+      if (decoded === undefined || decoded === null || decoded === '') {
+        return defaultData;
+      }
+
+      return decoded;
     });
 
     return { row, values };
@@ -101,107 +102,20 @@ export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFiel
   return sortData.map((item) => item.row);
 }
 
-function dealWithUnicode(data: string) {
-  const hasUnicode = /[^\x20-\x7E]/.test(data);
-
-  if (hasUnicode) {
-    const emojiRegex = /\p{Emoji}/u;
-    const emojiMatch = data.match(emojiRegex);
-
-    if (emojiMatch && emojiMatch[0] !== data) {
-      const textOnly = data.replace(emojiRegex, '').trim();
-
-      return textOnly;
-    } else if (emojiMatch && emojiMatch[0] === data) {
-      return data;
-    } else {
-      return data;
-    }
-  }
-
-  return data;
-}
-
-export function parseCellDataForSort(
-  field: YDatabaseField,
-  data: string | boolean | number | object | Y.Array<string>,
-  condition: SortCondition
-) {
-  const fieldType = Number(field.get(YjsDatabaseKey.type));
-
+export function defaultValueForSort(fieldType: FieldType, condition: SortCondition) {
   switch (fieldType) {
     case FieldType.RichText:
-    case FieldType.URL: {
-      if (data) {
-        return dealWithUnicode(data as string);
-      }
-
-      if (condition === SortCondition.Descending) {
-        return '\u0000';
-      } else {
-        return '\uFFFF';
-      }
-    }
-
-    case FieldType.Number:
-      if (data) {
-        return typeof data === 'string' && !isNaN(parseInt(data)) ? parseInt(data) : data;
-      }
-
-      if (condition === SortCondition.Descending) {
-        return -Infinity;
-      } else {
-        return Infinity;
-      }
-
-    case FieldType.Checkbox:
-      return getChecked(data as string);
-
+    case FieldType.URL:
     case FieldType.SingleSelect:
     case FieldType.MultiSelect:
-      if (data) {
-        const parsedData = parseSelectOptionCellData(field, data as string);
-
-        if (typeof parsedData === 'string') {
-          return dealWithUnicode(parsedData);
-        }
-
-        return parsedData;
-      }
-
-      if (condition === SortCondition.Descending) {
-        return '\u0000';
-      } else {
-        return '\uFFFF';
-      }
-
-    case FieldType.Checklist: {
-      const percentage = parseChecklistData(data as string)?.percentage;
-
-      if (percentage !== undefined) {
-        return percentage;
-      }
-
-      if (condition === SortCondition.Descending) {
-        return -Infinity;
-      } else {
-        return Infinity;
-      }
-    }
-
-    case FieldType.DateTime: {
-      if (data) {
-        return Number(data);
-      }
-
-      if (condition === SortCondition.Descending) {
-        return -Infinity;
-      } else {
-        return Infinity;
-      }
-    }
-
-    case FieldType.Relation:
-      return '';
+      return condition === SortCondition.Descending ? '\u0000' : '\uFFFF';
+    case FieldType.Number:
+    case FieldType.Checklist:
+    case FieldType.DateTime:
+      return condition === SortCondition.Descending ? -Infinity : Infinity;
+    case FieldType.Checkbox:
+      return false;
+    default:
+      return condition === SortCondition.Descending ? '\u0000' : '\uFFFF';
   }
 }

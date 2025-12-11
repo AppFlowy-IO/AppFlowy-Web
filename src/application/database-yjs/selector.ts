@@ -796,17 +796,18 @@ export function useRowDataSelector(rowId: string) {
 export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: string }) {
   const { row } = useRowDataSelector(rowId);
   const cells = row?.get(YjsDatabaseKey.cells);
+  const { field } = useFieldSelector(fieldId);
 
   const cell = cells?.get(fieldId);
   const [, setClock] = useState<number>(0);
   const [cellValue, setCellValue] = useState(() => {
-    return cell ? parseYDatabaseCellToCell(cell) : undefined;
+    return cell ? parseYDatabaseCellToCell(cell, field) : undefined;
   });
 
   useEffect(() => {
     const observerEvent = () => {
       setClock((prev) => prev + 1);
-      setCellValue(cell ? parseYDatabaseCellToCell(cell) : undefined);
+      setCellValue(cell ? parseYDatabaseCellToCell(cell, field) : undefined);
     };
 
     observerEvent();
@@ -815,7 +816,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     return () => {
       cell?.unobserveDeep(observerEvent);
     };
-  }, [cell]);
+  }, [cell, field]);
 
   useEffect(() => {
     if (!cells) return;
@@ -827,7 +828,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
         setCellValue(undefined);
         return;
       } else {
-        const cellValue = parseYDatabaseCellToCell(cell);
+        const cellValue = parseYDatabaseCellToCell(cell, field);
 
         setCellValue(cellValue);
       }
@@ -840,7 +841,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     return () => {
       cells.unobserve(observerEvent);
     };
-  }, [cells, fieldId]);
+  }, [cells, fieldId, field]);
 
   return cellValue;
 }
@@ -894,7 +895,7 @@ export function useCalendarEventsSelector() {
         const rowCreatedTime = databbaseRow.get(YjsDatabaseKey.created_at).toString();
         const rowLastEditedTime = databbaseRow.get(YjsDatabaseKey.last_modified).toString();
 
-        const value = cell ? parseYDatabaseCellToCell(cell) as DateTimeCell : undefined;
+        const value = cell ? parseYDatabaseCellToCell(cell, field) as DateTimeCell : undefined;
 
         if ((!value?.data && fieldType !== FieldType.CreatedTime && fieldType !== FieldType.LastEditedTime) ||
           (fieldType === FieldType.CreatedTime && !rowCreatedTime) ||
@@ -1315,6 +1316,7 @@ export const useSelectFieldOptions = (fieldId: string, searchValue?: string) => 
 
 export function useRowPrimaryContentSelector(rowDoc: YDoc | null, primaryFieldId: string) {
   const [primaryContent, setPrimaryContent] = useState<string | null>(null);
+  const { field } = useFieldSelector(primaryFieldId);
 
   const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
   const row = rowSharedRoot?.get(YjsEditorKey.database_row) as YDatabaseRow;
@@ -1327,7 +1329,7 @@ export function useRowPrimaryContentSelector(rowDoc: YDoc | null, primaryFieldId
 
       if (!cell) return;
 
-      const cellValue = parseYDatabaseCellToCell(cell);
+      const cellValue = parseYDatabaseCellToCell(cell, field);
 
       if (cellValue) {
         setPrimaryContent(cellValue.data as string);
@@ -1343,7 +1345,7 @@ export function useRowPrimaryContentSelector(rowDoc: YDoc | null, primaryFieldId
     return () => {
       row?.unobserveDeep(observerEvent);
     };
-  }, [primaryFieldId, row, rowDoc]);
+  }, [primaryFieldId, row, rowDoc, field]);
 
   return primaryContent;
 }

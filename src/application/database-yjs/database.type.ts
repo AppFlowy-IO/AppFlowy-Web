@@ -22,6 +22,7 @@ export enum FieldType {
   AITranslations = 12,
   FileMedia = 14,
   Person = 15,
+  Time = 16, // Added missing FieldType.Time
 }
 
 export enum CalculationType {

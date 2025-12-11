@@ -556,7 +556,8 @@
     "AISummaryField": "Summarize the content of the record. Useful for getting a quick overview",
     "AITranslateField": "Translate the content of the record. Useful for multilingual support",
     "mediaField": "Add images, videos, or other media. Useful for rich content",
-    "personField": "Select a person from your workspace. Useful for assigning tasks or ownership"
+    "personField": "Select a person from your workspace. Useful for assigning tasks or ownership",
+    "timeField": "Add a time value. Useful for tracking duration or specific times"
   },
   "sideBar": {
     "closeSidebar": "Close sidebar",

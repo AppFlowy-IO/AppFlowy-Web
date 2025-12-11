@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { getPrimaryFieldId, useDatabaseContext } from '@/application/database-yjs';
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { View, YDatabase, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { View, YDatabase, YDatabaseField, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { ReactComponent as MinusIcon } from '@/assets/icons/minus.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import RelationRowItem from '@/components/database/components/cell/relation/RelationRowItem';
@@ -52,6 +52,7 @@ function RelationCellMenuContent({
 
   const [searchInput, setSearchInput] = useState<string>('');
   const [primaryFieldId, setPrimaryFieldId] = useState<string | null>(null);
+  const [primaryField, setPrimaryField] = useState<YDatabaseField | null>(null);
   const [guid, setGuid] = useState<string | null>(null);
   const [noAccess, setNoAccess] = useState(false);
   const [rowIds, setRowIds] = useState<string[]>([]);
@@ -89,6 +90,7 @@ function RelationCellMenuContent({
 
         setNoAccess(false);
         setPrimaryFieldId(fieldId);
+        setPrimaryField(database.get(YjsDatabaseKey.fields)?.get(fieldId) || null);
 
         const views = database.get(YjsDatabaseKey.views);
         const view = views.get(selectedViewId);
@@ -115,11 +117,11 @@ function RelationCellMenuContent({
       const cell = row?.get(YjsDatabaseKey.cells)?.get(primaryFieldId);
 
       if (!cell) return '';
-      const cellValue = parseYDatabaseCellToCell(cell);
+      const cellValue = parseYDatabaseCellToCell(cell, primaryField || undefined);
 
       return (cellValue?.data as string) || '';
     },
-    [primaryFieldId]
+    [primaryFieldId, primaryField]
   );
 
   useEffect(() => {

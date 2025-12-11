@@ -6,7 +6,6 @@ import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
 import { Log } from '@/utils/log';
-import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
 import {
   useCreateRow,
   useDatabase,
@@ -31,18 +30,7 @@ import {
   RowMetaKey,
   SortCondition,
 } from '@/application/database-yjs/database.type';
-import {
-  getDateCellStr,
-  getFieldName,
-  isDate,
-  NumberFormat,
-  parseSelectOptionTypeOptions,
-  RIGHTWARDS_ARROW,
-  safeParseTimestamp,
-  SelectOption,
-  SelectOptionColor,
-  SelectTypeOption,
-} from '@/application/database-yjs/fields';
+import { getFieldName, NumberFormat, parseSelectOptionTypeOptions, SelectOption, SelectOptionColor, SelectTypeOption } from '@/application/database-yjs/fields';
 import { createCheckboxCell, getChecked } from '@/application/database-yjs/fields/checkbox/utils';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
@@ -88,7 +76,6 @@ import {
 } from '@/application/types';
 import { DefaultTimeSetting } from '@/application/user-metadata';
 import { applyYDoc } from '@/application/ydoc/apply';
-import { useCurrentUser } from '@/components/main/app.hooks';
 
 export function useResizeColumnWidthDispatch() {
   const database = useDatabase();
@@ -2461,7 +2448,6 @@ export function useSwitchPropertyType() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const rowDocMap = useRowDocMap();
-  const currentUser = useCurrentUser();
 
   return useCallback(
     (fieldId: string, fieldType: FieldType) => {
@@ -2620,168 +2606,17 @@ export function useSwitchPropertyType() {
                 const cells = row.get(YjsDatabaseKey.cells);
                 const cell = cells.get(fieldId);
 
-                // Update each cell
+                // Update each cell lazily: preserve existing data, record source type, update target type only.
                 if (cell) {
                   const data = cell.get(YjsDatabaseKey.data);
-                  let newData = data instanceof Y.Array ? data.clone() : data;
+                  const oldCellType = Number(cell.get(YjsDatabaseKey.field_type));
 
-                  // From Relation or Files & Media to other types, clear the data
-                  if ([FieldType.Relation, FieldType.Checklist].includes(oldFieldType)) {
-                    newData = null;
-                  } else {
-                    // Handle transformation of data based on the new field type
-                    // 1. to RichText
-                    if ([FieldType.RichText, FieldType.URL].includes(fieldType)) {
-                      const cellType = Number(cell.get(YjsDatabaseKey.field_type));
-                      const existingTypeOption = field
-                        .get(YjsDatabaseKey.type_option)
-                        ?.get(String(cellType)) as YMapFieldTypeOption | undefined;
+                  // Remember the original type so rendering can decode on demand.
+                  cell.set(YjsDatabaseKey.source_field_type, String(oldCellType));
 
-                      switch (cellType) {
-                        // From Number to RichText, keep the number format value
-                        case FieldType.Number: {
-                          const formatRaw = existingTypeOption?.get(YjsDatabaseKey.format);
-                          const parsedFormat =
-                            formatRaw === undefined || formatRaw === null ? undefined : Number(formatRaw);
-                          const format =
-                            parsedFormat === undefined || Number.isNaN(parsedFormat)
-                              ? NumberFormat.Num
-                              : (parsedFormat as NumberFormat);
-
-                          if (data) {
-                            newData = EnhancedBigStats.parse(data.toString(), format) || '';
-                          }
-
-                          break;
-                        }
-
-                        case FieldType.SingleSelect:
-                        case FieldType.MultiSelect: {
-                          const selectedIds = (data as string).split(',');
-                          const optionSource = typeOptionMap?.get(String(cellType)) as YMapFieldTypeOption | undefined;
-                          const content = optionSource?.get(YjsDatabaseKey.content);
-
-                          if (typeof content !== 'string') {
-                            newData = '';
-                            break;
-                          }
-
-                          try {
-                            const parsedContent = JSON.parse(content) as SelectTypeOption;
-                            const options = parsedContent.options;
-                            const selectedNames = selectedIds
-                              .map((id) => {
-                                const option = options.find((opt) => opt.id === id);
-
-                                if (!option) {
-                                  return '';
-                                }
-
-                                return option.name;
-                              })
-                              .filter((name) => name !== '');
-
-                            newData = selectedNames.join(',');
-                          } catch (e) {
-                            // do nothing
-                          }
-
-                          break;
-                        }
-
-                        case FieldType.DateTime: {
-                          const dateCell = parseYDatabaseDateTimeCellToCell(cell);
-
-                          newData = getDateCellStr({
-                            cell: dateCell,
-                            field,
-                            currentUser,
-                          });
-
-                          break;
-                        }
-
-                        default:
-                          break;
-                      }
-                    }
-
-                    // 2. to Number
-                    if (fieldType === FieldType.Number) {
-                      if (oldFieldType === FieldType.Checkbox) {
-                        // From Checkbox to Number, convert Yes/No to 1/0
-                        newData = (data as string).toLowerCase() === 'yes' ? '1' : '0';
-                      } else if ((typeof data === 'number' || typeof data === 'string') && !isNaN(Number(data))) {
-                        // From other types to Number, keep the number format value
-                        newData = data;
-                      } else {
-                        const start =
-                          typeof data === 'number' || typeof data === 'string'
-                            ? data.toString().split(RIGHTWARDS_ARROW)[0]
-                            : '';
-
-                        // If the data is a date string, convert it to a timestamp
-                        if (data && start && isDate(start)) {
-                          const date = safeParseTimestamp(start);
-
-                          if (date) {
-                            newData = date.unix().toString();
-                          }
-                        }
-                      }
-                    }
-
-                    // 3. to SingleSelect or MultiSelect
-                    if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
-                      const targetTypeOption = typeOptionMap?.get(String(fieldType)) as
-                        | YMapFieldTypeOption
-                        | undefined;
-                      const content = targetTypeOption?.get(YjsDatabaseKey.content);
-
-                      if (typeof content === 'string') {
-                        try {
-                          const parsedContent = JSON.parse(content) as SelectTypeOption;
-                          const options = parsedContent.options;
-
-                          const selectedOptionNames = (data as string).split(',');
-                          const selectedOptionIds = selectedOptionNames
-                            .map((name) => {
-                              const option = options.find((opt) => opt.name === name || opt.id === name);
-
-                              if (!option) {
-                                return '';
-                              }
-
-                              return option.id;
-                            })
-                            .filter((id) => id !== '');
-
-                          newData = selectedOptionIds.join(',');
-                        } catch (e) {
-                          // do nothing
-                        }
-                      } else {
-                        newData = '';
-                      }
-                    }
-
-                    // 4. to DateTime
-                    if (fieldType === FieldType.DateTime) {
-                      if (data && (typeof data === 'string' || typeof data === 'number')) {
-                        const start = data.toString().split('-')[0];
-
-                        newData = safeParseTimestamp(start).unix();
-                      }
-                    }
-
-                    // 5. to Relation or Files & Media
-                    if ([FieldType.Relation].includes(fieldType)) {
-                      newData = new Y.Array<string>();
-                    }
-                  }
-
+                  // Move the cell to the new type without mutating data.
                   cell.set(YjsDatabaseKey.field_type, fieldType);
-                  cell.set(YjsDatabaseKey.data, newData);
+                  cell.set(YjsDatabaseKey.data, data instanceof Y.Array ? data.clone() : data);
                   cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
                   row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
                 }
@@ -2792,7 +2627,7 @@ export function useSwitchPropertyType() {
         'switchPropertyType'
       );
     },
-    [database, sharedRoot, rowDocMap, currentUser]
+    [database, sharedRoot, rowDocMap]
   );
 }
 

@@ -4,6 +4,7 @@ import { every, filter, some } from 'lodash-es';
 import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
   CheckboxFilter,
   CheckboxFilterCondition,
@@ -13,15 +14,16 @@ import {
   DateFilterCondition,
   NumberFilter,
   NumberFilterCondition,
-  parseChecklistData,
+  parseChecklistFlexible,
+  parseSelectOptionTypeOptions,
   PersonFilterCondition,
   SelectOptionFilter,
   SelectOptionFilterCondition,
   TextFilter,
   TextFilterCondition,
 } from '@/application/database-yjs/fields';
-import { getChecked } from '@/application/database-yjs/fields/checkbox/utils';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
+import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
 import { Row } from '@/application/database-yjs/selector';
 import {
   RowId,
@@ -146,21 +148,23 @@ export function filterBy(
 
       const { condition, content } = filterValue;
 
-      const cellData = (cell?.get(YjsDatabaseKey.data) as string) || '';
+      const cellData = cell?.get(YjsDatabaseKey.data);
+      const cellText = cell ? decodeCellToText(cell, field) : '';
 
       switch (fieldType) {
         case FieldType.URL:
         case FieldType.RichText:
-          return textFilterCheck(cellData, content, condition);
+        case FieldType.Time:
+          return textFilterCheck(cellText, content, condition);
         case FieldType.Number:
-          return numberFilterCheck(cellData, content, condition);
+          return numberFilterCheck(cellText, content, condition);
         case FieldType.Checkbox:
           return checkboxFilterCheck(cellData, condition);
         case FieldType.SingleSelect:
         case FieldType.MultiSelect:
-          return selectOptionFilterCheck(cellData, content, condition);
+          return selectOptionFilterCheck(field, cellData, content, condition);
         case FieldType.Checklist:
-          return checklistFilterCheck(cellData, content, condition);
+          return checklistFilterCheck(cellData as string, content, condition);
         case FieldType.DateTime:
           return dateFilterCheck(cell ? parseYDatabaseDateTimeCellToCell(cell) : null, filterValue as DateFilter);
         case FieldType.CreatedTime: {
@@ -176,7 +180,7 @@ export function filterBy(
         }
 
         case FieldType.Person: {
-          return personFilterCheck(cellData, content, condition);
+          return personFilterCheck(typeof cellData === 'string' ? cellData : '', content, condition);
         }
 
         default:
@@ -245,19 +249,19 @@ export function numberFilterCheck(data: string, content: string, condition: numb
   }
 }
 
-export function checkboxFilterCheck(data: string, condition: number) {
+export function checkboxFilterCheck(data: unknown, condition: number) {
   switch (condition) {
     case CheckboxFilterCondition.IsChecked:
-      return getChecked(data);
+      return parseCheckboxValue(data as string);
     case CheckboxFilterCondition.IsUnChecked:
-      return !getChecked(data);
+      return !parseCheckboxValue(data as string);
     default:
       return false;
   }
 }
 
-export function checklistFilterCheck(data: string, content: string, condition: number) {
-  const percentage = parseChecklistData(data)?.percentage ?? 0;
+export function checklistFilterCheck(data: unknown, content: string, condition: number) {
+  const percentage = typeof data === 'string' ? parseChecklistFlexible(data)?.percentage ?? 0 : 0;
 
   if (condition === ChecklistFilterCondition.IsComplete) {
     return percentage === 1;
@@ -351,30 +355,61 @@ export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
   }
 }
 
-export function selectOptionFilterCheck(data: string, content: string, condition: number) {
+export function selectOptionFilterCheck(field: YDatabaseField, data: unknown, content: string, condition: number) {
+  const filterOptionIds = content.split(',').filter((item) => item.trim() !== '');
+  const typeOption = parseSelectOptionTypeOptions(field);
+  const options = typeOption?.options || [];
+
+  let selectedOptionIds: string[] = [];
+
+  if (typeof data === 'string') {
+    const checklist = parseChecklistFlexible(data);
+
+    if (checklist) {
+      const checkedNames =
+        checklist.selectedOptionIds
+          ?.map((idOrName) => {
+            const fromChecklist = checklist.options?.find((opt) => opt.id === idOrName)?.name;
+
+            return fromChecklist ?? idOrName;
+          })
+          .filter(Boolean) ?? [];
+
+      selectedOptionIds =
+        checkedNames
+          .map((idOrName) => options.find((opt) => opt.id === idOrName || opt.name === idOrName)?.id)
+          .filter((item): item is string => Boolean(item)) ?? [];
+    } else {
+      selectedOptionIds = data
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+
+  const selectedIdsByName = selectedOptionIds
+    .map((idOrName) => options.find((opt) => opt.id === idOrName || opt.name === idOrName)?.id)
+    .filter((item): item is string => Boolean(item));
+
   if (SelectOptionFilterCondition.OptionIsEmpty === condition) {
-    return data === '';
+    return selectedIdsByName.length === 0;
   }
 
   if (SelectOptionFilterCondition.OptionIsNotEmpty === condition) {
-    return data !== '';
+    return selectedIdsByName.length > 0;
   }
-
-  const selectedOptionIds = data.split(',').filter((item) => item.trim() !== '');
-  const filterOptionIds = content.split(',').filter((item) => item.trim() !== '');
 
   switch (condition) {
     case SelectOptionFilterCondition.OptionIs:
     case SelectOptionFilterCondition.OptionContains:
       if (!content) return true;
-      return some(filterOptionIds, (option) => selectedOptionIds.includes(option));
+      return some(filterOptionIds, (option) => selectedIdsByName.includes(option));
 
     case SelectOptionFilterCondition.OptionIsNot:
     case SelectOptionFilterCondition.OptionDoesNotContain:
       if (!content) return true;
-      return every(filterOptionIds, (option) => !selectedOptionIds.includes(option));
+      return every(filterOptionIds, (option) => !selectedIdsByName.includes(option));
 
-    // Default case, if no conditions match
     default:
       return false;
   }
