@@ -1,6 +1,4 @@
-import { generateUUID } from '@/application/database-yjs/const';
-
-import { SelectOption, SelectOptionColor } from '../select-option';
+import { generateOptionId, SelectOption, SelectOptionColor } from '../select-option';
 
 export interface ChecklistCellData {
   selectedOptionIds?: string[];
@@ -48,7 +46,7 @@ function parseChecklistTextToStruct(text: string): { options: SelectOption[]; se
     const isChecked = marker?.toLowerCase() === '[x]';
 
     const option: SelectOption = {
-      id: generateUUID(),
+      id: generateOptionId(),
       name,
       color: SelectOptionColor.OptionColor1,
     };
@@ -95,7 +93,7 @@ export function addTask(data: string, taskName: string): string {
   const parsedData = parseChecklistData(data);
 
   const task: SelectOption = {
-    id: generateUUID(),
+    id: generateOptionId(),
     name: taskName,
     color: SelectOptionColor.OptionColor1,
   };

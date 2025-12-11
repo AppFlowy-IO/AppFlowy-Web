@@ -1,10 +1,10 @@
 import * as Y from 'yjs';
 
-import { generateUUID } from '@/application/database-yjs/const';
 import { FieldType } from '@/application/database-yjs/database.type';
 import {
   ChecklistCellData,
   SelectOption,
+  generateOptionId,
   getDateCellStr,
   parseChecklistFlexible,
   parseSelectOptionTypeOptions,
@@ -98,7 +98,7 @@ function transformCellData(
         const checklistSelectedIds: string[] = [];
 
         options.forEach((opt) => {
-          const newOpt = { ...opt, id: generateUUID() };
+          const newOpt = { ...opt, id: generateOptionId() };
 
           checklistOptions.push(newOpt);
           if (selectedIds.includes(opt.id)) {
@@ -168,7 +168,7 @@ function transformCellData(
     case FieldType.Checkbox:
       if (sourceType === FieldType.RichText) {
         if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
-            return parseCheckboxValue(data) ? 'Yes' : 'No';
+          return parseCheckboxValue(data) ? 'Yes' : 'No';
         }
 
         return '';
