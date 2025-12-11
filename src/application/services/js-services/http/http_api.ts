@@ -997,6 +997,16 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
   });
 }
 
+export async function previewCollabVersion(workspaceId: string, objectId: string, version: string, collabType: Types) {
+  const url = `/{workspace_id}/collab/${objectId}/history/${version}?collab_type=${collabType}`;
+  return await axiosInstance?.get(url, {
+    responseType: 'arraybuffer'
+  }).then((response) => {
+    // preview response is Y.Doc lib0 v1 encoded binary
+    return new Uint8Array(response.data)
+  })
+}
+
 export async function createCollabVersion(workspaceId: string, objectId: string, name: string, ySnapshot: Uint8Array) {
   const snapshot = toBase64(ySnapshot);
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
