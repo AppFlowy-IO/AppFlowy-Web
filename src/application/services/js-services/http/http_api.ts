@@ -760,17 +760,17 @@ export async function getPageCollab(workspaceId: string, viewId: string) {
   };
 }
 
-export async function getCollabVersions(workspaceId: string, objectId: string, since: Date|undefined) {
+export async function getCollabVersions(workspaceId: string, objectId: string, since?: Date) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
   const from = since?.getTime() || null;
   const response = await axiosInstance?.get<{
     code: number;
     data: {
       version: string,
-      parent: string|null,
-      name: string|null,
+      parent: string | null,
+      name: string | null,
       created_at: string,
-      created_by: number|null,
+      created_by: number | null,
       snapshot: string, // base64
     }[];
     message: string;
@@ -793,6 +793,16 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       snapshot: fromBase64(data.snapshot),
     };
   });
+}
+
+export async function previewCollabVersion(workspaceId: string, objectId: string, version: string, collabType: Types) {
+  const url = `/{workspace_id}/collab/${objectId}/history/${version}?collab_type=${collabType}`;
+  return await axiosInstance?.get(url, {
+    responseType: 'arraybuffer'
+  }).then((response) => {
+    // preview response is Y.Doc lib0 v1 encoded binary
+    return new Uint8Array(response.data)
+  })
 }
 
 export async function createCollabVersion(workspaceId: string, objectId: string, name: string, ySnapshot: Uint8Array) {
@@ -829,7 +839,7 @@ export async function revertCollabVersion(workspaceId: string, objectId: string,
   const response = await axiosInstance?.post<{
     state_vector: number[],
     doc_state: number[],
-    collab_version: string|null,
+    collab_version: string | null,
     version: number, // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
   }>(url, {
     data: {
