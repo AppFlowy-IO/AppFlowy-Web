@@ -343,6 +343,9 @@ export const DatabaseGridSelectors = {
   // Get first row
   firstRow: () => cy.get('[data-testid^="grid-row-"]').first(),
 
+  // Get data rows only (excludes header, new-row, calculate-row with undefined IDs)
+  dataRows: () => cy.get('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])'),
+
   // Grid cells
   cells: () => cy.get('[data-testid^="grid-cell-"]'),
 
@@ -351,6 +354,14 @@ export const DatabaseGridSelectors = {
 
   // Get all cells in a specific row
   cellsInRow: (rowId: string) => cy.get(`[data-testid^="grid-cell-${rowId}-"]`),
+
+  // Get all cells for a specific field (column) by field ID
+  cellsForField: (fieldId: string) => cy.get(`[data-testid$="-${fieldId}"][data-testid^="grid-cell-"]`),
+
+  // Get clickable row cell wrappers for a field (DATA ROWS ONLY)
+  // These have data-column-id={fieldId} and contain the onClick handler
+  dataRowCellsForField: (fieldId: string) =>
+    cy.get(`[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"]) .grid-row-cell[data-column-id="${fieldId}"]`),
 
   // Get first cell
   firstCell: () => cy.get('[data-testid^="grid-cell-"]').first(),
