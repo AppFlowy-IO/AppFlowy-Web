@@ -6,24 +6,27 @@ import { ViewLayout } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
+import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { useService } from '@/components/main/app.hooks';
-import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
-
-function MoreActionsContent ({ itemClicked, viewId }: {
+function MoreActionsContent({
+  itemClicked,
+  viewId,
+  onOpenHistory,
+}: {
   itemClicked?: () => void;
   onDeleted?: () => void;
   viewId: string;
+  onOpenHistory?: () => void;
 }) {
   const { t } = useTranslation();
-  const {
-    openDeleteModal,
-  } = useAppOverlayContext();
+  const { openDeleteModal } = useAppOverlayContext();
   const service = useService();
   const workspaceId = useCurrentWorkspaceId();
   const view = useAppView(viewId);
@@ -38,9 +41,7 @@ function MoreActionsContent ({ itemClicked, viewId }: {
   }, [outline, parentViewId]);
 
   const [duplicateLoading, setDuplicateLoading] = useState(false);
-  const {
-    refreshOutline,
-  } = useAppHandlers();
+  const { refreshOutline } = useAppHandlers();
   const handleDuplicateClick = async () => {
     if (!workspaceId || !service) return;
     setDuplicateLoading(true);
@@ -60,56 +61,73 @@ function MoreActionsContent ({ itemClicked, viewId }: {
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
 
+  const isDocument = layout === ViewLayout.Document;
+
   return (
-    <DropdownMenuGroup
-    >
-      <div
-        ref={el => {
-
-          setContainer(el);
-        }}
-      />
-      <DropdownMenuItem
-        className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
-        onSelect={handleDuplicateClick}
-        disabled={duplicateLoading}
-      >
-        {duplicateLoading ? <Progress /> : <DuplicateIcon />}
-        {t('button.duplicate')}
-      </DropdownMenuItem>
-      {container && <MovePagePopover
-        viewId={viewId}
-        onMoved={itemClicked}
-        popoverContentProps={{
-          side: 'right',
-          align: 'start',
-          container,
-        }}
-      >
-        <DropdownMenuItem
-          onSelect={(e) => {
-            e.preventDefault();
+    <>
+      <DropdownMenuGroup>
+        <div
+          ref={(el) => {
+            setContainer(el);
           }}
-          disabled={parentLayout !== ViewLayout.Document}
+        />
+        <DropdownMenuItem
+          className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
+          onSelect={handleDuplicateClick}
+          disabled={duplicateLoading}
         >
-          <MoveToIcon />
-          {t('disclosureAction.moveTo')}
+          {duplicateLoading ? <Progress /> : <DuplicateIcon />}
+          {t('button.duplicate')}
         </DropdownMenuItem>
-      </MovePagePopover>
-      }
+        {container && (
+          <MovePagePopover
+            viewId={viewId}
+            onMoved={itemClicked}
+            popoverContentProps={{
+              side: 'right',
+              align: 'start',
+              container,
+            }}
+          >
+            <DropdownMenuItem
+              onSelect={(e) => {
+                e.preventDefault();
+              }}
+              disabled={parentLayout !== ViewLayout.Document}
+            >
+              <MoveToIcon />
+              {t('disclosureAction.moveTo')}
+            </DropdownMenuItem>
+          </MovePagePopover>
+        )}
 
-      <DropdownMenuItem
-        data-testid="view-action-delete"
-        variant={'destructive'}
-        onSelect={() => {
-          openDeleteModal(viewId);
-        }}
-      >
-        <DeleteIcon />
-        {t('button.delete')}
-      </DropdownMenuItem>
-
-    </DropdownMenuGroup>
+        <DropdownMenuItem
+          data-testid='view-action-delete'
+          variant={'destructive'}
+          onSelect={() => {
+            openDeleteModal(viewId);
+          }}
+        >
+          <DeleteIcon />
+          {t('button.delete')}
+        </DropdownMenuItem>
+      </DropdownMenuGroup>
+      <DropdownMenuSeparator />
+      {isDocument && (
+        <DropdownMenuGroup>
+          <DropdownMenuItem
+            onSelect={(event) => {
+              event.preventDefault();
+              onOpenHistory?.();
+              itemClicked?.();
+            }}
+          >
+            <TimeIcon />
+            {t('versionHistory.versionHistory')}
+          </DropdownMenuItem>
+        </DropdownMenuGroup>
+      )}
+    </>
   );
 }
 

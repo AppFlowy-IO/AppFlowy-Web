@@ -772,6 +772,7 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       created_at: string,
       created_by: number | null,
       is_deleted: boolean
+      editors: number[],
     }[];
     message: string;
   }>(url, {
@@ -790,13 +791,15 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       parentId: data.parent,
       name: data.name,
       createdAt: new Date(data.created_at),
-      isDeleted: data.is_deleted
+      isDeleted: data.is_deleted,
+      editors: data.editors,
     };
   });
 }
 
 export async function previewCollabVersion(workspaceId: string, objectId: string, version: string, collabType: Types) {
   const url = `/{workspace_id}/collab/${objectId}/history/${version}?collab_type=${collabType}`;
+
   return await axiosInstance?.get(url, {
     responseType: 'arraybuffer'
   }).then((response) => {

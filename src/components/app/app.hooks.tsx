@@ -3,6 +3,7 @@ import EventEmitter from 'events';
 import React, { createContext, useContext } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
+import { CollabVersionRecord } from '@/application/collab-version.type';
 import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
@@ -27,6 +28,7 @@ import {
   UserWorkspaceInfo,
   View,
   ViewIconType,
+  YDoc,
 } from '@/application/types';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
@@ -92,6 +94,9 @@ export interface AppContextType {
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadMentionableUsers?: () => Promise<MentionablePerson[]>;
+  getCollabHistory?: (viewId: string) => Promise<CollabVersionRecord[]>;
+  previewCollabVersion?: (viewId: string, versionId: string) => Promise<YDoc | undefined>;
+  revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 
 // Main AppContext - same as original
@@ -283,6 +288,9 @@ export function useAppHandlers() {
     updatePageIcon: context.updatePageIcon,
     updatePageName: context.updatePageName,
     getViewIdFromDatabaseId: context.getViewIdFromDatabaseId,
+    getCollabHistory: context.getCollabHistory,
+    previewCollabVersion: context.previewCollabVersion,
+    revertCollabVersion: context.revertCollabVersion,
     loadMentionableUsers: context.loadMentionableUsers,
   };
 }
