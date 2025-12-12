@@ -120,7 +120,7 @@ export interface AppContextType {
    */
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   getCollabHistory?: (viewId: string) => Promise<CollabVersionRecord[]>;
-  previewCollabVersion?: (viewId: string, versionId: string) => Promise<YDoc>;
+  previewCollabVersion?: (viewId: string, versionId: string) => Promise<YDoc | undefined>;
   revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 

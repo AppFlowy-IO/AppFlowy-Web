@@ -109,7 +109,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
-  const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory } = useViewOperations();
+  const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory, previewCollabVersion } = useViewOperations();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -476,6 +476,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       setWordCount,
 
       getCollabHistory,
+      previewCollabVersion,
       revertCollabVersion,
 
       // Mentionable users
@@ -517,6 +518,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       openModalViewId,
       setWordCount,
       getCollabHistory,
+      previewCollabVersion,
       revertCollabVersion,
       loadMentionableUsers,
     ]
