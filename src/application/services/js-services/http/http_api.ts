@@ -1001,6 +1001,7 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
 
 export async function previewCollabVersion(workspaceId: string, objectId: string, version: string, collabType: Types) {
   const url = `/{workspace_id}/collab/${objectId}/history/${version}?collab_type=${collabType}`;
+
   return await axiosInstance?.get(url, {
     responseType: 'arraybuffer'
   }).then((response) => {

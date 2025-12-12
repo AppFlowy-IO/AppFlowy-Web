@@ -11,7 +11,6 @@ export interface CollabVersionRecord {
   parentId: string | null;
   name: string | null;
   createdAt: Date;
-  snapshot: Uint8Array | null;
   editors: number[]
 }
 

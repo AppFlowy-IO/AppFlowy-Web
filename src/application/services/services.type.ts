@@ -295,6 +295,7 @@ export interface AIChatService {
 
 export interface CollabHistoryService {
   getCollabHistory: (workspaceId: string, viewId: string, since?: Date) => Promise<CollabVersionRecord[]>;
+  previewCollabVersion: (workspaceId: string, viewId: string, versionId: string, collabType: Types) => Promise<Uint8Array | undefined>;
   createCollabVersion: (workspaceId: string, viewId: string, name: string, snapshot: Uint8Array) => Promise<string>;
   deleteCollabVersion: (workspaceId: string, viewId: string, versionId: string) => Promise<void>;
   revertCollabVersion: (workspaceId: string, viewId: string, collabType: Types, versionId: string) => Promise<EncodedCollab>;

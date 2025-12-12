@@ -6,6 +6,7 @@ import { TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM, resolveSidebarSelectedViewId } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
+import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { BusinessInternalContext, BusinessInternalContextType } from '../contexts/BusinessInternalContext';
@@ -56,6 +57,7 @@ function isRouteNotFoundError(error: unknown): boolean {
 // Depends on workspace ID and sync context from previous layers
 export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) => {
   const { currentWorkspaceId, service } = useAuthInternal();
+  const { lastUpdatedCollab, eventEmitter, revertCollabVersion } = useSyncInternal();
   const params = useParams();
   const [searchParams] = useSearchParams();
 
@@ -107,7 +109,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
-  const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync } = useViewOperations();
+  const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory } = useViewOperations();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -473,6 +475,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       wordCount: wordCountRef.current,
       setWordCount,
 
+      getCollabHistory,
+      revertCollabVersion,
+
+      // Mentionable users
       loadMentionableUsers,
     }),
     [
@@ -510,6 +516,8 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       openPageModal,
       openModalViewId,
       setWordCount,
+      getCollabHistory,
+      revertCollabVersion,
       loadMentionableUsers,
     ]
   );

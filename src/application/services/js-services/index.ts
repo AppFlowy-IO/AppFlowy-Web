@@ -899,6 +899,10 @@ export class AFClientService implements AFService {
     return APIService.getCollabVersions(workspaceId, viewId, since);
   }
 
+  async previewCollabVersion(workspaceId: string, viewId: string, versionId: string, collabType: Types) {
+    return APIService.previewCollabVersion(workspaceId, viewId, versionId, collabType);
+  }
+
   async createCollabVersion(workspaceId: string, viewId: string, name: string, snapshot: Uint8Array) {
     return APIService.createCollabVersion(workspaceId, viewId, name, snapshot);
   }

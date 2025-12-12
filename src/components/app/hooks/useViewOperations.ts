@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Awareness } from 'y-protocols/awareness';
+import * as Y from 'yjs';
 
 import { openCollabDB } from '@/application/db';
 import {
@@ -553,6 +554,61 @@ export function useViewOperations() {
     [currentWorkspaceId, navigate, service]
   );
 
+  const getCollabHistory = useCallback(
+    async (viewId: string, since?: Date) => {
+      if (!currentWorkspaceId || !service) {
+        throw new Error('Service not found');
+      }
+
+      try {
+        const versions = await service.getCollabHistory(currentWorkspaceId, viewId, since);
+
+        return versions;
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    [currentWorkspaceId, service]
+  );
+
+  const previewCollabVersion = useCallback(
+    async (viewId: string, versionId: string, collabType: Types) => {
+      if (!currentWorkspaceId || !service) {
+        throw new Error('Service not found');
+      }
+
+      try {
+        const docState = await service.previewCollabVersion(currentWorkspaceId, viewId, versionId, collabType);
+
+        if (!docState) {
+          return Promise.reject(new Error('No document state returned'));
+        }
+
+        if (collabType === Types.Document) {
+          const doc = new Y.Doc();
+
+          Y.transact(
+            doc,
+            () => {
+              try {
+                Y.applyUpdate(doc, docState, CollabOrigin.Local);
+              } catch (e) {
+                Log.error('Error applying Yjs update for document version preview', e);
+                throw e;
+              }
+            },
+            CollabOrigin.Local,
+          );
+
+          return doc;
+        }
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    [currentWorkspaceId, service]
+  );
+
   // Clean up created row documents when view changes
   useEffect(() => {
     const rowKeys = createdRowKeys.current;
@@ -578,5 +634,7 @@ export function useViewOperations() {
     awarenessMap,
     getViewIdFromDatabaseId,
     getViewReadOnlyStatus,
+    getCollabHistory,
+    previewCollabVersion,
   };
 }
