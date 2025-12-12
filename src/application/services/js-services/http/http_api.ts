@@ -1,6 +1,6 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import dayjs from 'dayjs';
-import { fromBase64, toBase64 } from 'lib0/buffer';
+import { toBase64 } from 'lib0/buffer';
 import { omit } from 'lodash-es';
 import { nanoid } from 'nanoid';
 
@@ -908,7 +908,7 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       name: string | null,
       created_at: string,
       created_by: number | null,
-      snapshot: string, // base64
+      is_deleted: boolean
     }[];
     message: string;
   }>(url, {
@@ -927,7 +927,7 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       parentId: data.parent,
       name: data.name,
       createdAt: new Date(data.created_at),
-      snapshot: fromBase64(data.snapshot),
+      isDeleted: data.is_deleted
     };
   });
 }
