@@ -27,10 +27,10 @@ export function useViewOperations() {
   // Register workspace database document for sync
   const registerWorkspaceDatabaseDoc = useCallback(
     async (workspaceId: string, databaseStorageId: string) => {
-      const doc = await openCollabDB(databaseStorageId);
+      const { doc, version } = await openCollabDB(databaseStorageId);
 
       doc.guid = databaseStorageId;
-      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase });
+      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase, version });
 
       workspaceDatabaseDocMapRef.current.clear();
       workspaceDatabaseDocMapRef.current.set(workspaceId, workspaceDatabaseDoc);
@@ -181,9 +181,9 @@ export function useViewOperations() {
           throw new Error('Service or workspace not found');
         }
 
-        const res = await service?.getPageDoc(currentWorkspaceId, id);
+        const { doc, version } = await service.getPageDoc(currentWorkspaceId, id);
 
-        if (!res) {
+        if (!doc) {
           throw new Error('View not found');
         }
 
@@ -253,14 +253,14 @@ export function useViewOperations() {
                 return prev;
               }
 
-              awareness = new Awareness(res);
+              awareness = new Awareness(doc);
               return { ...prev, [id]: awareness };
             });
           }
 
-          const { doc } = registerSyncContext({ doc: res, collabType, awareness });
+          const ctx = registerSyncContext({ doc, collabType, awareness, version });
 
-          return doc;
+          return ctx.doc;
         }
 
         const databaseId = await getDatabaseId(id);
@@ -269,11 +269,8 @@ export function useViewOperations() {
           throw new Error('Database not found');
         }
 
-        res.guid = databaseId;
-        const { doc } = registerSyncContext({ doc: res, collabType });
-
-        return doc;
-
+        doc.guid = databaseId;
+        return registerSyncContext({ doc: doc, collabType, version }).doc;
       } catch (e) {
         return Promise.reject(e);
       }
@@ -306,6 +303,7 @@ export function useViewOperations() {
         const syncContext = registerSyncContext({
           doc,
           collabType: Types.DatabaseRow,
+          version: null, // atm. versions are not used for database rows
         });
 
         createdRowKeys.current.push(rowKey);
