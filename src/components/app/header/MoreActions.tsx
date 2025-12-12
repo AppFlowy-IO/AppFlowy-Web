@@ -8,6 +8,7 @@ import { findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { useAppOutline, useAppView, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
+import { DocumentHistoryModal } from '@/components/document/history/DocumentHistoryModal';
 import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +37,7 @@ function MoreActions({
   const { selectionMode, onOpenSelectionMode } = useAIChatContext();
   const [hasMessages, setHasMessages] = useState(false);
   const [open, setOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const outline = useAppOutline();
 
   const view = useAppView(viewId);
@@ -93,6 +95,23 @@ function MoreActions({
     ) : null;
   }, [view?.layout, hasMessages, t, onOpenSelectionMode, handleClose]);
 
+  const handleOpenHistory = useCallback(() => {
+    handleClose();
+    setHistoryOpen(true);
+  }, [handleClose]);
+
+  useEffect(() => {
+    setHistoryOpen(false);
+  }, [viewId]);
+
+  const showHistory = view?.layout === ViewLayout.Document;
+
+  useEffect(() => {
+    if (!showHistory && historyOpen) {
+      setHistoryOpen(false);
+    }
+  }, [showHistory, historyOpen]);
+
   const shareWithMeView = useMemo(() => {
     return findViewInShareWithMe(outline || [], viewId);
   }, [outline, viewId]);
@@ -102,31 +121,37 @@ function MoreActions({
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button data-testid='page-more-actions' size={'icon'} variant={'ghost'} className={'text-icon-secondary'}>
-          <MoreIcon />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent {...menuContentProps}>
-        <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button data-testid='page-more-actions' size={'icon'} variant={'ghost'} className={'text-icon-secondary'}>
+            <MoreIcon />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent {...menuContentProps}>
+          <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
 
-        {role === Role.Guest || shareWithMeView ? null : (
-          <>
-            <MoreActionsContent
-              itemClicked={() => {
-                handleClose();
-              }}
-              onDeleted={onDeleted}
-              viewId={viewId}
-            />
-            <DropdownMenuSeparator />
-          </>
-        )}
+          {role === Role.Guest || shareWithMeView ? null : (
+            <>
+              <MoreActionsContent
+                itemClicked={() => {
+                  handleClose();
+                }}
+                onDeleted={onDeleted}
+                viewId={viewId}
+                onOpenHistory={showHistory ? handleOpenHistory : undefined}
+              />
+              <DropdownMenuSeparator />
+            </>
+          )}
 
-        <DocumentInfo viewId={viewId} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DocumentInfo viewId={viewId} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {showHistory && (
+        <DocumentHistoryModal open={historyOpen} onOpenChange={setHistoryOpen} viewId={viewId} view={view} />
+      )}
+    </>
   );
 }
 

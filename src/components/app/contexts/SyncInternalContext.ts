@@ -14,7 +14,7 @@ export interface SyncInternalContextType {
   webSocket: AppflowyWebSocketType; // WebSocket connection from useAppflowyWebSocket
   broadcastChannel: BroadcastChannelType; // BroadcastChannel from useBroadcastChannel
   registerSyncContext: (params: RegisterSyncContext) => SyncContext;
-  revertCollabVersion: (viewId: string, version: string) => void;
+  revertCollabVersion: (viewId: string, version: string) => Promise<void>;
   eventEmitter: EventEmitter;
   awarenessMap: Record<string, Awareness>;
   lastUpdatedCollab: UpdateCollabInfo | null;

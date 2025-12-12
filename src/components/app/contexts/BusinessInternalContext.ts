@@ -1,31 +1,33 @@
 import { createContext, useContext } from 'react';
 
+import { CollabVersionRecord } from '@/application/collab-version.type';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
-  View,
-  TextCount,
   AppendBreadcrumb,
-  LoadView,
-  LoadViewMeta,
-  CreateRow,
-  CreatePagePayload,
-  CreatePageResponse,
-  UpdatePagePayload,
-  ViewIconType,
-  CreateSpacePayload,
-  UpdateSpacePayload,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  CreatePagePayload,
+  CreatePageResponse,
+  CreateRow,
+  CreateSpacePayload,
+  DatabaseRelations,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadDatabasePrompts,
-  TestDatabasePromptConfig,
-  DatabaseRelations,
-  Subscription,
+  LoadView,
+  LoadViewMeta,
   MentionablePerson,
+  Subscription,
+  TestDatabasePromptConfig,
+  TextCount,
+  Types,
   UIVariant,
+  UpdatePagePayload,
+  UpdateSpacePayload,
+  View,
+  ViewIconType,
   YDoc,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 
 // Internal context for business layer
 // This context is only used within the app provider layers
@@ -100,10 +102,15 @@ export interface BusinessInternalContextType {
   viewHasBeenDeleted?: boolean;
   openPageModal?: (viewId: string) => void;
   openPageModalViewId?: string;
-  
+
   // Word count
   wordCount?: Record<string, TextCount>;
   setWordCount?: (viewId: string, count: TextCount) => void;
+
+  // Collaboration history
+  getCollabHistory?: (viewId: string, since?: Date | undefined) => Promise<CollabVersionRecord[]>;
+  previewCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<YDoc>;
+  revertCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<void>;
 }
 
 export const BusinessInternalContext = createContext<BusinessInternalContextType | null>(null);
@@ -111,10 +118,10 @@ export const BusinessInternalContext = createContext<BusinessInternalContextType
 // Hook to access business internal context
 export function useBusinessInternal() {
   const context = useContext(BusinessInternalContext);
-  
+
   if (!context) {
     throw new Error('useBusinessInternal must be used within a BusinessInternalProvider');
   }
-  
+
   return context;
 }

@@ -31,7 +31,7 @@ const SKIP_NEXT_FOLDER_OUTLINE_REFRESH_TTL_MS =
 // Depends on workspace ID and sync context from previous layers
 export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) => {
   const { currentWorkspaceId } = useAuthInternal();
-  const { lastUpdatedCollab, eventEmitter } = useSyncInternal();
+  const { lastUpdatedCollab, eventEmitter, revertCollabVersion } = useSyncInternal();
   const params = useParams();
   const [searchParams] = useSearchParams();
 
@@ -79,7 +79,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
-  const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync } = useViewOperations();
+  const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory } = useViewOperations();
 
   // Initialize page operations
   const pageOperations = usePageOperations({ outline, loadOutline });
@@ -299,6 +299,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       wordCount: wordCountRef.current,
       setWordCount,
 
+      getCollabHistory,
+      revertCollabVersion,
+
+      // Mentionable users
       loadMentionableUsers,
     }),
     [
@@ -332,6 +336,8 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       openPageModal,
       openModalViewId,
       setWordCount,
+      getCollabHistory,
+      revertCollabVersion,
       loadMentionableUsers,
     ]
   );

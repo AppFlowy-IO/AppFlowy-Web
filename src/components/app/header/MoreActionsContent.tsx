@@ -7,6 +7,7 @@ import { canBeMoved } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
+import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
@@ -15,11 +16,15 @@ import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { useService } from '@/components/main/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 
-
-function MoreActionsContent({ itemClicked, viewId }: {
+function MoreActionsContent({
+  itemClicked,
+  viewId,
+  onOpenHistory,
+}: {
   itemClicked?: () => void;
   onDeleted?: () => void;
   viewId: string;
+  onOpenHistory?: () => void;
 }) {
   const { t } = useTranslation();
   const {
@@ -40,9 +45,7 @@ function MoreActionsContent({ itemClicked, viewId }: {
     return findView(outline, parentViewId) ?? null;
   }, [outline, parentViewId]);
 
-  const {
-    refreshOutline,
-  } = useAppHandlers();
+  const { refreshOutline } = useAppHandlers();
   const { syncAllToServer } = useSyncInternal();
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId || !service) return;
@@ -70,6 +73,8 @@ function MoreActionsContent({ itemClicked, viewId }: {
   const containerRef = useCallback((el: HTMLElement | null) => {
     setContainer(el);
   }, []);
+
+  const isDocument = layout === ViewLayout.Document;
 
   return (
     <DropdownMenuGroup
@@ -114,6 +119,17 @@ function MoreActionsContent({ itemClicked, viewId }: {
       >
         <DeleteIcon />
         {t('button.delete')}
+      </DropdownMenuItem>
+
+      <DropdownMenuItem
+        onSelect={(event) => {
+          event.preventDefault();
+          onOpenHistory?.();
+          itemClicked?.();
+        }}
+      >
+        <TimeIcon />
+        {t('versionHistory.versionHistory')}
       </DropdownMenuItem>
 
     </DropdownMenuGroup>
