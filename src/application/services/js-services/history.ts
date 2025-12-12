@@ -1,5 +1,4 @@
 
-import { db } from '@/application/db';
 import { getCollabVersions } from '@/application/services/js-services/http/http_api';
 
 interface DeleteItem {
@@ -12,30 +11,9 @@ export interface CollabVersion {
   parentId: string | null,
   name: string | null,
   createdAt: Date,
-  snapshot: Uint8Array | null,
+  isDeleted: boolean,
   uids?: string[]
 }
-
-/**
- * By default, invalidate versions stored in IndexedDb cache after 30 days.
- */
-const VERSION_EXPIRY_DAYS = 7;
-
-const cleanupExpiredVersions = async (versions: Map<string, CollabVersion>) => {
-  const expirationDate = Date.now() - (VERSION_EXPIRY_DAYS * 1000 * 60 * 60 * 24);
-  const toDelete = [];
-
-  for (const [versionId, version] of versions) {
-    if (version.createdAt.getTime() < expirationDate) {
-      toDelete.push(versionId);
-    }
-  }
-
-  if (toDelete.length > 0) {
-    console.debug('Pruning expired collab versions', toDelete);
-    await db.collab_versions.bulkDelete(toDelete);
-  }
-};
 
 /**
  * Returns the collab versions for a given `viewId`. These are fetched from remote HTTP endpoint and cached inside
