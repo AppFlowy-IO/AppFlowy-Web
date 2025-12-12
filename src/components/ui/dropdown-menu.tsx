@@ -35,7 +35,7 @@ function DropdownMenuContent({ className, sideOffset = 4, container, forceMount,
         avoidCollisions
         className={cn(
           // Base colors and appearance
-          'bg-background-primary text-text-primary',
+          'border border-border-primary bg-background-primary text-text-primary',
           'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
 
           // Size constraints and overflow behavior
@@ -69,7 +69,7 @@ const DropdownMenuGroup = ({ ...props }: React.ComponentProps<typeof DropdownMen
 const dropdownMenuItemVariants = cva(
   cn(
     'focus:bg-fill-content-hover hover:bg-fill-content-hover focus-visible:outline-none',
-    'relative flex cursor-pointer items-center gap-[10px] rounded-300 px-2 py-1.5 min-h-[32px]',
+    'relative flex cursor-pointer items-center gap-2 rounded-300 px-2 py-1.5 min-h-[32px]',
     'text-sm text-text-primary outline-hidden select-none',
 
     // Disabled state

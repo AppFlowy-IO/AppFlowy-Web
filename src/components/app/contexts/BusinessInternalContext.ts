@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 
+import { CollabVersionRecord } from '@/application/collab-version.type';
 import {
   View,
   TextCount,
@@ -23,6 +24,8 @@ import {
   Subscription,
   MentionablePerson,
   UIVariant,
+  YDoc,
+  Types,
 } from '@/application/types';
 
 // Internal context for business layer
@@ -101,6 +104,11 @@ export interface BusinessInternalContextType {
   // Word count
   wordCount?: Record<string, TextCount>;
   setWordCount?: (viewId: string, count: TextCount) => void;
+  
+  // Collaboration history
+  getCollabHistory?: (viewId: string, since?: Date | undefined) => Promise<CollabVersionRecord[]>;
+  previewCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<YDoc>;
+  revertCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<void>;
 }
 
 export const BusinessInternalContext = createContext<BusinessInternalContextType | null>(null);

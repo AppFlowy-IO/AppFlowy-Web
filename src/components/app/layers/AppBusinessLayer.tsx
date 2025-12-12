@@ -24,7 +24,7 @@ interface AppBusinessLayerProps {
 // Depends on workspace ID and sync context from previous layers
 export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) => {
   const { currentWorkspaceId } = useAuthInternal();
-  const { lastUpdatedCollab } = useSyncInternal();
+  const { lastUpdatedCollab, revertCollabVersion } = useSyncInternal();
   const params = useParams();
 
   // UI state
@@ -60,7 +60,8 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   } = useWorkspaceData();
 
   // Initialize view operations
-  const { loadView, createRowDoc, toView, awarenessMap, getViewIdFromDatabaseId } = useViewOperations();
+  const { loadView, createRowDoc, toView, awarenessMap, getViewIdFromDatabaseId, getCollabHistory } =
+    useViewOperations();
 
   // Initialize page operations
   const pageOperations = usePageOperations({ outline, loadOutline });
@@ -256,6 +257,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       wordCount: wordCountRef.current,
       setWordCount,
 
+      getCollabHistory,
+      revertCollabVersion,
+
+      // Mentionable users
       loadMentionableUsers,
     }),
     [
@@ -288,6 +293,8 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       openPageModal,
       openModalViewId,
       setWordCount,
+      getCollabHistory,
+      revertCollabVersion,
       loadMentionableUsers,
     ]
   );

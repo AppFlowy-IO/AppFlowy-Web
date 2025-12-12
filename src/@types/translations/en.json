@@ -1938,6 +1938,7 @@
       "timeHintTextInTwelveHour": "01:00 PM",
       "timeHintTextInTwentyFourHour": "13:00"
     },
+
     "creating": "Creating...",
     "slashMenu": {
       "board": {
@@ -3601,5 +3602,19 @@
   "other_users": "Other users ({{count}})",
   "connecting": "Connecting...",
   "disconnected": "Disconnected from cloud. Reconnect to sync changes.",
-  "reconnect": "Reconnect"
+  "reconnect": "Reconnect",
+  "versionHistory": {
+    "versionHistory": "Version History",
+    "all": "All",
+    "last7Days": "Last 7 days",
+    "last30Days": "Last 30 days",
+    "last60Days": "Last 60 days",
+    "onlyYours": "Only yours",
+    "restore": "Restore",
+    "currentVersion": "Current version",
+    "restoredFrom": "Restored from {}",
+    "more": "More...",
+    "upgrade": "Upgrade",
+    "forLongerVersionHistory": "for longer version history"
+  }
 }

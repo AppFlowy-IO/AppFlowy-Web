@@ -27,6 +27,7 @@ import {
   UserWorkspaceInfo,
   View,
   ViewIconType,
+  YDoc,
 } from '@/application/types';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
@@ -35,6 +36,7 @@ import { AuthInternalContext } from './contexts/AuthInternalContext';
 import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';
 import { AppSyncLayer } from './layers/AppSyncLayer';
+import { CollabVersionRecord } from '@/application/collab-version.type';
 
 // Main AppContext interface - kept identical to maintain backward compatibility
 export interface AppContextType {
@@ -92,6 +94,9 @@ export interface AppContextType {
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadMentionableUsers?: () => Promise<MentionablePerson[]>;
+  getCollabHistory?: (viewId: string) => Promise<CollabVersionRecord[]>;
+  previewCollabVersion?: (viewId: string, versionId: string) => Promise<YDoc>;
+  revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 
 // Main AppContext - same as original
@@ -283,6 +288,9 @@ export function useAppHandlers() {
     updatePageIcon: context.updatePageIcon,
     updatePageName: context.updatePageName,
     getViewIdFromDatabaseId: context.getViewIdFromDatabaseId,
+    getCollabHistory: context.getCollabHistory,
+    previewCollabVersion: context.previewCollabVersion,
+    revertCollabVersion: context.revertCollabVersion,
     loadMentionableUsers: context.loadMentionableUsers,
   };
 }

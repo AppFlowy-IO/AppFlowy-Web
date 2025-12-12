@@ -27,5 +27,5 @@ export interface CollabVersion {
  */
 export const collabVersions = async (workspaceId: string, viewId: string) => {
   //TODO: join editors with user data (preferably cached locally)
-  await getCollabVersions(workspaceId, viewId)
+  return getCollabVersions(workspaceId, viewId)
 }
