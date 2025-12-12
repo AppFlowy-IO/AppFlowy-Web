@@ -188,6 +188,10 @@ export function DocumentHistoryModal({
 
   useEffect(() => {
     void (async () => {
+      if (!selectedVersionId) {
+        Log.warn('No selected version id for previewing version');
+      }
+
       const cachedDoc = previewYDocRef.current.get(selectedVersionId);
 
       if (cachedDoc) {
