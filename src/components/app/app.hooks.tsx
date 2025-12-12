@@ -3,6 +3,7 @@ import EventEmitter from 'events';
 import React, { createContext, useContext } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
+import { CollabVersionRecord } from '@/application/collab-version.type';
 import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
@@ -36,7 +37,6 @@ import { AuthInternalContext } from './contexts/AuthInternalContext';
 import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';
 import { AppSyncLayer } from './layers/AppSyncLayer';
-import { CollabVersionRecord } from '@/application/collab-version.type';
 
 // Main AppContext interface - kept identical to maintain backward compatibility
 export interface AppContextType {
@@ -95,7 +95,7 @@ export interface AppContextType {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadMentionableUsers?: () => Promise<MentionablePerson[]>;
   getCollabHistory?: (viewId: string) => Promise<CollabVersionRecord[]>;
-  previewCollabVersion?: (viewId: string, versionId: string) => Promise<YDoc>;
+  previewCollabVersion?: (viewId: string, versionId: string) => Promise<YDoc | undefined>;
   revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 
