@@ -20,8 +20,9 @@ interface AppBusinessLayerProps {
 }
 
 const FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS = 1000;
-const OUTLINE_REFRESH_COALESCE_BUFFER_MS = 1500;
-const OUTLINE_REFRESH_SUPPRESS_WINDOW_MS = FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS + OUTLINE_REFRESH_COALESCE_BUFFER_MS;
+const SKIP_NEXT_FOLDER_OUTLINE_REFRESH_BUFFER_MS = 5000;
+const SKIP_NEXT_FOLDER_OUTLINE_REFRESH_TTL_MS =
+  FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS + SKIP_NEXT_FOLDER_OUTLINE_REFRESH_BUFFER_MS;
 
 // Third layer: Business logic operations
 // Handles all business operations like outline management, page operations, database operations
@@ -35,7 +36,8 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const [rendered, setRendered] = useState(false);
   const [openModalViewId, setOpenModalViewId] = useState<string | undefined>(undefined);
   const wordCountRef = useRef<Record<string, TextCount>>({});
-  const suppressFolderOutlineRefreshUntilRef = useRef<number>(0);
+  const skipNextFolderOutlineRefreshRef = useRef(false);
+  const skipNextFolderOutlineRefreshUntilRef = useRef<number>(0);
 
   // Calculate view ID from params
   const viewId = useMemo(() => {
@@ -70,8 +72,21 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   // Initialize page operations
   const loadOutlineAfterLocalMutation = useCallback(
     async (workspaceId: string, force?: boolean) => {
-      suppressFolderOutlineRefreshUntilRef.current = Date.now() + OUTLINE_REFRESH_SUPPRESS_WINDOW_MS;
-      return loadOutline(workspaceId, force);
+      // Local mutations typically trigger a folder-collab update echo shortly after we already
+      // refetched the outline. Skip the next folder-collab-driven refresh once to avoid a
+      // second, visually noticeable "refresh" of database UI derived from the outline.
+      skipNextFolderOutlineRefreshRef.current = true;
+      skipNextFolderOutlineRefreshUntilRef.current = Date.now() + SKIP_NEXT_FOLDER_OUTLINE_REFRESH_TTL_MS;
+
+      try {
+        return await loadOutline(workspaceId, force);
+      } catch (e) {
+        // If our local outline reload failed, allow the next folder refresh to proceed so
+        // we can still recover when the folder-collab update arrives.
+        skipNextFolderOutlineRefreshRef.current = false;
+        skipNextFolderOutlineRefreshUntilRef.current = 0;
+        throw e;
+      }
     },
     [loadOutline]
   );
@@ -175,10 +190,13 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const debouncedRefreshOutline = useMemo(
     () =>
       debounce(() => {
-        // Avoid an extra outline refetch right after we already requested an outline reload
-        // (e.g. after create/delete/rename operations). This prevents a visible "refresh"
-        // of database UI state derived from the outline.
-        if (Date.now() < suppressFolderOutlineRefreshUntilRef.current) {
+        // Avoid an extra outline refetch right after a local mutation already requested one.
+        // This prevents a visible "refresh" of database UI state derived from the outline.
+        if (
+          skipNextFolderOutlineRefreshRef.current &&
+          Date.now() < skipNextFolderOutlineRefreshUntilRef.current
+        ) {
+          skipNextFolderOutlineRefreshRef.current = false;
           return;
         }
 

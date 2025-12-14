@@ -21,6 +21,15 @@ import './commands';
 
 // Global hooks for console logging
 beforeEach(() => {
+  // Clear stale localStorage values that could cause issues between tests
+  // This prevents the app from trying to navigate to a non-existent view from previous tests
+  cy.clearLocalStorage('last_view_id');
+
+  // Clear all IndexedDB databases to remove stale document caches
+  // Visit about:blank first to get a window context for IndexedDB operations
+  cy.visit('about:blank');
+  cy.clearAllIndexedDB();
+
   // Start capturing console logs for each test
   cy.startConsoleCapture();
   
