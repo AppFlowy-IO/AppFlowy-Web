@@ -47,6 +47,7 @@ import {
   RowId,
   TimeFormat,
   UpdatePagePayload,
+  View,
   ViewLayout,
   YDatabase,
   YDatabaseBoardLayoutSetting,
@@ -76,6 +77,7 @@ import {
 } from '@/application/types';
 import { DefaultTimeSetting } from '@/application/user-metadata';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { isDatabaseContainer } from '@/application/view-utils';
 
 export function useResizeColumnWidthDispatch() {
   const database = useDatabase();
@@ -2255,7 +2257,8 @@ function useEnhanceCalendarLayoutByFieldExists() {
  */
 export function useAddDatabaseView() {
   // databasePageId: The main database page in folder (used as parent for new views)
-  const { databasePageId, createDatabaseView, databaseDoc } = useDatabaseContext();
+  const { databasePageId, activeViewId, createDatabaseView, databaseDoc, loadViewMeta, isDocumentBlock } =
+    useDatabaseContext();
   const sharedRoot = useSharedRoot();
 
   const database = useMemo(() => {
@@ -2269,7 +2272,7 @@ export function useAddDatabaseView() {
   }, [database]);
 
   return useCallback(
-    async (layout: DatabaseViewLayout) => {
+    async (layout: DatabaseViewLayout, nameOverride?: string) => {
       if (!createDatabaseView) {
         throw new Error('createDatabaseView not found');
       }
@@ -2277,6 +2280,8 @@ export function useAddDatabaseView() {
       if (!databasePageId) {
         throw new Error('databasePageId not found');
       }
+
+      const requestViewId = activeViewId || databasePageId;
 
       if (!databaseId) {
         throw new Error('databaseId not found');
@@ -2293,12 +2298,56 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Calendar]: 'Calendar',
       }[layout];
 
-      // Create new view as a child of the main database page
-      const response = await createDatabaseView(databasePageId, {
-        parent_view_id: databasePageId,
+      const tabsParentViewId = await (async (): Promise<string> => {
+        // Best-effort: fall back to previous behavior if meta lookup isn't available.
+        if (!loadViewMeta) {
+          return databasePageId;
+        }
+
+        const safeLoadViewMeta = async (viewId: string): Promise<View | null> => {
+          try {
+            return await loadViewMeta(viewId);
+          } catch {
+            return null;
+          }
+        };
+
+        const currentMeta = await safeLoadViewMeta(requestViewId);
+
+        // If the current view itself is a container, attach under it.
+        if (currentMeta && isDatabaseContainer(currentMeta)) {
+          return currentMeta.view_id;
+        }
+
+        const parentId = currentMeta?.parent_view_id;
+
+        if (!parentId) {
+          return databasePageId;
+        }
+
+        // If parent is a database container, attach under the container (Scenario 4).
+        const parentMeta = await safeLoadViewMeta(parentId);
+
+        if (isDatabaseContainer(parentMeta)) {
+          return parentId;
+        }
+
+        // Embedded databases without a container attach under the document (Scenario 3).
+        if (isDocumentBlock) {
+          return parentId;
+        }
+
+        // Backward-compatible fallback: attach under the current database view.
+        return databasePageId;
+      })();
+
+      // Create new view as a child of the database container (or document for embedded linked views).
+      const response = await createDatabaseView(requestViewId, {
+        parent_view_id: tabsParentViewId,
         database_id: databaseId,
         layout: viewLayout,
-        name,
+        name: nameOverride ?? name,
+        embedded: isDocumentBlock ?? false,
       });
 
       if (response?.database_update?.length) {
@@ -2307,7 +2356,7 @@ export function useAddDatabaseView() {
 
       return response.view_id;
     },
-    [createDatabaseView, databaseDoc, databasePageId, databaseId]
+    [createDatabaseView, databaseDoc, databasePageId, databaseId, activeViewId, loadViewMeta, isDocumentBlock]
   );
 }
 

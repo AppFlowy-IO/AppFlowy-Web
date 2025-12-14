@@ -22,6 +22,17 @@ export function byTestIdContains(fragment: string): string {
 }
 
 /**
+ * Extracts a viewId from a sidebar page item test id (e.g. "page-<viewId>").
+ */
+export function viewIdFromPageTestId(testId: string | null | undefined): string {
+  if (!testId || !testId.startsWith('page-')) {
+    throw new Error(`Expected data-testid to start with "page-" but got: ${String(testId)}`);
+  }
+
+  return testId.slice('page-'.length);
+}
+
+/**
  * Page-related selectors
  */
 export const PageSelectors = {
@@ -36,18 +47,23 @@ export const PageSelectors = {
 
   // Get page item containing specific page name
   itemByName: (pageName: string) => {
-    return cy.get(byTestId('page-name'))
-      .contains(pageName)
-      .first()
-      .closest(byTestId('page-item'));
+    return cy.get(byTestId('page-name')).contains(pageName).first().closest(byTestId('page-item'));
   },
+
+  // Get the first child viewId for a page (e.g. database container -> first database view)
+  firstChildViewIdByName: (pageName: string) =>
+    PageSelectors.itemByName(pageName)
+      .find(byTestId('page-item'))
+      .first()
+      .children()
+      .first()
+      .invoke('attr', 'data-testid')
+      .then((testId) => viewIdFromPageTestId(testId)),
 
   // Get more actions button for a specific page
   moreActionsButton: (pageName?: string) => {
     if (pageName) {
-      return PageSelectors.itemByName(pageName)
-        .find(byTestId('page-more-actions'))
-        .first();  // Ensure we only get one button even if multiple exist
+      return PageSelectors.itemByName(pageName).find(byTestId('page-more-actions')).first(); // Ensure we only get one button even if multiple exist
     }
     return cy.get(byTestId('page-more-actions'));
   },
@@ -100,9 +116,7 @@ export const SpaceSelectors = {
 
   // Get space by name
   itemByName: (spaceName: string) => {
-    return cy.get(byTestId('space-name'))
-      .contains(spaceName)
-      .closest(byTestId('space-item'));
+    return cy.get(byTestId('space-name')).contains(spaceName).closest(byTestId('space-item'));
   },
 
   // Get more actions button for spaces
@@ -170,7 +184,7 @@ export const ModalSelectors = {
   // Rename modal inputs
   renameInput: () => cy.get(byTestId('rename-modal-input')),
   renameSaveButton: () => cy.get(byTestId('rename-modal-save')),
-  
+
   // Generic dialog selectors
   dialogContainer: () => cy.get('.MuiDialog-container'),
   dialogRole: () => cy.get('[role="dialog"]'),
@@ -190,9 +204,7 @@ export const DropdownSelectors = {
  * Helper function to trigger hover on an element to show hidden actions
  */
 export function hoverToShowActions(element: Cypress.Chainable) {
-  return element
-    .trigger('mouseenter', { force: true })
-    .trigger('mouseover', { force: true });
+  return element.trigger('mouseenter', { force: true }).trigger('mouseover', { force: true });
 }
 
 /**
@@ -204,7 +216,7 @@ export const ShareSelectors = {
 
   // Share popover
   sharePopover: () => cy.get(byTestId('share-popover')),
-  
+
   // Share inputs
   emailTagInput: () => cy.get('[data-slot="email-tag-input"]'),
   inviteButton: () => cy.contains('button', /invite/i),
@@ -361,7 +373,9 @@ export const DatabaseGridSelectors = {
   // Get clickable row cell wrappers for a field (DATA ROWS ONLY)
   // These have data-column-id={fieldId} and contain the onClick handler
   dataRowCellsForField: (fieldId: string) =>
-    cy.get(`[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"]) .grid-row-cell[data-column-id="${fieldId}"]`),
+    cy.get(
+      `[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"]) .grid-row-cell[data-column-id="${fieldId}"]`
+    ),
 
   // Get first cell
   firstCell: () => cy.get('[data-testid^="grid-cell-"]').first(),
@@ -375,10 +389,17 @@ export const DatabaseGridSelectors = {
  */
 export const DatabaseViewSelectors = {
   // View tabs
-  viewTab: (viewId?: string) => viewId ? cy.get(byTestId(`view-tab-${viewId}`)) : cy.get('[data-testid^="view-tab-"]'),
+  viewTab: (viewId?: string) => (viewId ? cy.get(byTestId(`view-tab-${viewId}`)) : cy.get('[data-testid^="view-tab-"]')),
 
   // Active view tab
   activeViewTab: () => cy.get('[data-testid^="view-tab-"][data-state="active"]'),
+
+  // Tab context menu actions
+  tabActionRename: () => cy.get(byTestId('database-view-action-rename')),
+  tabActionDelete: () => cy.get(byTestId('database-view-action-delete')),
+
+  // Delete view confirm dialog button
+  deleteViewConfirmButton: () => cy.get(byTestId('database-view-delete-confirm')),
 
   // View name input
   viewNameInput: () => cy.get(byTestId('view-name-input')),
@@ -419,7 +440,12 @@ export const DatabaseFilterSelectors = {
   sortCondition: () => cy.get(byTestId('database-sort-condition')),
 
   // Remove filter button (inside condition)
-  removeFilterButton: () => cy.get('button[aria-label*="remove"], button[aria-label*="delete"], button:contains("×"), svg[class*="close"], svg[class*="x"]').first(),
+  removeFilterButton: () =>
+    cy
+      .get(
+        'button[aria-label*="remove"], button[aria-label*="delete"], button:contains("×"), svg[class*="close"], svg[class*="x"]'
+      )
+      .first(),
 
   // Filter input
   filterInput: () => cy.get(byTestId('text-filter-input')),
@@ -457,92 +483,105 @@ export const SlashCommandSelectors = {
     });
 
     // Find the MUI Popover paper element and interact with it
-    cy.get('.MuiPopover-paper').last().should('be.visible').within(() => {
-      if (dbName) {
-        // Try to search for specific database with retry logic
-        cy.get('input[placeholder*="Search"]').should('be.visible').clear().type(dbName);
+    cy.get('.MuiPopover-paper')
+      .last()
+      .should('be.visible')
+      .within(() => {
+        if (dbName) {
+          // Try to search for specific database with retry logic
+          cy.get('input[placeholder*="Search"]').should('be.visible').clear().type(dbName);
 
-        // Retry mechanism: wait and check if database appears (up to 5 attempts)
-        let attempts = 0;
-        const maxAttempts = 5;
-        const checkDatabase = () => {
-          attempts++;
-          cy.task('log', `[selectDatabase] Attempt ${attempts}/${maxAttempts} to find database "${dbName}"`);
+          // Retry mechanism: wait and check if database appears (up to 5 attempts)
+          let attempts = 0;
+          const maxAttempts = 5;
+          const checkDatabase = () => {
+            attempts++;
+            cy.task('log', `[selectDatabase] Attempt ${attempts}/${maxAttempts} to find database "${dbName}"`);
 
-          waitForReactUpdate(2000);
+            waitForReactUpdate(2000);
 
-          cy.get('[class*="appflowy-scrollbar"]').then(($area) => {
-            const areaText = $area.text();
+            cy.get('[class*="appflowy-scrollbar"]').then(($area) => {
+              const areaText = $area.text();
 
-            // Check if we have "No databases found" message
-            if (areaText.includes('No databases found')) {
-              if (attempts < maxAttempts) {
-                cy.task('log', `[selectDatabase] No databases found, retrying... (attempt ${attempts})`);
-                waitForReactUpdate(3000); // Wait longer before retry
-                checkDatabase();
-                return;
-              } else {
-                cy.task('log', '[selectDatabase] No databases found after all retries');
-                throw new Error('No databases available to select');
+              // Check if we have "No databases found" message
+              if (areaText.includes('No databases found')) {
+                if (attempts < maxAttempts) {
+                  cy.task('log', `[selectDatabase] No databases found, retrying... (attempt ${attempts})`);
+                  waitForReactUpdate(3000); // Wait longer before retry
+                  checkDatabase();
+                  return;
+                } else {
+                  cy.task('log', '[selectDatabase] No databases found after all retries');
+                  throw new Error('No databases available to select');
+                }
               }
-            }
 
-            if (areaText.includes(dbName)) {
-              // Database found by name, find the span and click its parent div
-              cy.task('log', `[selectDatabase] Database "${dbName}" found, selecting it`);
-              cy.contains('span', dbName).parent('div').click({ force: true });
-            } else {
-              // Database not found yet, retry if we haven't exceeded max attempts
-              if (attempts < maxAttempts) {
-                cy.task('log', `[selectDatabase] Database "${dbName}" not found yet, retrying... (attempt ${attempts})`);
-                waitForReactUpdate(3000); // Wait longer before retry
-                checkDatabase();
+              if (areaText.includes(dbName)) {
+                // Database found by name, find the span and click its parent div
+                cy.task('log', `[selectDatabase] Database "${dbName}" found, selecting it`);
+                cy.contains('span', dbName).parent('div').click({ force: true });
               } else {
-                // After all retries, select first available database
-                cy.task('log', `[selectDatabase] Database "${dbName}" not found after ${maxAttempts} attempts, selecting first available`);
-                cy.get('[class*="appflowy-scrollbar"]').within(() => {
-                  cy.get('span').then(($spans) => {
-                    const $dbSpan = Array.from($spans).find((span) => {
-                      const text = span.textContent?.trim() || '';
-                      return /Grid|View|Database|Kanban|Calendar/i.test(text) &&
-                        text.length > 0 &&
-                        !text.includes('Link to an existing database');
+                // Database not found yet, retry if we haven't exceeded max attempts
+                if (attempts < maxAttempts) {
+                  cy.task(
+                    'log',
+                    `[selectDatabase] Database "${dbName}" not found yet, retrying... (attempt ${attempts})`
+                  );
+                  waitForReactUpdate(3000); // Wait longer before retry
+                  checkDatabase();
+                } else {
+                  // After all retries, select first available database
+                  cy.task(
+                    'log',
+                    `[selectDatabase] Database "${dbName}" not found after ${maxAttempts} attempts, selecting first available`
+                  );
+                  cy.get('[class*="appflowy-scrollbar"]').within(() => {
+                    cy.get('span').then(($spans) => {
+                      const $dbSpan = Array.from($spans).find((span) => {
+                        const text = span.textContent?.trim() || '';
+                        return (
+                          /Grid|View|Database|Kanban|Calendar/i.test(text) &&
+                          text.length > 0 &&
+                          !text.includes('Link to an existing database')
+                        );
+                      });
+
+                      if ($dbSpan) {
+                        cy.wrap($dbSpan).parent('div').click({ force: true });
+                      } else {
+                        cy.get('div').first().click({ force: true });
+                      }
                     });
-
-                    if ($dbSpan) {
-                      cy.wrap($dbSpan).parent('div').click({ force: true });
-                    } else {
-                      cy.get('div').first().click({ force: true });
-                    }
                   });
-                });
+                }
               }
-            }
-          });
-        };
-
-        checkDatabase();
-      } else {
-        // No name provided, select first available database
-        waitForReactUpdate(2000);
-        cy.get('[class*="appflowy-scrollbar"]').within(() => {
-          cy.get('span').then(($spans) => {
-            const $dbSpan = Array.from($spans).find((span) => {
-              const text = span.textContent?.trim() || '';
-              return /Grid|View|Database|Kanban|Calendar/i.test(text) &&
-                text.length > 0 &&
-                !text.includes('Link to an existing database');
             });
+          };
 
-            if ($dbSpan) {
-              cy.wrap($dbSpan).parent('div').click({ force: true });
-            } else {
-              cy.get('div').first().click({ force: true });
-            }
+          checkDatabase();
+        } else {
+          // No name provided, select first available database
+          waitForReactUpdate(2000);
+          cy.get('[class*="appflowy-scrollbar"]').within(() => {
+            cy.get('span').then(($spans) => {
+              const $dbSpan = Array.from($spans).find((span) => {
+                const text = span.textContent?.trim() || '';
+                return (
+                  /Grid|View|Database|Kanban|Calendar/i.test(text) &&
+                  text.length > 0 &&
+                  !text.includes('Link to an existing database')
+                );
+              });
+
+              if ($dbSpan) {
+                cy.wrap($dbSpan).parent('div').click({ force: true });
+              } else {
+                cy.get('div').first().click({ force: true });
+              }
+            });
           });
-        });
-      }
-    });
+        }
+      });
   },
 };
 

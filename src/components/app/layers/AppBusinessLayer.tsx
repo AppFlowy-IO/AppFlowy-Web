@@ -19,6 +19,10 @@ interface AppBusinessLayerProps {
   children: React.ReactNode;
 }
 
+const FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS = 1000;
+const OUTLINE_REFRESH_COALESCE_BUFFER_MS = 1500;
+const OUTLINE_REFRESH_SUPPRESS_WINDOW_MS = FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS + OUTLINE_REFRESH_COALESCE_BUFFER_MS;
+
 // Third layer: Business logic operations
 // Handles all business operations like outline management, page operations, database operations
 // Depends on workspace ID and sync context from previous layers
@@ -31,6 +35,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const [rendered, setRendered] = useState(false);
   const [openModalViewId, setOpenModalViewId] = useState<string | undefined>(undefined);
   const wordCountRef = useRef<Record<string, TextCount>>({});
+  const suppressFolderOutlineRefreshUntilRef = useRef<number>(0);
 
   // Calculate view ID from params
   const viewId = useMemo(() => {
@@ -63,7 +68,15 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const { loadView, createRowDoc, toView, awarenessMap, getViewIdFromDatabaseId } = useViewOperations();
 
   // Initialize page operations
-  const pageOperations = usePageOperations({ outline, loadOutline });
+  const loadOutlineAfterLocalMutation = useCallback(
+    async (workspaceId: string, force?: boolean) => {
+      suppressFolderOutlineRefreshUntilRef.current = Date.now() + OUTLINE_REFRESH_SUPPRESS_WINDOW_MS;
+      return loadOutline(workspaceId, force);
+    },
+    [loadOutline]
+  );
+
+  const pageOperations = usePageOperations({ outline, loadOutline: loadOutlineAfterLocalMutation });
 
   // Check if current view has been deleted
   const viewHasBeenDeleted = useMemo(() => {
@@ -156,24 +169,36 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const refreshOutline = useCallback(async () => {
     if (!currentWorkspaceId) return;
     await loadOutline(currentWorkspaceId, false);
-    console.log(`Refreshed outline for workspace ${currentWorkspaceId}`);
   }, [currentWorkspaceId, loadOutline]);
 
   // Debounced outline refresh for folder updates
   const debouncedRefreshOutline = useMemo(
     () =>
       debounce(() => {
+        // Avoid an extra outline refetch right after we already requested an outline reload
+        // (e.g. after create/delete/rename operations). This prevents a visible "refresh"
+        // of database UI state derived from the outline.
+        if (Date.now() < suppressFolderOutlineRefreshUntilRef.current) {
+          return;
+        }
+
         void refreshOutline();
-      }, 1000),
+      }, FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS),
     [refreshOutline]
   );
+
+  useEffect(() => {
+    return () => {
+      debouncedRefreshOutline.cancel();
+    };
+  }, [debouncedRefreshOutline]);
 
   // Refresh outline when a folder collab update is detected
   useEffect(() => {
     if (lastUpdatedCollab?.collabType === Types.Folder) {
       return debouncedRefreshOutline();
     }
-  }, [lastUpdatedCollab, debouncedRefreshOutline]);
+  }, [debouncedRefreshOutline, lastUpdatedCollab]);
 
   // Load mentionable users on mount
   useEffect(() => {

@@ -2,6 +2,7 @@ import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ViewComponentProps, ViewLayout, YDatabase, YjsEditorKey } from '@/application/types';
+import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
@@ -29,10 +30,51 @@ function DatabaseView(props: ViewComponentProps) {
     return findView(outline || [], databasePageId);
   }, [outline, databasePageId]);
 
+  const containerView = useMemo(() => {
+    if (!outline || !view) return;
+
+    if (isDatabaseContainer(view)) {
+      return view;
+    }
+
+    const parentId = view.parent_view_id;
+
+    if (!parentId) {
+      return;
+    }
+
+    const parent = findView(outline || [], parentId);
+
+    return isDatabaseContainer(parent) ? parent : undefined;
+  }, [outline, view]);
+
+  // Use container view (if present) as the "page meta" view for naming/icon operations.
+  const pageView = containerView || view;
+
   const visibleViewIds = useMemo(() => {
+    if (containerView) {
+      return containerView.children?.map((v) => v.view_id) || [];
+    }
+
     if (!view) return [];
     return [view.view_id, ...(view.children?.map((v) => v.view_id) || [])];
-  }, [view]);
+  }, [containerView, view]);
+
+  const pageMeta = useMemo(() => {
+    if (!pageView) {
+      return viewMeta;
+    }
+
+    return {
+      ...viewMeta,
+      viewId: pageView.view_id,
+      name: pageView.name,
+      icon: pageView.icon || undefined,
+      extra: pageView.extra,
+      cover: pageView.extra?.cover,
+      layout: pageView.layout,
+    };
+  }, [pageView, viewMeta]);
 
   /**
    * The currently active/selected view tab ID (Grid, Board, or Calendar).
@@ -94,7 +136,7 @@ function DatabaseView(props: ViewComponentProps) {
     >
       {rowId ? null : (
         <ViewMetaPreview
-          {...viewMeta}
+          {...pageMeta}
           readOnly={props.readOnly}
           updatePage={props.updatePage}
           updatePageIcon={props.updatePageIcon}
@@ -105,7 +147,7 @@ function DatabaseView(props: ViewComponentProps) {
 
       <Suspense fallback={skeleton}>
         <Database
-          databaseName={viewMeta.name || ''}
+          databaseName={pageMeta.name || ''}
           databasePageId={databasePageId || ''}
           {...props}
           activeViewId={activeViewId}

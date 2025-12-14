@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import { APP_EVENTS } from '@/application/constants';
 import { UIVariant, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
+import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
 import { findView } from '@/components/_shared/outline/utils';
 import { AIChat } from '@/components/ai-chat';
@@ -85,8 +86,28 @@ function AppPage() {
   useEffect(() => {
     if (!viewId || layout === undefined || layout === ViewLayout.AIChat) return;
 
+    // Database container views should open their first child view (matches Desktop behavior)
+    if (isDatabaseContainer(view)) {
+      const firstChild = getFirstChildView(view);
+
+      if (firstChild) {
+        // Clear current state to avoid rendering stale content while redirecting
+        setError(null);
+        setDoc(undefined);
+        void toView(firstChild.view_id, undefined, true);
+        return;
+      }
+
+      // If outline doesn't include container children yet, delegate to toView() so it can
+      // resolve the first child (may fetch from server).
+      setError(null);
+      setDoc(undefined);
+      void toView(viewId, undefined, true);
+      return;
+    }
+
     void loadPageDoc(viewId);
-  }, [loadPageDoc, viewId, layout]);
+  }, [loadPageDoc, viewId, layout, toView, view]);
 
   useEffect(() => {
     if (layout === ViewLayout.AIChat) {
