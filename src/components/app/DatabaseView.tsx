@@ -2,7 +2,7 @@ import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ViewComponentProps, ViewLayout, YDatabase, YjsEditorKey } from '@/application/types';
-import { isDatabaseContainer } from '@/application/view-utils';
+import { getDatabaseTabViewIds, isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
@@ -23,7 +23,7 @@ function DatabaseView(props: ViewComponentProps) {
    * The database's page ID in the folder/outline structure.
    * This is the main entry point for the database and remains constant.
    */
-  const databasePageId = viewMeta.viewId;
+  const databasePageId = viewMeta.viewId || '';
 
   const view = useMemo(() => {
     if (!outline || !databasePageId) return;
@@ -53,12 +53,12 @@ function DatabaseView(props: ViewComponentProps) {
 
   const visibleViewIds = useMemo(() => {
     if (containerView) {
-      return containerView.children?.map((v) => v.view_id) || [];
+      return getDatabaseTabViewIds(databasePageId, containerView);
     }
 
     if (!view) return [];
     return [view.view_id, ...(view.children?.map((v) => v.view_id) || [])];
-  }, [containerView, view]);
+  }, [containerView, view, databasePageId]);
 
   const pageMeta = useMemo(() => {
     if (!pageView) {

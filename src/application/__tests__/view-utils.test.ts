@@ -3,9 +3,11 @@ import { View, ViewLayout } from '../types';
 import {
   isDatabaseLayout,
   isDatabaseContainer,
+  isEmbeddedView,
   getDatabaseIdFromExtra,
   isReferencedDatabaseView,
   getFirstChildView,
+  getDatabaseTabViewIds,
 } from '../view-utils';
 
 /**
@@ -469,6 +471,116 @@ describe('view-utils', () => {
       it('child views are referenced database views', () => {
         expect(isReferencedDatabaseView(originalGridView, containerWithMultipleViews)).toBe(true);
         expect(isReferencedDatabaseView(newBoardView, containerWithMultipleViews)).toBe(true);
+      });
+    });
+
+    describe('getDatabaseTabViewIds', () => {
+      it('filters embedded views from container tabs', () => {
+        const gridView = createMockView({
+          view_id: 'grid-view',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, database_id: 'db-1' },
+        });
+        const embeddedBoardView = createMockView({
+          view_id: 'board-view',
+          layout: ViewLayout.Board,
+          extra: { is_space: false, database_id: 'db-1', embedded: true },
+        });
+        const container = createMockView({
+          view_id: 'container',
+          layout: ViewLayout.Grid,
+          extra: {
+            is_space: false,
+            is_database_container: true,
+            database_id: 'db-1',
+          },
+          children: [gridView, embeddedBoardView],
+        });
+
+        expect(isEmbeddedView(gridView)).toBe(false);
+        expect(isEmbeddedView(embeddedBoardView)).toBe(true);
+        expect(getDatabaseTabViewIds(gridView.view_id, container)).toEqual([gridView.view_id]);
+      });
+
+      it('shows only the embedded view when opening it from the sidebar', () => {
+        const gridView = createMockView({
+          view_id: 'grid-view',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, database_id: 'db-1' },
+        });
+        const embeddedBoardView = createMockView({
+          view_id: 'board-view',
+          layout: ViewLayout.Board,
+          extra: { is_space: false, database_id: 'db-1', embedded: true },
+        });
+        const container = createMockView({
+          view_id: 'container',
+          layout: ViewLayout.Grid,
+          extra: {
+            is_space: false,
+            is_database_container: true,
+            database_id: 'db-1',
+          },
+          children: [gridView, embeddedBoardView],
+        });
+
+        expect(getDatabaseTabViewIds(embeddedBoardView.view_id, container)).toEqual([
+          embeddedBoardView.view_id,
+        ]);
+      });
+
+      it('falls back to display tabs when opening a container directly', () => {
+        const gridView = createMockView({
+          view_id: 'grid-view',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, database_id: 'db-1' },
+        });
+        const embeddedBoardView = createMockView({
+          view_id: 'board-view',
+          layout: ViewLayout.Board,
+          extra: { is_space: false, database_id: 'db-1', embedded: true },
+        });
+        const container = createMockView({
+          view_id: 'container',
+          layout: ViewLayout.Grid,
+          extra: {
+            is_space: false,
+            is_database_container: true,
+            database_id: 'db-1',
+          },
+          children: [gridView, embeddedBoardView],
+        });
+
+        expect(getDatabaseTabViewIds(container.view_id, container)).toEqual([gridView.view_id]);
+      });
+
+      it('keeps all tabs when a database only has embedded views', () => {
+        const embeddedGridView = createMockView({
+          view_id: 'embedded-grid',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, database_id: 'db-1', embedded: true },
+        });
+        const embeddedBoardView = createMockView({
+          view_id: 'embedded-board',
+          layout: ViewLayout.Board,
+          extra: { is_space: false, database_id: 'db-1', embedded: true },
+        });
+        const container = createMockView({
+          view_id: 'container',
+          layout: ViewLayout.Grid,
+          extra: {
+            is_space: false,
+            is_database_container: true,
+            database_id: 'db-1',
+            embedded: true,
+          },
+          children: [embeddedGridView, embeddedBoardView],
+        });
+
+        expect(getDatabaseTabViewIds(embeddedGridView.view_id, container)).toEqual([
+          embeddedGridView.view_id,
+          embeddedBoardView.view_id,
+        ]);
       });
     });
 

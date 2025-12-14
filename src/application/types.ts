@@ -924,6 +924,10 @@ export interface ViewExtra {
   };
   is_hidden_space?: boolean;
 
+  // Whether this view is embedded inside a document (e.g. a linked database view).
+  // This is aligned with Desktop/Flutter and server-side `EXTRA_KEY_EMBEDDED`.
+  embedded?: boolean;
+
   // Database container support (aligned with Desktop/Flutter)
   // Reference: AppFlowy-Premium/frontend/doc/context/database_container_behavior.md
   is_database_container?: boolean; // True if this view is a database container

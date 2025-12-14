@@ -26,6 +26,16 @@ export function isDatabaseLayout(layout: ViewLayout): boolean {
 }
 
 /**
+ * Check if a view is marked as embedded in its extra.
+ *
+ * Embedded views are created inside documents (e.g. database blocks) and should not
+ * appear as tabs in the "source" database container page.
+ */
+export function isEmbeddedView(view: View | null | undefined): boolean {
+  return view?.extra?.embedded === true;
+}
+
+/**
  * Check if view is a database container.
  *
  * Container views hold database views as children and appear in the sidebar.
@@ -90,4 +100,41 @@ export function getFirstChildView(view: View | null | undefined): View | undefin
   }
 
   return undefined;
+}
+
+/**
+ * Returns the list of database view IDs that should be displayed in the tab bar.
+ *
+ * Mirrors Desktop/Flutter behavior:
+ * - Database containers can have both non-embedded "display views" and embedded views.
+ * - Embedded views should not appear as tabs when viewing the source database container.
+ * - When navigating directly to an embedded child view from the sidebar, show only that view.
+ */
+export function getDatabaseTabViewIds(currentViewId: string, containerView: View): string[] {
+  const children = containerView.children ?? [];
+  const childViewIds = children.map((child) => child.view_id);
+
+  if (childViewIds.length === 0) {
+    return [currentViewId];
+  }
+
+  const nonEmbeddedChildIds = children
+    .filter((child) => !isEmbeddedView(child))
+    .map((child) => child.view_id);
+
+  const displayViewIds = nonEmbeddedChildIds.length > 0 ? nonEmbeddedChildIds : childViewIds;
+
+  // If the current view is one of the display views, show the full display list.
+  if (displayViewIds.includes(currentViewId)) {
+    return displayViewIds;
+  }
+
+  // If the current view is a child but not a display view, treat it as an embedded
+  // view opened as a standalone page and only show itself as a single tab.
+  if (childViewIds.includes(currentViewId)) {
+    return [currentViewId];
+  }
+
+  // Otherwise, treat it as opening the container (or a stale route param).
+  return displayViewIds;
 }
