@@ -65,11 +65,12 @@ describe('Database Container Open Behavior', () => {
       DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
 
       // Scenario 1 parity: a newly created container has exactly 1 child view
+      // The view tab shows 'Grid' (the view name), not 'New Database' (the container name)
       DatabaseViewSelectors.viewTab()
         .should('have.length', 1)
         .first()
         .should('have.attr', 'data-state', 'active')
-        .and('contain.text', dbName);
+        .and('contain.text', 'Grid');
 
       // Ensure sidebar is visible and space expanded
       SpaceSelectors.itemByName(spaceName).should('exist');

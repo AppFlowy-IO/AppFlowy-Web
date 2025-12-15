@@ -91,9 +91,9 @@ describe('Database Container - Tab Operations', () => {
       DatabaseGridSelectors.grid().should('exist');
       DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
 
-      // 2) Rename the first view (New Database -> A)
+      // 2) Rename the first view (Grid -> A) - view tab shows 'Grid', not container name
       testLog.step(2, 'Rename first tab to A');
-      openTabMenuByLabel(dbName);
+      openTabMenuByLabel('Grid');
       DatabaseViewSelectors.tabActionRename().should('be.visible').click({ force: true });
       ModalSelectors.renameInput().should('be.visible').clear().type('A');
       ModalSelectors.renameSaveButton().click({ force: true });

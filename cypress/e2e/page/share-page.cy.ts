@@ -255,6 +255,10 @@ describe('Share Page Test', () => {
 
             waitForReactUpdate(3000);
 
+            // Re-open share popover since it closes after menu selection
+            TestTool.openSharePopover();
+            waitForReactUpdate(1000);
+
             // Verify access level changed
             ShareSelectors.sharePopover().within(() => {
                 cy.contains(userBEmail)

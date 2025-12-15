@@ -98,12 +98,13 @@ describe('Database Container - Add Linked Views via Tab Bar', () => {
       DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
 
       // Scenario 4 parity: tab bar "+" adds linked views to the same container
+      // View tab shows 'Grid' (the view name), not 'New Database' (the container name)
       testLog.step(2, 'Verify initial tabs (single tab)');
       DatabaseViewSelectors.viewTab()
         .should('have.length', 1)
         .first()
         .should('have.attr', 'data-state', 'active')
-        .and('contain.text', dbName);
+        .and('contain.text', 'Grid');
 
       testLog.step(3, 'Add Board view via tab bar "+"');
       addViewViaPlus('Board');

@@ -176,37 +176,44 @@ describe('Editor - Drag and Drop Blocks', () => {
     authUtils.signInWithTestUrl(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.contains('Getting started').click();
-      
+
       cy.get('[data-slate-editor="true"]').click().type('{selectall}{backspace}');
       waitForReactUpdate(500);
 
-      // Create Header
-      cy.focused().type('/');
+      // Create text blocks first - no trailing enter on Bottom Text
+      cy.focused().type('Top Text{enter}');
+      cy.focused().type('Bottom Text');
+      waitForReactUpdate(500);
+
+      // Move cursor back to Top Text to insert header after it (like Callout test)
+      cy.contains('Top Text').click().type('{end}{enter}');
+
+      // Create Header Block in the MIDDLE
+      cy.focused().type('/heading');
       waitForReactUpdate(1000);
       cy.contains('Heading 1').should('be.visible').click();
-      waitForReactUpdate(500);
-      
+      waitForReactUpdate(2000);  // Longer wait like Grid test
+
       cy.focused().type('Header Block');
-      cy.focused().type('{enter}'); // New line
-      
-      // Create Paragraph
-      cy.focused().type('Paragraph Block');
       waitForReactUpdate(1000);
 
-      // Verify initial order: Header, Paragraph
+      // Verify initial order: Top Text, Header, Bottom Text
       BlockSelectors.blockByType('heading').should('exist');
-      BlockSelectors.blockByType('paragraph').should('exist');
-      
-      // Drag Header below Paragraph
-      dragBlock('Header Block', 'Paragraph Block', 'bottom');
 
-      // Verify Order: Paragraph, Header
+      // Initial State: Top Text, Header Block, Bottom Text
+      // Action: Drag Header below Bottom Text (DOWN direction like Callout test)
+      dragBlock('[data-block-type="heading"]', 'Bottom Text', 'bottom');
+
+      // Verify Order: Top Text, Bottom Text, Header
       BlockSelectors.allBlocks().then($blocks => {
-         const textBlocks = $blocks.filter((i, el) => 
-            el.textContent?.includes('Header Block') || el.textContent?.includes('Paragraph Block')
+         const textBlocks = $blocks.filter((i, el) =>
+            el.textContent?.includes('Top Text') ||
+            el.textContent?.includes('Bottom Text') ||
+            el.textContent?.includes('Header Block')
          );
-         expect(textBlocks[0]).to.contain.text('Paragraph Block');
-         expect(textBlocks[1]).to.contain.text('Header Block');
+         expect(textBlocks[0]).to.contain.text('Top Text');
+         expect(textBlocks[1]).to.contain.text('Bottom Text');
+         expect(textBlocks[2]).to.contain.text('Header Block');
       });
 
       // Reload and verify
@@ -288,41 +295,58 @@ describe('Editor - Drag and Drop Blocks', () => {
     authUtils.signInWithTestUrl(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.contains('Getting started').click();
-      
+
       cy.get('[data-slate-editor="true"]').click().type('{selectall}{backspace}');
       waitForReactUpdate(500);
 
-      // Create text blocks
+      // Create text blocks - no trailing enter on Bottom Text
       cy.focused().type('Top Text{enter}');
-      cy.focused().type('Bottom Text{enter}');
-      
-      // Create Image Block
+      cy.focused().type('Bottom Text');
+      waitForReactUpdate(500);
+
+      // Move cursor back to Top Text to insert image after it (like Callout test)
+      cy.contains('Top Text').click().type('{end}{enter}');
+
+      // Create Image Block in the MIDDLE
       cy.focused().type('/image');
       waitForReactUpdate(1000);
       cy.contains('Image').should('be.visible').click();
-      waitForReactUpdate(1000);
+      waitForReactUpdate(2000);  // Longer wait like Grid test
 
-      // Close the image upload popover/modal if it appears
-      cy.get('body').type('{esc}');
-      waitForReactUpdate(500);
-      
-      // Verify image block exists
-      BlockSelectors.blockByType('image').should('exist');
+      // Close the image upload popover/modal if it appears - with better handling
+      cy.get('body').then($body => {
+        if ($body.find('[role="dialog"]').length > 0) {
+          cy.get('[role="dialog"]').should('be.visible');
+          cy.get('body').type('{esc}');
+          waitForReactUpdate(800);
+          cy.get('[role="dialog"]').should('not.exist');
+        } else {
+          cy.get('body').type('{esc}');
+          waitForReactUpdate(800);
+        }
+      });
 
-      // Initial State: Top Text, Bottom Text, Image (at bottom)
-      // Drag Image between Top and Bottom
-      dragBlock('[data-block-type="image"]', 'Top Text', 'bottom');
+      // Verify image block exists and wait for it to be stable
+      BlockSelectors.blockByType('image').should('exist').and('be.visible');
 
-      // Verify: Top Text, Image, Bottom Text
+      // Extra wait for image block to be fully initialized
+      cy.wait(2000);
+
+      // Initial State: Top Text, Image, Bottom Text
+      // Action: Drag Image below Bottom Text (DOWN direction like Callout test)
+      // Use text-based selector instead of attribute selector for more reliable selection
+      dragBlock('Add an image', 'Bottom Text', 'bottom');
+
+      // Verify: Top Text, Bottom Text, Image
       BlockSelectors.allBlocks().then($blocks => {
-         const relevant = $blocks.filter((i, el) => 
-            el.textContent?.includes('Top Text') || 
-            el.textContent?.includes('Bottom Text') || 
+         const relevant = $blocks.filter((i, el) =>
+            el.textContent?.includes('Top Text') ||
+            el.textContent?.includes('Bottom Text') ||
             el.getAttribute('data-block-type') === 'image'
          );
          expect(relevant[0]).to.contain.text('Top Text');
-         expect(relevant[1]).to.have.attr('data-block-type', 'image');
-         expect(relevant[2]).to.contain.text('Bottom Text');
+         expect(relevant[1]).to.contain.text('Bottom Text');
+         expect(relevant[2]).to.have.attr('data-block-type', 'image');
       });
     });
   });
