@@ -62,8 +62,19 @@ describe('Embedded Database View Isolation', () => {
    */
   function expandPageInSidebar(pageName: string) {
     cy.task('log', `[ACTION] Expanding page "${pageName}" in sidebar`);
-    PageSelectors.itemByName(pageName).find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
-    waitForReactUpdate(500);
+    PageSelectors.itemByName(pageName).should('exist');
+    PageSelectors.itemByName(pageName)
+      .find('[data-testid="outline-toggle-collapse"]')
+      .then(($collapse) => {
+        if ($collapse.length > 0) return;
+
+        PageSelectors.itemByName(pageName)
+          .find('[data-testid="outline-toggle-expand"]')
+          .should('exist')
+          .first()
+          .click({ force: true });
+        waitForReactUpdate(500);
+      });
   }
 
   /**

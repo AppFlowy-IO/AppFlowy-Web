@@ -62,10 +62,13 @@ export const DatabaseTabItem = memo(
     // Get name from YDatabaseView (real-time, always correct)
     const rawName = view.get(YjsDatabaseKey.name);
     const defaultName = getDefaultNameByLayout();
-    const name =
-      rawName && databaseName && visibleViewIds.length === 1 && rawName.trim() === databaseName.trim()
-        ? defaultName
-        : rawName || defaultName;
+    const shouldUseDefaultName =
+      rawName &&
+      databaseName &&
+      visibleViewIds.length === 1 &&
+      viewId !== databasePageId &&
+      rawName.trim() === databaseName.trim();
+    const name = shouldUseDefaultName ? defaultName : rawName || defaultName;
 
     // Compute the layout for PageIcon (icon is based on layout type)
     const computedLayout =

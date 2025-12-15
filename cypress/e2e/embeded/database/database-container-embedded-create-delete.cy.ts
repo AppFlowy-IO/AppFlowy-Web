@@ -39,28 +39,35 @@ describe('Database Container - Embedded Create/Delete', () => {
 
   const ensurePageExpanded = (name: string) => {
     PageSelectors.itemByName(name).should('exist');
-    PageSelectors.itemByName(name).then(($page) => {
-      const isExpanded = $page.find('[data-testid="outline-toggle-collapse"]').length > 0;
+    PageSelectors.itemByName(name)
+      .find('[data-testid="outline-toggle-collapse"]')
+      .then(($collapse) => {
+        if ($collapse.length > 0) return;
 
-      if (!isExpanded) {
-        PageSelectors.itemByName(name).find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
+        PageSelectors.itemByName(name)
+          .find('[data-testid="outline-toggle-expand"]')
+          .should('exist')
+          .first()
+          .click({ force: true });
         waitForReactUpdate(500);
-      }
-    });
+      });
   };
 
   const ensurePageExpandedByViewId = (viewId: string) => {
-    cy.get(`[data-testid="page-${viewId}"]`)
-      .first()
-      .closest('[data-testid="page-item"]')
-      .should('exist')
-      .then(($page) => {
-        const isExpanded = $page.find('[data-testid="outline-toggle-collapse"]').length > 0;
+    const pageItem = () => cy.get(`[data-testid="page-${viewId}"]`).first().closest('[data-testid="page-item"]');
 
-        if (!isExpanded) {
-          cy.wrap($page).find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
-          waitForReactUpdate(500);
-        }
+    pageItem().should('exist');
+    pageItem()
+      .find('[data-testid="outline-toggle-collapse"]')
+      .then(($collapse) => {
+        if ($collapse.length > 0) return;
+
+        pageItem()
+          .find('[data-testid="outline-toggle-expand"]')
+          .should('exist')
+          .first()
+          .click({ force: true });
+        waitForReactUpdate(500);
       });
   };
 
@@ -171,13 +178,18 @@ describe('Database Container - Embedded Create/Delete', () => {
         containerPageItem().should('exist');
 
         // Expand the container to reveal its first child view (Grid)
-        containerPageItem().then(($container) => {
-          const isExpanded = $container.find('[data-testid="outline-toggle-collapse"]').length > 0;
-          if (!isExpanded) {
-            cy.wrap($container).find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
+        containerPageItem()
+          .find('[data-testid="outline-toggle-collapse"]')
+          .then(($collapse) => {
+            if ($collapse.length > 0) return;
+
+            containerPageItem()
+              .find('[data-testid="outline-toggle-expand"]')
+              .should('exist')
+              .first()
+              .click({ force: true });
             waitForReactUpdate(500);
-          }
-        });
+          });
 
         containerPageItem().within(() => {
           // When the current page is open in a modal, the sidebar can be covered by the dialog backdrop.
