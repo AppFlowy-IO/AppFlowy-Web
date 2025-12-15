@@ -21,6 +21,8 @@ export function byTestIdContains(fragment: string): string {
   return `[data-testid*="${fragment}"]`;
 }
 
+type CypressGetOptions = Partial<Cypress.Loggable & Cypress.Timeoutable & Cypress.Withinable & Cypress.Shadow>;
+
 /**
  * Extracts a viewId from a sidebar page item test id (e.g. "page-<viewId>").
  */
@@ -37,13 +39,13 @@ export function viewIdFromPageTestId(testId: string | null | undefined): string 
  */
 export const PageSelectors = {
   // Get all page items
-  items: () => cy.get(byTestId('page-item')),
+  items: (options?: CypressGetOptions) => cy.get(byTestId('page-item'), options),
 
   // Get all page names
-  names: () => cy.get(byTestId('page-name')),
+  names: (options?: CypressGetOptions) => cy.get(byTestId('page-name'), options),
 
   // Get page name containing specific text
-  nameContaining: (text: string) => cy.get(byTestId('page-name')).contains(text),
+  nameContaining: (text: string, options?: CypressGetOptions) => cy.get(byTestId('page-name'), options).contains(text),
 
   // Get page item containing specific page name
   itemByName: (pageName: string) => {
@@ -69,10 +71,10 @@ export const PageSelectors = {
   },
 
   // Get new page button
-  newPageButton: () => cy.get(byTestId('new-page-button')),
+  newPageButton: (options?: CypressGetOptions) => cy.get(byTestId('new-page-button'), options),
 
   // Get page title input
-  titleInput: () => cy.get(byTestId('page-title-input')),
+  titleInput: (options?: CypressGetOptions) => cy.get(byTestId('page-title-input'), options),
 };
 
 /**
@@ -290,7 +292,7 @@ export const WorkspaceSelectors = {
  */
 export const SidebarSelectors = {
   // Sidebar page header
-  pageHeader: () => cy.get(byTestId('sidebar-page-header')),
+  pageHeader: (options?: CypressGetOptions) => cy.get(byTestId('sidebar-page-header'), options),
 };
 
 /**
@@ -330,13 +332,13 @@ export const ModelSelectorSelectors = {
  * Chat UI selectors
  */
 export const ChatSelectors = {
-  aiChatContainer: () => cy.get(byTestId('ai-chat-container')),
-  formatToggle: () => cy.get(byTestId('chat-input-format-toggle')),
-  formatGroup: () => cy.get(byTestId('chat-format-group')),
-  browsePromptsButton: () => cy.get(byTestId('chat-input-browse-prompts')),
-  relatedViewsButton: () => cy.get(byTestId('chat-input-related-views')),
-  relatedViewsPopover: () => cy.get(byTestId('chat-related-views-popover')),
-  sendButton: () => cy.get(byTestId('chat-input-send')),
+  aiChatContainer: (options?: CypressGetOptions) => cy.get(byTestId('ai-chat-container'), options),
+  formatToggle: (options?: CypressGetOptions) => cy.get(byTestId('chat-input-format-toggle'), options),
+  formatGroup: (options?: CypressGetOptions) => cy.get(byTestId('chat-format-group'), options),
+  browsePromptsButton: (options?: CypressGetOptions) => cy.get(byTestId('chat-input-browse-prompts'), options),
+  relatedViewsButton: (options?: CypressGetOptions) => cy.get(byTestId('chat-input-related-views'), options),
+  relatedViewsPopover: (options?: CypressGetOptions) => cy.get(byTestId('chat-related-views-popover'), options),
+  sendButton: (options?: CypressGetOptions) => cy.get(byTestId('chat-input-send'), options),
 };
 
 /**

@@ -98,12 +98,12 @@ describe('Database Container - Add Linked Views via Tab Bar', () => {
       DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
 
       // Scenario 4 parity: tab bar "+" adds linked views to the same container
-      testLog.step(2, 'Verify initial tabs (Grid only)');
+      testLog.step(2, 'Verify initial tabs (single tab)');
       DatabaseViewSelectors.viewTab()
         .should('have.length', 1)
         .first()
         .should('have.attr', 'data-state', 'active')
-        .and('contain.text', 'Grid');
+        .and('contain.text', dbName);
 
       testLog.step(3, 'Add Board view via tab bar "+"');
       addViewViaPlus('Board');
@@ -113,15 +113,15 @@ describe('Database Container - Add Linked Views via Tab Bar', () => {
       addViewViaPlus('Calendar');
       DatabaseViewSelectors.viewTab().should('have.length', 3);
 
-      testLog.step(5, 'Verify sidebar container children show Grid/Board/Calendar');
+      testLog.step(5, 'Verify sidebar container children updated');
       closeModalsIfOpen();
       ensureSpaceExpanded(spaceName);
       ensurePageExpanded(dbName);
 
       PageSelectors.itemByName(dbName).within(() => {
-        cy.get('[data-testid="page-name"]').contains('Grid').should('be.visible');
-        cy.get('[data-testid="page-name"]').contains('Board').should('be.visible');
-        cy.get('[data-testid="page-name"]').contains('Calendar').should('be.visible');
+        PageSelectors.nameContaining('Board').should('be.visible');
+        PageSelectors.nameContaining('Calendar').should('be.visible');
+        PageSelectors.items().should('have.length', 3);
       });
 
       testLog.testEnd('Database container add linked views');

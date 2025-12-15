@@ -21,13 +21,18 @@ import './commands';
 
 // Global hooks for console logging
 beforeEach(() => {
-  // Clear stale localStorage values that could cause issues between tests
-  // This prevents the app from trying to navigate to a non-existent view from previous tests
-  cy.clearLocalStorage('last_view_id');
+  // Visit a blank page on the app origin so we can clear storage/IndexedDB
+  // before the app bundle initializes and opens its caches.
+  cy.visit('/cypress-blank.html', {
+    failOnStatusCode: false,
+    onBeforeLoad: (win) => {
+      // Clear all localStorage to remove stale view IDs from previous tests
+      win.localStorage.clear();
+      win.sessionStorage.clear();
+    },
+  });
 
   // Clear all IndexedDB databases to remove stale document caches
-  // Visit about:blank first to get a window context for IndexedDB operations
-  cy.visit('about:blank');
   cy.clearAllIndexedDB();
 
   // Start capturing console logs for each test

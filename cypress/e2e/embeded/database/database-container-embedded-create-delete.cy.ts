@@ -156,8 +156,8 @@ describe('Database Container - Embedded Create/Delete', () => {
         cy.get(`#editor-${docViewId}`).find(BlockSelectors.blockSelector('grid')).should('exist');
       });
 
-      // 3) Verify sidebar: document has a child database container, which has a Grid child view
-      testLog.step(3, 'Verify sidebar hierarchy: document -> container -> Grid view');
+      // 3) Verify sidebar: document has a child database container with a child view
+      testLog.step(3, 'Verify sidebar hierarchy: document -> container -> child view');
       ensureSpaceExpanded(spaceName);
 
       cy.get<string>('@docViewId').then((docViewId) => {
@@ -177,7 +177,7 @@ describe('Database Container - Embedded Create/Delete', () => {
 
         containerPageItem().should('exist');
 
-        // Expand the container to reveal its first child view (Grid)
+        // Expand the container to reveal its first child view
         containerPageItem()
           .find('[data-testid="outline-toggle-collapse"]')
           .then(($collapse) => {
@@ -194,7 +194,7 @@ describe('Database Container - Embedded Create/Delete', () => {
         containerPageItem().within(() => {
           // When the current page is open in a modal, the sidebar can be covered by the dialog backdrop.
           // We only need to assert the hierarchy exists.
-          cy.get('[data-testid="page-name"]').contains('Grid').should('exist');
+          PageSelectors.items().should('have.length.at.least', 1);
         });
       });
 
@@ -265,7 +265,7 @@ describe('Database Container - Embedded Create/Delete', () => {
           .first()
           .closest('[data-testid="page-item"]')
           .within(() => {
-            cy.get('[data-testid="page-name"]').contains(dbName).should('not.exist');
+            PageSelectors.names().should('not.contain.text', dbName);
           });
       });
 

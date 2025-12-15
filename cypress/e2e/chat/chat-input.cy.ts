@@ -1,6 +1,6 @@
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { AddPageSelectors, ModelSelectorSelectors, PageSelectors, SidebarSelectors, ChatSelectors } from '../../support/selectors';
+import { AddPageSelectors, ModelSelectorSelectors, PageSelectors, SidebarSelectors, ChatSelectors, byTestId } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
 
 describe('Chat Input Tests', () => {
@@ -34,8 +34,8 @@ describe('Chat Input Tests', () => {
     authUtils.signInWithTestUrl(testEmail).then(() => {
       cy.url().should('include', '/app');
 
-      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-      PageSelectors.items().should('exist', { timeout: 30000 });
+      SidebarSelectors.pageHeader({ timeout: 30000 }).should('be.visible');
+      PageSelectors.items({ timeout: 30000 }).should('exist');
       cy.wait(2000);
 
       TestTool.expandSpace();
@@ -52,17 +52,19 @@ describe('Chat Input Tests', () => {
       AddPageSelectors.addAIChatButton().should('be.visible').click();
 
       cy.wait(2000);
+      ChatSelectors.aiChatContainer({ timeout: 30000 }).should('be.visible');
 
       // Test 1: Format toggle
       cy.log('Testing format toggle');
-      ChatSelectors.formatGroup().then($group => {
-        if ($group.length > 0) {
+      cy.get('body').then(($body) => {
+        if ($body.find(byTestId('chat-format-group')).length > 0) {
           ChatSelectors.formatToggle().click();
           ChatSelectors.formatGroup().should('not.exist');
         }
       });
 
-      ChatSelectors.formatToggle().should('be.visible').click();
+      ChatSelectors.formatToggle({ timeout: 30000 }).should('be.visible');
+      ChatSelectors.formatToggle().click();
       ChatSelectors.formatGroup().should('exist');
       ChatSelectors.formatGroup().find('button').should('have.length.at.least', 4);
       ChatSelectors.formatToggle().click();
@@ -111,8 +113,8 @@ describe('Chat Input Tests', () => {
     authUtils.signInWithTestUrl(testEmail).then(() => {
       cy.url().should('include', '/app');
 
-      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-      PageSelectors.items().should('exist', { timeout: 30000 });
+      SidebarSelectors.pageHeader({ timeout: 30000 }).should('be.visible');
+      PageSelectors.items({ timeout: 30000 }).should('exist');
       cy.wait(2000);
 
       TestTool.expandSpace();
@@ -129,6 +131,7 @@ describe('Chat Input Tests', () => {
       AddPageSelectors.addAIChatButton().should('be.visible').click();
 
       cy.wait(3000); // Wait for chat to fully load
+      ChatSelectors.aiChatContainer({ timeout: 30000 }).should('be.visible');
 
       // Mock API endpoints with more realistic responses
       cy.intercept('POST', '**/api/chat/**/message/question', (req) => {
