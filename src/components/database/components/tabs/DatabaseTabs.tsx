@@ -35,7 +35,10 @@ export interface DatabaseTabBarProps {
 }
 
 export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
-  ({ viewIds, databasePageId, selectedViewId, setSelectedViewId, onViewAddedToDatabase, onViewIdsChanged }, ref) => {
+  (
+    { viewIds, databasePageId, selectedViewId, setSelectedViewId, viewName, onViewAddedToDatabase, onViewIdsChanged },
+    ref
+  ) => {
     const views = useDatabase()?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
     const { loadViewMeta, navigateToView, readOnly, showActions = true, eventEmitter } = context;
@@ -209,6 +212,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             selectedViewId={selectedViewId}
             setSelectedViewId={setSelectedViewId}
             databasePageId={databasePageId}
+            databaseName={viewName}
             views={views}
             readOnly={!!readOnly}
             visibleViewIds={visibleViewIds}

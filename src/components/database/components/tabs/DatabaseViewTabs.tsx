@@ -21,6 +21,8 @@ export interface DatabaseViewTabsProps {
    * This is the main entry point for the database and remains constant.
    */
   databasePageId: string;
+  /** Database title shown in header (used to avoid duplicate tab labels). */
+  databaseName?: string;
   views: Y.Map<YDatabaseView> | undefined;
   readOnly: boolean;
   visibleViewIds: string[];
@@ -38,6 +40,7 @@ export function DatabaseViewTabs({
   selectedViewId,
   setSelectedViewId,
   databasePageId,
+  databaseName,
   views,
   readOnly,
   visibleViewIds,
@@ -183,7 +186,7 @@ export function DatabaseViewTabs({
           }}
         >
           <Tabs
-            value={selectedViewId || viewIds[0] || databasePageId}
+            value={viewIds.includes(selectedViewId || '') ? selectedViewId : viewIds[0] || databasePageId}
             onValueChange={(viewId) => {
               if (setSelectedViewId) {
                 setSelectedViewId(viewId);
@@ -205,6 +208,7 @@ export function DatabaseViewTabs({
                     viewId={viewId}
                     view={view}
                     databasePageId={databasePageId}
+                    databaseName={databaseName}
                     menuViewId={menuViewId}
                     readOnly={!!readOnly}
                     visibleViewIds={visibleViewIds}

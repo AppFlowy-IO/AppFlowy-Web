@@ -12,7 +12,7 @@ import {
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppHandlers, useAppViewId } from '@/components/app/app.hooks';
+import { useAppHandlers, useSidebarSelectedViewId } from '@/components/app/app.hooks';
 
 function ViewItem({
   view,
@@ -34,7 +34,7 @@ function ViewItem({
   parentView?: View;
 }) {
   const { t } = useTranslation();
-  const selectedViewId = useAppViewId();
+  const selectedViewId = useSidebarSelectedViewId();
   const viewId = view.view_id;
   const selected =
     selectedViewId === viewId ||

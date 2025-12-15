@@ -13,7 +13,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
-  useAppViewId: () => global.__selectedViewId,
+  useSidebarSelectedViewId: () => global.__selectedViewId,
   useAppHandlers: () => ({
     updatePage: jest.fn(),
     uploadFile: jest.fn(),

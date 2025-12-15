@@ -16,6 +16,8 @@ export interface DatabaseTabItemProps {
    * This is the main entry point for the database and remains constant.
    */
   databasePageId: string;
+  /** Database title shown in header (used to avoid duplicate tab labels). */
+  databaseName?: string;
   menuViewId: string | null;
   readOnly: boolean;
   visibleViewIds: string[];
@@ -30,6 +32,7 @@ export const DatabaseTabItem = memo(
     viewId,
     view,
     databasePageId,
+    databaseName,
     menuViewId,
     readOnly,
     visibleViewIds,
@@ -57,7 +60,12 @@ export const DatabaseTabItem = memo(
     };
 
     // Get name from YDatabaseView (real-time, always correct)
-    const name = view.get(YjsDatabaseKey.name) || getDefaultNameByLayout();
+    const rawName = view.get(YjsDatabaseKey.name);
+    const defaultName = getDefaultNameByLayout();
+    const name =
+      rawName && databaseName && visibleViewIds.length === 1 && rawName.trim() === databaseName.trim()
+        ? defaultName
+        : rawName || defaultName;
 
     // Compute the layout for PageIcon (icon is based on layout type)
     const computedLayout =
