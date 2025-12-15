@@ -5,7 +5,7 @@ import {
   AddPageSelectors,
   EditorSelectors,
   SlashCommandSelectors,
-  waitForReactUpdate
+  waitForReactUpdate,
 } from '../../../support/selectors';
 
 describe('Embedded Database - Plus Button View Creation', () => {
@@ -16,11 +16,9 @@ describe('Embedded Database - Plus Button View Creation', () => {
     cy.wait(1000);
 
     // Use .then() to force fresh query and avoid DOM detachment
-    cy.get('@embeddedDB').then($db => {
+    cy.get('@embeddedDB').then(($db) => {
       // Re-query the button to get a fresh reference
-      cy.wrap($db).find('[data-testid="add-view-button"]')
-        .scrollIntoView()
-        .click({ force: true }); // force click to avoid detachment issues
+      cy.wrap($db).find('[data-testid="add-view-button"]').scrollIntoView().click({ force: true }); // force click to avoid detachment issues
     });
   };
 
@@ -32,10 +30,12 @@ describe('Embedded Database - Plus Button View Creation', () => {
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
-      if (err.message.includes('Minified React error') ||
+      if (
+        err.message.includes('Minified React error') ||
         err.message.includes('View not found') ||
         err.message.includes('No workspace or service found') ||
-        err.message.includes('ResizeObserver loop')) {
+        err.message.includes('ResizeObserver loop')
+      ) {
         return false;
       }
       return true;
@@ -69,7 +69,7 @@ describe('Embedded Database - Plus Button View Creation', () => {
       AddPageSelectors.addGridButton().should('be.visible').as('gridBtnPlus');
       cy.get('@gridBtnPlus').click();
       cy.wait(5000);
-      const dbName = 'New Grid';
+      const dbName = 'New Database';
 
       // Step 2: Create document at same level as database
       cy.task('log', '[STEP 5] Creating document at same level as database');
@@ -100,19 +100,14 @@ describe('Embedded Database - Plus Button View Creation', () => {
       waitForReactUpdate(2000);
 
       // Get the embedded database (should be the LAST one, not the first)
-      // The first is the standalone "New Grid" page, the last is the embedded database in the document
-      cy.get('[class*="appflowy-database"]', { timeout: 10000 })
-        .should('exist')
-        .last()
-        .as('embeddedDB');
+      // The first is the standalone "New Database" page, the last is the embedded database in the document
+      cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist').last().as('embeddedDB');
 
       // Step 4: Verify embedded database shows 1 tab (the reference view itself)
       cy.task('log', '[STEP 7] Verifying embedded database shows reference view tab');
       cy.get('@embeddedDB').within(() => {
-        // Embedded database should show 1 tab: the reference view itself (like "View of New Grid")
-        cy.get('[data-testid^="view-tab-"]', { timeout: 10000 })
-          .should('have.length', 1)
-          .and('be.visible');
+        // Embedded database should show 1 tab: the reference view itself (like "View of New Database")
+        cy.get('[data-testid^="view-tab-"]', { timeout: 10000 }).should('have.length', 1).and('be.visible');
         cy.task('log', '[STEP 7.1] Confirmed: 1 tab in embedded database (reference view)');
       });
 
@@ -147,8 +142,10 @@ describe('Embedded Database - Plus Button View Creation', () => {
 
       // Debug: Log all existing tabs with fresh query
       cy.get('@embeddedDBFresh').within(() => {
-        cy.get('[data-testid^="view-tab-"]').then($tabs => {
-          const tabNames = Array.from($tabs).map((t: any) => t.textContent).join(', ');
+        cy.get('[data-testid^="view-tab-"]').then(($tabs) => {
+          const tabNames = Array.from($tabs)
+            .map((t: any) => t.textContent)
+            .join(', ');
           cy.task('log', `[DEBUG FRESH] All tabs after Board creation: ${tabNames} (count: ${$tabs.length})`);
         });
       });
@@ -221,7 +218,7 @@ describe('Embedded Database - Plus Button View Creation', () => {
       AddPageSelectors.addGridButton().should('be.visible').as('gridBtnPlus');
       cy.get('@gridBtnPlus').click();
       cy.wait(5000);
-      const dbName = 'New Grid';
+      const dbName = 'New Database';
 
       // Step 2: Create document at same level as database
       cy.task('log', '[STEP 2] Creating document at same level as database');
@@ -251,16 +248,11 @@ describe('Embedded Database - Plus Button View Creation', () => {
 
       waitForReactUpdate(2000);
 
-      cy.get('[class*="appflowy-database"]', { timeout: 10000 })
-        .should('exist')
-        .last()
-        .as('embeddedDB');
+      cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist').last().as('embeddedDB');
 
       // Wait for initial view to load
       cy.get('@embeddedDB').within(() => {
-        cy.get('[data-testid^="view-tab-"]', { timeout: 10000 })
-          .should('exist')
-          .and('be.visible');
+        cy.get('[data-testid^="view-tab-"]', { timeout: 10000 }).should('exist').and('be.visible');
       });
 
       // Record start time for performance measurement
@@ -329,7 +321,7 @@ describe('Embedded Database - Plus Button View Creation', () => {
       AddPageSelectors.addGridButton().should('be.visible').as('gridBtnPlus');
       cy.get('@gridBtnPlus').click();
       cy.wait(5000);
-      const dbName = 'New Grid';
+      const dbName = 'New Database';
 
       // Step 2: Create document at same level as database
       cy.task('log', '[STEP 2] Creating document at same level as database');
@@ -359,10 +351,7 @@ describe('Embedded Database - Plus Button View Creation', () => {
 
       waitForReactUpdate(2000);
 
-      cy.get('[class*="appflowy-database"]', { timeout: 10000 })
-        .should('exist')
-        .last()
-        .as('embeddedDB');
+      cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist').last().as('embeddedDB');
 
       // Create multiple views to trigger horizontal scrolling
       // Using 2 views for reliability (Board, Calendar)
@@ -390,7 +379,7 @@ describe('Embedded Database - Plus Button View Creation', () => {
 
         // Log current tab count for debugging
         cy.get(`@embeddedDBScroll${index}`).within(() => {
-          cy.get('[data-testid^="view-tab-"]').then($tabs => {
+          cy.get('[data-testid^="view-tab-"]').then(($tabs) => {
             cy.task('log', `[DEBUG] Current tab count after creating view ${index + 1}: ${$tabs.length}`);
           });
         });

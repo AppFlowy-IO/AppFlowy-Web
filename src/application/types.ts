@@ -865,7 +865,7 @@ export enum AuthProvider {
   MAGIC_LINK = 'magic_link',
   SAML = 'saml',
   PHONE = 'phone',
-  EMAIL = 'email'
+  EMAIL = 'email',
 }
 
 export interface AuthProvidersResponse {
@@ -923,6 +923,15 @@ export interface ViewExtra {
     value: string;
   };
   is_hidden_space?: boolean;
+
+  // Whether this view is embedded inside a document (e.g. a linked database view).
+  // This is aligned with Desktop/Flutter and server-side `EXTRA_KEY_EMBEDDED`.
+  embedded?: boolean;
+
+  // Database container support (aligned with Desktop/Flutter)
+  // Reference: AppFlowy-Premium/frontend/doc/context/database_container_behavior.md
+  is_database_container?: boolean; // True if this view is a database container
+  database_id?: string; // The underlying database ID
 }
 
 export interface View {
@@ -944,7 +953,6 @@ export interface View {
   publish_timestamp?: string;
   parent_view_id?: string;
   access_level?: AccessLevel;
-
 }
 
 export interface UpdatePublishConfigPayload {
@@ -1262,7 +1270,7 @@ export interface DatabasePromptRow {
 export enum MentionPersonRole {
   Member = 1,
   Guest = 2,
-  Contact = 3
+  Contact = 3,
 }
 export interface MentionablePerson {
   avatar_url: string | null;

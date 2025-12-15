@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks';
 import { useSnackbar } from 'notistack';
-import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { clearData, db } from '@/application/db';
 import { getService } from '@/application/services';
@@ -146,22 +146,32 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   useAppLanguage();
 
   const [hasCheckedTimezone, setHasCheckedTimezone] = useState(false);
+  const isCheckingTimezoneRef = useRef(false);
 
   // Handle initial timezone setup - only when timezone is not set
   const handleTimezoneSetup = useCallback(
     async (detectedTimezone: string) => {
-      if (!isAuthenticated || !service || hasCheckedTimezone) return;
+      if (!isAuthenticated || !service || hasCheckedTimezone || isCheckingTimezoneRef.current) return;
+      isCheckingTimezoneRef.current = true;
 
       try {
         // Get current user profile to check if timezone is already set
         const user = await service.getCurrentUser();
         const currentMetadata = user.metadata || {};
 
-        // Check if user has timezone metadata
-        const existingTimezone = currentMetadata[MetadataKey.Timezone] as UserTimezone | undefined;
+        const existingTimezone = currentMetadata[MetadataKey.Timezone];
+        const timezoneObj = existingTimezone as UserTimezone | null;
+        const hasTimezoneMetadata =
+          typeof existingTimezone === 'string'
+            ? existingTimezone.trim().length > 0
+            : typeof existingTimezone === 'object' &&
+              existingTimezone !== null &&
+              typeof timezoneObj?.default_timezone === 'string' &&
+              timezoneObj.default_timezone.trim().length > 0;
 
-        // Only set timezone if it's not already set (None in Rust = no timezone field or null)
-        if (!existingTimezone || existingTimezone.timezone === null || existingTimezone.timezone === undefined) {
+        // Only set timezone metadata once; subsequent sessions should not re-update if
+        // `default_timezone` has already been stored, even if `timezone` remains null.
+        if (!hasTimezoneMetadata) {
           // Create the UserTimezone struct format matching Rust
           const timezoneData = createInitialTimezone(detectedTimezone);
 
@@ -180,6 +190,8 @@ function AppConfig({ children }: { children: React.ReactNode }) {
         Log.error('Failed to check/update timezone:', e);
         // Still mark as checked to avoid repeated attempts
         setHasCheckedTimezone(true);
+      } finally {
+        isCheckingTimezoneRef.current = false;
       }
     }, [isAuthenticated, service, hasCheckedTimezone]);
 

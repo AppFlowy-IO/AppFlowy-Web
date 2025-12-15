@@ -9,6 +9,7 @@ module.exports = {
   roots: ['<rootDir>'],
   modulePaths: [compilerOptions.baseUrl],
   moduleNameMapper: {
+    '^.+\\.svg$': '<rootDir>/src/__mocks__/svgrMock.tsx',
     ...pathsToModuleNameMapper(compilerOptions.paths),
     '^lodash-es(/(.*)|$)': 'lodash$1',
     '^nanoid(/(.*)|$)': 'nanoid$1',

@@ -21,7 +21,6 @@ function AddPageActions({ view }: { view: View }) {
         if (layout === ViewLayout.Document) {
           void openPageModal?.(response.view_id);
         } else {
-          console.log('viewId', response.view_id, toView);
           void toView(response.view_id);
         }
 
@@ -37,6 +36,7 @@ function AddPageActions({ view }: { view: View }) {
   const actions: {
     label: string;
     icon: React.ReactNode;
+    testId?: string;
     disabled?: boolean;
     onSelect: () => void;
   }[] = useMemo(
@@ -45,35 +45,37 @@ function AddPageActions({ view }: { view: View }) {
         label: t('document.menuName'),
         icon: <ViewIcon layout={ViewLayout.Document} size={'small'} />,
         onSelect: () => {
-          void handleAddPage(ViewLayout.Document);
+          void handleAddPage(ViewLayout.Document, t('menuAppHeader.defaultNewPageName'));
         },
       },
       {
         label: t('grid.menuName'),
         icon: <ViewIcon layout={ViewLayout.Grid} size={'small'} />,
+        testId: 'add-grid-button',
         onSelect: () => {
-          void handleAddPage(ViewLayout.Grid, 'New Grid');
+          void handleAddPage(ViewLayout.Grid, t('document.plugins.database.newDatabase'));
         },
       },
       {
         label: t('board.menuName'),
         icon: <ViewIcon layout={ViewLayout.Board} size={'small'} />,
         onSelect: () => {
-          void handleAddPage(ViewLayout.Board, 'New Board');
+          void handleAddPage(ViewLayout.Board, t('document.plugins.database.newDatabase'));
         },
       },
       {
         label: t('calendar.menuName'),
         icon: <ViewIcon layout={ViewLayout.Calendar} size={'medium'} />,
         onSelect: () => {
-          void handleAddPage(ViewLayout.Calendar, 'New Calendar');
+          void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
         },
       },
       {
         label: t('chat.newChat'),
         icon: <ViewIcon layout={ViewLayout.AIChat} size={'small'} />,
+        testId: 'add-ai-chat-button',
         onSelect: () => {
-          void handleAddPage(ViewLayout.AIChat);
+          void handleAddPage(ViewLayout.AIChat, t('menuAppHeader.defaultNewPageName'));
         },
       },
     ],
@@ -85,10 +87,7 @@ function AddPageActions({ view }: { view: View }) {
       {actions.map((action) => (
         <DropdownMenuItem
           key={action.label}
-          data-testid={
-            action.label === t('chat.newChat') ? 'add-ai-chat-button' :
-            action.label === t('grid.menuName') ? 'add-grid-button' : undefined
-          }
+          data-testid={action.testId}
           disabled={action.disabled}
           onSelect={() => {
             action.onSelect();

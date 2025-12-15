@@ -363,18 +363,22 @@ export function SlashPanel({
         // view.layout is ViewLayout enum, compare directly
         return databaseLayouts.includes(view.layout);
       });
+      // Prefer listing database containers (Desktop parity). Fallback to all database views for
+      // legacy workspaces where containers may not exist yet.
+      const containerDatabaseViews = databaseViews.filter((view) => view.extra?.is_database_container === true);
+      const selectableDatabaseViews = containerDatabaseViews.length > 0 ? containerDatabaseViews : databaseViews;
 
       // Build options - databaseId will be fetched from viewMeta when user selects
       // The outline API doesn't include database_relations, so we set empty string here
-      const options: DatabaseOption[] = databaseViews.map((view) => ({
+      const options: DatabaseOption[] = selectableDatabaseViews.map((view) => ({
         databaseId: '', // Will be fetched from loadViewMeta in handleSelectDatabase
         view,
       }));
 
       Log.debug('[SlashPanel] loadDatabasesForPicker:', {
         totalViews: flatViews.length,
-        databaseViews: databaseViews.length,
-        databaseViewNames: databaseViews.map(v => v.name),
+        databaseViews: selectableDatabaseViews.length,
+        databaseViewNames: selectableDatabaseViews.map(v => v.name),
       });
 
       setDatabaseOptions(options);
@@ -451,70 +455,70 @@ export function SlashPanel({
           option.view.name ||
           t('document.view.placeholder', { defaultValue: 'Untitled' });
 
-        // Fetch the view's metadata to get the correct database_id
-        // The outline API doesn't include database_relations, so we MUST fetch it here
-        if (!loadViewMeta) {
-          notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
-            defaultValue: 'Unable to fetch database information',
-          }));
-          return;
+        // Database ID is available on database containers and database views via `extra.database_id`.
+        // Prefer the outline value, then fallback to view meta / legacy database_relations mapping.
+        let databaseId = option.view.extra?.database_id;
+        let viewMeta: View | null = null;
+
+        if (!databaseId) {
+          if (!loadViewMeta) {
+            notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
+              defaultValue: 'Unable to fetch database information',
+            }));
+            return;
+          }
+
+          viewMeta = await loadViewMeta(databaseViewId);
+          databaseId = viewMeta?.extra?.database_id;
         }
 
-        const viewMeta = await loadViewMeta(databaseViewId);
+        if (!databaseId && viewMeta?.database_relations) {
+          // database_relations is Record<DatabaseId, ViewId>
+          // Find the entry where the value (base view id) matches this view
+          let relationEntry = Object.entries(viewMeta.database_relations).find(
+            ([_, baseViewId]) => baseViewId === databaseViewId
+          );
 
-        Log.debug('[SlashPanel] viewMeta for database:', {
-          viewId: databaseViewId,
-          viewName: baseName,
-          database_relations: viewMeta?.database_relations,
-          fullMeta: viewMeta,
-        });
+          // If not found, try refreshing database relations (for newly created databases)
+          if (!relationEntry && loadDatabaseRelations) {
+            Log.debug('[SlashPanel] database_id not found in cache, refreshing relations...', {
+              viewId: databaseViewId,
+            });
 
-        if (!viewMeta?.database_relations) {
-          notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
-            defaultValue: 'Database relations not found',
-          }));
-          return;
-        }
+            // Refresh and get fresh relations directly (don't rely on React state update)
+            const freshRelations = await loadDatabaseRelations();
 
-        // database_relations is Record<DatabaseId, ViewId>
-        // Find the entry where the value (base view id) matches this view
-        let relationEntry = Object.entries(viewMeta.database_relations).find(
-          ([_, baseViewId]) => baseViewId === databaseViewId
-        );
+            Log.debug('[SlashPanel] Fresh relations after refresh:', {
+              viewId: databaseViewId,
+              freshRelations,
+            });
 
-        // If not found, try refreshing database relations (for newly created databases)
-        if (!relationEntry && loadDatabaseRelations) {
-          Log.debug('[SlashPanel] database_id not found in cache, refreshing relations...', {
-            viewId: databaseViewId,
-          });
+            if (freshRelations) {
+              relationEntry = Object.entries(freshRelations).find(
+                ([_, baseViewId]) => baseViewId === databaseViewId
+              );
+            }
+          }
 
-          // Refresh and get fresh relations directly (don't rely on React state update)
-          const freshRelations = await loadDatabaseRelations();
-
-          Log.debug('[SlashPanel] Fresh relations after refresh:', {
-            viewId: databaseViewId,
-            freshRelations,
-          });
-
-          if (freshRelations) {
-            relationEntry = Object.entries(freshRelations).find(
-              ([_, baseViewId]) => baseViewId === databaseViewId
-            );
+          if (relationEntry) {
+            databaseId = relationEntry[0];
           }
         }
 
-        if (!relationEntry) {
-          console.error('[SlashPanel] Could not find database_id for view:', {
-            viewId: databaseViewId,
-            database_relations: viewMeta.database_relations,
-          });
+        Log.debug('[SlashPanel] resolved database_id:', {
+          targetViewId: databaseViewId,
+          databaseId,
+          fromOutlineExtra: Boolean(option.view.extra?.database_id),
+          fromViewMetaExtra: Boolean(viewMeta?.extra?.database_id),
+          hasDatabaseRelations: Boolean(viewMeta?.database_relations),
+        });
+
+        if (!databaseId) {
           notify.error(t('document.slashMenu.linkedDatabase.actionUnavailable', {
             defaultValue: 'Could not find database ID',
           }));
           return;
         }
-
-        const databaseId = relationEntry[0];
 
         Log.debug('[SlashPanel] Found database_id:', {
           viewId: databaseViewId,
@@ -767,7 +771,7 @@ export function SlashPanel({
         onClick: async () => {
           if (!documentId || !addPage || !openPageModal) return;
 
-          let scrollContainer: Element | null = null;
+          let scrollContainer: HTMLElement | null = null;
 
           try {
             const domNode = ReactEditor.toDOMNode(editor, editor);
@@ -786,7 +790,7 @@ export function SlashPanel({
           try {
             const response = await addPage(documentId, {
               layout: ViewLayout.Grid,
-              name: t('document.slashMenu.name.grid'),
+              name: t('document.plugins.database.newDatabase'),
             });
 
             Log.debug('[SlashPanel] {} created grid', {
@@ -804,14 +808,32 @@ export function SlashPanel({
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
-                const currentContainer = document.querySelector('.appflowy-scroll-container');
+                let currentContainer: HTMLElement | null = null;
 
-                if (currentContainer) {
-                  currentContainer.scrollTop = savedScrollTop;
+                if (scrollContainer?.isConnected) {
+                  currentContainer = scrollContainer;
+                } else {
+                  try {
+                    const domNode = ReactEditor.toDOMNode(editor, editor);
+
+                    currentContainer = domNode.closest('.appflowy-scroll-container');
+                  } catch {
+                    currentContainer = document.querySelector('.appflowy-scroll-container');
+                  }
                 }
+
+                if (!currentContainer) return;
+                if (Math.abs(currentContainer.scrollTop - savedScrollTop) <= 5) return;
+
+                currentContainer.scrollTop = savedScrollTop;
               };
 
+              requestAnimationFrame(restoreScroll);
               setTimeout(restoreScroll, 50);
+              setTimeout(restoreScroll, 250);
+              setTimeout(restoreScroll, 600);
+              setTimeout(restoreScroll, 1200);
+              setTimeout(restoreScroll, 1800);
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
@@ -836,7 +858,7 @@ export function SlashPanel({
         onClick: async () => {
           if (!documentId || !addPage || !openPageModal) return;
 
-          let scrollContainer: Element | null = null;
+          let scrollContainer: HTMLElement | null = null;
 
           try {
             const domNode = ReactEditor.toDOMNode(editor, editor);
@@ -855,7 +877,7 @@ export function SlashPanel({
           try {
             const response = await addPage(documentId, {
               layout: ViewLayout.Board,
-              name: t('document.slashMenu.name.kanban'),
+              name: t('document.plugins.database.newDatabase'),
             });
 
             Log.debug('[SlashPanel] {} created kanban', {
@@ -873,14 +895,32 @@ export function SlashPanel({
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
-                const currentContainer = document.querySelector('.appflowy-scroll-container');
+                let currentContainer: HTMLElement | null = null;
 
-                if (currentContainer) {
-                  currentContainer.scrollTop = savedScrollTop;
+                if (scrollContainer?.isConnected) {
+                  currentContainer = scrollContainer;
+                } else {
+                  try {
+                    const domNode = ReactEditor.toDOMNode(editor, editor);
+
+                    currentContainer = domNode.closest('.appflowy-scroll-container');
+                  } catch {
+                    currentContainer = document.querySelector('.appflowy-scroll-container');
+                  }
                 }
+
+                if (!currentContainer) return;
+                if (Math.abs(currentContainer.scrollTop - savedScrollTop) <= 5) return;
+
+                currentContainer.scrollTop = savedScrollTop;
               };
 
+              requestAnimationFrame(restoreScroll);
               setTimeout(restoreScroll, 50);
+              setTimeout(restoreScroll, 250);
+              setTimeout(restoreScroll, 600);
+              setTimeout(restoreScroll, 1200);
+              setTimeout(restoreScroll, 1800);
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {
@@ -905,7 +945,7 @@ export function SlashPanel({
         onClick: async () => {
           if (!documentId || !addPage || !openPageModal) return;
 
-          let scrollContainer: Element | null = null;
+          let scrollContainer: HTMLElement | null = null;
 
           try {
             const domNode = ReactEditor.toDOMNode(editor, editor);
@@ -924,7 +964,7 @@ export function SlashPanel({
           try {
             const response = await addPage(documentId, {
               layout: ViewLayout.Calendar,
-              name: t('document.slashMenu.name.calendar'),
+              name: t('document.plugins.database.newDatabase'),
             });
 
             Log.debug('[SlashPanel] {} created calendar', {
@@ -942,14 +982,32 @@ export function SlashPanel({
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
-                const currentContainer = document.querySelector('.appflowy-scroll-container');
+                let currentContainer: HTMLElement | null = null;
 
-                if (currentContainer) {
-                  currentContainer.scrollTop = savedScrollTop;
+                if (scrollContainer?.isConnected) {
+                  currentContainer = scrollContainer;
+                } else {
+                  try {
+                    const domNode = ReactEditor.toDOMNode(editor, editor);
+
+                    currentContainer = domNode.closest('.appflowy-scroll-container');
+                  } catch {
+                    currentContainer = document.querySelector('.appflowy-scroll-container');
+                  }
                 }
+
+                if (!currentContainer) return;
+                if (Math.abs(currentContainer.scrollTop - savedScrollTop) <= 5) return;
+
+                currentContainer.scrollTop = savedScrollTop;
               };
 
+              requestAnimationFrame(restoreScroll);
               setTimeout(restoreScroll, 50);
+              setTimeout(restoreScroll, 250);
+              setTimeout(restoreScroll, 600);
+              setTimeout(restoreScroll, 1200);
+              setTimeout(restoreScroll, 1800);
             }
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
           } catch (e: any) {

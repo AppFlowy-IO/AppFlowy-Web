@@ -11,7 +11,7 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import OutlineItem from '@/components/_shared/outline/OutlineItem';
 import { Popover } from '@/components/_shared/popover';
 import RecentListSkeleton from '@/components/_shared/skeleton/RecentListSkeleton';
-import { useAppFavorites, useAppHandlers, useAppViewId } from '@/components/app/app.hooks';
+import { useAppFavorites, useAppHandlers, useSidebarSelectedViewId } from '@/components/app/app.hooks';
 
 const popoverOrigin: Partial<PopoverProps> = {
   transformOrigin: {
@@ -34,7 +34,7 @@ enum FavoriteGroup {
 export function Favorite() {
   const { favoriteViews, loadFavoriteViews } = useAppFavorites();
   const navigateToView = useAppHandlers().toView;
-  const viewId = useAppViewId();
+  const viewId = useSidebarSelectedViewId();
   const { t } = useTranslation();
   const [isExpanded, setIsExpanded] = React.useState(() => {
     return localStorage.getItem('favorite_expanded') !== 'false';
