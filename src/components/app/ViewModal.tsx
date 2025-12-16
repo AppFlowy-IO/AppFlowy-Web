@@ -89,6 +89,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
     if (meta) {
       const firstChild = getFirstChildView(meta as Parameters<typeof getFirstChildView>[0]);
+
       return firstChild?.view_id ?? viewId;
     }
 
@@ -109,6 +110,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       if (fallbackMeta && (effectiveOutlineView || !open)) {
         setFallbackMeta(null);
       }
+
       return;
     }
 
@@ -141,6 +143,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       setDoc(undefined);
       try {
         const loadedDoc = await loadView(id, false, true);
+
         setDoc({ doc: loadedDoc, id });
       } catch (e) {
         setNotFound(true);
@@ -202,6 +205,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       if (resolvedView && uploadFile) {
         return uploadFile(resolvedView.view_id, file);
       }
+
       return Promise.reject();
     },
     [uploadFile, resolvedView]

@@ -179,7 +179,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
 
       views.forEach((view, viewId) => {
         allYjsViewIds.push(viewId);
-        const databaseView = view as YDatabaseView;
+        const databaseView = view;
         const isEmbedded = databaseView.get(YjsDatabaseKey.embedded) === true;
 
         if (!isEmbedded) {

@@ -107,7 +107,8 @@ describe('http_api client (unit)', () => {
     });
 
     await expect(module.getAuthProviders()).resolves.toEqual([AuthProvider.PASSWORD]);
-    expect(warnSpy).toHaveBeenCalledWith('Auth providers API returned error:', 'Invalid request');
+    // Error message format: "${message} [${url}]" - URL is 'unknown' since mock doesn't set config.url
+    expect(warnSpy).toHaveBeenCalledWith('Auth providers API returned error:', 'Invalid request [unknown]');
     warnSpy.mockRestore();
   });
 

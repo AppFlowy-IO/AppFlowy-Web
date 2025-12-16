@@ -13,12 +13,36 @@ import {
 describe('Database Conditions - Filters and Sorts UI', () => {
   const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
 
+  // Helper to get current viewId from URL
+  const currentViewIdFromUrl = () =>
+    cy.location('pathname').then((pathname) => {
+      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
+      return maybeId;
+    });
+
+  // Helper to close dialogs that are NOT the document we're working in
+  const closeTopDialogIfNotDocument = (docViewId: string) => {
+    cy.get('body').then(($body) => {
+      const dialogs = $body.find('[role="dialog"]').filter(':visible');
+      if (dialogs.length === 0) return;
+
+      const topDialog = dialogs.last();
+      const topContainsDocEditor = $body.find(topDialog).find(`#editor-${docViewId}`).length > 0;
+
+      if (!topContainsDocEditor) {
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(500);
+      }
+    });
+  };
+
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
       if (
         err.message.includes('Minified React error') ||
         err.message.includes('View not found') ||
-        err.message.includes('No workspace or service found')
+        err.message.includes('No workspace or service found') ||
+        err.message.includes('ResizeObserver loop')
       ) {
         return false;
       }
@@ -59,12 +83,28 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       waitForReactUpdate(1000);
       cy.get('[role="menuitem"]').first().as('menuItem0');
       cy.get('@menuItem0').click();
-      waitForReactUpdate(2000);
-      EditorSelectors.firstEditor().should('exist', { timeout: 10000 });
+      waitForReactUpdate(1000);
+
+      // When creating a Document via inline add button, it opens in a ViewModal.
+      // Click the expand button (first button in modal header) to navigate to full page view.
+      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]').find('button').first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      // Now the URL should reflect the new document - capture the docViewId
+      currentViewIdFromUrl().then((viewId) => {
+        expect(viewId).to.not.equal('');
+        cy.wrap(viewId).as('docViewId0');
+        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
+      });
+      waitForReactUpdate(1000);
 
       // Insert linked database
       cy.task('log', '[STEP 6] Inserting linked database');
-      EditorSelectors.firstEditor().click().type('/');
+      cy.get<string>('@docViewId0').then((docViewId) => {
+        cy.get(`#editor-${docViewId}`).should('exist').click('center', { force: true });
+        cy.get(`#editor-${docViewId}`).type('/', { force: true });
+      });
       waitForReactUpdate(500);
 
       SlashCommandSelectors.slashPanel()
@@ -78,9 +118,14 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       SlashCommandSelectors.selectDatabase(dbName);
       waitForReactUpdate(2000);
 
+      // Close any dialogs that might have opened, but NOT the document itself
+      cy.get<string>('@docViewId0').then((docViewId) => {
+        closeTopDialogIfNotDocument(docViewId);
+      });
+
       // Verify embedded database exists
       cy.task('log', '[STEP 7] Verifying embedded database exists');
-      cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist').last().as('embeddedDBTemp');
+      cy.get('[class*="appflowy-database"]', { timeout: 15000 }).should('exist').last().as('embeddedDBTemp');
       cy.get('@embeddedDBTemp').as('embeddedDB');
 
       cy.get('@embeddedDB').within(() => {
@@ -168,11 +213,27 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       waitForReactUpdate(1000);
       cy.get('[role="menuitem"]').first().as('menuItem');
       cy.get('@menuItem').click();
-      waitForReactUpdate(2000);
-      EditorSelectors.firstEditor().should('exist', { timeout: 10000 });
+      waitForReactUpdate(1000);
+
+      // When creating a Document via inline add button, it opens in a ViewModal.
+      // Click the expand button (first button in modal header) to navigate to full page view.
+      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]').find('button').first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      // Now the URL should reflect the new document - capture the docViewId
+      currentViewIdFromUrl().then((viewId) => {
+        expect(viewId).to.not.equal('');
+        cy.wrap(viewId).as('docViewId1');
+        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
+      });
+      waitForReactUpdate(1000);
 
       cy.task('log', '[STEP 4] Inserting linked database');
-      EditorSelectors.firstEditor().click().type('/');
+      cy.get<string>('@docViewId1').then((docViewId) => {
+        cy.get(`#editor-${docViewId}`).should('exist').click('center', { force: true });
+        cy.get(`#editor-${docViewId}`).type('/', { force: true });
+      });
       waitForReactUpdate(500);
 
       SlashCommandSelectors.slashPanel()
@@ -186,20 +247,16 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       SlashCommandSelectors.selectDatabase('New Database');
       waitForReactUpdate(2000);
 
-      cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist').last().as('embeddedDBTemp1');
+      // Close any dialogs that might have opened, but NOT the document itself
+      cy.get<string>('@docViewId1').then((docViewId) => {
+        closeTopDialogIfNotDocument(docViewId);
+      });
+
+      cy.get('[class*="appflowy-database"]', { timeout: 15000 }).should('exist').last().as('embeddedDBTemp1');
       cy.get('@embeddedDBTemp1').as('embeddedDB');
 
       // Wait for database to fully render
       cy.wait(2000);
-
-      // Close any open dialogs that might be blocking
-      cy.get('body').then(($body) => {
-        if ($body.find('.MuiDialog-container').length > 0) {
-          cy.log('Found dialog, attempting to close it');
-          cy.get('body').type('{esc}');
-          cy.wait(500);
-        }
-      });
 
       // Add filter
       cy.task('log', '[STEP 5] Adding filter');
@@ -268,10 +325,26 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       waitForReactUpdate(1000);
       cy.get('[role="menuitem"]').first().as('menuItem2');
       cy.get('@menuItem2').click();
-      waitForReactUpdate(2000);
-      EditorSelectors.firstEditor().should('exist', { timeout: 10000 });
+      waitForReactUpdate(1000);
 
-      EditorSelectors.firstEditor().click().type('/');
+      // When creating a Document via inline add button, it opens in a ViewModal.
+      // Click the expand button (first button in modal header) to navigate to full page view.
+      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]').find('button').first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      // Now the URL should reflect the new document - capture the docViewId
+      currentViewIdFromUrl().then((viewId) => {
+        expect(viewId).to.not.equal('');
+        cy.wrap(viewId).as('docViewId2');
+        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
+      });
+      waitForReactUpdate(1000);
+
+      cy.get<string>('@docViewId2').then((docViewId) => {
+        cy.get(`#editor-${docViewId}`).should('exist').click('center', { force: true });
+        cy.get(`#editor-${docViewId}`).type('/', { force: true });
+      });
       waitForReactUpdate(500);
 
       SlashCommandSelectors.slashPanel()
@@ -285,32 +358,19 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       SlashCommandSelectors.selectDatabase('New Database');
       waitForReactUpdate(2000);
 
-      cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist').last().as('embeddedDBTemp2');
+      // Close any dialogs that might have opened, but NOT the document itself
+      cy.get<string>('@docViewId2').then((docViewId) => {
+        closeTopDialogIfNotDocument(docViewId);
+      });
+
+      cy.get('[class*="appflowy-database"]', { timeout: 15000 }).should('exist').last().as('embeddedDBTemp2');
       cy.get('@embeddedDBTemp2').as('embeddedDB');
 
       // Wait for database to fully render
       cy.wait(2000);
 
-      // Close any open dialogs that might be blocking
-      cy.get('body').then(($body) => {
-        if ($body.find('.MuiDialog-container').length > 0) {
-          cy.log('Found dialog, attempting to close it');
-          cy.get('body').type('{esc}');
-          cy.wait(500);
-        }
-      });
-
       // Add filter
       cy.task('log', '[STEP 2] Adding filter');
-
-      // Close any dialogs right before clicking filter button
-      cy.get('body').then(($body) => {
-        if ($body.find('.MuiDialog-container').length > 0) {
-          cy.log('Found dialog before filter click, closing it');
-          cy.get('body').type('{esc}');
-          cy.wait(500);
-        }
-      });
 
       // Re-query the embedded DB to ensure we have a fresh reference
       cy.get('[class*="appflowy-database"]').last().as('freshEmbeddedDB2');
