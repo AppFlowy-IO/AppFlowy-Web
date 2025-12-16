@@ -1,6 +1,6 @@
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { DropdownSelectors, ModalSelectors, PageSelectors, waitForReactUpdate } from '../../support/selectors';
+import { DropdownSelectors, ModalSelectors, PageSelectors, ViewActionSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
 
@@ -135,7 +135,7 @@ describe('More Page Actions', () => {
         testLog.info( 'Page successfully duplicated');
     });
 
-    it.skip('should rename a page and verify the name persists after refresh', () => {
+    it('should rename a page and verify the name persists after refresh', () => {
         // Handle uncaught exceptions during workspace creation
         cy.on('uncaught:exception', (err: Error) => {
             if (err.message.includes('No workspace or service found')) {
@@ -161,31 +161,28 @@ describe('More Page Actions', () => {
         // Store the original page name
         const originalPageName = 'Getting started';
         const renamedPageName = `Renamed Page ${Date.now()}`;
-        
+
         testLog.info( `Starting rename test: ${originalPageName} -> ${renamedPageName}`);
 
-        // Find the page by its text content and hover
-        cy.contains(originalPageName)
-            .parent()
-            .parent()
+        // Find the page item in the sidebar and click its more actions button
+        // Using itemByName to ensure we target the sidebar's page row, not the header
+        PageSelectors.itemByName(originalPageName)
             .trigger('mouseenter', { force: true })
             .trigger('mouseover', { force: true });
 
         cy.wait(1000);
 
-        // Look for the more actions button - using PageSelectors
-        PageSelectors.moreActionsButton().first().click({ force: true });
+        // Click the more actions button within the sidebar page item (not the header)
+        PageSelectors.moreActionsButton(originalPageName).click({ force: true });
 
         testLog.info( 'Clicked more actions button');
 
         // Wait for the dropdown menu to be visible
         DropdownSelectors.content().should('be.visible');
 
-        // Click on Rename option - simplified approach
-        DropdownSelectors.content().within(() => {
-            cy.contains('Rename').click();
-        });
-        
+        // Click on Rename option using the proper selector
+        ViewActionSelectors.renameButton().should('be.visible').click();
+
         testLog.info( 'Clicked Rename option');
 
         // Wait for the rename modal to appear

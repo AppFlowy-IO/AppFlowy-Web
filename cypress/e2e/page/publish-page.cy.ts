@@ -669,8 +669,7 @@ describe('Publish Page Test', () => {
         });
     });
 
-    // Flaky test, skipping for now
-    it.skip('opens publish manage modal from namespace caret and closes share popover first', () => {
+    it('opens publish manage modal from namespace caret and closes share popover first', () => {
         cy.on('uncaught:exception', (err: Error) => {
             if (err.message.includes('No workspace or service found') ||
                 err.message.includes('createThemeNoVars_default is not a function') ||
