@@ -48,10 +48,51 @@ function AppPage() {
   const { getViewReadOnlyStatus } = useViewOperations();
 
   const currentUser = useCurrentUser();
-  const view = useMemo(() => {
+  const service = useService();
+
+  // View from outline (may be undefined if outline hasn't updated yet)
+  const outlineView = useMemo(() => {
     if (!outline || !viewId) return;
     return findView(outline, viewId);
   }, [outline, viewId]);
+
+  // Fallback view fetched from server when not in outline
+  const [fallbackView, setFallbackView] = React.useState<{ view_id: string; layout: ViewLayout } | null>(null);
+
+  // Fetch view metadata when not found in outline (handles race condition after creating new view)
+  useEffect(() => {
+    if (outlineView || !viewId || !workspaceId || !service) {
+      // Clear fallback when outline has the view
+      if (outlineView && fallbackView?.view_id === viewId) {
+        setFallbackView(null);
+      }
+
+      return;
+    }
+
+    // View not in outline - fetch from server directly
+    let cancelled = false;
+
+    service
+      .getAppView(workspaceId, viewId)
+      .then((fetchedView) => {
+        if (!cancelled && fetchedView) {
+          setFallbackView({ view_id: fetchedView.view_id, layout: fetchedView.layout });
+        }
+      })
+      .catch((e) => {
+        console.warn('[AppPage] Failed to fetch view metadata for', viewId, e);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [outlineView, viewId, workspaceId, service, fallbackView?.view_id]);
+
+  // Use outline view if available, otherwise use fallback
+  const view = outlineView;
+  const layout = outlineView?.layout ?? fallbackView?.layout;
+
   const rendered = useContext(AppContext)?.rendered;
 
   const helmet = useMemo(() => {
@@ -61,8 +102,6 @@ function AppPage() {
       </Suspense>
     ) : null;
   }, [rendered, view]);
-
-  const layout = view?.layout;
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
   const [error, setError] = React.useState<AppError | null>(null);
   const loadPageDoc = useCallback(
@@ -141,7 +180,6 @@ function AppPage() {
     [uploadFile, view]
   );
 
-  const service = useService();
   const requestInstance = service?.getAxiosInstance();
 
   // Check if view is in shareWithMe and determine readonly status
@@ -151,7 +189,10 @@ function AppPage() {
   }, [getViewReadOnlyStatus, viewId, outline]);
 
   const viewDom = useMemo(() => {
-    if (!doc && layout === ViewLayout.AIChat && viewId) {
+    // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
+    const docForCurrentView = doc && doc.id === viewId ? doc : undefined;
+
+    if (!docForCurrentView && layout === ViewLayout.AIChat && viewId) {
       return (
         <Suspense>
           <AIChat chatId={viewId} onRendered={onRendered} />
@@ -161,11 +202,11 @@ function AppPage() {
 
     const View = layout === ViewLayout.Document ? Document : DatabaseView;
 
-    return doc && viewMeta && workspaceId && View ? (
+    return docForCurrentView && viewMeta && workspaceId && View ? (
       <View
         requestInstance={requestInstance}
         workspaceId={workspaceId}
-        doc={doc}
+        doc={docForCurrentView}
         readOnly={isReadOnly}
         viewMeta={viewMeta}
         navigateToView={toView}

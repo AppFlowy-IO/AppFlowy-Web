@@ -306,6 +306,18 @@ export const SidebarSelectors = {
 };
 
 /**
+ * App Header selectors (top bar)
+ */
+export const HeaderSelectors = {
+  // Header container
+  container: (options?: CypressGetOptions) => cy.get('.appflowy-top-bar', options),
+
+  // More actions button in the header (not sidebar)
+  moreActionsButton: (options?: CypressGetOptions) =>
+    cy.get('.appflowy-top-bar').find(byTestId('page-more-actions'), options),
+};
+
+/**
  * Trash view selectors
  */
 export const TrashSelectors = {

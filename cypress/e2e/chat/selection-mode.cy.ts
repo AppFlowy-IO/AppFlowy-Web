@@ -1,6 +1,6 @@
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { AddPageSelectors, PageSelectors, SidebarSelectors } from '../../support/selectors';
+import { AddPageSelectors, HeaderSelectors, PageSelectors, SidebarSelectors } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
 
 const STUBBED_MESSAGE_ID = 101;
@@ -147,7 +147,8 @@ describe('Chat Selection Mode Tests', () => {
 
             cy.contains(STUBBED_MESSAGE_CONTENT).should('be.visible');
 
-            PageSelectors.moreActionsButton().first().click({ force: true });
+            // Click the header's more actions button (not the sidebar's)
+            HeaderSelectors.moreActionsButton().click({ force: true });
 
             cy.get('[role="menu"]').should('exist');
 
