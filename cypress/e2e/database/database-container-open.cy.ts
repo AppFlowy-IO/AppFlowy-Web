@@ -69,7 +69,7 @@ describe('Database Container Open Behavior', () => {
         .should('have.length', 1)
         .first()
         .should('have.attr', 'data-state', 'active')
-        .and('contain.text', dbName);
+        .and('contain.text', 'Grid'); // First tab shows child view name, not container name
 
       // Ensure sidebar is visible and space expanded
       SpaceSelectors.itemByName(spaceName).should('exist');

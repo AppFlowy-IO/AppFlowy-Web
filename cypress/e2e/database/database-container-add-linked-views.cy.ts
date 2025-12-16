@@ -103,7 +103,7 @@ describe('Database Container - Add Linked Views via Tab Bar', () => {
         .should('have.length', 1)
         .first()
         .should('have.attr', 'data-state', 'active')
-        .and('contain.text', dbName);
+        .and('contain.text', 'Grid'); // First tab shows child view name, not container name
 
       testLog.step(3, 'Add Board view via tab bar "+"');
       addViewViaPlus('Board');
