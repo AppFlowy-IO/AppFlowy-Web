@@ -41,6 +41,8 @@ function CollaborativeEditor({
   const readOnly = context.readOnly;
   const viewId = context.viewId;
   const onWordCountChange = context.onWordCountChange;
+  const deletePage = context.deletePage;
+  const loadViewMeta = context.loadViewMeta;
   const [, setClock] = useState(0);
   const databaseBlocksRef = useRef<Map<string, DatabaseBlockInfo>>(new Map());
   const pendingDatabaseViewDeletionRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -129,25 +131,28 @@ function CollaborativeEditor({
 
       const previousBlocks = databaseBlocksRef.current;
       const currentBlocks = collectDatabaseBlocks(editor);
+
+      // Collect all child view IDs that are still referenced by current blocks
       const referencedViewIds = new Set<string>();
 
       for (const info of currentBlocks.values()) {
-        for (const id of info.viewIds) {
-          referencedViewIds.add(id);
+        for (const viewId of info.viewIds) {
+          referencedViewIds.add(viewId);
         }
       }
 
       databaseBlocksRef.current = currentBlocks;
 
-      for (const baseViewId of Array.from(pendingDatabaseViewDeletionRef.current.keys())) {
-        if (!referencedViewIds.has(baseViewId)) continue;
+      // Cancel pending deletions if the view is re-referenced (e.g., undo)
+      for (const childViewId of Array.from(pendingDatabaseViewDeletionRef.current.keys())) {
+        if (!referencedViewIds.has(childViewId)) continue;
 
-        const timeoutId = pendingDatabaseViewDeletionRef.current.get(baseViewId);
+        const timeoutId = pendingDatabaseViewDeletionRef.current.get(childViewId);
 
         if (!timeoutId) continue;
 
         clearTimeout(timeoutId);
-        pendingDatabaseViewDeletionRef.current.delete(baseViewId);
+        pendingDatabaseViewDeletionRef.current.delete(childViewId);
       }
 
       const removedBlocks = Array.from(previousBlocks.values()).filter((info) => !currentBlocks.has(info.blockId));
@@ -155,29 +160,44 @@ function CollaborativeEditor({
       if (removedBlocks.length === 0) return;
 
       for (const removed of removedBlocks) {
-        const uniqueViewIds = new Set(removed.viewIds);
+        // viewIds contains child database views (Grid/Board/Calendar); we need to find their parent (the container)
+        const firstViewId = removed.viewIds[0];
 
-        for (const databaseViewId of uniqueViewIds) {
-          if (!databaseViewId) continue;
-          if (referencedViewIds.has(databaseViewId)) continue;
-          if (pendingDatabaseViewDeletionRef.current.has(databaseViewId)) continue;
+        if (!firstViewId) continue;
+        if (pendingDatabaseViewDeletionRef.current.has(firstViewId)) continue;
 
-          const timeoutId = setTimeout(() => {
-            pendingDatabaseViewDeletionRef.current.delete(databaseViewId);
+        const timeoutId = setTimeout(async () => {
+          pendingDatabaseViewDeletionRef.current.delete(firstViewId);
 
-            const latestBlocks = databaseBlocksRef.current;
-            const stillReferenced = Array.from(latestBlocks.values()).some((info) => info.viewIds.includes(databaseViewId));
+          // Check again that this view is not referenced by any current blocks
+          const latestBlocks = databaseBlocksRef.current;
+          const stillReferenced = Array.from(latestBlocks.values()).some((info) => info.viewIds.includes(firstViewId));
 
-            if (stillReferenced) return;
+          if (stillReferenced) return;
 
-            // TODO(nathan): implement delete database view (NOT deletePage) and call it here.
-          }, DATABASE_VIEW_DELETION_GRACE_MS);
+          // Find the container by looking up the parent of the child view
+          if (!loadViewMeta || !deletePage) return;
 
-          pendingDatabaseViewDeletionRef.current.set(databaseViewId, timeoutId);
-        }
+          try {
+            const childMeta = await loadViewMeta(firstViewId);
+            const containerId = childMeta?.parent_view_id;
+
+            if (!containerId) {
+              Log.warn('[CollaborativeEditor] Could not find container for orphaned database view', { firstViewId });
+              return;
+            }
+
+            Log.debug('[CollaborativeEditor] Deleting orphaned database container', { containerId, firstViewId });
+            await deletePage(containerId);
+          } catch (err) {
+            Log.error('[CollaborativeEditor] Failed to delete database container', { firstViewId, err });
+          }
+        }, DATABASE_VIEW_DELETION_GRACE_MS);
+
+        pendingDatabaseViewDeletionRef.current.set(firstViewId, timeoutId);
       }
     },
-    [collectDatabaseBlocks]
+    [collectDatabaseBlocks, deletePage, loadViewMeta]
   );
 
   const editor = useMemo(

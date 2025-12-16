@@ -1,6 +1,6 @@
 import { Button, Dialog, Divider, IconButton, Tooltip, Zoom } from '@mui/material';
 import { TransitionProps } from '@mui/material/transitions';
-import React, { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -34,9 +34,17 @@ const Transition = React.forwardRef(function Transition(
   return <Zoom ref={ref} {...props} />;
 });
 
+/**
+ * Minimal view metadata used as fallback when view is not yet in outline
+ */
+interface FallbackViewMeta {
+  view_id: string;
+  layout: ViewLayout;
+  name: string;
+}
+
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
   const workspaceId = useCurrentWorkspaceId();
-
   const { t } = useTranslation();
   const {
     toView,
@@ -53,39 +61,90 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     eventEmitter,
     ...handlers
   } = useAppHandlers();
+
   const outline = useAppOutline();
-  const { getViewReadOnlyStatus } = useViewOperations();
-  const [doc, setDoc] = React.useState<
-    | {
-        id: string;
-        doc: YDoc;
-      }
-    | undefined
-  >(undefined);
-  const [notFound, setNotFound] = React.useState(false);
   const service = useService();
   const requestInstance = service?.getAxiosInstance();
+  const { getViewReadOnlyStatus } = useViewOperations();
 
-  // Database container views should render their first child view (matches Desktop behavior)
-  const effectiveViewId = useMemo(() => {
-    if (!viewId) return viewId;
-    const meta = findView(outline || [], viewId);
-    const firstChild = getFirstChildView(meta);
+  // Document state
+  const [doc, setDoc] = useState<{ id: string; doc: YDoc } | undefined>(undefined);
+  const [notFound, setNotFound] = useState(false);
 
-    return firstChild?.view_id ?? viewId;
+  // Fallback view metadata fetched from server (used when view not in outline yet)
+  const [fallbackMeta, setFallbackMeta] = useState<FallbackViewMeta | null>(null);
+
+  // Get view from outline
+  const outlineView = useMemo(() => {
+    if (!outline || !viewId) return undefined;
+    return findView(outline, viewId);
   }, [outline, viewId]);
 
+  // Compute effective view ID (for database containers, use first child)
+  const effectiveViewId = useMemo(() => {
+    if (!viewId) return undefined;
+
+    // Try outline first, then fallback
+    const meta = outlineView || fallbackMeta;
+
+    if (meta) {
+      const firstChild = getFirstChildView(meta as Parameters<typeof getFirstChildView>[0]);
+      return firstChild?.view_id ?? viewId;
+    }
+
+    return viewId;
+  }, [viewId, outlineView, fallbackMeta]);
+
+  // Get effective view from outline
+  const effectiveOutlineView = useMemo(() => {
+    if (!outline || !effectiveViewId) return undefined;
+    return findView(outline, effectiveViewId);
+  }, [outline, effectiveViewId]);
+
+  // Fetch fallback metadata when view not in outline
+  useEffect(() => {
+    // Skip if modal closed, view already in outline, or missing dependencies
+    if (!open || effectiveOutlineView || !effectiveViewId || !workspaceId || !service) {
+      // Clear fallback when no longer needed
+      if (fallbackMeta && (effectiveOutlineView || !open)) {
+        setFallbackMeta(null);
+      }
+      return;
+    }
+
+    let cancelled = false;
+
+    service
+      .getAppView(workspaceId, effectiveViewId)
+      .then((fetchedView) => {
+        if (!cancelled && fetchedView) {
+          setFallbackMeta({
+            view_id: fetchedView.view_id,
+            layout: fetchedView.layout,
+            name: fetchedView.name,
+          });
+        }
+      })
+      .catch((e) => {
+        console.warn('[ViewModal] Failed to fetch view metadata for', effectiveViewId, e);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, effectiveOutlineView, effectiveViewId, workspaceId, service, fallbackMeta]);
+
+  // Load document
   const loadPageDoc = useCallback(
     async (id: string) => {
       setNotFound(false);
       setDoc(undefined);
       try {
-        const doc = await loadView(id, false, true);
-
-        setDoc({ doc, id });
+        const loadedDoc = await loadView(id, false, true);
+        setDoc({ doc: loadedDoc, id });
       } catch (e) {
         setNotFound(true);
-        console.error(e);
+        console.error('[ViewModal] Failed to load document:', e);
       }
     },
     [loadView]
@@ -97,44 +156,60 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     }
   }, [open, effectiveViewId, loadPageDoc]);
 
+  // Use outline view if available, otherwise use fallback
+  const resolvedView = effectiveOutlineView || fallbackMeta;
+  const layout = resolvedView?.layout ?? ViewLayout.Document;
+
+  // Build viewMeta for the View component
+  const viewMeta: ViewMetaProps | null = useMemo(() => {
+    if (!resolvedView) return null;
+
+    // When we have full outline view, use all properties
+    if (effectiveOutlineView) {
+      return {
+        name: effectiveOutlineView.name,
+        icon: effectiveOutlineView.icon || undefined,
+        cover: effectiveOutlineView.extra?.cover || undefined,
+        layout: effectiveOutlineView.layout,
+        visibleViewIds: [],
+        viewId: effectiveOutlineView.view_id,
+        extra: effectiveOutlineView.extra,
+        workspaceId,
+      };
+    }
+
+    // Fallback with minimal properties
+    return {
+      name: resolvedView.name,
+      icon: undefined,
+      cover: undefined,
+      layout: resolvedView.layout,
+      visibleViewIds: [],
+      viewId: resolvedView.view_id,
+      extra: undefined,
+      workspaceId,
+    };
+  }, [resolvedView, effectiveOutlineView, workspaceId]);
+
   const handleClose = useCallback(() => {
     setDoc(undefined);
+    setFallbackMeta(null);
     onClose();
   }, [onClose]);
 
-  const view = useMemo(() => {
-    if (!outline || !effectiveViewId) return;
-    return findView(outline, effectiveViewId);
-  }, [outline, effectiveViewId]);
-
-  const viewMeta: ViewMetaProps | null = useMemo(() => {
-    return view
-      ? {
-          name: view.name,
-          icon: view.icon || undefined,
-          cover: view.extra?.cover || undefined,
-          layout: view.layout,
-          visibleViewIds: [],
-          viewId: view.view_id,
-          extra: view.extra,
-          workspaceId,
-        }
-      : null;
-  }, [view, workspaceId]);
-
   const handleUploadFile = useCallback(
     (file: File) => {
-      if (view && uploadFile) {
-        return uploadFile(view.view_id, file);
+      if (resolvedView && uploadFile) {
+        return uploadFile(resolvedView.view_id, file);
       }
-
       return Promise.reject();
     },
-    [uploadFile, view]
+    [uploadFile, resolvedView]
   );
 
   const ref = useRef<HTMLDivElement | null>(null);
-  const [movePageOpen, setMovePageOpen] = React.useState(false);
+  const [movePageOpen, setMovePageOpen] = useState(false);
+
   const renderModalTitle = useCallback(() => {
     if (!effectiveViewId) return null;
     const space = findAncestors(outline || [], effectiveViewId)?.find((item) => item.extra?.is_space);
@@ -206,8 +281,6 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       </div>
     );
   }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView]);
-
-  const layout = view?.layout || ViewLayout.Document;
 
   // Check if view is in shareWithMe and determine readonly status
   const isReadOnly = useMemo(() => {

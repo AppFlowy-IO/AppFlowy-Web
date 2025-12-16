@@ -57,7 +57,11 @@ function AppPage() {
   }, [outline, viewId]);
 
   // Fallback view fetched from server when not in outline
-  const [fallbackView, setFallbackView] = React.useState<{ view_id: string; layout: ViewLayout } | null>(null);
+  const [fallbackView, setFallbackView] = React.useState<{
+    view_id: string;
+    layout: ViewLayout;
+    name: string;
+  } | null>(null);
 
   // Fetch view metadata when not found in outline (handles race condition after creating new view)
   useEffect(() => {
@@ -77,7 +81,11 @@ function AppPage() {
       .getAppView(workspaceId, viewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
-          setFallbackView({ view_id: fetchedView.view_id, layout: fetchedView.layout });
+          setFallbackView({
+            view_id: fetchedView.view_id,
+            layout: fetchedView.layout,
+            name: fetchedView.name,
+          });
         }
       })
       .catch((e) => {
@@ -155,29 +163,46 @@ function AppPage() {
   }, [layout]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
-    return view
-      ? {
-          name: view.name,
-          icon: view.icon || undefined,
-          cover: view.extra?.cover || undefined,
-          layout: view.layout,
-          visibleViewIds: [],
-          viewId: view.view_id,
-          extra: view.extra,
-          workspaceId,
-        }
-      : null;
-  }, [view, workspaceId]);
+    // Use outline view if available, otherwise use fallback
+    if (view) {
+      return {
+        name: view.name,
+        icon: view.icon || undefined,
+        cover: view.extra?.cover || undefined,
+        layout: view.layout,
+        visibleViewIds: [],
+        viewId: view.view_id,
+        extra: view.extra,
+        workspaceId,
+      };
+    }
+
+    // Fallback with minimal properties
+    if (fallbackView) {
+      return {
+        name: fallbackView.name,
+        icon: undefined,
+        cover: undefined,
+        layout: fallbackView.layout,
+        visibleViewIds: [],
+        viewId: fallbackView.view_id,
+        extra: undefined,
+        workspaceId,
+      };
+    }
+
+    return null;
+  }, [view, fallbackView, workspaceId]);
 
   const handleUploadFile = useCallback(
     (file: File) => {
-      if (view && uploadFile) {
-        return uploadFile(view.view_id, file);
+      if (viewId && uploadFile) {
+        return uploadFile(viewId, file);
       }
 
       return Promise.reject();
     },
-    [uploadFile, view]
+    [uploadFile, viewId]
   );
 
   const requestInstance = service?.getAxiosInstance();

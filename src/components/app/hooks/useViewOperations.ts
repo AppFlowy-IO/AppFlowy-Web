@@ -272,6 +272,8 @@ export function useViewOperations() {
 
           const { doc } = registerSyncContext({ doc: res, collabType, awareness });
 
+          // Set the view ID on the doc for React state tracking
+          doc.id = id;
           return doc;
         }
 
@@ -284,6 +286,8 @@ export function useViewOperations() {
         res.guid = databaseId;
         const { doc } = registerSyncContext({ doc: res, collabType });
 
+        // Set the view ID on the doc for React state tracking
+        doc.id = id;
         return doc;
       } catch (e) {
         return Promise.reject(e);

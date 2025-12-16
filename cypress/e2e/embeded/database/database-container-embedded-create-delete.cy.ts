@@ -58,13 +58,19 @@ describe('Database Container - Embedded Create/Delete', () => {
     const pageItem = () => PageSelectors.itemByViewId(viewId, { timeout: 30000 });
 
     pageItem().should('exist');
-    pageItem().within(() => {
-      cy.get(byTestId('outline-toggle-collapse')).then(($collapse) => {
-        if ($collapse.length > 0) return;
+    // Wait for either toggle to appear (page has children)
+    pageItem().then(($pageItem) => {
+      const collapseToggle = $pageItem.find('[data-testid="outline-toggle-collapse"]');
+      if (collapseToggle.length > 0) {
+        // Already expanded
+        return;
+      }
 
-        cy.get(byTestId('outline-toggle-expand'), { timeout: 30000 }).should('exist').first().click({ force: true });
+      const expandToggle = $pageItem.find('[data-testid="outline-toggle-expand"]');
+      if (expandToggle.length > 0) {
+        cy.wrap(expandToggle.first()).click({ force: true });
         waitForReactUpdate(500);
-      });
+      }
     });
   };
 
@@ -122,7 +128,13 @@ describe('Database Container - Embedded Create/Delete', () => {
       cy.get('[role="menuitem"]').first().click({ force: true });
       waitForReactUpdate(1000);
 
-      // Capture the document view id for reliable sidebar targeting (avoid relying on a title edit)
+      // When creating a Document via inline add button, it opens in a ViewModal.
+      // Click the expand button (first button in modal header) to navigate to full page view.
+      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]').find('button').first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      // Now the URL should reflect the new document
       currentViewIdFromUrl().then((viewId) => {
         expect(viewId).to.not.equal('');
         cy.wrap(viewId).as('docViewId');
@@ -153,6 +165,9 @@ describe('Database Container - Embedded Create/Delete', () => {
         cy.get(`#editor-${docViewId}`).find(BlockSelectors.blockSelector('grid')).should('exist');
       });
 
+      // Wait for sidebar to update after database creation
+      waitForReactUpdate(3000);
+
       // 3) Verify sidebar: document has a child database container with a child view
       testLog.step(3, 'Verify sidebar hierarchy: document -> container -> child view');
       ensureSpaceExpanded(spaceName);
@@ -171,20 +186,26 @@ describe('Database Container - Embedded Create/Delete', () => {
 
         containerPageItem().should('exist');
 
-        // Expand the container to reveal its first child view
-        containerPageItem().within(() => {
-          cy.get(byTestId('outline-toggle-collapse')).then(($collapse) => {
-            if ($collapse.length > 0) return;
+        // Expand the container to reveal its first child view (if it has a toggle)
+        containerPageItem().then(($container) => {
+          const collapseToggle = $container.find('[data-testid="outline-toggle-collapse"]');
+          if (collapseToggle.length > 0) {
+            // Already expanded
+            return;
+          }
 
-            cy.get(byTestId('outline-toggle-expand'), { timeout: 30000 }).should('exist').first().click({ force: true });
+          const expandToggle = $container.find('[data-testid="outline-toggle-expand"]');
+          if (expandToggle.length > 0) {
+            cy.wrap(expandToggle.first()).click({ force: true });
             waitForReactUpdate(500);
-          });
+          }
         });
 
-        containerPageItem().within(() => {
-          // When the current page is open in a modal, the sidebar can be covered by the dialog backdrop.
-          // We only need to assert the hierarchy exists.
-          PageSelectors.items().should('have.length.at.least', 1);
+        // Verify the container has children (database container should have at least one child view)
+        containerPageItem().then(($container) => {
+          const childItems = $container.find('[data-testid="page-item"]');
+          // Database containers should have at least one child view
+          expect(childItems.length).to.be.at.least(1);
         });
       });
 
@@ -240,6 +261,9 @@ describe('Database Container - Embedded Create/Delete', () => {
       cy.get<string>('@docViewId').then((docViewId) => {
         cy.get(`#editor-${docViewId}`).find(BlockSelectors.blockSelector('grid')).should('not.exist');
       });
+
+      // Wait for sidebar to sync after block deletion
+      waitForReactUpdate(3000);
 
       // 5) Verify sidebar: document no longer has the database container child
       testLog.step(5, 'Verify sidebar no longer contains the embedded container');

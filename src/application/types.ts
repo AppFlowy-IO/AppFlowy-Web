@@ -381,12 +381,35 @@ export enum YjsDatabaseKey {
   layout_ty = 'layout_ty',
   icon = 'icon',
   is_inline = 'is_inline',
+  embedded = 'embedded',
   auto_fill = 'auto_fill',
   language = 'language',
   number_of_days = 'number_of_days',
 }
 
+/**
+ * YDoc extends Y.Doc with AppFlowy-specific properties.
+ *
+ * Document Identification:
+ * - `id`: The view ID that this document belongs to. Set when loading a document
+ *         via loadView(). Used to verify the document matches the current view
+ *         and prevent race conditions when navigating between pages.
+ * - `guid`: The Y.Doc globally unique identifier. In AppFlowy, this is typically
+ *           set to the viewId when creating the document via openCollabDB(viewId).
+ *           The guid is used for sync context registration and WebSocket communication.
+ *
+ * Note: Both `id` and `guid` typically contain the same viewId value, but they serve
+ * different purposes:
+ * - `id` is for React state tracking to ensure rendered content matches current route
+ * - `guid` is for Yjs sync protocol and collab document identity
+ */
 export interface YDoc extends Y.Doc {
+  /**
+   * The view ID this document belongs to.
+   * Set when loading a document via loadView() to track which view the doc is for.
+   */
+  id?: string;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getMap(key: YjsEditorKey.data_section): YSharedRoot | any;
 }
@@ -578,6 +601,9 @@ export interface YDatabaseView extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.calculations): YDatabaseCalculations;
 
   get(key: YjsDatabaseKey.is_inline): boolean;
+
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  get(key: YjsDatabaseKey.embedded): boolean;
 }
 
 export type YDatabaseFieldOrders = Y.Array<{ id: FieldId }>; // [ { id: FieldId } ]
