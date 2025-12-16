@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosResponse } from 'axios';
+import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import dayjs from 'dayjs';
 import { omit } from 'lodash-es';
 import { nanoid } from 'nanoid';
@@ -99,11 +99,14 @@ interface APIError {
  */
 function handleAPIError(error: unknown): APIError {
   if (axios.isAxiosError(error)) {
+    // Extract just the path from URL (no query params or sensitive data)
+    const url = error.config?.url || 'unknown';
+
     // Network error (no response from server)
     if (!error.response) {
       return {
         code: -1,
-        message: error.message || 'Network error. Please check your connection.',
+        message: `${error.message || 'Network error'} [${url}]`,
       };
     }
 
@@ -112,7 +115,7 @@ function handleAPIError(error: unknown): APIError {
 
     return {
       code: errorData?.code ?? error.response.status,
-      message: errorData?.message || error.message || 'Request failed',
+      message: `${errorData?.message || error.message || 'Request failed'} [${url}]`,
     };
   }
 
@@ -174,7 +177,7 @@ async function executeAPIRequest<TResponseData = unknown>(
     // Server returned an error response
     return Promise.reject({
       code: response.data.code,
-      message: response.data.message || 'Request failed',
+      message: `${response.data.message || 'Request failed'} [${response.config?.url || 'unknown'}]`,
     });
   } catch (error) {
     return Promise.reject(handleAPIError(error));
@@ -198,22 +201,42 @@ async function executeAPIVoidRequest(
 
     const response = await request();
 
-    if (!response?.data) {
-      console.error('[executeAPIVoidRequest] No response data received', response);
+    if (!response) {
       return Promise.reject({
         code: -1,
-        message: 'No response data received',
+        message: 'No response received from server',
       });
     }
 
-    if (response.data.code === 0) {
+    const requestUrl = response.config?.url || 'unknown';
+
+    // Many "void" endpoints return 204 or a 2xx with an empty body. Treat any 2xx as success
+    // unless the standard APIResponse envelope is present and indicates an error.
+    if (response.status >= 200 && response.status < 300) {
+      const responseData: unknown = response.data;
+
+      if (
+        responseData &&
+        typeof responseData === 'object' &&
+        'code' in responseData &&
+        typeof (responseData as { code?: unknown }).code === 'number'
+      ) {
+        const data = responseData as APIResponse;
+
+        if (data.code === 0) return;
+
+        return Promise.reject({
+          code: data.code,
+          message: `${data.message || 'Request failed'} [${requestUrl}]`,
+        });
+      }
+
       return;
     }
 
-    // Server returned an error response
     return Promise.reject({
-      code: response.data.code,
-      message: response.data.message || 'Request failed',
+      code: response.status,
+      message: `${response.statusText || 'Request failed'} [${requestUrl}]`,
     });
   } catch (error) {
     return Promise.reject(handleAPIError(error));
@@ -278,8 +301,9 @@ export function initAPIService(config: AFCloudConfig) {
     }
   );
 
-  const handleUnauthorized = async (response: AxiosResponse) => {
-    const status = response.status;
+  const handleUnauthorized = async (error: unknown) => {
+    const axiosError = error as AxiosError;
+    const status = axiosError.response?.status;
 
     if (status === 401) {
       const token = getTokenParsed();
@@ -287,7 +311,7 @@ export function initAPIService(config: AFCloudConfig) {
       if (!token) {
         console.warn('[initAPIService][response] 401 without token, emitting invalid token');
         invalidToken();
-        return response;
+        return Promise.reject(error);
       }
 
       const refresh_token = token.refresh_token;
@@ -297,13 +321,13 @@ export function initAPIService(config: AFCloudConfig) {
       } catch (e) {
         console.warn('[initAPIService][response] refresh on 401 failed, emitting invalid token', {
           message: (e as Error)?.message,
-          url: response.config?.url,
+          url: axiosError.config?.url,
         });
         invalidToken();
       }
     }
 
-    return response;
+    return Promise.reject(error);
   };
 
   axiosInstance.interceptors.response.use((response) => response, handleUnauthorized);

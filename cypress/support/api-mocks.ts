@@ -4,18 +4,32 @@
  *
  * Usage:
  * ```typescript
- * import { mockAuthEndpoints, mockWorkspaceEndpoints, createAuthResponse } from '@/cypress/support/api-mocks';
+ * import { mockAuthEndpoints, mockWorkspaceEndpoints, createAuthResponse, APIResponseCode } from '@/cypress/support/api-mocks';
  *
  * // Mock all standard auth endpoints
  * const { userId, accessToken, refreshToken } = mockAuthEndpoints(testEmail);
  *
  * // Mock workspace endpoints
  * const { workspaceId } = mockWorkspaceEndpoints();
+ *
+ * // Use APIResponseCode for consistent response codes
+ * cy.intercept('GET', '/api/...', { body: { code: APIResponseCode.Success, data: {...} }})
  * ```
  */
 
 import { v4 as uuidv4 } from 'uuid';
 import { TestConfig } from './test-config';
+
+/**
+ * Standard API response codes used by AppFlowy server
+ * Matches the server-side response code definitions
+ */
+export const APIResponseCode = {
+  /** Request was successful */
+  Success: 0,
+  /** Generic error (check message for details) */
+  Error: -1,
+} as const;
 
 /**
  * Creates a standard GoTrue auth response body
@@ -63,7 +77,7 @@ export const mockAuthEndpoints = (
   cy.intercept('GET', `${apiUrl}/api/user/verify/${accessToken}`, {
     statusCode: 200,
     body: {
-      code: 0,
+      code: APIResponseCode.Success,
       data: {
         is_new: false,
       },
@@ -107,7 +121,7 @@ export const mockOTPEndpoints = (
   cy.intercept('GET', `${apiUrl}/api/user/verify/${accessToken}`, {
     statusCode: 200,
     body: {
-      code: 0,
+      code: APIResponseCode.Success,
       data: {
         is_new: false,
       },
@@ -138,7 +152,7 @@ export const mockWorkspaceEndpoints = (
   cy.intercept('GET', `${apiUrl}/api/user/workspace`, {
     statusCode: 200,
     body: {
-      code: 0,
+      code: APIResponseCode.Success,
       data: {
         user_profile: { uuid: userId },
         visiting_workspace: {
@@ -183,7 +197,7 @@ export const mockUserVerification = (
   cy.intercept('GET', `${apiUrl}/api/user/verify/${accessToken}`, {
     statusCode: 200,
     body: {
-      code: 0,
+      code: APIResponseCode.Success,
       data: {
         is_new: isNewUser,
       },

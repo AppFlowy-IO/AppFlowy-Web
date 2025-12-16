@@ -48,7 +48,7 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       waitForReactUpdate(1000);
       AddPageSelectors.addGridButton().should('be.visible').click();
       cy.wait(3000);
-      const dbName = 'New Grid';
+      const dbName = 'New Database';
       cy.task('log', `[STEP 4.1] Using database name: ${dbName}`);
       cy.wait(1000);
 
@@ -183,7 +183,7 @@ describe('Database Conditions - Filters and Sorts UI', () => {
         });
 
       waitForReactUpdate(1000);
-      SlashCommandSelectors.selectDatabase('New Grid');
+      SlashCommandSelectors.selectDatabase('New Database');
       waitForReactUpdate(2000);
 
       cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist').last().as('embeddedDBTemp1');
@@ -224,9 +224,11 @@ describe('Database Conditions - Filters and Sorts UI', () => {
 
       // Verify filter condition appears
       cy.task('log', '[STEP 6] Verifying filter condition appears');
-      cy.get('[class*="appflowy-database"]').last().within(() => {
-        DatabaseFilterSelectors.filterCondition().should('exist').and('be.visible');
-      });
+      cy.get('[class*="appflowy-database"]')
+        .last()
+        .within(() => {
+          DatabaseFilterSelectors.filterCondition().should('exist').and('be.visible');
+        });
 
       cy.task('log', '[TEST COMPLETE] Filter expansion test passed');
     });
@@ -280,7 +282,7 @@ describe('Database Conditions - Filters and Sorts UI', () => {
         });
 
       waitForReactUpdate(1000);
-      SlashCommandSelectors.selectDatabase('New Grid');
+      SlashCommandSelectors.selectDatabase('New Database');
       waitForReactUpdate(2000);
 
       cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist').last().as('embeddedDBTemp2');
@@ -328,17 +330,21 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       waitForReactUpdate(1000);
 
       // Verify filter exists
-      cy.get('[class*="appflowy-database"]').last().within(() => {
-        DatabaseFilterSelectors.filterCondition().should('exist');
-      });
+      cy.get('[class*="appflowy-database"]')
+        .last()
+        .within(() => {
+          DatabaseFilterSelectors.filterCondition().should('exist');
+        });
 
       // Remove filter
       cy.task('log', '[STEP 3] Removing filter');
 
       // Click the filter condition chip to open the menu
-      cy.get('[class*="appflowy-database"]').last().within(() => {
-        DatabaseFilterSelectors.filterCondition().first().click();
-      });
+      cy.get('[class*="appflowy-database"]')
+        .last()
+        .within(() => {
+          DatabaseFilterSelectors.filterCondition().first().click();
+        });
 
       waitForReactUpdate(500);
 
@@ -354,9 +360,11 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       waitForReactUpdate(1000);
 
       // Verify filter is removed
-      cy.get('[class*="appflowy-database"]').last().within(() => {
-        DatabaseFilterSelectors.filterCondition().should('not.exist');
-      });
+      cy.get('[class*="appflowy-database"]')
+        .last()
+        .within(() => {
+          DatabaseFilterSelectors.filterCondition().should('not.exist');
+        });
 
       cy.task('log', '[TEST COMPLETE] Dynamic height adjustment test passed');
     });

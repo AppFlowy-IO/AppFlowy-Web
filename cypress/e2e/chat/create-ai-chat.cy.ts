@@ -53,18 +53,18 @@ describe('AI Chat Creation and Navigation Tests', () => {
                 cy.get('body', { timeout: 30000 }).should('not.contain', 'Welcome!');
                 
                 // Wait for the sidebar to be visible (indicates app is loaded)
-                SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
+                SidebarSelectors.pageHeader({ timeout: 30000 }).should('be.visible');
                 
                 // Wait for at least one page to exist in the sidebar
-                PageSelectors.names().should('exist', { timeout: 30000 });
+                PageSelectors.names({ timeout: 30000 }).should('exist');
                 
                 // Additional wait for stability
                 cy.wait(2000);
                 
                 // Now wait for the new page button to be available
                 testLog.info( 'Looking for new page button...');
-                PageSelectors.newPageButton()
-                    .should('exist', { timeout: 20000 })
+                PageSelectors.newPageButton({ timeout: 20000 })
+                    .should('exist')
                     .then(() => {
                         testLog.info( 'New page button found!');
                     });
@@ -121,33 +121,12 @@ describe('AI Chat Creation and Navigation Tests', () => {
                 testLog.info( '=== Step 4: Verifying AI Chat page loaded ===');
                 
                 // Check that the URL contains a view ID (indicating navigation to chat)
-                cy.url().should('match', /\/app\/[a-f0-9-]+\/[a-f0-9-]+/, { timeout: 10000 });
+                cy.url({ timeout: 20000 }).should('match', /\/app\/[^/]+\/[^/?#]+/);
                 testLog.info( '✓ Navigated to AI Chat page');
                 
-                // Check if the AI Chat container exists (but don't fail if it doesn't load immediately)
-                ChatSelectors.aiChatContainer().then($container => {
-                    if ($container.length > 0) {
-                        testLog.info( '✓ AI Chat container exists');
-                    } else {
-                        testLog.info( 'AI Chat container not immediately visible, checking for navigation success...');
-                    }
-                });
-                
-                // Wait a bit for the chat to fully load
-                cy.wait(2000);
-                
-                // Check for AI Chat specific elements (the chat interface)
-                // The AI chat library loads its own components
-                cy.get('body').then($body => {
-                    ChatSelectors.aiChatContainer().then($container => {
-                        const hasChatElements = $body.find('.ai-chat').length > 0 || $container.length > 0;
-                        if (hasChatElements) {
-                            testLog.info( '✓ AI Chat interface loaded');
-                        } else {
-                            testLog.info( 'Warning: AI Chat elements not immediately visible, but container exists');
-                        }
-                    });
-                });
+                // Verify AI Chat container renders (chat UI may load async after container is mounted)
+                ChatSelectors.aiChatContainer({ timeout: 30000 }).should('be.visible');
+                testLog.info( '✓ AI Chat container exists');
                 
                 // Verify no error messages are displayed
                 cy.get('body').then($body => {

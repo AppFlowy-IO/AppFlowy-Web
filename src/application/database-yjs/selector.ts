@@ -94,7 +94,11 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
       // If visibleViewIds is provided (for embedded databases), filter to only show those views
       // visibleViewIds is undefined for standalone databases, [] for embedded with no child views yet
       if (visibleViewIds !== undefined) {
-        allViewIds = allViewIds.filter((viewId) => visibleViewIds.includes(viewId));
+        // Preserve the ordering defined by `visibleViewIds` (folder/outline order), not the
+        // internal insertion order of the Yjs `views` map.
+        const availableIds = new Set(allViewIds);
+
+        allViewIds = visibleViewIds.filter((viewId) => availableIds.has(viewId));
       }
 
       setViewIds(allViewIds);

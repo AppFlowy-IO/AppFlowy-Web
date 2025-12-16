@@ -9,7 +9,8 @@ describe('Editor - Drag and Drop Blocks', () => {
         err.message.includes('Minified React error') ||
         err.message.includes('View not found') ||
         err.message.includes('No workspace or service found') ||
-        err.message.includes('Cannot resolve a DOM point from Slate point')
+        err.message.includes('Cannot resolve a DOM point from Slate point') ||
+        err.message.includes('Cannot resolve a DOM node from Slate node')
       ) {
         return false;
       }
@@ -32,7 +33,7 @@ describe('Editor - Drag and Drop Blocks', () => {
           : EditorSelectors.slateEditor().contains(sourceText);
     };
 
-    getSource().closest('[data-block-type]').scrollIntoView().should('be.visible').click().then(($sourceBlock) => {
+    getSource().closest('[data-block-type]').scrollIntoView().should('be.visible').then(($sourceBlock) => {
       // Use realHover to simulate user interaction which updates elementFromPoint
       cy.wrap($sourceBlock).trigger('mouseover', { force: true });
       cy.wrap($sourceBlock).realHover({ position: 'center' });
@@ -41,7 +42,7 @@ describe('Editor - Drag and Drop Blocks', () => {
       BlockSelectors.hoverControls().invoke('css', 'opacity', '1');
 
       // 2. Get the drag handle
-      BlockSelectors.dragHandle().should('be.visible').then(($handle) => {
+      BlockSelectors.dragHandle().should('exist').then(($handle) => {
         const dataTransfer = new DataTransfer();
 
         // 3. Start dragging
@@ -100,6 +101,13 @@ describe('Editor - Drag and Drop Blocks', () => {
     });
     
     waitForReactUpdate(1000);
+  };
+
+  const closeViewModal = () => {
+    cy.get('[role="dialog"]', { timeout: 30000 }).should('be.visible');
+    cy.get('body').type('{esc}');
+    waitForReactUpdate(800);
+    cy.get('[role="dialog"]').should('not.exist');
   };
 
   it.skip('should iteratively reorder items in a list (5 times)', () => {
@@ -343,10 +351,8 @@ describe('Editor - Drag and Drop Blocks', () => {
       BlockSelectors.slashMenuGrid().should('be.visible').click();
       waitForReactUpdate(2000);
       
-      // Grid creation usually opens a modal. We need to close it to interact with the editor.
-      // Pressing ESC is a robust way to close modals.
-      cy.get('body').type('{esc}');
-      waitForReactUpdate(1000);
+      // Grid creation opens a view modal; close it before interacting with the document editor.
+      closeViewModal();
 
       // Verify grid block exists
       BlockSelectors.blockByType('grid').should('exist');

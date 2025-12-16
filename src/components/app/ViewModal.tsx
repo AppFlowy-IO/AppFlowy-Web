@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
 import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/full_screen.svg';
@@ -64,6 +65,16 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const [notFound, setNotFound] = React.useState(false);
   const service = useService();
   const requestInstance = service?.getAxiosInstance();
+
+  // Database container views should render their first child view (matches Desktop behavior)
+  const effectiveViewId = useMemo(() => {
+    if (!viewId) return viewId;
+    const meta = findView(outline || [], viewId);
+    const firstChild = getFirstChildView(meta);
+
+    return firstChild?.view_id ?? viewId;
+  }, [outline, viewId]);
+
   const loadPageDoc = useCallback(
     async (id: string) => {
       setNotFound(false);
@@ -81,11 +92,10 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   );
 
   useEffect(() => {
-    if (open && viewId) {
-      void loadPageDoc(viewId);
+    if (open && effectiveViewId) {
+      void loadPageDoc(effectiveViewId);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, viewId]);
+  }, [open, effectiveViewId, loadPageDoc]);
 
   const handleClose = useCallback(() => {
     setDoc(undefined);
@@ -93,9 +103,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [onClose]);
 
   const view = useMemo(() => {
-    if (!outline || !viewId) return;
-    return findView(outline, viewId);
-  }, [outline, viewId]);
+    if (!outline || !effectiveViewId) return;
+    return findView(outline, effectiveViewId);
+  }, [outline, effectiveViewId]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
     return view
@@ -126,8 +136,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const ref = useRef<HTMLDivElement | null>(null);
   const [movePageOpen, setMovePageOpen] = React.useState(false);
   const renderModalTitle = useCallback(() => {
-    if (!viewId) return null;
-    const space = findAncestors(outline || [], viewId)?.find((item) => item.extra?.is_space);
+    if (!effectiveViewId) return null;
+    const space = findAncestors(outline || [], effectiveViewId)?.find((item) => item.extra?.is_space);
 
     return (
       <div
@@ -138,7 +148,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
             <IconButton
               size={'small'}
               onClick={async () => {
-                await toView(viewId);
+                await toView(effectiveViewId);
                 handleClose();
               }}
             >
@@ -148,7 +158,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
           <Divider orientation={'vertical'} className={'h-4'} />
           {space && ref.current && (
             <MovePagePopover
-              viewId={viewId}
+              viewId={effectiveViewId}
               open={movePageOpen}
               onOpenChange={setMovePageOpen}
               onMoved={() => {
@@ -175,8 +185,8 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
 
         <div className={'flex items-center gap-4'}>
-          <Users viewId={viewId} />
-          <ShareButton viewId={viewId} />
+          <Users viewId={effectiveViewId} />
+          <ShareButton viewId={effectiveViewId} />
           {ref.current && (
             <MoreActions
               menuContentProps={{
@@ -184,7 +194,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
                 align: 'end',
               }}
               onDeleted={handleClose}
-              viewId={viewId}
+              viewId={effectiveViewId}
             />
           )}
 
@@ -195,15 +205,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         </div>
       </div>
     );
-  }, [handleClose, movePageOpen, outline, t, toView, viewId]);
+  }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView]);
 
   const layout = view?.layout || ViewLayout.Document;
 
   // Check if view is in shareWithMe and determine readonly status
   const isReadOnly = useMemo(() => {
-    if (!viewId) return false;
-    return getViewReadOnlyStatus(viewId, outline);
-  }, [getViewReadOnlyStatus, viewId, outline]);
+    if (!effectiveViewId) return false;
+    return getViewReadOnlyStatus(effectiveViewId, outline);
+  }, [getViewReadOnlyStatus, effectiveViewId, outline]);
 
   const View = useMemo(() => {
     switch (layout) {
@@ -267,7 +277,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
   useEffect(() => {
     const handleShareViewsChanged = ({ emails, viewId: id }: { emails: string[]; viewId: string }) => {
-      if (id === viewId && emails.includes(currentUser?.email || '')) {
+      if (id === effectiveViewId && emails.includes(currentUser?.email || '')) {
         toast.success('Permission changed');
       }
     };
@@ -281,7 +291,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
       }
     };
-  }, [eventEmitter, viewId, currentUser?.email]);
+  }, [eventEmitter, effectiveViewId, currentUser?.email]);
 
   return (
     <Dialog
@@ -301,7 +311,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       }}
     >
       {renderModalTitle()}
-      {notFound ? <RecordNotFound viewId={viewId} /> : <div className={'h-full w-full'}>{viewDom}</div>}
+      {notFound ? <RecordNotFound viewId={effectiveViewId} /> : <div className={'h-full w-full'}>{viewDom}</div>}
     </Dialog>
   );
 }

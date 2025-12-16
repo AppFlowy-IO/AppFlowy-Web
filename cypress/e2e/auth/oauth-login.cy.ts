@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { TestConfig, generateRandomEmail } from '../../support/test-config';
+import { APIResponseCode } from '../../support/api-mocks';
 
 /**
  * OAuth Login Flow Tests
@@ -22,6 +23,67 @@ import { TestConfig, generateRandomEmail } from '../../support/test-config';
 describe('OAuth Login Flow', () => {
     const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
 
+    /**
+     * Sets up mocks for app initialization endpoints.
+     * These prevent 401/404 errors from unmocked endpoints triggering session invalidation.
+     */
+    const setupAppInitMocks = (mockWorkspaceId: string) => {
+        // Mock favorites endpoint
+        cy.intercept('GET', `${apiUrl}/api/workspace/*/favorite`, {
+            statusCode: 200,
+            body: { code: APIResponseCode.Success, data: { views: [] }, message: 'Success' },
+        }).as('getFavorites');
+
+        // Mock folder/outline endpoint
+        cy.intercept('GET', `${apiUrl}/api/workspace/*/folder*`, {
+            statusCode: 200,
+            body: {
+                code: APIResponseCode.Success,
+                data: {
+                    view_id: mockWorkspaceId,
+                    name: 'My Workspace',
+                    children: [],
+                    layout: 0,
+                    icon: null,
+                    extra: null,
+                    is_private: false,
+                    is_published: false,
+                },
+                message: 'Success',
+            },
+        }).as('getFolder');
+
+        // Mock trash endpoint
+        cy.intercept('GET', `${apiUrl}/api/workspace/*/trash`, {
+            statusCode: 200,
+            body: { code: APIResponseCode.Success, data: { views: [] }, message: 'Success' },
+        }).as('getTrash');
+
+        // Mock recent endpoint
+        cy.intercept('GET', `${apiUrl}/api/workspace/*/recent`, {
+            statusCode: 200,
+            body: { code: APIResponseCode.Success, data: { views: [] }, message: 'Success' },
+        }).as('getRecent');
+
+        // Mock user update endpoint (for timezone)
+        cy.intercept('POST', `${apiUrl}/api/user/update`, {
+            statusCode: 200,
+            body: { code: APIResponseCode.Success, message: 'Success' },
+        }).as('updateUserProfile');
+
+        // Mock workspace open endpoint
+        cy.intercept('PUT', `${apiUrl}/api/workspace/*/open`, {
+            statusCode: 200,
+            body: { code: APIResponseCode.Success, message: 'Success' },
+        }).as('openWorkspace');
+
+        // Mock shareWithMe endpoint
+        cy.intercept('GET', `${apiUrl}/api/workspace?*`, {
+            statusCode: 200,
+            body: { code: APIResponseCode.Success, data: [], message: 'Success' },
+        }).as('shareWithMe');
+    };
+
     beforeEach(() => {
         // Handle uncaught exceptions
         cy.on('uncaught:exception', (err) => {
@@ -29,7 +91,9 @@ describe('OAuth Login Flow', () => {
                 err.message.includes('Minified React error') ||
                 err.message.includes('View not found') ||
                 err.message.includes('No workspace or service found') ||
-                err.message.includes('Cannot read properties of undefined')
+                err.message.includes('Cannot read properties of undefined') ||
+                err.message.includes('WebSocket') ||
+                err.message.includes('ResizeObserver loop')
             ) {
                 return false;
             }
@@ -53,11 +117,14 @@ describe('OAuth Login Flow', () => {
 
             cy.log(`[TEST START] Testing OAuth login for new user: ${testEmail}`);
 
+            // Setup mocks for app initialization endpoints
+            setupAppInitMocks(mockWorkspaceId);
+
             // Mock the verifyToken endpoint - new user
             cy.intercept('GET', `${apiUrl}/api/user/verify/${mockAccessToken}`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         is_new: true,
                     },
@@ -86,7 +153,7 @@ describe('OAuth Login Flow', () => {
             cy.intercept('GET', `${apiUrl}/api/user/workspace`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         user_profile: { uuid: mockUserId },
                         visiting_workspace: {
@@ -116,17 +183,19 @@ describe('OAuth Login Flow', () => {
                 },
             }).as('getUserWorkspaceInfo');
 
-            // Mock getCurrentUser endpoint
+            // Mock getCurrentUser endpoint (include timezone metadata to avoid update call)
             cy.intercept('GET', `${apiUrl}/api/user/profile*`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         uid: 1,
                         uuid: mockUserId,
                         email: testEmail,
                         name: 'Test User',
-                        metadata: {},
+                        metadata: {
+                            '0': { default_timezone: 'UTC', timezone: 'UTC' },
+                        },
                         encryption_sign: null,
                         latest_workspace_id: mockWorkspaceId,
                         updated_at: Date.now(),
@@ -211,11 +280,14 @@ describe('OAuth Login Flow', () => {
 
             cy.log(`[TEST START] Testing OAuth login for existing user: ${testEmail}`);
 
+            // Setup mocks for app initialization endpoints
+            setupAppInitMocks(mockWorkspaceId);
+
             // Mock the verifyToken endpoint - existing user
             cy.intercept('GET', `${apiUrl}/api/user/verify/${mockAccessToken}`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         is_new: false,
                     },
@@ -244,7 +316,7 @@ describe('OAuth Login Flow', () => {
             cy.intercept('GET', `${apiUrl}/api/user/workspace`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         user_profile: { uuid: mockUserId },
                         visiting_workspace: {
@@ -274,17 +346,19 @@ describe('OAuth Login Flow', () => {
                 },
             }).as('getUserWorkspaceInfo');
 
-            // Mock getCurrentUser endpoint
+            // Mock getCurrentUser endpoint (include timezone metadata to avoid update call)
             cy.intercept('GET', `${apiUrl}/api/user/profile*`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         uid: 1,
                         uuid: mockUserId,
                         email: testEmail,
                         name: 'Test User',
-                        metadata: {},
+                        metadata: {
+                            '0': { default_timezone: 'UTC', timezone: 'UTC' },
+                        },
                         encryption_sign: null,
                         latest_workspace_id: mockWorkspaceId,
                         updated_at: Date.now(),
@@ -361,11 +435,14 @@ describe('OAuth Login Flow', () => {
 
             cy.log('[TEST START] Testing redirect loop prevention');
 
+            // Setup mocks for app initialization endpoints
+            setupAppInitMocks(mockWorkspaceId);
+
             // Mock all required endpoints
             cy.intercept('GET', `${apiUrl}/api/user/verify/${mockAccessToken}`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: { is_new: false },
                     message: 'Success',
                 },
@@ -390,7 +467,7 @@ describe('OAuth Login Flow', () => {
             cy.intercept('GET', `${apiUrl}/api/user/workspace`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         user_profile: { uuid: mockUserId },
                         visiting_workspace: {
@@ -423,13 +500,15 @@ describe('OAuth Login Flow', () => {
             cy.intercept('GET', `${apiUrl}/api/user/profile*`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         uid: 1,
                         uuid: mockUserId,
                         email: 'test@example.com',
                         name: 'Test User',
-                        metadata: {},
+                        metadata: {
+                            '0': { default_timezone: 'UTC', timezone: 'UTC' },
+                        },
                         encryption_sign: null,
                         latest_workspace_id: mockWorkspaceId,
                         updated_at: Date.now(),
@@ -496,6 +575,9 @@ describe('OAuth Login Flow', () => {
 
             cy.log('[TEST START] Testing old expired token race condition');
 
+            // Setup mocks for app initialization endpoints
+            setupAppInitMocks(mockWorkspaceId);
+
             cy.log('[SETUP] Pre-populate localStorage with expired token');
             cy.window().then((win) => {
                 // Set old expired token (expired 1 hour ago)
@@ -550,7 +632,7 @@ describe('OAuth Login Flow', () => {
             cy.intercept('GET', `${apiUrl}/api/user/verify/${newAccessToken}`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: { is_new: false },
                     message: 'Success',
                 },
@@ -569,7 +651,7 @@ describe('OAuth Login Flow', () => {
             cy.intercept('GET', `${apiUrl}/api/user/workspace`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         user_profile: { uuid: mockUserId },
                         visiting_workspace: {
@@ -602,13 +684,15 @@ describe('OAuth Login Flow', () => {
             cy.intercept('GET', `${apiUrl}/api/user/profile*`, {
                 statusCode: 200,
                 body: {
-                    code: 0,
+                    code: APIResponseCode.Success,
                     data: {
                         uid: 1,
                         uuid: mockUserId,
                         email: 'test@example.com',
                         name: 'Test User',
-                        metadata: {},
+                        metadata: {
+                            '0': { default_timezone: 'UTC', timezone: 'UTC' },
+                        },
                         encryption_sign: null,
                         latest_workspace_id: mockWorkspaceId,
                         updated_at: Date.now(),

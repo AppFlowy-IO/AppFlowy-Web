@@ -53,6 +53,7 @@ export function DeleteViewConfirm ({ open, onClose, viewId, onDeleted }: {
           </Button>
           <Button
             variant={'destructive'}
+            data-testid="database-view-delete-confirm"
             onClick={async () => {
               try {
                 await deleteView(viewId);

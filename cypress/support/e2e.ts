@@ -24,20 +24,29 @@ beforeEach(() => {
   // Start capturing console logs for each test
   cy.startConsoleCapture();
   
-  // Mock billing endpoints to prevent 502 errors in console
+  // Mock billing endpoints to prevent errors in console
+  // API expects {code: 0, data: {...}, message: 'success'} format
+  // Note: More specific patterns must be registered AFTER general ones in Cypress
+
+  // Mock /billing/api/v1/subscriptions - returns array of subscriptions
+  cy.intercept('GET', '**/billing/api/v1/subscriptions', {
+    statusCode: 200,
+    body: {
+      code: 0,
+      data: [],  // Empty array of subscriptions
+      message: 'success'
+    }
+  }).as('billingSubscriptions');
+
+  // Mock /billing/api/v1/active-subscription/{workspaceId} - returns array of active plans
   cy.intercept('GET', '**/billing/api/v1/active-subscription/**', {
     statusCode: 200,
     body: {
-      subscription: null,
-      status: 'free'
+      code: 0,
+      data: [],  // Empty array of active subscription plans
+      message: 'success'
     }
-  }).as('billingSubscription');
-  
-  // Mock other billing endpoints
-  cy.intercept('GET', '**/billing/api/**', {
-    statusCode: 200,
-    body: {}
-  }).as('billingAPI');
+  }).as('billingActiveSubscription');
 });
 
 afterEach(() => {

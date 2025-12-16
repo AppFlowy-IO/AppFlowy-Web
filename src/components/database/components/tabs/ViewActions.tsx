@@ -21,6 +21,7 @@ export function DatabaseViewActions({
   return (
     <DropdownMenuGroup>
       <DropdownMenuItem
+        data-testid="database-view-action-rename"
         onSelect={() => {
           onOpenRenameModal(view.view_id);
         }}
@@ -29,6 +30,7 @@ export function DatabaseViewActions({
         {t('button.rename')}
       </DropdownMenuItem>
       <DropdownMenuItem
+        data-testid="database-view-action-delete"
         disabled={deleteDisabled}
         variant={'destructive'}
         onSelect={() => {

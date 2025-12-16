@@ -4,7 +4,18 @@ import { Awareness } from 'y-protocols/awareness';
 
 import { Log } from '@/utils/log';
 import { openCollabDB } from '@/application/db';
-import { AccessLevel, DatabaseId, Types, View, ViewId, ViewLayout, YDoc, YjsEditorKey, YSharedRoot } from '@/application/types';
+import {
+  AccessLevel,
+  DatabaseId,
+  Types,
+  View,
+  ViewId,
+  ViewLayout,
+  YDoc,
+  YjsEditorKey,
+  YSharedRoot,
+} from '@/application/types';
+import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { getPlatform } from '@/utils/platform';
 
@@ -143,35 +154,36 @@ export function useViewOperations() {
     return false;
   }, []);
 
-  const getViewIdFromDatabaseId = useCallback(async (databaseId: string) => {
-    if (!currentWorkspaceId) {
-      return null;
-    }
+  const getViewIdFromDatabaseId = useCallback(
+    async (databaseId: string) => {
+      if (!currentWorkspaceId) {
+        return null;
+      }
 
-    if (databaseIdViewIdMapRef.current.has(databaseId)) {
+      if (databaseIdViewIdMapRef.current.has(databaseId)) {
+        return databaseIdViewIdMapRef.current.get(databaseId) || null;
+      }
+
+      const workspaceDatabaseDoc = workspaceDatabaseDocMapRef.current.get(currentWorkspaceId);
+
+      if (!workspaceDatabaseDoc) {
+        return null;
+      }
+
+      const sharedRoot = workspaceDatabaseDoc.getMap(YjsEditorKey.data_section);
+
+      const databases = sharedRoot?.toJSON()?.databases;
+
+      const database = databases?.find((db: { database_id: string; views: string[] }) => db.database_id === databaseId);
+
+      if (database) {
+        databaseIdViewIdMapRef.current.set(databaseId, database.views[0]);
+      }
+
       return databaseIdViewIdMapRef.current.get(databaseId) || null;
-    }
-
-    const workspaceDatabaseDoc = workspaceDatabaseDocMapRef.current.get(currentWorkspaceId);
-
-    if (!workspaceDatabaseDoc) {
-      return null;
-    }
-
-    const sharedRoot = workspaceDatabaseDoc.getMap(YjsEditorKey.data_section);
-
-    const databases = sharedRoot?.toJSON()?.databases;
-
-    const database = databases?.find((db: { database_id: string; views: string[] }) =>
-      db.database_id === databaseId
-    );
-
-    if (database) {
-      databaseIdViewIdMapRef.current.set(databaseId, database.views[0]);
-    }
-
-    return databaseIdViewIdMapRef.current.get(databaseId) || null;
-  }, [currentWorkspaceId]);
+    },
+    [currentWorkspaceId]
+  );
 
   // Load view document
   const loadView = useCallback(
@@ -273,14 +285,12 @@ export function useViewOperations() {
         const { doc } = registerSyncContext({ doc: res, collabType });
 
         return doc;
-
       } catch (e) {
         return Promise.reject(e);
       }
     },
     [service, currentWorkspaceId, getDatabaseId, registerSyncContext] // Add dependencies to prevent re-creation of functions
   );
-
 
   // Create row document
   const createRowDoc = useCallback(
@@ -320,14 +330,53 @@ export function useViewOperations() {
   // Navigate to view
   const toView = useCallback(
     async (viewId: string, blockId?: string, keepSearch?: boolean, loadViewMeta?: (viewId: string) => Promise<View>) => {
-      let url = `/app/${currentWorkspaceId}/${viewId}`;
-      const view = await loadViewMeta?.(viewId);
+      // Prefer outline/meta when available (fast), but fall back to server fetch for cases
+      // where the outline does not include container children (e.g. shallow outline fetch).
+      let view = await loadViewMeta?.(viewId);
 
-      console.log('view', view);
+      // If this is a database container, navigate to the first child view instead
+      // This matches Desktop/Flutter behavior where clicking a container opens its first child
+      let targetViewId = viewId;
+      let targetView = view;
+
+      if (isDatabaseContainer(view)) {
+        let firstChild = getFirstChildView(view);
+
+        // Fallback: fetch the container subtree from server to resolve first child.
+        if (!firstChild && currentWorkspaceId && service) {
+          try {
+            const remote = await service.getAppView(currentWorkspaceId, viewId);
+
+            // Update local variable so blockId routing below uses the correct layout.
+            view = remote;
+            targetView = remote;
+
+            if (isDatabaseContainer(remote)) {
+              firstChild = getFirstChildView(remote);
+            }
+          } catch (e) {
+            Log.warn('[toView] Failed to fetch container view from server', {
+              containerId: viewId,
+              error: e,
+            });
+          }
+        }
+
+        if (firstChild) {
+          Log.debug('[toView] Database container detected, navigating to first child', {
+            containerId: viewId,
+            firstChildId: firstChild.view_id,
+          });
+          targetViewId = firstChild.view_id;
+          targetView = firstChild;
+        }
+      }
+
+      let url = `/app/${currentWorkspaceId}/${targetViewId}`;
       const searchParams = new URLSearchParams(keepSearch ? window.location.search : undefined);
 
-      if (blockId && view) {
-        switch (view.layout) {
+      if (blockId && targetView) {
+        switch (targetView.layout) {
           case ViewLayout.Document:
             searchParams.set('blockId', blockId);
             break;
@@ -345,9 +394,18 @@ export function useViewOperations() {
         url += `?${searchParams.toString()}`;
       }
 
+      // Avoid pushing duplicate history entries (also prevents loops when a container has no child).
+      if (typeof window !== 'undefined') {
+        const currentUrl = `${window.location.pathname}${window.location.search}`;
+
+        if (currentUrl === url) {
+          return;
+        }
+      }
+
       navigate(url);
     },
-    [currentWorkspaceId, navigate]
+    [currentWorkspaceId, navigate, service]
   );
 
   // Clean up created row documents when view changes

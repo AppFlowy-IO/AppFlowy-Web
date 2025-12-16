@@ -24,10 +24,10 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
 
-  const handleAddView = async (layout: DatabaseViewLayout) => {
+  const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
     setAddLoading(true);
     try {
-      const viewId = await onAddView(layout);
+      const viewId = await onAddView(layout, name);
 
       onViewAdded(viewId);
     } catch (e: unknown) {
@@ -59,7 +59,7 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
       >
         <DropdownMenuItem
           onSelect={() => {
-            void handleAddView(DatabaseViewLayout.Grid);
+            void handleAddView(DatabaseViewLayout.Grid, t('grid.menuName'));
           }}
         >
           <ViewIcon layout={ViewLayout.Grid} size={'small'} />
@@ -67,7 +67,7 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => {
-            void handleAddView(DatabaseViewLayout.Board);
+            void handleAddView(DatabaseViewLayout.Board, t('board.menuName'));
           }}
         >
           <ViewIcon layout={ViewLayout.Board} size={'small'} />
@@ -75,7 +75,7 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
         </DropdownMenuItem>
         <DropdownMenuItem
           onSelect={() => {
-            void handleAddView(DatabaseViewLayout.Calendar);
+            void handleAddView(DatabaseViewLayout.Calendar, t('calendar.menuName'));
           }}
         >
           <ViewIcon layout={ViewLayout.Calendar} size={'small'} />

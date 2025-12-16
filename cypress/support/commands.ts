@@ -21,4 +21,32 @@ Cypress.Commands.add('mockAPI', () => {
   // Mock the API
 });
 
+/**
+ * Clear all IndexedDB databases to ensure clean test state
+ * This removes stale document caches from y-indexeddb and the app's Dexie cache
+ */
+Cypress.Commands.add('clearAllIndexedDB', () => {
+  return cy.window().then(async (win) => {
+    try {
+      const databases = await win.indexedDB.databases();
+      const deletePromises = databases.map((db) => {
+        return new Promise<void>((resolve) => {
+          if (db.name) {
+            const request = win.indexedDB.deleteDatabase(db.name);
+            request.onsuccess = () => resolve();
+            request.onerror = () => resolve(); // Resolve even on error to not block other deletions
+            request.onblocked = () => resolve();
+          } else {
+            resolve();
+          }
+        });
+      });
+      await Promise.all(deletePromises);
+      cy.log(`Cleared ${databases.length} IndexedDB databases`);
+    } catch (e) {
+      cy.log('Failed to clear IndexedDB databases');
+    }
+  });
+});
+
 export {};

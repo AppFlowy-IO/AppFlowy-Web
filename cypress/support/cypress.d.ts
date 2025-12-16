@@ -6,7 +6,11 @@ declare namespace Cypress {
   }
 
   interface Chainable {
-    // Add any custom commands here
+    /**
+     * Clear all IndexedDB databases to ensure clean test state
+     * This removes stale document caches from y-indexeddb and the app's Dexie cache
+     */
+    clearAllIndexedDB(): Chainable<void>;
   }
 
   // Fix for uncaught:exception event

@@ -1,7 +1,8 @@
 import EventEmitter from 'events';
 
-import React, { createContext, useContext } from 'react';
+import React, { createContext, useContext, useMemo } from 'react';
 import { Awareness } from 'y-protocols/awareness';
+import { useSearchParams } from 'react-router-dom';
 
 import {
   AppendBreadcrumb,
@@ -31,6 +32,10 @@ import {
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 
+import {
+  DATABASE_TAB_VIEW_ID_QUERY_PARAM,
+  resolveSidebarSelectedViewId,
+} from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { AuthInternalContext } from './contexts/AuthInternalContext';
 import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';
@@ -187,6 +192,31 @@ export function useAppViewId() {
   }
 
   return context.viewId;
+}
+
+/**
+ * Returns the view id that should be treated as "selected" in the sidebar.
+ *
+ * For database pages, the URL can encode the active database tab view id via the
+ * `v` query param while keeping the route view id stable (to avoid reloading the
+ * database doc on every tab switch). Desktop keeps the sidebar selection in sync
+ * with the active tab; this hook provides the equivalent behavior for Web.
+ */
+export function useSidebarSelectedViewId() {
+  const routeViewId = useAppViewId();
+  const outline = useAppOutline();
+  const [searchParams] = useSearchParams();
+  const tabViewId = searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM);
+
+  return useMemo(
+    () =>
+      resolveSidebarSelectedViewId({
+        routeViewId,
+        tabViewId,
+        outline,
+      }),
+    [outline, routeViewId, tabViewId]
+  );
 }
 
 export function useAppWordCount(viewId?: string | null) {

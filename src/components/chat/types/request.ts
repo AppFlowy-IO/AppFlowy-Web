@@ -128,6 +128,10 @@ export interface ViewExtra {
     type: CoverType;
     value: string;
   };
+
+  // Database container support (aligned with Desktop/Flutter)
+  is_database_container?: boolean;
+  database_id?: string;
 }
 
 export interface ViewIcon {
