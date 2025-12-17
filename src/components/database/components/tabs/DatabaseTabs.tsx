@@ -158,51 +158,6 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       } as View;
     }, [databasePageId, meta, renameViewId, views]);
 
-    // Get visible view IDs, combining viewIds prop with non-embedded views from Yjs.
-    //
-    // Two contexts where this component is used:
-    // 1. Standalone database page: viewIds from outline, should add any non-embedded Yjs views
-    // 2. Embedded database block in document: viewIds from block data, may include embedded views
-    //
-    // The viewIds prop is always trusted (explicitly requested views).
-    // When adding extra views from Yjs, we filter out embedded ones to match Desktop behavior:
-    // embedded views should only appear in the document where they were embedded,
-    // not in the original database's tab bar.
-    const visibleViewIds = useMemo(() => {
-      if (!views) {
-        return viewIds;
-      }
-
-      // Get all view IDs from Yjs database, separating embedded and non-embedded
-      const allYjsViewIds: string[] = [];
-      const nonEmbeddedYjsViewIds: string[] = [];
-
-      views.forEach((view, viewId) => {
-        allYjsViewIds.push(viewId);
-        const databaseView = view;
-        const isEmbedded = databaseView.get(YjsDatabaseKey.embedded) === true;
-
-        if (!isEmbedded) {
-          nonEmbeddedYjsViewIds.push(viewId);
-        }
-      });
-
-      // If no viewIds prop provided, use all non-embedded Yjs views (standalone database case)
-      if (!viewIds || viewIds.length === 0) {
-        return nonEmbeddedYjsViewIds.length > 0 ? nonEmbeddedYjsViewIds : allYjsViewIds;
-      }
-
-      // Filter viewIds to only include those that exist in Yjs
-      // This preserves embedded views from viewIds (for embedded database blocks in documents)
-      const validViewIds = viewIds.filter((id) => allYjsViewIds.includes(id));
-
-      // Add any non-embedded Yjs views that aren't in viewIds
-      // This ensures newly created views appear in tabs even if outline hasn't synced yet
-      const extraNonEmbeddedIds = nonEmbeddedYjsViewIds.filter((id) => !viewIds.includes(id));
-
-      return [...validViewIds, ...extraNonEmbeddedIds];
-    }, [viewIds, views]);
-
     const viewNameById = useMemo(() => {
       if (!meta) return undefined;
 
@@ -271,7 +226,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             viewNameById={viewNameById}
             views={views}
             readOnly={!!readOnly}
-            visibleViewIds={visibleViewIds}
+            visibleViewIds={viewIds}
             menuViewId={menuViewId}
             setMenuViewId={setMenuViewId}
             setDeleteConfirmOpen={setDeleteConfirmOpen}
@@ -279,8 +234,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             pendingScrollToViewId={pendingScrollToViewId}
             setPendingScrollToViewId={setPendingScrollToViewId}
             onViewAdded={(viewId) => {
-              // For embedded databases, first update visibleViewIds immediately
-              // This ensures the tab is rendered before we try to select it
+              // For embedded databases, notify parent immediately
               if (onViewAddedToDatabase) {
                 onViewAddedToDatabase(viewId);
               }
@@ -343,7 +297,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             if (!deleteConfirmOpen) return;
 
             const deletedViewId = deleteConfirmOpen;
-            const remainingViewIds = visibleViewIds.filter((id) => id !== deletedViewId);
+            const remainingViewIds = viewIds.filter((id) => id !== deletedViewId);
             const nextViewId = remainingViewIds[0] || null;
 
             // If the active tab was deleted, switch to the next available view.

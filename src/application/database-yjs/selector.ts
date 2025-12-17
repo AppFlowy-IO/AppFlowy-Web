@@ -70,8 +70,14 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
   const [viewIds, setViewIds] = useState<string[]>([]);
   const [childViews, setChildViews] = useState<ReturnType<typeof views.get>[]>([]);
 
+  // Stabilize visibleViewIds reference to avoid unnecessary effect re-runs
+  const visibleViewIdsKey = visibleViewIds?.join(',') ?? '';
+
   useEffect(() => {
     if (!views) return;
+
+    // Parse the stabilized key back to array (or undefined)
+    const stableVisibleViewIds = visibleViewIdsKey ? visibleViewIdsKey.split(',') : undefined;
 
     const observerEvent = () => {
       const viewsObj = views.toJSON() as Record<
@@ -81,24 +87,31 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
         }
       >;
 
-      // Get all views from the database and filter out inline views
+      // Get all non-embedded views from the database (matching desktop behavior).
+      // Embedded views should only appear in the document where they were embedded,
+      // not in the original database's tab bar.
+      // See: flowy-database2/src/services/database/database_editor.rs:get_database_view_ids()
       let allViewIds = Object.keys(viewsObj).filter((viewId) => {
         const view = views.get(viewId);
 
         if (!view) return false;
         const isInline = view.get(YjsDatabaseKey.is_inline);
+        const isEmbedded = view.get(YjsDatabaseKey.embedded) === true;
 
-        return !isInline;
+        return !isInline && !isEmbedded;
       });
 
-      // If visibleViewIds is provided (for embedded databases), filter to only show those views
-      // visibleViewIds is undefined for standalone databases, [] for embedded with no child views yet
-      if (visibleViewIds !== undefined) {
-        // Preserve the ordering defined by `visibleViewIds` (folder/outline order), not the
-        // internal insertion order of the Yjs `views` map.
+      // If visibleViewIds is provided (for embedded databases), use intersection
+      // to preserve the ordering from visibleViewIds while validating against Yjs.
+      // For standalone databases, visibleViewIds is undefined so we show all non-embedded views.
+      if (stableVisibleViewIds !== undefined && stableVisibleViewIds.length > 0) {
         const availableIds = new Set(allViewIds);
+        // Start with views from visibleViewIds that exist in Yjs
+        const orderedIds = stableVisibleViewIds.filter((viewId) => availableIds.has(viewId));
+        // Add any non-embedded views from Yjs not in visibleViewIds (newly created views)
+        const extraIds = allViewIds.filter((viewId) => !stableVisibleViewIds.includes(viewId));
 
-        allViewIds = visibleViewIds.filter((viewId) => availableIds.has(viewId));
+        allViewIds = [...orderedIds, ...extraIds];
       }
 
       setViewIds(allViewIds);
@@ -111,7 +124,7 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
     return () => {
       views.unobserveDeep(observerEvent);
     };
-  }, [views, visibleViewIds, databasePageId]);
+  }, [views, visibleViewIdsKey]);
 
   return {
     childViews,

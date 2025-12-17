@@ -132,10 +132,20 @@ describe('Database View Tabs', () => {
         }
       });
 
-      // Verify children exist
+      // Verify children exist and match the database views (Grid, Board, Calendar)
       PageSelectors.itemByName('New Database', { timeout: 10000 }).within(() => {
         PageSelectors.names().should('have.length.at.least', 3);
+        // Verify each view type exists in sidebar
+        cy.contains('Grid').should('exist');
+        cy.contains('Board').should('exist');
+        cy.contains('Calendar').should('exist');
       });
+
+      // Step 7.1: Verify tab bar and sidebar have matching views
+      cy.task('log', '[STEP 7.1] Verifying tab bar and sidebar views match');
+      DatabaseViewSelectors.viewTab().contains('Grid').should('exist');
+      DatabaseViewSelectors.viewTab().contains('Board').should('exist');
+      DatabaseViewSelectors.viewTab().contains('Calendar').should('exist');
 
       // Step 8: Navigate away and back to verify tabs persist
       cy.task('log', '[STEP 8] Navigating away and back');
@@ -223,6 +233,115 @@ describe('Database View Tabs', () => {
       });
 
       cy.task('log', '[TEST COMPLETE] Tab selection updates sidebar');
+    });
+  });
+
+  /**
+   * Regression test for: newly created views should appear immediately in tab bar.
+   *
+   * Previously, views wouldn't appear until the folder/outline synced from the server.
+   * The fix ensures views from Yjs (database_update) are shown immediately without
+   * waiting for folder sync.
+   *
+   * See: selector.ts - useDatabaseViewsSelector now includes non-embedded views from Yjs
+   */
+  it('newly created view appears immediately in tab bar (no sync delay)', () => {
+    const testEmail = generateRandomEmail();
+
+    cy.task('log', `[TEST] Immediate view appearance - Email: ${testEmail}`);
+
+    cy.visit('/login', { failOnStatusCode: false });
+    cy.wait(2000);
+
+    const authUtils = new AuthTestUtils();
+    authUtils.signInWithTestUrl(testEmail).then(() => {
+      cy.url({ timeout: 30000 }).should('include', '/app');
+      cy.wait(3000);
+
+      // Create a Grid database
+      cy.task('log', '[STEP 1] Creating Grid database');
+      AddPageSelectors.inlineAddButton().first().click({ force: true });
+      waitForReactUpdate(1000);
+      AddPageSelectors.addGridButton().should('be.visible').click({ force: true });
+      cy.wait(5000);
+
+      // Verify initial state - should have exactly 1 tab (Grid)
+      cy.task('log', '[STEP 2] Verifying initial tab count');
+      DatabaseViewSelectors.viewTab().should('have.length.at.least', 1);
+      DatabaseViewSelectors.viewTab().then(($tabs) => {
+        cy.wrap($tabs.length).as('initialTabCount');
+      });
+
+      // Click + button to add Board view
+      cy.task('log', '[STEP 3] Clicking + button to add Board view');
+      DatabaseViewSelectors.addViewButton().scrollIntoView().click({ force: true });
+      waitForReactUpdate(300); // Short wait for menu to appear
+
+      // Click Board option
+      cy.get('[role="menu"], [role="menuitem"]', { timeout: 5000 })
+        .should('be.visible')
+        .contains('Board')
+        .click({ force: true });
+
+      // CRITICAL: Verify tab appears quickly (within 1s)
+      // This tests that the view appears from Yjs immediately, not waiting for folder sync
+      // Previously this would fail because views only appeared after folder sync (3+ seconds)
+      cy.task('log', '[STEP 4] Verifying Board tab appears quickly (within 1s)');
+      waitForReactUpdate(200); // Minimal wait for React to process the state update
+      cy.get('@initialTabCount').then((initialCount) => {
+        cy.get('[data-testid^="view-tab-"]', { timeout: 1000 }).should(
+          'have.length',
+          (initialCount as number) + 1
+        );
+      });
+
+      // Verify the Board tab is active (selected)
+      cy.task('log', '[STEP 5] Verifying Board tab is active');
+      DatabaseViewSelectors.activeViewTab().should('exist');
+      cy.get('[data-testid^="view-tab-"][data-state="active"]')
+        .should('contain.text', 'Board');
+
+      // Add Calendar view with same immediate check
+      cy.task('log', '[STEP 6] Adding Calendar view');
+      DatabaseViewSelectors.addViewButton().scrollIntoView().click({ force: true });
+      waitForReactUpdate(300);
+
+      cy.get('[role="menu"], [role="menuitem"]', { timeout: 5000 })
+        .should('be.visible')
+        .contains('Calendar')
+        .click({ force: true });
+
+      // Verify Calendar tab appears immediately
+      cy.task('log', '[STEP 7] Verifying Calendar tab appears IMMEDIATELY');
+      cy.get('@initialTabCount').then((initialCount) => {
+        cy.get('[data-testid^="view-tab-"]', { timeout: 500 }).should(
+          'have.length',
+          (initialCount as number) + 2
+        );
+      });
+
+      // Step 8: Verify sidebar matches tab bar views
+      cy.task('log', '[STEP 8] Verifying sidebar matches tab bar views');
+      ensureSpaceExpanded(spaceName);
+      waitForReactUpdate(500);
+
+      // Expand the database to see children
+      PageSelectors.itemByName('New Database', { timeout: 10000 }).then(($dbItem) => {
+        const expandToggle = $dbItem.find('[data-testid="outline-toggle-expand"]');
+        if (expandToggle.length > 0) {
+          cy.wrap(expandToggle).first().click({ force: true });
+          waitForReactUpdate(500);
+        }
+      });
+
+      // Verify sidebar contains all view types
+      PageSelectors.itemByName('New Database', { timeout: 10000 }).within(() => {
+        cy.contains('Grid').should('exist');
+        cy.contains('Board').should('exist');
+        cy.contains('Calendar').should('exist');
+      });
+
+      cy.task('log', '[TEST COMPLETE] Views appear immediately without sync delay');
     });
   });
 });
