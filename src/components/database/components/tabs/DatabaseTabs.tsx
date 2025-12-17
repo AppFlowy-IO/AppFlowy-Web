@@ -254,7 +254,11 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
               }
 
               setPendingScrollToViewId(viewId);
-              void reloadView();
+              // Note: We don't call reloadView() here because:
+              // 1. The view tab already appears from Yjs (useDatabaseViewsSelector)
+              // 2. The outline will be loaded by createDatabaseView in usePageOperations
+              // 3. OUTLINE_LOADED event will update meta with view names
+              // Calling reloadView() here would cause redundant setMeta() calls.
             }}
           />
 
