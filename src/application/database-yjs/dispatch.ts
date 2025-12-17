@@ -5,7 +5,6 @@ import { useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
-import { Log } from '@/utils/log';
 import {
   useCreateRow,
   useDatabase,
@@ -76,8 +75,9 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { DefaultTimeSetting } from '@/application/user-metadata';
-import { applyYDoc } from '@/application/ydoc/apply';
 import { isDatabaseContainer } from '@/application/view-utils';
+import { applyYDoc } from '@/application/ydoc/apply';
+import { Log } from '@/utils/log';
 
 export function useResizeColumnWidthDispatch() {
   const database = useDatabase();
@@ -3455,18 +3455,40 @@ export function useAddFilter() {
 
   return useCallback(
     (fieldId: string) => {
-      if (!view) return;
+      Log.debug('[useAddFilter] Creating filter', { fieldId });
+
+      // Guard: Don't create filter if fieldId is missing or empty
+      if (!view || !fieldId || fieldId.trim() === '') {
+        Log.warn('[useAddFilter] Skipping filter creation: view or fieldId is missing', {
+          hasView: !!view,
+          fieldId,
+        });
+        return;
+      }
+
       const id = `${nanoid(6)}`;
+
+      Log.debug('[useAddFilter] Generated filter id', { filterId: id, fieldId });
 
       executeOperations(
         sharedRoot,
         [
           () => {
             const field = fields.get(fieldId);
+
+            if (!field) {
+              Log.warn('[useAddFilter] Field not found for fieldId:', fieldId);
+              return;
+            }
+
             const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+            Log.debug('[useAddFilter] Field info', { fieldId, fieldType });
+
             let filters = view.get(YjsDatabaseKey.filters);
 
             if (!filters) {
+              Log.debug('[useAddFilter] Creating new filters array');
               filters = new Y.Array() as YDatabaseFilters;
               view.set(YjsDatabaseKey.filters, filters);
             }
@@ -3477,7 +3499,18 @@ export function useAddFilter() {
             filter.set(YjsDatabaseKey.field_id, fieldId);
             const conditionData = getDefaultFilterCondition(fieldType);
 
-            if (!conditionData) return;
+            if (!conditionData) {
+              Log.warn('[useAddFilter] No default condition for fieldType:', fieldType);
+              return;
+            }
+
+            Log.debug('[useAddFilter] Setting filter data', {
+              filterId: id,
+              fieldId,
+              fieldType,
+              condition: conditionData.condition,
+              content: conditionData.content,
+            });
 
             filter.set(YjsDatabaseKey.condition, conditionData.condition);
             if (conditionData.content !== undefined) {
@@ -3488,6 +3521,8 @@ export function useAddFilter() {
             filter.set(YjsDatabaseKey.filter_type, FilterType.Data);
 
             filters.push([filter]);
+
+            Log.debug('[useAddFilter] Filter created successfully', { filterId: id, filter: filter.toJSON() });
           },
         ],
         'addFilter'
@@ -3532,50 +3567,72 @@ export function useRemoveFilter() {
   );
 }
 
+export interface UpdateFilterParams {
+  filterId: string;
+  fieldId?: string;
+  condition?: number;
+  content?: string;
+}
+
 export function useUpdateFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
 
   return useCallback(
-    ({
-      filterId,
-      fieldId,
-      condition,
-      content,
-    }: {
-      filterId: string;
-      fieldId?: string;
-      condition?: number;
-      content?: string;
-    }) => {
-      if (!view) return;
+    (params: UpdateFilterParams) => {
+      const { filterId, fieldId, condition, content } = params;
+
+      Log.debug('[useUpdateFilter] Updating filter', { filterId, fieldId, condition, content });
+
+      // Guard: view must exist
+      if (!view) {
+        Log.warn('[useUpdateFilter] View is not available');
+        return;
+      }
+
+      // Guard: fieldId is required for filter updates
+      if (!fieldId) {
+        Log.warn('[useUpdateFilter] FieldId is missing', { filterId });
+        return;
+      }
+
       executeOperations(
         sharedRoot,
         [
           () => {
+            // Get filters array from view
             const filters = view.get(YjsDatabaseKey.filters);
 
             if (!filters) {
+              Log.warn('[useUpdateFilter] No filters found in view', { filterId });
               return;
             }
 
-            const filter = filters.toArray().find((filter) => filter.get(YjsDatabaseKey.id) === filterId);
+            // Find the filter by id
+            const filter = filters.toArray().find((f) => f.get(YjsDatabaseKey.id) === filterId);
 
             if (!filter) {
+              Log.warn('[useUpdateFilter] Filter not found', { filterId });
               return;
             }
 
-            if (fieldId) {
-              filter.set(YjsDatabaseKey.field_id, fieldId);
-            }
+            // Update field_id (always required)
+            filter.set(YjsDatabaseKey.field_id, fieldId);
 
+            // Update condition if provided
             if (condition !== undefined) {
               filter.set(YjsDatabaseKey.condition, condition);
             }
 
+            // Update content if provided
             if (content !== undefined) {
               filter.set(YjsDatabaseKey.content, content);
             }
+
+            Log.debug('[useUpdateFilter] Filter updated successfully', {
+              filterId,
+              filter: filter.toJSON(),
+            });
           },
         ],
         'updateFilter'

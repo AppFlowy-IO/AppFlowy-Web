@@ -42,9 +42,9 @@ export enum SortCondition {
 }
 
 export enum FilterType {
-  Data = 0,
-  And = 1,
-  Or = 2,
+  And = 0,
+  Or = 1,
+  Data = 2,
 }
 
 export interface Filter {
