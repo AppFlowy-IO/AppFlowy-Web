@@ -52,7 +52,6 @@ function DatabaseViews({
   const views = database?.get(YjsDatabaseKey.views);
 
   const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
-  const viewContainerRef = useRef<HTMLDivElement | null>(null);
   // Track the previous valid layout to prevent flash when switching to a new view
   const prevLayoutRef = useRef<DatabaseViewLayout | null>(null);
 
@@ -148,7 +147,6 @@ function DatabaseViews({
         <DatabaseConditions />
 
         <div
-          ref={viewContainerRef}
           className={'relative flex h-full w-full flex-1 flex-col overflow-hidden'}
           style={
             fixedHeight !== undefined
