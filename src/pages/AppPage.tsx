@@ -215,7 +215,7 @@ function AppPage() {
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
-    const docForCurrentView = doc && doc.id === viewId ? doc : undefined;
+    const docForCurrentView = doc && doc.object_id === viewId ? doc : undefined;
 
     if (!docForCurrentView && layout === ViewLayout.AIChat && viewId) {
       return (

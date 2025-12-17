@@ -273,7 +273,7 @@ export function useViewOperations() {
           const { doc } = registerSyncContext({ doc: res, collabType, awareness });
 
           // Set the view ID on the doc for React state tracking
-          doc.id = id;
+          doc.object_id = id;
           return doc;
         }
 
@@ -287,7 +287,7 @@ export function useViewOperations() {
         const { doc } = registerSyncContext({ doc: res, collabType });
 
         // Set the view ID on the doc for React state tracking
-        doc.id = id;
+        doc.object_id = id;
         return doc;
       } catch (e) {
         return Promise.reject(e);

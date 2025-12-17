@@ -391,16 +391,16 @@ export enum YjsDatabaseKey {
  * YDoc extends Y.Doc with AppFlowy-specific properties.
  *
  * Document Identification:
- * - `id`: The view ID that this document belongs to. Set when loading a document
- *         via loadView(). Used to verify the document matches the current view
- *         and prevent race conditions when navigating between pages.
+ * - `object_id`: The view ID that this document belongs to. Set when loading a document
+ *                via loadView(). Used to verify the document matches the current view
+ *                and prevent race conditions when navigating between pages.
  * - `guid`: The Y.Doc globally unique identifier. In AppFlowy, this is typically
  *           set to the viewId when creating the document via openCollabDB(viewId).
  *           The guid is used for sync context registration and WebSocket communication.
  *
- * Note: Both `id` and `guid` typically contain the same viewId value, but they serve
+ * Note: Both `object_id` and `guid` typically contain the same viewId value, but they serve
  * different purposes:
- * - `id` is for React state tracking to ensure rendered content matches current route
+ * - `object_id` is for React state tracking to ensure rendered content matches current route
  * - `guid` is for Yjs sync protocol and collab document identity
  */
 export interface YDoc extends Y.Doc {
@@ -408,7 +408,7 @@ export interface YDoc extends Y.Doc {
    * The view ID this document belongs to.
    * Set when loading a document via loadView() to track which view the doc is for.
    */
-  id?: string;
+  object_id?: string;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getMap(key: YjsEditorKey.data_section): YSharedRoot | any;
@@ -937,27 +937,77 @@ export enum SpacePermission {
   Private = 1,
 }
 
-export interface ViewExtra {
+/**
+ * Represents the space info of a view.
+ * Aligned with Desktop/Flutter `SpaceInfo` struct.
+ *
+ * Two view types are supported:
+ * - Space view: A view associated with space info. Parent view that can contain normal views.
+ *   Child views inherit the space's permissions.
+ * - Normal view: Cannot contain space views and has no direct permission controls.
+ */
+export interface SpaceInfo {
+  /** Whether the view is a space view. */
   is_space: boolean;
+
+  /** The permission of the space view. Defaults to SpacePermission.Public if not set. */
+  space_permission?: SpacePermission;
+
+  /** The created time of the space view (timestamp). */
   space_created_at?: number;
+
+  /** The space icon. If not set, uses the default icon. */
   space_icon?: string;
+
+  /** The space icon color. Should be a valid hex color code: 0xFFA34AFD */
   space_icon_color?: string;
-  space_permission?: number;
-  is_pinned?: boolean;
-  cover?: {
-    type: CoverType;
-    value: string;
-  };
+
+  /** Whether this is a hidden space. */
   is_hidden_space?: boolean;
+}
 
-  // Whether this view is embedded inside a document (e.g. a linked database view).
-  // This is aligned with Desktop/Flutter and server-side `EXTRA_KEY_EMBEDDED`.
+/**
+ * Information about a database view stored in the `extra` JSON field.
+ * Aligned with Desktop/Flutter `DatabaseViewExtra` struct.
+ * Used to track database container views and their children.
+ */
+export interface DatabaseViewExtra {
+  /** The database_id that this view is linked to. */
+  database_id?: string;
+
+  /**
+   * Whether this view is a database container (sidebar entry point).
+   * Container views are folder-like views that hold actual database views as children.
+   * When opening a container, the app should auto-select the first child view.
+   */
+  is_database_container?: boolean;
+
+  /**
+   * Whether this view is embedded/inline (created inside a document).
+   * Aligned with Desktop/Flutter and server-side `EXTRA_KEY_EMBEDDED`.
+   */
   embedded?: boolean;
+}
 
-  // Database container support (aligned with Desktop/Flutter)
-  // Reference: AppFlowy-Premium/frontend/doc/context/database_container_behavior.md
-  is_database_container?: boolean; // True if this view is a database container
-  database_id?: string; // The underlying database ID
+/**
+ * View cover configuration.
+ */
+export interface ViewCover {
+  type: CoverType;
+  value: string;
+}
+
+/**
+ * Combined view extra data.
+ * This is the union of all extra types that can be stored in a view's extra field.
+ * The extra field is a JSON blob that may contain any combination of these properties.
+ */
+export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
+  /** Whether this view is pinned. */
+  is_pinned?: boolean;
+
+  /** The view's cover image/color configuration. */
+  cover?: ViewCover;
 }
 
 export interface View {
