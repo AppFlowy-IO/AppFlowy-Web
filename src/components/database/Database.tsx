@@ -44,7 +44,11 @@ export interface Database2Props {
   onChangeView: (viewId: string) => void;
   onViewAdded?: (viewId: string) => void;
   onOpenRowPage?: (rowId: string) => void;
-  visibleViewIds: string[];
+  /**
+   * For embedded databases: restricts which views are shown (from block data).
+   * For standalone databases: should be undefined to show all non-embedded views.
+   */
+  visibleViewIds?: string[];
   /**
    * The database's page ID in the folder/outline structure.
    * This is the main entry point for the database and remains constant.

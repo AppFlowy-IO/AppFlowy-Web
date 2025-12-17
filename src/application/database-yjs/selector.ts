@@ -87,43 +87,35 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
         }
       >;
 
-      // Build a set of view IDs in visibleViewIds for quick lookup
-      const visibleViewIdsSet = stableVisibleViewIds ? new Set(stableVisibleViewIds) : null;
-      const isEmbeddedDatabase = visibleViewIdsSet !== null && visibleViewIdsSet.size > 0;
-
-      // Get views based on context:
-      // - For embedded databases (visibleViewIds provided): ONLY show views in visibleViewIds
-      //   This includes views with embedded: true (created via + button in embedded DB)
-      // - For standalone databases (no visibleViewIds): show all non-embedded, non-inline views
+      // Step 1: Get all non-inline views from Yjs (don't filter by embedded yet)
       // See: flowy-database2/src/services/database/database_editor.rs:get_database_view_ids()
       let allViewIds = Object.keys(viewsObj).filter((viewId) => {
         const view = views.get(viewId);
 
         if (!view) return false;
+
         const isInline = view.get(YjsDatabaseKey.is_inline);
 
-        // Always exclude inline views
-        if (isInline) return false;
-
-        // For embedded databases: ONLY show views that are in visibleViewIds
-        // This ensures newly created views (embedded: true) appear while excluding
-        // views from the source database that aren't part of this embedded block
-        if (isEmbeddedDatabase) {
-          return visibleViewIdsSet.has(viewId);
-        }
-
-        // For standalone databases: exclude embedded views (they belong to embedded blocks)
-        const isEmbedded = view.get(YjsDatabaseKey.embedded) === true;
-
-        return !isEmbedded;
+        return !isInline;
       });
 
-      // If visibleViewIds is provided (for embedded databases), preserve ordering
+      // Step 2: Apply context-specific filtering (separate concerns)
       if (stableVisibleViewIds !== undefined && stableVisibleViewIds.length > 0) {
-        const availableIds = new Set(allViewIds);
+        // For embedded databases: show ONLY views in visibleViewIds
+        // This handles views with embedded: true (created via + button)
+        // The visibleViewIds list is the source of truth for what to display
+        const allViewIdsSet = new Set(allViewIds);
 
-        // Preserve the ordering from visibleViewIds
-        allViewIds = stableVisibleViewIds.filter((viewId) => availableIds.has(viewId));
+        allViewIds = stableVisibleViewIds.filter((viewId) => allViewIdsSet.has(viewId));
+      } else {
+        // For standalone databases: exclude embedded views
+        // Embedded views belong to their respective embedded database blocks
+        allViewIds = allViewIds.filter((viewId) => {
+          const view = views.get(viewId);
+          const isEmbedded = view?.get(YjsDatabaseKey.embedded) === true;
+
+          return !isEmbedded;
+        });
       }
 
       setViewIds(allViewIds);

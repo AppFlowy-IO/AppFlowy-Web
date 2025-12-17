@@ -2,7 +2,7 @@ import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ViewComponentProps, ViewLayout, YDatabase, YjsEditorKey } from '@/application/types';
-import { getDatabaseTabViewIds, isDatabaseContainer } from '@/application/view-utils';
+import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
@@ -51,15 +51,6 @@ function DatabaseView(props: ViewComponentProps) {
 
   // Use container view (if present) as the "page meta" view for naming/icon operations.
   const pageView = containerView || view;
-
-  const visibleViewIds = useMemo(() => {
-    if (containerView) {
-      return getDatabaseTabViewIds(databasePageId, containerView);
-    }
-
-    if (!view) return [];
-    return [view.view_id, ...(view.children?.map((v) => v.view_id) || [])];
-  }, [containerView, view, databasePageId]);
 
   const pageMeta = useMemo(() => {
     if (!pageView) {
@@ -154,7 +145,6 @@ function DatabaseView(props: ViewComponentProps) {
           activeViewId={activeViewId}
           rowId={rowId}
           showActions={true}
-          visibleViewIds={visibleViewIds}
           onChangeView={handleChangeView}
           onOpenRowPage={handleNavigateToRow}
           modalRowId={modalRowId}
