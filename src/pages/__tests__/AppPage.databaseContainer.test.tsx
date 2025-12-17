@@ -13,6 +13,7 @@ declare global {
     workspaceId?: string;
     outline?: View[];
     handlers?: Record<string, unknown>;
+    service?: { getAxiosInstance?: () => unknown; getAppView?: (workspaceId: string, viewId: string) => Promise<View> };
   } | undefined;
 }
 
@@ -36,7 +37,7 @@ jest.mock('@/components/app/hooks/useViewOperations', () => ({
 
 jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUser: () => ({ email: 'test@appflowy.io' }),
-  useService: () => ({ getAxiosInstance: () => null }),
+  useService: () => global.__appPageTestState?.service ?? { getAxiosInstance: () => null },
 }));
 
 jest.mock('@/components/app/DatabaseView', () => () => null);
@@ -106,6 +107,71 @@ describe('AppPage database container', () => {
     );
 
     await waitFor(() => {
+      expect(toView).toHaveBeenCalledWith(childView.view_id, undefined, true);
+    });
+
+    expect(loadView).not.toHaveBeenCalled();
+  });
+
+  it('navigates to first child even when outline is missing (fallback fetch)', async () => {
+    const toView = jest.fn().mockResolvedValue(undefined);
+    const loadView = jest.fn().mockResolvedValue({ guid: 'db' });
+
+    const childView: View = {
+      view_id: 'child-view-id',
+      name: 'Grid View',
+      icon: null,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false },
+      children: [],
+      is_published: false,
+      is_private: false,
+    };
+
+    const containerView: View = {
+      view_id: 'container-view-id',
+      name: 'Database Container',
+      icon: null,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, is_database_container: true },
+      children: [childView],
+      is_published: false,
+      is_private: false,
+    };
+
+    const getAppView = jest.fn().mockResolvedValue(containerView);
+
+    global.__appPageTestState = {
+      viewId: containerView.view_id,
+      workspaceId: 'workspace-id',
+      outline: undefined,
+      service: { getAxiosInstance: () => null, getAppView },
+      handlers: {
+        toView,
+        loadViewMeta: jest.fn(),
+        createRowDoc: jest.fn(),
+        loadView,
+        appendBreadcrumb: jest.fn(),
+        onRendered: jest.fn(),
+        updatePage: jest.fn(),
+        addPage: jest.fn(),
+        deletePage: jest.fn(),
+        openPageModal: jest.fn(),
+        loadViews: jest.fn(),
+        setWordCount: jest.fn(),
+        uploadFile: jest.fn(),
+        eventEmitter: undefined,
+      },
+    };
+
+    render(
+      <AppContext.Provider value={{ rendered: false }}>
+        <AppPage />
+      </AppContext.Provider>
+    );
+
+    await waitFor(() => {
+      expect(getAppView).toHaveBeenCalledWith('workspace-id', containerView.view_id);
       expect(toView).toHaveBeenCalledWith(childView.view_id, undefined, true);
     });
 

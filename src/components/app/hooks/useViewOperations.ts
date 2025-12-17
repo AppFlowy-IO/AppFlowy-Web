@@ -336,7 +336,31 @@ export function useViewOperations() {
     async (viewId: string, blockId?: string, keepSearch?: boolean, loadViewMeta?: (viewId: string) => Promise<View>) => {
       // Prefer outline/meta when available (fast), but fall back to server fetch for cases
       // where the outline does not include container children (e.g. shallow outline fetch).
-      let view = await loadViewMeta?.(viewId);
+      let view: View | undefined;
+
+      if (loadViewMeta) {
+        try {
+          view = await loadViewMeta(viewId);
+        } catch (e) {
+          Log.debug('[toView] loadViewMeta failed', {
+            viewId,
+            error: e,
+          });
+        }
+      }
+
+      // If meta is unavailable (e.g. outline not loaded yet), fall back to a direct server fetch so we can
+      // still resolve database containers and block routing.
+      if (!view && currentWorkspaceId && service) {
+        try {
+          view = await service.getAppView(currentWorkspaceId, viewId);
+        } catch (e) {
+          Log.warn('[toView] Failed to fetch view from server', {
+            viewId,
+            error: e,
+          });
+        }
+      }
 
       // If this is a database container, navigate to the first child view instead
       // This matches Desktop/Flutter behavior where clicking a container opens its first child

@@ -35,6 +35,98 @@ describe('useViewOperations.toView database container', () => {
     jest.clearAllMocks();
   });
 
+  it('navigates even when loadViewMeta rejects', async () => {
+    const workspaceId = 'workspace-id';
+    const targetId = 'target-id';
+
+    const authContextValue: AuthInternalContextType = {
+      service: undefined,
+      currentWorkspaceId: workspaceId,
+      isAuthenticated: true,
+      onChangeWorkspace: () => Promise.resolve(),
+    };
+
+    const syncContextValue: SyncInternalContextType = {
+      registerSyncContext: () => ({ doc: {} as never }),
+      eventEmitter: new EventEmitter(),
+      awarenessMap: {},
+      lastUpdatedCollab: null,
+    } as unknown as SyncInternalContextType;
+
+    const loadViewMeta = jest.fn(async (_viewId: string) => {
+      throw new Error('View not found');
+    });
+
+    const { result } = renderHook(() => useViewOperations(), {
+      wrapper: ({ children }) => (
+        <AuthInternalContext.Provider value={authContextValue}>
+          <SyncInternalContext.Provider value={syncContextValue}>{children}</SyncInternalContext.Provider>
+        </AuthInternalContext.Provider>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.toView(targetId, undefined, false, loadViewMeta);
+    });
+
+    expect(loadViewMeta).toHaveBeenCalledWith(targetId);
+    expect(mockNavigate).toHaveBeenCalledWith(`/app/${workspaceId}/${targetId}`);
+  });
+
+  it('redirects database containers even when loadViewMeta rejects', async () => {
+    const workspaceId = 'workspace-id';
+    const containerId = 'container-id';
+    const firstChildId = 'first-child-id';
+
+    const service: Partial<AFService> = {
+      getAppView: jest.fn(async (_workspaceId: string, viewId: string) => {
+        expect(_workspaceId).toBe(workspaceId);
+        expect(viewId).toBe(containerId);
+
+        return createView({
+          view_id: containerId,
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true },
+          children: [createView({ view_id: firstChildId, layout: ViewLayout.Grid, parent_view_id: containerId })],
+        });
+      }),
+    };
+
+    const authContextValue: AuthInternalContextType = {
+      service: service as AFService,
+      currentWorkspaceId: workspaceId,
+      isAuthenticated: true,
+      onChangeWorkspace: () => Promise.resolve(),
+    };
+
+    const syncContextValue: SyncInternalContextType = {
+      registerSyncContext: () => ({ doc: {} as never }),
+      eventEmitter: new EventEmitter(),
+      awarenessMap: {},
+      lastUpdatedCollab: null,
+    } as unknown as SyncInternalContextType;
+
+    const loadViewMeta = jest.fn(async (_viewId: string) => {
+      throw new Error('View not found');
+    });
+
+    const { result } = renderHook(() => useViewOperations(), {
+      wrapper: ({ children }) => (
+        <AuthInternalContext.Provider value={authContextValue}>
+          <SyncInternalContext.Provider value={syncContextValue}>{children}</SyncInternalContext.Provider>
+        </AuthInternalContext.Provider>
+      ),
+    });
+
+    await act(async () => {
+      await result.current.toView(containerId, undefined, false, loadViewMeta);
+    });
+
+    expect(loadViewMeta).toHaveBeenCalledWith(containerId);
+    expect(service.getAppView).toHaveBeenCalledWith(workspaceId, containerId);
+    expect(mockNavigate).toHaveBeenCalledWith(`/app/${workspaceId}/${firstChildId}`);
+  });
+
   it('navigates to first child even when container children are missing from outline meta', async () => {
     const workspaceId = 'workspace-id';
     const containerId = 'container-id';

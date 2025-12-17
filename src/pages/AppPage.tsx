@@ -2,7 +2,7 @@ import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMem
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
@@ -57,11 +57,7 @@ function AppPage() {
   }, [outline, viewId]);
 
   // Fallback view fetched from server when not in outline
-  const [fallbackView, setFallbackView] = React.useState<{
-    view_id: string;
-    layout: ViewLayout;
-    name: string;
-  } | null>(null);
+  const [fallbackView, setFallbackView] = React.useState<View | null>(null);
 
   // Fetch view metadata when not found in outline (handles race condition after creating new view)
   useEffect(() => {
@@ -74,6 +70,11 @@ function AppPage() {
       return;
     }
 
+    // Already fetched for this viewId.
+    if (fallbackView?.view_id === viewId) {
+      return;
+    }
+
     // View not in outline - fetch from server directly
     let cancelled = false;
 
@@ -81,11 +82,7 @@ function AppPage() {
       .getAppView(workspaceId, viewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
-          setFallbackView({
-            view_id: fetchedView.view_id,
-            layout: fetchedView.layout,
-            name: fetchedView.name,
-          });
+          setFallbackView(fetchedView);
         }
       })
       .catch((e) => {
@@ -98,8 +95,8 @@ function AppPage() {
   }, [outlineView, viewId, workspaceId, service, fallbackView?.view_id]);
 
   // Use outline view if available, otherwise use fallback
-  const view = outlineView;
-  const layout = outlineView?.layout ?? fallbackView?.layout;
+  const view = outlineView ?? fallbackView;
+  const layout = view?.layout;
 
   const rendered = useContext(AppContext)?.rendered;
 
@@ -163,7 +160,6 @@ function AppPage() {
   }, [layout]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
-    // Use outline view if available, otherwise use fallback
     if (view) {
       return {
         name: view.name,
@@ -177,22 +173,8 @@ function AppPage() {
       };
     }
 
-    // Fallback with minimal properties
-    if (fallbackView) {
-      return {
-        name: fallbackView.name,
-        icon: undefined,
-        cover: undefined,
-        layout: fallbackView.layout,
-        visibleViewIds: [],
-        viewId: fallbackView.view_id,
-        extra: undefined,
-        workspaceId,
-      };
-    }
-
     return null;
-  }, [view, fallbackView, workspaceId]);
+  }, [view, workspaceId]);
 
   const handleUploadFile = useCallback(
     (file: File) => {
