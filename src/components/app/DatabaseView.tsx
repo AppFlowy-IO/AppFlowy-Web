@@ -2,7 +2,6 @@ import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ViewComponentProps, ViewLayout, YDatabase, YjsEditorKey } from '@/application/types';
-import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
@@ -12,6 +11,7 @@ import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { useAppOutline } from '@/components/app/app.hooks';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { Database } from '@/components/database';
+import { useContainerVisibleViewIds } from '@/components/database/hooks';
 
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
@@ -31,23 +31,8 @@ function DatabaseView(props: ViewComponentProps) {
     return findView(outline || [], databasePageId);
   }, [outline, databasePageId]);
 
-  const containerView = useMemo(() => {
-    if (!outline || !view) return;
-
-    if (isDatabaseContainer(view)) {
-      return view;
-    }
-
-    const parentId = view.parent_view_id;
-
-    if (!parentId) {
-      return;
-    }
-
-    const parent = findView(outline || [], parentId);
-
-    return isDatabaseContainer(parent) ? parent : undefined;
-  }, [outline, view]);
+  // Use hook to determine container view and visible view IDs
+  const { containerView, visibleViewIds } = useContainerVisibleViewIds({ view, outline });
 
   // Use container view (if present) as the "page meta" view for naming/icon operations.
   const pageView = containerView || view;
@@ -148,6 +133,7 @@ function DatabaseView(props: ViewComponentProps) {
           onChangeView={handleChangeView}
           onOpenRowPage={handleNavigateToRow}
           modalRowId={modalRowId}
+          visibleViewIds={visibleViewIds}
         />
       </Suspense>
     </div>
