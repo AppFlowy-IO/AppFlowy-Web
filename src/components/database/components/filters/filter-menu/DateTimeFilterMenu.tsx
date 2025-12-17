@@ -89,10 +89,11 @@ function TextFilterMenu ({ filter }: { filter: DateFilter }) {
     if (newCondition) {
       updateFilter({
         filterId: filter.id,
+        fieldId: filter.fieldId,
         condition: isStart ? newCondition.value - 8 : newCondition.value + 8,
       });
     }
-  }, [conditions, filter.condition, filter.id, updateFilter]);
+  }, [conditions, filter.condition, filter.id, filter.fieldId, updateFilter]);
 
   return (
     <div

@@ -66,10 +66,11 @@ function DateTimeFilterDatePicker({ filter }: { filter: DateFilter }) {
 
       updateFilter({
         filterId: filter.id,
+        fieldId: filter.fieldId,
         content,
       });
     },
-    [filter.id, isRange, updateFilter]
+    [filter.id, filter.fieldId, isRange, updateFilter]
   );
 
   const text = useMemo(() => {

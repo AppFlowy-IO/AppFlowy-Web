@@ -16,6 +16,7 @@ function NumberFilterMenu ({ filter }: { filter: NumberFilter }) {
     setValue(e.target.value);
     updateFilter({
       filterId: filter.id,
+      fieldId: filter.fieldId,
       content: e.target.value,
     });
   };

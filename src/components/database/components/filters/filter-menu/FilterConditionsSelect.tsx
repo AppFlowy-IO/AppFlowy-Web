@@ -56,6 +56,7 @@ function FilterConditionsSelect ({
                 } else {
                   updateFilter({
                     filterId: filter.id,
+                    fieldId: filter.fieldId,
                     condition: condition.value,
                   });
                 }
