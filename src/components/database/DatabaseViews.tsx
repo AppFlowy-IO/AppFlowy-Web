@@ -99,8 +99,6 @@ function DatabaseViews({
     };
   }, [activeView]);
 
-  // Simple view change handler - no loading animation needed
-  // The view components (Grid/Board/Calendar) stay mounted and switch instantly
   const handleViewChange = useCallback(
     (newViewId: string) => {
       onChangeView(newViewId);

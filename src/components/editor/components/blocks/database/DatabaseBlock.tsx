@@ -5,12 +5,15 @@ import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 import { Log } from '@/utils/log';
 import { DatabaseContextState } from '@/application/database-yjs';
 import { YjsEditorKey, YSharedRoot } from '@/application/types';
+import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
 import { DatabaseNode, EditorElementProps } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
 
 import { DatabaseContent } from './components/DatabaseContent';
-import { useDatabaseLoading } from './hooks/useDatabaseLoading';
+import { useDocumentLoader } from './hooks/useDocumentLoader';
 import { useResizePositioning } from './hooks/useResizePositioning';
+import { useViewMeta } from './hooks/useViewMeta';
+import { useViewSelection } from './hooks/useViewSelection';
 import { addViewId, getViewIds, removeViewId } from './utils/databaseBlockUtils';
 
 export const DatabaseBlock = memo(
@@ -29,12 +32,40 @@ export const DatabaseBlock = memo(
     const editor = useSlateStatic();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 
-    const { notFound, doc, selectedViewId, visibleViewIds, databaseName, onChangeView, onViewAdded, loadViewMeta } = useDatabaseLoading({
+    // Compose focused hooks instead of one monolithic hook
+    // 1. Document loading
+    const { doc, notFound, setNotFound } = useDocumentLoader({
       viewId,
-      allowedViewIds,
       loadView,
-      loadViewMeta: context?.loadViewMeta,
     });
+
+    // 2. Visible view IDs from block data
+    const { visibleViewIds, onViewAdded: onVisibleViewAdded } = useEmbeddedVisibleViewIds({
+      allowedViewIds,
+    });
+
+    // 3. View selection management
+    const { selectedViewId, onChangeView, onViewAddedSelection } = useViewSelection({
+      viewId,
+      visibleViewIds,
+    });
+
+    // 4. View metadata loading
+    const { databaseName, loadViewMeta } = useViewMeta({
+      viewId,
+      loadViewMeta: context?.loadViewMeta,
+      ignoreMetaErrors: true, // Embedded databases don't require meta
+      onNotFound: () => setNotFound(true),
+    });
+
+    // Combined callback when a view is added
+    const onViewAdded = useCallback(
+      (newViewId: string) => {
+        onVisibleViewAdded(newViewId);
+        onViewAddedSelection(newViewId);
+      },
+      [onVisibleViewAdded, onViewAddedSelection]
+    );
 
     // Track latest valid scroll position to restore if layout shift resets it
     const latestScrollTop = useRef<number>(0);
