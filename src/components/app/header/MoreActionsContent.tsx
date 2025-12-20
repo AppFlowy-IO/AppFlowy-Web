@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ViewLayout } from '@/application/types';
+import { canBeMoved } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
@@ -30,11 +31,11 @@ function MoreActionsContent ({ itemClicked, viewId }: {
   const layout = view?.layout;
   const outline = useAppOutline();
   const parentViewId = view?.parent_view_id;
-  const parentLayout = useMemo(() => {
+  const parentView = useMemo(() => {
     if (!parentViewId) return null;
     if (!outline) return null;
 
-    return findView(outline, parentViewId)?.layout;
+    return findView(outline, parentViewId) ?? null;
   }, [outline, parentViewId]);
 
   const [duplicateLoading, setDuplicateLoading] = useState(false);
@@ -90,7 +91,7 @@ function MoreActionsContent ({ itemClicked, viewId }: {
           onSelect={(e) => {
             e.preventDefault();
           }}
-          disabled={parentLayout !== ViewLayout.Document}
+          disabled={!canBeMoved(view, parentView)}
         >
           <MoveToIcon />
           {t('disclosureAction.moveTo')}

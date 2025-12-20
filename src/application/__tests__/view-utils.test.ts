@@ -8,6 +8,8 @@ import {
   isReferencedDatabaseView,
   getFirstChildView,
   getDatabaseTabViewIds,
+  isLinkedDatabaseViewUnderDocument,
+  canBeMoved,
 } from '../view-utils';
 
 /**
@@ -607,6 +609,387 @@ describe('view-utils', () => {
 
       it('getFirstChildView returns undefined for non-container', () => {
         expect(getFirstChildView(legacyGridView)).toBeUndefined();
+      });
+    });
+  });
+
+  /**
+   * Tests for isLinkedDatabaseViewUnderDocument
+   *
+   * Linked database views under documents are database views that:
+   * - Have a database layout (Grid, Board, Calendar)
+   * - Are NOT database containers
+   * - Have a Document parent
+   */
+  describe('isLinkedDatabaseViewUnderDocument', () => {
+    it('returns true for non-container database view under document', () => {
+      const view = createMockView({
+        view_id: 'grid-view',
+        layout: ViewLayout.Grid,
+        extra: { is_space: false },
+      });
+      const parentView = createMockView({
+        view_id: 'parent-doc',
+        layout: ViewLayout.Document,
+      });
+
+      expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(true);
+    });
+
+    it('returns false for database container under document', () => {
+      const view = createMockView({
+        view_id: 'container-view',
+        layout: ViewLayout.Grid,
+        extra: { is_space: false, is_database_container: true },
+      });
+      const parentView = createMockView({
+        view_id: 'parent-doc',
+        layout: ViewLayout.Document,
+      });
+
+      expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(false);
+    });
+
+    it('returns false for database view under non-document parent', () => {
+      const view = createMockView({
+        view_id: 'grid-view',
+        layout: ViewLayout.Grid,
+        extra: { is_space: false },
+      });
+      const parentView = createMockView({
+        view_id: 'parent-grid',
+        layout: ViewLayout.Board,
+      });
+
+      expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(false);
+    });
+
+    it('returns false for document view under document', () => {
+      const view = createMockView({
+        view_id: 'child-doc',
+        layout: ViewLayout.Document,
+      });
+      const parentView = createMockView({
+        view_id: 'parent-doc',
+        layout: ViewLayout.Document,
+      });
+
+      expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(false);
+    });
+
+    it('returns false when parent is null', () => {
+      const view = createMockView({
+        view_id: 'grid-view',
+        layout: ViewLayout.Grid,
+      });
+
+      expect(isLinkedDatabaseViewUnderDocument(view, null)).toBe(false);
+    });
+
+    it('returns false when view is null', () => {
+      const parentView = createMockView({
+        view_id: 'parent-doc',
+        layout: ViewLayout.Document,
+      });
+
+      expect(isLinkedDatabaseViewUnderDocument(null, parentView)).toBe(false);
+    });
+
+    it('returns true for all database layouts under document (non-container)', () => {
+      const databaseLayouts = [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar];
+      const parentView = createMockView({
+        view_id: 'parent-doc',
+        layout: ViewLayout.Document,
+      });
+
+      for (const layout of databaseLayouts) {
+        const view = createMockView({
+          view_id: 'db-view',
+          layout,
+          extra: { is_space: false },
+        });
+
+        expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(true);
+      }
+    });
+
+    // Web workaround tests: embedded views with is_database_container=true but no children
+    describe('Web workaround for incorrect is_database_container flag', () => {
+      it('returns true for embedded database view with is_database_container=true but no children', () => {
+        const view = createMockView({
+          view_id: 'embedded-grid',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true, embedded: true },
+          children: [], // No children indicates it's a linked view
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(true);
+      });
+
+      it('returns false for embedded database view with is_database_container=true AND children', () => {
+        const childView = createMockView({
+          view_id: 'child-view',
+          layout: ViewLayout.Grid,
+        });
+        const view = createMockView({
+          view_id: 'container-grid',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true, embedded: true },
+          children: [childView], // Has children, so it's a true container
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(false);
+      });
+    });
+  });
+
+  /**
+   * Tests for canBeMoved
+   *
+   * Mirrors Desktop/Flutter implementation in view_ext.dart canBeDragged().
+   * Views should NOT be movable in these cases:
+   * - Case 1: Referenced database views (database inside database)
+   * - Case 2: Children of database containers
+   * - Case 3: Linked database views under documents
+   */
+  describe('canBeMoved', () => {
+    describe('returns true for movable views', () => {
+      it('Document under Document', () => {
+        const view = createMockView({
+          view_id: 'child-doc',
+          layout: ViewLayout.Document,
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(true);
+      });
+
+      it('Database container under Document', () => {
+        const view = createMockView({
+          view_id: 'container-view',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true },
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(true);
+      });
+
+      it('View with null parent', () => {
+        const view = createMockView({
+          view_id: 'root-view',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, null)).toBe(true);
+      });
+
+      it('Chat view under Document', () => {
+        const view = createMockView({
+          view_id: 'chat-view',
+          layout: ViewLayout.AIChat,
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(true);
+      });
+    });
+
+    describe('Case 1: Referenced database views cannot be moved', () => {
+      it('Grid view under Board view', () => {
+        const view = createMockView({
+          view_id: 'grid-view',
+          layout: ViewLayout.Grid,
+        });
+        const parentView = createMockView({
+          view_id: 'parent-board',
+          layout: ViewLayout.Board,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(false);
+      });
+
+      it('Calendar view under Grid view', () => {
+        const view = createMockView({
+          view_id: 'calendar-view',
+          layout: ViewLayout.Calendar,
+        });
+        const parentView = createMockView({
+          view_id: 'parent-grid',
+          layout: ViewLayout.Grid,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(false);
+      });
+    });
+
+    describe('Case 2: Children of database containers cannot be moved', () => {
+      it('Grid view under database container', () => {
+        const view = createMockView({
+          view_id: 'grid-view',
+          layout: ViewLayout.Grid,
+        });
+        const containerView = createMockView({
+          view_id: 'container',
+          layout: ViewLayout.Document,
+          extra: { is_space: false, is_database_container: true },
+        });
+
+        expect(canBeMoved(view, containerView)).toBe(false);
+      });
+
+      it('Board view under database container', () => {
+        const view = createMockView({
+          view_id: 'board-view',
+          layout: ViewLayout.Board,
+        });
+        const containerView = createMockView({
+          view_id: 'container',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true },
+        });
+
+        expect(canBeMoved(view, containerView)).toBe(false);
+      });
+    });
+
+    describe('Case 3: Linked database views under documents cannot be moved', () => {
+      it('Non-container Grid view under Document', () => {
+        const view = createMockView({
+          view_id: 'linked-grid',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false },
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(false);
+      });
+
+      it('Non-container Board view under Document', () => {
+        const view = createMockView({
+          view_id: 'linked-board',
+          layout: ViewLayout.Board,
+          extra: { is_space: false },
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(false);
+      });
+
+      it('Non-container Calendar view under Document', () => {
+        const view = createMockView({
+          view_id: 'linked-calendar',
+          layout: ViewLayout.Calendar,
+          extra: { is_space: false },
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(false);
+      });
+
+      // Web workaround: embedded views with is_database_container=true but no children
+      // should also be blocked from moving
+      it('Embedded database view with is_database_container=true but no children under Document (web workaround)', () => {
+        const view = createMockView({
+          view_id: 'embedded-grid',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true, embedded: true },
+          children: [], // No children indicates it's a linked view, not a true container
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(false);
+      });
+
+      it('Database container WITH children under Document CAN be moved', () => {
+        const childView = createMockView({
+          view_id: 'child-view',
+          layout: ViewLayout.Grid,
+        });
+        const view = createMockView({
+          view_id: 'container-grid',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true, embedded: true },
+          children: [childView], // Has children, so it's a true container
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(true);
+      });
+    });
+
+    describe('Edge cases', () => {
+      it('handles view with empty extra field', () => {
+        const view = createMockView({
+          view_id: 'view1',
+          layout: ViewLayout.Document,
+          extra: null,
+        });
+        const parentView = createMockView({
+          view_id: 'parent1',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(true);
+      });
+
+      it('handles parent with empty extra field', () => {
+        const view = createMockView({
+          view_id: 'view1',
+          layout: ViewLayout.Document,
+        });
+        const parentView = createMockView({
+          view_id: 'parent1',
+          layout: ViewLayout.Document,
+          extra: null,
+        });
+
+        expect(canBeMoved(view, parentView)).toBe(true);
+      });
+
+      it('returns true when both view and parent are null', () => {
+        expect(canBeMoved(null, null)).toBe(true);
+      });
+
+      it('returns true when view is null but parent exists', () => {
+        const parentView = createMockView({
+          view_id: 'parent1',
+          layout: ViewLayout.Document,
+        });
+
+        expect(canBeMoved(null, parentView)).toBe(true);
       });
     });
   });

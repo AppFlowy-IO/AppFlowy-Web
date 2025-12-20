@@ -103,6 +103,81 @@ export function getFirstChildView(view: View | null | undefined): View | undefin
 }
 
 /**
+ * Check if a view is a linked database view under a document.
+ *
+ * These are non-container database views whose parent is a Document.
+ * They should not be movable because they are tied to the document content.
+ *
+ * Note: On web, the backend currently sets `is_database_container: true` for ALL
+ * embedded database views, including linked ones. This is different from desktop
+ * where linked views have `is_database_container: false`. To work around this,
+ * we also check for embedded views without children (linked views don't have children).
+ *
+ * @param view The view to check
+ * @param parentView The parent view
+ * @returns true if this is a linked database view under a document
+ */
+export function isLinkedDatabaseViewUnderDocument(
+  view: View | null | undefined,
+  parentView: View | null | undefined
+): boolean {
+  if (!parentView || !view) {
+    return false;
+  }
+
+  // A linked database view under a document is:
+  // 1. A database layout (Grid, Board, Calendar)
+  // 2. Under a Document parent
+  // 3. Either:
+  //    a. Not marked as a container (desktop behavior), OR
+  //    b. Embedded with no children (web workaround for incorrect is_database_container flag)
+  const isNonContainerView = !isDatabaseContainer(view);
+  const isEmbeddedWithNoChildren = isEmbeddedView(view) && (!view.children || view.children.length === 0);
+
+  return (
+    isDatabaseLayout(view.layout) &&
+    parentView.layout === ViewLayout.Document &&
+    (isNonContainerView || isEmbeddedWithNoChildren)
+  );
+}
+
+/**
+ * Check if a view can be moved.
+ *
+ * Mirrors Desktop/Flutter implementation in view_ext.dart canBeDragged().
+ *
+ * Returns false for:
+ * - Case 1: Referenced database views (database inside database)
+ * - Case 2: Children of database containers (managed by the database)
+ * - Case 3: Linked database views under documents (tied to document content)
+ *
+ * @param view The view to check
+ * @param parentView The parent view
+ * @returns true if the view can be moved
+ */
+export function canBeMoved(
+  view: View | null | undefined,
+  parentView: View | null | undefined
+): boolean {
+  // Case 1: Referenced database views
+  if (isReferencedDatabaseView(view, parentView)) {
+    return false;
+  }
+
+  // Case 2: Children of database containers
+  if (isDatabaseContainer(parentView)) {
+    return false;
+  }
+
+  // Case 3: Linked database views under documents
+  if (isLinkedDatabaseViewUnderDocument(view, parentView)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Returns the list of database view IDs that should be displayed in the tab bar.
  *
  * Mirrors Desktop/Flutter behavior:
