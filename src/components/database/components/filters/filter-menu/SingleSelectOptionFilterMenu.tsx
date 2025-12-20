@@ -28,6 +28,7 @@ function SingleSelectOptionFilterMenu({ filter }: { filter: SelectOptionFilter }
 
       updateFilter({
         filterId: filter.id,
+        fieldId: filter.fieldId,
         content: newSelectedIds.filter((id) => id !== '').join(','),
       });
     },

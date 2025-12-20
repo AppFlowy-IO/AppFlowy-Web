@@ -17,6 +17,7 @@ function TextFilterMenu ({ filter }: { filter: TextFilter }) {
     setValue(e.target.value);
     updateFilter({
       filterId: filter.id,
+      fieldId: filter.fieldId,
       content: e.target.value,
     });
   };
