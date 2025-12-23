@@ -1,6 +1,8 @@
-import type { Meta, StoryObj } from '@storybook/react';
 import { withContainer } from '../../../../../../.storybook/decorators';
+
 import { AIMeetingBlock } from './AIMeetingBlock';
+
+import type { Meta, StoryObj } from '@storybook/react';
 import '../../../editor.scss';
 
 const meta = {

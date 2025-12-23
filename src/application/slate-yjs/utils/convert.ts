@@ -4,6 +4,7 @@ import { BlockJson } from '@/application/slate-yjs/types';
 import { sortTableCells } from '@/application/slate-yjs/utils/table';
 import {
   createBlock,
+  ensureAIMeetingContainerHasParagraph,
   getBlock,
   getBlocks,
   getChildrenMap,
@@ -56,11 +57,15 @@ export function traverseBlock(id: string, sharedRoot: YSharedRoot): Element | un
 
   let textId = block.external_id as string;
 
-  // SimpleTable and SimpleTableRow are containers but should not have text content directly
+  // Container blocks that should not have text content directly
   if (
     slateNode.type === BlockType.SimpleTableBlock ||
     slateNode.type === BlockType.SimpleTableRowBlock ||
-    slateNode.type === BlockType.SimpleTableCellBlock
+    slateNode.type === BlockType.SimpleTableCellBlock ||
+    slateNode.type === BlockType.AIMeetingBlock ||
+    slateNode.type === BlockType.AIMeetingTranscription ||
+    slateNode.type === BlockType.AIMeetingSummary ||
+    slateNode.type === BlockType.AIMeetingNotes
   ) {
     textId = '';
   }
@@ -71,9 +76,44 @@ export function traverseBlock(id: string, sharedRoot: YSharedRoot): Element | un
 
   if (!yText) {
     if (children.length === 0) {
-      children.push({
-        text: '',
-      });
+      // For AI Meeting container blocks, ensure they have an editable Paragraph child in YJS
+      if (
+        slateNode.type === BlockType.AIMeetingNotes ||
+        slateNode.type === BlockType.AIMeetingSummary ||
+        slateNode.type === BlockType.AIMeetingTranscription
+      ) {
+        // Get the YBlock for this container
+        const containerBlock = getBlock(block.id, sharedRoot);
+
+        if (containerBlock) {
+          // Create a real paragraph in YJS (this is idempotent - won't create if children exist)
+          ensureAIMeetingContainerHasParagraph(sharedRoot, containerBlock);
+
+          // Re-fetch children after creating the paragraph
+          const updatedChildren = (childrenMap.get(childrenId)?.toJSON() ?? [])
+            .map((childId: string) => traverseBlock(childId, sharedRoot))
+            .filter(Boolean) as (Element | Text)[];
+
+          // Use the newly created real children
+          slateNode.children = updatedChildren;
+
+          if (updatedChildren.length > 0) {
+            return slateNode;
+          }
+        }
+
+        // Fallback: create a temporary paragraph (shouldn't normally reach here)
+        children.push({
+          type: BlockType.Paragraph,
+          blockId: `${block.id}_p`,
+          data: {},
+          children: [{ text: '' }],
+        } as Element);
+      } else {
+        children.push({
+          text: '',
+        });
+      }
     }
 
     // Compatible data

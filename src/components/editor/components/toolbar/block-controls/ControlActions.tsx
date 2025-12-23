@@ -95,13 +95,30 @@ function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: Co
     if(!entry) return;
 
     const [node, path] = entry;
+    const type = node.type as BlockType;
+
+    // For AI Meeting blocks, always add a new paragraph below rather than trying
+    // to select into them, as their internal structure may contain nodes without
+    // DOM representations (e.g., empty text nodes)
+    if (type === BlockType.AIMeetingBlock) {
+      if (e.altKey) {
+        CustomEditor.addAboveBlock(editor, blockId, BlockType.Paragraph, {});
+      } else {
+        CustomEditor.addBelowBlock(editor, blockId, BlockType.Paragraph, {});
+      }
+
+      onAdded();
+      return;
+    }
 
     const start = editor.start(path);
 
-    ReactEditor.focus(editor);
-    Transforms.select(editor, start);
-
-    const type = node.type as BlockType;
+    try {
+      ReactEditor.focus(editor);
+      Transforms.select(editor, start);
+    } catch {
+      // Selection may fail if the node doesn't have a DOM representation
+    }
 
     if (CustomEditor.getBlockTextContent(node, 2) === '' && [...CONTAINER_BLOCK_TYPES, BlockType.HeadingBlock].includes(type)) {
       onAdded();

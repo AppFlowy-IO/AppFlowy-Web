@@ -85,6 +85,7 @@ export interface EditorContextState {
   databaseRelations?: DatabaseRelations;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  slashPlaceholder?: string;
 }
 
 export const EditorContext = createContext<EditorContextState>({

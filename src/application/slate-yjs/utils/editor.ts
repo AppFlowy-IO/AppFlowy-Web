@@ -27,6 +27,7 @@ import {
   appendEmptyParagraph,
   assertDocExists,
   compatibleDataDeltaToYText,
+  createAIMeetingChildren,
   createBlock,
   dataStringTOJson,
   deleteBlock,
@@ -844,9 +845,19 @@ export function preventLiftNode(editor: YjsEditor, blockId: string) {
 
   const parent = getParent(blockId, getSharedRoot(editor));
 
+  // Prevent lifting for blocks that are children of special container types
+  const preventLiftParentTypes = [
+    BlockType.ColumnsBlock,
+    BlockType.ColumnBlock,
+    // AI Meeting containers - blocks inside these should not be lifted out
+    BlockType.AIMeetingSummary,
+    BlockType.AIMeetingNotes,
+    BlockType.AIMeetingTranscription,
+  ];
+
   if (
     level < 2 ||
-    (parent && [BlockType.ColumnsBlock, BlockType.ColumnBlock].includes(parent.get(YjsEditorKey.block_type)))
+    (parent && preventLiftParentTypes.includes(parent.get(YjsEditorKey.block_type)))
   ) {
     return true;
   }
@@ -1030,6 +1041,11 @@ export function addBlock(
     newBlockId = newBlock.get(YjsEditorKey.block_id);
 
     updateBlockParent(sharedRoot, newBlock, parent, index);
+
+    // Special handling for AI Meeting blocks - create required child blocks
+    if (ty === BlockType.AIMeetingBlock) {
+      createAIMeetingChildren(sharedRoot, newBlock);
+    }
 
     extendNextSiblingsToToggleHeading(sharedRoot, newBlock);
   });
