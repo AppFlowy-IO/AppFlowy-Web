@@ -1823,15 +1823,9 @@ export async function generateAITranslateForRow(workspaceId: string, payload: Ge
   );
 
   return payloadResponse.items
-    .map((item) => {
-      return Object.entries(item)
-        .map(([key, value]) => {
-          if (!value) return '';
-          return `${key}: ${value}`;
-        })
-        .join(', ');
-    })
-    .join('\n');
+    .map((item) => item.content)
+    .filter((content) => content)
+    .join(', ');
 }
 
 export async function createOrphanedView(workspaceId: string, payload: { document_id: string }) {

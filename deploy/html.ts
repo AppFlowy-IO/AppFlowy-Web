@@ -1,4 +1,5 @@
 import * as fs from 'fs';
+
 import { type CheerioAPI, load } from 'cheerio';
 
 import { indexPath } from './config';

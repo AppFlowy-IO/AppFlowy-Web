@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
+import { FieldType, useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { useAddSort } from '@/application/database-yjs/dispatch';
 import { ReactComponent as SortIcon } from '@/assets/icons/sort.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+
+import { useRollupSortableIds } from '../sorts/utils';
 
 
 function SortsButton ({ toggleExpanded, expanded }: {
@@ -18,6 +20,15 @@ function SortsButton ({ toggleExpanded, expanded }: {
   const [open, setOpen] = useState(false);
   const readOnly = useReadOnly();
   const addSort = useAddSort();
+  const rollupSortableIds = useRollupSortableIds();
+  const propertyFilter = useCallback(
+    (property: { id: string; type: FieldType }) => {
+      if (property.type !== FieldType.Rollup) return true;
+      return rollupSortableIds.has(property.id);
+    },
+    [rollupSortableIds]
+  );
+  const excludedTypes = useMemo(() => [FieldType.Person], []);
 
   return (
     <PropertiesMenu
@@ -31,6 +42,8 @@ function SortsButton ({ toggleExpanded, expanded }: {
           toggleExpanded?.();
         }
       }}
+      excludedTypes={excludedTypes}
+      propertyFilter={propertyFilter}
       asChild
     >
       <div>

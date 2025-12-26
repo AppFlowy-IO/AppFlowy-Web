@@ -6,12 +6,12 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
-import { Log } from '@/utils/log';
 import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types } from '@/application/types';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 import { messages } from '@/proto/messages';
+import { Log } from '@/utils/log';
 
 export interface RegisterSyncContext {
   /**

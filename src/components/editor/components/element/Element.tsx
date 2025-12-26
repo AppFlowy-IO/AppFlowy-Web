@@ -7,17 +7,16 @@ import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'sl
 import { YjsEditor } from '@/application/slate-yjs';
 import { CONTAINER_BLOCK_TYPES, SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockData, BlockType, ColumnNodeData, YjsEditorKey } from '@/application/types';
+import { AIMeetingBlock } from '@/components/editor/components/blocks/ai-meeting';
 import { BulletedList } from '@/components/editor/components/blocks/bulleted-list';
 import { Callout } from '@/components/editor/components/blocks/callout';
 import { CodeBlock } from '@/components/editor/components/blocks/code';
 import { Column, Columns } from '@/components/editor/components/blocks/columns';
 import { DatabaseBlock } from '@/components/editor/components/blocks/database';
 import { DividerNode } from '@/components/editor/components/blocks/divider';
-import { AIMeetingBlock } from '@/components/editor/components/blocks/ai-meeting';
 import { FileBlock } from '@/components/editor/components/blocks/file';
 import { GalleryBlock } from '@/components/editor/components/blocks/gallery';
 import { Heading } from '@/components/editor/components/blocks/heading';
-import { PDFBlock } from '@/components/editor/components/blocks/pdf';
 import { ImageBlock } from '@/components/editor/components/blocks/image';
 import { LinkPreview } from '@/components/editor/components/blocks/link-preview';
 import { MathEquation } from '@/components/editor/components/blocks/math-equation';
@@ -25,6 +24,7 @@ import { NumberedList } from '@/components/editor/components/blocks/numbered-lis
 import { Outline } from '@/components/editor/components/blocks/outline';
 import { Page } from '@/components/editor/components/blocks/page';
 import { Paragraph } from '@/components/editor/components/blocks/paragraph';
+import { PDFBlock } from '@/components/editor/components/blocks/pdf';
 import { Quote } from '@/components/editor/components/blocks/quote';
 import SimpleTable from '@/components/editor/components/blocks/simple-table/SimpleTable';
 import SimpleTableCell from '@/components/editor/components/blocks/simple-table/SimpleTableCell';

@@ -1,6 +1,7 @@
 import { Button, CircularProgress, Divider, IconButton, Tooltip } from '@mui/material';
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { validate as uuidValidate } from 'uuid';
 
 import { SubscriptionPlan, View } from '@/application/types';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
@@ -14,7 +15,6 @@ import UpdateNamespace from '@/components/app/publish-manage/UpdateNamespace';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
 import { isAppFlowyHosted } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
-import { validate as uuidValidate } from 'uuid';
 
 export function PublishManage({ onClose }: { onClose?: () => void }) {
   const { t } = useTranslation();

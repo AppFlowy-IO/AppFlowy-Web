@@ -9,6 +9,7 @@ on:
 
 env:
   CLOUD_VERSION: latest-amd64
+  APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: "true"
 
 jobs:
   # Run different test categories in parallel for 6x speedup

@@ -5,9 +5,9 @@ import { APP_EVENTS } from '@/application/constants';
 import { ReactComponent as CloudOffIcon } from '@/assets/icons/cloud_off.svg';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { Log } from '@/utils/log';
 
 import { useAppHandlers } from './app.hooks';
-import { Log } from '@/utils/log';
 
 // WebSocket readyState enum
 const READY_STATE = {

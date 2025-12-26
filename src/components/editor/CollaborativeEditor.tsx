@@ -6,13 +6,13 @@ import * as Y from 'yjs';
 
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
-import { Log } from '@/utils/log';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { BlockType, CollabOrigin } from '@/application/types';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
+import { Log } from '@/utils/log';
 import { getTextCount } from '@/utils/word';
 
 const defaultInitialValue: Descendant[] = [];

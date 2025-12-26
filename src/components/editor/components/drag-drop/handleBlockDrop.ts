@@ -1,6 +1,5 @@
 import { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 
-import { Log } from '@/utils/log';
 import { YjsEditor } from '@/application/slate-yjs';
 import {
   executeOperations,
@@ -10,6 +9,7 @@ import {
 } from '@/application/slate-yjs/utils/yjs';
 import { CollabOrigin, YjsEditorKey } from '@/application/types';
 import { wouldCreateCircularReference } from '@/components/editor/components/drag-drop/validation';
+import { Log } from '@/utils/log';
 
 /**
  * Handle dropping a block onto another block

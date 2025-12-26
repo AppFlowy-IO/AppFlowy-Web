@@ -9,12 +9,16 @@ import { SearchInput } from '@/components/ui/search-input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
+const DEFAULT_EXCLUDED_TYPES = [FieldType.AISummaries, FieldType.AITranslations, FieldType.FileMedia];
+
 function PropertiesMenu({
   open,
   onSelect,
   onOpenChange,
   searchPlaceholder,
   filteredOut,
+  excludedTypes,
+  propertyFilter,
   children,
   asChild,
 }: {
@@ -23,11 +27,19 @@ function PropertiesMenu({
   onOpenChange?: (open: boolean) => void;
   searchPlaceholder?: string;
   filteredOut?: string[];
+  excludedTypes?: FieldType[];
+  propertyFilter?: (property: { id: string; visible: boolean; name: string; type: FieldType }) => boolean;
   children?: React.ReactNode;
   asChild?: boolean;
 }) {
   const { properties } = usePropertiesSelector(false);
   const [searchInput, setSearchInput] = useState('');
+  const excludedTypeSet = useMemo(() => {
+    const set = new Set(DEFAULT_EXCLUDED_TYPES);
+
+    (excludedTypes ?? []).forEach((type) => set.add(type));
+    return set;
+  }, [excludedTypes]);
 
   const filteredProperties = useMemo(() => {
     return properties.filter((property) => {
@@ -35,21 +47,17 @@ function PropertiesMenu({
         return false;
       }
 
-      if (
-        [
-          FieldType.Relation,
-          FieldType.AISummaries,
-          FieldType.AITranslations,
-          FieldType.FileMedia,
-          FieldType.Person,
-        ].includes(property.type)
-      ) {
+      if (excludedTypeSet.has(property.type)) {
+        return false;
+      }
+
+      if (propertyFilter && !propertyFilter(property)) {
         return false;
       }
 
       return property.name.toLowerCase().includes(searchInput.toLowerCase());
     });
-  }, [searchInput, properties, filteredOut]);
+  }, [searchInput, properties, filteredOut, excludedTypeSet, propertyFilter]);
 
   const [element, setElement] = useState<HTMLElement | null>(null);
 

@@ -1,10 +1,10 @@
 import React, { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
-import { Log } from '@/utils/log';
 import { invalidToken, isTokenValid } from '@/application/session/token';
 import { UserWorkspaceInfo } from '@/application/types';
 import { AFConfigContext, useService } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 import { AuthInternalContext, AuthInternalContextType } from '../contexts/AuthInternalContext';
 

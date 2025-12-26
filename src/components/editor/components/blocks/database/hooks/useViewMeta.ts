@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { Log } from '@/utils/log';
 import { View } from '@/application/types';
+import { Log } from '@/utils/log';
 
 interface UseViewMetaProps {
   viewId: string;

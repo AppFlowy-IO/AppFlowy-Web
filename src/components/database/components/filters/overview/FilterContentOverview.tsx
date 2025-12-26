@@ -26,6 +26,8 @@ export function FilterContentOverview({ filter }: { filter: Filter }) {
     switch (fieldType) {
       case FieldType.RichText:
       case FieldType.URL:
+      case FieldType.Relation:
+      case FieldType.Rollup:
         return <TextFilterContentOverview filter={filter} />;
       case FieldType.Number:
         return <NumberFilterContentOverview filter={filter} />;

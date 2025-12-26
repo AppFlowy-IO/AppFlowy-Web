@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
 import { CellProps, RelationCell as RelationCellType } from '@/application/database-yjs/cell.type';
 import RelationCellMenu from '@/components/database/components/cell/relation/RelationCellMenu';
@@ -14,6 +14,13 @@ export function RelationCell({
   rowId,
   wrap,
 }: CellProps<RelationCellType>) {
+  const handleOpenChange = useCallback(
+    (status: boolean) => {
+      setEditing?.(status);
+    },
+    [setEditing]
+  );
+
   const children = useMemo(() => {
     if (!cell?.data)
       return placeholder ? (
@@ -26,11 +33,17 @@ export function RelationCell({
   }, [cell, wrap, fieldId, placeholder, style]);
 
   return (
-    <>
+    <div className="relative w-full">
       {children}
-      {editing && (
-        <RelationCellMenu open={editing} onOpenChange={setEditing} cell={cell} fieldId={fieldId} rowId={rowId} />
-      )}
-    </>
+      {editing ? (
+        <RelationCellMenu
+          cell={cell}
+          fieldId={fieldId}
+          rowId={rowId}
+          open={editing}
+          onOpenChange={handleOpenChange}
+        />
+      ) : null}
+    </div>
   );
 }

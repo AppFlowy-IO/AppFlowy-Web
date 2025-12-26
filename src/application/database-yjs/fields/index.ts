@@ -8,6 +8,7 @@ export * from './text';
 export * from './checkbox';
 export * from './checklist';
 export * from './relation';
+export * from './rollup';
 export * from './person';
 
 export function getFieldName (fieldType: FieldType) {
@@ -42,6 +43,10 @@ export function getFieldName (fieldType: FieldType) {
       return 'AI Translate';
     case FieldType.Person:
       return 'Person';
+    case FieldType.Time:
+      return 'Time';
+    case FieldType.Rollup:
+      return 'Rollup';
     default:
       return 'Text';
   }

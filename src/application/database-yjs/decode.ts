@@ -76,6 +76,16 @@ export function decodeCellToText(
       return getDateCellStr({ cell: dateCell, field, currentUser });
     }
 
+    case FieldType.Relation: {
+      if (data && typeof data === 'object' && 'toJSON' in data) {
+        const ids = (data as { toJSON: () => unknown }).toJSON();
+
+        return Array.isArray(ids) ? ids.join(',') : '';
+      }
+
+      return Array.isArray(data) ? data.join(',') : '';
+    }
+
     default:
       return typeof data === 'string' || typeof data === 'number' ? String(data) : '';
   }
@@ -94,6 +104,16 @@ export function decodeCellForSort(
   const data = cell.get(YjsDatabaseKey.data);
 
   switch (targetType) {
+    case FieldType.Relation: {
+      if (data && typeof data === 'object' && 'toJSON' in data) {
+        const ids = (data as { toJSON: () => unknown }).toJSON();
+
+        return Array.isArray(ids) ? ids.join(',') : '';
+      }
+
+      return Array.isArray(data) ? data.join(',') : '';
+    }
+
     case FieldType.Checkbox:
       if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
         return parseCheckboxValue(data);

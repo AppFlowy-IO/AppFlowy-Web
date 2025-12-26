@@ -116,6 +116,19 @@ export function groupBySelectOption(
     return result;
   }
 
+  const filterCondition = filter
+    ? (Number(filter?.get(YjsDatabaseKey.condition)) as SelectOptionFilterCondition)
+    : undefined;
+  const filterContent = filter?.get(YjsDatabaseKey.content) ?? '';
+
+  const shouldIncludeEmptyGroup = filter
+    ? selectOptionFilterCheck(field, '', filterContent, filterCondition as SelectOptionFilterCondition)
+    : true;
+
+  if (shouldIncludeEmptyGroup) {
+    result.set(fieldId, []);
+  }
+
   typeOption.options.forEach((option) => {
     const groupName = option?.id;
 
@@ -124,10 +137,7 @@ export function groupBySelectOption(
     }
 
     if (filter) {
-      const condition = Number(filter?.get(YjsDatabaseKey.condition)) as SelectOptionFilterCondition;
-      const content = filter?.get(YjsDatabaseKey.content);
-
-      if (!selectOptionFilterCheck(field, groupName, content, condition)) {
+      if (!selectOptionFilterCheck(field, groupName, filterContent, filterCondition as SelectOptionFilterCondition)) {
         result.delete(groupName);
         return;
       }

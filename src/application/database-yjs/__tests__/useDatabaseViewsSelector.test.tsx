@@ -1,10 +1,10 @@
-import { renderHook } from '@testing-library/react';
 import { expect } from '@jest/globals';
+import { renderHook } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
-import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { useDatabaseViewsSelector } from '@/application/database-yjs/selector';
+import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,

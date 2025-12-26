@@ -19,8 +19,10 @@ import NumberPropertyMenuContent from '@/components/database/components/property
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
 import PropertySelectTrigger from '@/components/database/components/property/PropertySelectTrigger';
 import RelationPropertyMenuContent from '@/components/database/components/property/relation/RelationPropertyMenuContent';
+import RollupPropertyMenuContent from '@/components/database/components/property/rollup/RollupPropertyMenuContent';
 import SelectPropertyMenuContent from '@/components/database/components/property/select/SelectPropertyMenuContent';
 import TranslatePropertyMenuContext from '@/components/database/components/property/translate/TranslatePropertyMenuContext';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -48,6 +50,7 @@ function PropertyMenu({
   const onShowProperty = useShowPropertyDispatch();
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
+  const isEditingDisabled = isFieldEditingDisabled(type);
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
   const { t } = useTranslation();
   const [deleteConfirmOpen, setDeleteConfirmOpen] = React.useState(false);
@@ -108,10 +111,16 @@ function PropertyMenu({
         return <FileMediaPropertyMenuContent {...props} />;
       case FieldType.AITranslations:
         return <TranslatePropertyMenuContext {...props} />;
+      case FieldType.Rollup:
+        return <RollupPropertyMenuContent {...props} />;
       default:
         return null;
     }
   }, [fieldId, type]);
+
+  if (isEditingDisabled) {
+    return children ? <>{children}</> : null;
+  }
 
   return (
     <>

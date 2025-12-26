@@ -8,7 +8,6 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 
 import './FullCalendar.styles.scss';
 
-import { Log } from '@/utils/log';
 import { useDatabaseContext } from '@/application/database-yjs';
 import { useConditionsContext } from '@/components/database/components/conditions/context';
 import { AddButton } from '@/components/database/fullcalendar/AddButton';
@@ -28,6 +27,7 @@ import {
   useTimeFormat,
 } from '@/components/database/fullcalendar/hooks';
 import { dayCellContent } from '@/components/database/fullcalendar/utils/dayCellContent';
+import { Log } from '@/utils/log';
 import { dateToUnixTimestamp } from '@/utils/time';
 
 // CustomToolbar will be handled by parent component

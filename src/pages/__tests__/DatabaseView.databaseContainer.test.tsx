@@ -1,10 +1,9 @@
+import { expect } from '@jest/globals';
 import { render } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { expect } from '@jest/globals';
 import * as Y from 'yjs';
 
 import { View, ViewLayout, ViewMetaProps, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
-
 import DatabaseView from '@/components/app/DatabaseView';
 
 declare global {

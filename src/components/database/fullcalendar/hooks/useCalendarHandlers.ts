@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { Log } from '@/utils/log';
 import { useDatabaseContext, useDatabaseViewId } from '@/application/database-yjs';
+import { Log } from '@/utils/log';
 
 import { CalendarViewType } from '../types';
 

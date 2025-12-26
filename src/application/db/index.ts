@@ -3,7 +3,6 @@ import { IndexeddbPersistence } from 'y-indexeddb';
 import * as Y from 'yjs';
 
 import { databasePrefix } from '@/application/constants';
-import { Log } from '@/utils/log';
 import { rowSchema, rowTable } from '@/application/db/tables/rows';
 import { userSchema, UserTable } from '@/application/db/tables/users';
 import { viewMetasSchema, ViewMetasTable } from '@/application/db/tables/view_metas';
@@ -12,6 +11,7 @@ import {
   WorkspaceMemberProfileTable,
 } from '@/application/db/tables/workspace_member_profiles';
 import { YDoc } from '@/application/types';
+import { Log } from '@/utils/log';
 
 type DexieTables = ViewMetasTable & UserTable & rowTable & WorkspaceMemberProfileTable;
 

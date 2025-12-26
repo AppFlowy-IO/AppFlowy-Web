@@ -2,11 +2,11 @@ import { BaseRange, NodeEntry, Point, Range, Text, Transforms } from 'slate';
 import { TextInsertTextOptions } from 'slate/dist/interfaces/transforms/text';
 import { ReactEditor } from 'slate-react';
 
-import { Log } from '@/utils/log';
 import { YjsEditor } from '@/application/slate-yjs';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
 import { getBlockEntry } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
+import { Log } from '@/utils/log';
 
 export const withInsertText = (editor: ReactEditor) => {
   const { insertText } = editor;

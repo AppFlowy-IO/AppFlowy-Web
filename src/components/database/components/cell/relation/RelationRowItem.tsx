@@ -14,7 +14,7 @@ function RelationRowItem ({ rowId, content }: {
       style={{
         scrollMarginTop: '80px',
       }}
-      className={cn('text-sm w-full text-text-primary', !content && 'text-text-secondary')}
+      className={cn('flex-1 truncate text-sm text-text-primary', !content && 'text-text-secondary')}
     >
       {content || t('menuAppHeader.defaultNewPageName')}
     </div>

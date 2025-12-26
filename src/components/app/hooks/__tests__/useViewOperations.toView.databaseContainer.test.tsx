@@ -1,9 +1,10 @@
-import { act, renderHook } from '@testing-library/react';
-import { expect } from '@jest/globals';
 import EventEmitter from 'events';
 
-import { View, ViewLayout } from '@/application/types';
+import { expect } from '@jest/globals';
+import { act, renderHook } from '@testing-library/react';
+
 import { AFService } from '@/application/services/services.type';
+import { View, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '@/components/app/contexts/SyncInternalContext';
 

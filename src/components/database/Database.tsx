@@ -1,7 +1,6 @@
 import { debounce } from 'lodash-es';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { Log } from '@/utils/log';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import {
   AppendBreadcrumb,
@@ -21,6 +20,7 @@ import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
+import { Log } from '@/utils/log';
 
 import { DatabaseContextProvider } from './DatabaseContext';
 
@@ -296,6 +296,7 @@ function Database(props: Database2Props) {
           createRowDoc={createNewRowDoc}
           calendarViewTypeMap={calendarViewTypeMap}
           setCalendarViewType={setCalendarViewType}
+          closeRowDetailModal={handleCloseRowModal}
         >
           <DatabaseRowModal
             rowId={openModalRowId}

@@ -1,10 +1,11 @@
 import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { TextCount, Types, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
+import { DATABASE_TAB_VIEW_ID_QUERY_PARAM, resolveSidebarSelectedViewId } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -31,6 +32,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const { currentWorkspaceId } = useAuthInternal();
   const { lastUpdatedCollab } = useSyncInternal();
   const params = useParams();
+  const [searchParams] = useSearchParams();
 
   // UI state
   const [rendered, setRendered] = useState(false);
@@ -46,6 +48,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     if (id && !uuidValidate(id)) return;
     return id;
   }, [params.viewId]);
+  const tabViewId = searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM) ?? undefined;
 
   // Initialize workspace data management
   const {
@@ -65,6 +68,14 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     loadMentionableUsers,
     stableOutlineRef,
   } = useWorkspaceData();
+
+  const breadcrumbViewId = useMemo(() => {
+    return resolveSidebarSelectedViewId({
+      routeViewId: viewId,
+      tabViewId,
+      outline,
+    });
+  }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
   const { loadView, createRowDoc, toView, awarenessMap, getViewIdFromDatabaseId } = useViewOperations();
@@ -107,9 +118,9 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
 
   // Calculate breadcrumbs based on current view
   const originalCrumbs = useMemo(() => {
-    if (!outline || !viewId) return [];
-    return findAncestors(outline, viewId) || [];
-  }, [outline, viewId]);
+    if (!outline || !breadcrumbViewId) return [];
+    return findAncestors(outline, breadcrumbViewId) || [];
+  }, [outline, breadcrumbViewId]);
 
   const [breadcrumbs, setBreadcrumbs] = useState<View[]>(originalCrumbs);
 

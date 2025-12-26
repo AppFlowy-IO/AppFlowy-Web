@@ -24,6 +24,7 @@ function FieldLabel ({ type, ...props }: { type: FieldType } & React.HTMLAttribu
       [FieldType.FileMedia]: t('grid.field.mediaFieldName'),
       [FieldType.Person]: t('grid.field.personFieldName'),
       [FieldType.Time]: t('grid.field.timeFieldName'),
+      [FieldType.Rollup]: t('grid.field.rollupFieldName', { defaultValue: 'Rollup' }),
     }[type];
   }, [t, type]);
 

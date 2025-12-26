@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Awareness } from 'y-protocols/awareness';
 
-import { Log } from '@/utils/log';
 import { openCollabDB } from '@/application/db';
 import {
   AccessLevel,
@@ -17,6 +16,7 @@ import {
 } from '@/application/types';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';

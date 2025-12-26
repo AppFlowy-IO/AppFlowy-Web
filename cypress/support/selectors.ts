@@ -396,9 +396,10 @@ export const DatabaseGridSelectors = {
 
   // Get clickable row cell wrappers for a field (DATA ROWS ONLY)
   // These have data-column-id={fieldId} and contain the onClick handler
-  dataRowCellsForField: (fieldId: string) =>
+  dataRowCellsForField: (fieldId: string, options?: CypressGetOptions) =>
     cy.get(
-      `[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"]) .grid-row-cell[data-column-id="${fieldId}"]`
+      `[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"]) .grid-row-cell[data-column-id="${fieldId}"]`,
+      options
     ),
 
   // Get first cell
@@ -763,7 +764,8 @@ export const FieldType = {
   AITranslations: 12,
   FileMedia: 14,
   Person: 15,
-  Time: 16,
+  Rollup: 16,
+  Time: 17,
 };
 
 /**

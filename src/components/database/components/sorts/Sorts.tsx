@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useReadOnly, useSortsSelector } from '@/application/database-yjs';
+import { FieldType, useReadOnly, useSortsSelector } from '@/application/database-yjs';
 import { useAddSort, useClearSortingDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as ArrowDown } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
@@ -11,6 +11,8 @@ import PropertiesMenu from '@/components/database/components/conditions/Properti
 import SortList from '@/components/database/components/sorts/SortList';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
+
+import { useRollupSortableIds } from './utils';
 
 
 export function Sorts () {
@@ -27,6 +29,15 @@ export function Sorts () {
   const [openPropertiesMenu, setOpenPropertiesMenu] = useState(false);
 
   const readOnly = useReadOnly();
+  const rollupSortableIds = useRollupSortableIds();
+  const propertyFilter = useCallback(
+    (property: { id: string; type: FieldType }) => {
+      if (property.type !== FieldType.Rollup) return true;
+      return rollupSortableIds.has(property.id);
+    },
+    [rollupSortableIds]
+  );
+  const excludedTypes = useMemo(() => [FieldType.Person], []);
 
   useEffect(() => {
     if (!open) {
@@ -79,6 +90,8 @@ export function Sorts () {
                     addSort(fieldId);
                   }}
                   filteredOut={sortFieldIds}
+                  excludedTypes={excludedTypes}
+                  propertyFilter={propertyFilter}
                   open={openPropertiesMenu}
                   onOpenChange={setOpenPropertiesMenu}
                 >

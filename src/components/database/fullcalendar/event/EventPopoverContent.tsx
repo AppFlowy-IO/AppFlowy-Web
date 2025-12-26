@@ -3,7 +3,6 @@ import { uniqBy } from 'lodash-es';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Log } from '@/utils/log';
 import { FieldType, useFieldsSelector, useNavigateToRow, usePrimaryFieldId } from '@/application/database-yjs';
 import { Cell } from '@/application/database-yjs/cell.type';
 import { useReadOnly } from '@/application/database-yjs/context';
@@ -17,6 +16,7 @@ import RowPropertyPrimitive from '@/components/database/components/database-row/
 import { EventTitle } from '@/components/database/fullcalendar/event/EventTitle';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Log } from '@/utils/log';
 
 import { useEventContext } from '../CalendarContent';
 

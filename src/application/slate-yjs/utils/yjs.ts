@@ -2,7 +2,6 @@ import { nanoid } from 'nanoid';
 import Delta, { Op } from 'quill-delta';
 import * as Y from 'yjs';
 
-import { Log } from '@/utils/log';
 import {
   CONTAINER_BLOCK_TYPES,
   isEmbedBlockTypes,
@@ -22,6 +21,7 @@ import {
   YSharedRoot,
   YTextMap,
 } from '@/application/types';
+import { Log } from '@/utils/log';
 
 export function getTextMap(sharedRoot: YSharedRoot) {
   const document = sharedRoot.get(YjsEditorKey.document);

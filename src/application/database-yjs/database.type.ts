@@ -20,9 +20,10 @@ export enum FieldType {
   Relation = 10,
   AISummaries = 11,
   AITranslations = 12,
+  Time = 13,
   FileMedia = 14,
   Person = 15,
-  Time = 16, // Added missing FieldType.Time
+  Rollup = 16,
 }
 
 export enum CalculationType {
@@ -34,6 +35,25 @@ export enum CalculationType {
   Count = 5,
   CountEmpty = 6,
   CountNonEmpty = 7,
+  DateEarliest = 8,
+  DateLatest = 9,
+  DateRange = 10,
+  NumberRange = 11,
+  NumberMode = 12,
+  CountChecked = 13,
+  CountUnchecked = 14,
+  PercentEmpty = 15,
+  PercentNotEmpty = 16,
+  CountUnique = 17,
+  CountValue = 18,
+  PercentChecked = 19,
+  PercentUnchecked = 20,
+}
+
+export enum RollupDisplayMode {
+  Calculated = 0,
+  OriginalList = 1,
+  UniqueList = 2,
 }
 
 export enum SortCondition {

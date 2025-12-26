@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { Log } from '@/utils/log';
 import { YDoc } from '@/application/types';
+import { Log } from '@/utils/log';
 
 interface UseDocumentLoaderProps {
   viewId: string;

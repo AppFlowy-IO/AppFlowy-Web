@@ -1,9 +1,9 @@
 import { Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { createContext, useContext } from 'react';
 
-import { Log } from '@/utils/log';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
+import { Log } from '@/utils/log';
 
 type RowEntry = { rowId: string; element: HTMLElement };
 type ColumnEntry = { fieldId: string; element: HTMLElement };

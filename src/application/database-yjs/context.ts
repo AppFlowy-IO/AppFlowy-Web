@@ -82,6 +82,8 @@ export interface DatabaseContextState {
   calendarViewTypeMap?: Map<string, CalendarViewType>;
   setCalendarViewType?: (viewId: string, viewType: CalendarViewType) => void;
   openPageModalViewId?: string;
+  // Close row detail modal (when in modal context)
+  closeRowDetailModal?: () => void;
 }
 
 export const DatabaseContext = createContext<DatabaseContextState | null>(null);

@@ -1,10 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Log } from '@/utils/log';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import RecordNotFound from '@/components/error/RecordNotFound';
+import { Log } from '@/utils/log';
 
 /**
  * Component that handles redirecting from /app to /app/:workspaceId

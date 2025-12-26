@@ -29,6 +29,7 @@ const properties = [
   FieldType.LastEditedTime,
   FieldType.CreatedTime,
   FieldType.Relation,
+  FieldType.Rollup,
   FieldType.AISummaries,
   FieldType.AITranslations,
   FieldType.Person,
@@ -61,6 +62,7 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
       [FieldType.LastEditedTime]: t('tooltip.updatedAtField'),
       [FieldType.CreatedTime]: t('tooltip.createdAtField'),
       [FieldType.Relation]: t('tooltip.relationField'),
+      [FieldType.Rollup]: t('tooltip.rollupField', { defaultValue: 'Rollup' }),
       [FieldType.AISummaries]: t('tooltip.AISummaryField'),
       [FieldType.AITranslations]: t('tooltip.AITranslateField'),
       [FieldType.FileMedia]: t('tooltip.mediaField'),
@@ -87,7 +89,7 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
                     data-testid={`property-type-option-${property}`}
                     onSelect={(e) => {
                       handleSelect(property);
-                      if ([FieldType.AITranslations, FieldType.Relation].includes(property)) {
+                      if ([FieldType.AITranslations, FieldType.Relation, FieldType.Rollup].includes(property)) {
                         e.preventDefault();
                         setOpen(false);
                       }

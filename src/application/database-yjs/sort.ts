@@ -1,5 +1,7 @@
-import { FieldType, SortCondition } from '@/application/database-yjs/database.type';
+import { FieldType, RollupDisplayMode, SortCondition } from '@/application/database-yjs/database.type';
 import { decodeCellForSort } from '@/application/database-yjs/decode';
+import { parseRollupTypeOption } from '@/application/database-yjs/fields';
+import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
 import {
   RowId,
@@ -13,7 +15,18 @@ import {
 
 type SortableValue = string | number | object | boolean | undefined;
 
-export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFields, rowMetas: Record<RowId, YDoc>) {
+type SortOptions = {
+  getRelationCellText?: (rowId: string, fieldId: string) => string;
+  getRollupCellValue?: (rowId: string, fieldId: string) => { value: string; rawNumeric?: number };
+};
+
+export function sortBy(
+  rows: Row[],
+  sorts: YDatabaseSorts,
+  fields: YDatabaseFields,
+  rowMetas: Record<RowId, YDoc>,
+  options?: SortOptions
+) {
   const sortArray = sorts.toArray();
 
   if (sortArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
@@ -21,7 +34,7 @@ export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFiel
   // Define collator for Unicode string comparison
   // Can adjust parameters based on application needs, such as locale, sensitivity, etc.
   const collator = new Intl.Collator('en', {
-    sensitivity: 'variant',
+    sensitivity: 'base',
     numeric: true, // Use numeric sorting, such as "2" before "10"
     usage: 'sort', // Used specifically for sorting
   });
@@ -47,6 +60,7 @@ export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFiel
   };
 
   // Prepare sort data, pre-calculate all values to avoid multiple calculations
+  const rollupNumericCache = new Map<string, boolean>();
   const sortData = rows.map((row) => {
     const values = sortArray.map((sort) => {
       const fieldId = sort.get(YjsDatabaseKey.field_id);
@@ -55,12 +69,22 @@ export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFiel
 
       const field = fields.get(fieldId);
       const fieldType = Number(field.get(YjsDatabaseKey.type));
+      const isRollupNumeric =
+        fieldType === FieldType.Rollup
+          ? rollupNumericCache.get(fieldId) ??
+            (() => {
+              const numeric = isNumericRollupField(field);
+
+              rollupNumericCache.set(fieldId, numeric);
+              return numeric;
+            })()
+          : false;
 
       const rowId = row.id;
       const rowMeta = rowMetas[rowId];
       const meta = rowMeta?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
 
-      const defaultData = defaultValueForSort(fieldType, Number(sort.get(YjsDatabaseKey.condition)));
+      const defaultData = defaultValueForSort(fieldType, Number(sort.get(YjsDatabaseKey.condition)), isRollupNumeric);
 
       if (!meta) return defaultData;
 
@@ -74,6 +98,37 @@ export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFiel
 
       const cells = meta.get(YjsDatabaseKey.cells);
       const cell = cells.get(fieldId);
+
+      if (fieldType === FieldType.Relation && options?.getRelationCellText) {
+        const relationText = options.getRelationCellText(rowId, fieldId);
+
+        if (relationText === undefined || relationText === '') {
+          return defaultData;
+        }
+
+        return relationText;
+      }
+
+      if (fieldType === FieldType.Rollup && options?.getRollupCellValue) {
+        const rollupOption = parseRollupTypeOption(field);
+        const showAs = (rollupOption?.show_as ?? RollupDisplayMode.Calculated) as RollupDisplayMode;
+
+        if (showAs !== RollupDisplayMode.Calculated) {
+          return defaultData;
+        }
+
+        const rollupValue = options.getRollupCellValue(rowId, fieldId);
+
+        if (isRollupNumeric) {
+          if (typeof rollupValue?.rawNumeric === 'number' && Number.isFinite(rollupValue.rawNumeric)) {
+            return rollupValue.rawNumeric;
+          }
+
+          return defaultData;
+        }
+
+        return rollupValue?.value || defaultData;
+      }
 
       if (!cell) return defaultData;
       const decoded = decodeCellForSort(cell, field);
@@ -102,10 +157,11 @@ export function sortBy(rows: Row[], sorts: YDatabaseSorts, fields: YDatabaseFiel
   return sortData.map((item) => item.row);
 }
 
-export function defaultValueForSort(fieldType: FieldType, condition: SortCondition) {
+export function defaultValueForSort(fieldType: FieldType, condition: SortCondition, isRollupNumeric?: boolean) {
   switch (fieldType) {
     case FieldType.RichText:
     case FieldType.URL:
+    case FieldType.Relation:
     case FieldType.SingleSelect:
     case FieldType.MultiSelect:
       return condition === SortCondition.Descending ? '\u0000' : '\uFFFF';
@@ -113,6 +169,14 @@ export function defaultValueForSort(fieldType: FieldType, condition: SortConditi
     case FieldType.Checklist:
     case FieldType.DateTime:
       return condition === SortCondition.Descending ? -Infinity : Infinity;
+    case FieldType.Rollup:
+      return isRollupNumeric
+        ? condition === SortCondition.Descending
+          ? -Infinity
+          : Infinity
+        : condition === SortCondition.Descending
+          ? '\u0000'
+          : '\uFFFF';
     case FieldType.Checkbox:
       return false;
     default:
