@@ -704,9 +704,11 @@ describe('Publish Page Test', () => {
             ShareSelectors.sharePopover().should('not.exist');
             ShareSelectors.publishManageModal().should('be.visible');
 
-            // Verify panel exists and is visible separately to avoid null subject issues
-            ShareSelectors.publishManagePanel().should('exist').should('be.visible');
-            ShareSelectors.publishManagePanel().contains('Namespace');
+            // Verify panel exists inside modal to avoid null subject issues
+            ShareSelectors.publishManageModal().within(() => {
+                ShareSelectors.publishManagePanel().should('be.visible');
+                cy.contains('Namespace').should('be.visible');
+            });
 
             cy.get('body').type('{esc}');
             ShareSelectors.publishManageModal().should('not.exist');
