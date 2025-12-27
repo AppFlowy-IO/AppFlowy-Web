@@ -6,9 +6,9 @@ import { Edge, extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitb
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Log } from '@/utils/log';
 import { useDatabaseViewId, useReadOnly } from '@/application/database-yjs';
 import { useReorderColumnDispatch } from '@/application/database-yjs/dispatch';
+import { Log } from '@/utils/log';
 
 import type { CleanupFn } from '@atlaskit/pragmatic-drag-and-drop/types';
 

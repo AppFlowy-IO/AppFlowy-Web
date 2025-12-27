@@ -56,8 +56,10 @@ export const GridProvider = ({ children }: { children: React.ReactNode }) => {
 
   const onResizeRowEnd = useCallback((id: string) => {
     setResizeRows((prev) => {
-      prev.delete(id);
-      return prev;
+      const newMap = new Map(prev);
+
+      newMap.delete(id);
+      return newMap;
     });
   }, []);
 

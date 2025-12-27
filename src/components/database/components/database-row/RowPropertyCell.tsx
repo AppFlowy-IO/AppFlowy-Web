@@ -6,6 +6,7 @@ import { CellProps, Cell as CellType } from '@/application/database-yjs/cell.typ
 import { YjsDatabaseKey } from '@/application/types';
 import ChecklistCell from '@/components/database/components/database-row/checklist/ChecklistCell';
 import FileMediaCell from '@/components/database/components/database-row/file-media/FileMediaCell';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { cn } from '@/lib/utils';
 
 import Cell from 'src/components/database/components/cell/Cell';
@@ -28,6 +29,7 @@ function RowPropertyCell({
   const readOnly = useReadOnly();
   const { field, clock } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const isReadOnlyCell = readOnly || isFieldEditingDisabled(fieldType);
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const fieldName = useMemo(() => field?.get(YjsDatabaseKey.name) || '', [field, clock]);
@@ -49,26 +51,27 @@ function RowPropertyCell({
   }, [isChecklist, isFileMedia]) as React.FC<CellProps<CellType>>;
 
   const placeholder = useMemo(() => {
+    if (fieldType === FieldType.Rollup) return '';
     return `${t('button.add')} ${fieldName}`;
-  }, [fieldName, t]);
+  }, [fieldName, t, fieldType]);
 
   return (
     <div
       onClick={() => {
-        if (readOnly) return;
+        if (isReadOnlyCell) return;
         setEditing(true);
       }}
       onMouseEnter={() => {
-        if (readOnly) return;
+        if (isReadOnlyCell) return;
         setHovering(true);
       }}
       onMouseLeave={() => {
-        if (readOnly) return;
+        if (isReadOnlyCell) return;
         setHovering(false);
       }}
       className={cn(
         'relative flex h-fit min-h-[36px] flex-1 flex-wrap items-center overflow-x-hidden rounded-300 px-2 py-2 pr-1 text-sm',
-        !readOnly && !isChecklist && 'cursor-pointer hover:bg-fill-content-hover'
+        !isReadOnlyCell && !isChecklist && 'cursor-pointer hover:bg-fill-content-hover'
       )}
     >
       <CellComponent
@@ -76,7 +79,7 @@ function RowPropertyCell({
         placeholder={placeholder}
         fieldId={fieldId}
         rowId={rowId}
-        readOnly={readOnly}
+        readOnly={isReadOnlyCell}
         isHovering={hovering}
         editing={editing}
         setEditing={setEditing}

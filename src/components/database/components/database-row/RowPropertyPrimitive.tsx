@@ -5,8 +5,10 @@ import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/database/ai.svg
 import RowPropertyCell from '@/components/database/components/database-row/RowPropertyCell';
 import { FieldDisplay } from '@/components/database/components/field';
 import PropertyMenu from '@/components/database/components/property/PropertyMenu';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 function RowPropertyPrimitive({
   fieldId,
@@ -24,17 +26,29 @@ function RowPropertyPrimitive({
   showPropertyName?: boolean;
 }) {
   const readOnly = useReadOnly();
+  const { t } = useTranslation();
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(fieldType);
   const fieldName = field?.get(YjsDatabaseKey.name) || '';
+  const isEditingDisabled = isFieldEditingDisabled(fieldType);
+  const fallbackFieldName =
+    fieldType === FieldType.Relation
+      ? t('grid.field.relationFieldName')
+      : t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
+  const tooltipContent =
+    isEditingDisabled && (fieldType === FieldType.Relation || fieldType === FieldType.Rollup)
+    ? t('tooltip.fieldEditingUnavailable', {
+      field: fieldName.trim() ? fieldName.trim() : fallbackFieldName,
+    })
+    : fieldName;
 
   return (
     <div className={'flex min-h-[36px] w-full items-start gap-2'}>
       <PropertyMenu
         open={isActive}
         onOpenChange={(status) => {
-          if (status && readOnly) {
+          if (status && (readOnly || isEditingDisabled)) {
             return;
           }
 
@@ -61,7 +75,7 @@ function RowPropertyPrimitive({
                 className={'flex-1 gap-1.5 truncate text-sm text-text-primary'}
               />
             </TooltipTrigger>
-            <TooltipContent side={'left'}>{fieldName}</TooltipContent>
+            <TooltipContent side={'left'}>{tooltipContent}</TooltipContent>
           </Tooltip>
           {isAIField && <AIIndicatorSvg className={'h-5 w-5 min-w-5 text-text-featured'} />}
         </div>

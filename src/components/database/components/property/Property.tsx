@@ -1,7 +1,7 @@
 import { FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useCellSelector, useFieldSelector } from '@/application/database-yjs';
+import { FieldType, useCellSelector, useFieldSelector, useReadOnly } from '@/application/database-yjs';
 import { Cell as CellType, CellProps } from '@/application/database-yjs/cell.type';
 import { YjsDatabaseKey } from '@/application/types';
 import { CheckboxCell } from '@/components/database/components/cell/checkbox';
@@ -10,6 +10,7 @@ import { DateTimeCell } from '@/components/database/components/cell/date';
 import { FileMediaCell } from '@/components/database/components/cell/file-media';
 import { NumberCell } from '@/components/database/components/cell/number';
 import { RelationCell } from '@/components/database/components/cell/relation';
+import { RollupCell } from '@/components/database/components/cell/rollup';
 import { SelectOptionCell } from '@/components/database/components/cell/select-option';
 import { TextCell } from '@/components/database/components/cell/text';
 import PropertyWrapper from '@/components/database/components/property/PropertyWrapper';
@@ -28,6 +29,9 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
 
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const readOnly = useReadOnly();
+  const isRollup = fieldType === FieldType.Rollup;
+  const isReadOnlyCell = readOnly || isRollup;
 
   const { t } = useTranslation();
   const Component = useMemo(() => {
@@ -54,6 +58,8 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
         return FileMediaCell;
       case FieldType.Person:
         return PersonCell;
+      case FieldType.Rollup:
+        return RollupCell;
       default:
         return TextProperty;
     }
@@ -79,9 +85,10 @@ export function Property ({ fieldId, rowId }: { fieldId: string; rowId: string }
       <Component
         wrap
         cell={cell}
-        placeholder={t('grid.row.textPlaceholder')}
+        placeholder={isRollup ? '' : t('grid.row.textPlaceholder')}
         fieldId={fieldId}
         rowId={rowId}
+        readOnly={isReadOnlyCell}
       />
     </PropertyWrapper>
   );

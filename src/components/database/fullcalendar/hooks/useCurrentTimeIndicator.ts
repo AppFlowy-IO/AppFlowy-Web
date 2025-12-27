@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
-import { Log } from '@/utils/log';
 import { useCalendarLayoutSetting } from '@/application/database-yjs';
+import { Log } from '@/utils/log';
 
 import { CalendarViewType } from '../types';
 

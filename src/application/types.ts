@@ -344,12 +344,18 @@ export enum YjsDatabaseKey {
   data = 'data',
   iid = 'iid',
   database_id = 'database_id',
+  relation_field_id = 'relation_field_id',
+  target_field_id = 'target_field_id',
+  calculation_type = 'calculation_type',
+  show_as = 'show_as',
+  condition_value = 'condition_value',
   field_orders = 'field_orders',
   field_settings = 'field_settings',
   visibility = 'visibility',
   wrap = 'wrap',
   width = 'width',
   filters = 'filters',
+  children = 'children',
   groups = 'groups',
   layout = 'layout',
   layout_settings = 'layout_settings',
@@ -370,6 +376,7 @@ export enum YjsDatabaseKey {
   calculation_value = 'calculation_value',
   source_field_type = 'source_field_type', // Added this
   condition = 'condition',
+  schema_version = 'schema_version',
   format = 'format',
   filter_type = 'filter_type',
   visible = 'visible',
@@ -676,6 +683,8 @@ export interface YDatabaseFilter extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.field_id): FieldId;
 
   get(key: YjsDatabaseKey.type | YjsDatabaseKey.condition | YjsDatabaseKey.content | YjsDatabaseKey.filter_type): string;
+
+  get(key: YjsDatabaseKey.children): YDatabaseFilters | YDatabaseFilter[] | undefined;
 }
 
 export interface YDatabaseCalculation extends Y.Map<unknown> {
@@ -699,6 +708,7 @@ export interface YDatabaseFieldSetting extends Y.Map<unknown> {
 
 export interface YDatabaseMetas extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.iid): string;
+  get(key: YjsDatabaseKey.schema_version): string | number;
 }
 
 export interface YDatabaseFields extends Y.Map<YDatabaseField> {
@@ -730,7 +740,13 @@ export interface YDatabaseFieldTypeOption extends Y.Map<unknown> {
 
 export interface YMapFieldTypeOption extends Y.Map<unknown> {
   // single select, Multi select, File media
-  get(key: YjsDatabaseKey.content): string;
+  get(
+    key:
+      | YjsDatabaseKey.content
+      | YjsDatabaseKey.relation_field_id
+      | YjsDatabaseKey.target_field_id
+      | YjsDatabaseKey.condition_value
+  ): string;
 
   // CreatedTime, LastEditedTime, DateTime
   // eslint-disable-next-line @typescript-eslint/unified-signatures
@@ -742,6 +758,8 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
 
   // Relation
   get(key: YjsDatabaseKey.database_id): DatabaseId;
+
+  get(key: YjsDatabaseKey.calculation_type | YjsDatabaseKey.show_as): number;
 
   // Number
   // eslint-disable-next-line @typescript-eslint/unified-signatures

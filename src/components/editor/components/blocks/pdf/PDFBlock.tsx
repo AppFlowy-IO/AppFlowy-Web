@@ -1,18 +1,19 @@
+import { CircularProgress, IconButton, Tooltip } from '@mui/material';
+import React, { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Element } from 'slate';
+import { useReadOnly, useSlateStatic } from 'slate-react';
+
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType, FieldURLType, PDFBlockData } from '@/application/types';
 import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
 import { ReactComponent as ReloadIcon } from '@/assets/icons/regenerate.svg';
 import { notify } from '@/components/_shared/notify';
-import { useEditorContext } from '@/components/editor/EditorContext';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import FileToolbar from '@/components/editor/components/blocks/file/FileToolbar';
 import { EditorElementProps, FileNode, PDFNode } from '@/components/editor/editor.type';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { FileHandler } from '@/utils/file';
-import { CircularProgress, IconButton, Tooltip } from '@mui/material';
-import React, { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'react';
-import { Element } from 'slate';
-import { useReadOnly, useSlateStatic } from 'slate-react';
 
 export const PDFBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<PDFNode>>(

@@ -542,6 +542,7 @@
     "referencePage": "This {{name}} is referenced",
     "addBlockBelow": "Add a block below",
     "aiGenerate": "Generate",
+    "fieldEditingUnavailable": "Editing {{field}} is not available yet",
     "textField": "Add text that will be used to generate the content",
     "numberField": "Accepts numbers. These can be formatted as currency, percentages, or decimals",
     "dateField": "Accepts a date or a date range(time optional). Useful for deadlines, events, and scheduling",

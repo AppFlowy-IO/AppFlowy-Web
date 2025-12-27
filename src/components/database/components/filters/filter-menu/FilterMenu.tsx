@@ -21,6 +21,8 @@ export function FilterMenu({ filter }: { filter: Filter }) {
     switch (fieldType) {
       case FieldType.RichText:
       case FieldType.URL:
+      case FieldType.Relation:
+      case FieldType.Rollup:
         return <TextFilterMenu filter={filter} />;
       case FieldType.Checkbox:
         return <CheckboxFilterMenu filter={filter} />;

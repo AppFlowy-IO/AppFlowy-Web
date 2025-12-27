@@ -1,7 +1,7 @@
+import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { closeCollabDB, db, openCollabDB } from '@/application/db';
 import { Fetcher, StrategyType } from '@/application/services/js-services/cache/types';
-import { Log } from '@/utils/log';
 import {
   DatabaseId,
   PublishViewMetaData,
@@ -15,6 +15,7 @@ import {
   YSharedRoot,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
+import { Log } from '@/utils/log';
 
 export function collabTypeToDBType(type: Types) {
   switch (type) {
@@ -194,6 +195,7 @@ export async function getPublishView<
   const doc = await openCollabDB(name);
 
   const exist = (await hasViewMetaCache(name)) && hasCollabCache(doc);
+  let didRevalidate = false;
 
   switch (strategy) {
     case StrategyType.CACHE_ONLY: {
@@ -207,6 +209,7 @@ export async function getPublishView<
     case StrategyType.CACHE_FIRST: {
       if (!exist) {
         await revalidatePublishView(name, fetcher, doc);
+        didRevalidate = true;
       }
 
       break;
@@ -215,6 +218,7 @@ export async function getPublishView<
     case StrategyType.CACHE_AND_NETWORK: {
       if (!exist) {
         await revalidatePublishView(name, fetcher, doc);
+        didRevalidate = true;
       } else {
         void revalidatePublishView(name, fetcher, doc);
       }
@@ -224,8 +228,16 @@ export async function getPublishView<
 
     default: {
       await revalidatePublishView(name, fetcher, doc);
+      didRevalidate = true;
       break;
     }
+  }
+
+  if (!didRevalidate && exist) {
+    await migrateDatabaseFieldTypes(doc, {
+      loadRowDoc: createRowDoc,
+      commitVersion: strategy !== StrategyType.CACHE_AND_NETWORK,
+    });
   }
 
   return { doc };
@@ -240,19 +252,17 @@ export async function getPageDoc<
   const doc = await openCollabDB(name);
 
   const exist = hasCollabCache(doc);
+  let didRevalidate = false;
 
   switch (strategy) {
     case StrategyType.CACHE_ONLY: {
-      if (!exist) {
-        console.warn('No cache found for doc', name);
-      }
-
       break;
     }
 
     case StrategyType.CACHE_FIRST: {
       if (!exist) {
         await revalidateView(fetcher, doc);
+        didRevalidate = true;
       }
 
       break;
@@ -261,6 +271,7 @@ export async function getPageDoc<
     case StrategyType.CACHE_AND_NETWORK: {
       if (!exist) {
         await revalidateView(fetcher, doc);
+        didRevalidate = true;
       } else {
         void revalidateView(fetcher, doc);
       }
@@ -270,8 +281,16 @@ export async function getPageDoc<
 
     default: {
       await revalidateView(fetcher, doc);
+      didRevalidate = true;
       break;
     }
+  }
+
+  if (!didRevalidate && exist) {
+    await migrateDatabaseFieldTypes(doc, {
+      loadRowDoc: createRowDoc,
+      commitVersion: strategy !== StrategyType.CACHE_AND_NETWORK,
+    });
   }
 
   return { doc };
@@ -312,6 +331,11 @@ export async function revalidateView<
     }
 
     applyYDoc(collab, data);
+
+    await migrateDatabaseFieldTypes(collab, {
+      loadRowDoc: createRowDoc,
+      rowIds: rows ? Object.keys(rows) : undefined,
+    });
   } catch (e) {
     return Promise.reject(e);
   }
@@ -380,6 +404,11 @@ export async function revalidatePublishView<
   }
 
   applyYDoc(collab, data);
+
+  await migrateDatabaseFieldTypes(collab, {
+    loadRowDoc: createRowDoc,
+    rowIds: rows ? Object.keys(rows) : undefined,
+  });
 }
 
 export async function deleteViewMeta(name: string) {

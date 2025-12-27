@@ -2,12 +2,12 @@ import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ViewLayout } from '@/application/types';
+import { NormalModal } from '@/components/_shared/modal';
 import { useAppView } from '@/components/app/app.hooks';
-import ShareTabs from '@/components/app/share/ShareTabs';
 import { PublishManage } from '@/components/app/publish-manage';
+import ShareTabs from '@/components/app/share/ShareTabs';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { NormalModal } from '@/components/_shared/modal';
 
 export function ShareButton({ viewId }: { viewId: string }) {
   const { t } = useTranslation();

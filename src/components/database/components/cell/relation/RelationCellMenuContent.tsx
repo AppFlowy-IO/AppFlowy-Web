@@ -193,13 +193,17 @@ function RelationCellMenuContent({
       return (
         <div
           onClick={() => {
-            void navigateToRow?.(id, selectedViewId);
+            // Close the popover first, then navigate after state settles
             onClose?.();
+            setTimeout(() => {
+              void navigateToRow?.(id, selectedViewId);
+            }, 0);
           }}
           className={cn(
             dropdownMenuItemVariants({
               variant: 'default',
             }),
+            'group flex items-center justify-between gap-2',
             selectedId === id && 'bg-fill-content-hover',
             'hover:bg-fill-content-hover'
           )}
@@ -221,7 +225,11 @@ function RelationCellMenuContent({
                 }}
                 variant={'ghost'}
                 size={'icon'}
-                className={selectedId === id ? 'visible' : 'invisible'}
+                className={cn(
+                  'shrink-0 opacity-0 transition-opacity',
+                  (selectedId === id) && 'opacity-100',
+                  'group-hover:opacity-100'
+                )}
               >
                 {isRelated ? <MinusIcon /> : <PlusIcon />}
               </Button>

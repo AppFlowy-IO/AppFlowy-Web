@@ -1,9 +1,9 @@
 import dayjs from 'dayjs';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 
-import { Log } from '@/utils/log';
 import { CalendarEvent, useDatabaseContext } from '@/application/database-yjs';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
+import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
 
 import { CalendarContent } from './CalendarContent';

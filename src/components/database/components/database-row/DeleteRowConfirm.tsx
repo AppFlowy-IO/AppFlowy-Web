@@ -1,6 +1,5 @@
 import { useTranslation } from 'react-i18next';
 
-import { Log } from '@/utils/log';
 import { useDatabaseViewLayout } from '@/application/database-yjs';
 import { useBulkDeleteRowDispatch } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
@@ -14,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { Log } from '@/utils/log';
 
 export function DeleteRowConfirm({
   open,

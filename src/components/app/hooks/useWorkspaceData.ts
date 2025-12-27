@@ -32,6 +32,7 @@ export function useWorkspaceData() {
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
+  const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
@@ -212,8 +213,13 @@ export function useWorkspaceData() {
     [service]
   );
 
-  // Load database relations
-  const loadDatabaseRelations = useCallback(async () => {
+  // Get cached database relations (synchronous, returns immediately)
+  const getCachedDatabaseRelations = useCallback(() => {
+    return workspaceDatabasesRef.current;
+  }, []);
+
+  // Internal helper to fetch and update database relations
+  const fetchAndUpdateDatabaseRelations = useCallback(async (silent = false) => {
     if (!currentWorkspaceId || !service) {
       return;
     }
@@ -223,14 +229,36 @@ export function useWorkspaceData() {
     if (!selectedWorkspace) return;
 
     try {
-      const res = await service?.getAppDatabaseViewRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
+      const res = await service.getAppDatabaseViewRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
 
-      setWorkspaceDatabases(res);
+      if (res) {
+        workspaceDatabasesRef.current = res;
+        setWorkspaceDatabases(res);
+      }
+
       return res;
     } catch (e) {
-      console.error(e);
+      if (!silent) {
+        console.error(e);
+      }
     }
   }, [currentWorkspaceId, service, userWorkspaceInfo?.selectedWorkspace]);
+
+  // Load database relations (returns cached if available, fetches otherwise)
+  const loadDatabaseRelations = useCallback(async () => {
+    // Return cached data if already loaded to avoid unnecessary re-renders
+    if (workspaceDatabasesRef.current) {
+      return workspaceDatabasesRef.current;
+    }
+
+    return fetchAndUpdateDatabaseRelations(false);
+  }, [fetchAndUpdateDatabaseRelations]);
+
+  // Refresh database relations in background (doesn't block, updates cache)
+  const refreshDatabaseRelationsInBackground = useCallback(() => {
+    // Fire and forget - update cache when done
+    void fetchAndUpdateDatabaseRelations(true);
+  }, [fetchAndUpdateDatabaseRelations]);
 
   const enhancedLoadDatabaseRelations = useMemo(() => {
     return createDeduplicatedNoArgsRequest(loadDatabaseRelations);
@@ -313,6 +341,10 @@ export function useWorkspaceData() {
   useEffect(() => {
     if (!currentWorkspaceId) return;
     setOutline([]);
+    // Clear database relations cache when switching workspaces to prevent
+    // cross-workspace data contamination
+    workspaceDatabasesRef.current = undefined;
+    setWorkspaceDatabases(undefined);
     void loadOutline(currentWorkspaceId, true);
     void (async () => {
       try {
@@ -342,6 +374,8 @@ export function useWorkspaceData() {
     loadRecentViews,
     loadTrash,
     loadDatabaseRelations: enhancedLoadDatabaseRelations,
+    getCachedDatabaseRelations,
+    refreshDatabaseRelationsInBackground,
     loadViews,
     getMentionUser,
     loadMentionableUsers,

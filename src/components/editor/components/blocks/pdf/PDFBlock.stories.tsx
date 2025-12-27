@@ -1,11 +1,16 @@
-import type { Meta, StoryObj } from '@storybook/react';
 import React from 'react';
-import { Slate } from 'slate-react';
 import { createEditor } from 'slate';
-import { withContainer } from '../../../../../../.storybook/decorators';
-import { PDFBlock } from './PDFBlock';
-import { EditorContext } from '@/components/editor/EditorContext';
+import { Slate } from 'slate-react';
+
 import { BlockPopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
+import { EditorContext } from '@/components/editor/EditorContext';
+
+import { withContainer } from '../../../../../../.storybook/decorators';
+
+import { PDFBlock } from './PDFBlock';
+
+
+import type { Meta, StoryObj } from '@storybook/react';
 import '../../../editor.scss';
 
 const mockEditorContext = {

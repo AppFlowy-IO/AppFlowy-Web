@@ -1,5 +1,6 @@
-import { AIMeetingNode, EditorElementProps } from '@/components/editor/editor.type';
 import { forwardRef, memo } from 'react';
+
+import { AIMeetingNode, EditorElementProps } from '@/components/editor/editor.type';
 
 export const AIMeetingBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<AIMeetingNode>>(

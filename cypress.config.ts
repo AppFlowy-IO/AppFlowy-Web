@@ -13,6 +13,7 @@ export default defineConfig({
     APPFLOWY_BASE_URL: process.env.APPFLOWY_BASE_URL || 'http://localhost',
     APPFLOWY_GOTRUE_BASE_URL: process.env.APPFLOWY_GOTRUE_BASE_URL || 'http://localhost/gotrue',
     APPFLOWY_WS_BASE_URL: process.env.APPFLOWY_WS_BASE_URL || 'ws://localhost/ws/v2',
+    APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: process.env.APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT || 'false',
     GOTRUE_ADMIN_EMAIL: process.env.GOTRUE_ADMIN_EMAIL || 'admin@example.com',
     GOTRUE_ADMIN_PASSWORD: process.env.GOTRUE_ADMIN_PASSWORD || 'password',
   },
@@ -64,6 +65,8 @@ export default defineConfig({
       config.env.APPFLOWY_BASE_URL = process.env.APPFLOWY_BASE_URL || config.env.APPFLOWY_BASE_URL;
       config.env.APPFLOWY_GOTRUE_BASE_URL = process.env.APPFLOWY_GOTRUE_BASE_URL || config.env.APPFLOWY_GOTRUE_BASE_URL;
       config.env.APPFLOWY_WS_BASE_URL = process.env.APPFLOWY_WS_BASE_URL || config.env.APPFLOWY_WS_BASE_URL;
+      config.env.APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT =
+        process.env.APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT || config.env.APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT;
       config.env.GOTRUE_ADMIN_EMAIL = process.env.GOTRUE_ADMIN_EMAIL || config.env.GOTRUE_ADMIN_EMAIL;
       config.env.GOTRUE_ADMIN_PASSWORD = process.env.GOTRUE_ADMIN_PASSWORD || config.env.GOTRUE_ADMIN_PASSWORD;
 

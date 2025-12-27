@@ -8,6 +8,7 @@ import { Cell } from '@/components/database/components/cell';
 import { PrimaryCell } from '@/components/database/components/cell/primary';
 import { useGridRowContext } from '@/components/database/components/grid/grid-row/GridRowContext';
 import { useGridContext } from '@/components/database/grid/useGridContext';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { cn } from '@/lib/utils';
 
 export interface GridCellProps {
@@ -23,6 +24,8 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
   const fieldType = Number(field?.get(YjsDatabaseKey.type));
   const readOnly = useReadOnly();
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
+  const disableRelationRollupEdit = isFieldEditingDisabled(fieldType as FieldType);
+  const isReadOnlyCell = readOnly || disableRelationRollupEdit;
   const cell = useCellSelector({
     rowId,
     fieldId,
@@ -71,10 +74,10 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
 
   const isActive = activeCell?.rowId === rowId && activeCell?.fieldId === fieldId;
 
-
   const setEditing = useCallback(
     (status: boolean) => {
       if (status) {
+        if (disableRelationRollupEdit) return;
         setActiveCell({
           rowId,
           fieldId,
@@ -83,7 +86,7 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
         setActiveCell(undefined);
       }
     },
-    [fieldId, rowId, setActiveCell]
+    [disableRelationRollupEdit, fieldId, rowId, setActiveCell]
   );
 
   const paddingVertical = useMemo(() => {
@@ -119,13 +122,13 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
     <div
       ref={ref}
       data-testid={`grid-cell-${rowId}-${fieldId}`}
-      className={cn('grid-cell flex w-full items-start overflow-hidden px-2 text-sm', paddingVertical)}
+      className={cn('grid-cell flex h-full w-full items-start overflow-hidden px-2 text-sm', paddingVertical)}
     >
       <Component
         cell={cell}
         rowId={rowId}
         fieldId={fieldId}
-        readOnly={readOnly}
+        readOnly={isReadOnlyCell}
         editing={isActive}
         setEditing={setEditing}
         isHovering={hovered}

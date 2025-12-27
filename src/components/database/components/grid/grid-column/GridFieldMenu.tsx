@@ -1,7 +1,7 @@
 import React, { useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFieldSelector, useFieldWrap } from '@/application/database-yjs';
+import { FieldType, useFieldSelector, useFieldWrap } from '@/application/database-yjs';
 import {
   useAddPropertyLeftDispatch,
   useAddPropertyRightDispatch,
@@ -21,6 +21,7 @@ import ClearCellsConfirm from '@/components/database/components/property/ClearCe
 import DeletePropertyConfirm from '@/components/database/components/property/DeletePropertyConfirm';
 import PropertyMenu from '@/components/database/components/property/PropertyMenu';
 import PropertyProfile from '@/components/database/components/property/PropertyProfile';
+import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { useGridContext } from '@/components/database/grid/useGridContext';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,6 +34,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
+
+type FieldOperation = {
+  label: string;
+  icon: React.ReactNode;
+  onSelect: () => void;
+  disabled?: boolean;
+  variant?: 'destructive';
+};
 
 function GridFieldMenu({
   fieldId,
@@ -47,6 +56,8 @@ function GridFieldMenu({
 }) {
   const { field } = useFieldSelector(fieldId);
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
+  const type = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
+  const isEditingDisabled = isFieldEditingDisabled(type);
   const wrap = useFieldWrap(fieldId);
   const onToggleWrap = useTogglePropertyWrapDispatch();
   const onAddPropertyLeft = useAddPropertyLeftDispatch();
@@ -61,16 +72,21 @@ function GridFieldMenu({
 
   const { t } = useTranslation();
 
-  const operations = useMemo(
-    () => [
-      {
+  const operations = useMemo<FieldOperation[]>(() => {
+    const items: FieldOperation[] = [];
+
+    if (!isEditingDisabled) {
+      items.push({
         label: t('grid.field.editProperty'),
         icon: <EditIcon />,
         onSelect: () => {
           setActivePropertyId(fieldId);
           setMenuOpen(false);
         },
-      },
+      });
+    }
+
+    items.push(
       {
         label: t('grid.field.insertLeft'),
         icon: <LeftIcon />,
@@ -119,20 +135,22 @@ function GridFieldMenu({
         onSelect: () => {
           setDeleteConfirmOpen(true);
         },
-      },
-    ],
-    [
-      t,
-      isPrimary,
-      setActivePropertyId,
-      fieldId,
-      setMenuOpen,
-      onAddPropertyLeft,
-      onAddPropertyRight,
-      onHideProperty,
-      onDuplicateProperty,
-    ]
-  );
+      }
+    );
+
+    return items;
+  }, [
+    t,
+    isPrimary,
+    setActivePropertyId,
+    fieldId,
+    setMenuOpen,
+    onAddPropertyLeft,
+    onAddPropertyRight,
+    onHideProperty,
+    onDuplicateProperty,
+    isEditingDisabled,
+  ]);
 
   const secondItemRef = useRef<HTMLDivElement | null>(null);
 
@@ -144,16 +162,18 @@ function GridFieldMenu({
           <Button tabIndex={-1} className={'pointer-events-none absolute left-0 right-0 top-0 z-[-1] opacity-0'} />
         </DropdownMenuTrigger>
         <DropdownMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
-          <PropertyProfile
-            className={'mb-2'}
-            fieldId={fieldId}
-            onNext={() => {
-              secondItemRef.current?.focus();
-            }}
-            onEnter={() => {
-              setMenuOpen(false);
-            }}
-          />
+          {!isEditingDisabled && (
+            <PropertyProfile
+              className={'mb-2'}
+              fieldId={fieldId}
+              onNext={() => {
+                secondItemRef.current?.focus();
+              }}
+              onEnter={() => {
+                setMenuOpen(false);
+              }}
+            />
+          )}
           <DropdownMenuGroup>
             {operations.map((operation, index) => (
               <DropdownMenuItem
@@ -165,7 +185,7 @@ function GridFieldMenu({
                 disabled={operation.disabled}
                 onSelect={operation.onSelect}
                 key={operation.label}
-                variant={operation.variant as 'destructive' | undefined}
+                variant={operation.variant}
               >
                 {operation.icon}
                 {operation.label}

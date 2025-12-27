@@ -1,5 +1,6 @@
-import { DocumentTest, FromBlockJSON } from 'cypress/support/document';
 import { Editor, Element as SlateElement, Transforms } from 'slate';
+
+import { DocumentTest, FromBlockJSON } from 'cypress/support/document';
 
 import type { YHistoryEditor } from '@/application/slate-yjs/plugins/withHistory';
 import { mountEditor } from '@/components/editor/__tests__/mount';

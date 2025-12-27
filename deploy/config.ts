@@ -1,5 +1,5 @@
-import path from 'path';
 import fs from 'fs';
+import path from 'path';
 
 // In production, dist is copied to deploy/dist. In dev, it's at project root.
 const prodDistDir = path.join(__dirname, 'dist');

@@ -103,6 +103,13 @@ export interface RelationCell extends Cell {
 
 export type RelationCellData = RowId[];
 
+export interface RollupCell extends Cell {
+  fieldType: FieldType.Rollup;
+  data: string;
+  rawNumeric?: number;
+  list?: string[];
+}
+
 export interface PersonCell extends Cell {
   fieldType: FieldType.Person;
   data: string;

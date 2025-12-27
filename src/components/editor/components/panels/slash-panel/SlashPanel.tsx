@@ -5,7 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
-import { Log } from '@/utils/log';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
@@ -68,6 +67,7 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import { Button as OutlineButton } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Log } from '@/utils/log';
 import { getCharacters } from '@/utils/word';
 
 type DatabaseOption = {

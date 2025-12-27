@@ -1,8 +1,9 @@
-import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { withContextsMinimal } from '../../../../.storybook/decorators';
 
 import { ErrorPage } from './ErrorPage';
+
+import type { Meta, StoryObj } from '@storybook/react-vite';
 
 const meta = {
   title: 'Landing Pages/ErrorPage',

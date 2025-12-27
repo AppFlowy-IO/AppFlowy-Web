@@ -3,8 +3,8 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 import { Types } from '@/application/types';
-import { Log } from '@/utils/log';
 import { collab, messages } from '@/proto/messages';
+import { Log } from '@/utils/log';
 
 /**
  * SyncContext is the context object passed to the sync protocol handlers.

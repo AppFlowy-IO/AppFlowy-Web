@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 
-import { Log } from '@/utils/log';
 import { getScrollParent } from '@/components/global-comment/utils';
+import { Log } from '@/utils/log';
 
 import { CalendarViewType } from '../types';
 

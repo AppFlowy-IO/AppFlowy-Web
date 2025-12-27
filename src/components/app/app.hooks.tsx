@@ -1,8 +1,8 @@
 import EventEmitter from 'events';
 
 import React, { createContext, useContext, useMemo } from 'react';
-import { Awareness } from 'y-protocols/awareness';
 import { useSearchParams } from 'react-router-dom';
+import { Awareness } from 'y-protocols/awareness';
 
 import {
   AppendBreadcrumb,
@@ -31,11 +31,11 @@ import {
 } from '@/application/types';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
-
 import {
   DATABASE_TAB_VIEW_ID_QUERY_PARAM,
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+
 import { AuthInternalContext } from './contexts/AuthInternalContext';
 import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';

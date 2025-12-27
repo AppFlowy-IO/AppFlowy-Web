@@ -15,8 +15,8 @@ import { ReactComponent as URLSvg } from '@/assets/icons/database/url.svg';
 import { ReactComponent as DateSvg } from '@/assets/icons/date.svg';
 import { ReactComponent as LastEditedTimeSvg } from '@/assets/icons/last_modified.svg';
 import { ReactComponent as RelationSvg } from '@/assets/icons/relation.svg';
-import { ReactComponent as PersonSvg } from '@/assets/icons/user.svg';
 import { ReactComponent as TimeSvg } from '@/assets/icons/time.svg'; // Import TimeSvg
+import { ReactComponent as PersonSvg } from '@/assets/icons/user.svg';
 
 export const FieldTypeSvgMap: Record<FieldType, FC<React.SVGProps<SVGSVGElement>>> = {
   [FieldType.RichText]: TextSvg,
@@ -34,7 +34,8 @@ export const FieldTypeSvgMap: Record<FieldType, FC<React.SVGProps<SVGSVGElement>
   [FieldType.AITranslations]: AITranslationsSvg,
   [FieldType.FileMedia]: FileMediaSvg,
   [FieldType.Person]: PersonSvg,
-  [FieldType.Time]: TimeSvg, // Add TimeSvg
+  [FieldType.Time]: TimeSvg,
+  [FieldType.Rollup]: RelationSvg,
 };
 
 export const FieldTypeIcon: FC<{ type: FieldType; className?: string }> = memo(({ type, ...props }) => {

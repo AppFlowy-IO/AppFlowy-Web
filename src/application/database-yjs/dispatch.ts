@@ -1,10 +1,10 @@
 import dayjs from 'dayjs';
-import { countBy } from 'lodash-es';
 import { nanoid } from 'nanoid';
 import { useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
+import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import {
   useCreateRow,
   useDatabase,
@@ -27,11 +27,13 @@ import {
   FieldVisibility,
   FilterType,
   RowMetaKey,
+  RollupDisplayMode,
   SortCondition,
 } from '@/application/database-yjs/database.type';
 import { getFieldName, NumberFormat, parseSelectOptionTypeOptions, SelectOption, SelectOptionColor, SelectTypeOption } from '@/application/database-yjs/fields';
-import { createCheckboxCell, getChecked } from '@/application/database-yjs/fields/checkbox/utils';
-import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
+import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
+import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
+import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField, createTextField } from '@/application/database-yjs/fields/text/utils';
 import { dateFilterFillData, filterFillData, getDefaultFilterCondition } from '@/application/database-yjs/filter';
@@ -749,109 +751,17 @@ export function useCalculateFieldDispatch(fieldId: string) {
 
       const cellValues = Array.from(cells.values());
 
-      const countEmptyResult = countBy(cellValues, (data) => {
-        if (fieldType === FieldType.Checkbox) {
-          if (getChecked(data as string)) {
-            return CalculationType.CountNonEmpty;
-          }
-
-          return CalculationType.CountEmpty;
-        }
-
-        if (fieldType === FieldType.Checklist && typeof data === 'string') {
-          try {
-            const { options, selected_option_ids } = JSON.parse(data);
-            const percentage = selected_option_ids.length / options.length;
-
-            if (percentage === 1) {
-              return CalculationType.CountNonEmpty;
-            }
-
-            return CalculationType.CountEmpty;
-          } catch (e) {
-            // do nothing, return empty
-          }
-        }
-
-        if (!data) {
-          return CalculationType.CountEmpty;
-        } else {
-          return CalculationType.CountNonEmpty;
-        }
-      });
-
-      const itemMap = (data: unknown) => {
-        if (typeof data === 'number') {
-          return data.toString();
-        }
-
-        if (typeof data === 'string') {
-          return EnhancedBigStats.parse(data);
-        }
-
-        return null;
-      };
-
-      const nums = cellValues.map(itemMap).filter((item) => !!item) as string[];
-      const stats = new EnhancedBigStats(nums);
-
-      const getSum = () => {
-        return stats.sum().toString();
-      };
-
-      const getAverage = () => {
-        return stats.average().toString();
-      };
-
-      const getMedian = () => {
-        return stats.median().toString();
-      };
-
-      const getMin = () => {
-        return stats.min().toString();
-      };
-
-      const getMax = () => {
-        return stats.max().toString();
-      };
-
       const item = calculations.get(index);
       const type = Number(item.get(YjsDatabaseKey.type)) as CalculationType;
       const oldValue = item.get(YjsDatabaseKey.calculation_value) as string | number;
 
-      let newValue = oldValue;
+      const newValue = calculateFieldValue({
+        fieldType,
+        calculationType: type,
+        cellValues,
+      });
 
-      switch (type) {
-        case CalculationType.CountEmpty:
-          newValue = countEmptyResult[CalculationType.CountEmpty];
-          break;
-        case CalculationType.CountNonEmpty:
-          newValue = countEmptyResult[CalculationType.CountNonEmpty];
-          break;
-        case CalculationType.Count:
-          newValue = cellValues.length;
-
-          break;
-        case CalculationType.Sum:
-          newValue = getSum();
-          break;
-        case CalculationType.Average:
-          newValue = getAverage();
-          break;
-        case CalculationType.Median:
-          newValue = getMedian();
-          break;
-        case CalculationType.Max:
-          newValue = getMax();
-          break;
-        case CalculationType.Min:
-          newValue = getMin();
-          break;
-        default:
-          break;
-      }
-
-      if (newValue !== oldValue) {
+      if (newValue !== null && newValue !== oldValue) {
         executeOperations(
           sharedRoot,
           [
@@ -969,6 +879,10 @@ function createField(type: FieldType, fieldId: string) {
       return createTextField(fieldId);
     case FieldType.DateTime:
       return createDateTimeField(fieldId);
+    case FieldType.Relation:
+      return createRelationField(fieldId);
+    case FieldType.Rollup:
+      return createRollupField(fieldId);
     default:
       throw new Error(`Field type ${type} not supported`);
   }
@@ -2530,6 +2444,7 @@ export function useSwitchPropertyType() {
                 FieldType.CreatedTime,
                 FieldType.LastEditedTime,
                 FieldType.FileMedia,
+                FieldType.Rollup,
               ].includes(fieldType)
             ) {
               // Ensure the type option map is created
@@ -2622,6 +2537,12 @@ export function useSwitchPropertyType() {
                   });
 
                   newTypeOption.set(YjsDatabaseKey.content, content);
+                } else if (fieldType === FieldType.Rollup) {
+                  newTypeOption.set(YjsDatabaseKey.relation_field_id, '');
+                  newTypeOption.set(YjsDatabaseKey.target_field_id, '');
+                  newTypeOption.set(YjsDatabaseKey.calculation_type, CalculationType.Count);
+                  newTypeOption.set(YjsDatabaseKey.show_as, RollupDisplayMode.Calculated);
+                  newTypeOption.set(YjsDatabaseKey.condition_value, '');
                 }
 
                 typeOptionMap.set(String(fieldType), newTypeOption);
@@ -3266,6 +3187,72 @@ export function useUpdateRelationDatabaseId(fieldId: string) {
       }
     },
     [database, fieldId, sharedRoot, clearCells]
+  );
+}
+
+export function useUpdateRollupTypeOption(fieldId: string) {
+  const database = useDatabase();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (updates: {
+      relation_field_id?: string;
+      target_field_id?: string;
+      calculation_type?: CalculationType;
+      show_as?: RollupDisplayMode;
+      condition_value?: string;
+    }) => {
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+
+            if (!field) {
+              throw new Error(`Field not found`);
+            }
+
+            let typeOptionMap = field?.get(YjsDatabaseKey.type_option);
+
+            if (!typeOptionMap) {
+              typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+              field.set(YjsDatabaseKey.type_option, typeOptionMap);
+            }
+
+            let typeOption = typeOptionMap.get(String(FieldType.Rollup));
+
+            if (!typeOption) {
+              typeOption = new Y.Map() as YMapFieldTypeOption;
+              typeOptionMap.set(String(FieldType.Rollup), typeOption);
+            }
+
+            if (updates.relation_field_id !== undefined) {
+              typeOption.set(YjsDatabaseKey.relation_field_id, updates.relation_field_id);
+            }
+
+            if (updates.target_field_id !== undefined) {
+              typeOption.set(YjsDatabaseKey.target_field_id, updates.target_field_id);
+            }
+
+            if (updates.calculation_type !== undefined) {
+              typeOption.set(YjsDatabaseKey.calculation_type, updates.calculation_type);
+            }
+
+            if (updates.show_as !== undefined) {
+              typeOption.set(YjsDatabaseKey.show_as, updates.show_as);
+            }
+
+            if (updates.condition_value !== undefined) {
+              typeOption.set(YjsDatabaseKey.condition_value, updates.condition_value);
+            }
+
+            field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+          },
+        ],
+        'updateRollupTypeOption'
+      );
+    },
+    [database, fieldId, sharedRoot]
   );
 }
 

@@ -2,12 +2,12 @@ import { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'reac
 import { Element, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
-import { Log } from '@/utils/log';
 import { DatabaseContextState } from '@/application/database-yjs';
 import { YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
 import { DatabaseNode, EditorElementProps } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { Log } from '@/utils/log';
 
 import { DatabaseContent } from './components/DatabaseContent';
 import { useDocumentLoader } from './hooks/useDocumentLoader';

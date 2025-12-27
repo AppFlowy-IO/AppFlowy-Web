@@ -1,6 +1,5 @@
 import { forwardRef, useCallback, useMemo, useState } from 'react';
 
-import { Log } from '@/utils/log';
 import {
   FieldVisibility,
   RowMeta,
@@ -16,6 +15,7 @@ import CardToolbar from '@/components/database/components/board/card/CardToolbar
 import CardField from '@/components/database/components/field/CardField';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
+import { Log } from '@/utils/log';
 
 export interface CardProps {
   groupFieldId: string;

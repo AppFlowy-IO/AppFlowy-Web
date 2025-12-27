@@ -2,7 +2,6 @@ import { filter } from 'lodash-es';
 import { Op } from 'quill-delta';
 import { Element as SlateElement, Node as SlateNode, Text as SlateText } from 'slate';
 
-import { Log } from '@/utils/log';
 import { TEXT_BLOCK_TYPES } from '@/application/slate-yjs/command/const';
 import { yDocToSlateContent } from '@/application/slate-yjs/utils/convert';
 import {
@@ -28,6 +27,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { Log } from '@/utils/log';
 
 export function deserialize(body: HTMLElement, sharedRoot: YSharedRoot) {
   const pageId = getPageId(sharedRoot);

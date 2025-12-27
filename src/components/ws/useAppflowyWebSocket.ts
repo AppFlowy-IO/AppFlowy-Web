@@ -4,8 +4,8 @@ import useWebSocket from 'react-use-websocket';
 
 import { getTokenParsed } from '@/application/session/token';
 import { messages } from '@/proto/messages';
-import { getConfigValue } from '@/utils/runtime-config';
 import { Log } from '@/utils/log';
+import { getConfigValue } from '@/utils/runtime-config';
 
 const wsURL = getConfigValue('APPFLOWY_WS_BASE_URL', 'ws://localhost:8000/ws/v2');
 

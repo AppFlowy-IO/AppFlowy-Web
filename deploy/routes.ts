@@ -1,11 +1,13 @@
-import { defaultSite, distDir } from './config';
+import fs from 'fs';
+import path from 'path';
+
 import { fetchPublishMetadata } from './api';
+import { defaultSite, distDir } from './config';
 import { renderMarketingPage, renderPublishPage } from './html';
 import { logger } from './logger';
 import { type PublishErrorPayload } from './publish-error';
 import { type RequestContext } from './server';
-import path from 'path';
-import fs from 'fs';
+
 
 type RouteHandler = (context: RequestContext) => Promise<Response | undefined>;
 

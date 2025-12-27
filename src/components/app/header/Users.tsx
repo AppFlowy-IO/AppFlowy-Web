@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Log } from '@/utils/log';
 import { useUsersSelector } from '@/application/awareness/selector';
 import { useAppAwareness } from '@/components/app/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Log } from '@/utils/log';
 
 const isImageSource = (value?: string) => {
   if (!value) return false;

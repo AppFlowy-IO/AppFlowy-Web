@@ -1,6 +1,5 @@
 import React, { useRef } from 'react';
 
-import { Log } from '@/utils/log';
 import { useFieldSelector } from '@/application/database-yjs';
 import { useUpdatePropertyIconDispatch, useUpdatePropertyNameDispatch } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
@@ -9,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+import { Log } from '@/utils/log';
 
 import CustomIconPopover from 'src/components/_shared/cutsom-icon/CustomIconPopover';
 

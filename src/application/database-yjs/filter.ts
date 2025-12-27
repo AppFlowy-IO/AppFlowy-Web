@@ -3,7 +3,7 @@ import { every, filter, some } from 'lodash-es';
 
 import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
-import { FieldType } from '@/application/database-yjs/database.type';
+import { FieldType, FilterType } from '@/application/database-yjs/database.type';
 import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
   CheckboxFilter,
@@ -17,6 +17,7 @@ import {
   parseChecklistFlexible,
   parseSelectOptionTypeOptions,
   PersonFilterCondition,
+  RelationFilterCondition,
   SelectOptionFilter,
   SelectOptionFilterCondition,
   TextFilter,
@@ -56,6 +57,8 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
   switch (fieldType) {
     case FieldType.URL:
     case FieldType.RichText:
+    case FieldType.Relation:
+    case FieldType.Rollup:
       return value as TextFilter;
     case FieldType.Number:
       return value as NumberFilter;
@@ -111,6 +114,113 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
   return value;
 }
 
+function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
+  const children = filter.get(YjsDatabaseKey.children);
+
+  if (!children) return [];
+  if (Array.isArray(children)) return children;
+  if (typeof (children as { toArray?: () => YDatabaseFilter[] }).toArray === 'function') {
+    return (children as { toArray: () => YDatabaseFilter[] }).toArray();
+  }
+
+  return [];
+}
+
+function parseRelationFilterIds(content: string): string[] | null {
+  const trimmed = content.trim();
+
+  if (!trimmed) return null;
+
+  try {
+    const parsed = JSON.parse(trimmed);
+
+    if (Array.isArray(parsed)) {
+      return parsed.map((id) => String(id)).filter(Boolean);
+    }
+  } catch (e) {
+    return null;
+  }
+
+  return null;
+}
+
+function getRelationRowIds(cellData: unknown): string[] {
+  if (!cellData) return [];
+
+  if (typeof cellData === 'object' && 'toJSON' in cellData) {
+    const json = (cellData as { toJSON: () => unknown }).toJSON();
+
+    if (Array.isArray(json)) {
+      return json.map((id) => String(id)).filter(Boolean);
+    }
+  }
+
+  if (Array.isArray(cellData)) {
+    return cellData.map((id) => String(id)).filter(Boolean);
+  }
+
+  if (typeof cellData === 'string') {
+    try {
+      const parsed = JSON.parse(cellData);
+
+      if (Array.isArray(parsed)) {
+        return parsed.map((id) => String(id)).filter(Boolean);
+      }
+    } catch (e) {
+      return cellData
+        .split(',')
+        .map((id) => id.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return [];
+}
+
+function normalizeRelationCondition(condition: number): RelationFilterCondition | null {
+  switch (condition) {
+    case RelationFilterCondition.RelationIsEmpty:
+    case RelationFilterCondition.RelationIsNotEmpty:
+    case RelationFilterCondition.RelationContains:
+    case RelationFilterCondition.RelationDoesNotContain:
+      return condition;
+    case RelationFilterCondition.RelationLegacyTextIsEmpty:
+      return RelationFilterCondition.RelationIsEmpty;
+    case RelationFilterCondition.RelationLegacyTextIsNotEmpty:
+      return RelationFilterCondition.RelationIsNotEmpty;
+    default:
+      return null;
+  }
+}
+
+export function relationFilterCheck(cellData: unknown, filterRowIds: string[], condition: number) {
+  const normalized = normalizeRelationCondition(condition);
+
+  if (normalized === null) return true;
+
+  const cellRowIds = getRelationRowIds(cellData);
+
+  switch (normalized) {
+    case RelationFilterCondition.RelationIsEmpty:
+      return cellRowIds.length === 0;
+    case RelationFilterCondition.RelationIsNotEmpty:
+      return cellRowIds.length > 0;
+    case RelationFilterCondition.RelationContains:
+      if (filterRowIds.length === 0) return true;
+      return some(filterRowIds, (rowId) => cellRowIds.includes(rowId));
+    case RelationFilterCondition.RelationDoesNotContain:
+      if (filterRowIds.length === 0) return true;
+      return every(filterRowIds, (rowId) => !cellRowIds.includes(rowId));
+    default:
+      return true;
+  }
+}
+
+type FilterOptions = {
+  getRelationCellText?: (rowId: string, fieldId: string) => string;
+  getRollupCellText?: (rowId: string, fieldId: string) => string;
+};
+
 function createPredicate(conditions: ((row: Row) => boolean)[]) {
   return function (item: Row) {
     return every(conditions, (condition) => condition(item));
@@ -121,72 +231,111 @@ export function filterBy(
   rows: Row[],
   filters: YDatabaseFilters,
   fields: YDatabaseFields,
-  rowMetas: Record<RowId, YDoc>
+  rowMetas: Record<RowId, YDoc>,
+  options?: FilterOptions
 ) {
   const filterArray = filters.toArray();
 
   if (filterArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
 
-  const conditions = filterArray.map((filter) => {
-    return (row: { id: string }) => {
-      const fieldId = filter.get(YjsDatabaseKey.field_id);
-      const field = fields.get(fieldId);
+  const evaluateFilter = (filterNode: YDatabaseFilter, row: Row): boolean => {
+    const filterType = Number(filterNode.get(YjsDatabaseKey.filter_type));
 
-      if (!field) return true;
-      const fieldType = Number(field.get(YjsDatabaseKey.type));
-      const rowId = row.id;
-      const rowMeta = rowMetas[rowId];
+    if (filterType === FilterType.And || filterType === FilterType.Or) {
+      const children = getFilterChildren(filterNode);
 
-      if (!rowMeta) return false;
-      const filterValue = parseFilter(fieldType, filter);
-      const meta = rowMeta.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+      if (children.length === 0) return true;
 
-      if (!meta) return false;
-
-      const cells = meta.get(YjsDatabaseKey.cells);
-      const cell = cells.get(fieldId);
-
-      const { condition, content } = filterValue;
-
-      const cellData = cell?.get(YjsDatabaseKey.data);
-      const cellText = cell ? decodeCellToText(cell, field) : '';
-
-      switch (fieldType) {
-        case FieldType.URL:
-        case FieldType.RichText:
-        case FieldType.Time:
-          return textFilterCheck(cellText, content, condition);
-        case FieldType.Number:
-          return numberFilterCheck(cellText, content, condition);
-        case FieldType.Checkbox:
-          return checkboxFilterCheck(cellData, condition);
-        case FieldType.SingleSelect:
-        case FieldType.MultiSelect:
-          return selectOptionFilterCheck(field, cellData, content, condition);
-        case FieldType.Checklist:
-          return checklistFilterCheck(cellData as string, content, condition);
-        case FieldType.DateTime:
-          return dateFilterCheck(cell ? parseYDatabaseDateTimeCellToCell(cell) : null, filterValue as DateFilter);
-        case FieldType.CreatedTime: {
-          const data = meta.get(YjsDatabaseKey.created_at);
-
-          return rowTimeFilterCheck(data, filterValue as DateFilter);
-        }
-
-        case FieldType.LastEditedTime: {
-          const data = meta.get(YjsDatabaseKey.last_modified);
-
-          return rowTimeFilterCheck(data, filterValue as DateFilter);
-        }
-
-        case FieldType.Person: {
-          return personFilterCheck(typeof cellData === 'string' ? cellData : '', content, condition);
-        }
-
-        default:
-          return true;
+      if (filterType === FilterType.And) {
+        return every(children, (child) => evaluateFilter(child, row));
       }
-    };
+
+      return some(children, (child) => evaluateFilter(child, row));
+    }
+
+    const fieldId = filterNode.get(YjsDatabaseKey.field_id);
+    const field = fields.get(fieldId);
+
+    if (!field) return true;
+
+    const fieldType = Number(field.get(YjsDatabaseKey.type));
+    const rowId = row.id;
+    const rowMeta = rowMetas[rowId];
+
+    if (!rowMeta) return false;
+
+    const filterValue = parseFilter(fieldType, filterNode);
+    const meta = rowMeta.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+
+    if (!meta) return false;
+
+    const cells = meta.get(YjsDatabaseKey.cells);
+    const cell = cells.get(fieldId);
+    const cellData = cell?.get(YjsDatabaseKey.data);
+
+    const condition = Number(filterValue.condition);
+    const rawContent = filterValue.content;
+    const content = typeof rawContent === 'string' ? rawContent : '';
+
+    const cellText =
+      fieldType === FieldType.Relation
+        ? options?.getRelationCellText?.(rowId, fieldId) ?? ''
+        : fieldType === FieldType.Rollup
+          ? options?.getRollupCellText?.(rowId, fieldId) ?? ''
+          : cell
+            ? decodeCellToText(cell, field)
+            : '';
+
+    if (fieldType === FieldType.Relation) {
+      const relationRowIds = parseRelationFilterIds(content);
+
+      if (relationRowIds !== null) {
+        return relationFilterCheck(cellData, relationRowIds ?? [], condition);
+      }
+
+      return textFilterCheck(cellText, content, condition);
+    }
+
+    switch (fieldType) {
+      case FieldType.URL:
+      case FieldType.RichText:
+      case FieldType.Rollup:
+        return textFilterCheck(cellText, content, condition);
+      case FieldType.Time:
+      case FieldType.Number:
+        return numberFilterCheck(cellText, content, condition);
+      case FieldType.Checkbox:
+        return checkboxFilterCheck(cellData, condition);
+      case FieldType.SingleSelect:
+      case FieldType.MultiSelect:
+        return selectOptionFilterCheck(field, cellData, content, condition);
+      case FieldType.Checklist:
+        return checklistFilterCheck(cellData as string, content, condition);
+      case FieldType.DateTime:
+        return dateFilterCheck(cell ? parseYDatabaseDateTimeCellToCell(cell) : null, filterValue as DateFilter);
+      case FieldType.CreatedTime: {
+        const data = meta.get(YjsDatabaseKey.created_at);
+
+        return rowTimeFilterCheck(data, filterValue as DateFilter);
+      }
+
+      case FieldType.LastEditedTime: {
+        const data = meta.get(YjsDatabaseKey.last_modified);
+
+        return rowTimeFilterCheck(data, filterValue as DateFilter);
+      }
+
+      case FieldType.Person: {
+        return personFilterCheck(typeof cellData === 'string' ? cellData : '', content, condition);
+      }
+
+      default:
+        return true;
+    }
+  };
+
+  const conditions = filterArray.map((filterNode) => {
+    return (row: Row) => evaluateFilter(filterNode, row);
   });
   const predicate = createPredicate(conditions);
 
@@ -363,7 +512,10 @@ export function selectOptionFilterCheck(field: YDatabaseField, data: unknown, co
   let selectedOptionIds: string[] = [];
 
   if (typeof data === 'string') {
-    const checklist = parseChecklistFlexible(data);
+    const trimmed = data.trim();
+    const looksLikeChecklist =
+      trimmed.startsWith('{') || trimmed.includes('[x]') || trimmed.includes('[X]') || trimmed.includes('[ ]');
+    const checklist = looksLikeChecklist ? parseChecklistFlexible(data) : null;
 
     if (checklist) {
       const checkedNames =
@@ -682,8 +834,10 @@ export function filterFillData(filter: YDatabaseFilter, field: YDatabaseField) {
   switch (fieldType) {
     case FieldType.URL:
     case FieldType.RichText:
+    case FieldType.Relation:
       return textFilterFillData(content, condition);
     case FieldType.Number:
+    case FieldType.Time:
       return numberFilterFillData(content, condition);
     case FieldType.Checkbox:
       return checkboxFilterFillData(condition);
@@ -703,6 +857,8 @@ export function getDefaultFilterCondition(fieldType: FieldType) {
   switch (fieldType) {
     case FieldType.RichText:
     case FieldType.URL:
+    case FieldType.Relation:
+    case FieldType.Rollup:
       return {
         condition: TextFilterCondition.TextContains,
         content: '',
@@ -729,6 +885,11 @@ export function getDefaultFilterCondition(fieldType: FieldType) {
       return {
         condition: NumberFilterCondition.Equal,
         value: '',
+      };
+    case FieldType.Time:
+      return {
+        condition: NumberFilterCondition.Equal,
+        content: '',
       };
     case FieldType.DateTime:
     case FieldType.CreatedTime:

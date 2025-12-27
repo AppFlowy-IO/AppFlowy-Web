@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AuthTestUtils } from '../../support/auth-utils';
 import {
   AddPageSelectors,
+  BreadcrumbSelectors,
   DatabaseViewSelectors,
   PageSelectors,
   SpaceSelectors,
@@ -233,6 +234,54 @@ describe('Database View Tabs', () => {
       });
 
       cy.task('log', '[TEST COMPLETE] Tab selection updates sidebar');
+    });
+  });
+
+  /**
+   * Regression test: breadcrumb should reflect the active database tab view.
+   */
+  it('breadcrumb shows active database tab view', () => {
+    const testEmail = generateRandomEmail();
+
+    cy.task('log', `[TEST] Breadcrumb reflects active tab - Email: ${testEmail}`);
+
+    cy.visit('/login', { failOnStatusCode: false });
+    cy.wait(2000);
+
+    const authUtils = new AuthTestUtils();
+    authUtils.signInWithTestUrl(testEmail).then(() => {
+      cy.url({ timeout: 30000 }).should('include', '/app');
+      cy.wait(3000);
+
+      // Create a Grid database
+      AddPageSelectors.inlineAddButton().first().click({ force: true });
+      waitForReactUpdate(1000);
+      AddPageSelectors.addGridButton().should('be.visible').click({ force: true });
+      cy.wait(5000);
+
+      // Add a Board view
+      DatabaseViewSelectors.addViewButton().scrollIntoView().click({ force: true });
+      waitForReactUpdate(500);
+      cy.get('[role="menu"], [role="listbox"], .MuiMenu-list, .MuiPopover-paper', { timeout: 5000 })
+        .should('be.visible')
+        .contains('Board')
+        .click({ force: true });
+      waitForReactUpdate(3000);
+
+      // Switch to Board tab
+      DatabaseViewSelectors.viewTab().contains('Board').click({ force: true });
+      waitForReactUpdate(1000);
+      DatabaseViewSelectors.activeViewTab().should('contain.text', 'Board');
+
+      // Verify breadcrumb shows Board as the active view
+      BreadcrumbSelectors.navigation()
+        .find('[data-testid^="breadcrumb-item-"]')
+        .should('have.length.at.least', 1)
+        .last()
+        .should('contain.text', 'Board')
+        .and('not.contain.text', 'Grid');
+
+      cy.task('log', '[TEST COMPLETE] Breadcrumb shows active tab view');
     });
   });
 
