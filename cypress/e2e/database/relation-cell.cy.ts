@@ -118,26 +118,21 @@ describeIfEnabled('Relation Cell Type', () => {
       // Add a Relation field
       cy.log('[STEP 3] Adding Relation field');
       PropertyMenuSelectors.newPropertyButton().first().scrollIntoView().click({ force: true });
-      waitForReactUpdate(3000);
+
+      // Wait for the PropertyMenu dropdown to open (Radix dropdown)
+      cy.log('[STEP 3b] Waiting for property menu dropdown to open');
+      cy.get('[data-radix-popper-content-wrapper]', { timeout: 10000 }).should('be.visible');
 
       // Change column type to Relation
       cy.log('[STEP 4] Changing column type to Relation');
-      PropertyMenuSelectors.propertyTypeTrigger().then(($trigger) => {
-        if ($trigger.length > 0) {
-          cy.wrap($trigger.first()).click({ force: true });
-          waitForReactUpdate(1000);
-          PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).click({ force: true });
-          waitForReactUpdate(2000);
-        } else {
-          // Fallback: click on the last field header to open edit menu
-          GridFieldSelectors.allFieldHeaders().last().scrollIntoView().click({ force: true });
-          waitForReactUpdate(1000);
-          PropertyMenuSelectors.propertyTypeTrigger().first().click({ force: true });
-          waitForReactUpdate(1000);
-          PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).click({ force: true });
-          waitForReactUpdate(2000);
-        }
-      });
+      // The property-type-trigger should now be visible inside the dropdown
+      PropertyMenuSelectors.propertyTypeTrigger().should('be.visible', { timeout: 5000 }).first().click({ force: true });
+      waitForReactUpdate(500);
+
+      // Wait for the type submenu to open and click Relation
+      cy.log('[STEP 4b] Selecting Relation type');
+      PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).should('be.visible', { timeout: 5000 }).click({ force: true });
+      waitForReactUpdate(2000);
 
       // Close property menu
       cy.get('body').type('{esc}{esc}');
@@ -232,13 +227,18 @@ describeIfEnabled('Relation Cell Type', () => {
       cy.log('[STEP 3a] Reloading page to ensure grid loads');
       cy.reload();
 
+      // Wait for grid to be fully loaded first
+      cy.log('[STEP 3b] Waiting for grid to load');
+      DatabaseGridSelectors.grid().should('exist', { timeout: 30000 });
+      waitForReactUpdate(2000);
+
       // Wait for grid cells with extended timeout and retry
-      cy.log('[STEP 3b] Waiting for grid cells to load');
-      DatabaseGridSelectors.cells().should('have.length.at.least', 1, { timeout: 30000 });
+      cy.log('[STEP 3c] Waiting for grid cells to load');
+      cy.get('[data-testid^="grid-cell-"]', { timeout: 30000 }).should('exist');
 
       // Add data to second grid for reference
-      cy.log('[STEP 3c] Adding data to second grid');
-      DatabaseGridSelectors.cells().first().should('be.visible', { timeout: 10000 }).click({ force: true });
+      cy.log('[STEP 3d] Adding data to second grid');
+      cy.get('[data-testid^="grid-cell-"]').first().should('be.visible', { timeout: 10000 }).click({ force: true });
       waitForReactUpdate(1000);
       cy.focused().type('Main Row{enter}');
       waitForReactUpdate(1000);
@@ -246,11 +246,13 @@ describeIfEnabled('Relation Cell Type', () => {
       // Add Relation field
       cy.log('[STEP 4] Adding Relation field to second grid');
       PropertyMenuSelectors.newPropertyButton().first().scrollIntoView().click({ force: true });
-      waitForReactUpdate(3000);
 
-      PropertyMenuSelectors.propertyTypeTrigger().first().click({ force: true });
-      waitForReactUpdate(1000);
-      PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).click({ force: true });
+      // Wait for the PropertyMenu dropdown to open
+      cy.get('[data-radix-popper-content-wrapper]', { timeout: 10000 }).should('be.visible');
+
+      PropertyMenuSelectors.propertyTypeTrigger().should('be.visible', { timeout: 5000 }).first().click({ force: true });
+      waitForReactUpdate(500);
+      PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).should('be.visible', { timeout: 5000 }).click({ force: true });
       waitForReactUpdate(2000);
 
       // Close property menu
@@ -349,10 +351,13 @@ describeIfEnabled('Relation Cell Type', () => {
 
       // Add Relation field
       PropertyMenuSelectors.newPropertyButton().first().scrollIntoView().click({ force: true });
-      waitForReactUpdate(3000);
-      PropertyMenuSelectors.propertyTypeTrigger().first().click({ force: true });
-      waitForReactUpdate(1000);
-      PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).click({ force: true });
+
+      // Wait for the PropertyMenu dropdown to open
+      cy.get('[data-radix-popper-content-wrapper]', { timeout: 10000 }).should('be.visible');
+
+      PropertyMenuSelectors.propertyTypeTrigger().should('be.visible', { timeout: 5000 }).first().click({ force: true });
+      waitForReactUpdate(500);
+      PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).should('be.visible', { timeout: 5000 }).click({ force: true });
       waitForReactUpdate(2000);
 
       cy.get('body').type('{esc}{esc}');
@@ -459,10 +464,13 @@ describeIfEnabled('Relation Cell Type', () => {
       // Add Relation field
       cy.log('[STEP 3] Adding Relation field');
       PropertyMenuSelectors.newPropertyButton().first().scrollIntoView().click({ force: true });
-      waitForReactUpdate(3000);
-      PropertyMenuSelectors.propertyTypeTrigger().first().click({ force: true });
-      waitForReactUpdate(1000);
-      PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).click({ force: true });
+
+      // Wait for the PropertyMenu dropdown to open
+      cy.get('[data-radix-popper-content-wrapper]', { timeout: 10000 }).should('be.visible');
+
+      PropertyMenuSelectors.propertyTypeTrigger().should('be.visible', { timeout: 5000 }).first().click({ force: true });
+      waitForReactUpdate(500);
+      PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).should('be.visible', { timeout: 5000 }).click({ force: true });
       waitForReactUpdate(2000);
 
       cy.get('body').type('{esc}{esc}');
@@ -594,10 +602,13 @@ describeIfEnabled('Relation Cell Type', () => {
 
         // Add Relation field
         PropertyMenuSelectors.newPropertyButton().first().scrollIntoView().click({ force: true });
-        waitForReactUpdate(3000);
-        PropertyMenuSelectors.propertyTypeTrigger().first().click({ force: true });
-        waitForReactUpdate(1000);
-        PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).click({ force: true });
+
+        // Wait for the PropertyMenu dropdown to open
+        cy.get('[data-radix-popper-content-wrapper]', { timeout: 10000 }).should('be.visible');
+
+        PropertyMenuSelectors.propertyTypeTrigger().should('be.visible', { timeout: 5000 }).first().click({ force: true });
+        waitForReactUpdate(500);
+        PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).should('be.visible', { timeout: 5000 }).click({ force: true });
         waitForReactUpdate(2000);
 
         cy.get('body').type('{esc}{esc}');
@@ -729,10 +740,13 @@ describeIfEnabled('Relation Cell Type', () => {
         // Add Relation field
         cy.log('[STEP 3] Adding Relation field');
         PropertyMenuSelectors.newPropertyButton().first().scrollIntoView().click({ force: true });
-        waitForReactUpdate(3000);
-        PropertyMenuSelectors.propertyTypeTrigger().first().click({ force: true });
-        waitForReactUpdate(1000);
-        PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).click({ force: true });
+
+        // Wait for the PropertyMenu dropdown to open
+        cy.get('[data-radix-popper-content-wrapper]', { timeout: 10000 }).should('be.visible');
+
+        PropertyMenuSelectors.propertyTypeTrigger().should('be.visible', { timeout: 5000 }).first().click({ force: true });
+        waitForReactUpdate(500);
+        PropertyMenuSelectors.propertyTypeOption(FieldType.Relation).should('be.visible', { timeout: 5000 }).click({ force: true });
         waitForReactUpdate(2000);
 
         cy.get('body').type('{esc}{esc}');

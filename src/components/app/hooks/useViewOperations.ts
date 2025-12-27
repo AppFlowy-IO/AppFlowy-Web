@@ -107,7 +107,29 @@ export function useViewOperations() {
 
       return new Promise<string | null>((resolve) => {
         const sharedRoot = workspaceDatabaseDocMapRef.current.get(currentWorkspaceId)?.getMap(YjsEditorKey.data_section);
+        let resolved = false;
+        let warningLogged = false;
+        let observerRegistered = false;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+        const cleanup = () => {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+          if (observerRegistered && sharedRoot) {
+            try {
+              sharedRoot.unobserveDeep(observeEvent);
+            } catch {
+              // Ignore if already unobserved
+            }
+            observerRegistered = false;
+          }
+        };
+
         const observeEvent = () => {
+          if (resolved) return;
+
           const databases = sharedRoot?.toJSON()?.databases;
 
           const databaseId = databases?.find((database: { database_id: string; views: string[] }) =>
@@ -115,20 +137,35 @@ export function useViewOperations() {
           )?.database_id;
 
           if (databaseId) {
+            resolved = true;
             Log.debug('[useViewOperations] mapped view to database', { viewId: id, databaseId });
+            cleanup();
             resolve(databaseId);
             return;
           }
 
-          console.warn('[useViewOperations] databaseId not found for view', { viewId: id });
+          // Only log warning once, not on every observe event
+          if (!warningLogged) {
+            warningLogged = true;
+            Log.debug('[useViewOperations] databaseId not found for view yet, waiting for sync', { viewId: id });
+          }
         };
 
         observeEvent();
-        sharedRoot?.observeDeep(observeEvent);
+        if (sharedRoot && !resolved) {
+          sharedRoot.observeDeep(observeEvent);
+          observerRegistered = true;
+        }
 
-        return () => {
-          sharedRoot?.unobserveDeep(observeEvent);
-        };
+        // Add timeout to prevent hanging forever
+        timeoutId = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            console.warn('[useViewOperations] databaseId lookup timed out for view', { viewId: id });
+            resolve(null);
+          }
+        }, 10000); // 10 second timeout
       });
     },
     [currentWorkspaceId, databaseStorageId, registerWorkspaceDatabaseDoc]
