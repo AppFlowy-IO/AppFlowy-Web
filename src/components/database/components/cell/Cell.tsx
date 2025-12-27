@@ -28,6 +28,10 @@ export function Cell(props: CellProps<CellType>) {
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const fieldName = field?.get(YjsDatabaseKey.name);
+  const fallbackFieldName =
+    fieldType === FieldType.Relation
+      ? t('grid.field.relationFieldName')
+      : t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
   const disableRelationRollupEdit = isFieldEditingDisabled(fieldType);
 
   const Component = useMemo(() => {
@@ -79,11 +83,11 @@ export function Cell(props: CellProps<CellType>) {
 
   const cellProps = disableRelationRollupEdit
     ? {
-        ...props,
-        readOnly: true,
-        editing: false,
-        setEditing: undefined,
-      }
+      ...props,
+      readOnly: true,
+      editing: false,
+      setEditing: undefined,
+    }
     : props;
 
   const content = <Component {...cellProps} />;
@@ -91,15 +95,12 @@ export function Cell(props: CellProps<CellType>) {
   if (disableRelationRollupEdit) {
     const tooltipContent =
       fieldType === FieldType.Relation || fieldType === FieldType.Rollup
-        ? t(fieldType === FieldType.Relation ? 'tooltip.relationReadOnlyField' : 'tooltip.rollupReadOnlyField', {
-            defaultValue: `Editing ${
-              typeof fieldName === 'string' && fieldName.trim()
-                ? fieldName.trim()
-                : fieldType === FieldType.Relation
-                  ? 'relation'
-                  : 'rollup'
-            } is not available yet`,
-          })
+        ? t('tooltip.fieldEditingUnavailable', {
+          field:
+            typeof fieldName === 'string' && fieldName.trim()
+              ? fieldName.trim()
+              : fallbackFieldName,
+        })
         : '';
 
     return (

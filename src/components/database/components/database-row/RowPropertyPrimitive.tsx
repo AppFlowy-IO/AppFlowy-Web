@@ -1,5 +1,4 @@
 import { FieldType, useFieldSelector, useReadOnly } from '@/application/database-yjs';
-import { useTranslation } from 'react-i18next';
 import { Cell } from '@/application/database-yjs/cell.type';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as AIIndicatorSvg } from '@/assets/icons/database/ai.svg';
@@ -9,6 +8,7 @@ import PropertyMenu from '@/components/database/components/property/PropertyMenu
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+import { useTranslation } from 'react-i18next';
 
 function RowPropertyPrimitive({
   fieldId,
@@ -32,19 +32,15 @@ function RowPropertyPrimitive({
   const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(fieldType);
   const fieldName = field?.get(YjsDatabaseKey.name) || '';
   const isEditingDisabled = isFieldEditingDisabled(fieldType);
-  const isRelationOrRollup = fieldType === FieldType.Relation || fieldType === FieldType.Rollup;
-  const showEditingTooltip = isRelationOrRollup && isEditingDisabled;
-  const showTooltip = showEditingTooltip || !isRelationOrRollup;
-  const tooltipContent = showEditingTooltip
-    ? t(fieldType === FieldType.Relation ? 'tooltip.relationReadOnlyField' : 'tooltip.rollupReadOnlyField', {
-        defaultValue: `Editing ${
-          fieldName.trim()
-            ? fieldName.trim()
-            : fieldType === FieldType.Relation
-              ? 'relation'
-              : 'rollup'
-        } is not available yet`,
-      })
+  const fallbackFieldName =
+    fieldType === FieldType.Relation
+      ? t('grid.field.relationFieldName')
+      : t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
+  const tooltipContent =
+    isEditingDisabled && (fieldType === FieldType.Relation || fieldType === FieldType.Rollup)
+    ? t('tooltip.fieldEditingUnavailable', {
+      field: fieldName.trim() ? fieldName.trim() : fallbackFieldName,
+    })
     : fieldName;
 
   return (
@@ -71,26 +67,16 @@ function RowPropertyPrimitive({
             !showPropertyName && 'w-auto gap-0 p-2'
           )}
         >
-          {showTooltip ? (
-            <Tooltip delayDuration={200} disableHoverableContent>
-              <TooltipTrigger className={'overflow-hidden'}>
-                <FieldDisplay
-                  showPropertyName={showPropertyName}
-                  fieldId={fieldId}
-                  className={'flex-1 gap-1.5 truncate text-sm text-text-primary'}
-                />
-              </TooltipTrigger>
-              <TooltipContent side={'left'}>{tooltipContent}</TooltipContent>
-            </Tooltip>
-          ) : (
-            <div className={'overflow-hidden'}>
+          <Tooltip delayDuration={200} disableHoverableContent>
+            <TooltipTrigger className={'overflow-hidden'}>
               <FieldDisplay
                 showPropertyName={showPropertyName}
                 fieldId={fieldId}
                 className={'flex-1 gap-1.5 truncate text-sm text-text-primary'}
               />
-            </div>
-          )}
+            </TooltipTrigger>
+            <TooltipContent side={'left'}>{tooltipContent}</TooltipContent>
+          </Tooltip>
           {isAIField && <AIIndicatorSvg className={'h-5 w-5 min-w-5 text-text-featured'} />}
         </div>
       </PropertyMenu>

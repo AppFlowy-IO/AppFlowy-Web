@@ -33,30 +33,27 @@ export function GridHeaderColumn({
   const type = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(type);
   const isEditingDisabled = isFieldEditingDisabled(type);
-  const isRelationOrRollup = type === FieldType.Relation || type === FieldType.Rollup;
   const isNewProperty = column.type === GridColumnType.NewProperty;
   const [menuOpen, setMenuOpen] = useState(false);
   const name = field?.get(YjsDatabaseKey.name);
   const fieldName = typeof name === 'string' ? name : '';
-  const showEditingTooltip = isRelationOrRollup && isEditingDisabled;
-  const showTooltip = showEditingTooltip || !isRelationOrRollup;
-  const tooltipContent = showEditingTooltip
-    ? t(type === FieldType.Relation ? 'tooltip.relationReadOnlyField' : 'tooltip.rollupReadOnlyField', {
-        defaultValue: `Editing ${
-          fieldName.trim()
-            ? fieldName.trim()
-            : type === FieldType.Relation
-              ? 'relation'
-              : 'rollup'
-        } is not available yet`,
-      })
-    : fieldName;
+  const fallbackFieldName =
+    type === FieldType.Relation
+      ? t('grid.field.relationFieldName')
+      : t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
+  const tooltipContent =
+    isEditingDisabled && (type === FieldType.Relation || type === FieldType.Rollup)
+      ? t('tooltip.fieldEditingUnavailable', {
+          field: fieldName.trim() ? fieldName.trim() : fallbackFieldName,
+        })
+      : fieldName;
   const children = useMemo(() => {
     const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
       if (readOnly) return;
       e.stopPropagation();
       setMenuOpen(true);
     };
+
     const triggerProps = {
       'data-testid': `grid-field-header-${fieldId}`,
       onClick: handleClick,
@@ -78,16 +75,10 @@ export function GridHeaderColumn({
           'relative flex h-full w-full items-center justify-start gap-[10px] rounded-none px-2 text-sm text-text-secondary hover:bg-fill-content-hover'
         }
       >
-        {showTooltip ? (
-          <Tooltip disableHoverableContent delayDuration={500}>
-            <TooltipTrigger {...triggerProps}>{triggerContent}</TooltipTrigger>
-            <TooltipContent side={'right'}>{tooltipContent}</TooltipContent>
-          </Tooltip>
-        ) : (
-          <button type="button" {...triggerProps}>
-            {triggerContent}
-          </button>
-        )}
+        <Tooltip disableHoverableContent delayDuration={500}>
+          <TooltipTrigger {...triggerProps}>{triggerContent}</TooltipTrigger>
+          <TooltipContent side={'right'}>{tooltipContent}</TooltipContent>
+        </Tooltip>
 
         {onResizeColumnStart && !readOnly && fieldId && (
           <ResizeHandle fieldId={fieldId} onResizeStart={onResizeColumnStart} />
@@ -99,10 +90,7 @@ export function GridHeaderColumn({
     isAIField,
     onResizeColumnStart,
     readOnly,
-    showTooltip,
     tooltipContent,
-    isRelationOrRollup,
-    isEditingDisabled,
   ]);
 
   const displayMenu = useMemo(() => {

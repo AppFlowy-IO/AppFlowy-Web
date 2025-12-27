@@ -35,6 +35,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 
+type FieldOperation = {
+  label: string;
+  icon: React.ReactNode;
+  onSelect: () => void;
+  disabled?: boolean;
+  variant?: 'destructive';
+};
+
 function GridFieldMenu({
   fieldId,
   children,
@@ -64,8 +72,8 @@ function GridFieldMenu({
 
   const { t } = useTranslation();
 
-  const operations = useMemo(() => {
-    const items = [];
+  const operations = useMemo<FieldOperation[]>(() => {
+    const items: FieldOperation[] = [];
 
     if (!isEditingDisabled) {
       items.push({
@@ -177,7 +185,7 @@ function GridFieldMenu({
                 disabled={operation.disabled}
                 onSelect={operation.onSelect}
                 key={operation.label}
-                variant={operation.variant as 'destructive' | undefined}
+                variant={operation.variant}
               >
                 {operation.icon}
                 {operation.label}

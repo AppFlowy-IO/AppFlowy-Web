@@ -16,6 +16,7 @@ function getCachedViews(workspaceId: string): View[] | null {
   if (currentCachedWorkspaceId === workspaceId) {
     return cachedViews;
   }
+
   return null;
 }
 
@@ -25,6 +26,7 @@ function setCachedViews(workspaceId: string, views: View[]): void {
   if (currentCachedWorkspaceId !== workspaceId) {
     cachedViews = null;
   }
+
   currentCachedWorkspaceId = workspaceId;
   cachedViews = views;
 }
@@ -71,6 +73,7 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
 
         try {
           const result = await loadDatabaseRelations();
+
           setRelations(result);
         } catch (e) {
           //

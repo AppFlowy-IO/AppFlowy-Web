@@ -1,8 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import * as Y from 'yjs';
 
 import { RelationCell as RelationCellType, RelationCellData } from '@/application/database-yjs/cell.type';
-import { useDatabaseContext } from '@/application/database-yjs/context';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import NoDatabaseSelectedContent from '@/components/database/components/cell/relation/NoDatabaseSelectedContent';
@@ -68,8 +67,8 @@ function RelationCellMenu ({
     newData.push([rowId]);
 
     updateCell(newData);
-
   }, [data, updateCell]);
+
   const onRemoveRelationRowId = useCallback((rowId: string) => {
     const newData = new Y.Array<string>();
 
@@ -105,6 +104,7 @@ function RelationCellMenu ({
             onSelect={(view) => {
               setSelectedView(view);
               const databaseId = Object.entries(relations || []).find(([, id]) => id === view.view_id)?.[0];
+
               if (databaseId) {
                 onUpdateDatabaseId(databaseId);
               }

@@ -207,8 +207,9 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
   }, [loadPublishNamespace]);
 
   useEffect(() => {
+    if (publishViews.length === 0) return;
     void loadHomePageId();
-  }, [loadHomePageId]);
+  }, [loadHomePageId, publishViews.length]);
 
   useEffect(() => {
     void loadPublishPages();
