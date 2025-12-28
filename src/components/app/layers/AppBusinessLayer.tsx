@@ -229,11 +229,6 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     }
   }, [debouncedRefreshOutline, lastUpdatedCollab]);
 
-  // Load mentionable users on mount
-  useEffect(() => {
-    void loadMentionableUsers();
-  }, [loadMentionableUsers]);
-
   // Enhanced toView that uses loadViewMeta
   const enhancedToView = useCallback(
     async (viewId: string, blockId?: string, keepSearch?: boolean) => {

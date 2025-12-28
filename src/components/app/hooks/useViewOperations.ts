@@ -11,6 +11,7 @@ import {
   ViewId,
   ViewLayout,
   YDoc,
+  YjsDatabaseKey,
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
@@ -117,12 +118,14 @@ export function useViewOperations() {
             clearTimeout(timeoutId);
             timeoutId = null;
           }
+
           if (observerRegistered && sharedRoot) {
             try {
               sharedRoot.unobserveDeep(observeEvent);
             } catch {
               // Ignore if already unobserved
             }
+
             observerRegistered = false;
           }
         };
@@ -314,7 +317,22 @@ export function useViewOperations() {
           return doc;
         }
 
-        const databaseId = await getDatabaseId(id);
+        let databaseId = await getDatabaseId(id);
+
+        if (!databaseId) {
+          const sharedRoot = res.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+          const database = sharedRoot?.get(YjsEditorKey.database);
+          const fallbackDatabaseId = database?.get(YjsDatabaseKey.id);
+
+          if (fallbackDatabaseId) {
+            Log.debug('[useViewOperations] databaseId loaded from Yjs document', {
+              viewId: id,
+              databaseId: fallbackDatabaseId,
+            });
+            databaseId = fallbackDatabaseId;
+            databaseIdViewIdMapRef.current.set(fallbackDatabaseId, id);
+          }
+        }
 
         if (!databaseId) {
           throw new Error('Database not found');

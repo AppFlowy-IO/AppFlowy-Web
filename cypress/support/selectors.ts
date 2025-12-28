@@ -3,6 +3,9 @@
  * This file encapsulates all data-testid selectors to avoid hardcoding them in tests
  */
 
+// Re-export FieldType from the source to avoid duplication
+export { FieldType } from '../../src/application/database-yjs/database.type';
+
 /**
  * Helper function to create a data-testid selector
  */
@@ -745,28 +748,6 @@ export const PropertyMenuSelectors = {
   editPropertyMenuItem: () => cy.get(byTestId('grid-field-edit-property')),
 };
 
-/**
- * Field Types enum for database columns
- */
-export const FieldType = {
-  RichText: 0,
-  Number: 1,
-  DateTime: 2,
-  SingleSelect: 3,
-  MultiSelect: 4,
-  Checkbox: 5,
-  URL: 6,
-  Checklist: 7,
-  LastEditedTime: 8,
-  CreatedTime: 9,
-  Relation: 10,
-  AISummaries: 11,
-  AITranslations: 12,
-  FileMedia: 14,
-  Person: 15,
-  Rollup: 16,
-  Time: 17,
-};
 
 /**
  * Database Row Controls selectors

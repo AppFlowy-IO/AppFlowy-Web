@@ -655,8 +655,10 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
     return { value: cached.value, rawNumeric: cached.rawNumeric, list: cached.list };
   }
 
-  if (!inflight.has(cellId)) {
-    const promise = (async () => {
+  let promise = inflight.get(cellId);
+
+  if (!promise) {
+    promise = (async () => {
       const release = await semaphore.acquire();
 
       try {
@@ -684,7 +686,19 @@ export async function readRollupCell(context: RollupComputeContext): Promise<Rol
     inflight.set(cellId, promise);
   }
 
-  return cached ? { value: cached.value, rawNumeric: cached.rawNumeric, list: cached.list } : { value: '' };
+  const value = await promise;
+  const currentGen = getGeneration(cellId);
+  const currentCached = getCachedValue(cellId);
+
+  if (currentCached && isEntryFresh(currentCached, currentGen)) {
+    return { value: currentCached.value, rawNumeric: currentCached.rawNumeric, list: currentCached.list };
+  }
+
+  if (currentGen !== generation) {
+    return { value: '' };
+  }
+
+  return value;
 }
 
 export function readRollupCellSync(context: RollupComputeContext): RollupCellValue {

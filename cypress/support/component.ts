@@ -16,7 +16,7 @@ import '@cypress/code-coverage/support';
 import { addMatchImageSnapshotCommand } from 'cypress-image-snapshot/command';
 import 'cypress-real-events';
 import 'cypress-real-events/support';
-import { mount } from 'cypress/react18';
+import { mount } from 'cypress/react';
 import '../../src/styles/global.css';
 import './commands';
 import './document';
