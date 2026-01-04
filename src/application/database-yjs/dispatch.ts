@@ -1881,8 +1881,6 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         } else {
           meta.set(keyId, value);
         }
-
-        row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       });
     },
     [rowDoc, rowId]

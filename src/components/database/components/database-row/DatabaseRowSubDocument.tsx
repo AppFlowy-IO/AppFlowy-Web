@@ -16,6 +16,7 @@ import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { YjsEditor } from '@/application/slate-yjs';
 import {
   BlockType,
+  CollabOrigin,
   YDatabaseCell,
   YDatabaseField,
   YDatabaseRow,
@@ -37,6 +38,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const checkIfRowDocumentExists = context.checkIfRowDocumentExists;
   const { createOrphanedView, loadView } = context;
   const currentUser = useCurrentUser();
+  const updateRowMeta = useUpdateRowMetaDispatch(rowId);
+  const editorRef = useRef<YjsEditor | null>(null);
+  const lastIsEmptyRef = useRef<boolean | null>(null);
+  const pendingMetaUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const getCellData = useCallback(
     (cell: YDatabaseCell, field: YDatabaseField) => {
@@ -84,8 +89,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
     return obj;
   }, [database, getCellData, row]);
-
-  const updateRowMeta = useUpdateRowMetaDispatch(rowId);
 
   const [loading, setLoading] = useState(true);
   const [doc, setDoc] = useState<YDoc | null>(null);
@@ -147,8 +150,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     return JSON.stringify(properties);
   }, [properties]);
 
-  const editorRef = useRef<YjsEditor | null>(null);
-
   const isDocumentEmpty = useCallback((editor: YjsEditor) => {
     const children = editor.children;
 
@@ -169,34 +170,71 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     return false;
   }, []);
 
-  const handleEditorConnected = useCallback(
-    (editor: YjsEditor) => {
-      editorRef.current = editor;
-      if (readOnly) return;
-
-      if (!isDocumentEmpty(editor)) {
-        updateRowMeta(RowMetaKey.IsDocumentEmpty, false);
-        return;
-      }
-    },
-    [isDocumentEmpty, updateRowMeta, readOnly]
-  );
-
-  const handleWordCountChange = useCallback(
-    (_: string, { characters }: { characters: number }) => {
-      if (characters > 0) {
-        updateRowMeta(RowMetaKey.IsDocumentEmpty, false);
-        return;
+  const shouldSkipIsDocumentEmptyUpdate = useCallback(
+    (isEmpty: boolean) => {
+      if (readOnly) {
+        return true;
       }
 
-      const editor = editorRef.current;
+      if (meta?.isEmptyDocument === false && isEmpty) {
+        return true;
+      }
 
-      if (!editor) return;
-
-      updateRowMeta(RowMetaKey.IsDocumentEmpty, isDocumentEmpty(editor));
+      return false;
     },
-    [isDocumentEmpty, updateRowMeta]
+    [meta?.isEmptyDocument, readOnly]
   );
+
+  const handleEditorConnected = useCallback((editor: YjsEditor) => {
+    editorRef.current = editor;
+  }, []);
+
+  useEffect(() => {
+    if (!doc) return;
+
+    const handleDocUpdate = (_update: Uint8Array, origin: unknown) => {
+      if (origin !== CollabOrigin.Local && origin !== CollabOrigin.LocalManual) {
+        return;
+      }
+
+      if (pendingMetaUpdateRef.current) {
+        clearTimeout(pendingMetaUpdateRef.current);
+      }
+
+      pendingMetaUpdateRef.current = setTimeout(() => {
+        pendingMetaUpdateRef.current = null;
+        const editor = editorRef.current;
+
+        if (!editor) {
+          return;
+        }
+
+        const isEmpty = isDocumentEmpty(editor);
+
+        if (lastIsEmptyRef.current === isEmpty) {
+          return;
+        }
+
+        lastIsEmptyRef.current = isEmpty;
+
+        if (shouldSkipIsDocumentEmptyUpdate(isEmpty)) {
+          return;
+        }
+
+        updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
+      }, 0);
+    };
+
+    doc.on('update', handleDocUpdate);
+
+    return () => {
+      doc.off('update', handleDocUpdate);
+      if (pendingMetaUpdateRef.current) {
+        clearTimeout(pendingMetaUpdateRef.current);
+        pendingMetaUpdateRef.current = null;
+      }
+    };
+  }, [doc, isDocumentEmpty, shouldSkipIsDocumentEmptyUpdate, updateRowMeta]);
 
   if (loading) {
     return <EditorSkeleton />;
@@ -212,7 +250,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       readOnly={readOnly}
       getMoreAIContext={getMoreAIContext}
       onEditorConnected={handleEditorConnected}
-      onWordCountChange={handleWordCountChange}
     />
   );
 });
