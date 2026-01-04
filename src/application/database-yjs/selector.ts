@@ -1035,6 +1035,11 @@ export function useRowOrdersSelector() {
               try {
                 const doc = await pending;
 
+                if (backgroundCancelledRef.current) {
+                  doc.destroy();
+                  return;
+                }
+
                 if (rows?.[rowId]) {
                   doc.destroy();
                   return;

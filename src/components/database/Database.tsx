@@ -27,8 +27,6 @@ import { Log } from '@/utils/log';
 
 import { DatabaseContextProvider } from './DatabaseContext';
 
-const ROW_LOAD_LOG_LIMIT = 200;
-
 export interface Database2Props {
   workspaceId: string;
   doc: YDoc;
@@ -106,7 +104,6 @@ function Database(props: Database2Props) {
   const blobPrefetchDoneRef = useRef(false);
   const pendingRowSyncRef = useRef<Set<string>>(new Set());
   const syncedRowKeysRef = useRef<Set<string>>(new Set());
-  const rowLoadLogCountRef = useRef(0);
 
   useEffect(() => {
     rowDocMapRef.current = rowDocMap;
@@ -223,6 +220,29 @@ function Database(props: Database2Props) {
     [createRowDoc, doc.guid, ensureBlobPrefetch]
   );
 
+  const queueRowSync = useCallback(
+    (rowKey: string, rowId: string) => {
+      if (blobPrefetchDoneRef.current) {
+        registerRowSync(rowKey);
+        return;
+      }
+
+      Log.debug('[Database] queue row sync', {
+        rowId,
+        rowKey,
+        databaseId: doc.guid,
+      });
+
+      pendingRowSyncRef.current.add(rowKey);
+
+      if (blobPrefetchDoneRef.current) {
+        pendingRowSyncRef.current.delete(rowKey);
+        registerRowSync(rowKey);
+      }
+    },
+    [registerRowSync, doc.guid]
+  );
+
   const ensureRowDoc = useCallback(
     async (rowId: string) => {
       if (!createRowDoc || !rowId) return;
@@ -243,16 +263,10 @@ function Database(props: Database2Props) {
 
         void ensureBlobPrefetch();
 
-        const logRowEvent = (message: string, payload: Record<string, unknown>) => {
-          if (rowLoadLogCountRef.current >= ROW_LOAD_LOG_LIMIT) return;
-          rowLoadLogCountRef.current += 1;
-          Log.debug(message, payload);
-        };
-
         const loadStartedAt = performance.now();
         const seed = takeDatabaseRowDocSeed(rowKey);
 
-        logRowEvent('[Database] ensure row doc start', {
+        Log.debug('[Database] ensure row doc start', {
           rowId,
           rowKey,
           databaseId: doc.guid,
@@ -260,33 +274,34 @@ function Database(props: Database2Props) {
           prefetchDone: blobPrefetchDoneRef.current,
         });
 
-        const rowDoc = await createRowDocFast(rowKey, seed ?? undefined);
-        const loadDurationMs = Math.round(performance.now() - loadStartedAt);
-        const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
-        const hasRowData = Boolean(rowSharedRoot?.get(YjsEditorKey.database_row));
+        try {
+          const rowDoc = await createRowDocFast(rowKey, seed ?? undefined);
+          const loadDurationMs = Math.round(performance.now() - loadStartedAt);
+          const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
+          const hasRowData = Boolean(rowSharedRoot?.get(YjsEditorKey.database_row));
 
-        logRowEvent('[Database] ensure row doc loaded', {
-          rowId,
-          rowKey,
-          databaseId: doc.guid,
-          hasSeed: Boolean(seed),
-          prefetchDone: blobPrefetchDoneRef.current,
-          loadDurationMs,
-          hasRowData,
-        });
-
-        if (blobPrefetchDoneRef.current) {
-          registerRowSync(rowKey);
-        } else {
-          Log.debug('[Database] queue row sync', {
+          Log.debug('[Database] ensure row doc loaded', {
             rowId,
             rowKey,
             databaseId: doc.guid,
+            hasSeed: Boolean(seed),
+            prefetchDone: blobPrefetchDoneRef.current,
+            loadDurationMs,
+            hasRowData,
           });
-          pendingRowSyncRef.current.add(rowKey);
-        }
 
-        return rowDoc;
+          queueRowSync(rowKey, rowId);
+
+          return rowDoc;
+        } catch (error) {
+          Log.warn('[Database] row doc load failed', {
+            rowId,
+            rowKey,
+            databaseId: doc.guid,
+            error,
+          });
+          return undefined;
+        }
       })();
 
       pendingRowDocsRef.current.set(rowId, promise);
@@ -306,7 +321,7 @@ function Database(props: Database2Props) {
         pendingRowDocsRef.current.delete(rowId);
       }
     },
-    [createRowDoc, doc.guid, ensureBlobPrefetch, registerRowSync]
+    [createRowDoc, doc.guid, ensureBlobPrefetch, queueRowSync]
   );
 
   useEffect(() => {

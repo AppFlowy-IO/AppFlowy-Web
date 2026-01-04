@@ -1,11 +1,11 @@
 import { useMemo, useRef } from 'react';
 
 import { RowMetaKey, useDatabaseContext, useRowMetaSelector } from '@/application/database-yjs';
-import { CellProps, TextCell as CellType } from '@/application/database-yjs/cell.type';
+import { Cell as CellType, CellProps } from '@/application/database-yjs/cell.type';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/doc.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
-import { TextCell } from '@/components/database/components/cell/text';
+import { Cell as DatabaseCell } from '@/components/database/components/cell';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { isFlagEmoji } from '@/utils/emoji';
@@ -69,7 +69,7 @@ export function PrimaryCell(props: CellProps<CellType>) {
       </CustomIconPopover>
 
       <div className={'flex flex-1 items-center overflow-x-hidden'}>
-        <TextCell {...props} />
+        <DatabaseCell {...props} />
       </div>
     </div>
   );

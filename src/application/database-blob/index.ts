@@ -22,6 +22,7 @@ const RID_CACHE_PREFIX = 'af_database_blob_rid:';
 const APPLY_CONCURRENCY = 6;
 const DIFF_RETRY_COUNT = 2;
 const DIFF_RETRY_DELAY_MS = 5000;
+const MAX_ROW_DOC_SEEDS = 2000;
 
 const readyStatus = database_blob.DiffStatus.READY;
 
@@ -77,11 +78,20 @@ function compareRid(a: DatabaseBlobRowRid, b: DatabaseBlobRowRid) {
 const rowDocSeedCache = new Map<string, RowDocSeed>();
 
 function cacheRowDocSeed(rowKey: string, docState?: database_blob.ICollabDocState | null) {
+  if (getCachedRowDoc(rowKey)) return;
+
   const seed = getDocState(docState);
 
   if (!seed) return;
 
   rowDocSeedCache.set(rowKey, seed);
+
+  while (rowDocSeedCache.size > MAX_ROW_DOC_SEEDS) {
+    const oldestKey = rowDocSeedCache.keys().next().value;
+
+    if (!oldestKey) break;
+    rowDocSeedCache.delete(oldestKey);
+  }
 }
 
 export function takeDatabaseRowDocSeed(rowKey: string): RowDocSeed | null {
