@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 
 import { AxiosInstance } from 'axios';
-import { createContext, useContext } from 'react';
+import { createContext, useContext, useEffect } from 'react';
 
 import {
   CreateDatabaseViewPayload,
@@ -48,6 +48,7 @@ export interface DatabaseContextState {
    */
   activeViewId: string;
   rowDocMap: Record<RowId, YDoc> | null;
+  ensureRowDoc?: (rowId: string) => Promise<YDoc | undefined> | void;
   isDatabaseRowPage?: boolean;
   paddingStart?: number;
   paddingEnd?: number;
@@ -133,9 +134,13 @@ export const useIsDatabaseRowPage = () => {
 };
 
 export const useRow = (rowId: string) => {
-  const rows = useRowDocMap();
+  const { rowDocMap, ensureRowDoc } = useDatabaseContext();
 
-  return rows?.[rowId]?.getMap(YjsEditorKey.data_section);
+  useEffect(() => {
+    void ensureRowDoc?.(rowId);
+  }, [ensureRowDoc, rowId]);
+
+  return rowDocMap?.[rowId]?.getMap(YjsEditorKey.data_section);
 };
 
 export const useRowData = (rowId: string) => {

@@ -74,6 +74,31 @@ export async function openCollabDB(name: string): Promise<YDoc> {
   return doc as YDoc;
 }
 
+export async function openCollabDBWithProvider(name: string): Promise<{ doc: YDoc; provider: IndexeddbPersistence }> {
+  const doc = new Y.Doc({
+    guid: name,
+  });
+
+  const provider = new IndexeddbPersistence(name, doc);
+
+  let resolve: (value: unknown) => void;
+  const promise = new Promise((resolveFn) => {
+    resolve = resolveFn;
+  });
+
+  provider.on('synced', () => {
+    if (!openedSet.has(name)) {
+      openedSet.add(name);
+    }
+
+    resolve(true);
+  });
+
+  await promise;
+
+  return { doc: doc as YDoc, provider };
+}
+
 export async function closeCollabDB(name: string) {
   if (openedSet.has(name)) {
     openedSet.delete(name);

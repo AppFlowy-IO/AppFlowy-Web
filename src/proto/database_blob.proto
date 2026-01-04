@@ -1,0 +1,88 @@
+syntax = "proto3";
+
+package database_blob;
+
+// Row RID used by database-blob storage (timestamp + u16 seq_no).
+// seq_no must fit within u16; it is not a Redis stream counter.
+message DatabaseBlobRowRid {
+    uint64 timestamp = 1;
+    uint32 seq_no = 2;
+}
+
+message DatabaseBlobDiffRequest {
+    optional DatabaseBlobRowRid max_known_rid = 1;
+    int32 version = 2;
+}
+
+message CollabDocState {
+    bytes doc_state = 1;
+    int32 encoder_version = 2;
+}
+
+message DatabaseBlobRowDocument {
+    bytes document_id = 1;
+    DatabaseBlobRowRid rid = 2;
+    bool deleted = 3;
+    CollabDocState doc_state = 4;
+}
+
+message DatabaseBlobRowUpdate {
+    bytes row_id = 1;
+    DatabaseBlobRowRid rid = 2;
+    CollabDocState doc_state = 3;
+    optional DatabaseBlobRowDocument document = 4;
+}
+
+message DatabaseBlobRowDelete {
+    bytes row_id = 1;
+    DatabaseBlobRowRid rid = 2;
+}
+
+message DatabaseBlobDiffResponse {
+    string manifest_version = 1;
+    optional string head_blob_key = 2;
+    repeated DatabaseBlobRowUpdate updates = 3;
+    repeated DatabaseBlobRowDelete deletes = 4;
+    repeated DatabaseBlobRowUpdate creates = 5;
+    DiffStatus status = 6;
+    optional uint32 retry_after_secs = 7;
+    optional string message = 8;
+}
+
+message BlobDescriptor {
+    string key = 1;
+    optional DatabaseBlobRowRid start_rid = 2;
+    optional DatabaseBlobRowRid end_rid = 3;
+    uint64 total_bytes = 4;
+    bool sealed = 5;
+}
+
+message ManifestRowDocumentPointer {
+    bytes document_id = 1;
+    DatabaseBlobRowRid rid = 2;
+    bool deleted = 3;
+}
+
+message ManifestRowPointer {
+    bytes row_id = 1;
+    uint32 blob_index = 2;
+    uint64 segment_offset = 3;
+    DatabaseBlobRowRid rid = 4;
+    bool deleted = 5;
+    optional ManifestRowDocumentPointer document = 6;
+}
+
+message DatabaseBlobManifest {
+    bytes workspace_id = 1;
+    bytes database_id = 2;
+    string version_id = 3;
+    repeated BlobDescriptor blobs = 4;
+    repeated ManifestRowPointer row_index = 5;
+    int64 updated_at_millis = 6;
+    uint64 lock_epoch = 7;
+}
+
+enum DiffStatus {
+    READY = 0;
+    PENDING = 1;
+}

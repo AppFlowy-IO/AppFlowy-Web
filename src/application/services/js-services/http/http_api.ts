@@ -65,6 +65,7 @@ import {
 } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { RepeatedChatMessage } from '@/components/chat';
+import { database_blob } from '@/proto/database_blob';
 import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
 
@@ -781,6 +782,35 @@ export async function getPageCollab(workspaceId: string, viewId: string) {
     owner,
     lastEditor: last_editor,
   };
+}
+
+export async function databaseBlobDiff(
+  workspaceId: string,
+  databaseId: string,
+  request: database_blob.IDatabaseBlobDiffRequest
+) {
+  if (!axiosInstance) {
+    return Promise.reject({
+      code: -1,
+      message: 'API service not initialized',
+    });
+  }
+
+  const url = `/api/workspace/${workspaceId}/database/${databaseId}/blob/diff`;
+  const payload = database_blob.DatabaseBlobDiffRequest.encode(request).finish();
+
+  const response = await axiosInstance.post<ArrayBuffer>(url, payload, {
+    responseType: 'arraybuffer',
+    headers: {
+      'Content-Type': 'application/octet-stream',
+    },
+    transformRequest: [(data) => data],
+    validateStatus: (status) => status === 200 || status === 202,
+  });
+
+  const bytes = new Uint8Array(response.data);
+
+  return database_blob.DatabaseBlobDiffResponse.decode(bytes);
 }
 
 export async function getPublishView(publishNamespace: string, publishName: string) {

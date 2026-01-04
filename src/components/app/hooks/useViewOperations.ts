@@ -233,7 +233,8 @@ export function useViewOperations() {
           throw new Error('Service or workspace not found');
         }
 
-        const res = await service?.getPageDoc(currentWorkspaceId, id);
+        const workspaceId = currentWorkspaceId;
+        const res = await service?.getPageDoc(workspaceId, id);
 
         if (!res) {
           throw new Error('View not found');
@@ -338,11 +339,14 @@ export function useViewOperations() {
           throw new Error('Database not found');
         }
 
-        res.guid = databaseId;
+        const resolvedDatabaseId = databaseId;
+
+        res.guid = resolvedDatabaseId;
         const { doc } = registerSyncContext({ doc: res, collabType });
 
         // Set the view ID on the doc for React state tracking
         doc.object_id = id;
+
         return doc;
       } catch (e) {
         return Promise.reject(e);

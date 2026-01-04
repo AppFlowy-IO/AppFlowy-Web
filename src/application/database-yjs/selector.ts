@@ -38,6 +38,7 @@ import {
   subscribeRollupCache,
 } from '@/application/database-yjs/rollup/cache';
 import { getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
+import { openCollabDBWithProvider } from '@/application/db';
 import { sortBy } from '@/application/database-yjs/sort';
 import {
   DatabaseViewLayout,
@@ -752,6 +753,7 @@ export function useRowsByGroup(groupId: string) {
 export function useRowOrdersSelector() {
   const rows = useRowDocMap();
   const [rowOrders, setRowOrders] = useState<Row[]>();
+  const [cachedRowDocs, setCachedRowDocs] = useState<Record<string, YDoc>>({});
   const view = useDatabaseView();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const fields = useDatabaseFields();
@@ -759,14 +761,28 @@ export function useRowOrdersSelector() {
   const database = useDatabase();
   const { databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId } = useDatabaseContext();
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
+  const cachedRowDocsRef = useRef<Record<string, YDoc>>({});
+  const cachedRowDocPendingRef = useRef<Map<string, Promise<YDoc | undefined>>>(new Map());
+  const backgroundQueueRef = useRef<Set<string>>(new Set());
+  const backgroundLoadingRef = useRef(false);
+  const backgroundCancelledRef = useRef(false);
+
+  useEffect(() => {
+    cachedRowDocsRef.current = cachedRowDocs;
+  }, [cachedRowDocs]);
+
+  const rowDocsForConditions = useMemo(
+    () => ({ ...cachedRowDocs, ...(rows || {}) }),
+    [cachedRowDocs, rows]
+  );
 
   const relationTextGetter = useCallback(
     (rowId: string, fieldId: string) => {
-      if (!rows || !fields || !database) return '';
+      if (!fields || !database) return '';
       const field = fields.get(fieldId);
 
       if (!field || Number(field.get(YjsDatabaseKey.type)) !== FieldType.Relation) return '';
-      const rowDoc = rows[rowId];
+      const rowDoc = rowDocsForConditions[rowId];
       const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
       const row = rowSharedRoot?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 
@@ -783,16 +799,16 @@ export function useRowOrdersSelector() {
         getViewIdFromDatabaseId,
       });
     },
-    [rows, fields, database, databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId]
+    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId]
   );
 
   const rollupValueGetter = useCallback(
     (rowId: string, fieldId: string) => {
-      if (!rows || !fields || !database) return { value: '' };
+      if (!fields || !database) return { value: '' };
       const field = fields.get(fieldId);
 
       if (!field || Number(field.get(YjsDatabaseKey.type)) !== FieldType.Rollup) return { value: '' };
-      const rowDoc = rows[rowId];
+      const rowDoc = rowDocsForConditions[rowId];
       const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
       const row = rowSharedRoot?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 
@@ -809,7 +825,7 @@ export function useRowOrdersSelector() {
         getViewIdFromDatabaseId,
       });
     },
-    [rows, fields, database, databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId]
+    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId]
   );
 
   const rollupTextGetter = useCallback(
@@ -822,9 +838,18 @@ export function useRowOrdersSelector() {
   const onConditionsChange = useCallback(() => {
     const originalRowOrders = view?.get(YjsDatabaseKey.row_orders).toJSON();
 
-    if (!originalRowOrders || !rows) return;
+    if (!originalRowOrders) return;
 
-    if (sorts?.length === 0 && filters?.length === 0) {
+    const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
+    const rowDocCount = Object.keys(rowDocsForConditions).length;
+    const isRowDataComplete = rowDocCount >= originalRowOrders.length;
+
+    if (!hasConditions) {
+      setRowOrders(originalRowOrders);
+      return;
+    }
+
+    if (!isRowDataComplete) {
       setRowOrders(originalRowOrders);
       return;
     }
@@ -832,14 +857,14 @@ export function useRowOrdersSelector() {
     let rowOrders: Row[] | undefined;
 
     if (sorts?.length) {
-      rowOrders = sortBy(originalRowOrders, sorts, fields, rows, {
+      rowOrders = sortBy(originalRowOrders, sorts, fields, rowDocsForConditions, {
         getRelationCellText: relationTextGetter,
         getRollupCellValue: rollupValueGetter,
       });
     }
 
     if (filters?.length) {
-      rowOrders = filterBy(rowOrders ?? originalRowOrders, filters, fields, rows, {
+      rowOrders = filterBy(rowOrders ?? originalRowOrders, filters, fields, rowDocsForConditions, {
         getRelationCellText: relationTextGetter,
         getRollupCellText: rollupTextGetter,
       });
@@ -850,7 +875,16 @@ export function useRowOrdersSelector() {
     } else {
       setRowOrders(originalRowOrders);
     }
-  }, [fields, filters, rows, sorts, view, relationTextGetter, rollupValueGetter, rollupTextGetter]);
+  }, [
+    fields,
+    filters,
+    rowDocsForConditions,
+    sorts,
+    view,
+    relationTextGetter,
+    rollupValueGetter,
+    rollupTextGetter,
+  ]);
 
   useEffect(() => {
     onConditionsChange();
@@ -939,6 +973,124 @@ export function useRowOrdersSelector() {
       });
     };
   }, [onConditionsChange, view, fields, filters, sorts, rows]);
+
+  useEffect(() => {
+    return () => {
+      backgroundCancelledRef.current = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if ((sorts?.length ?? 0) === 0 && (filters?.length ?? 0) === 0) return;
+
+    const rowOrdersData = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string }[] | undefined;
+
+    if (!rowOrdersData) return;
+
+    rowOrdersData.forEach(({ id }) => {
+      if (!rowDocsForConditions[id]) {
+        backgroundQueueRef.current.add(id);
+      }
+    });
+
+    if (backgroundQueueRef.current.size === 0 || backgroundLoadingRef.current) return;
+
+    backgroundLoadingRef.current = true;
+    backgroundCancelledRef.current = false;
+
+    const BACKGROUND_BATCH_SIZE = 24;
+    const BACKGROUND_CONCURRENCY = 6;
+
+    const drainQueue = async () => {
+      while (backgroundQueueRef.current.size > 0 && !backgroundCancelledRef.current) {
+        const batch = Array.from(backgroundQueueRef.current).slice(0, BACKGROUND_BATCH_SIZE);
+
+        batch.forEach((rowId) => {
+          backgroundQueueRef.current.delete(rowId);
+        });
+
+        for (let i = 0; i < batch.length; i += BACKGROUND_CONCURRENCY) {
+          if (backgroundCancelledRef.current) break;
+          const slice = batch.slice(i, i + BACKGROUND_CONCURRENCY);
+
+          await Promise.all(
+            slice.map(async (rowId) => {
+              if (rowDocsForConditions[rowId]) return;
+
+              if (cachedRowDocPendingRef.current.has(rowId)) {
+                await cachedRowDocPendingRef.current.get(rowId);
+                return;
+              }
+
+              const rowKey = getRowKey(databaseDoc.guid, rowId);
+              const pending = (async () => {
+                const { doc, provider } = await openCollabDBWithProvider(rowKey);
+
+                await provider.destroy();
+                return doc;
+              })();
+
+              cachedRowDocPendingRef.current.set(rowId, pending);
+
+              try {
+                const doc = await pending;
+
+                if (rows?.[rowId]) {
+                  doc.destroy();
+                  return;
+                }
+
+                setCachedRowDocs((prev) => {
+                  if (prev[rowId] || rows?.[rowId]) return prev;
+                  return { ...prev, [rowId]: doc };
+                });
+              } finally {
+                cachedRowDocPendingRef.current.delete(rowId);
+              }
+            })
+          );
+        }
+
+        if (backgroundCancelledRef.current) break;
+
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+
+      backgroundLoadingRef.current = false;
+    };
+
+    void drainQueue();
+  }, [databaseDoc.guid, filters, rowDocsForConditions, rows, sorts, view]);
+
+  useEffect(() => {
+    const cached = cachedRowDocsRef.current;
+    let changed = false;
+    const next: Record<string, YDoc> = {};
+
+    Object.entries(cached).forEach(([rowId, doc]) => {
+      if (rows?.[rowId]) {
+        doc.destroy();
+        changed = true;
+        return;
+      }
+
+      next[rowId] = doc;
+    });
+
+    if (changed) {
+      setCachedRowDocs(next);
+    }
+  }, [rows]);
+
+  useEffect(() => {
+    const pendingRef = cachedRowDocPendingRef.current;
+
+    return () => {
+      Object.values(cachedRowDocsRef.current).forEach((doc) => doc.destroy());
+      cachedRowDocsRef.current = {};
+      pendingRef.clear();
+    };
+  }, [databaseDoc.guid]);
 
   useEffect(() => {
     if (!rows || !fields || !database || !loadView || !createRowDoc || !getViewIdFromDatabaseId) return;
@@ -1083,11 +1235,14 @@ export function useRowOrdersSelector() {
 }
 
 export function useRowDataSelector(rowId: string) {
-  const rowMap = useRowDocMap();
-  const rowDoc = rowMap?.[rowId];
+  const { rowDocMap, ensureRowDoc } = useDatabaseContext();
 
+  useEffect(() => {
+    void ensureRowDoc?.(rowId);
+  }, [ensureRowDoc, rowId]);
+
+  const rowDoc = rowDocMap?.[rowId];
   const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
-
   const row = rowSharedRoot?.get(YjsEditorKey.database_row);
 
   return {
