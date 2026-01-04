@@ -32,6 +32,7 @@ function Sort ({ sortId }: { sortId: string }) {
       </Button>
       <SortCondition sort={sort} />
       {readOnly ? null : <Button
+        data-testid="delete-sort-button"
         size={'icon-sm'}
         onClick={(e) => {
           e.stopPropagation();

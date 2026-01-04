@@ -31,6 +31,7 @@ function FieldMenuTitle ({ filterId, fieldId, renderConditionSelect }: {
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
+            data-testid="delete-filter-button"
             size={'icon-sm'}
             onClick={(e) => {
               e.stopPropagation();

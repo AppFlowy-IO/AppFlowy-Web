@@ -22,6 +22,7 @@ function SortCondition ({ sort }: { sort: Sort }) {
 
   return (
     <Button
+      data-testid="sort-condition-button"
       variant={'outline'}
       size={'sm'}
       onClick={() => {

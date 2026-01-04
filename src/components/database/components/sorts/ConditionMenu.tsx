@@ -53,6 +53,7 @@ function ConditionMenu ({
           {conditions.map(condition => (
             <DropdownMenuItem
               key={condition.id}
+              data-testid={`sort-condition-${condition.id === SortCondition.Ascending ? 'asc' : 'desc'}`}
               className={selected === condition.id ? 'bg-accent' : ''}
               onSelect={() => {
                 updateSort({

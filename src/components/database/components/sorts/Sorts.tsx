@@ -96,6 +96,7 @@ export function Sorts () {
                   onOpenChange={setOpenPropertiesMenu}
                 >
                   <Button
+                    data-testid="add-sort-button"
                     size={'sm'}
                     onClick={() => setOpenPropertiesMenu(!openPropertiesMenu)}
                     variant={'ghost'}
@@ -108,6 +109,7 @@ export function Sorts () {
               </div>
 
               <Button
+                data-testid="delete-all-sorts-button"
                 size={'sm'}
                 onClick={() => {
                   deleteAllSorts();

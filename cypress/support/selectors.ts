@@ -452,31 +452,51 @@ export const DatabaseViewSelectors = {
  * Database Filter & Sort selectors
  */
 export const DatabaseFilterSelectors = {
-  // Filter button (opens filter menu)
+  // Filter button (opens filter menu - shows field picker when no filters exist)
   filterButton: () => cy.get(byTestId('database-actions-filter')),
 
-  // Add filter button (plus button in DatabaseConditions area to add new filter condition)
+  // Add filter button (plus button in filter area to add another filter condition)
   addFilterButton: () => cy.get(byTestId('database-add-filter-button')),
 
-  // Sort button
+  // Sort button (opens sort menu - shows field picker when no sorts exist)
   sortButton: () => cy.get(byTestId('database-actions-sort')),
 
-  // Filter condition row
+  // Filter condition pill (clickable to open filter menu)
   filterCondition: () => cy.get(byTestId('database-filter-condition')),
 
-  // Sort condition row
+  // Sort condition pill (clickable to open sort menu)
   sortCondition: () => cy.get(byTestId('database-sort-condition')),
 
-  // Remove filter button (inside condition)
-  removeFilterButton: () =>
-    cy
-      .get(
-        'button[aria-label*="remove"], button[aria-label*="delete"], button:contains("×"), svg[class*="close"], svg[class*="x"]'
-      )
-      .first(),
+  // Individual sort condition row
+  sortConditionRow: () => cy.get(byTestId('sort-condition')),
 
-  // Filter input
+  // Delete filter button (inside filter menu)
+  deleteFilterButton: () => cy.get(byTestId('delete-filter-button')),
+
+  // Delete sort button (inside sort row)
+  deleteSortButton: () => cy.get(byTestId('delete-sort-button')),
+
+  // Add sort button (inside sort menu)
+  addSortButton: () => cy.get(byTestId('add-sort-button')),
+
+  // Delete all sorts button
+  deleteAllSortsButton: () => cy.get(byTestId('delete-all-sorts-button')),
+
+  // Sort condition button (shows Ascending/Descending)
+  sortConditionButton: () => cy.get(byTestId('sort-condition-button')),
+
+  // Sort direction options
+  sortConditionAsc: () => cy.get(byTestId('sort-condition-asc')),
+  sortConditionDesc: () => cy.get(byTestId('sort-condition-desc')),
+
+  // Text filter container
+  textFilter: () => cy.get(byTestId('text-filter')),
+
+  // Filter input for text filters
   filterInput: () => cy.get(byTestId('text-filter-input')),
+
+  // Date filter container
+  dateFilter: () => cy.get(byTestId('date-filter')),
 };
 
 /**
