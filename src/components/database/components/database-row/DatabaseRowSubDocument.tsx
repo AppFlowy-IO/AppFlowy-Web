@@ -176,8 +176,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         return true;
       }
 
-      // If meta says the document already exists but the local editor is empty,
-      // skip updating to avoid overwriting unsynced content.
       if (meta?.isEmptyDocument === false && isEmpty) {
         return true;
       }
