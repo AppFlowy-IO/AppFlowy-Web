@@ -74,7 +74,10 @@ export async function openCollabDB(name: string): Promise<YDoc> {
   return doc as YDoc;
 }
 
-export async function openCollabDBWithProvider(name: string): Promise<{ doc: YDoc; provider: IndexeddbPersistence }> {
+export async function openCollabDBWithProvider(
+  name: string,
+  options?: { awaitSync?: boolean }
+): Promise<{ doc: YDoc; provider: IndexeddbPersistence }> {
   const doc = new Y.Doc({
     guid: name,
   });
@@ -94,7 +97,9 @@ export async function openCollabDBWithProvider(name: string): Promise<{ doc: YDo
     resolve(true);
   });
 
-  await promise;
+  if (options?.awaitSync !== false) {
+    await promise;
+  }
 
   return { doc: doc as YDoc, provider };
 }

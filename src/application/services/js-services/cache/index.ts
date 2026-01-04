@@ -1,6 +1,6 @@
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { closeCollabDB, db, openCollabDB } from '@/application/db';
+import { closeCollabDB, db, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { Fetcher, StrategyType } from '@/application/services/js-services/cache/types';
 import {
   DatabaseId,
@@ -435,18 +435,87 @@ export async function revalidateUser<T extends User>(fetcher: Fetcher<T>) {
   return data;
 }
 
-const rowDocs = new Map<string, YDoc>();
+type RowDocEntry = {
+  doc: YDoc;
+  whenSynced: Promise<void>;
+};
 
-export async function createRowDoc(rowKey: string) {
-  if (rowDocs.has(rowKey)) {
-    return rowDocs.get(rowKey) as YDoc;
+const ROW_SYNC_LOG_LIMIT = 50;
+const ROW_FAST_LOG_LIMIT = 50;
+let rowSyncLogCount = 0;
+let rowFastLogCount = 0;
+
+const rowDocs = new Map<string, RowDocEntry>();
+
+async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
+  const existing = rowDocs.get(rowKey);
+
+  if (existing) {
+    return existing;
   }
 
-  const doc = await openCollabDB(rowKey);
+  const startedAt = Date.now();
+  const { doc, provider } = await openCollabDBWithProvider(rowKey, { awaitSync: false });
+  const whenSynced = provider.synced
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => {
+        provider.on('synced', () => {
+          if (rowSyncLogCount < ROW_SYNC_LOG_LIMIT) {
+            rowSyncLogCount += 1;
+            const rowSharedRoot = doc.getMap(YjsEditorKey.data_section);
+            const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
 
-  rowDocs.set(rowKey, doc);
+            Log.debug('[Database] row doc synced', {
+              rowKey,
+              durationMs: Date.now() - startedAt,
+              hasRowData,
+            });
+          }
 
-  return doc;
+          resolve();
+        });
+      });
+  const entry = { doc, whenSynced };
+
+  rowDocs.set(rowKey, entry);
+  return entry;
+}
+
+export async function createRowDoc(rowKey: string) {
+  const entry = await getOrCreateRowDocEntry(rowKey);
+
+  await entry.whenSynced;
+
+  return entry.doc;
+}
+
+export async function createRowDocFast(
+  rowKey: string,
+  seed?: { bytes: Uint8Array; encoderVersion: number }
+) {
+  const entry = await getOrCreateRowDocEntry(rowKey);
+
+  if (seed) {
+    applyYDoc(entry.doc, seed.bytes, seed.encoderVersion);
+  }
+
+  if (rowFastLogCount < ROW_FAST_LOG_LIMIT) {
+    rowFastLogCount += 1;
+    const rowSharedRoot = entry.doc.getMap(YjsEditorKey.data_section);
+    const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
+
+    Log.debug('[Database] row doc fast open', {
+      rowKey,
+      hasSeed: Boolean(seed),
+      hasRowData,
+    });
+  }
+
+  return entry.doc;
+}
+
+export function getCachedRowDoc(rowKey: string): YDoc | undefined {
+  return rowDocs.get(rowKey)?.doc;
 }
 
 export function deleteRowDoc(rowKey: string) {

@@ -2,6 +2,7 @@ import { stringify as uuidStringify } from 'uuid';
 
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
+import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { database_blob } from '@/proto/database_blob';
@@ -12,10 +13,19 @@ type DatabaseBlobRowRid = {
   seqNo: number;
 };
 
+type RowDocSeed = {
+  bytes: Uint8Array;
+  encoderVersion: number;
+};
+
 const RID_CACHE_PREFIX = 'af_database_blob_rid:';
 const APPLY_CONCURRENCY = 6;
+const DIFF_RETRY_COUNT = 2;
+const DIFF_RETRY_DELAY_MS = 5000;
 
 const readyStatus = database_blob.DiffStatus.READY;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function ridCacheKey(databaseId: string) {
   return `${RID_CACHE_PREFIX}${databaseId}`;
@@ -62,6 +72,35 @@ function compareRid(a: DatabaseBlobRowRid, b: DatabaseBlobRowRid) {
   }
 
   return a.timestamp > b.timestamp ? 1 : -1;
+}
+
+const rowDocSeedCache = new Map<string, RowDocSeed>();
+
+function cacheRowDocSeed(rowKey: string, docState?: database_blob.ICollabDocState | null) {
+  const seed = getDocState(docState);
+
+  if (!seed) return;
+
+  rowDocSeedCache.set(rowKey, seed);
+}
+
+export function takeDatabaseRowDocSeed(rowKey: string): RowDocSeed | null {
+  const seed = rowDocSeedCache.get(rowKey);
+
+  if (!seed) return null;
+
+  rowDocSeedCache.delete(rowKey);
+  return seed;
+}
+
+export function clearDatabaseRowDocSeedCache(databaseId: string) {
+  const prefix = `${databaseId}_rows_`;
+
+  for (const key of rowDocSeedCache.keys()) {
+    if (key.startsWith(prefix)) {
+      rowDocSeedCache.delete(key);
+    }
+  }
 }
 
 function maxRidFromDiff(diff: database_blob.DatabaseBlobDiffResponse): DatabaseBlobRowRid | null {
@@ -129,6 +168,18 @@ async function applyCollabUpdate(objectId: string, docState: database_blob.IColl
 
   if (!state) return;
 
+  const cachedDoc = getCachedRowDoc(objectId);
+
+  if (cachedDoc) {
+    Log.debug('[Database] apply blob update to cached doc', {
+      objectId,
+      bytes: state.bytes.length,
+      encoderVersion: state.encoderVersion,
+    });
+    applyYDoc(cachedDoc, state.bytes, state.encoderVersion);
+    return;
+  }
+
   const { doc, provider } = await openCollabDBWithProvider(objectId);
 
   try {
@@ -150,6 +201,7 @@ async function applyRowUpdate(databaseId: string, update: database_blob.IDatabas
   if (rowDocState) {
     const rowKey = getRowKey(databaseId, rowId);
 
+    cacheRowDocSeed(rowKey, rowDocState);
     await applyCollabUpdate(rowKey, rowDocState);
   }
 
@@ -185,25 +237,34 @@ async function fetchReadyDiff(workspaceId: string, databaseId: string) {
     version: 1,
   });
 
-  Log.debug('[database-blob] diff request', {
+  Log.debug('[Database] blob diff request', {
     workspaceId,
     databaseId,
     maxKnownRid: cachedRid ?? null,
   });
 
-  const startedAt = Date.now();
-  const diff = await databaseBlobDiff(workspaceId, databaseId, request);
+  for (let attempt = 0; attempt <= DIFF_RETRY_COUNT; attempt += 1) {
+    const startedAt = Date.now();
+    const diff = await databaseBlobDiff(workspaceId, databaseId, request);
 
-  Log.debug('[database-blob] diff response', {
-    databaseId,
-    status: diff.status,
-    retryAfterSecs: diff.retryAfterSecs ?? null,
-    durationMs: Date.now() - startedAt,
-    ...summarizeDiff(diff),
-  });
+    Log.debug('[Database] blob diff response', {
+      databaseId,
+      status: diff.status,
+      retryAfterSecs: diff.retryAfterSecs ?? null,
+      durationMs: Date.now() - startedAt,
+      attempt,
+      ...summarizeDiff(diff),
+    });
 
-  if (diff.status === readyStatus) {
-    return diff;
+    if (diff.status === readyStatus) {
+      return diff;
+    }
+
+    if (attempt >= DIFF_RETRY_COUNT) {
+      break;
+    }
+
+    await sleep(DIFF_RETRY_DELAY_MS);
   }
 
   throw new Error('database blob diff is not ready');
@@ -215,17 +276,21 @@ export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: 
 
   await applyDiff(databaseId, diff);
 
-  Log.debug('[database-blob] diff persisted to IndexedDB', {
+  Log.debug('[Database] blob diff persisted to IndexedDB', {
     databaseId,
     durationMs: Date.now() - applyStartedAt,
     ...summarizeDiff(diff),
+  });
+  Log.debug('[Database] blob seed cache size', {
+    databaseId,
+    seedCount: rowDocSeedCache.size,
   });
 
   const maxRid = maxRidFromDiff(diff);
 
   if (maxRid) {
     writeCachedRid(databaseId, maxRid);
-    Log.debug('[database-blob] updated rid cache', { databaseId, maxRid });
+    Log.debug('[Database] blob updated rid cache', { databaseId, maxRid });
   }
 
   return diff;

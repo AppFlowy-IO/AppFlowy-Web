@@ -13,6 +13,7 @@
    - `row_orders` is still read from the view doc when rendering.
 3. Row docs are opened lazily per row:
    - `useRowData(rowId)` / `useRowDataSelector(rowId)` call `ensureRowDoc(rowId)` from `DatabaseContext`.
+   - `ensureRowDoc` waits for the blob diff prefetch to finish (success or failure) before binding row sync.
    - `ensureRowDoc` uses `getRowKey(doc.guid, rowId)` and `createRowDoc(rowKey)` to open the row doc and register sync as `Types.DatabaseRow`.
 4. `rowDocMap` in `DatabaseContext` is incremental (only loaded rows):
    - Grid/Board/Calendar rows read `YjsDatabaseKey.cells` from row docs when available.
