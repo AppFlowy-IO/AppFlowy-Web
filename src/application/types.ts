@@ -1269,6 +1269,60 @@ export interface CreateDatabaseViewResponse {
   database_update?: number[];
 }
 
+export enum DatabaseCsvImportMode {
+  Create = 'create',
+  Append = 'append',
+  Replace = 'replace',
+}
+
+export enum DatabaseCsvImportLayout {
+  Grid = 'grid',
+  Board = 'board',
+  Calendar = 'calendar',
+}
+
+export interface DatabaseCsvOptions {
+  has_header: boolean;
+  delimiter: string;
+  quote: string;
+  escape?: string;
+  encoding: string;
+  trim: boolean;
+}
+
+export interface DatabaseCsvImportRequest {
+  content_length: number;
+  md5_base64?: string;
+  mode: DatabaseCsvImportMode;
+  parent_view_id?: string;
+  database_id?: string;
+  name?: string;
+  layout: DatabaseCsvImportLayout;
+  csv: DatabaseCsvOptions;
+}
+
+export interface DatabaseCsvImportCreateResponse {
+  task_id: string;
+  presigned_url: string;
+  expires_in_secs: number;
+}
+
+export interface DatabaseCsvImportProgress {
+  rows_processed: number;
+  rows_total: number;
+}
+
+export type DatabaseCsvImportStatus = 'Pending' | 'Completed' | 'Failed' | 'Expire' | 'Cancel';
+
+export interface DatabaseCsvImportStatusResponse {
+  task_id: string;
+  status: DatabaseCsvImportStatus;
+  progress: DatabaseCsvImportProgress;
+  database_id?: string;
+  view_id?: string;
+  error?: string;
+}
+
 export interface CreateSpacePayload {
   name?: string;
   space_icon?: string;

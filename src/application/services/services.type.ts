@@ -20,6 +20,9 @@ import {
   CreatePageResponse,
   CreateSpacePayload,
   CreateWorkspacePayload,
+  DatabaseCsvImportCreateResponse,
+  DatabaseCsvImportRequest,
+  DatabaseCsvImportStatusResponse,
   DatabaseRelations,
   DuplicatePublishView,
   DuplicatePublishViewResponse,
@@ -145,6 +148,17 @@ export interface AppService {
   getActiveSubscription: (workspaceId: string) => Promise<SubscriptionPlan[]>;
   getWorkspaceSubscriptions: (workspaceId: string) => Promise<Subscription[]>;
   importFile: (file: File, onProgress: (progress: number) => void) => Promise<void>;
+  createDatabaseCsvImportTask: (
+    workspaceId: string,
+    payload: DatabaseCsvImportRequest
+  ) => Promise<DatabaseCsvImportCreateResponse>;
+  uploadDatabaseCsvImportFile: (
+    presignedUrl: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ) => Promise<void>;
+  getDatabaseCsvImportStatus: (workspaceId: string, taskId: string) => Promise<DatabaseCsvImportStatusResponse>;
+  cancelDatabaseCsvImportTask: (workspaceId: string, taskId: string) => Promise<void>;
   createSpace: (workspaceId: string, payload: CreateSpacePayload) => Promise<string>;
   updateSpace: (workspaceId: string, payload: UpdateSpacePayload) => Promise<void>;
   addAppPage: (workspaceId: string, parentViewId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;

@@ -39,6 +39,9 @@ import {
   CreatePagePayload,
   CreateSpacePayload,
   CreateWorkspacePayload,
+  DatabaseCsvImportCreateResponse,
+  DatabaseCsvImportRequest,
+  DatabaseCsvImportStatusResponse,
   DatabaseRelations,
   DuplicatePublishView,
   DuplicatePublishViewResponse,
@@ -593,6 +596,32 @@ export class AFClientService implements AFService {
     const task = await APIService.createImportTask(file);
 
     await APIService.uploadImportFile(task.presignedUrl, file, onProgress);
+  }
+
+  async createDatabaseCsvImportTask(
+    workspaceId: string,
+    payload: DatabaseCsvImportRequest
+  ): Promise<DatabaseCsvImportCreateResponse> {
+    return APIService.createDatabaseCsvImportTask(workspaceId, payload);
+  }
+
+  async uploadDatabaseCsvImportFile(
+    presignedUrl: string,
+    file: File,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    return APIService.uploadDatabaseCsvImportFile(presignedUrl, file, onProgress);
+  }
+
+  async getDatabaseCsvImportStatus(
+    workspaceId: string,
+    taskId: string
+  ): Promise<DatabaseCsvImportStatusResponse> {
+    return APIService.getDatabaseCsvImportStatus(workspaceId, taskId);
+  }
+
+  async cancelDatabaseCsvImportTask(workspaceId: string, taskId: string): Promise<void> {
+    return APIService.cancelDatabaseCsvImportTask(workspaceId, taskId);
   }
 
   async createSpace(workspaceId: string, payload: CreateSpacePayload) {

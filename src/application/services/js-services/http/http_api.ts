@@ -29,6 +29,9 @@ import {
   CreatePageResponse,
   CreateSpacePayload,
   CreateWorkspacePayload,
+  DatabaseCsvImportCreateResponse,
+  DatabaseCsvImportRequest,
+  DatabaseCsvImportStatusResponse,
   DatabaseId,
   FolderView,
   GenerateAISummaryRowPayload,
@@ -1471,6 +1474,62 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
     code: -1,
     message: `Upload file failed. ${response.statusText}`,
   });
+}
+
+export async function createDatabaseCsvImportTask(
+  workspaceId: string,
+  payload: DatabaseCsvImportRequest
+): Promise<DatabaseCsvImportCreateResponse> {
+  const url = `/api/workspace/${workspaceId}/database/import/csv`;
+
+  return executeAPIRequest<DatabaseCsvImportCreateResponse>(() =>
+    axiosInstance?.post<APIResponse<DatabaseCsvImportCreateResponse>>(url, payload)
+  );
+}
+
+export async function uploadDatabaseCsvImportFile(
+  presignedUrl: string,
+  file: File,
+  onProgress?: (progress: number) => void
+) {
+  const response = await axios.put(presignedUrl, file, {
+    onUploadProgress: (progressEvent) => {
+      if (!onProgress) return;
+      const { progress = 0 } = progressEvent;
+
+      Log.debug(`Upload progress: ${progress * 100}%`);
+      onProgress(progress);
+    },
+    headers: {
+      'Content-Type': 'text/csv',
+    },
+  });
+
+  if (response.status === 200 || response.status === 204) {
+    return;
+  }
+
+  return Promise.reject({
+    code: -1,
+    message: `Upload csv file failed. ${response.statusText}`,
+  });
+}
+
+export async function getDatabaseCsvImportStatus(
+  workspaceId: string,
+  taskId: string
+): Promise<DatabaseCsvImportStatusResponse> {
+  const url = `/api/workspace/${workspaceId}/database/import/csv/${taskId}`;
+
+  return executeAPIRequest<DatabaseCsvImportStatusResponse>(() =>
+    axiosInstance?.get<APIResponse<DatabaseCsvImportStatusResponse>>(url)
+  );
+}
+
+export async function cancelDatabaseCsvImportTask(workspaceId: string, taskId: string): Promise<void> {
+  const url = `/api/workspace/${workspaceId}/database/import/csv/${taskId}/cancel`;
+
+  return executeAPIVoidRequest(() => axiosInstance?.post<APIResponse>(url));
 }
 
 export async function createDatabaseView(
