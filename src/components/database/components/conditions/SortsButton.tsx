@@ -38,7 +38,6 @@ function SortsButton ({ toggleExpanded, expanded }: {
       onSelect={fieldId => {
         addSort(fieldId);
         if (!expanded) {
-
           toggleExpanded?.();
         }
       }}

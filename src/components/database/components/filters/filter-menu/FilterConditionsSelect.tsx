@@ -49,6 +49,7 @@ function FilterConditionsSelect ({
           {conditions.map((condition) => (
             <DropdownMenuItem
               key={condition.value}
+              data-testid={`filter-condition-${condition.value}`}
               onSelect={() => {
                 if (onSelect) {
                   onSelect(condition.value);

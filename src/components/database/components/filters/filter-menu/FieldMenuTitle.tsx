@@ -38,6 +38,7 @@ function FieldMenuTitle ({ filterId, fieldId, renderConditionSelect }: {
             }}
             variant={'ghost'}
             danger
+            data-testid="delete-filter-button"
           >
             <DeleteIcon className={'w-5 h-5'} />
           </Button>

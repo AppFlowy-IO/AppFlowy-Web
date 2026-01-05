@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useFiltersSelector, useReadOnly } from '@/application/database-yjs';
@@ -16,7 +16,23 @@ function FiltersButton({ toggleExpanded, expanded }: { toggleExpanded?: () => vo
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const addFilter = useAddFilter();
-  const setOpenFilterId = useConditionsContext()?.setOpenFilterId;
+  const conditionsContext = useConditionsContext();
+  const setOpenFilterId = conditionsContext?.setOpenFilterId;
+  const setExpanded = conditionsContext?.setExpanded;
+  const prevFiltersLengthRef = useRef(filters.length);
+
+  // Auto-expand conditions panel when first filter is added
+  useEffect(() => {
+    const prevLength = prevFiltersLengthRef.current;
+    const currentLength = filters.length;
+
+    // If filters went from 0 to 1+, expand the panel
+    if (prevLength === 0 && currentLength > 0) {
+      setExpanded?.(true);
+    }
+
+    prevFiltersLengthRef.current = currentLength;
+  }, [filters.length, setExpanded]);
 
   return (
     <PropertiesMenu
@@ -27,9 +43,6 @@ function FiltersButton({ toggleExpanded, expanded }: { toggleExpanded?: () => vo
         const filterId = addFilter(fieldId);
 
         setOpenFilterId?.(filterId);
-        if (!expanded) {
-          toggleExpanded?.();
-        }
       }}
       asChild
     >

@@ -66,6 +66,9 @@ function DatabaseViews({
   const toggleExpanded = useCallback(() => {
     setConditionsExpanded((prev) => !prev);
   }, []);
+  const setExpanded = useCallback((expanded: boolean) => {
+    setConditionsExpanded(expanded);
+  }, []);
   const [openFilterId, setOpenFilterId] = useState<string>();
 
   // Get active view from selector state, or directly from Yjs if not yet in state
@@ -128,6 +131,7 @@ function DatabaseViews({
         value={{
           expanded: conditionsExpanded,
           toggleExpanded,
+          setExpanded,
           openFilterId,
           setOpenFilterId,
         }}

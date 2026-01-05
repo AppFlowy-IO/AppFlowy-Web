@@ -461,22 +461,29 @@ export const DatabaseFilterSelectors = {
   // Sort button
   sortButton: () => cy.get(byTestId('database-actions-sort')),
 
-  // Filter condition row
+  // Filter condition row/chip
   filterCondition: () => cy.get(byTestId('database-filter-condition')),
 
   // Sort condition row
   sortCondition: () => cy.get(byTestId('database-sort-condition')),
 
-  // Remove filter button (inside condition)
-  removeFilterButton: () =>
-    cy
-      .get(
-        'button[aria-label*="remove"], button[aria-label*="delete"], button:contains("×"), svg[class*="close"], svg[class*="x"]'
-      )
-      .first(),
+  // Delete filter button (inside filter menu)
+  deleteFilterButton: () => cy.get(byTestId('delete-filter-button')),
 
-  // Filter input
+  // Filter input (text/number)
   filterInput: () => cy.get(byTestId('text-filter-input')),
+
+  // Text filter container
+  textFilter: () => cy.get(byTestId('text-filter')),
+
+  // Filter condition option by value (0-7 for text, 0-7 for number, etc.)
+  filterConditionOption: (conditionValue: number) => cy.get(byTestId(`filter-condition-${conditionValue}`)),
+
+  // Property/field item in filter selection popover
+  propertyItem: (fieldId: string) => cy.get(`[data-item-id="${fieldId}"]`),
+
+  // Property/field item by name (searches within popover)
+  propertyItemByName: (name: string) => cy.contains('[data-item-id]', name),
 };
 
 /**
