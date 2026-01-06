@@ -10,7 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 import { useConditionsContext } from './context';
 
-function FiltersButton({ toggleExpanded, expanded }: { toggleExpanded?: () => void; expanded?: boolean }) {
+function FiltersButton({ toggleExpanded }: { toggleExpanded?: () => void }) {
   const filters = useFiltersSelector();
   const readOnly = useReadOnly();
   const { t } = useTranslation();
