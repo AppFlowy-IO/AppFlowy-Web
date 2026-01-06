@@ -120,6 +120,10 @@ export const initSync = (ctx: SyncContext) => {
 
   Log.debug(`Initializing sync for objectId ${doc.guid} with collabType ${collabType}`);
 
+  if (collabType === Types.DatabaseRow) {
+    Log.debug('[Database] row sync start', { rowId: doc.guid });
+  }
+
   let onAwarenessChange;
   const updates: Uint8Array[] = [];
   const debounced = debounce(() => {

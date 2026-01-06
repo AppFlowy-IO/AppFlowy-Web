@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 
 import { AxiosInstance } from 'axios';
-import { createContext, useContext, useEffect } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
 
 import {
   CreateDatabaseViewPayload,
@@ -135,12 +135,55 @@ export const useIsDatabaseRowPage = () => {
 
 export const useRow = (rowId: string) => {
   const { rowDocMap, ensureRowDoc } = useDatabaseContext();
+  const [, forceUpdate] = useState(0);
+  const rowDoc = rowDocMap?.[rowId];
 
   useEffect(() => {
     void ensureRowDoc?.(rowId);
   }, [ensureRowDoc, rowId]);
 
-  return rowDocMap?.[rowId]?.getMap(YjsEditorKey.data_section);
+  useEffect(() => {
+    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
+    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+    let detachRowObserver: (() => void) | null = null;
+    const update = () => {
+      forceUpdate((prev) => prev + 1);
+    };
+
+    const attachRowObserver = () => {
+      const row = rowSharedRoot.get(YjsEditorKey.database_row) as
+        | { observeDeep?: (cb: () => void) => void; unobserveDeep?: (cb: () => void) => void }
+        | undefined;
+
+      if (!row?.observeDeep || !row?.unobserveDeep) return;
+
+      row.observeDeep(update);
+      detachRowObserver = () => row.unobserveDeep(update);
+    };
+
+    const handleRootChange = (event: { keysChanged?: Set<string> }) => {
+      if (!event.keysChanged?.has(YjsEditorKey.database_row)) return;
+      if (detachRowObserver) {
+        detachRowObserver();
+        detachRowObserver = null;
+      }
+      attachRowObserver();
+      update();
+    };
+
+    rowSharedRoot.observe(handleRootChange);
+    attachRowObserver();
+    update();
+
+    return () => {
+      if (detachRowObserver) {
+        detachRowObserver();
+      }
+      rowSharedRoot.unobserve(handleRootChange);
+    };
+  }, [rowDoc]);
+
+  return rowDoc?.getMap(YjsEditorKey.data_section);
 };
 
 export const useRowData = (rowId: string) => {

@@ -369,13 +369,19 @@ export function useViewOperations() {
           throw new Error('Failed to create row doc');
         }
 
-        const rowId = rowKey.split('_rows_')[1];
+        const [databaseId, rowId] = rowKey.split('_rows_');
 
         if (!rowId) {
           throw new Error('Failed to create row doc');
         }
 
         doc.guid = rowId;
+
+        Log.debug('[Database] row sync bind start', {
+          rowKey,
+          rowId,
+          databaseId,
+        });
         const syncContext = registerSyncContext({
           doc,
           collabType: Types.DatabaseRow,

@@ -11,6 +11,7 @@ import {
   useDatabaseFields,
   useDatabaseView,
   useDatabaseViewId,
+  useRow,
   useRowDocMap,
 } from '@/application/database-yjs/context';
 import {
@@ -1240,14 +1241,7 @@ export function useRowOrdersSelector() {
 }
 
 export function useRowDataSelector(rowId: string) {
-  const { rowDocMap, ensureRowDoc } = useDatabaseContext();
-
-  useEffect(() => {
-    void ensureRowDoc?.(rowId);
-  }, [ensureRowDoc, rowId]);
-
-  const rowDoc = rowDocMap?.[rowId];
-  const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
+  const rowSharedRoot = useRow(rowId);
   const row = rowSharedRoot?.get(YjsEditorKey.database_row);
 
   return {

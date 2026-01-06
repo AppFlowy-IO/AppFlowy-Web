@@ -45,6 +45,71 @@ db.version(2)
   });
 
 const openedSet = new Set<string>();
+const ensuredStores = new Map<string, Promise<void>>();
+
+const yjsStoreDefinitions = [
+  { name: 'updates', options: { autoIncrement: true } },
+  { name: 'custom' },
+];
+
+function createYjsStores(db: IDBDatabase) {
+  yjsStoreDefinitions.forEach((store) => {
+    if (!db.objectStoreNames.contains(store.name)) {
+      db.createObjectStore(store.name, store.options);
+    }
+  });
+}
+
+function openIdbDatabase(name: string, version?: number) {
+  return new Promise<IDBDatabase | null>((resolve) => {
+    const request = typeof version === 'number' ? indexedDB.open(name, version) : indexedDB.open(name);
+
+    request.onupgradeneeded = () => {
+      createYjsStores(request.result);
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => resolve(null);
+    request.onblocked = () => resolve(null);
+  });
+}
+
+async function ensureYjsStores(name: string) {
+  if (typeof indexedDB === 'undefined') return;
+
+  const existing = ensuredStores.get(name);
+
+  if (existing) {
+    await existing;
+    return;
+  }
+
+  const ensurePromise = (async () => {
+    const db = await openIdbDatabase(name);
+
+    if (!db) return;
+
+    const missingStores = yjsStoreDefinitions.filter((store) => !db.objectStoreNames.contains(store.name));
+
+    if (missingStores.length === 0) {
+      db.close();
+      return;
+    }
+
+    const nextVersion = db.version + 1;
+
+    db.close();
+    const upgraded = await openIdbDatabase(name, nextVersion);
+
+    upgraded?.close();
+  })().catch((error) => {
+    Log.warn('[Database] failed to ensure yjs stores', { name, error });
+  });
+
+  ensuredStores.set(name, ensurePromise);
+  await ensurePromise;
+  ensuredStores.delete(name);
+}
 
 /**
  * Open the collaboration database, and return a function to close it
@@ -53,6 +118,8 @@ export async function openCollabDB(name: string): Promise<YDoc> {
   const doc = new Y.Doc({
     guid: name,
   });
+
+  await ensureYjsStores(name);
 
   const provider = new IndexeddbPersistence(name, doc);
 
@@ -81,6 +148,8 @@ export async function openCollabDBWithProvider(
   const doc = new Y.Doc({
     guid: name,
   });
+
+  await ensureYjsStores(name);
 
   const provider = new IndexeddbPersistence(name, doc);
 
@@ -121,10 +190,10 @@ export async function closeCollabDB(name: string) {
 export async function clearData() {
   const databases = await indexedDB.databases();
 
-  const deleteDatabase = async (dbInfo: IDBDatabaseInfo): Promise<boolean> => {
+  const deleteDatabase = async (dbInfo: IDBDatabaseInfo): Promise<{ name: string; deleted: boolean }> => {
     const dbName = dbInfo.name;
 
-    if (!dbName) return false;
+    if (!dbName) return { name: '', deleted: false };
 
     return new Promise((resolve) => {
       const request = indexedDB.open(dbName);
@@ -138,31 +207,57 @@ export async function clearData() {
 
         deleteRequest.onsuccess = () => {
           Log.debug(`Database ${dbName} deleted successfully`);
-          resolve(true);
+          resolve({ name: dbName, deleted: true });
         };
 
         deleteRequest.onerror = (event) => {
           console.error(`Error deleting database ${dbName}`, event);
-          resolve(false);
+          resolve({ name: dbName, deleted: false });
         };
 
         deleteRequest.onblocked = () => {
           console.warn(`Delete operation blocked for database ${dbName}`);
-          resolve(false);
+          resolve({ name: dbName, deleted: false });
         };
       };
 
       request.onerror = (event) => {
         console.error(`Error opening database ${dbName}`, event);
-        resolve(false);
+        resolve({ name: dbName, deleted: false });
       };
     });
   };
 
   try {
     const results = await Promise.all(databases.map(deleteDatabase));
+    try {
+      const deletedDatabaseIds = new Set<string>();
+      const blockedDatabaseIds = new Set<string>();
 
-    return results.every(Boolean);
+      results.forEach(({ name, deleted }) => {
+        if (!name) return;
+        const markerIndex = name.indexOf('_rows_');
+
+        if (markerIndex <= 0) return;
+        const databaseId = name.slice(0, markerIndex);
+
+        if (!databaseId) return;
+        if (deleted) {
+          deletedDatabaseIds.add(databaseId);
+        } else {
+          blockedDatabaseIds.add(databaseId);
+        }
+      });
+
+      deletedDatabaseIds.forEach((databaseId) => {
+        if (blockedDatabaseIds.has(databaseId)) return;
+        localStorage.removeItem(`af_database_blob_rid:${databaseId}`);
+      });
+    } catch {
+      // Ignore localStorage failures (private mode/quota).
+    }
+
+    return results.every((result) => result.deleted);
   } catch (error) {
     console.error('Error during database deletion process:', error);
     return false;

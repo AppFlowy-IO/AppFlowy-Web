@@ -18,11 +18,16 @@ type RowDocSeed = {
   encoderVersion: number;
 };
 
+type PrefetchOptions = {
+  priorityRowIds?: string[];
+};
+
 const RID_CACHE_PREFIX = 'af_database_blob_rid:';
 const APPLY_CONCURRENCY = 6;
 const DIFF_RETRY_COUNT = 2;
 const DIFF_RETRY_DELAY_MS = 5000;
 const MAX_ROW_DOC_SEEDS = 2000;
+const MAX_ROW_DOC_SEEDS_LOOKUP = 10000;
 
 const readyStatus = database_blob.DiffStatus.READY;
 
@@ -76,6 +81,16 @@ function compareRid(a: DatabaseBlobRowRid, b: DatabaseBlobRowRid) {
 }
 
 const rowDocSeedCache = new Map<string, RowDocSeed>();
+const rowDocSeedLookup = new Map<string, RowDocSeed>();
+
+function trimRowDocSeedLookup() {
+  while (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
+    const oldestKey = rowDocSeedLookup.keys().next().value;
+
+    if (!oldestKey) break;
+    rowDocSeedLookup.delete(oldestKey);
+  }
+}
 
 function cacheRowDocSeed(rowKey: string, docState?: database_blob.ICollabDocState | null) {
   if (getCachedRowDoc(rowKey)) return;
@@ -95,11 +110,38 @@ function cacheRowDocSeed(rowKey: string, docState?: database_blob.ICollabDocStat
 }
 
 export function takeDatabaseRowDocSeed(rowKey: string): RowDocSeed | null {
-  const seed = rowDocSeedCache.get(rowKey);
+  const cachedSeed = rowDocSeedCache.get(rowKey);
 
-  if (!seed) return null;
+  if (cachedSeed) {
+    rowDocSeedCache.delete(rowKey);
+    rowDocSeedLookup.delete(rowKey);
+    Log.debug('[Database] row seed hit', {
+      rowKey,
+      source: 'cache',
+      cacheSize: rowDocSeedCache.size,
+      lookupSize: rowDocSeedLookup.size,
+    });
+    return cachedSeed;
+  }
 
-  rowDocSeedCache.delete(rowKey);
+  const seed = rowDocSeedLookup.get(rowKey);
+
+  if (!seed) {
+    Log.debug('[Database] row seed miss', {
+      rowKey,
+      cacheSize: rowDocSeedCache.size,
+      lookupSize: rowDocSeedLookup.size,
+    });
+    return null;
+  }
+
+  rowDocSeedLookup.delete(rowKey);
+  Log.debug('[Database] row seed hit', {
+    rowKey,
+    source: 'lookup',
+    cacheSize: rowDocSeedCache.size,
+    lookupSize: rowDocSeedLookup.size,
+  });
   return seed;
 }
 
@@ -109,6 +151,12 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
   for (const key of rowDocSeedCache.keys()) {
     if (key.startsWith(prefix)) {
       rowDocSeedCache.delete(key);
+    }
+  }
+
+  for (const key of rowDocSeedLookup.keys()) {
+    if (key.startsWith(prefix)) {
+      rowDocSeedLookup.delete(key);
     }
   }
 }
@@ -173,6 +221,115 @@ function getDocState(state?: database_blob.ICollabDocState | null) {
   };
 }
 
+function decodeRowId(rowIdBytes?: Uint8Array | null) {
+  if (!rowIdBytes || rowIdBytes.length !== 16) return null;
+  return uuidStringify(rowIdBytes);
+}
+
+function applySeedToCachedDoc(rowKey: string, seed: RowDocSeed) {
+  const cachedDoc = getCachedRowDoc(rowKey);
+
+  if (!cachedDoc) return false;
+
+  applyYDoc(cachedDoc, seed.bytes, seed.encoderVersion);
+  return true;
+}
+
+function seedRowDocCacheFromDiff(databaseId: string, diff: database_blob.DatabaseBlobDiffResponse, options?: PrefetchOptions) {
+  const updates = [...diff.creates, ...diff.updates];
+
+  if (updates.length === 0) {
+    return { seeded: 0, prioritized: 0, priorityRequested: 0, appliedToCached: 0 };
+  }
+
+  const priorityRowIds = options?.priorityRowIds ?? [];
+  const prioritySet = new Set(priorityRowIds);
+  const updatesByRowId = priorityRowIds.length > 0 ? new Map<string, database_blob.IDatabaseBlobRowUpdate>() : null;
+  let seeded = 0;
+  let prioritized = 0;
+  let appliedToCached = 0;
+
+  updates.forEach((update) => {
+    const rowId = decodeRowId(update.rowId);
+
+    if (!rowId) return;
+
+    const rowKey = getRowKey(databaseId, rowId);
+
+    const seed = getDocState(update.docState);
+
+    if (!seed) return;
+
+    rowDocSeedLookup.set(rowKey, seed);
+    if (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
+      trimRowDocSeedLookup();
+    }
+
+    if (applySeedToCachedDoc(rowKey, seed)) {
+      appliedToCached += 1;
+      return;
+    }
+
+    if (prioritySet.has(rowId)) {
+      if (updatesByRowId) {
+        updatesByRowId.set(rowId, update);
+      }
+
+      return;
+    }
+
+    rowDocSeedCache.set(rowKey, seed);
+    seeded += 1;
+
+    while (rowDocSeedCache.size > MAX_ROW_DOC_SEEDS) {
+      const oldestKey = rowDocSeedCache.keys().next().value;
+
+      if (!oldestKey) break;
+      rowDocSeedCache.delete(oldestKey);
+    }
+  });
+
+  priorityRowIds.forEach((rowId) => {
+    const update = updatesByRowId?.get(rowId);
+
+    if (!update) return;
+
+    const rowKey = getRowKey(databaseId, rowId);
+
+    const seed = getDocState(update.docState);
+
+    if (!seed) return;
+
+    rowDocSeedLookup.set(rowKey, seed);
+    if (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
+      trimRowDocSeedLookup();
+    }
+
+    if (applySeedToCachedDoc(rowKey, seed)) {
+      appliedToCached += 1;
+      return;
+    }
+
+    rowDocSeedCache.set(rowKey, seed);
+    seeded += 1;
+    prioritized += 1;
+
+    while (rowDocSeedCache.size > MAX_ROW_DOC_SEEDS) {
+      const oldestKey = rowDocSeedCache.keys().next().value;
+
+      if (!oldestKey) break;
+      rowDocSeedCache.delete(oldestKey);
+    }
+  });
+
+  return {
+    seeded,
+    prioritized,
+    priorityRequested: priorityRowIds.length,
+    appliedToCached,
+  };
+}
+
 async function applyCollabUpdate(objectId: string, docState: database_blob.ICollabDocState) {
   const state = getDocState(docState);
 
@@ -200,18 +357,23 @@ async function applyCollabUpdate(objectId: string, docState: database_blob.IColl
   }
 }
 
-async function applyRowUpdate(databaseId: string, update: database_blob.IDatabaseBlobRowUpdate) {
-  const rowIdBytes = update.rowId;
+async function applyRowUpdate(
+  databaseId: string,
+  update: database_blob.IDatabaseBlobRowUpdate,
+  options?: { seedCache?: boolean }
+) {
+  const rowId = decodeRowId(update.rowId);
 
-  if (!rowIdBytes || rowIdBytes.length !== 16) return;
-
-  const rowId = uuidStringify(rowIdBytes);
+  if (!rowId) return;
   const rowDocState = update.docState;
 
   if (rowDocState) {
     const rowKey = getRowKey(databaseId, rowId);
 
-    cacheRowDocSeed(rowKey, rowDocState);
+    if (options?.seedCache !== false) {
+      cacheRowDocSeed(rowKey, rowDocState);
+    }
+
     await applyCollabUpdate(rowKey, rowDocState);
   }
 
@@ -230,13 +392,17 @@ async function applyRowUpdate(databaseId: string, update: database_blob.IDatabas
   await applyCollabUpdate(docId, doc.docState);
 }
 
-async function applyDiff(databaseId: string, diff: database_blob.DatabaseBlobDiffResponse) {
+async function applyDiff(
+  databaseId: string,
+  diff: database_blob.DatabaseBlobDiffResponse,
+  options?: { seedCache?: boolean }
+) {
   const updates = [...diff.creates, ...diff.updates];
 
   for (let i = 0; i < updates.length; i += APPLY_CONCURRENCY) {
     const batch = updates.slice(i, i + APPLY_CONCURRENCY);
 
-    await Promise.all(batch.map((update) => applyRowUpdate(databaseId, update)));
+    await Promise.all(batch.map((update) => applyRowUpdate(databaseId, update, options)));
   }
 }
 
@@ -280,27 +446,42 @@ async function fetchReadyDiff(workspaceId: string, databaseId: string) {
   throw new Error('database blob diff is not ready');
 }
 
-export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: string) {
+export async function prefetchDatabaseBlobDiff(
+  workspaceId: string,
+  databaseId: string,
+  options?: PrefetchOptions
+) {
   const diff = await fetchReadyDiff(workspaceId, databaseId);
+  const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, options);
+
+  Log.debug('[Database] blob seed cache prepared', {
+    databaseId,
+    ...seedSummary,
+    seedCount: rowDocSeedCache.size,
+    lookupCount: rowDocSeedLookup.size,
+  });
+
   const applyStartedAt = Date.now();
 
-  await applyDiff(databaseId, diff);
+  try {
+    await applyDiff(databaseId, diff, { seedCache: false });
+    Log.debug('[Database] blob diff persisted to IndexedDB', {
+      databaseId,
+      durationMs: Date.now() - applyStartedAt,
+      ...summarizeDiff(diff),
+    });
 
-  Log.debug('[Database] blob diff persisted to IndexedDB', {
-    databaseId,
-    durationMs: Date.now() - applyStartedAt,
-    ...summarizeDiff(diff),
-  });
-  Log.debug('[Database] blob seed cache size', {
-    databaseId,
-    seedCount: rowDocSeedCache.size,
-  });
+    const maxRid = maxRidFromDiff(diff);
 
-  const maxRid = maxRidFromDiff(diff);
-
-  if (maxRid) {
-    writeCachedRid(databaseId, maxRid);
-    Log.debug('[Database] blob updated rid cache', { databaseId, maxRid });
+    if (maxRid) {
+      writeCachedRid(databaseId, maxRid);
+      Log.debug('[Database] blob updated rid cache', { databaseId, maxRid });
+    }
+  } catch (error) {
+    Log.warn('[Database] blob diff persist failed', {
+      databaseId,
+      error,
+    });
   }
 
   return diff;

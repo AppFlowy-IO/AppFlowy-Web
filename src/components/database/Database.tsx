@@ -16,7 +16,9 @@ import {
   LoadViewMeta,
   RowId,
   UIVariant,
+  YDatabase,
   YDoc,
+  YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
@@ -26,6 +28,8 @@ import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { Log } from '@/utils/log';
 
 import { DatabaseContextProvider } from './DatabaseContext';
+
+const PRIORITY_ROW_SEED_LIMIT = 200;
 
 export interface Database2Props {
   workspaceId: string;
@@ -102,12 +106,36 @@ function Database(props: Database2Props) {
   const prefetchPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
   const blobPrefetchPromiseRef = useRef<Promise<void> | null>(null);
   const blobPrefetchDoneRef = useRef(false);
+  const localCachePrimedRef = useRef(false);
   const pendingRowSyncRef = useRef<Set<string>>(new Set());
   const syncedRowKeysRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     rowDocMapRef.current = rowDocMap;
   }, [rowDocMap]);
+
+  const getPriorityRowIds = useCallback(() => {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+    const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+    const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
+    const rowOrders = view?.get(YjsDatabaseKey.row_orders);
+
+    if (!rowOrders || rowOrders.length === 0) return [];
+
+    const limit = Math.min(rowOrders.length, PRIORITY_ROW_SEED_LIMIT);
+    const ids: string[] = [];
+
+    for (let index = 0; index < limit; index += 1) {
+      const row = rowOrders.get(index) as { id?: string } | undefined;
+      const rowId = row?.id;
+
+      if (rowId) {
+        ids.push(rowId);
+      }
+    }
+
+    return ids;
+  }, [doc, activeViewId]);
 
   const registerRowSync = useCallback(
     (rowKey: string) => {
@@ -167,7 +195,8 @@ function Database(props: Database2Props) {
 
     Log.debug('[Database] start blob prefetch', { databaseId, workspaceId });
 
-    const promise = prefetchDatabaseBlobDiff(workspaceId, databaseId)
+    const priorityRowIds = getPriorityRowIds();
+    const promise = prefetchDatabaseBlobDiff(workspaceId, databaseId, { priorityRowIds })
       .catch((error) => {
         Log.warn('[Database] database blob diff prefetch failed', {
           databaseId,
@@ -181,11 +210,7 @@ function Database(props: Database2Props) {
     prefetchPromisesRef.current.set(databaseId, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [workspaceId, doc.guid, markPrefetchDone]);
-
-  useEffect(() => {
-    void ensureBlobPrefetch();
-  }, [ensureBlobPrefetch]);
+  }, [workspaceId, doc.guid, markPrefetchDone, getPriorityRowIds]);
 
   useEffect(() => {
     const databaseId = doc.guid;
@@ -203,19 +228,14 @@ function Database(props: Database2Props) {
 
       const [databaseId] = rowKey.split('_rows_');
 
-      if (databaseId && databaseId === doc.guid) {
-        Log.debug('[Database] create row doc waiting for blob prefetch', {
-          rowKey,
-          databaseId,
-        });
-        const prefetchPromise = ensureBlobPrefetch();
+      const rowDoc = await createRowDoc(rowKey);
 
-        if (prefetchPromise) {
-          await prefetchPromise;
-        }
+      if (databaseId && databaseId === doc.guid && !localCachePrimedRef.current) {
+        localCachePrimedRef.current = true;
+        void ensureBlobPrefetch();
       }
 
-      return createRowDoc(rowKey);
+      return rowDoc;
     },
     [createRowDoc, doc.guid, ensureBlobPrefetch]
   );
@@ -261,8 +281,6 @@ function Database(props: Database2Props) {
       const promise = (async () => {
         const rowKey = getRowKey(doc.guid, rowId);
 
-        void ensureBlobPrefetch();
-
         const loadStartedAt = performance.now();
         const seed = takeDatabaseRowDocSeed(rowKey);
 
@@ -292,8 +310,18 @@ function Database(props: Database2Props) {
 
           queueRowSync(rowKey, rowId);
 
+          if (!localCachePrimedRef.current) {
+            localCachePrimedRef.current = true;
+            void ensureBlobPrefetch();
+          }
+
           return rowDoc;
         } catch (error) {
+          if (!localCachePrimedRef.current) {
+            localCachePrimedRef.current = true;
+            void ensureBlobPrefetch();
+          }
+
           Log.warn('[Database] row doc load failed', {
             rowId,
             rowKey,
@@ -329,6 +357,7 @@ function Database(props: Database2Props) {
     pendingRowDocsRef.current.clear();
     blobPrefetchPromiseRef.current = null;
     blobPrefetchDoneRef.current = false;
+    localCachePrimedRef.current = false;
     pendingRowSyncRef.current.clear();
     syncedRowKeysRef.current.clear();
     setRowDocMap({});
