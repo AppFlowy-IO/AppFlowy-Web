@@ -16,6 +16,7 @@ import Title from '@/components/database/components/header/Title';
 import { getScrollParent } from '@/components/global-comment/utils';
 import ViewCoverActions from '@/components/view-meta/ViewCoverActions';
 import { renderColor } from '@/utils/color';
+import { clampCoverOffset, coverOffsetToObjectPosition } from '@/utils/cover';
 
 function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendBreadcrumb?: AppendBreadcrumb }) {
   const fieldId = usePrimaryFieldId() || '';
@@ -45,12 +46,14 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
         [CoverType.UpsplashImage]: RowCoverType.FileCover,
       };
       const coverType = coverTypeMap[cover.type];
+      const offset = clampCoverOffset(cover.offset);
 
       updateRowMeta(
         RowMetaKey.CoverId,
         JSON.stringify({
           cover_type: coverType,
           data: cover.value,
+          offset,
         })
       );
     },
@@ -93,9 +96,19 @@ function DatabaseRowHeader({ rowId, appendBreadcrumb }: { rowId: string; appendB
 
     if (!url) return null;
 
+    const objectPosition = coverOffsetToObjectPosition(cover.offset);
+
     return (
       <>
-        <ImageRender draggable={false} src={url} alt={''} className={'h-full w-full object-cover'} />
+        <ImageRender
+          draggable={false}
+          src={url}
+          alt={''}
+          className={'h-full w-full object-cover'}
+          style={{
+            objectPosition,
+          }}
+        />
       </>
     );
   }, []);

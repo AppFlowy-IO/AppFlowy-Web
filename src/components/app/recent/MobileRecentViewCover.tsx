@@ -1,10 +1,11 @@
 import { useCallback, useMemo } from 'react';
 
-import { CoverType } from '@/application/types';
+import { CoverType, ViewCover as ViewCoverData } from '@/application/types';
 import ImageRender from '@/components/_shared/image-render/ImageRender';
 import { renderColor } from '@/utils/color';
+import { coverOffsetToObjectPosition } from '@/utils/cover';
 
-function MobileRecentViewCover ({ cover }: { cover: { type: string; value: string } }) {
+function MobileRecentViewCover ({ cover }: { cover: ViewCoverData }) {
   const renderCoverColor = useCallback((color: string) => {
     return (
       <div
@@ -16,7 +17,7 @@ function MobileRecentViewCover ({ cover }: { cover: { type: string; value: strin
     );
   }, []);
 
-  const renderCoverImage = useCallback((url: string) => {
+  const renderCoverImage = useCallback((url: string, offset?: number) => {
     return (
       <>
         <ImageRender
@@ -24,6 +25,9 @@ function MobileRecentViewCover ({ cover }: { cover: { type: string; value: strin
           src={url}
           alt={''}
           className={'h-full w-full object-cover'}
+          style={{
+            objectPosition: coverOffsetToObjectPosition(offset),
+          }}
         />
       </>
     );
@@ -58,6 +62,8 @@ function MobileRecentViewCover ({ cover }: { cover: { type: string; value: strin
     return cover.value;
   }, [coverType, cover.value]);
 
+  const offset = cover.offset ?? 0;
+
   if (!coverType || !coverValue) {
     return null;
   }
@@ -65,7 +71,7 @@ function MobileRecentViewCover ({ cover }: { cover: { type: string; value: strin
   return (
     <div className={'w-[78px] rounded-[8px] overflow-hidden h-[54px]'}>
       {coverType === 'color' && renderCoverColor(coverValue)}
-      {(coverType === 'custom' || coverType === 'built_in') && renderCoverImage(coverValue)}
+      {(coverType === 'custom' || coverType === 'built_in') && renderCoverImage(coverValue, offset)}
     </div>
   );
 }

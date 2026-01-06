@@ -42,6 +42,7 @@ function CoverPopover({
           onUpdateCover?.({
             type: isGradient ? CoverType.GradientColor : CoverType.NormalColor,
             value,
+            offset: 0,
           });
         },
       },
@@ -57,6 +58,7 @@ function CoverPopover({
           onUpdateCover?.({
             type: CoverType.CustomImage,
             value,
+            offset: 0,
           });
           onOpenChange(false);
         },
@@ -69,6 +71,7 @@ function CoverPopover({
           onUpdateCover?.({
             type: CoverType.CustomImage,
             value,
+            offset: 0,
           });
           onOpenChange(false);
         },
@@ -81,6 +84,7 @@ function CoverPopover({
           onUpdateCover?.({
             type: CoverType.UpsplashImage,
             value,
+            offset: 0,
           });
         },
       },

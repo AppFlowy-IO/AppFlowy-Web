@@ -1013,6 +1013,7 @@ export interface DatabaseViewExtra {
 export interface ViewCover {
   type: CoverType;
   value: string;
+  offset?: number;
 }
 
 /**
@@ -1176,10 +1177,7 @@ export interface UpdatePagePayload {
   extra?: Partial<ViewExtra>;
 }
 
-export interface ViewMetaCover {
-  type: CoverType;
-  value: string;
-}
+export type ViewMetaCover = ViewCover;
 
 export interface ViewMetaProps {
   icon?: ViewMetaIcon;
