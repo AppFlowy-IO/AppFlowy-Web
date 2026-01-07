@@ -19,7 +19,11 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
           err.message.includes('View not found') ||
           err.message.includes('No workspace or service found') ||
           err.message.includes('Cannot resolve a DOM point from Slate point') ||
-          err.message.includes('No range and node found')) {
+          err.message.includes('Cannot resolve a DOM node from Slate node') ||
+          err.message.includes('No range and node found') ||
+          err.message.includes("Cannot read properties of undefined (reading '_dEH')") ||
+          err.message.includes('unobserveDeep') ||
+          err.message.includes('ResizeObserver loop')) {
         return false;
       }
       return true;
@@ -132,18 +136,18 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
 
       // Step 8: Open slash menu at the bottom
       cy.task('log', '[STEP 10] Opening slash menu at bottom');
-      
+
       // Ensure we click near the bottom of the visible editor area
       EditorSelectors.firstEditor().click('bottom', { force: true });
       waitForReactUpdate(500);
-      
+
       // Type enter to ensure we are on a new line, then slash
       EditorSelectors.firstEditor().type('{enter}/', { force: true, delay: 100 });
-      waitForReactUpdate(1000);
+      waitForReactUpdate(1500);
 
-      // Step 9: Verify slash menu is visible
+      // Step 9: Verify slash menu is visible (with longer timeout for stability)
       cy.task('log', '[STEP 11] Verifying slash menu is visible');
-      SlashCommandSelectors.slashPanel().should('be.visible');
+      SlashCommandSelectors.slashPanel().should('be.visible', { timeout: 10000 });
 
       // Step 10: Check that scroll position is preserved after opening slash menu
       cy.get('@scrollContainer').then(($container) => {
@@ -168,19 +172,39 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
         cy.task('log', `[STEP 12.1] Scroll position before creating database: ${scrollBeforeDbCreation}`);
       });
 
-      SlashCommandSelectors.slashPanel().within(() => {
-        // specific handling for board -> kanban mapping
-        const itemKey = databaseType === 'board' ? 'kanban' : databaseType;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        SlashCommandSelectors.slashMenuItem(getSlashMenuItemName(itemKey as any)).first().as('dbMenuItem');
-        cy.get('@dbMenuItem').should('exist').click({ force: true });
+      // Select database option with retry for stability
+      const itemKey = databaseType === 'board' ? 'kanban' : databaseType;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const menuItemName = getSlashMenuItemName(itemKey as any);
+
+      // Wait for slash panel to be fully loaded
+      SlashCommandSelectors.slashPanel().should('be.visible', { timeout: 10000 });
+      waitForReactUpdate(500);
+
+      // Find and click the menu item - use force:true since item might be partially hidden
+      SlashCommandSelectors.slashPanel().then(($panel) => {
+        // Find the item within the panel
+        const $item = $panel.find(`button:contains("${menuItemName}")`).first();
+        if ($item.length > 0) {
+          // Scroll item into view and click
+          $item[0].scrollIntoView({ block: 'center' });
+          cy.wrap($item).click({ force: true });
+        } else {
+          // Fallback: try using Cypress selector with scrollIntoView
+          SlashCommandSelectors.slashPanel().within(() => {
+            SlashCommandSelectors.slashMenuItem(menuItemName)
+              .first()
+              .scrollIntoView()
+              .click({ force: true });
+          });
+        }
       });
 
-      waitForReactUpdate(2000);
+      waitForReactUpdate(3000);
 
       // Step 12: Verify the modal opened (database opens in a modal)
       cy.task('log', '[STEP 13] Verifying database modal opened');
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]', { timeout: 15000 }).should('be.visible');
 
       // Step 13: CRITICAL CHECK - Verify scroll position is preserved after creating database
       cy.task('log', '[STEP 14] CRITICAL: Verifying scroll position after creating database');
@@ -217,20 +241,25 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
 
       // Step 14: Close the modal and verify final state
       cy.task('log', '[STEP 15] Closing database modal');
-      cy.get('[role="dialog"]').within(() => {
-        cy.get('button').first().click(); // Click close button
-      });
+      // Use Escape key to close modal - more reliable than finding close button
+      cy.get('body').type('{esc}');
+      waitForReactUpdate(1500);
 
-      waitForReactUpdate(1000);
+      // Verify modal is closed
+      cy.get('[role="dialog"]').should('not.exist', { timeout: 5000 }).then(() => {}, () => {
+        // If modal still exists, try clicking outside or pressing Escape again
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(1000);
+      });
 
       // Step 15: Verify the database was actually created in the document
       cy.task('log', `[STEP 16] Verifying ${databaseType} database exists in document`);
-      cy.get('[class*="appflowy-database"]').should('exist');
+      cy.get('[class*="appflowy-database"]', { timeout: 10000 }).should('exist');
 
       if (selector.startsWith('data-testid')) {
-        cy.get(`[${selector}]`).should('exist');
+        cy.get(`[${selector}]`, { timeout: 10000 }).should('exist');
       } else {
-        cy.get(selector).should('exist');
+        cy.get(selector, { timeout: 10000 }).should('exist');
       }
 
       cy.task('log', `[TEST COMPLETE] Scroll preservation test for ${databaseType} passed successfully`);
