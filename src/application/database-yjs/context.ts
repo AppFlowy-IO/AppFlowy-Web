@@ -157,10 +157,16 @@ export const useRow = (rowId: string) => {
 
       if (!row?.observeDeep || !row?.unobserveDeep) return;
 
-      const unobserve = row.unobserveDeep;
+      const unobserve = row.unobserveDeep.bind(row);
 
       row.observeDeep(update);
-      detachRowObserver = () => unobserve(update);
+      detachRowObserver = () => {
+        try {
+          unobserve(update);
+        } catch {
+          // Ignore errors from unobserving destroyed Yjs objects
+        }
+      };
     };
 
     const handleRootChange = (event: { keysChanged?: Set<string> }) => {

@@ -193,11 +193,33 @@ describe('Template Duplication Test - Document with Embedded Database', () => {
       // Step 8: Publish the document
       testLog.info('[STEP 8] Publishing the document');
 
+      // Close any open modals first (the linked database might have opened a modal)
+      cy.get('body').then(($body) => {
+        if ($body.find('[role="dialog"]').length > 0) {
+          testLog.info('Closing open modal before publishing');
+          cy.get('body').type('{esc}');
+          waitForReactUpdate(1000);
+        }
+      });
+
       // First, make sure we're on the document page
       expandSpaceInSidebar(spaceName);
       waitForReactUpdate(500);
       PageSelectors.nameContaining(docName).first().click({ force: true });
       waitForReactUpdate(2000);
+
+      // Close any modal that might have opened when clicking on the page
+      cy.get('body').then(($body) => {
+        if ($body.find('[role="dialog"]').length > 0) {
+          testLog.info('Closing modal that opened when clicking page');
+          cy.get('body').type('{esc}');
+          waitForReactUpdate(1000);
+        }
+      });
+
+      // Wait for the page to fully load - editor should be visible
+      EditorSelectors.firstEditor().should('exist', { timeout: 15000 });
+      waitForReactUpdate(1000);
 
       TestTool.openSharePopover();
       cy.contains('Publish').should('exist').click({ force: true });
