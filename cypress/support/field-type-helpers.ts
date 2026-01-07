@@ -163,24 +163,39 @@ export const addFieldWithType = (fieldType: FieldType): Cypress.Chainable<string
 
 /**
  * Type text into a cell at the specified index
+ * Uses realClick from cypress-real-events for reliable cell activation
+ * NOTE: Uses Enter to save the value, not Escape.
+ * This is important because NumberCell only saves on Enter/blur, not on Escape.
  */
 export const typeTextIntoCell = (fieldId: string, cellIndex: number, text: string): void => {
   cy.log(`typeTextIntoCell: field=${fieldId}, dataRowIndex=${cellIndex}, text=${text}`);
 
-  // Click to enter edit mode
+  // Click to enter edit mode using realClick for reliable activation
   DatabaseGridSelectors.dataRowCellsForField(fieldId)
     .eq(cellIndex)
     .should('be.visible')
     .scrollIntoView()
-    .click()
-    .click(); // Double click to enter edit mode
+    .realClick();
 
-  // Wait for textarea/input and type
-  cy.get('textarea:visible, input:visible', { timeout: 8000 })
+  // Wait for the cell to become active and render the textarea
+  cy.wait(1500);
+
+  // Replace newlines with Shift+Enter to insert actual newlines without triggering save
+  // In Cypress, \n is interpreted as pressing Enter, which triggers cell save
+  // Using {shift}{enter} inserts a newline character instead
+  const textWithShiftEnter = text.replace(/\n/g, '{shift}{enter}');
+
+  // The textarea should appear when the cell becomes active
+  cy.get('textarea:visible', { timeout: 8000 })
     .should('exist')
     .first()
     .clear()
-    .type(`${text}{enter}`, { delay: 30 });
+    .type(textWithShiftEnter, { delay: 30 });
+
+  // Press Enter to save the value and close the cell
+  // Note: Both TextCellEditing and NumberCellEditing save on Enter
+  // Using Escape would NOT save for NumberCell
+  cy.get('textarea:visible').first().type('{enter}');
   cy.wait(500);
 };
 

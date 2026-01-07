@@ -157,8 +157,10 @@ export const useRow = (rowId: string) => {
 
       if (!row?.observeDeep || !row?.unobserveDeep) return;
 
+      const unobserve = row.unobserveDeep;
+
       row.observeDeep(update);
-      detachRowObserver = () => row.unobserveDeep(update);
+      detachRowObserver = () => unobserve(update);
     };
 
     const handleRootChange = (event: { keysChanged?: Set<string> }) => {
@@ -167,6 +169,7 @@ export const useRow = (rowId: string) => {
         detachRowObserver();
         detachRowObserver = null;
       }
+
       attachRowObserver();
       update();
     };
@@ -179,6 +182,7 @@ export const useRow = (rowId: string) => {
       if (detachRowObserver) {
         detachRowObserver();
       }
+
       rowSharedRoot.unobserve(handleRootChange);
     };
   }, [rowDoc]);

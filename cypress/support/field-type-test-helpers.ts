@@ -48,6 +48,8 @@ export const getDataRowCellsForField = (fieldId: string) => {
 
 /**
  * Helper to type text into a cell. Uses the centralized dataRowCellsForField selector.
+ * NOTE: Uses Enter to save the value, not Escape.
+ * This is important because NumberCell only saves on Enter/blur, not on Escape.
  */
 export const typeTextIntoCell = (fieldId: string, cellIndex: number, text: string): void => {
   cy.log(`typeTextIntoCell: field=${fieldId}, dataRowIndex=${cellIndex}, text=${text}`);
@@ -60,14 +62,21 @@ export const typeTextIntoCell = (fieldId: string, cellIndex: number, text: strin
     .click()
     .click(); // Double click to enter edit mode
 
+  // Replace newlines with Shift+Enter to insert actual newlines without triggering save
+  // In Cypress, \n is interpreted as pressing Enter, which triggers cell save
+  // Using {shift}{enter} inserts a newline character instead
+  const textWithShiftEnter = text.replace(/\n/g, '{shift}{enter}');
+
   // Wait for textarea and type
   cy.get('textarea:visible', { timeout: 8000 })
     .should('exist')
     .first()
     .clear()
-    .type(text, { delay: 30 });
-  // Press Escape to close the cell and trigger save
-  cy.get('body').type('{esc}');
+    .type(textWithShiftEnter, { delay: 30 });
+  // Press Enter to save the value and close the cell
+  // Note: Both TextCellEditing and NumberCellEditing save on Enter
+  // Using Escape would NOT save for NumberCell
+  cy.get('textarea:visible').first().type('{enter}');
   cy.wait(500);
 };
 

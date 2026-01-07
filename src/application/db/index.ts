@@ -230,6 +230,7 @@ export async function clearData() {
 
   try {
     const results = await Promise.all(databases.map(deleteDatabase));
+
     try {
       const deletedDatabaseIds = new Set<string>();
       const blockedDatabaseIds = new Set<string>();

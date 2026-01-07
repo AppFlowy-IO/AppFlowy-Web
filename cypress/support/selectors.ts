@@ -661,6 +661,12 @@ export const AddPageSelectors = {
   // Add grid button in dropdown
   addGridButton: () => cy.get(byTestId('add-grid-button')),
 
+  // Add calendar button in dropdown
+  addCalendarButton: () => cy.get(byTestId('add-calendar-button')),
+
+  // Add board button in dropdown
+  addBoardButton: () => cy.get(byTestId('add-board-button')),
+
   // Add AI chat button in dropdown
   addAIChatButton: () => cy.get(byTestId('add-ai-chat-button')),
 };
@@ -828,6 +834,92 @@ export const BlockSelectors = {
   blockByType: (type: string) => cy.get(`[data-block-type="${type}"]`),
   blockSelector: (type: string) => `[data-block-type="${type}"]`,
   allBlocks: () => cy.get('[data-block-type]'),
+};
+
+/**
+ * Sort selectors
+ */
+export const SortSelectors = {
+  // Sort button in database actions toolbar
+  sortButton: () => cy.get(byTestId('database-actions-sort')),
+
+  // Sort condition chip (shown when sorts are active)
+  sortCondition: () => cy.get(byTestId('database-sort-condition')),
+
+  // Individual sort item in the sort menu
+  sortItem: () => cy.get(byTestId('sort-condition')),
+
+  // Add sort button in sort menu
+  addSortButton: () => cy.contains('button', /add.*sort/i),
+
+  // Delete all sorts button
+  deleteAllSortsButton: () => cy.contains('button', /delete.*all.*sort/i),
+};
+
+/**
+ * Calendar selectors using FullCalendar's class names
+ */
+export const CalendarSelectors = {
+  // Main calendar container (FullCalendar wrapper)
+  calendarContainer: () => cy.get('.fc'),
+
+  // Calendar toolbar
+  toolbar: () => cy.get('.fc-toolbar'),
+
+  // Navigation buttons
+  prevButton: () => cy.get('.fc-prev-button'),
+  nextButton: () => cy.get('.fc-next-button'),
+  todayButton: () => cy.get('.fc-today-button'),
+
+  // View buttons
+  monthViewButton: () => cy.get('.fc-dayGridMonth-button'),
+  weekViewButton: () => cy.get('.fc-timeGridWeek-button'),
+  dayViewButton: () => cy.get('.fc-timeGridDay-button'),
+
+  // Calendar title (current month/week)
+  title: () => cy.get('.fc-toolbar-title'),
+
+  // Day cells
+  dayCell: () => cy.get('.fc-daygrid-day'),
+  dayCellByDate: (dateStr: string) => cy.get(`[data-date="${dateStr}"]`),
+  todayCell: () => cy.get('.fc-day-today'),
+
+  // Events
+  event: () => cy.get('.fc-event'),
+  eventTitle: () => cy.get('.fc-event-title'),
+
+  // No date / unscheduled events button
+  noDateButton: () => cy.get('.no-date-button'),
+
+  // More link (when events overflow)
+  moreLink: () => cy.get('.fc-more-link, .fc-daygrid-more-link'),
+};
+
+/**
+ * Row Detail Modal selectors
+ */
+export const RowDetailSelectors = {
+  // Row detail modal (MUI Dialog)
+  modal: () => cy.get('.MuiDialog-paper'),
+
+  // Modal content
+  modalContent: () => cy.get('.MuiDialogContent-root'),
+
+  // Modal title/header area
+  modalTitle: () => cy.get('.MuiDialogTitle-root'),
+
+  // Close button
+  closeButton: () => cy.get('.MuiDialogTitle-root button').first(),
+
+  // More actions button
+  moreActionsButton: () => cy.get('.MuiDialogTitle-root button').last(),
+
+  // Document area
+  documentArea: () => cy.get('.appflowy-scroll-container'),
+
+  // Dropdown menu items
+  duplicateMenuItem: () => cy.get('[role="menuitem"]').contains(/duplicate/i),
+  deleteMenuItem: () => cy.get('[role="menuitem"]').contains(/delete/i),
 };
 
 export function waitForReactUpdate(ms: number = 500) {
