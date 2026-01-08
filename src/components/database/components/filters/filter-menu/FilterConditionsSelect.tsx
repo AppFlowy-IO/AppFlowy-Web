@@ -39,6 +39,7 @@ function FilterConditionsSelect ({
           variant={'ghost'}
           size={'sm'}
           className={'min-w-fit w-fit'}
+          data-testid="filter-condition-trigger"
         >
           {selectedCondition?.text ?? ''}
           <ArrowDownSvg className={'w-5 h-5'} />

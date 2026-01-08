@@ -102,7 +102,7 @@ function DateTimeFilterDatePicker({ filter }: { filter: DateFilter }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant={'outline'} size={'sm'} className={'w-full justify-start'}>
+        <Button variant={'outline'} size={'sm'} className={'w-full justify-start'} data-testid="date-filter-date-picker">
           {text}
         </Button>
       </PopoverTrigger>

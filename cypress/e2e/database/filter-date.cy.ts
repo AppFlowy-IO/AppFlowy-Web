@@ -53,12 +53,16 @@ const clickDateCell = (fieldId: string, rowIndex: number): void => {
  * Select a date in the date picker by day number
  */
 const selectDateByDay = (day: number): void => {
-  // Find the date picker and click on the specified day
-  cy.get('.react-datepicker, [role="dialog"]')
-    .first()
-    .find('.react-datepicker__day, [role="gridcell"]')
-    .not('.react-datepicker__day--outside-month')
-    .filter((_, el) => el.textContent?.trim() === String(day))
+  // Find the calendar (react-day-picker) and click on the specified day
+  // Look in the last popover content wrapper (the calendar popover)
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('button')
+    .filter((_, el) => {
+      const text = el.textContent?.trim();
+      // Match day number exactly, excluding outside month days (they have day-outside class)
+      return text === String(day) && !el.classList.contains('day-outside');
+    })
     .first()
     .click({ force: true });
   waitForReactUpdate(500);
@@ -82,21 +86,9 @@ const navigateToMonth = (monthsForward: number): void => {
  * Change the date filter condition
  */
 const changeDateFilterCondition = (condition: DateFilterCondition): void => {
-  // Find the condition dropdown in the filter popover
-  cy.get('[data-radix-popper-content-wrapper]')
-    .last()
-    .find('button')
-    .filter((_, el) => {
-      const text = el.textContent?.toLowerCase() || '';
-      return (
-        text.includes('is') ||
-        text.includes('before') ||
-        text.includes('after') ||
-        text.includes('within') ||
-        text.includes('empty')
-      );
-    })
-    .first()
+  // Click the condition dropdown trigger
+  cy.get('[data-testid="filter-condition-trigger"]', { timeout: 10000 })
+    .should('be.visible')
     .click({ force: true });
   waitForReactUpdate(500);
 
@@ -111,21 +103,13 @@ const changeDateFilterCondition = (condition: DateFilterCondition): void => {
  * Set a date in the filter date picker
  */
 const setFilterDate = (day: number): void => {
-  // Look for date picker trigger in filter popover
-  cy.get('[data-radix-popper-content-wrapper]')
-    .last()
-    .find('button, input')
-    .filter((_, el) => {
-      const hasCalendarIcon = el.querySelector('[class*="calendar"]') !== null;
-      const isDateInput = el.getAttribute('type') === 'date' ||
-                          el.className.includes('date');
-      return hasCalendarIcon || isDateInput;
-    })
-    .first()
+  // Click the date picker trigger button
+  cy.get('[data-testid="date-filter-date-picker"]', { timeout: 10000 })
+    .should('be.visible')
     .click({ force: true });
   waitForReactUpdate(500);
 
-  // Select the day
+  // Select the day from the calendar
   selectDateByDay(day);
 };
 
@@ -367,10 +351,10 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
 
             // Grid starts with 3 default rows, no need to add more
 
-            // Enter names
-            typeTextIntoCell(primaryFieldId, 0, 'Scheduled');
-            typeTextIntoCell(primaryFieldId, 1, 'Not Scheduled');
-            typeTextIntoCell(primaryFieldId, 2, 'Also Not Scheduled');
+            // Enter names (using distinct names without substring overlap)
+            typeTextIntoCell(primaryFieldId, 0, 'Has Date');
+            typeTextIntoCell(primaryFieldId, 1, 'Empty Date 1');
+            typeTextIntoCell(primaryFieldId, 2, 'Empty Date 2');
             waitForReactUpdate(500);
 
             // Only set date for first row
@@ -397,10 +381,10 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
             // Verify only rows without date are visible
             assertRowCount(2);
             DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
-              .should('contain.text', 'Not Scheduled')
-              .and('contain.text', 'Also Not Scheduled');
+              .should('contain.text', 'Empty Date 1')
+              .and('contain.text', 'Empty Date 2');
             DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
-              .should('not.contain.text', 'Scheduled');
+              .should('not.contain.text', 'Has Date');
           });
       });
     });
