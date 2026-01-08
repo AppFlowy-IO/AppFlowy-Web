@@ -103,6 +103,7 @@ export interface RowMeta {
   cover: {
     data: string,
     cover_type: RowCoverType,
+    offset?: number,
   } | null;
   icon: string;
   isEmptyDocument: boolean;

@@ -4,6 +4,7 @@ import { usePublishContext } from '@/application/publish';
 import { ViewMetaCover } from '@/application/types';
 import { EditorLayoutStyle } from '@/components/editor/EditorContext';
 import { getFontFamily } from '@/utils/font';
+import { clampCoverOffset } from '@/utils/cover';
 
 export function useViewMeta () {
   const viewMeta = usePublishContext()?.viewMeta;
@@ -63,7 +64,16 @@ export function useViewMeta () {
 
   const icon = viewMeta?.icon || undefined;
 
-  const cover = extra?.cover as ViewMetaCover;
+  const cover = useMemo(() => {
+    const rawCover = extra?.cover as ViewMetaCover | undefined;
+
+    if (!rawCover) return undefined;
+
+    return {
+      ...rawCover,
+      offset: clampCoverOffset(rawCover.offset),
+    };
+  }, [extra?.cover]);
 
   const viewId = viewMeta?.view_id;
   const name = viewMeta?.name;

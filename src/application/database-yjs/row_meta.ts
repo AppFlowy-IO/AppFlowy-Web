@@ -1,6 +1,7 @@
 import { metaIdFromRowId } from '@/application/database-yjs/const';
 import { RowMetaKey } from '@/application/database-yjs/database.type';
 import { RowCoverType } from '@/application/types';
+import { clampCoverOffset } from '@/utils/cover';
 
 import type Y from 'yjs';
 
@@ -73,10 +74,18 @@ export function getMetaJSON(rowId: string, meta: Y.Map<unknown>) {
       ? (JSON.parse(metaJson[coverKey]) as {
         data: string;
         cover_type: RowCoverType;
+        offset?: number;
       })
       : null;
   } catch (e) {
     // do nothing
+  }
+
+  if (cover) {
+    cover = {
+      ...cover,
+      offset: clampCoverOffset(cover.offset),
+    };
   }
 
   const isEmptyDocument = metaJson[isEmptyDocumentKey] as boolean;

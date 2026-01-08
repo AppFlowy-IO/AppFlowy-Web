@@ -8,8 +8,18 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import TitleEditable from '@/components/view-meta/TitleEditable';
 import ViewCover from '@/components/view-meta/ViewCover';
 import { ColorEnum } from '@/utils/color';
+import { clampCoverOffset } from '@/utils/cover';
 
 const AddIconCover = lazy(() => import('@/components/view-meta/AddIconCover'));
+
+const normalizeCover = (cover?: ViewMetaCover | null): ViewMetaCover | null => {
+  if (!cover) return null;
+
+  return {
+    ...cover,
+    offset: clampCoverOffset(cover.offset),
+  };
+};
 
 export function ViewMetaPreview({
   icon: iconProp,
@@ -27,11 +37,11 @@ export function ViewMetaPreview({
   updatePageIcon,
   updatePageName,
 }: ViewMetaProps) {
-  const [cover, setCover] = React.useState<ViewMetaCover | null>(coverProp || null);
+  const [cover, setCover] = React.useState<ViewMetaCover | null>(normalizeCover(coverProp));
   const [icon, setIcon] = React.useState<ViewMetaIcon | null>(iconProp || null);
 
   useEffect(() => {
-    setCover(coverProp || null);
+    setCover(normalizeCover(coverProp));
   }, [coverProp]);
 
   useEffect(() => {
@@ -99,9 +109,11 @@ export function ViewMetaPreview({
   );
 
   const handleUpdateCover = React.useCallback(
-    async (cover?: { type: CoverType; value: string }) => {
+    async (newCover?: ViewMetaCover) => {
       if (!updatePage || !viewId) return;
-      setCover(cover ? cover : null);
+      const normalizedCover = normalizeCover(newCover);
+
+      setCover(normalizedCover);
 
       try {
         await updatePage(viewId, {
@@ -111,8 +123,8 @@ export function ViewMetaPreview({
           },
           name: name || '',
           extra: {
-            ...extra,
-            cover: cover,
+            ...(extra || {}),
+            cover: normalizedCover || undefined,
           },
         });
         // eslint-disable-next-line
@@ -166,6 +178,7 @@ export function ViewMetaPreview({
           onRemoveCover={handleUpdateCover}
           readOnly={readOnly}
           layout={layout}
+          coverOffset={cover?.offset}
         />
       )}
       <div ref={ref} data-testid='view-meta-hover-area' className={'relative flex w-full flex-col overflow-hidden'}>
@@ -186,6 +199,7 @@ export function ViewMetaPreview({
                   void handleUpdateCover({
                     type: CoverType.NormalColor,
                     value: ColorEnum.Tint1,
+                    offset: 0,
                   });
                 }}
                 maxWidth={maxWidth}

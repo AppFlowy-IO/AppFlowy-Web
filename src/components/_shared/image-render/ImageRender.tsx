@@ -10,11 +10,20 @@ interface ImageRenderProps extends React.HTMLAttributes<HTMLImageElement> {
   alt?: string;
 }
 
-export function ImageRender({ src, ...props }: ImageRenderProps) {
+export function ImageRender({ src, style, ...props }: ImageRenderProps) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [hasError, setHasError] = useState(false);
   const authenticatedSrc = useAuthenticatedImage(src);
+  const baseStyle: React.CSSProperties = {
+    display: hasError ? 'none' : 'block',
+    height: loading ? 0 : '100%',
+    width: loading ? 1 : '100%',
+  };
+  const mergedStyle = {
+    ...baseStyle,
+    ...style,
+  };
 
   return (
     <>
@@ -27,11 +36,7 @@ export function ImageRender({ src, ...props }: ImageRenderProps) {
         <Skeleton variant='rectangular' width={'100%'} height={'100%'} />
       ) : null}
       <img
-        style={{
-          display: hasError ? 'none' : 'block',
-          height: loading ? 0 : '100%',
-          width: loading ? 1 : '100%',
-        }}
+        style={mergedStyle}
         draggable={false}
         src={authenticatedSrc}
         {...props}
