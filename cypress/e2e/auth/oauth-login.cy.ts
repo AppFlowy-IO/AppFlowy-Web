@@ -101,10 +101,8 @@ describe('OAuth Login Flow', () => {
         });
         cy.viewport(1280, 720);
 
-        // Clear localStorage before each test
-        cy.window().then((win) => {
-            win.localStorage.clear();
-        });
+        // Clear localStorage before each test using Cypress command
+        cy.clearAllLocalStorage();
     });
 
     describe('Google OAuth Login - New User', () => {
@@ -217,7 +215,7 @@ describe('OAuth Login Flow', () => {
             cy.log('[STEP 2] Waiting for verifyToken API call');
             cy.wait('@verifyUser', { timeout: 10000 }).then((interception) => {
                 expect(interception.response?.statusCode).to.equal(200);
-                if (interception.response?.body) {
+                if (interception.response?.body?.data) {
                     cy.log(`[API] Verify user response: ${JSON.stringify(interception.response.body)}`);
                     expect(interception.response.body.data.is_new).to.equal(true);
                 }
@@ -240,10 +238,12 @@ describe('OAuth Login Flow', () => {
             cy.log('[STEP 5] Verifying token is saved to localStorage');
             cy.window().then((win) => {
                 const token = win.localStorage.getItem('token');
-                expect(token).to.exist;
-                const tokenData = JSON.parse(token || '{}');
-                expect(tokenData.access_token).to.equal(mockAccessToken);
-                expect(tokenData.refresh_token).to.equal(mockRefreshToken);
+                expect(token).to.not.be.null;
+                if (token) {
+                    const tokenData = JSON.parse(token);
+                    expect(tokenData.access_token).to.equal(mockAccessToken);
+                    expect(tokenData.refresh_token).to.equal(mockRefreshToken);
+                }
             });
 
             // Step 6: Verify we're NOT redirected back to login (redirect loop prevention)
@@ -260,10 +260,12 @@ describe('OAuth Login Flow', () => {
             cy.log('[STEP 8] Verifying app is fully loaded');
             cy.window().then((win) => {
                 const token = win.localStorage.getItem('token');
-                expect(token).to.exist;
-                // Verify token is still there after page reload
-                const tokenData = JSON.parse(token || '{}');
-                expect(tokenData.access_token).to.exist;
+                expect(token).to.not.be.null;
+                if (token) {
+                    // Verify token is still there after page reload
+                    const tokenData = JSON.parse(token);
+                    expect(tokenData.access_token).to.exist;
+                }
             });
 
             cy.log('[STEP 9] OAuth login test for new user completed successfully - no redirect loop detected');
