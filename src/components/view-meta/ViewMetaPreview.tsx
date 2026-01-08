@@ -112,6 +112,7 @@ export function ViewMetaPreview({
     async (newCover?: ViewMetaCover) => {
       if (!updatePage || !viewId) return;
       const normalizedCover = normalizeCover(newCover);
+
       setCover(normalizedCover);
 
       try {

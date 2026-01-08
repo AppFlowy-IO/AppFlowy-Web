@@ -34,7 +34,7 @@ function MobileRecentViewCover ({ cover }: { cover: ViewCoverData }) {
   }, []);
 
   const coverType = useMemo(() => {
-    if (cover && [CoverType.NormalColor, CoverType.GradientColor].includes(cover.type as CoverType)) {
+    if (cover && [CoverType.NormalColor, CoverType.GradientColor].includes(cover.type)) {
       return 'color';
     }
 
@@ -42,7 +42,7 @@ function MobileRecentViewCover ({ cover }: { cover: ViewCoverData }) {
       return 'built_in';
     }
 
-    if (cover && [CoverType.CustomImage, CoverType.UpsplashImage].includes(cover.type as CoverType)) {
+    if (cover && [CoverType.CustomImage, CoverType.UpsplashImage].includes(cover.type)) {
       return 'custom';
     }
   }, [cover]);
