@@ -16,7 +16,6 @@ import {
 } from '../../support/filter-test-helpers';
 import {
   addFieldWithType,
-  addRows,
   FieldType,
 } from '../../support/field-type-helpers';
 import {
@@ -134,9 +133,7 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const selectFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'High Priority Item');
@@ -165,8 +162,8 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
             // Verify initial row count
             assertRowCount(3);
 
-            // Add filter on Single Select field
-            addFilterByFieldName('Single Select');
+            // Add filter on Select field (the default name for SingleSelect type)
+            addFilterByFieldName('Select');
             waitForReactUpdate(500);
 
             // Change condition to "Option Is" (default might already be this)
@@ -205,9 +202,7 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const selectFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'With Status');
@@ -224,8 +219,8 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
             // Verify initial row count
             assertRowCount(3);
 
-            // Add filter on Single Select field
-            addFilterByFieldName('Single Select');
+            // Add filter on Select field (the default name for SingleSelect type)
+            addFilterByFieldName('Select');
             waitForReactUpdate(500);
 
             // Change condition to "Is Empty"
@@ -263,9 +258,7 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const multiSelectFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'Frontend Developer');
@@ -295,8 +288,8 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
             // Verify initial row count
             assertRowCount(3);
 
-            // Add filter on Multi Select field
-            addFilterByFieldName('Multi Select');
+            // Add filter on Multiselect field (the default name for MultiSelect type)
+            addFilterByFieldName('Multiselect');
             waitForReactUpdate(500);
 
             // Change condition to "Contains"
@@ -338,9 +331,7 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const multiSelectFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'Tagged Item');
@@ -362,8 +353,8 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
             // Verify initial row count
             assertRowCount(3);
 
-            // Add filter on Multi Select field
-            addFilterByFieldName('Multi Select');
+            // Add filter on Multiselect field (the default name for MultiSelect type)
+            addFilterByFieldName('Multiselect');
             waitForReactUpdate(500);
 
             // Change condition to "Is Not Empty"

@@ -90,11 +90,15 @@ export const setupRowDetailTest = () => {
  * @param rowIndex - Index of the row to open (0-based, data rows only)
  */
 export const openRowDetail = (rowIndex: number = 0): void => {
-  // Click on the expand icon in the row, or double-click the row
+  // Hover over the primary cell to trigger expand button visibility
   DatabaseGridSelectors.dataRows()
     .eq(rowIndex)
     .scrollIntoView()
-    .find('[data-testid="row-expand-icon"], .row-expand-icon')
+    .realHover();
+  waitForReactUpdate(500);
+
+  // Click the expand button that appears on hover
+  cy.get('[data-testid="row-expand-button"]')
     .first()
     .click({ force: true });
   waitForReactUpdate(1000);
@@ -104,27 +108,21 @@ export const openRowDetail = (rowIndex: number = 0): void => {
 };
 
 /**
- * Open row detail by clicking on any cell in the row and using expand button
- * Alternative method when direct row click doesn't work
+ * Open row detail by hovering over a cell to reveal the expand button
+ * Alternative method when direct row hover doesn't work
  */
 export const openRowDetailViaCell = (rowIndex: number, fieldId: string): void => {
-  // Click on a cell first
+  // Hover over the cell to trigger expand button visibility
   DatabaseGridSelectors.dataRowCellsForField(fieldId)
     .eq(rowIndex)
-    .click({ force: true });
+    .scrollIntoView()
+    .realHover();
   waitForReactUpdate(500);
 
-  // Look for expand button in the cell or row
-  cy.get('body').then(($body) => {
-    if ($body.find('[data-testid="expand-row-button"]:visible').length > 0) {
-      cy.get('[data-testid="expand-row-button"]').first().click({ force: true });
-    } else {
-      // Try double-clicking the cell
-      DatabaseGridSelectors.dataRowCellsForField(fieldId)
-        .eq(rowIndex)
-        .dblclick({ force: true });
-    }
-  });
+  // Click the expand button
+  cy.get('[data-testid="row-expand-button"]')
+    .first()
+    .click({ force: true });
   waitForReactUpdate(1000);
 };
 

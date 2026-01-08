@@ -61,28 +61,8 @@ describe('Database Row Detail Tests (Desktop Parity)', () => {
         typeTextIntoCell(primaryFieldId, 0, 'Test Row');
         waitForReactUpdate(500);
 
-        // Find and click the expand icon on the row
-        DatabaseGridSelectors.dataRows()
-          .first()
-          .scrollIntoView()
-          .realHover();
-        waitForReactUpdate(500);
-
-        // Look for expand button
-        cy.get('body').then(($body) => {
-          if ($body.find('[data-testid="row-expand-icon"]:visible').length > 0) {
-            cy.get('[data-testid="row-expand-icon"]').first().click({ force: true });
-          } else if ($body.find('.expand-row-button:visible').length > 0) {
-            cy.get('.expand-row-button').first().click({ force: true });
-          } else {
-            // Fallback: double-click on the row cell
-            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
-              .first()
-              .dblclick({ force: true });
-          }
-        });
-
-        waitForReactUpdate(1000);
+        // Open row detail using the helper
+        openRowDetail(0);
 
         // Verify modal is open
         assertRowDetailOpen();

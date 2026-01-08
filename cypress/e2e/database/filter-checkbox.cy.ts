@@ -16,7 +16,6 @@ import {
 } from '../../support/filter-test-helpers';
 import {
   addFieldWithType,
-  addRows,
   toggleCheckbox,
   FieldType,
 } from '../../support/field-type-helpers';
@@ -78,9 +77,7 @@ describe('Database Checkbox Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const checkboxFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'Task One');
@@ -135,9 +132,7 @@ describe('Database Checkbox Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const checkboxFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'Completed Task');
@@ -191,13 +186,12 @@ describe('Database Checkbox Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const checkboxFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(1);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, we'll use all 3 for this test
 
-            // Enter names
+            // Enter names for all 3 rows
             typeTextIntoCell(primaryFieldId, 0, 'Task A');
             typeTextIntoCell(primaryFieldId, 1, 'Task B');
+            typeTextIntoCell(primaryFieldId, 2, 'Task C');
             waitForReactUpdate(500);
 
             // Initially no checkboxes are checked
@@ -220,7 +214,7 @@ describe('Database Checkbox Filter Tests (Desktop Parity)', () => {
             waitForReactUpdate(500);
 
             // Verify all rows are back
-            assertRowCount(2);
+            assertRowCount(3);
 
             // Check one row
             toggleCheckbox(checkboxFieldId, 0);

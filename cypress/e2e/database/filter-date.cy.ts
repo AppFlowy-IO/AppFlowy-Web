@@ -16,7 +16,6 @@ import {
 } from '../../support/filter-test-helpers';
 import {
   addFieldWithType,
-  addRows,
   FieldType,
 } from '../../support/field-type-helpers';
 import {
@@ -150,9 +149,7 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const dateFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'Event on 15th');
@@ -224,9 +221,7 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const dateFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'Early Event');
@@ -298,9 +293,7 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const dateFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'First Week');
@@ -372,9 +365,7 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const dateFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'Scheduled');
@@ -430,9 +421,7 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
           .then((testId) => {
             const dateFieldId = testId?.replace('grid-field-header-', '') || '';
 
-            // Add more rows
-            addRows(2);
-            waitForReactUpdate(500);
+            // Grid starts with 3 default rows, no need to add more
 
             // Enter names
             typeTextIntoCell(primaryFieldId, 0, 'Has Date 1');
