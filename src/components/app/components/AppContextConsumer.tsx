@@ -61,7 +61,7 @@ function OpenClient() {
   const currentUser = useCurrentUser();
 
   const [isTabVisible, setIsTabVisible] = useState(true);
-  const prevOpenClientRef = useRef(openClient);
+  const hasOpenedRef = useRef(false);
 
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -78,18 +78,20 @@ function OpenClient() {
   }, []);
 
   useEffect(() => {
-    if (isTabVisible && openClient && currentUser) {
-      if (!prevOpenClientRef.current) {
-        window.open(
-          `appflowy-flutter://open-page?workspace_id=${currentWorkspaceId}&view_id=${viewId}&email=${currentUser.email}${
-            rowId ? `&row_id=${rowId}` : ''
-          }`,
-          '_self'
-        );
-      }
+    if (!openClient) {
+      hasOpenedRef.current = false;
+      return;
     }
 
-    prevOpenClientRef.current = openClient;
+    if (isTabVisible && currentUser && !hasOpenedRef.current) {
+      window.open(
+        `appflowy-flutter://open-page?workspace_id=${currentWorkspaceId}&view_id=${viewId}&email=${currentUser.email}${
+          rowId ? `&row_id=${rowId}` : ''
+        }`,
+        '_self'
+      );
+      hasOpenedRef.current = true;
+    }
   }, [currentWorkspaceId, viewId, currentUser, openClient, rowId, isTabVisible]);
 
   return <></>;
