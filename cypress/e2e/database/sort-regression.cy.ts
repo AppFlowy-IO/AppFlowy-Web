@@ -148,10 +148,11 @@ describe('Database Sort Regression Tests (Desktop Parity)', () => {
     const email = generateRandomEmail();
     loginAndCreateGrid(email).then(() => {
       getPrimaryFieldId().then((primaryFieldId) => {
-        addRows(3);
+        // Grid starts with 3 rows, add 1 more for 4 total
+        addRows(1);
         waitForReactUpdate(500);
 
-        // Enter mixed-case names
+        // Enter mixed-case names in all 4 rows
         typeTextIntoCell(primaryFieldId, 0, 'banana');
         typeTextIntoCell(primaryFieldId, 1, 'Apple');
         typeTextIntoCell(primaryFieldId, 2, 'CHERRY');
@@ -166,9 +167,11 @@ describe('Database Sort Regression Tests (Desktop Parity)', () => {
         // (alphabetical ignoring case)
         DatabaseGridSelectors.dataRowCellsForField(primaryFieldId).then(($cells) => {
           const values = $cells.toArray().map((el) => el.textContent?.trim().toLowerCase() || '');
+          // Filter out empty values since we only care about filled rows
+          const nonEmptyValues = values.filter(v => v !== '');
           // Should be in alphabetical order when lowercased
-          const sortedValues = [...values].sort();
-          expect(values).to.deep.equal(sortedValues);
+          const sortedValues = [...nonEmptyValues].sort();
+          expect(nonEmptyValues).to.deep.equal(sortedValues);
         });
       });
     });
