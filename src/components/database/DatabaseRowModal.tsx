@@ -97,7 +97,7 @@ function DatabaseRowModal({
               <TooltipTrigger asChild>
                 <div className={'h-7 w-7'}>
                   <DropdownMenuTrigger asChild>
-                    <Button size={'icon'} variant='ghost' onClick={() => onOpenChange(false)}>
+                    <Button size={'icon'} variant='ghost' data-testid='row-detail-more-actions'>
                       <MoreIcon />
                     </Button>
                   </DropdownMenuTrigger>
@@ -108,6 +108,7 @@ function DatabaseRowModal({
             <DropdownMenuContent className={' w-fit min-w-fit'}>
               <DropdownMenuGroup>
                 <DropdownMenuItem
+                  data-testid='row-detail-duplicate'
                   onSelect={async () => {
                     if (duplicateLoading) return;
                     setDuplicateLoading(true);
@@ -128,6 +129,7 @@ function DatabaseRowModal({
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   variant={'destructive'}
+                  data-testid='row-detail-delete'
                   onSelect={() => {
                     deleteRow?.(rowId);
                     onOpenChange(false);

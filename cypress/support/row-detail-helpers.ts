@@ -28,16 +28,16 @@ export const RowDetailSelectors = {
   }),
 
   // More actions button (...)
-  moreActionsButton: () => cy.get('.MuiDialogTitle-root button').last(),
+  moreActionsButton: () => cy.get('[data-testid="row-detail-more-actions"]'),
 
   // Dropdown menu
   dropdownMenu: () => cy.get('[role="menu"]'),
 
   // Duplicate menu item
-  duplicateMenuItem: () => cy.get('[role="menuitem"]').contains(/duplicate/i),
+  duplicateMenuItem: () => cy.get('[data-testid="row-detail-duplicate"]'),
 
   // Delete menu item
-  deleteMenuItem: () => cy.get('[role="menuitem"]').contains(/delete/i),
+  deleteMenuItem: () => cy.get('[data-testid="row-detail-delete"]'),
 
   // Row document area (the editor part)
   documentArea: () => cy.get('.appflowy-scroll-container, [data-testid="row-document"]'),

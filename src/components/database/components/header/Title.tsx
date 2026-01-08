@@ -122,6 +122,7 @@ export function Title({
               autoFocus
               placeholder={'Untitled'}
               value={value}
+              data-testid='row-title-input'
               onChange={(e) => {
                 if (readOnly) return;
 
