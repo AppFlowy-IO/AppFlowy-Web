@@ -667,6 +667,9 @@ export const AddPageSelectors = {
   // Add board button in dropdown
   addBoardButton: () => cy.get(byTestId('add-board-button')),
 
+  // Add chart button in dropdown
+  addChartButton: () => cy.get(byTestId('add-chart-button')),
+
   // Add AI chat button in dropdown
   addAIChatButton: () => cy.get(byTestId('add-ai-chat-button')),
 };
@@ -920,6 +923,41 @@ export const RowDetailSelectors = {
   // Dropdown menu items
   duplicateMenuItem: () => cy.get('[role="menuitem"]').contains(/duplicate/i),
   deleteMenuItem: () => cy.get('[role="menuitem"]').contains(/delete/i),
+};
+
+/**
+ * Chart View selectors
+ */
+export const ChartSelectors = {
+  // Main chart container
+  chart: () => cy.get(byTestId('database-chart')),
+
+  // Chart widgets by type (using recharts class selectors)
+  barChart: () => cy.get('.recharts-bar-chart'),
+  lineChart: () => cy.get('.recharts-line-chart'),
+  pieChart: () => cy.get('.recharts-pie-chart'),
+
+  // Any recharts chart wrapper
+  anyChart: () => cy.get('.recharts-wrapper'),
+
+  // Chart bars (for bar charts)
+  bars: () => cy.get('.recharts-bar-rectangle'),
+
+  // Chart data points (for line charts)
+  dots: () => cy.get('.recharts-dot'),
+
+  // Chart slices (for pie/donut charts)
+  slices: () => cy.get('.recharts-pie-sector'),
+
+  // Empty state
+  emptyStateNoField: () => cy.get(byTestId('database-chart')).contains('No fields available for grouping'),
+  emptyStateNoData: () => cy.get(byTestId('database-chart')).contains('No data'),
+
+  // Tooltip
+  tooltip: () => cy.get('.recharts-tooltip-wrapper'),
+
+  // Legend
+  legend: () => cy.get('.recharts-legend-wrapper'),
 };
 
 export function waitForReactUpdate(ms: number = 500) {

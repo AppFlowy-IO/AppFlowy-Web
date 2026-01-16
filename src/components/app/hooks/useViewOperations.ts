@@ -262,6 +262,7 @@ export function useViewOperations() {
           case ViewLayout.Grid:
           case ViewLayout.Board:
           case ViewLayout.Calendar:
+          case ViewLayout.Chart:
             collabType = Types.Database;
             break;
           case ViewLayout.AIChat:
@@ -270,7 +271,7 @@ export function useViewOperations() {
         }
 
         // Fallback: If view not found in outline yet (e.g., newly created view),
-        // try to determine type from the Yjs document itself
+        // try to determine type from the Yjs document itself or server metadata
         if (collabType === null) {
           console.warn('[useViewOperations] View not found in outline, checking Yjs document', { viewId: id });
 
@@ -284,13 +285,41 @@ export function useViewOperations() {
           } else if (hasDocument) {
             collabType = Types.Document;
           } else {
-            console.error('[useViewOperations] Could not determine view type', {
-              viewId: id,
-              viewLayout: view?.layout,
-              hasDatabase,
-              hasDocument,
-            });
-            return Promise.reject(new Error(`Invalid view layout: ${view?.layout}`));
+            // Last resort: try to fetch view metadata from server to get layout
+            if (service && currentWorkspaceId) {
+              try {
+                const viewMeta = await service.getAppView(currentWorkspaceId, id);
+
+                if (viewMeta?.layout !== undefined) {
+                  Log.debug('[useViewOperations] Got view layout from server', { viewId: id, layout: viewMeta.layout });
+                  switch (viewMeta.layout) {
+                    case ViewLayout.Document:
+                      collabType = Types.Document;
+                      break;
+                    case ViewLayout.Grid:
+                    case ViewLayout.Board:
+                    case ViewLayout.Calendar:
+                    case ViewLayout.Chart:
+                      collabType = Types.Database;
+                      break;
+                    case ViewLayout.AIChat:
+                      return Promise.reject(new Error('AIChat views cannot be loaded as collab documents'));
+                  }
+                }
+              } catch (e) {
+                Log.warn('[useViewOperations] Failed to fetch view metadata', { viewId: id, error: e });
+              }
+            }
+
+            if (collabType === null) {
+              console.error('[useViewOperations] Could not determine view type', {
+                viewId: id,
+                viewLayout: view?.layout,
+                hasDatabase,
+                hasDocument,
+              });
+              return Promise.reject(new Error(`Invalid view layout: ${view?.layout}`));
+            }
           }
         }
 
@@ -476,6 +505,7 @@ export function useViewOperations() {
           case ViewLayout.Grid:
           case ViewLayout.Board:
           case ViewLayout.Calendar:
+          case ViewLayout.Chart:
             searchParams.set('r', blockId);
             break;
           default:

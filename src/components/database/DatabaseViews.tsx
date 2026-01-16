@@ -4,6 +4,7 @@ import { ErrorBoundary } from 'react-error-boundary';
 import { useDatabase, useDatabaseViewsSelector } from '@/application/database-yjs';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { Board } from '@/components/database/board';
+import { Chart } from '@/components/database/chart';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import { Calendar } from '@/components/database/fullcalendar';
@@ -112,6 +113,7 @@ function DatabaseViews({
   // Render the appropriate view component based on layout
   // Use previous layout as fallback to prevent flash during view transitions
   const effectiveLayout = layout ?? prevLayoutRef.current;
+
   const view = useMemo(() => {
     switch (effectiveLayout) {
       case DatabaseViewLayout.Grid:
@@ -120,6 +122,8 @@ function DatabaseViews({
         return <Board />;
       case DatabaseViewLayout.Calendar:
         return <Calendar />;
+      case DatabaseViewLayout.Chart:
+        return <Chart />;
       default:
         return null;
     }

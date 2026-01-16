@@ -274,6 +274,7 @@ export enum ViewLayout {
   Board = 2,
   Calendar = 3,
   AIChat = 4,
+  Chart = 5,
 }
 
 export enum YjsEditorKey {
@@ -577,6 +578,7 @@ export enum DatabaseViewLayout {
   Grid = 0,
   Board = 1,
   Calendar = 2,
+  Chart = 3,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {
@@ -635,6 +637,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Calendar
   get(key: '2'): YDatabaseCalendarLayoutSetting;
+
+  // DatabaseViewLayout.Chart
+  get(key: '3'): YDatabaseChartLayoutSetting;
 }
 
 export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
@@ -646,6 +651,12 @@ export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.number_of_days): number;
 
   get(key: YjsDatabaseKey.show_week_numbers | YjsDatabaseKey.show_weekends): boolean;
+}
+
+export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
+  get(key: 'chartType' | 'aggregationType'): string;
+  get(key: 'xFieldId' | 'yFieldId'): string | undefined;
+  get(key: 'showEmptyValues'): boolean;
 }
 
 export interface YDatabaseGroup extends Y.Map<unknown> {
@@ -809,12 +820,14 @@ export const layoutMap = {
   [ViewLayout.Grid]: 'grid',
   [ViewLayout.Board]: 'board',
   [ViewLayout.Calendar]: 'calendar',
+  [ViewLayout.Chart]: 'chart',
 };
 
 export const databaseLayoutMap = {
   [DatabaseViewLayout.Grid]: 'grid',
   [DatabaseViewLayout.Board]: 'board',
   [DatabaseViewLayout.Calendar]: 'calendar',
+  [DatabaseViewLayout.Chart]: 'chart',
 };
 
 export enum FontLayout {

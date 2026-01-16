@@ -1995,3 +1995,48 @@ export function useRowPrimaryContentSelector(rowDoc: YDoc | null, primaryFieldId
 
   return primaryContent;
 }
+
+/**
+ * Hook to get chart layout settings
+ */
+export function useChartLayoutSetting() {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const [setting, setSetting] = useState<{
+    chartType: number;
+    xFieldId: string;
+    showEmptyValues: boolean;
+    aggregationType: number;
+    yFieldId?: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+
+    const observerHandler = () => {
+      const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('3'); // '3' = Chart layout
+
+      if (!layoutSetting) {
+        setSetting(null);
+        return;
+      }
+
+      setSetting({
+        chartType: Number(layoutSetting.get('chartType') || 0),
+        xFieldId: String(layoutSetting.get('xFieldId') || ''),
+        showEmptyValues: Boolean(layoutSetting.get('showEmptyValues')),
+        aggregationType: Number(layoutSetting.get('aggregationType') || 0),
+        yFieldId: layoutSetting.get('yFieldId') ? String(layoutSetting.get('yFieldId')) : undefined,
+      });
+    };
+
+    observerHandler();
+    view?.observeDeep(observerHandler);
+
+    return () => {
+      view?.unobserveDeep(observerHandler);
+    };
+  }, [database, viewId]);
+
+  return setting;
+}

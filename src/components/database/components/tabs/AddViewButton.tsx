@@ -81,6 +81,14 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
           <ViewIcon layout={ViewLayout.Calendar} size={'small'} />
           {t('calendar.menuName')}
         </DropdownMenuItem>
+        <DropdownMenuItem
+          onSelect={() => {
+            void handleAddView(DatabaseViewLayout.Chart, t('chart.menuName'));
+          }}
+        >
+          <ViewIcon layout={ViewLayout.Chart} size={'small'} />
+          {t('chart.menuName')}
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );

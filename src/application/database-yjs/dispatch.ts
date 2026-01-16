@@ -2202,11 +2202,13 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Grid]: ViewLayout.Grid,
         [DatabaseViewLayout.Board]: ViewLayout.Board,
         [DatabaseViewLayout.Calendar]: ViewLayout.Calendar,
+        [DatabaseViewLayout.Chart]: ViewLayout.Chart,
       }[layout];
       const name = {
         [DatabaseViewLayout.Grid]: 'Grid',
         [DatabaseViewLayout.Board]: 'Board',
         [DatabaseViewLayout.Calendar]: 'Calendar',
+        [DatabaseViewLayout.Chart]: 'Chart',
       }[layout];
 
       const tabsParentViewId = await (async (): Promise<string> => {
@@ -3734,6 +3736,71 @@ export function useUpdateCalendarSetting() {
           },
         ],
         'updateCalendarSetting'
+      );
+    },
+    [sharedRoot, view]
+  );
+}
+
+export interface ChartLayoutSetting {
+  chartType?: number;
+  xFieldId?: string;
+  showEmptyValues?: boolean;
+  aggregationType?: number;
+  yFieldId?: string;
+}
+
+export function useUpdateChartSetting() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (settings: Partial<ChartLayoutSetting>) => {
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            if (!view) {
+              throw new Error(`Unable to update chart settings`);
+            }
+
+            // Get or create the layout settings for the view
+            let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
+
+            if (!layoutSettings) {
+              layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+              view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+            }
+
+            let layoutSetting = layoutSettings.get('3') as Y.Map<unknown> | undefined; // '3' = Chart layout
+
+            if (!layoutSetting) {
+              layoutSetting = new Y.Map();
+              layoutSettings.set('3', layoutSetting as unknown as YDatabaseCalendarLayoutSetting);
+            }
+
+            if (settings.chartType !== undefined) {
+              layoutSetting.set('chartType', settings.chartType);
+            }
+
+            if (settings.xFieldId !== undefined) {
+              layoutSetting.set('xFieldId', settings.xFieldId);
+            }
+
+            if (settings.showEmptyValues !== undefined) {
+              layoutSetting.set('showEmptyValues', settings.showEmptyValues);
+            }
+
+            if (settings.aggregationType !== undefined) {
+              layoutSetting.set('aggregationType', settings.aggregationType);
+            }
+
+            if (settings.yFieldId !== undefined) {
+              layoutSetting.set('yFieldId', settings.yFieldId);
+            }
+          },
+        ],
+        'updateChartSetting'
       );
     },
     [sharedRoot, view]

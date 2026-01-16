@@ -71,6 +71,14 @@ function AddPageActions({ view }: { view: View }) {
         },
       },
       {
+        label: t('chart.menuName'),
+        icon: <ViewIcon layout={ViewLayout.Chart} size={'small'} />,
+        testId: 'add-chart-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Chart, t('document.plugins.database.newDatabase'));
+        },
+      },
+      {
         label: t('chat.newChat'),
         icon: <ViewIcon layout={ViewLayout.AIChat} size={'small'} />,
         testId: 'add-ai-chat-button',

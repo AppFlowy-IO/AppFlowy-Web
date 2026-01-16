@@ -2478,6 +2478,30 @@
     "deleteEventPrompt_one": "Are you sure you want to delete this event? This action cannot be undone.",
     "deleteEventPrompt_other": "Are you sure you want to delete these events? This action cannot be undone."
   },
+  "chart": {
+    "menuName": "Chart",
+    "emptyState": {
+      "title": "No data to display",
+      "description": "Add rows with data to see the chart",
+      "noField": "No fields available for grouping",
+      "noFieldDescription": "Create a SingleSelect, MultiSelect, or Checkbox field to use the chart view."
+    },
+    "tooltip": {
+      "count": "Count",
+      "sum": "Sum",
+      "average": "Average",
+      "min": "Min",
+      "max": "Max",
+      "rows": "{{count}} rows",
+      "clickToView": "Click to view data"
+    },
+    "drilldown": {
+      "title": "Rows in \"{{category}}\"",
+      "close": "Close",
+      "rowCount": "{{count}} rows",
+      "noRows": "No rows in this category"
+    }
+  },
   "errorDialog": {
     "title": "@:appName Error",
     "howToFixFallback": "We're sorry for the inconvenience! Submit an issue on our GitHub page that describes your error.",
