@@ -69,7 +69,11 @@ export function useWorkspaceData() {
           }
         } catch (error) {
           console.error('Failed to load shareWithMe data:', error);
-          // Continue with original outline if shareWithMe fails
+          // Expose the last shareWithMe failure for debugging tools / self-hosted setups.
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).__RCF_LAST_SHARE_WITH_ME_ERROR__ = error;
+          // In self-hosted environments the sharing API may be disabled or unconfigured.
+          // Treat failures here as non-fatal and continue with the main workspace outline.
         }
 
         stableOutlineRef.current = outlineWithShareWithMe;
