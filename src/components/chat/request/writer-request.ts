@@ -63,6 +63,7 @@ export class WriterRequest {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
         'ai-model': payload.modelName || 'Auto',
+        'x-platform': 'web-app',
       },
       body: JSON.stringify({
         text: payload.inputText,

@@ -261,6 +261,7 @@ export class ChatRequest {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${token}`,
         'ai-model': payload.model_name || 'Auto',
+        'x-platform': 'web-app',
       },
       body: JSON.stringify({
         ...payload,

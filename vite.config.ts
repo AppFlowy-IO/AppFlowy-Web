@@ -240,4 +240,11 @@ export default defineConfig({
       'react-i18next'
     ],
   },
+  css: {
+    preprocessorOptions: {
+      scss: {
+        api: 'modern-compiler',
+      },
+    },
+  },
 });

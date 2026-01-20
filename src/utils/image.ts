@@ -95,6 +95,7 @@ export const checkImage = async (url: string): Promise<CheckImageResult> => {
         const response = await fetch(fullUrl, {
           headers: {
             Authorization: `Bearer ${token.access_token}`,
+            'x-platform': 'web-app',
           },
         });
 
@@ -151,6 +152,7 @@ export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
       const response = await fetch(fullUrl, {
         headers: {
           Authorization: `Bearer ${token.access_token}`,
+          'x-platform': 'web-app',
         },
       });
 

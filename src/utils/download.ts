@@ -17,6 +17,7 @@ export async function downloadFile(url: string, filename?: string): Promise<void
       response = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token.access_token}`,
+          'x-platform': 'web-app',
         },
       });
     } else {

@@ -33,6 +33,7 @@ export async function fetchAuthenticatedImage(url: string, token = getTokenParse
     const response = await fetch(fullUrl, {
       headers: {
         Authorization: `Bearer ${authToken.access_token}`,
+        'x-platform': 'web-app',
       },
     });
 
