@@ -10,7 +10,6 @@ import {
   ChartAggregationType,
   ChartDataItem,
   ChartLayoutSettings,
-  EMPTY_VALUE_COLOR,
   isGroupableFieldType,
 } from '@/application/database-yjs/chart.type';
 import { FieldType } from '@/application/database-yjs/database.type';
@@ -49,22 +48,28 @@ function getCellGroupValue(
         // SingleSelect stores a single option ID
         return [data];
       }
+
       return [];
     }
+
     case FieldType.MultiSelect: {
       if (typeof data === 'string' && data.length > 0) {
         // MultiSelect stores comma-separated option IDs
         return data.split(',').filter(Boolean);
       }
+
       return [];
     }
+
     case FieldType.Checkbox: {
       // Checkbox stores 'Yes' or 'No' (or empty)
       if (data === 'Yes' || data === true) {
         return ['Checked'];
       }
+
       return ['Unchecked'];
     }
+
     default:
       return [];
   }
@@ -85,6 +90,7 @@ function getCellNumericValue(
   }
 
   const num = typeof data === 'number' ? data : parseFloat(String(data));
+
   return isNaN(num) || !isFinite(num) ? null : num;
 }
 
@@ -176,6 +182,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
         loadedRowIdsRef.current.add(row.id);
         return ensureRowDoc(row.id);
       });
+
       await Promise.all(loadPromises);
       setRowsLoaded(true);
     };
@@ -190,6 +197,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
 
     // Check if at least some row docs are available
     const rowMetasCount = Object.keys(rowMetas).length;
+
     return rowMetasCount > 0;
   }, [rowOrders, rowMetas]);
 
@@ -197,8 +205,10 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   const groupableFields = useMemo<GroupableField[]>(() => {
     if (!fields) return [];
     const result: GroupableField[] = [];
+
     fields.forEach((field, fieldId) => {
       const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
       if (isGroupableFieldType(fieldType)) {
         result.push({
           id: fieldId,
@@ -219,6 +229,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     // Check if settings.xFieldId is valid (exists and is groupable)
     if (settings?.xFieldId) {
       const isValidGroupableField = groupableFields.some(f => f.id === settings.xFieldId);
+
       if (isValidGroupableField) {
         return settings.xFieldId;
       }
@@ -246,6 +257,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     if (fieldType !== FieldType.SingleSelect && fieldType !== FieldType.MultiSelect) {
       return [];
     }
+
     return parseSelectOptionTypeOptions(xAxisField)?.options ?? [];
   }, [xAxisField, fieldType]);
 
@@ -258,6 +270,7 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   // Build option ID to name map
   const optionIdToName = useMemo(() => {
     const map = new Map<string, string>();
+
     selectOptions.forEach((opt) => {
       map.set(opt.id, opt.name);
     });

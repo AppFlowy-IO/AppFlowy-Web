@@ -36,6 +36,7 @@ export function BarChartWidget({ data, onBarClick }: BarChartWidgetProps) {
     const maxValue = Math.max(...data.map(d => d.value), 0);
     const axisMax = maxValue * 1.3; // 30% padding above max bar
     const ticks = generateIntegerTicks(maxValue);
+
     return { yAxisDomain: [0, axisMax], yAxisTicks: ticks };
   }, [data]);
 
@@ -51,6 +52,7 @@ export function BarChartWidget({ data, onBarClick }: BarChartWidgetProps) {
   const handleMouseEnter = (data: ChartDataItem, index: number, e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const containerRect = e.currentTarget.closest('.recharts-wrapper')?.getBoundingClientRect();
+
     if (containerRect) {
       setTooltip({
         active: true,

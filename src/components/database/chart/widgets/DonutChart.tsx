@@ -20,6 +20,7 @@ interface DonutChartWidgetProps {
  */
 function formatLabel(value: number, percent: number): string {
   const percentStr = (percent * 100).toFixed(1);
+
   return `${value} (${percentStr}%)`;
 }
 
@@ -146,6 +147,7 @@ export function DonutChartWidget({ data, onSliceClick }: DonutChartWidgetProps) 
 
   const handleSliceMouseEnter = (entry: ChartDataItem & { percent?: number }, e: React.MouseEvent) => {
     const containerRect = containerRef.current?.getBoundingClientRect();
+
     if (containerRect) {
       setTooltip({
         active: true,

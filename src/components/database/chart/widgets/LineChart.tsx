@@ -38,6 +38,7 @@ export function LineChartWidget({ data, onPointClick }: LineChartWidgetProps) {
     const axisMax = computeAxisMax(maxValue);
     // Add extra 15% for value labels (matching Flutter's chartMaxY = axisMaxY * 1.15)
     const ticks = generateIntegerTicks(maxValue);
+
     return { yAxisDomain: [0, axisMax * 1.15], yAxisTicks: ticks };
   }, [data]);
 

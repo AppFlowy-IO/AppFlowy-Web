@@ -256,6 +256,7 @@ export function initAPIService(config: AFCloudConfig) {
     baseURL: config.baseURL,
     headers: {
       'Content-Type': 'application/json',
+      'x-platform': 'web-app',
     },
   });
 

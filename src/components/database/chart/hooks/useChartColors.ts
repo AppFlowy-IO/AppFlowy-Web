@@ -45,6 +45,7 @@ export function getCSSVariableColor(varName: string, fallback: string = CHART_CO
   if (typeof window === 'undefined') return fallback;
 
   const value = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+
   return value || fallback;
 }
 
@@ -103,6 +104,7 @@ export function useChartColors({ fieldType, selectOptions }: UseChartColorsOptio
       if (label === 'Checked' || label === 'Yes') {
         return CHECKBOX_CHECKED_COLOR;
       }
+
       if (label === 'Unchecked' || label === 'No') {
         return CHECKBOX_UNCHECKED_COLOR;
       }
@@ -112,6 +114,7 @@ export function useChartColors({ fieldType, selectOptions }: UseChartColorsOptio
     if (optionId && optionColorMap.has(optionId)) {
       return optionColorMap.get(optionId)!;
     }
+
     if (optionColorMap.has(label)) {
       return optionColorMap.get(label)!;
     }

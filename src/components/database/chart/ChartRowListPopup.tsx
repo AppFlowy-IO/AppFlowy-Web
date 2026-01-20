@@ -2,10 +2,9 @@ import { Dialog, DialogContent, DialogTitle } from '@mui/material';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseFields, usePrimaryFieldId, useRowDocMap } from '@/application/database-yjs';
+import { usePrimaryFieldId, useRowDocMap } from '@/application/database-yjs';
 import { ChartDataItem } from '@/application/database-yjs/chart.type';
 import { getCellData } from '@/application/database-yjs/const';
-import { YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { AFScroller } from '@/components/_shared/scroller';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
@@ -27,7 +26,6 @@ interface RowItem {
  */
 export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProps) {
   const { t } = useTranslation();
-  const fields = useDatabaseFields();
   const rowMetas = useRowDocMap();
   const primaryFieldId = usePrimaryFieldId();
 
@@ -43,6 +41,7 @@ export function ChartRowListPopup({ open, onClose, item }: ChartRowListPopupProp
     return item.rowIds.map(rowId => {
       const data = getCellData(rowId, primaryFieldId, rowMetas);
       const primaryValue = typeof data === 'string' ? data : String(data || rowId);
+
       return { id: rowId, primaryValue };
     });
   }, [item.rowIds, rowMetas, primaryFieldId]);

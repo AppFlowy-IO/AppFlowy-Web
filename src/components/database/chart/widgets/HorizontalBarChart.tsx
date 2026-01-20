@@ -38,6 +38,7 @@ export function HorizontalBarChartWidget({ data, onBarClick }: HorizontalBarChar
     const maxValue = Math.max(...data.map(d => d.value), 0);
     const axisMax = computeAxisMax(maxValue);
     const ticks = generateIntegerTicks(maxValue);
+
     return { xAxisDomain: [0, axisMax], xAxisTicks: ticks };
   }, [data]);
 
@@ -47,6 +48,7 @@ export function HorizontalBarChartWidget({ data, onBarClick }: HorizontalBarChar
   // Calculate dynamic height based on number of bars
   const chartHeight = useMemo(() => {
     const minHeight = 300;
+
     return Math.max(minHeight, data.length * barHeight + 60);
   }, [data.length, barHeight]);
 
@@ -59,6 +61,7 @@ export function HorizontalBarChartWidget({ data, onBarClick }: HorizontalBarChar
   const handleMouseEnter = (item: ChartDataItem, index: number, e: React.MouseEvent) => {
     const rect = e.currentTarget.getBoundingClientRect();
     const containerRect = e.currentTarget.closest('.recharts-wrapper')?.getBoundingClientRect();
+
     if (containerRect) {
       setTooltip({
         active: true,
