@@ -798,9 +798,27 @@ export const AuthSelectors = {
   passwordInput: () => cy.get(byTestId('password-input')),
   passwordSubmitButton: () => cy.get(byTestId('password-submit-button')),
 
+  // Create account link on login page
+  createAccountButton: () => cy.get(byTestId('login-create-account-button')),
+
   // Logout elements
   logoutMenuItem: () => cy.get(byTestId('logout-menu-item')),
   logoutConfirmButton: () => cy.get(byTestId('logout-confirm-button')),
+};
+
+/**
+ * Sign Up page selectors
+ * Used for sign-up flow testing
+ */
+export const SignUpSelectors = {
+  // Sign-up form elements
+  emailInput: () => cy.get(byTestId('signup-email-input')),
+  passwordInput: () => cy.get(byTestId('signup-password-input')),
+  confirmPasswordInput: () => cy.get(byTestId('signup-confirm-password-input')),
+  submitButton: () => cy.get(byTestId('signup-submit-button')),
+
+  // Navigation
+  backToLoginButton: () => cy.get(byTestId('signup-back-to-login-button')),
 };
 
 /**

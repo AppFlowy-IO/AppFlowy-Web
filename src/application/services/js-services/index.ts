@@ -313,6 +313,11 @@ export class AFClientService implements AFService {
     return APIService.signInWithPassword(params);
   }
 
+  @withSignIn()
+  async signUpWithPassword(params: { email: string; password: string; redirectTo: string }) {
+    return APIService.signUpWithPassword(params);
+  }
+
   async forgotPassword(params: { email: string }) {
     return APIService.forgotPassword(params);
   }

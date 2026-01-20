@@ -122,6 +122,7 @@ export interface AppService {
     type?: 'magiclink' | 'recovery';
   }) => Promise<void>;
   signInWithPassword: (params: { email: string; password: string; redirectTo: string }) => Promise<void>;
+  signUpWithPassword: (params: { email: string; password: string; redirectTo: string }) => Promise<void>;
   forgotPassword: (params: { email: string }) => Promise<void>;
   changePassword: (params: { password: string }) => Promise<void>;
   signInGoogle: (params: { redirectTo: string }) => Promise<void>;

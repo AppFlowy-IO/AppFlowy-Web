@@ -4,4 +4,5 @@ export const LOGIN_ACTION = {
   RESET_PASSWORD: 'resetPassword',
   CHECK_EMAIL_RESET_PASSWORD: 'checkEmailResetPassword',
   CHANGE_PASSWORD: 'changePassword',
+  SIGN_UP_PASSWORD: 'signUpPassword',
 } as const;

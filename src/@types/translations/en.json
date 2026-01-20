@@ -29,7 +29,10 @@
     "emailHint": "Email",
     "passwordHint": "Password",
     "repeatPasswordHint": "Repeat password",
-    "signUpWith": "Sign up with:"
+    "signUpWith": "Sign up with:",
+    "signUpSuccess": "Account created successfully!",
+    "signUpFailed": "Failed to create account. Please try again.",
+    "emailAlreadyRegistered": "This email is already registered."
   },
   "signIn": {
     "loginTitle": "Login to @:appName",

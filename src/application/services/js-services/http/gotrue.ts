@@ -21,10 +21,16 @@ export function initGrantService(baseURL: string) {
   });
 
   axiosInstance.interceptors.request.use((config) => {
-    Object.assign(config.headers, {
+    const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'x-platform': 'web-app',
-    });
+    };
+
+    // Skip x-platform header for signup to avoid CORS issues with GoTrue
+    if (!config.url?.includes('/signup')) {
+      headers['x-platform'] = 'web-app';
+    }
+
+    Object.assign(config.headers, headers);
 
     return config;
   });
@@ -123,20 +129,34 @@ export async function signUpWithPassword(params: { email: string; password: stri
     const data = response?.data;
 
     if (data) {
-      saveGoTrueAuth(JSON.stringify(data));
       try {
         await verifyToken(data.access_token);
-      } catch (error: any) {
+      } catch (error: unknown) {
         emit(EventType.SESSION_INVALID);
+        const err = error as { message?: string; code?: number };
         const message =
-          typeof error?.message === 'string'
-            ? error.message.replace(/\s*\[.*\]$/, '')
+          typeof err?.message === 'string'
+            ? err.message.replace(/\s*\[.*\]$/, '')
             : 'Failed to verify token';
+
         return Promise.reject({
-          code: error?.code ?? -1,
+          code: err?.code ?? -1,
           message,
         });
       }
+
+      try {
+        await refreshToken(data.refresh_token);
+      } catch (error: unknown) {
+        emit(EventType.SESSION_INVALID);
+        const err = error as { message?: string; code?: number };
+
+        return Promise.reject({
+          code: err?.code ?? -1,
+          message: 'Failed to refresh token',
+        });
+      }
+
       emit(EventType.SESSION_VALID);
       afterAuth();
     } else {

@@ -8,6 +8,7 @@ import CheckEmailResetPassword from '@/components/login/CheckEmailResetPassword'
 import { LOGIN_ACTION } from '@/components/login/const';
 import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
+import { SignUpPassword } from '@/components/login/SignUpPassword';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 function LoginPage() {
@@ -45,6 +46,8 @@ function LoginPage() {
         return <CheckEmailResetPassword email={email} redirectTo={redirectTo} />;
       case LOGIN_ACTION.CHANGE_PASSWORD:
         return <ChangePassword email={email} redirectTo={redirectTo} />;
+      case LOGIN_ACTION.SIGN_UP_PASSWORD:
+        return <SignUpPassword redirectTo={redirectTo} />;
       default:
         return <Login redirectTo={redirectTo} />;
     }
