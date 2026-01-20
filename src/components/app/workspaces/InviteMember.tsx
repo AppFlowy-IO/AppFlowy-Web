@@ -12,7 +12,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
-import { isAppFlowyHosted } from '@/utils/subscription';
+import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
 function InviteMember({
   workspace,
@@ -63,9 +63,7 @@ function InviteMember({
         return;
       }
 
-      const subscription = subscriptions[0];
-
-      setActiveSubscriptionPaln(subscription?.plan || SubscriptionPlan.Free);
+      setActiveSubscriptionPaln(getProAccessPlanFromSubscriptions(subscriptions));
     } catch (e) {
       setActiveSubscriptionPaln(SubscriptionPlan.Free);
       console.error(e);

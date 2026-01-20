@@ -13,7 +13,7 @@ import PublishedPages from '@/components/app/publish-manage/PublishedPages';
 import PublishPagesSkeleton from '@/components/app/publish-manage/PublishPagesSkeleton';
 import UpdateNamespace from '@/components/app/publish-manage/UpdateNamespace';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
-import { isAppFlowyHosted } from '@/utils/subscription';
+import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
 
 export function PublishManage({ onClose }: { onClose?: () => void }) {
@@ -190,9 +190,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
         return;
       }
 
-      const subscription = subscriptions[0];
-
-      setActiveSubscription(subscription?.plan || SubscriptionPlan.Free);
+      setActiveSubscription(getProAccessPlanFromSubscriptions(subscriptions));
     } catch (e) {
       console.error(e);
     }

@@ -4,9 +4,11 @@
  * Include localhost:8000 to cover the default dev backend when APPFLOWY_BASE_URL isn't updated.
  * Self-hosted instances are not official hosts.
  */
+import { Subscription, SubscriptionPlan } from '@/application/types';
 import { getConfigValue } from '@/utils/runtime-config';
 
 const OFFICIAL_HOSTNAMES = new Set(['beta.appflowy.cloud', 'test.appflowy.cloud', 'localhost']);
+const PRO_ACCESS_PLANS = new Set([SubscriptionPlan.Pro, SubscriptionPlan.Team]);
 
 function getBaseUrlHostname(): string | null {
   const baseUrl = getConfigValue('APPFLOWY_BASE_URL', '').trim();
@@ -59,4 +61,16 @@ export function isAppFlowyHosted(): boolean {
   }
 
   return isOfficialHostname(resolveHostname());
+}
+
+export function hasProAccessFromPlans(plans?: SubscriptionPlan[] | null): boolean {
+  if (!plans || plans.length === 0) return false;
+  return plans.some((plan) => PRO_ACCESS_PLANS.has(plan));
+}
+
+export function getProAccessPlanFromSubscriptions(subscriptions?: Subscription[] | null): SubscriptionPlan {
+  if (!subscriptions || subscriptions.length === 0) return SubscriptionPlan.Free;
+  return subscriptions.some((subscription) => PRO_ACCESS_PLANS.has(subscription.plan))
+    ? SubscriptionPlan.Pro
+    : SubscriptionPlan.Free;
 }

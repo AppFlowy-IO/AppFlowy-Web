@@ -10,7 +10,7 @@ import { InviteGuest } from '@/components/app/share/InviteGuest';
 import { PeopleWithAccess } from '@/components/app/share/PeopleWithAccess';
 import { UpgradeBanner } from '@/components/app/share/UpgradeBanner';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
-import { isAppFlowyHosted } from '@/utils/subscription';
+import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
 function SharePanel({ viewId }: { viewId: string }) {
   const currentUser = useCurrentUser();
@@ -113,9 +113,7 @@ function SharePanel({ viewId }: { viewId: string }) {
         return;
       }
 
-      const subscription = subscriptions[0];
-
-      setActiveSubscriptionPaln(subscription?.plan || SubscriptionPlan.Free);
+      setActiveSubscriptionPaln(getProAccessPlanFromSubscriptions(subscriptions));
     } catch (e) {
       setActiveSubscriptionPaln(SubscriptionPlan.Free);
       console.error(e);

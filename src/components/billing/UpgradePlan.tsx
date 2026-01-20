@@ -51,9 +51,24 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
         return;
       }
 
-      const subscription = subscriptions[0];
+      const proSubscription = subscriptions.find(
+        (item) => item.plan === SubscriptionPlan.Pro || item.plan === SubscriptionPlan.Team
+      );
 
-      setActiveSubscription(subscription);
+      if (proSubscription) {
+        setActiveSubscription({
+          ...proSubscription,
+          plan: SubscriptionPlan.Pro,
+        });
+        return;
+      }
+
+      setActiveSubscription({
+        plan: SubscriptionPlan.Free,
+        currency: '',
+        recurring_interval: SubscriptionInterval.Month,
+        price_cents: 0,
+      });
     } catch (e) {
       console.error(e);
     }

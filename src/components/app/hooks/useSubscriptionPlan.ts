@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { Subscription, SubscriptionPlan } from '@/application/types';
-import { isAppFlowyHosted } from '@/utils/subscription';
+import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
 /**
  * Hook to manage subscription plan loading and Pro feature detection
@@ -34,9 +34,7 @@ export function useSubscriptionPlan(
                 return;
             }
 
-            const subscription = subscriptions[0];
-
-            setActiveSubscriptionPlan(subscription?.plan || SubscriptionPlan.Free);
+            setActiveSubscriptionPlan(getProAccessPlanFromSubscriptions(subscriptions));
         } catch (e: unknown) {
             // Silently handle expected errors (API not initialized, no response data, etc.)
             // These are normal scenarios when the service isn't available or there's no subscription data
@@ -67,4 +65,3 @@ export function useSubscriptionPlan(
         isPro,
     };
 }
-

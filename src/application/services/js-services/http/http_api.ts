@@ -71,6 +71,7 @@ import { RepeatedChatMessage } from '@/components/chat';
 import { database_blob } from '@/proto/database_blob';
 import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
+import { hasProAccessFromPlans } from '@/utils/subscription';
 
 export * from './gotrue';
 
@@ -1671,7 +1672,7 @@ export async function uploadFile(
   if (file.size > 7 * 1024 * 1024) {
     const plan = await getActiveSubscription(workspaceId);
 
-    if (plan?.length === 0 || plan?.[0] === SubscriptionPlan.Free) {
+    if (!hasProAccessFromPlans(plan)) {
       notify.error('Your file is over 7 MB limit of the Free plan. Upgrade for unlimited uploads.');
 
       return Promise.reject({

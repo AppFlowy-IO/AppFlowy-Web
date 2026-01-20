@@ -19,7 +19,7 @@ import { NormalModal } from '@/components/_shared/modal';
 import { useService } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { isAppFlowyHosted } from '@/utils/subscription';
+import { hasProAccessFromPlans, isAppFlowyHosted } from '@/utils/subscription';
 
 const GuestLimitExceededCode = 1070;
 const REPEAT_REQUEST_CODE = 1122;
@@ -29,7 +29,7 @@ function ApproveRequestPage() {
 
   const [requestInfo, setRequestInfo] = useState<GetRequestAccessInfoResponse | null>(null);
   const [currentPlans, setCurrentPlans] = useState<SubscriptionPlan[]>([]);
-  const isPro = useMemo(() => currentPlans.includes(SubscriptionPlan.Pro), [currentPlans]);
+  const isPro = useMemo(() => hasProAccessFromPlans(currentPlans), [currentPlans]);
   const requestId = searchParams.get('request_id');
   const service = useService();
   const { t } = useTranslation();
