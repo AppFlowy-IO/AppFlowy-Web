@@ -11,14 +11,8 @@ import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import { getPasswordErrors } from '@/components/login/password-validation';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
-
-interface PasswordValidation {
-  minLength: boolean;
-  hasUppercase: boolean;
-  hasLowercase: boolean;
-  hasSpecialChar: boolean;
-}
 
 export function ChangePassword({ email, redirectTo }: { email: string; redirectTo: string }) {
   const { t } = useTranslation();
@@ -43,38 +37,8 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
     }
   }, [isAuthenticated, redirectTo, setSearchParams]);
 
-  const validatePassword = (password: string): PasswordValidation => {
-    return {
-      minLength: password.length >= 6,
-      hasUppercase: /[A-Z]/.test(password),
-      hasLowercase: /[a-z]/.test(password),
-      hasSpecialChar: /[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password),
-    };
-  };
-
-  const getPasswordErrors = useCallback(
-    (password: string): string[] => {
-      const validation = validatePassword(password);
-      const errors: string[] = [];
-
-      if (!validation.minLength) {
-        errors.push(t('changePassword.passwordError'));
-      }
-
-      if (!validation.hasUppercase) {
-        errors.push(t('changePassword.passwordErrorUppercase'));
-      }
-
-      if (!validation.hasLowercase) {
-        errors.push(t('changePassword.passwordErrorLowercase'));
-      }
-
-      if (!validation.hasSpecialChar) {
-        errors.push(t('changePassword.passwordErrorSpecialChar'));
-      }
-
-      return errors;
-    },
+  const getValidationErrors = useCallback(
+    (password: string) => getPasswordErrors(password, t),
     [t]
   );
 
@@ -93,11 +57,11 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
 
   const validateNewPassword = useCallback(
     (password: string) => {
-      const errors = getPasswordErrors(password);
+      const errors = getValidationErrors(password);
 
       setPasswordErrors(errors);
     },
-    [getPasswordErrors]
+    [getValidationErrors]
   );
 
   const handlePasswordChange = useCallback((password: string) => {
@@ -110,7 +74,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
     e.preventDefault();
     if (!service) return;
 
-    const errors = getPasswordErrors(newPassword);
+    const errors = getValidationErrors(newPassword);
 
     if (errors.length > 0) {
       setPasswordErrors(errors);

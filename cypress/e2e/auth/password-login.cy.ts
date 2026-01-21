@@ -64,6 +64,63 @@ describe('Password Login Flow', () => {
   });
 
   describe('Successful Authentication', () => {
+    const mockSuccessfulLogin = (testEmail: string, mockUserId: string, mockAccessToken: string, mockRefreshToken: string) => {
+      cy.intercept('GET', '**/api/user/verify/**', {
+        statusCode: 200,
+        body: {
+          code: 0,
+          data: {
+            is_new: false,
+          },
+          message: 'success',
+        },
+      }).as('verifyUser');
+
+      cy.intercept({
+        method: 'POST',
+        url: /\/token\?grant_type=refresh_token/,
+      }, {
+        statusCode: 200,
+        body: {
+          access_token: mockAccessToken,
+          refresh_token: mockRefreshToken,
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+      }).as('refreshToken');
+
+      cy.intercept('GET', '**/api/user/profile*', {
+        statusCode: 200,
+        body: {
+          code: 0,
+          data: {
+            uid: 1,
+            uuid: mockUserId,
+            email: testEmail,
+            name: 'Test User',
+            metadata: {
+              timezone: {
+                default_timezone: 'UTC',
+                timezone: 'UTC',
+              },
+            },
+            encryption_sign: null,
+            latest_workspace_id: uuidv4(),
+            updated_at: Date.now(),
+          },
+          message: 'success',
+        },
+      }).as('getUserProfile');
+
+      cy.intercept('GET', '**/api/user/workspace*', {
+        statusCode: 200,
+        body: {
+          code: 0,
+          data: [],
+          message: 'success',
+        },
+      }).as('getUserWorkspaces');
+    };
+
     it('should successfully login with email and password', () => {
       const testEmail = generateRandomEmail();
       const testPassword = 'SecurePassword123!';
@@ -90,13 +147,7 @@ describe('Password Login Flow', () => {
         },
       }).as('passwordLogin');
 
-      // Mock the user verification endpoint
-      cy.intercept('GET', `${apiUrl}/api/user/verify/*`, {
-        statusCode: 200,
-        body: {
-          message: 'User verified successfully',
-        },
-      }).as('verifyUser');
+      mockSuccessfulLogin(testEmail, mockUserId, mockAccessToken, mockRefreshToken);
 
       // Visit login page
       cy.log('[STEP 1] Visiting login page');
@@ -145,6 +196,8 @@ describe('Password Login Flow', () => {
       const testEmail = generateRandomEmail();
       const testPassword = 'TestPassword123!';
       const mockAccessToken = 'mock-token-' + uuidv4();
+      const mockRefreshToken = 'refresh-' + mockAccessToken;
+      const mockUserId = uuidv4();
 
       cy.log(`[TEST START] Testing full password login flow`);
 
@@ -153,11 +206,13 @@ describe('Password Login Flow', () => {
         statusCode: 200,
         body: {
           access_token: mockAccessToken,
-          refresh_token: 'refresh-' + mockAccessToken,
+          refresh_token: mockRefreshToken,
           expires_at: Math.floor(Date.now() / 1000) + 3600,
-          user: { id: uuidv4(), email: testEmail },
+          user: { id: mockUserId, email: testEmail },
         },
       }).as('passwordAuth');
+
+      mockSuccessfulLogin(testEmail, mockUserId, mockAccessToken, mockRefreshToken);
 
       // Navigate directly to password page
       cy.visit(`/login?action=enterPassword&email=${encodeURIComponent(testEmail)}`);
