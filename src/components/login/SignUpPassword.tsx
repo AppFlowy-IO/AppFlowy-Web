@@ -86,6 +86,11 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
 
   const validateNewPassword = useCallback(
     (password: string) => {
+      if (!password) {
+        setPasswordErrors([]);
+        return;
+      }
+
       const errors = getPasswordErrors(password);
 
       setPasswordErrors(errors);
@@ -154,6 +159,12 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
     }
   };
 
+  const goBackToLogin = () => {
+    const encodedRedirect = encodeURIComponent(redirectTo);
+
+    window.location.href = `/login?redirectTo=${encodedRedirect}`;
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
       void handleSubmit(e);
@@ -175,7 +186,7 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
       >
         <Logo className={'h-10 w-10'} />
       </div>
-      <div className={'text-xl font-semibold text-text-primary'}>{t('signUp.buttonText')} to AppFlowy</div>
+      <div className={'text-xl font-semibold text-text-primary'}>{t('signUp.title')}</div>
 
       <div className={'flex w-full flex-col gap-3'}>
         <div className={'flex flex-col gap-1'}>
@@ -257,20 +268,29 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
         )}
       </Button>
 
-      <div className={'flex items-center gap-1 text-sm text-text-secondary'}>
-        <span>{t('signUp.alreadyHaveAnAccount')}</span>
-        <Button
-          variant={'link'}
-          onClick={() => {
-            const encodedRedirect = encodeURIComponent(redirectTo);
-
-            window.location.href = `/login?redirectTo=${encodedRedirect}`;
-          }}
-          className={'px-0 text-text-secondary underline'}
-          data-testid="signup-back-to-login-button"
-        >
-          {t('signIn.loginButtonText')}
-        </Button>
+      <div className={'flex flex-col items-center gap-2 text-sm text-text-secondary'}>
+        <div className={'flex items-center gap-1'}>
+          <span>{t('signUp.alreadyHaveAnAccount')}</span>
+          <Button
+            variant={'link'}
+            onClick={goBackToLogin}
+            className={'px-0 text-text-secondary underline'}
+            data-testid="signup-back-to-login-button"
+          >
+            {t('signIn.loginButtonText')}
+          </Button>
+        </div>
+        <div className={'flex items-center gap-1'}>
+          <span>{t('signUp.preferMagicLink')}</span>
+          <Button
+            variant={'link'}
+            onClick={goBackToLogin}
+            className={'px-0 text-text-secondary underline'}
+            data-testid="signup-go-back-button"
+          >
+            {t('signUp.goBack')}
+          </Button>
+        </div>
       </div>
     </div>
   );
