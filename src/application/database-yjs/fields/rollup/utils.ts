@@ -1,3 +1,4 @@
+import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
 import { CalculationType, FieldType, RollupDisplayMode } from '@/application/database-yjs/database.type';
@@ -12,10 +13,15 @@ export function createRollupField(fieldId: string) {
   const field = new Y.Map() as YDatabaseField;
   const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
   const typeOption = new Y.Map() as YMapFieldTypeOption;
+  const timestamp = String(dayjs().unix());
 
   field.set(YjsDatabaseKey.name, 'Rollup');
   field.set(YjsDatabaseKey.id, fieldId);
   field.set(YjsDatabaseKey.type, FieldType.Rollup);
+  field.set(YjsDatabaseKey.created_at, timestamp);
+  field.set(YjsDatabaseKey.last_modified, timestamp);
+  field.set(YjsDatabaseKey.is_primary, false);
+  field.set(YjsDatabaseKey.icon, '');
 
   typeOption.set(YjsDatabaseKey.relation_field_id, '');
   typeOption.set(YjsDatabaseKey.target_field_id, '');

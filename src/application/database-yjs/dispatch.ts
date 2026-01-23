@@ -35,7 +35,7 @@ import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/u
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
-import { createDateTimeField, createTextField } from '@/application/database-yjs/fields/text/utils';
+import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { dateFilterFillData, filterFillData, getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { getOptionsFromRow, initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
@@ -874,13 +874,90 @@ export function useUpdatePropertyNameDispatch(fieldId: string) {
 }
 
 function createField(type: FieldType, fieldId: string) {
+  const createSimpleField = (
+    fieldType: FieldType,
+    initTypeOption?: (typeOption: YMapFieldTypeOption) => void
+  ) => {
+    const field = new Y.Map() as YDatabaseField;
+    const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+    const typeOption = new Y.Map() as YMapFieldTypeOption;
+    const timestamp = String(dayjs().unix());
+
+    field.set(YjsDatabaseKey.name, getFieldName(fieldType));
+    field.set(YjsDatabaseKey.id, fieldId);
+    field.set(YjsDatabaseKey.type, fieldType);
+    field.set(YjsDatabaseKey.created_at, timestamp);
+    field.set(YjsDatabaseKey.last_modified, timestamp);
+    field.set(YjsDatabaseKey.is_primary, false);
+    field.set(YjsDatabaseKey.icon, '');
+
+    initTypeOption?.(typeOption);
+    typeOptionMap.set(String(fieldType), typeOption);
+    field.set(YjsDatabaseKey.type_option, typeOptionMap);
+
+    return field;
+  };
+
   switch (type) {
     case FieldType.RichText:
-      return createTextField(fieldId);
+      return createSimpleField(FieldType.RichText);
+    case FieldType.Number:
+      return createSimpleField(FieldType.Number, (typeOption) => {
+        typeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
+      });
     case FieldType.DateTime:
       return createDateTimeField(fieldId);
+    case FieldType.SingleSelect:
+      return createSimpleField(FieldType.SingleSelect, (typeOption) => {
+        typeOption.set(
+          YjsDatabaseKey.content,
+          JSON.stringify({
+            disable_color: false,
+            options: [],
+          })
+        );
+      });
+    case FieldType.MultiSelect:
+      return createSimpleField(FieldType.MultiSelect, (typeOption) => {
+        typeOption.set(
+          YjsDatabaseKey.content,
+          JSON.stringify({
+            disable_color: false,
+            options: [],
+          })
+        );
+      });
+    case FieldType.Checkbox:
+      return createSimpleField(FieldType.Checkbox);
+    case FieldType.URL:
+      return createSimpleField(FieldType.URL);
+    case FieldType.Checklist:
+      return createSimpleField(FieldType.Checklist);
+    case FieldType.LastEditedTime:
+      return createSimpleField(FieldType.LastEditedTime);
+    case FieldType.CreatedTime:
+      return createSimpleField(FieldType.CreatedTime);
     case FieldType.Relation:
       return createRelationField(fieldId);
+    case FieldType.AISummaries:
+      return createSimpleField(FieldType.AISummaries);
+    case FieldType.AITranslations:
+      return createSimpleField(FieldType.AITranslations, (typeOption) => {
+        typeOption.set(YjsDatabaseKey.language, AITranslateLanguage.English);
+      });
+    case FieldType.Time:
+      return createSimpleField(FieldType.Time);
+    case FieldType.FileMedia:
+      return createSimpleField(FieldType.FileMedia, (typeOption) => {
+        typeOption.set(
+          YjsDatabaseKey.content,
+          JSON.stringify({
+            hide_file_names: true,
+          })
+        );
+      });
+    case FieldType.Person:
+      return createSimpleField(FieldType.Person);
     case FieldType.Rollup:
       return createRollupField(fieldId);
     default:
@@ -902,14 +979,19 @@ export function useNewPropertyDispatch() {
         (view) => {
           const fields = database?.get(YjsDatabaseKey.fields);
           const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
+          const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
-          if (!fields || !fieldOrders) {
+          if (!fields || !fieldOrders || !fieldSettings) {
             throw new Error(`Field not found`);
           }
 
           const field: YDatabaseField = createField(fieldType, fieldId);
 
           fields.set(fieldId, field);
+          const setting = new Y.Map() as YDatabaseFieldSetting;
+
+          setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+          fieldSettings.set(fieldId, setting);
 
           fieldOrders.push([
             {
@@ -940,14 +1022,19 @@ export function useAddPropertyLeftDispatch() {
         (view) => {
           const fields = database?.get(YjsDatabaseKey.fields);
           const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
+          const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
-          if (!fields || !fieldOrders) {
+          if (!fields || !fieldOrders || !fieldSettings) {
             throw new Error(`Field not found`);
           }
 
           const field: YDatabaseField = createField(FieldType.RichText, newId);
 
           fields.set(newId, field);
+          const setting = new Y.Map() as YDatabaseFieldSetting;
+
+          setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+          fieldSettings.set(newId, setting);
 
           const index = fieldOrders.toArray().findIndex((field) => field.id === fieldId);
 
@@ -981,14 +1068,19 @@ export function useAddPropertyRightDispatch() {
         (view) => {
           const fields = database?.get(YjsDatabaseKey.fields);
           const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
+          const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
 
-          if (!fields || !fieldOrders) {
+          if (!fields || !fieldOrders || !fieldSettings) {
             throw new Error(`Field not found`);
           }
 
           const field: YDatabaseField = createField(FieldType.RichText, newId);
 
           fields.set(newId, field);
+          const setting = new Y.Map() as YDatabaseFieldSetting;
+
+          setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+          fieldSettings.set(newId, setting);
 
           const index = fieldOrders.toArray().findIndex((field) => field.id === fieldId);
 
@@ -1933,12 +2025,25 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
       const rowDoc = rowDocMap?.[rowId];
 
       if (!rowDoc) {
-        throw new Error(`Row not found`);
+        Log.warn('[useUpdateCellDispatch] Row doc not found', { rowId, fieldId });
+        return;
       }
 
       const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
       const row = rowSharedRoot.get(YjsEditorKey.database_row);
+
+      if (!row) {
+        Log.warn('[useUpdateCellDispatch] Row data not found', { rowId, fieldId });
+        return;
+      }
+
       const cells = row.get(YjsDatabaseKey.cells);
+
+      if (!cells) {
+        Log.warn('[useUpdateCellDispatch] Row cells not found', { rowId, fieldId });
+        return;
+      }
+
       const cell = cells.get(fieldId);
 
       const type = Number(field.get(YjsDatabaseKey.type));
@@ -2146,12 +2251,22 @@ function useEnhanceCalendarLayoutByFieldExists() {
         database,
         (view) => {
           const fieldOrders = view?.get(YjsDatabaseKey.field_orders);
+          const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
+
+          if (!fieldSettings) {
+            throw new Error(`Field settings not found`);
+          }
 
           fieldOrders.push([
             {
               id: fieldId,
             },
           ]);
+
+          const setting = new Y.Map() as YDatabaseFieldSetting;
+
+          setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+          fieldSettings.set(fieldId, setting);
         },
         'newDateTimeField'
       );
@@ -2437,10 +2552,14 @@ export function useSwitchPropertyType() {
                 FieldType.Number,
                 FieldType.SingleSelect,
                 FieldType.MultiSelect,
+                FieldType.Checklist,
+                FieldType.Checkbox,
+                FieldType.URL,
                 FieldType.DateTime,
                 FieldType.CreatedTime,
                 FieldType.LastEditedTime,
                 FieldType.FileMedia,
+                FieldType.AITranslations,
                 FieldType.Rollup,
               ].includes(fieldType)
             ) {
@@ -2527,6 +2646,10 @@ export function useSwitchPropertyType() {
 
                   // Set the content for the type option
                   newTypeOption.set(YjsDatabaseKey.content, content);
+                } else if (fieldType === FieldType.URL) {
+                  newTypeOption.set(YjsDatabaseKey.content, '');
+                } else if (fieldType === FieldType.AITranslations) {
+                  newTypeOption.set(YjsDatabaseKey.language, AITranslateLanguage.English);
                 } else if (fieldType === FieldType.FileMedia) {
                   // to FileMedia
                   const content = JSON.stringify({

@@ -1,25 +1,56 @@
+import dayjs from 'dayjs';
 import * as Y from 'yjs';
 
 import { FieldType } from '@/application/database-yjs';
-import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
+import {
+  DateFormat,
+  TimeFormat,
+  YDatabaseField,
+  YDatabaseFieldTypeOption,
+  YMapFieldTypeOption,
+  YjsDatabaseKey,
+} from '@/application/types';
 
 export function createTextField (id: string) {
   const field = new Y.Map() as YDatabaseField;
+  const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+  const typeOption = new Y.Map() as YMapFieldTypeOption;
+  const timestamp = String(dayjs().unix());
 
   field.set(YjsDatabaseKey.name, 'Text');
   field.set(YjsDatabaseKey.id, id);
   field.set(YjsDatabaseKey.type, FieldType.RichText);
+  field.set(YjsDatabaseKey.created_at, timestamp);
+  field.set(YjsDatabaseKey.last_modified, timestamp);
+  field.set(YjsDatabaseKey.is_primary, false);
+  field.set(YjsDatabaseKey.icon, '');
+
+  typeOptionMap.set(String(FieldType.RichText), typeOption);
+  field.set(YjsDatabaseKey.type_option, typeOptionMap);
 
   return field;
 }
 
 export function createDateTimeField(fieldId: string) {
   const field = new Y.Map() as YDatabaseField;
+  const typeOptionMap = new Y.Map() as YDatabaseFieldTypeOption;
+  const typeOption = new Y.Map() as YMapFieldTypeOption;
+  const timestamp = String(dayjs().unix());
 
   field.set(YjsDatabaseKey.name, 'Date');
   field.set(YjsDatabaseKey.id, fieldId);
   field.set(YjsDatabaseKey.type, FieldType.DateTime);
-  
+  field.set(YjsDatabaseKey.created_at, timestamp);
+  field.set(YjsDatabaseKey.last_modified, timestamp);
+  field.set(YjsDatabaseKey.is_primary, false);
+  field.set(YjsDatabaseKey.icon, '');
+
+  typeOption.set(YjsDatabaseKey.time_format, TimeFormat.TwentyFourHour);
+  typeOption.set(YjsDatabaseKey.date_format, DateFormat.Friendly);
+  typeOption.set(YjsDatabaseKey.include_time, true);
+  typeOptionMap.set(String(FieldType.DateTime), typeOption);
+  field.set(YjsDatabaseKey.type_option, typeOptionMap);
+
   return field;
 }
 

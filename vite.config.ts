@@ -170,6 +170,13 @@ export default defineConfig({
     watch: {
       ignored: ['node_modules'],
     },
+    proxy: {
+      '/gotrue': {
+        target: 'http://localhost:9999',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/gotrue/, ''),
+      },
+    },
     cors: false,
     sourcemapIgnoreList: false,
   },
