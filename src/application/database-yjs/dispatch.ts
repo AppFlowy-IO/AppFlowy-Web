@@ -2672,13 +2672,17 @@ export function useSwitchPropertyType() {
             field.set(YjsDatabaseKey.type, fieldType);
 
             const lastModified = field.get(YjsDatabaseKey.last_modified);
+            const createdAt = field.get(YjsDatabaseKey.created_at);
+            const currentName = field.get(YjsDatabaseKey.name);
+            const oldDefaultName = getFieldName(oldFieldType);
+            const isNewField =
+              createdAt !== undefined &&
+              lastModified !== undefined &&
+              String(createdAt) === String(lastModified);
 
-            // Before update-last modified time, check if the field is created
-            if (!lastModified) {
-              const fieldName = getFieldName(fieldType);
-
-              // Set the default name for the field if it is created
-              field.set(YjsDatabaseKey.name, fieldName);
+            // Only auto-rename for untouched default fields (desktop parity).
+            if (isNewField && (!currentName || currentName === oldDefaultName)) {
+              field.set(YjsDatabaseKey.name, getFieldName(fieldType));
             }
 
             field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
