@@ -730,7 +730,7 @@ export interface YDatabaseField extends Y.Map<unknown> {
 
   get(key: YjsDatabaseKey.is_primary): boolean;
 
-  get(key: YjsDatabaseKey.last_modified): LastModified;
+  get(key: YjsDatabaseKey.created_at | YjsDatabaseKey.last_modified): LastModified;
 }
 
 export interface YDatabaseFieldTypeOption extends Y.Map<unknown> {
