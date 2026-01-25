@@ -42,34 +42,34 @@ export function useWorkspaceData() {
     async (workspaceId: string, force = true) => {
       if (!service) return;
       try {
-        const res = await service?.getAppOutline(workspaceId);
+        // Parallelize API calls - both are independent and can run concurrently
+        const [res, shareWithMeResult] = await Promise.all([
+          service.getAppOutline(workspaceId),
+          service.getShareWithMe(workspaceId).catch((error) => {
+            console.error('Failed to load shareWithMe data:', error);
+            return null;
+          }),
+        ]);
 
         if (!res) {
           throw new Error('App outline not found');
         }
 
-        // Load shareWithMe data and append as hidden space
+        // Append shareWithMe data as hidden space if available
         let outlineWithShareWithMe = res;
 
-        try {
-          const shareWithMe = await service.getShareWithMe(workspaceId);
+        if (shareWithMeResult && shareWithMeResult.children && shareWithMeResult.children.length > 0) {
+          // Create a hidden space for shareWithMe
+          const shareWithMeSpace: View = {
+            ...shareWithMeResult,
+            extra: {
+              ...shareWithMeResult.extra,
+              is_space: true,
+              is_hidden_space: true, // Mark as hidden so it doesn't show in normal space list
+            },
+          };
 
-          if (shareWithMe && shareWithMe.children && shareWithMe.children.length > 0) {
-            // Create a hidden space for shareWithMe
-            const shareWithMeSpace: View = {
-              ...shareWithMe,
-              extra: {
-                ...shareWithMe.extra,
-                is_space: true,
-                is_hidden_space: true, // Mark as hidden so it doesn't show in normal space list
-              },
-            };
-
-            outlineWithShareWithMe = [...res, shareWithMeSpace];
-          }
-        } catch (error) {
-          console.error('Failed to load shareWithMe data:', error);
-          // Continue with original outline if shareWithMe fails
+          outlineWithShareWithMe = [...res, shareWithMeSpace];
         }
 
         stableOutlineRef.current = outlineWithShareWithMe;

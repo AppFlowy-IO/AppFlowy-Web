@@ -85,8 +85,8 @@ function MoreActionsContent({
     return items;
   }, [t, isAuthenticated, handleLogin, isDark, setDark]);
 
-  const actionsContent = useMemo(() => {
-    return (
+  return (
+    <>
       <div className={'flex w-[240px] flex-col gap-2 px-2 py-2 max-md:w-full'}>
         {actions.map((action, index) => (
           <button
@@ -104,12 +104,6 @@ function MoreActionsContent({
           </button>
         ))}
       </div>
-    );
-  }, [actions, itemClicked]);
-
-  return (
-    <>
-      {actionsContent}
       <CacheClearingDialog open={openConfirm} onClose={() => setOpenConfirm(false)} />
       <LogoutConfirm
         open={openLogoutConfirm}

@@ -219,6 +219,39 @@ body {
   @include scrollbar-style;
 }
 
+.appflowy-visible-scrollbar {
+  &::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 4px;
+    background-color: var(--scrollbar-thumb);
+  }
+
+  &::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
+
+  // Firefox
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.appflowy-hidden-horizontal-scrollbar {
+  // Hide all scrollbars - we use a custom horizontal scrollbar component
+  &::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+
+  // Firefox
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
 .appflowy-hidden-scrollbar {
   @include hidden-scrollbar;
 }

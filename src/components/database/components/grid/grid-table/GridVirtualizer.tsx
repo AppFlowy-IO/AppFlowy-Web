@@ -125,9 +125,10 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
         onMouseEnter={() => setIsHover(true)}
         onMouseLeave={() => setIsHover(false)}
         ref={parentRef}
-        className={'appflowy-custom-scroller'}
+        className={'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar'}
         style={{
           overflowY: 'auto',
+          overflowX: 'auto',
           scrollBehavior: 'auto',
         }}
         onScroll={(e) => {

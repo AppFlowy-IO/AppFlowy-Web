@@ -36,7 +36,7 @@ export function ViewIcon ({ layout, size, className }: {
   }, [size]);
 
   const iconClassName = useMemo(() => {
-    return `${iconSize} ${className || ''}`;
+    return className ? `${iconSize} ${className}` : iconSize;
   }, [iconSize, className]);
 
   switch (layout) {

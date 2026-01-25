@@ -48,45 +48,48 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
   const registeredContexts = useRef<Map<string, SyncContext>>(new Map());
   const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
 
-  useEffect(() => {
-    const message = lastMessage?.collabMessage;
-
-    if (message) {
-      const objectId = message.objectId!;
-      const context = registeredContexts.current.get(objectId);
-
-      if (context) {
-        handleMessage(context, message);
-      }
-
-      const updateTimestamp = message.update?.messageId?.timestamp;
-      const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-      Log.debug('Received collab message:', message.collabType, publishedAt, message);
-
-      setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
-    }
-  }, [lastMessage, registeredContexts, setLastUpdatedCollab]);
+  // Extract specific values to use as primitive dependencies
+  // This prevents effect re-runs when unrelated fields of the parent object change
+  const wsCollabMessage = lastMessage?.collabMessage;
+  const bcCollabMessage = lastBroadcastMessage?.collabMessage;
+  const wsNotification = lastMessage?.notification;
+  const bcNotification = lastBroadcastMessage?.notification;
 
   useEffect(() => {
-    const message = lastBroadcastMessage?.collabMessage;
+    if (!wsCollabMessage) return;
 
-    if (message) {
-      const objectId = message.objectId!;
-      const context = registeredContexts.current.get(objectId);
+    const objectId = wsCollabMessage.objectId!;
+    const context = registeredContexts.current.get(objectId);
 
-      if (context) {
-        handleMessage(context, message);
-      }
-
-      const updateTimestamp = message.update?.messageId?.timestamp;
-      const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-      Log.debug('Received broadcasted collab message:', message.collabType, publishedAt, message);
-
-      setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
+    if (context) {
+      handleMessage(context, wsCollabMessage);
     }
-  }, [lastBroadcastMessage, registeredContexts, setLastUpdatedCollab]);
+
+    const updateTimestamp = wsCollabMessage.update?.messageId?.timestamp;
+    const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
+
+    Log.debug('Received collab message:', wsCollabMessage.collabType, publishedAt, wsCollabMessage);
+
+    setLastUpdatedCollab({ objectId, publishedAt, collabType: wsCollabMessage.collabType as Types });
+  }, [wsCollabMessage]);
+
+  useEffect(() => {
+    if (!bcCollabMessage) return;
+
+    const objectId = bcCollabMessage.objectId!;
+    const context = registeredContexts.current.get(objectId);
+
+    if (context) {
+      handleMessage(context, bcCollabMessage);
+    }
+
+    const updateTimestamp = bcCollabMessage.update?.messageId?.timestamp;
+    const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
+
+    Log.debug('Received broadcasted collab message:', bcCollabMessage.collabType, publishedAt, bcCollabMessage);
+
+    setLastUpdatedCollab({ objectId, publishedAt, collabType: bcCollabMessage.collabType as Types });
+  }, [bcCollabMessage]);
 
   // Handle workspace notifications from WebSocket
   // This handles notifications received directly from the server via WebSocket connection.
@@ -124,42 +127,40 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
   //   (name, avatar_url, cover_image_url, custom_image_url, description) via PUT /{workspace_id}/update-member-profile
   //   Recipients: ALL users in the workspace (including the trigger user)
   useEffect(() => {
-    const notification = lastMessage?.notification;
+    if (!wsNotification || !eventEmitter) return;
 
-    if (notification && eventEmitter) {
-      Log.debug('Received workspace notification:', notification);
+    Log.debug('Received workspace notification:', wsNotification);
 
-      // Emit specific notification events for each notification type
-      // These events are consumed by AppProvider to update local state/database
-      if (notification.profileChange) {
-        eventEmitter.emit(APP_EVENTS.USER_PROFILE_CHANGED, notification.profileChange);
-      }
-
-      if (notification.permissionChanged) {
-        eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, notification.permissionChanged);
-      }
-
-      if (notification.sectionChanged) {
-        eventEmitter.emit(APP_EVENTS.SECTION_CHANGED, notification.sectionChanged);
-      }
-
-      if (notification.shareViewsChanged) {
-        eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, notification.shareViewsChanged);
-      }
-
-      if (notification.mentionablePersonListChanged) {
-        eventEmitter.emit(APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED, notification.mentionablePersonListChanged);
-      }
-
-      if (notification.serverLimit) {
-        eventEmitter.emit(APP_EVENTS.SERVER_LIMIT_CHANGED, notification.serverLimit);
-      }
-
-      if (notification.workspaceMemberProfileChanged) {
-        eventEmitter.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, notification.workspaceMemberProfileChanged);
-      }
+    // Emit specific notification events for each notification type
+    // These events are consumed by AppProvider to update local state/database
+    if (wsNotification.profileChange) {
+      eventEmitter.emit(APP_EVENTS.USER_PROFILE_CHANGED, wsNotification.profileChange);
     }
-  }, [lastMessage, eventEmitter]);
+
+    if (wsNotification.permissionChanged) {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, wsNotification.permissionChanged);
+    }
+
+    if (wsNotification.sectionChanged) {
+      eventEmitter.emit(APP_EVENTS.SECTION_CHANGED, wsNotification.sectionChanged);
+    }
+
+    if (wsNotification.shareViewsChanged) {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, wsNotification.shareViewsChanged);
+    }
+
+    if (wsNotification.mentionablePersonListChanged) {
+      eventEmitter.emit(APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED, wsNotification.mentionablePersonListChanged);
+    }
+
+    if (wsNotification.serverLimit) {
+      eventEmitter.emit(APP_EVENTS.SERVER_LIMIT_CHANGED, wsNotification.serverLimit);
+    }
+
+    if (wsNotification.workspaceMemberProfileChanged) {
+      eventEmitter.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, wsNotification.workspaceMemberProfileChanged);
+    }
+  }, [wsNotification, eventEmitter]);
 
   // Handle workspace notifications from BroadcastChannel
   // This handles cross-tab synchronization for multi-tab scenarios. When a user has multiple
@@ -175,42 +176,40 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
   //
   // Without this: Only the active tab would update, other tabs would show stale data
   useEffect(() => {
-    const notification = lastBroadcastMessage?.notification;
+    if (!bcNotification || !eventEmitter) return;
 
-    if (notification && eventEmitter) {
-      Log.debug('Received broadcasted workspace notification:', notification);
+    Log.debug('Received broadcasted workspace notification:', bcNotification);
 
-      // Process notifications identically to WebSocket notifications to ensure
-      // consistent behavior across all tabs. Same event emissions = same UI updates.
-      if (notification.profileChange) {
-        eventEmitter.emit(APP_EVENTS.USER_PROFILE_CHANGED, notification.profileChange);
-      }
-
-      if (notification.permissionChanged) {
-        eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, notification.permissionChanged);
-      }
-
-      if (notification.sectionChanged) {
-        eventEmitter.emit(APP_EVENTS.SECTION_CHANGED, notification.sectionChanged);
-      }
-
-      if (notification.shareViewsChanged) {
-        eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, notification.shareViewsChanged);
-      }
-
-      if (notification.mentionablePersonListChanged) {
-        eventEmitter.emit(APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED, notification.mentionablePersonListChanged);
-      }
-
-      if (notification.serverLimit) {
-        eventEmitter.emit(APP_EVENTS.SERVER_LIMIT_CHANGED, notification.serverLimit);
-      }
-
-      if (notification.workspaceMemberProfileChanged) {
-        eventEmitter.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, notification.workspaceMemberProfileChanged);
-      }
+    // Process notifications identically to WebSocket notifications to ensure
+    // consistent behavior across all tabs. Same event emissions = same UI updates.
+    if (bcNotification.profileChange) {
+      eventEmitter.emit(APP_EVENTS.USER_PROFILE_CHANGED, bcNotification.profileChange);
     }
-  }, [lastBroadcastMessage, eventEmitter]);
+
+    if (bcNotification.permissionChanged) {
+      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, bcNotification.permissionChanged);
+    }
+
+    if (bcNotification.sectionChanged) {
+      eventEmitter.emit(APP_EVENTS.SECTION_CHANGED, bcNotification.sectionChanged);
+    }
+
+    if (bcNotification.shareViewsChanged) {
+      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, bcNotification.shareViewsChanged);
+    }
+
+    if (bcNotification.mentionablePersonListChanged) {
+      eventEmitter.emit(APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED, bcNotification.mentionablePersonListChanged);
+    }
+
+    if (bcNotification.serverLimit) {
+      eventEmitter.emit(APP_EVENTS.SERVER_LIMIT_CHANGED, bcNotification.serverLimit);
+    }
+
+    if (bcNotification.workspaceMemberProfileChanged) {
+      eventEmitter.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, bcNotification.workspaceMemberProfileChanged);
+    }
+  }, [bcNotification, eventEmitter]);
 
   const registerSyncContext = useCallback(
     (context: RegisterSyncContext): SyncContext => {
