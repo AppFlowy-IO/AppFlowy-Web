@@ -274,6 +274,9 @@ export enum ViewLayout {
   Board = 2,
   Calendar = 3,
   AIChat = 4,
+  Chart = 5,
+  List = 6,
+  Gallery = 7,
 }
 
 export enum YjsEditorKey {
@@ -577,6 +580,9 @@ export enum DatabaseViewLayout {
   Grid = 0,
   Board = 1,
   Calendar = 2,
+  Chart = 3,
+  List = 4,
+  Gallery = 5,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {

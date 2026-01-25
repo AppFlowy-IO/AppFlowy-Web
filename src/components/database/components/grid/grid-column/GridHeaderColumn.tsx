@@ -37,16 +37,7 @@ export function GridHeaderColumn({
   const [menuOpen, setMenuOpen] = useState(false);
   const name = field?.get(YjsDatabaseKey.name);
   const fieldName = typeof name === 'string' ? name : '';
-  const fallbackFieldName =
-    type === FieldType.Relation
-      ? t('grid.field.relationFieldName')
-      : t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
-  const tooltipContent =
-    isEditingDisabled && (type === FieldType.Relation || type === FieldType.Rollup)
-      ? t('tooltip.fieldEditingUnavailable', {
-          field: fieldName.trim() ? fieldName.trim() : fallbackFieldName,
-        })
-      : fieldName;
+  const tooltipContent = isEditingDisabled ? t('common.desktopOnly') : fieldName;
   const children = useMemo(() => {
     const handleClick = (e: MouseEvent<HTMLButtonElement>) => {
       if (readOnly) return;

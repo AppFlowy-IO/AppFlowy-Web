@@ -36,6 +36,9 @@ const properties = [
   FieldType.Time,
 ];
 
+// Field types that are not yet supported on web
+const unsupportedFieldTypes = [FieldType.Rollup];
+
 export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; disabled?: boolean }) {
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
@@ -82,28 +85,41 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
         </DropdownMenuSubTrigger>
         <DropdownMenuPortal>
           <DropdownMenuSubContent className="appflowy-scroller max-h-[450px] overflow-y-auto">
-            {properties.map((property) => (
-              <Tooltip key={property}>
-                <TooltipTrigger asChild>
-                  <DropdownMenuItem
-                    data-testid={`property-type-option-${property}`}
-                    onSelect={(e) => {
-                      handleSelect(property);
-                      if ([FieldType.AITranslations, FieldType.Relation, FieldType.Rollup].includes(property)) {
-                        e.preventDefault();
-                        setOpen(false);
-                      }
-                    }}
-                  >
-                    <FieldTypeIcon type={property} />
-                    <FieldLabel type={property} />
-                  </DropdownMenuItem>
-                </TooltipTrigger>
-                <TooltipContent side={'left'} className='whitespace-pre-wrap break-words'>
-                  {propertyTooltip[property]}
-                </TooltipContent>
-              </Tooltip>
-            ))}
+            {properties.map((property) => {
+              const isUnsupported = unsupportedFieldTypes.includes(property);
+
+              return (
+                <Tooltip key={property}>
+                  <TooltipTrigger asChild>
+                    {isUnsupported ? (
+                      <div>
+                        <DropdownMenuItem disabled>
+                          <FieldTypeIcon type={property} />
+                          <FieldLabel type={property} />
+                        </DropdownMenuItem>
+                      </div>
+                    ) : (
+                      <DropdownMenuItem
+                        data-testid={`property-type-option-${property}`}
+                        onSelect={(e) => {
+                          handleSelect(property);
+                          if ([FieldType.AITranslations, FieldType.Relation].includes(property)) {
+                            e.preventDefault();
+                            setOpen(false);
+                          }
+                        }}
+                      >
+                        <FieldTypeIcon type={property} />
+                        <FieldLabel type={property} />
+                      </DropdownMenuItem>
+                    )}
+                  </TooltipTrigger>
+                  <TooltipContent side={'left'} className='whitespace-pre-wrap break-words'>
+                    {isUnsupported ? t('common.desktopOnly') : propertyTooltip[property]}
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
           </DropdownMenuSubContent>
         </DropdownMenuPortal>
       </DropdownMenuSub>

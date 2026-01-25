@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface AddViewButtonProps {
   onViewAdded: (viewId: string) => void;
@@ -81,6 +82,45 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
           <ViewIcon layout={ViewLayout.Calendar} size={'small'} />
           {t('calendar.menuName')}
         </DropdownMenuItem>
+
+        {/* Chart - Desktop Only */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <DropdownMenuItem disabled>
+                <ViewIcon layout={ViewLayout.Chart} size={'small'} />
+                {t('chart.menuName')}
+              </DropdownMenuItem>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.desktopOnly')}</TooltipContent>
+        </Tooltip>
+
+        {/* List - Desktop Only */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <DropdownMenuItem disabled>
+                <ViewIcon layout={ViewLayout.List} size={'small'} />
+                {t('list.menuName')}
+              </DropdownMenuItem>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.desktopOnly')}</TooltipContent>
+        </Tooltip>
+
+        {/* Gallery - Desktop Only */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <DropdownMenuItem disabled>
+                <ViewIcon layout={ViewLayout.Gallery} size={'small'} />
+                {t('gallery.menuName')}
+              </DropdownMenuItem>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.desktopOnly')}</TooltipContent>
+        </Tooltip>
       </DropdownMenuContent>
     </DropdownMenu>
   );

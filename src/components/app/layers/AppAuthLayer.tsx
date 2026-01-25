@@ -83,6 +83,8 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
       await loadUserWorkspaceInfo();
 
+      // Clean up old global key for backward compatibility
+      // New per-workspace-per-user keys don't need to be removed on workspace change
       localStorage.removeItem('last_view_id');
 
       navigate(`/app/${workspaceId}`);

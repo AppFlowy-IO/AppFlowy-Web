@@ -4,7 +4,10 @@ import { ViewLayout } from '@/application/types';
 import { ReactComponent as ChatSvg } from '@/assets/icons/ai_chat.svg';
 import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
 import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
+import { ReactComponent as ChartSvg } from '@/assets/icons/chart.svg';
+import { ReactComponent as GallerySvg } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
+import { ReactComponent as ListSvg } from '@/assets/icons/list.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
 
 export function ViewIcon ({ layout, size, className }: {
@@ -47,6 +50,12 @@ export function ViewIcon ({ layout, size, className }: {
       return <CalendarSvg className={iconClassName} />;
     case ViewLayout.Document:
       return <DocumentSvg className={iconClassName} />;
+    case ViewLayout.Chart:
+      return <ChartSvg className={iconClassName} />;
+    case ViewLayout.List:
+      return <ListSvg className={iconClassName} />;
+    case ViewLayout.Gallery:
+      return <GallerySvg className={iconClassName} />;
     default:
       return null;
   }

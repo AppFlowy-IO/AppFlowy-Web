@@ -27,11 +27,6 @@ export function Cell(props: CellProps<CellType>) {
   const { t } = useTranslation();
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
-  const fieldName = field?.get(YjsDatabaseKey.name);
-  const fallbackFieldName =
-    fieldType === FieldType.Relation
-      ? t('grid.field.relationFieldName')
-      : t('grid.field.rollupFieldName', { defaultValue: 'Rollup' });
   const disableRelationRollupEdit = isFieldEditingDisabled(fieldType);
 
   const Component = useMemo(() => {
@@ -93,22 +88,12 @@ export function Cell(props: CellProps<CellType>) {
   const content = <Component {...cellProps} />;
 
   if (disableRelationRollupEdit) {
-    const tooltipContent =
-      fieldType === FieldType.Relation || fieldType === FieldType.Rollup
-        ? t('tooltip.fieldEditingUnavailable', {
-          field:
-            typeof fieldName === 'string' && fieldName.trim()
-              ? fieldName.trim()
-              : fallbackFieldName,
-        })
-        : '';
-
     return (
       <Tooltip delayDuration={500} disableHoverableContent>
         <TooltipTrigger asChild>
           <div className="w-full min-h-[20px] h-full flex-1 self-stretch">{content}</div>
         </TooltipTrigger>
-        <TooltipContent side="top">{tooltipContent}</TooltipContent>
+        <TooltipContent side="top">{t('common.editNotSupported')}</TooltipContent>
       </Tooltip>
     );
   }

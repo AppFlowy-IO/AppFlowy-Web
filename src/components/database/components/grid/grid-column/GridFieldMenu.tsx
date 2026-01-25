@@ -162,6 +162,11 @@ function GridFieldMenu({
           <Button tabIndex={-1} className={'pointer-events-none absolute left-0 right-0 top-0 z-[-1] opacity-0'} />
         </DropdownMenuTrigger>
         <DropdownMenuContent onCloseAutoFocus={(e) => e.preventDefault()}>
+          {isEditingDisabled && (
+            <div className="mb-2 px-2 py-1.5 text-sm text-text-secondary">
+              {t('common.editNotSupported')}
+            </div>
+          )}
           {!isEditingDisabled && (
             <PropertyProfile
               className={'mb-2'}

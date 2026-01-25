@@ -1,16 +1,23 @@
 import { FieldType } from '@/application/database-yjs';
 
-const isRelationRollupEditEnabled = import.meta.env.APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT === 'true';
+const isRelationEditEnabled = import.meta.env.APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT === 'true';
+
+// Field types that are not yet supported on web
+const unsupportedFieldTypes = [FieldType.Rollup];
 
 export function isFieldEditingEnabled(fieldType?: FieldType): boolean {
   if (fieldType === undefined) {
     return true;
   }
 
+  // Rollup is always disabled on web (coming soon)
+  if (unsupportedFieldTypes.includes(fieldType)) {
+    return false;
+  }
+
   switch (fieldType) {
     case FieldType.Relation:
-    case FieldType.Rollup:
-      return isRelationRollupEditEnabled;
+      return isRelationEditEnabled;
     default:
       return true;
   }

@@ -6,6 +6,7 @@ import { View, ViewLayout } from '@/application/types';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { useAppHandlers } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function AddPageActions({ view }: { view: View }) {
   const { t } = useTranslation();
@@ -38,6 +39,7 @@ function AddPageActions({ view }: { view: View }) {
     icon: React.ReactNode;
     testId?: string;
     disabled?: boolean;
+    tooltip?: string;
     onSelect: () => void;
   }[] = useMemo(
     () => [
@@ -78,25 +80,63 @@ function AddPageActions({ view }: { view: View }) {
           void handleAddPage(ViewLayout.AIChat, t('menuAppHeader.defaultNewPageName'));
         },
       },
+      {
+        label: t('chart.menuName'),
+        icon: <ViewIcon layout={ViewLayout.Chart} size={'small'} />,
+        disabled: true,
+        tooltip: t('common.desktopOnly'),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onSelect: () => {},
+      },
+      {
+        label: t('list.menuName'),
+        icon: <ViewIcon layout={ViewLayout.List} size={'small'} />,
+        disabled: true,
+        tooltip: t('common.desktopOnly'),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onSelect: () => {},
+      },
+      {
+        label: t('gallery.menuName'),
+        icon: <ViewIcon layout={ViewLayout.Gallery} size={'small'} />,
+        disabled: true,
+        tooltip: t('common.desktopOnly'),
+        // eslint-disable-next-line @typescript-eslint/no-empty-function
+        onSelect: () => {},
+      },
     ],
     [handleAddPage, t]
   );
 
   return (
     <DropdownMenuGroup>
-      {actions.map((action) => (
-        <DropdownMenuItem
-          key={action.label}
-          data-testid={action.testId}
-          disabled={action.disabled}
-          onSelect={() => {
-            action.onSelect();
-          }}
-        >
-          {action.icon}
-          {action.label}
-        </DropdownMenuItem>
-      ))}
+      {actions.map((action) =>
+        action.disabled && action.tooltip ? (
+          <Tooltip key={action.label}>
+            <TooltipTrigger asChild>
+              <div>
+                <DropdownMenuItem disabled>
+                  {action.icon}
+                  {action.label}
+                </DropdownMenuItem>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent>{action.tooltip}</TooltipContent>
+          </Tooltip>
+        ) : (
+          <DropdownMenuItem
+            key={action.label}
+            data-testid={action.testId}
+            disabled={action.disabled}
+            onSelect={() => {
+              action.onSelect();
+            }}
+          >
+            {action.icon}
+            {action.label}
+          </DropdownMenuItem>
+        )
+      )}
     </DropdownMenuGroup>
   );
 }

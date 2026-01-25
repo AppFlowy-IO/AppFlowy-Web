@@ -258,9 +258,12 @@ function AppPage() {
   ]);
 
   useEffect(() => {
-    if (!viewId) return;
-    localStorage.setItem('last_view_id', viewId);
-  }, [viewId]);
+    if (!viewId || !workspaceId || !currentUser?.uuid) return;
+    // Use workspace and user specific key to avoid cross-user/workspace conflicts
+    const key = `last_view_id_${workspaceId}_${currentUser.uuid}`;
+
+    localStorage.setItem(key, viewId);
+  }, [viewId, workspaceId, currentUser?.uuid]);
 
   useEffect(() => {
     const handleShareViewsChanged = ({ emails, viewId: id }: { emails: string[]; viewId: string }) => {

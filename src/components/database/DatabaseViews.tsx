@@ -6,6 +6,7 @@ import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { Board } from '@/components/database/board';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
+import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
@@ -120,6 +121,10 @@ function DatabaseViews({
         return <Board />;
       case DatabaseViewLayout.Calendar:
         return <Calendar />;
+      case DatabaseViewLayout.Chart:
+      case DatabaseViewLayout.List:
+      case DatabaseViewLayout.Gallery:
+        return <UnsupportedView />;
       default:
         return null;
     }

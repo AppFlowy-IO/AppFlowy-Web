@@ -104,7 +104,10 @@ export function useWorkspaceData() {
             return;
           }
 
-          const lastViewId = localStorage.getItem('last_view_id');
+          // Use workspace and user specific key to avoid cross-user/workspace conflicts
+          const userId = userWorkspaceInfo?.userId;
+          const lastViewKey = userId ? `last_view_id_${workspaceId}_${userId}` : null;
+          const lastViewId = lastViewKey ? localStorage.getItem(lastViewKey) : null;
 
           if (lastViewId && findView(outlineWithShareWithMe, lastViewId)) {
             navigate(`/app/${workspaceId}/${lastViewId}${search}`);
@@ -133,7 +136,7 @@ export function useWorkspaceData() {
         }
       }
     },
-    [navigate, service, eventEmitter]
+    [navigate, service, eventEmitter, userWorkspaceInfo?.userId]
   );
 
   useEffect(() => {

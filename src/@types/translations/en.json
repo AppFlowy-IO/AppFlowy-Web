@@ -3173,6 +3173,7 @@
     "uploadingDescription": "The file is being uploaded"
   },
   "gallery": {
+    "menuName": "Gallery",
     "preview": "Open in full screen",
     "copy": "Copy",
     "download": "Download",
@@ -3608,5 +3609,16 @@
   "other_users": "Other users ({{count}})",
   "connecting": "Connecting...",
   "disconnected": "Disconnected from cloud. Reconnect to sync changes.",
-  "reconnect": "Reconnect"
+  "reconnect": "Reconnect",
+  "chart": {
+    "menuName": "Chart"
+  },
+  "list": {
+    "menuName": "List"
+  },
+  "common": {
+    "desktopOnly": "Coming soon to web. Available on desktop & mobile.",
+    "editNotSupported": "Editing not supported. Available on desktop & mobile.",
+    "comingSoonToWeb": "Coming soon to the web 👋. You can use this feature right now on our desktop or mobile app."
+  }
 }

@@ -2313,16 +2313,24 @@ export function useAddDatabaseView() {
         throw new Error('databaseId not found');
       }
 
-      const viewLayout = {
+      const layoutToViewLayout: Record<DatabaseViewLayout, ViewLayout> = {
         [DatabaseViewLayout.Grid]: ViewLayout.Grid,
         [DatabaseViewLayout.Board]: ViewLayout.Board,
         [DatabaseViewLayout.Calendar]: ViewLayout.Calendar,
-      }[layout];
-      const name = {
+        [DatabaseViewLayout.Chart]: ViewLayout.Chart,
+        [DatabaseViewLayout.List]: ViewLayout.List,
+        [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
+      };
+      const layoutToName: Record<DatabaseViewLayout, string> = {
         [DatabaseViewLayout.Grid]: 'Grid',
         [DatabaseViewLayout.Board]: 'Board',
         [DatabaseViewLayout.Calendar]: 'Calendar',
-      }[layout];
+        [DatabaseViewLayout.Chart]: 'Chart',
+        [DatabaseViewLayout.List]: 'List',
+        [DatabaseViewLayout.Gallery]: 'Gallery',
+      };
+      const viewLayout = layoutToViewLayout[layout];
+      const name = layoutToName[layout];
 
       const tabsParentViewId = await (async (): Promise<string> => {
         // Best-effort: fall back to previous behavior if meta lookup isn't available.

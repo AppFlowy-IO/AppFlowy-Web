@@ -28,6 +28,8 @@ function MoreActionsContent({
   const handleLogout = useCallback(() => {
     clearRedirectTo(); // Clear stored redirect URL from previous user
     invalidToken();
+    // Clean up old global key for backward compatibility
+    localStorage.removeItem('last_view_id');
     navigate('/login?redirectTo=' + encodeURIComponent(window.location.href));
   }, [navigate]);
 

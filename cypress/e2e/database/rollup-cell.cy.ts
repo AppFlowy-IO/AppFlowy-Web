@@ -43,8 +43,10 @@ const waitForAppReady = () => {
   cy.get(`${byTestId('inline-add-page')}, ${byTestId('new-page-button')}`, { timeout: 20000 }).should('be.visible');
 };
 
+// Rollup is always disabled on web (coming soon), so always skip these tests
+// When Rollup is enabled on web, restore the conditional: isRelationRollupEditEnabled ? describe : describe.skip
 const isRelationRollupEditEnabled = Cypress.env('APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT') === 'true';
-const describeIfEnabled = isRelationRollupEditEnabled ? describe : describe.skip;
+const describeIfEnabled = describe.skip;
 
 describeIfEnabled('Rollup Cell Type', () => {
   beforeEach(() => {
