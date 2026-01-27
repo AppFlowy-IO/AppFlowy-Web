@@ -12,6 +12,11 @@ function VideoEmpty({ node, error }: { node: VideoBlockNode; error?: string }) {
 
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 
+  // Translate error if it's a translation key (starts with 'document.plugins.video.')
+  const displayMessage = error && error.startsWith('document.plugins.video.')
+    ? t(error)
+    : error || t('embedAVideo');
+
   return (
     <>
       <div
@@ -20,7 +25,7 @@ function VideoEmpty({ node, error }: { node: VideoBlockNode; error?: string }) {
         }`}
       >
         <ImageIcon className={'h-6 w-6'} />
-        {error || t('embedAVideo')}
+        {displayMessage}
       </div>
     </>
   );
