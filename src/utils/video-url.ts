@@ -20,14 +20,23 @@ export function isValidVideoUrl(url: string): boolean {
 }
 
 /**
- * Enhanced error message for video loading failures
+ * Returns a translation key for video loading error messages
+ * Uses normalized URL (via processUrl) to ensure consistency with validation logic
+ * Returns translation keys that should be translated via i18n in the UI layer
  */
 export function getVideoErrorMessage(url: string): string {
-  if (url.includes('facebook.com')) {
-    return 'Facebook video couldn\'t be loaded. Check privacy settings.';
+  // Normalize URL the same way as validation to avoid inconsistencies
+  const processedUrl = processUrl(url);
+  if (!processedUrl) {
+    return 'document.plugins.video.errorInvalidUrl';
   }
-  if (url.match(/\.(mp4|webm|mov|ogv)$/i)) {
-    return 'Video file couldn\'t be loaded. Check URL and CORS settings.';
+
+  // Check for platform-specific errors using normalized URL
+  if (processedUrl.includes('facebook.com')) {
+    return 'document.plugins.video.errorFacebookPrivacy';
   }
-  return 'The video embed couldn\'t be loaded. Check URL and privacy settings.';
+  if (processedUrl.match(/\.(mp4|webm|mov|ogv)$/i)) {
+    return 'document.plugins.video.errorFileCors';
+  }
+  return 'document.plugins.video.errorGeneric';
 }
