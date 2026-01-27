@@ -77,6 +77,7 @@ function VideoRender({
           <ReactPlayer {...playerProps} onError={() => {
             if(onError) {
               const message = getVideoErrorMessage(url || '');
+
               onError(message);
             }
           }}

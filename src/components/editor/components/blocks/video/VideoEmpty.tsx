@@ -13,6 +13,7 @@ function VideoEmpty({ node, error }: { node: VideoBlockNode; error?: string }) {
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 
   // Translate error if it's a translation key (starts with 'document.plugins.video.')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const displayMessage = error && error.startsWith('document.plugins.video.')
     ? t(error as any)
     : error || t('embedAVideo');
