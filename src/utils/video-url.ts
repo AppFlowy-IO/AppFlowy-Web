@@ -10,6 +10,7 @@ import { processUrl } from '@/utils/url';
  */
 export function isValidVideoUrl(url: string): boolean {
   const processedUrl = processUrl(url);
+
   if (!processedUrl) return false;
 
   // Only allow http/https protocols for security
@@ -27,6 +28,7 @@ export function isValidVideoUrl(url: string): boolean {
 export function getVideoErrorMessage(url: string): string {
   // Normalize URL the same way as validation to avoid inconsistencies
   const processedUrl = processUrl(url);
+
   if (!processedUrl) {
     return 'document.plugins.video.errorInvalidUrl';
   }
@@ -35,8 +37,10 @@ export function getVideoErrorMessage(url: string): string {
   if (processedUrl.includes('facebook.com')) {
     return 'document.plugins.video.errorFacebookPrivacy';
   }
+
   if (processedUrl.match(/\.(mp4|webm|mov|ogv)$/i)) {
     return 'document.plugins.video.errorFileCors';
   }
+
   return 'document.plugins.video.errorGeneric';
 }
