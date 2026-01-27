@@ -1,10 +1,10 @@
 import { DatabaseContext, DatabaseContextState } from '@/application/database-yjs';
 
-export const DatabaseContextProvider = ({
-  children,
-  ...props
-}: DatabaseContextState & {
+interface DatabaseContextProviderProps {
   children: React.ReactNode;
-}) => {
-  return <DatabaseContext.Provider value={props}>{children}</DatabaseContext.Provider>;
+  value: DatabaseContextState;
+}
+
+export const DatabaseContextProvider = ({ children, value }: DatabaseContextProviderProps) => {
+  return <DatabaseContext.Provider value={value}>{children}</DatabaseContext.Provider>;
 };

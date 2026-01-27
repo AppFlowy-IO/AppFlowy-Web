@@ -1678,7 +1678,12 @@ export function usePrimaryFieldId() {
 
 export const useRowMetaSelector = (rowId: string) => {
   const [meta, setMeta] = useState<RowMeta | null>();
-  const rowMap = useRowDocMap();
+  const { rowDocMap: rowMap, ensureRowDoc } = useDatabaseContext();
+
+  // Ensure the row document is loaded (same pattern as useRow)
+  useEffect(() => {
+    void ensureRowDoc?.(rowId);
+  }, [ensureRowDoc, rowId]);
 
   const updateMeta = useCallback(() => {
     const row = rowMap?.[rowId];

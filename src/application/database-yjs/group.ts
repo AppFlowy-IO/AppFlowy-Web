@@ -79,8 +79,18 @@ export function groupByCheckbox(
   });
 
   rows.forEach((row) => {
-    // Skip if the row is not in the database
+    // If row document isn't loaded yet, default to 'No' group
+    // The card component will trigger loading via ensureRowDoc
     if (!rowMetas[row.id]) {
+      const defaultGroupName = 'No';
+
+      if (result.has(defaultGroupName)) {
+        const group = result.get(defaultGroupName) ?? [];
+
+        group.push(row);
+        result.set(defaultGroupName, group);
+      }
+
       return;
     }
 
@@ -147,8 +157,16 @@ export function groupBySelectOption(
   });
 
   rows.forEach((row) => {
-    // Skip if the row is not in the database
+    // If row document isn't loaded yet, put in "No Status" group (fieldId)
+    // The card component will trigger loading via ensureRowDoc
     if (!rowMetas[row.id]) {
+      if (result.has(fieldId)) {
+        const group = result.get(fieldId) ?? [];
+
+        group.push(row);
+        result.set(fieldId, group);
+      }
+
       return;
     }
 
