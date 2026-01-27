@@ -14,20 +14,18 @@ function VideoEmpty({ node, error }: { node: VideoBlockNode; error?: string }) {
 
   // Translate error if it's a translation key (starts with 'document.plugins.video.')
   const displayMessage = error && error.startsWith('document.plugins.video.')
-    ? t(error)
+    ? t(error as any)
     : error || t('embedAVideo');
 
   return (
-    <>
-      <div
-        className={`flex w-full select-none items-center gap-4 ${readOnly ? 'cursor-not-allowed' : 'cursor-pointer'} ${
-          error ? 'text-function-error' : 'text-text-secondary'
-        }`}
-      >
-        <ImageIcon className={'h-6 w-6'} />
-        {displayMessage}
-      </div>
-    </>
+    <div
+      className={`flex w-full select-none items-center gap-4 ${readOnly ? 'cursor-not-allowed' : 'cursor-pointer'} ${
+        error ? 'text-function-error' : 'text-text-secondary'
+      }`}
+    >
+      <ImageIcon className={'h-6 w-6'} />
+      {displayMessage}
+    </div>
   );
 }
 
