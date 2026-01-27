@@ -1,17 +1,37 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 
-const Resizer = ({
-  minWidth = Math.min(400, window.innerWidth / 4),
-  maxWidth = Math.max(400, window.innerWidth / 2),
-  onResize,
-  drawerWidth,
-}: {
+interface ResizerProps {
   drawerWidth: number;
   minWidth?: number;
   maxWidth?: number;
   onResize?: (width: number) => void;
-}) => {
+}
+
+const Resizer = ({
+  minWidth: minWidthProp,
+  maxWidth: maxWidthProp,
+  onResize,
+  drawerWidth,
+}: ResizerProps) => {
   const [isResizing, setIsResizing] = useState(false);
+  const onResizeRef = useRef(onResize);
+
+  // Update ref when onResize changes
+  useEffect(() => {
+    onResizeRef.current = onResize;
+  }, [onResize]);
+
+  // Calculate bounds dynamically, with SSR-safe defaults
+  const { minWidth, maxWidth } = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return { minWidth: minWidthProp ?? 400, maxWidth: maxWidthProp ?? 800 };
+    }
+
+    return {
+      minWidth: minWidthProp ?? Math.min(400, window.innerWidth / 4),
+      maxWidth: maxWidthProp ?? Math.max(400, window.innerWidth / 2),
+    };
+  }, [minWidthProp, maxWidthProp]);
 
   const startResizing = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
@@ -19,33 +39,32 @@ const Resizer = ({
     setIsResizing(true);
   }, []);
 
-  const stopResizing = useCallback(() => {
-    setIsResizing(false);
-  }, []);
-
-  const resize = useCallback(
-    (mouseMoveEvent: MouseEvent) => {
-      if(isResizing) {
-        mouseMoveEvent.stopPropagation();
-        mouseMoveEvent.preventDefault();
-        const newWidth = window.innerWidth - mouseMoveEvent.clientX;
-
-        if(newWidth >= minWidth && newWidth <= maxWidth) {
-          onResize?.(newWidth);
-        }
-      }
-    },
-    [isResizing, minWidth, maxWidth, onResize],
-  );
-
+  // Only add listeners when actively resizing
   useEffect(() => {
-    window.addEventListener('mousemove', resize);
-    window.addEventListener('mouseup', stopResizing);
-    return () => {
-      window.removeEventListener('mousemove', resize);
-      window.removeEventListener('mouseup', stopResizing);
+    if (!isResizing) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const newWidth = window.innerWidth - e.clientX;
+
+      if (newWidth >= minWidth && newWidth <= maxWidth) {
+        onResizeRef.current?.(newWidth);
+      }
     };
-  }, [resize, stopResizing]);
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, minWidth, maxWidth]);
 
   return (
     <div
@@ -56,4 +75,4 @@ const Resizer = ({
   );
 };
 
-export default Resizer;
+export default React.memo(Resizer);

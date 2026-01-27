@@ -1,4 +1,5 @@
 import { IconButton, Tooltip } from '@mui/material';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as DoubleArrowRight } from '@/assets/icons/double_arrow_right.svg';
@@ -15,6 +16,16 @@ function DrawerHeader() {
 
   const { toView } = useAppHandlers();
 
+  const handleCloseDrawer = useCallback(() => {
+    setDrawerOpen(false);
+  }, [setDrawerOpen]);
+
+  const handleOpenAsPage = useCallback(async () => {
+    if (!openViewId) return;
+    await toView(openViewId);
+    onCloseView();
+  }, [openViewId, toView, onCloseView]);
+
   if (!openViewId) {
     return null;
   }
@@ -27,24 +38,12 @@ function DrawerHeader() {
     >
       <div className={'flex items-center gap-4'}>
         <Tooltip title={t('sideBar.closeSidebar')}>
-          <IconButton
-            size={'small'}
-            onClick={async () => {
-              setDrawerOpen(false);
-            }}
-          >
+          <IconButton size={'small'} onClick={handleCloseDrawer}>
             <DoubleArrowRight className={'text-text-primary opacity-80'} />
           </IconButton>
         </Tooltip>
         <Tooltip title={t('tooltip.openAsPage')}>
-          <IconButton
-            size={'small'}
-            onClick={async () => {
-              if (!openViewId) return;
-              await toView(openViewId);
-              onCloseView();
-            }}
-          >
+          <IconButton size={'small'} onClick={handleOpenAsPage}>
             <ExpandIcon className={'text-text-primary opacity-80'} />
           </IconButton>
         </Tooltip>
@@ -57,4 +56,4 @@ function DrawerHeader() {
   );
 }
 
-export default DrawerHeader;
+export default React.memo(DrawerHeader);

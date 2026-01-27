@@ -17,6 +17,15 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
   const currentUser = useCurrentUser();
   const workspaceAvatar = useCurrentUserWorkspaceAvatar();
   const currentUserAvatar = useMemo(() => getUserIconUrl(currentUser, workspaceAvatar), [currentUser, workspaceAvatar]);
+  const chatUser = useMemo(() => {
+    if (!currentUser) return undefined;
+    return {
+      uuid: currentUser.uuid,
+      name: currentUser.name || '',
+      email: currentUser.email || '',
+      avatar: currentUserAvatar,
+    };
+  }, [currentUser, currentUserAvatar]);
   const isMobile = getPlatform().isMobile;
   const [openMobilePrompt, setOpenMobilePrompt] = React.useState(isMobile);
 
@@ -95,16 +104,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
           workspaceId={workspaceId}
           requestInstance={requestInstance}
           chatId={chatId}
-          currentUser={
-            currentUser
-              ? {
-                  uuid: currentUser.uuid,
-                  name: currentUser.name || '',
-                  email: currentUser.email || '',
-                  avatar: currentUserAvatar,
-                }
-              : undefined
-          }
+          currentUser={chatUser}
           selectionMode={selectionMode}
           onOpenSelectionMode={handleOpenSelectionMode}
           onCloseSelectionMode={handleCloseSelectionMode}

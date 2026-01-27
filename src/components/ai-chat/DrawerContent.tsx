@@ -1,5 +1,5 @@
 import { debounce } from 'lodash-es';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -41,7 +41,8 @@ function DrawerContent({
   } | undefined>(undefined);
   const service = useService();
   const requestInstance = service?.getAxiosInstance();
-  const initialScrolling = React.useRef(false);
+  const initialScrolling = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [editor, setEditor] = useState<YjsEditor | undefined>(undefined);
 
@@ -67,13 +68,12 @@ function DrawerContent({
   const view = useAppView(openViewId);
 
   useEffect(() => {
-    if(openViewId) {
+    if (openViewId) {
       void loadPageDoc(openViewId);
     } else {
       setDoc(undefined);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openViewId]);
+  }, [openViewId, loadPageDoc]);
 
   useEffect(() => {
     const insertData = getInsertData(openViewId);
@@ -96,20 +96,22 @@ function DrawerContent({
   }, [editor, clearInsertData, doc, getInsertData, openViewId, drawerOpen]);
 
   useEffect(() => {
-    const container = document.querySelector('.ai-chat-view');
+    const container = containerRef.current;
+
+    if (!container) return;
 
     const debounceStopScrolling = debounce(() => {
       initialScrolling.current = false;
     }, 500);
 
     const observer = new MutationObserver(() => {
-      if(!initialScrolling.current) {
+      if (!initialScrolling.current) {
         return;
       }
 
-      const textBox = document.querySelector('.ai-chat-view [role="textbox"]');
+      const textBox = container.querySelector('[role="textbox"]');
 
-      if(textBox) {
+      if (textBox) {
         void smoothScrollIntoViewIfNeeded(textBox, {
           behavior: 'smooth',
           block: 'end',
@@ -125,22 +127,21 @@ function DrawerContent({
         range.collapse(false);
         const selection = window.getSelection();
 
-        if(selection) {
+        if (selection) {
           selection.removeAllRanges();
           selection.addRange(range);
         }
       }
     });
 
-    if(container) {
-      observer.observe(container, {
-        childList: true,
-        subtree: true,
-      });
-    }
+    observer.observe(container, {
+      childList: true,
+      subtree: true,
+    });
 
     return () => {
       observer.disconnect();
+      debounceStopScrolling.cancel();
     };
   }, []);
 
@@ -173,7 +174,7 @@ function DrawerContent({
   }
 
   return (
-    <div className={'h-fit w-full relative ai-chat-view'}>
+    <div ref={containerRef} className={'h-fit w-full relative ai-chat-view'}>
       {
         doc && viewMeta && (
           <Document
