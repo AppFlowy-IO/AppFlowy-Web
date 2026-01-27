@@ -452,16 +452,11 @@ function Database(props: Database2Props) {
     [handleCloseRowModal]
   );
 
-  // Memoize context value to prevent unnecessary re-renders of consumers
-  const mainContextValue = useMemo(
+  // Shared context properties - extracted to reduce duplication between main and modal contexts
+  const sharedContextProps = useMemo(
     () => ({
       readOnly,
-      databaseDoc: doc,
-      databasePageId,
-      activeViewId,
-      rowDocMap,
       ensureRowDoc,
-      isDatabaseRowPage: !!rowId,
       paddingStart: props.paddingStart,
       paddingEnd: props.paddingEnd,
       isDocumentBlock: _isDocumentBlock,
@@ -481,12 +476,7 @@ function Database(props: Database2Props) {
     }),
     [
       readOnly,
-      doc,
-      databasePageId,
-      activeViewId,
-      rowDocMap,
       ensureRowDoc,
-      rowId,
       props.paddingStart,
       props.paddingEnd,
       _isDocumentBlock,
@@ -506,34 +496,30 @@ function Database(props: Database2Props) {
     ]
   );
 
+  // Memoize context value to prevent unnecessary re-renders of consumers
+  const mainContextValue = useMemo(
+    () => ({
+      ...sharedContextProps,
+      databaseDoc: doc,
+      databasePageId,
+      activeViewId,
+      rowDocMap,
+      isDatabaseRowPage: !!rowId,
+    }),
+    [sharedContextProps, doc, databasePageId, activeViewId, rowDocMap, rowId]
+  );
+
   // Memoize modal context value separately - only compute when modal is open
   const modalContextValue = useMemo(
     () =>
       modalState.rowId
         ? {
-            readOnly,
+            ...sharedContextProps,
             databaseDoc: modalState.databaseDoc || doc,
             databasePageId: modalState.viewId || databasePageId,
             activeViewId: modalState.viewId || activeViewId,
             rowDocMap: modalState.rowDocMap || rowDocMap,
-            ensureRowDoc,
             isDatabaseRowPage: false,
-            paddingStart: props.paddingStart,
-            paddingEnd: props.paddingEnd,
-            isDocumentBlock: _isDocumentBlock,
-            navigateToRow: handleOpenRow,
-            loadView,
-            createRowDoc: createNewRowDoc,
-            loadViewMeta: props.loadViewMeta,
-            navigateToView,
-            onRendered: props.onRendered,
-            showActions: props.showActions,
-            workspaceId,
-            createDatabaseView: props.createDatabaseView,
-            getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
-            variant: props.variant,
-            calendarViewTypeMap,
-            setCalendarViewType,
             closeRowDetailModal: handleCloseRowModal,
           }
         : null,
@@ -542,28 +528,11 @@ function Database(props: Database2Props) {
       modalState.databaseDoc,
       modalState.viewId,
       modalState.rowDocMap,
-      readOnly,
+      sharedContextProps,
       doc,
       databasePageId,
       activeViewId,
       rowDocMap,
-      ensureRowDoc,
-      props.paddingStart,
-      props.paddingEnd,
-      _isDocumentBlock,
-      handleOpenRow,
-      loadView,
-      createNewRowDoc,
-      props.loadViewMeta,
-      navigateToView,
-      props.onRendered,
-      props.showActions,
-      workspaceId,
-      props.createDatabaseView,
-      props.getViewIdFromDatabaseId,
-      props.variant,
-      calendarViewTypeMap,
-      setCalendarViewType,
       handleCloseRowModal,
     ]
   );

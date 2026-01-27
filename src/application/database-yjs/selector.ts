@@ -1529,7 +1529,16 @@ export function useCalendarEventsSelector() {
         // If row document isn't loaded yet, trigger loading and add to emptyEvents
         // The event will move to the correct position once the document loads
         if (!doc) {
-          void ensureRowDoc?.(row.id);
+          if (ensureRowDoc) {
+            const promise = ensureRowDoc(row.id);
+
+            if (promise) {
+              promise.catch((error: unknown) => {
+                console.error('[useCalendarEventsSelector] Failed to ensure row doc:', error);
+              });
+            }
+          }
+
           emptyEvents.push({
             id: `${row.id}`,
             title: '',
@@ -1694,7 +1703,23 @@ export const useRowMetaSelector = (rowId: string) => {
 
   // Ensure the row document is loaded (same pattern as useRow)
   useEffect(() => {
-    void ensureRowDoc?.(rowId);
+    let cancelled = false;
+
+    if (ensureRowDoc && rowId) {
+      const promise = ensureRowDoc(rowId);
+
+      if (promise) {
+        promise.catch((error: unknown) => {
+          if (!cancelled) {
+            console.error('[useRowMetaSelector] Failed to ensure row doc:', error);
+          }
+        });
+      }
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [ensureRowDoc, rowId]);
 
   const updateMeta = useCallback(() => {
