@@ -363,6 +363,15 @@ function Database(props: Database2Props) {
     setRowDocMap({});
   }, [doc.guid]);
 
+  // Trigger blob prefetch when database opens
+  useEffect(() => {
+    if (workspaceId && doc.guid) {
+      ensureBlobPrefetch()?.catch((error: unknown) => {
+        console.error('[Database] Failed to prefetch blob:', error);
+      });
+    }
+  }, [workspaceId, doc.guid, ensureBlobPrefetch]);
+
   // Combined modal state to avoid multiple re-renders when updating related values
   const [modalState, setModalState] = useState<{
     rowId: string | null;

@@ -2,7 +2,7 @@ import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-sc
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { PADDING_END, useDatabaseContext, useReadOnly, useRowsByGroup } from '@/application/database-yjs';
+import { PADDING_END, useDatabaseContext, useReadOnly, useRowOrdersSelector, useRowsByGroup } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
 import { useBoardContext } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
@@ -25,7 +25,34 @@ export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
   const context = useDatabaseContext();
-  const { paddingStart, paddingEnd, navigateToRow } = context;
+  const { paddingStart, paddingEnd, navigateToRow, ensureRowDoc } = context;
+  const rowOrders = useRowOrdersSelector();
+
+  // Ensure all row documents are loaded when Board mounts
+  // This is critical for Board view which needs row docs to display cards
+  // Use rowOrders which contains ALL row IDs, not just those in groups
+  useEffect(() => {
+    if (!ensureRowDoc || !rowOrders || rowOrders.length === 0) return;
+
+    let cancelled = false;
+
+    // Load all row documents in parallel
+    rowOrders.forEach((row) => {
+      const promise = ensureRowDoc(row.id);
+
+      if (promise) {
+        promise.catch((error: unknown) => {
+          if (!cancelled) {
+            console.error('[Group] Failed to ensure row doc:', error);
+          }
+        });
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureRowDoc, rowOrders]);
   const readOnly = useReadOnly();
   const getCards = useCallback(
     (columnId: string) => {
