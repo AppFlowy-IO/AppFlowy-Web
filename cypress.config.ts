@@ -85,6 +85,31 @@ export default defineConfig({
             return false;
           }
         },
+        generateServiceRoleJwt({ secret }: { secret: string }) {
+          // Generate a service role JWT for GoTrue admin API
+          const crypto = require('crypto');
+          const header = { alg: 'HS256', typ: 'JWT' };
+          const payload = {
+            role: 'supabase_admin',
+            iss: 'gotrue',
+            exp: Math.floor(Date.now() / 1000) + 3600 * 24, // 24 hours
+          };
+
+          const base64url = (str: string) =>
+            Buffer.from(str).toString('base64').replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_');
+
+          const headerB64 = base64url(JSON.stringify(header));
+          const payloadB64 = base64url(JSON.stringify(payload));
+          const signature = crypto
+            .createHmac('sha256', secret)
+            .update(headerB64 + '.' + payloadB64)
+            .digest('base64')
+            .replace(/=/g, '')
+            .replace(/\+/g, '-')
+            .replace(/\//g, '_');
+
+          return headerB64 + '.' + payloadB64 + '.' + signature;
+        },
       });
 
       return config;

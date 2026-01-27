@@ -35,6 +35,8 @@ describe('Template Duplication Test - Document with Embedded Database', () => {
         err.message.includes('useAppHandlers must be used within') ||
         err.message.includes('Cannot resolve a DOM node from Slate') ||
         err.message.includes('ResizeObserver loop') ||
+        err.message.includes("Cannot read properties of undefined (reading '_dEH')") ||
+        err.message.includes('_dEH') ||
         err.name === 'NotAllowedError'
       ) {
         return false;

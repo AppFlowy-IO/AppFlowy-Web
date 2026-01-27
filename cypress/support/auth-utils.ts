@@ -6,6 +6,7 @@ export interface AuthConfig {
   gotrueUrl: string;
   adminEmail: string;
   adminPassword: string;
+  jwtSecret: string;
 }
 
 /**
@@ -25,37 +26,31 @@ export class AuthTestUtils {
       gotrueUrl: gotrueUrl,
       adminEmail: config?.adminEmail || Cypress.env('GOTRUE_ADMIN_EMAIL') || 'admin@example.com',
       adminPassword: config?.adminPassword || Cypress.env('GOTRUE_ADMIN_PASSWORD') || 'password',
+      jwtSecret: config?.jwtSecret || Cypress.env('GOTRUE_JWT_SECRET') || 'hello456',
     };
   }
 
   /**
-   * Sign in as admin user to get access token
+   * Generate a service role JWT for admin operations using Cypress task
+   * This creates a JWT with supabase_admin role that can access admin endpoints
+   */
+  private generateServiceRoleJwt(): Cypress.Chainable<string> {
+    return cy.task('generateServiceRoleJwt', { secret: this.config.jwtSecret });
+  }
+
+  /**
+   * Get admin access token (service role JWT for admin operations)
+   * Uses a service role JWT instead of password authentication
    */
   signInAsAdmin(): Cypress.Chainable<string> {
     if (this.adminAccessToken) {
       return cy.wrap(this.adminAccessToken);
     }
 
-    // Try to sign in with existing admin account
-    const url = `${this.config.gotrueUrl}/token?grant_type=password`;
-
-    return cy.request({
-      method: 'POST',
-      url: url,
-      body: {
-        email: this.config.adminEmail,
-        password: this.config.adminPassword,
-      },
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      failOnStatusCode: false,
-    }).then((response): string => {
-      if (response.status === 200) {
-        this.adminAccessToken = response.body.access_token as string;
-        return this.adminAccessToken as string;
-      }
-      throw new Error(`Failed to sign in as admin: ${response.status} - ${JSON.stringify(response.body)}`);
+    // Generate a service role JWT for admin operations
+    return this.generateServiceRoleJwt().then((token) => {
+      this.adminAccessToken = token;
+      return token;
     });
   }
 
