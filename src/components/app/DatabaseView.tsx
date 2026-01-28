@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
 import { useSearchParams } from 'react-router-dom';
 
 import { ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -99,11 +98,33 @@ function DatabaseView(props: ViewComponentProps) {
   // Ref to track the container element for DOM recovery check
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // Ref to track pending update to debounce rapid Y.js changes
+  const pendingUpdateRef = useRef<number | null>(null);
+
+  // Debounced update function that avoids flushSync warnings
+  // Uses setTimeout(0) to defer to next event loop tick, ensuring we're outside React's commit phase
+  const scheduleUpdate = useCallback(() => {
+    if (pendingUpdateRef.current !== null) return; // Already scheduled
+
+    pendingUpdateRef.current = window.setTimeout(() => {
+      pendingUpdateRef.current = null;
+      forceUpdate((prev) => prev + 1);
+    }, 0);
+  }, []);
+
+  // Cleanup pending update on unmount
+  useEffect(() => {
+    return () => {
+      if (pendingUpdateRef.current !== null) {
+        clearTimeout(pendingUpdateRef.current);
+        pendingUpdateRef.current = null;
+      }
+    };
+  }, []);
+
   // Use doc.guid as dependency to ensure stable observer lifecycle
   // This prevents premature observer cleanup when doc reference changes
   // Use observeDeep to catch nested database updates from websocket sync
-  // Schedule flushSync on next microtask to avoid "flushSync called inside lifecycle" warning
-  // when Y.js observer fires during React's commit phase (e.g., from websocket message handling)
   useEffect(() => {
     if (!doc) return;
 
@@ -111,28 +132,17 @@ function DatabaseView(props: ViewComponentProps) {
 
     if (!section) return;
 
-    const handleChange = () => {
-      // Schedule flushSync on next microtask to ensure we're outside React's commit phase
-      // This prevents the "flushSync was called from inside a lifecycle method" warning
-      // while still ensuring our update commits before the next websocket message
-      queueMicrotask(() => {
-        flushSync(() => {
-          forceUpdate((prev) => prev + 1);
-        });
-      });
-    };
-
-    section.observeDeep(handleChange);
+    section.observeDeep(scheduleUpdate);
 
     return () => {
       try {
-        section.unobserveDeep(handleChange);
+        section.unobserveDeep(scheduleUpdate);
       } catch {
         // Ignore errors from unobserving destroyed Yjs objects
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc?.guid, databasePageId]);
+  }, [doc?.guid, databasePageId, scheduleUpdate]);
 
   // Separate effect to observe database deep changes when database becomes available
   useEffect(() => {
@@ -140,25 +150,16 @@ function DatabaseView(props: ViewComponentProps) {
       return;
     }
 
-    const handleChange = () => {
-      // Schedule flushSync on next microtask to ensure we're outside React's commit phase
-      queueMicrotask(() => {
-        flushSync(() => {
-          forceUpdate((prev) => prev + 1);
-        });
-      });
-    };
-
-    database.observeDeep(handleChange);
+    database.observeDeep(scheduleUpdate);
 
     return () => {
       try {
-        database.unobserveDeep(handleChange);
+        database.unobserveDeep(scheduleUpdate);
       } catch {
         // Ignore errors from unobserving destroyed Yjs objects
       }
     };
-  }, [database, databasePageId]);
+  }, [database, databasePageId, scheduleUpdate]);
 
   // Polling fallback for race conditions when database data hasn't arrived yet
   // This handles cases where Y.js observer doesn't fire due to timing issues
@@ -183,9 +184,7 @@ function DatabaseView(props: ViewComponentProps) {
       const viewsSize = db?.get(YjsDatabaseKey.views)?.size || 0;
 
       if (db && viewsSize > 0) {
-        flushSync(() => {
-          forceUpdate((prev) => prev + 1);
-        });
+        forceUpdate((prev) => prev + 1);
         return;
       }
 
@@ -195,17 +194,18 @@ function DatabaseView(props: ViewComponentProps) {
       }
     };
 
-    // Start polling immediately
-    checkForDatabase();
+    // Start polling after a short delay to avoid triggering during React's commit phase
+    const initialTimeout = setTimeout(checkForDatabase, 0);
 
     return () => {
       cancelled = true;
+      clearTimeout(initialTimeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.guid, databasePageId]);
 
   // Recovery mechanism: Check if we have database data but DOM is empty
-  // This handles cases where flushSync from react-use-websocket discards our render
+  // This handles cases where render was discarded due to timing issues
   useLayoutEffect(() => {
     const container = containerRef.current;
     const hasData = database && database.get(YjsDatabaseKey.views)?.size > 0;
@@ -219,9 +219,7 @@ function DatabaseView(props: ViewComponentProps) {
     if (!hasContent) {
       // Schedule a re-render on next tick to avoid infinite loop
       const timeoutId = setTimeout(() => {
-        flushSync(() => {
-          forceUpdate((prev) => prev + 1);
-        });
+        forceUpdate((prev) => prev + 1);
       }, 0);
 
       return () => clearTimeout(timeoutId);

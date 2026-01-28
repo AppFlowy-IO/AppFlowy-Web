@@ -201,12 +201,13 @@ describe('More Page Actions', () => {
         // Wait for the modal to close and the page to update
         waitForReactUpdate(2000);
 
-        // Verify the page was renamed in the sidebar
-        cy.contains(renamedPageName, { timeout: 10000 }).should('exist');
+        // Verify the page was renamed in the sidebar (use sidebar-specific selector)
+        PageSelectors.nameContaining(renamedPageName, { timeout: 10000 }).should('exist');
         testLog.info('Page renamed successfully in sidebar');
 
-        // Also verify the original name doesn't exist anymore
-        cy.contains(originalPageName).should('not.exist');
+        // Also verify the original name doesn't exist in the sidebar anymore
+        // Note: The document content may still contain "Getting started" text, so we must scope to sidebar
+        PageSelectors.nameContaining(originalPageName, { timeout: 5000 }).should('not.exist');
 
         // Now refresh the page to verify the rename persisted
         testLog.info('Refreshing page to verify persistence...');
@@ -217,15 +218,16 @@ describe('More Page Actions', () => {
         TestTool.waitForSidebarReady();
         cy.wait(2000);
 
-        // Verify the renamed page still exists after refresh
-        cy.contains(renamedPageName, { timeout: 10000 }).should('exist');
+        // Verify the renamed page still exists in the sidebar after refresh
+        PageSelectors.nameContaining(renamedPageName, { timeout: 10000 }).should('exist');
         testLog.info('Renamed page persisted after refresh');
 
-        // Verify the original name is still gone
-        cy.contains(originalPageName).should('not.exist');
+        // Verify the original name is still gone from the sidebar
+        PageSelectors.nameContaining(originalPageName, { timeout: 5000 }).should('not.exist');
 
         // Optional: Also verify the page is clickable and can be opened
-        cy.contains(renamedPageName).click();
+        // Use force: true in case the page is in a collapsed section after refresh
+        PageSelectors.nameContaining(renamedPageName).click({ force: true });
         cy.wait(2000);
 
         // Verify we're on the renamed page by checking the URL or page content
