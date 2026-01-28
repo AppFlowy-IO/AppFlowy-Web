@@ -4,7 +4,6 @@ import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
-import { YDoc, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { database_blob } from '@/proto/database_blob';
 import { Log } from '@/utils/log';
@@ -25,10 +24,14 @@ type PrefetchOptions = {
 
 const RID_CACHE_PREFIX = 'af_database_blob_rid:';
 const APPLY_CONCURRENCY = 6;
+const DIFF_RETRY_COUNT = 2;
+const DIFF_RETRY_DELAY_MS = 5000;
 const MAX_ROW_DOC_SEEDS = 2000;
 const MAX_ROW_DOC_SEEDS_LOOKUP = 10000;
 
 const readyStatus = database_blob.DiffStatus.READY;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function ridCacheKey(databaseId: string) {
   return `${RID_CACHE_PREFIX}${databaseId}`;
@@ -327,108 +330,30 @@ function seedRowDocCacheFromDiff(databaseId: string, diff: database_blob.Databas
   };
 }
 
-function inspectDocRowData(doc: YDoc, objectId: string): {
-  hasDataSection: boolean;
-  hasDatabaseRow: boolean;
-  rowKeys: string[];
-} {
-  try {
-    const sharedRoot = doc.getMap(YjsEditorKey.data_section);
-    const hasDataSection = Boolean(sharedRoot);
-
-    if (!sharedRoot) {
-      return { hasDataSection: false, hasDatabaseRow: false, rowKeys: [] };
-    }
-
-    const row = sharedRoot.get(YjsEditorKey.database_row);
-    const hasDatabaseRow = Boolean(row);
-    let rowKeys: string[] = [];
-
-    if (row && typeof row.keys === 'function') {
-      try {
-        rowKeys = Array.from(row.keys() as Iterable<string>);
-      } catch {
-        rowKeys = [];
-      }
-    }
-
-    return { hasDataSection, hasDatabaseRow, rowKeys };
-  } catch (e) {
-    Log.debug('[Database] inspectDocRowData error', { objectId, error: e });
-    return { hasDataSection: false, hasDatabaseRow: false, rowKeys: [] };
-  }
-}
-
 async function applyCollabUpdate(objectId: string, docState: database_blob.ICollabDocState) {
   const state = getDocState(docState);
 
-  if (!state) {
-    Log.debug('[Database] applyCollabUpdate skipped - no doc state', { objectId });
-    return;
-  }
+  if (!state) return;
 
   const cachedDoc = getCachedRowDoc(objectId);
 
   if (cachedDoc) {
-    const beforeState = inspectDocRowData(cachedDoc, objectId);
-
-    Log.debug('[Database] applyCollabUpdate to in-memory cached doc (before)', {
+    Log.debug('[Database] apply blob update to cached doc', {
       objectId,
       bytes: state.bytes.length,
       encoderVersion: state.encoderVersion,
-      ...beforeState,
     });
     applyYDoc(cachedDoc, state.bytes, state.encoderVersion);
-
-    const afterState = inspectDocRowData(cachedDoc, objectId);
-
-    Log.debug('[Database] applyCollabUpdate to in-memory cached doc (after)', {
-      objectId,
-      bytes: state.bytes.length,
-      ...afterState,
-    });
     return;
   }
 
-  Log.debug('[Database] applyCollabUpdate opening IndexedDB for write (NO CACHED DOC)', {
-    objectId,
-    bytes: state.bytes.length,
-    encoderVersion: state.encoderVersion,
-  });
-
-  const openStartedAt = Date.now();
   const { doc, provider } = await openCollabDBWithProvider(objectId);
 
-  const beforeState = inspectDocRowData(doc, objectId);
-
-  Log.debug('[Database] applyCollabUpdate IndexedDB opened', {
-    objectId,
-    openDurationMs: Date.now() - openStartedAt,
-    beforeApply: beforeState,
-  });
-
   try {
-    const applyStartedAt = Date.now();
-
     applyYDoc(doc, state.bytes, state.encoderVersion);
-
-    const afterState = inspectDocRowData(doc, objectId);
-
-    Log.debug('[Database] applyCollabUpdate written to IndexedDB', {
-      objectId,
-      bytes: state.bytes.length,
-      applyDurationMs: Date.now() - applyStartedAt,
-      afterApply: afterState,
-    });
   } finally {
-    const destroyStartedAt = Date.now();
-
     await provider.destroy();
     doc.destroy();
-    Log.debug('[Database] applyCollabUpdate provider destroyed', {
-      objectId,
-      destroyDurationMs: Date.now() - destroyStartedAt,
-    });
   }
 }
 
@@ -439,25 +364,8 @@ async function applyRowUpdate(
 ) {
   const rowId = decodeRowId(update.rowId);
 
-  if (!rowId) {
-    Log.debug('[Database] applyRowUpdate skipped - invalid rowId bytes');
-    return;
-  }
-
+  if (!rowId) return;
   const rowDocState = update.docState;
-  const hasRowDocState = Boolean(rowDocState?.docState?.length);
-  const hasDocument = Boolean(update.document?.docState?.docState?.length);
-
-  Log.debug('[Database] applyRowUpdate start', {
-    databaseId,
-    rowId,
-    hasRowDocState,
-    hasDocument,
-    documentDeleted: update.document?.deleted ?? false,
-    seedCache: options?.seedCache !== false,
-  });
-
-  const startedAt = Date.now();
 
   if (rowDocState) {
     const rowKey = getRowKey(databaseId, rowId);
@@ -471,52 +379,17 @@ async function applyRowUpdate(
 
   const doc = update.document;
 
-  if (!doc || doc.deleted) {
-    Log.debug('[Database] applyRowUpdate completed (no document)', {
-      databaseId,
-      rowId,
-      durationMs: Date.now() - startedAt,
-    });
-    return;
-  }
+  if (!doc || doc.deleted) return;
 
-  if (!doc.docState) {
-    Log.debug('[Database] applyRowUpdate completed (no document docState)', {
-      databaseId,
-      rowId,
-      durationMs: Date.now() - startedAt,
-    });
-    return;
-  }
+  if (!doc.docState) return;
 
   const docIdBytes = doc.documentId;
 
-  if (!docIdBytes || docIdBytes.length !== 16) {
-    Log.debug('[Database] applyRowUpdate completed (invalid documentId)', {
-      databaseId,
-      rowId,
-      durationMs: Date.now() - startedAt,
-    });
-    return;
-  }
+  if (!docIdBytes || docIdBytes.length !== 16) return;
 
   const docId = uuidStringify(docIdBytes);
 
-  Log.debug('[Database] applyRowUpdate applying document', {
-    databaseId,
-    rowId,
-    docId,
-    docBytes: doc.docState.docState?.length ?? 0,
-  });
-
   await applyCollabUpdate(docId, doc.docState);
-
-  Log.debug('[Database] applyRowUpdate completed', {
-    databaseId,
-    rowId,
-    docId,
-    durationMs: Date.now() - startedAt,
-  });
 }
 
 async function applyDiff(
@@ -525,50 +398,12 @@ async function applyDiff(
   options?: { seedCache?: boolean }
 ) {
   const updates = [...diff.creates, ...diff.updates];
-  const totalUpdates = updates.length;
-  const totalBatches = Math.ceil(totalUpdates / APPLY_CONCURRENCY);
-
-  Log.debug('[Database] applyDiff start', {
-    databaseId,
-    totalUpdates,
-    totalBatches,
-    concurrency: APPLY_CONCURRENCY,
-    creates: diff.creates.length,
-    updates: diff.updates.length,
-    seedCache: options?.seedCache !== false,
-  });
-
-  const startedAt = Date.now();
 
   for (let i = 0; i < updates.length; i += APPLY_CONCURRENCY) {
-    const batchIndex = Math.floor(i / APPLY_CONCURRENCY);
     const batch = updates.slice(i, i + APPLY_CONCURRENCY);
-    const batchStartedAt = Date.now();
-
-    Log.debug('[Database] applyDiff batch start', {
-      databaseId,
-      batchIndex,
-      batchSize: batch.length,
-      progress: `${i}/${totalUpdates}`,
-    });
 
     await Promise.all(batch.map((update) => applyRowUpdate(databaseId, update, options)));
-
-    Log.debug('[Database] applyDiff batch completed', {
-      databaseId,
-      batchIndex,
-      batchSize: batch.length,
-      batchDurationMs: Date.now() - batchStartedAt,
-      progress: `${Math.min(i + APPLY_CONCURRENCY, totalUpdates)}/${totalUpdates}`,
-    });
   }
-
-  Log.debug('[Database] applyDiff completed', {
-    databaseId,
-    totalUpdates,
-    totalBatches,
-    totalDurationMs: Date.now() - startedAt,
-  });
 }
 
 async function fetchReadyDiff(workspaceId: string, databaseId: string) {
@@ -584,22 +419,31 @@ async function fetchReadyDiff(workspaceId: string, databaseId: string) {
     maxKnownRid: cachedRid ?? null,
   });
 
-  const startedAt = Date.now();
-  const diff = await databaseBlobDiff(workspaceId, databaseId, request);
+  for (let attempt = 0; attempt <= DIFF_RETRY_COUNT; attempt += 1) {
+    const startedAt = Date.now();
+    const diff = await databaseBlobDiff(workspaceId, databaseId, request);
 
-  Log.debug('[Database] blob diff response', {
-    databaseId,
-    status: diff.status,
-    retryAfterSecs: diff.retryAfterSecs ?? null,
-    durationMs: Date.now() - startedAt,
-    ...summarizeDiff(diff),
-  });
+    Log.debug('[Database] blob diff response', {
+      databaseId,
+      status: diff.status,
+      retryAfterSecs: diff.retryAfterSecs ?? null,
+      durationMs: Date.now() - startedAt,
+      attempt,
+      ...summarizeDiff(diff),
+    });
 
-  if (diff.status !== readyStatus) {
-    throw new Error('database blob diff is not ready');
+    if (diff.status === readyStatus) {
+      return diff;
+    }
+
+    if (attempt >= DIFF_RETRY_COUNT) {
+      break;
+    }
+
+    await sleep(DIFF_RETRY_DELAY_MS);
   }
 
-  return diff;
+  throw new Error('database blob diff is not ready');
 }
 
 export async function prefetchDatabaseBlobDiff(

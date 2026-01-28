@@ -39,24 +39,12 @@ jest.mock('src/components/view-meta/ViewMetaPreview', () => (props: unknown) => 
   return null;
 });
 
-function createDatabaseDoc(databaseId: string, viewIds: string[] = ['default-view']): YDoc {
+function createDatabaseDoc(databaseId: string): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
   const database = new Y.Map();
 
   database.set(YjsDatabaseKey.id, databaseId);
-
-  // Add views map with at least one view so hasViews check passes
-  const views = new Y.Map();
-
-  viewIds.forEach((viewId) => {
-    const view = new Y.Map();
-
-    view.set(YjsDatabaseKey.id, viewId);
-    views.set(viewId, view);
-  });
-  database.set(YjsDatabaseKey.views, views);
-
   sharedRoot.set(YjsEditorKey.database, database);
   return doc;
 }
@@ -121,7 +109,7 @@ describe('DatabaseView database container', () => {
     render(
       <MemoryRouter initialEntries={['/app/workspace-id/grid-view-id']}>
         <DatabaseView
-          doc={createDatabaseDoc('db-1', [gridViewId, boardViewId])}
+          doc={createDatabaseDoc('db-1')}
           workspaceId={'workspace-id'}
           readOnly={false}
           viewMeta={viewMeta}

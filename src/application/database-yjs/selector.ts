@@ -511,76 +511,25 @@ export function useGroupsSelector() {
   const [groups, setGroups] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!viewId || !database) {
-      return;
-    }
+    if (!viewId) return;
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
 
-    let retryIntervalId: ReturnType<typeof setInterval> | null = null;
+    const groupOrders = view?.get(YjsDatabaseKey.groups);
 
-    const updateGroups = () => {
-      const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+    if (!groupOrders) return;
 
-      if (!view) {
-        setGroups([]);
-        return false;
-      }
-
-      const groupOrders = view.get(YjsDatabaseKey.groups);
-
-      if (!groupOrders) {
-        setGroups([]);
-        return false;
-      }
-
-      const newGroups = groupOrders.toArray().map((item) => item.get(YjsDatabaseKey.id));
-
-      setGroups(newGroups);
-
-      // Clear retry interval once we have groups
-      if (retryIntervalId && newGroups.length > 0) {
-        clearInterval(retryIntervalId);
-        retryIntervalId = null;
-      }
-
-      return newGroups.length > 0;
+    const getGroups = () => {
+      return groupOrders.toArray().map((item) => item.get(YjsDatabaseKey.id));
     };
 
-    // Attach observer FIRST to avoid missing updates that arrive during setup
-    database.observeDeep(updateGroups);
+    const observerEvent = () => setGroups(getGroups());
 
-    // Then check current state
-    const hasGroups = updateGroups();
+    setGroups(getGroups());
 
-    // If groups not found initially, poll briefly to catch race conditions
-    if (!hasGroups) {
-      retryIntervalId = setInterval(() => {
-        const found = updateGroups();
-
-        if (found && retryIntervalId) {
-          clearInterval(retryIntervalId);
-          retryIntervalId = null;
-        }
-      }, 100);
-
-      // Stop polling after 3 seconds max
-      setTimeout(() => {
-        if (retryIntervalId) {
-          clearInterval(retryIntervalId);
-          retryIntervalId = null;
-        }
-      }, 3000);
-    }
+    groupOrders.observeDeep(observerEvent);
 
     return () => {
-      if (retryIntervalId) {
-        clearInterval(retryIntervalId);
-      }
-
-      try {
-        database.unobserveDeep(updateGroups);
-      } catch {
-        // Ignore errors from unobserving destroyed Yjs objects
-      }
+      groupOrders.unobserveDeep(observerEvent);
     };
   }, [database, viewId]);
 
@@ -888,7 +837,7 @@ export function useRowOrdersSelector() {
   );
 
   const onConditionsChange = useCallback(() => {
-    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON();
+    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders).toJSON();
 
     if (!originalRowOrders) return;
 

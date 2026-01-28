@@ -23,7 +23,6 @@ function DatabaseViews({
   fixedHeight,
   onViewIdsChanged,
 }: {
-  // Debug logging will be added inside the component
   onChangeView: (viewId: string) => void;
   /**
    * Called when a new view is added via the + button.
@@ -114,7 +113,6 @@ function DatabaseViews({
   // Render the appropriate view component based on layout
   // Use previous layout as fallback to prevent flash during view transitions
   const effectiveLayout = layout ?? prevLayoutRef.current;
-
   const view = useMemo(() => {
     switch (effectiveLayout) {
       case DatabaseViewLayout.Grid:

@@ -451,31 +451,11 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   const existing = rowDocs.get(rowKey);
 
   if (existing) {
-    Log.debug('[Database] getOrCreateRowDocEntry returning existing entry', {
-      rowKey,
-      hasDoc: Boolean(existing.doc),
-    });
     return existing;
   }
 
-  Log.debug('[Database] getOrCreateRowDocEntry creating new entry', {
-    rowKey,
-  });
-
   const startedAt = Date.now();
   const { doc, provider } = await openCollabDBWithProvider(rowKey, { awaitSync: false });
-
-  // Check initial state immediately after opening
-  const initialSharedRoot = doc.getMap(YjsEditorKey.data_section);
-  const initialHasRowData = initialSharedRoot.has(YjsEditorKey.database_row);
-
-  Log.debug('[Database] getOrCreateRowDocEntry opened (before sync)', {
-    rowKey,
-    openDurationMs: Date.now() - startedAt,
-    providerSynced: provider.synced,
-    hasRowDataBeforeSync: initialHasRowData,
-  });
-
   const whenSynced = provider.synced
     ? Promise.resolve()
     : new Promise<void>((resolve) => {
@@ -485,11 +465,10 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
             const rowSharedRoot = doc.getMap(YjsEditorKey.data_section);
             const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
 
-            Log.debug('[Database] row doc IndexedDB synced', {
+            Log.debug('[Database] row doc synced', {
               rowKey,
               durationMs: Date.now() - startedAt,
-              hasRowDataAfterSync: hasRowData,
-              hadRowDataBeforeSync: initialHasRowData,
+              hasRowData,
             });
           }
 
@@ -514,41 +493,21 @@ export async function createRowDocFast(
   rowKey: string,
   seed?: { bytes: Uint8Array; encoderVersion: number }
 ) {
-  Log.debug('[Database] createRowDocFast start', {
-    rowKey,
-    hasSeed: Boolean(seed),
-    seedBytes: seed?.bytes.length ?? 0,
-  });
-
   const entry = await getOrCreateRowDocEntry(rowKey);
 
-  // Check state before applying seed
-  const rowSharedRootBefore = entry.doc.getMap(YjsEditorKey.data_section);
-  const hasRowDataBefore = rowSharedRootBefore.has(YjsEditorKey.database_row);
-
   if (seed) {
-    Log.debug('[Database] createRowDocFast applying seed', {
-      rowKey,
-      seedBytes: seed.bytes.length,
-      encoderVersion: seed.encoderVersion,
-      hasRowDataBeforeSeed: hasRowDataBefore,
-    });
-
     applyYDoc(entry.doc, seed.bytes, seed.encoderVersion);
   }
 
-  const rowSharedRoot = entry.doc.getMap(YjsEditorKey.data_section);
-  const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
-
   if (rowFastLogCount < ROW_FAST_LOG_LIMIT) {
     rowFastLogCount += 1;
+    const rowSharedRoot = entry.doc.getMap(YjsEditorKey.data_section);
+    const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
 
-    Log.debug('[Database] createRowDocFast completed', {
+    Log.debug('[Database] row doc fast open', {
       rowKey,
       hasSeed: Boolean(seed),
-      hasRowDataBefore,
-      hasRowDataAfter: hasRowData,
-      rowDataAppeared: !hasRowDataBefore && hasRowData,
+      hasRowData,
     });
   }
 

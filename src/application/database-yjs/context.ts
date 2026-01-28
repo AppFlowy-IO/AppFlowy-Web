@@ -114,47 +114,9 @@ export const useCreateRow = () => {
 };
 
 export const useDatabase = () => {
-  const context = useDatabaseContext();
-  const databaseDoc = context.databaseDoc;
-  const [, forceUpdate] = useState(0);
-  const dataSection = databaseDoc?.getMap(YjsEditorKey.data_section);
-  const database = dataSection?.get(YjsEditorKey.database) as YDatabase;
-
-  // Re-render when database key is added to dataSection (initial load via websocket).
-  useEffect(() => {
-    if (!dataSection) return;
-
-    const handleChange = () => {
-      forceUpdate((prev) => prev + 1);
-    };
-
-    dataSection.observe(handleChange);
-
-    return () => {
-      dataSection.unobserve(handleChange);
-    };
-  }, [dataSection, databaseDoc?.guid]);
-
-  // Re-render on database content changes (rows, fields, views added/modified).
-  useEffect(() => {
-    if (!database) {
-      return;
-    }
-
-    const handleChange = () => {
-      forceUpdate((prev) => prev + 1);
-    };
-
-    database.observeDeep(handleChange);
-
-    return () => {
-      try {
-        database.unobserveDeep(handleChange);
-      } catch {
-        // Ignore errors from unobserving destroyed Yjs objects
-      }
-    };
-  }, [database]);
+  const database = useDatabaseContext()
+    .databaseDoc?.getMap(YjsEditorKey.data_section)
+    .get(YjsEditorKey.database) as YDatabase;
 
   return database;
 };
@@ -171,16 +133,11 @@ export const useIsDatabaseRowPage = () => {
   return useDatabaseContext().isDatabaseRowPage;
 };
 
-/**
- * Hook to access and observe a row document.
- * Ensures the row doc is loaded and re-renders when row data changes.
- */
 export const useRow = (rowId: string) => {
   const { rowDocMap, ensureRowDoc } = useDatabaseContext();
   const [, forceUpdate] = useState(0);
   const rowDoc = rowDocMap?.[rowId];
 
-  // Ensure row document is loaded.
   useEffect(() => {
     let cancelled = false;
 
@@ -201,7 +158,6 @@ export const useRow = (rowId: string) => {
     };
   }, [ensureRowDoc, rowId]);
 
-  // Observe row document for changes and re-render when data updates.
   useEffect(() => {
     if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
     const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
@@ -279,21 +235,20 @@ export const useReadOnly = () => {
 export const useDatabaseView = () => {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
-  const views = database?.get(YjsDatabaseKey.views);
 
-  return viewId ? views?.get(viewId) : undefined;
+  return viewId ? database?.get(YjsDatabaseKey.views)?.get(viewId) : undefined;
 };
 
 export function useDatabaseFields() {
   const database = useDatabase();
 
-  return database?.get(YjsDatabaseKey.fields);
+  return database.get(YjsDatabaseKey.fields);
 }
 
 export const useDatabaseSelectedView = (viewId: string) => {
   const database = useDatabase();
 
-  return database?.get(YjsDatabaseKey.views)?.get(viewId);
+  return database.get(YjsDatabaseKey.views).get(viewId);
 };
 
 export const useDefaultTimeSetting = (): DefaultTimeSetting => {
