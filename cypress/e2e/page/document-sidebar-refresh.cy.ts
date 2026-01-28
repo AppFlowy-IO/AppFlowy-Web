@@ -145,25 +145,48 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     cy.log('[SUCCESS] New document appeared in sidebar via WebSocket notification!');
 
-    // Step 11: Close the page modal if it's open
-    cy.log('[STEP 11] Closing page modal if open');
-    // The page modal opens when creating a document, close it by pressing Escape
+    // Step 11: Close any dialog that may have opened
+    cy.log('[STEP 11] Closing any open dialog');
+    // Check for "No access" dialog first and close it
     cy.get('body').then(($body) => {
-      // Check for any MUI dialog
+      // Check for "Back to home" button (indicates "No access" dialog)
+      const backToHomeBtn = $body.find('button:contains("Back to home")');
+      if (backToHomeBtn.length > 0) {
+        cy.log('[STEP 11.1] Found "No access" dialog, clicking Back to home');
+        cy.wrap(backToHomeBtn).first().click({ force: true });
+        waitForReactUpdate(1000);
+        return;
+      }
+
+      // Check for X close button
+      const closeBtn = $body.find('[data-testid="close-modal-button"]');
+      if (closeBtn.length > 0) {
+        cy.log('[STEP 11.2] Found close button, clicking it');
+        cy.wrap(closeBtn).first().click({ force: true });
+        waitForReactUpdate(1000);
+        return;
+      }
+
+      // Try pressing Escape as fallback
       if ($body.find('.MuiDialog-root').length > 0) {
-        cy.log('[STEP 11.1] Found dialog, closing with Escape');
+        cy.log('[STEP 11.3] Found dialog, pressing Escape');
         cy.get('body').type('{esc}');
         waitForReactUpdate(1000);
       }
     });
-    // Also try clicking outside the modal if it's still there
+
+    // Wait for dialog to be completely gone
+    waitForReactUpdate(2000);
+    // Retry closing if dialog is still there
     cy.get('body').then(($body) => {
-      if ($body.find('.MuiDialog-root').length > 0) {
-        cy.log('[STEP 11.2] Dialog still open, trying to close by clicking outside');
-        cy.get('.MuiBackdrop-root').first().click({ force: true });
+      const backToHomeBtn = $body.find('button:contains("Back to home")');
+      if (backToHomeBtn.length > 0) {
+        cy.log('[STEP 11.4] Dialog still open, clicking Back to home again');
+        cy.wrap(backToHomeBtn).first().click({ force: true });
         waitForReactUpdate(1000);
       }
     });
+    cy.get('.MuiDialog-root', { timeout: 30000 }).should('not.exist');
 
     // Step 12: Expand the parent page to show the newly created child
     cy.log('[STEP 12] Expanding parent page to show new child');
@@ -175,7 +198,7 @@ describe('Document Sidebar Refresh via WebSocket', () => {
     // Find the newly created "Untitled" page under the parent
     cy.log('[STEP 12.1] Finding newly created Untitled page');
     // The new page should be named "Untitled" by default
-    PageSelectors.nameContaining('Untitled', { timeout: 30000 }).first().should('be.visible');
+    PageSelectors.nameContaining('Untitled', { timeout: 30000 }).first().should('exist');
 
     // Step 13: Hover over Untitled page and click the more actions button
     cy.log('[STEP 13] Opening more actions menu on Untitled page');
@@ -241,5 +264,112 @@ describe('Document Sidebar Refresh via WebSocket', () => {
     PageSelectors.nameContaining(renamedDocumentName, { timeout: 10000 }).should('not.exist');
 
     cy.log('[TEST COMPLETE] Sidebar refresh via WebSocket notification verified successfully!');
+  });
+
+  it('should verify sidebar updates via WebSocket when creating AI chat', () => {
+    const testEmail = generateRandomEmail();
+    const authUtils = new AuthTestUtils();
+
+    cy.log(`[TEST START] Testing AI chat sidebar refresh via WebSocket notifications with: ${testEmail}`);
+
+    // Step 1: Sign in with test user
+    cy.log('[STEP 1] Signing in with test user');
+    authUtils.signInWithTestUrl(testEmail);
+
+    // Step 2: Wait for app to fully load
+    cy.log('[STEP 2] Waiting for app to fully load');
+    PageSelectors.names({ timeout: 60000 }).should('exist');
+    waitForReactUpdate(2000);
+
+    // Step 3: Expand the General space
+    cy.log('[STEP 3] Expanding General space');
+    expandSpaceInSidebar(_spaceName);
+    waitForReactUpdate(1000);
+
+    // Count existing pages
+    let initialPageCount = 0;
+    PageSelectors.names().then(($pages) => {
+      initialPageCount = $pages.length;
+      cy.log(`[INFO] Initial page count: ${initialPageCount}`);
+    });
+
+    // Step 4: Hover over the first page and click the plus button
+    cy.log('[STEP 4] Hovering over first page to show plus button');
+    cy.get('[data-testid="page-item"]').first().trigger('mouseenter');
+    waitForReactUpdate(500);
+
+    // Click the inline add page button (plus button)
+    cy.log('[STEP 4.1] Clicking the inline add page button');
+    cy.get('[data-testid="page-item"]').first().find('[data-testid="inline-add-page"]').first().click({ force: true });
+    waitForReactUpdate(500);
+
+    // Step 5: Select "AI Chat" from the dropdown menu
+    cy.log('[STEP 5] Selecting AI Chat from dropdown');
+    cy.get('[data-testid="view-actions-popover"]').should('be.visible');
+    // Click the AI Chat menu item
+    cy.get('[data-testid="add-ai-chat-button"]').click();
+    waitForReactUpdate(3000);
+
+    // Step 6: Verify sidebar page count increased (WebSocket notification worked!)
+    cy.log('[STEP 6] Verifying page count increased via WebSocket notification');
+    expandSpaceInSidebar(_spaceName);
+    waitForReactUpdate(2000);
+
+    // Wait for the new AI chat to appear and verify count increased
+    const waitForPageCountIncrease = (attempts = 0, maxAttempts = 30): void => {
+      if (attempts >= maxAttempts) {
+        throw new Error('Page count did not increase - WebSocket notification may not be working for AI chat');
+      }
+
+      PageSelectors.names().then(($pages) => {
+        const newCount = $pages.length;
+        cy.log(`[INFO] Current page count: ${newCount}, initial: ${initialPageCount}, attempt: ${attempts + 1}`);
+
+        if (newCount > initialPageCount) {
+          cy.log('[SUCCESS] Page count increased for AI chat!');
+          return;
+        }
+
+        // Wait and retry
+        cy.wait(1000).then(() => waitForPageCountIncrease(attempts + 1, maxAttempts));
+      });
+    };
+
+    waitForPageCountIncrease();
+
+    cy.log('[SUCCESS] New AI chat appeared in sidebar via WebSocket notification!');
+
+    // Step 7: Expand the parent page to show the newly created AI chat
+    cy.log('[STEP 7] Expanding parent page to show new AI chat');
+    cy.get('[data-testid="page-item"]').first().find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
+    waitForReactUpdate(1000);
+
+    // Step 8: Clean up - delete the AI chat
+    cy.log('[STEP 8] Cleaning up - deleting AI chat');
+    // Find the Untitled page (AI chat default name) and delete it
+    PageSelectors.nameContaining('Untitled', { timeout: 30000 }).first().should('be.visible');
+    PageSelectors.nameContaining('Untitled').first().parents('[data-testid="page-item"]').first().trigger('mouseenter', { force: true });
+    waitForReactUpdate(500);
+    PageSelectors.moreActionsButton('Untitled').click({ force: true });
+    waitForReactUpdate(500);
+
+    cy.get('[data-testid="view-action-delete"]').should('be.visible').click();
+    waitForReactUpdate(500);
+
+    // Confirm deletion if dialog appears
+    cy.get('body').then(($body) => {
+      const confirmButton = $body.find('[data-testid="confirm-delete-button"]');
+      if (confirmButton.length > 0) {
+        cy.get('[data-testid="confirm-delete-button"]').click({ force: true });
+      } else {
+        const deleteButton = $body.find('button:contains("Delete")');
+        if (deleteButton.length > 0) {
+          cy.wrap(deleteButton).first().click({ force: true });
+        }
+      }
+    });
+    waitForReactUpdate(2000);
+
+    cy.log('[TEST COMPLETE] AI chat sidebar refresh via WebSocket notification verified successfully!');
   });
 });

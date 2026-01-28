@@ -1,4 +1,4 @@
-import { applyPatch, type Operation } from 'fast-json-patch';
+import { applyPatch, type Operation, type ReplaceOperation } from 'fast-json-patch';
 import { sortBy, uniqBy } from 'lodash-es';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -48,9 +48,11 @@ function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
   return patch.every((op) => {
     if (!op.path?.startsWith('/outline')) return false;
     const path = op.path;
+
     if (Array.from(OUTLINE_NON_VISUAL_FIELDS).some((suffix) => path.endsWith(suffix))) {
       return true;
     }
+
     return !Array.from(OUTLINE_VISIBLE_FIELDS).some((suffix) => path.endsWith(suffix));
   });
 }
@@ -194,41 +196,61 @@ export function useWorkspaceData() {
 
   useEffect(() => {
     const handleFolderOutlineChanged = (payload: notification.IFolderChanged) => {
-      if (!currentWorkspaceId || !payload?.outlineDiffJson) return;
+      if (!currentWorkspaceId) return;
+
+      // If no diff JSON provided, fall back to full outline reload
+      if (!payload?.outlineDiffJson) {
+        Log.debug('[FolderOutlineChanged] No diff JSON, reloading outline');
+        void loadOutline(currentWorkspaceId, false);
+        return;
+      }
 
       let patch: JsonPatchOperation[] | null = null;
+
       try {
         Log.debug('[FolderOutlineChanged] raw diff json', payload.outlineDiffJson);
         patch = JSON.parse(payload.outlineDiffJson) as JsonPatchOperation[];
       } catch (error) {
-        console.warn('Failed to parse folder outline diff:', error);
+        console.warn('Failed to parse folder outline diff, reloading outline:', error);
+        void loadOutline(currentWorkspaceId, false);
         return;
       }
 
-      if (!patch || !Array.isArray(patch)) return;
+      if (!patch || !Array.isArray(patch)) {
+        void loadOutline(currentWorkspaceId, false);
+        return;
+      }
       if (isOnlyNonVisualOutlineChange(patch)) {
         return;
       }
+
       Log.debug('[FolderOutlineChanged] parsed patch', patch);
 
       const baseOutline = stableOutlineRef.current.filter((view) => !view.extra?.is_hidden_space);
       const baseDocument = { outline: baseOutline };
       let patchedOutline: View[] | null = null;
 
+      const firstOp = patch[0];
       const fastReplace =
-        patch.length === 1 && patch[0]?.op === 'replace' && patch[0]?.path === '/outline';
-      if (fastReplace && Array.isArray(patch[0]?.value)) {
-        patchedOutline = patch[0].value as View[];
+        patch.length === 1 && firstOp?.op === 'replace' && firstOp?.path === '/outline';
+
+      if (fastReplace && firstOp?.op === 'replace') {
+        const replaceOp = firstOp as ReplaceOperation<View[]>;
+
+        if (Array.isArray(replaceOp.value)) {
+          patchedOutline = replaceOp.value;
+        }
       } else {
         try {
-          const result = applyPatch(baseDocument, patch, false, false);
+          const result = applyPatch(baseDocument, patch, true, false);
           const nextDocument = result?.newDocument ?? baseDocument;
           const nextOutline = (nextDocument as { outline?: unknown }).outline;
 
           if (!Array.isArray(nextOutline)) return;
           patchedOutline = nextOutline as View[];
         } catch (error) {
-          console.warn('Failed to apply folder outline diff:', error);
+          console.warn('Failed to apply folder outline diff, reloading outline:', error);
+          void loadOutline(currentWorkspaceId, false);
           return;
         }
       }
@@ -259,7 +281,7 @@ export function useWorkspaceData() {
         eventEmitter.off(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
       }
     };
-  }, [currentWorkspaceId, eventEmitter, stableOutlineRef]);
+  }, [currentWorkspaceId, eventEmitter, loadOutline, stableOutlineRef]);
 
   // Load favorite views
   const loadFavoriteViews = useCallback(async () => {

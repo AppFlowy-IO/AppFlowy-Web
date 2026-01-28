@@ -29,7 +29,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
   const isMobile = getPlatform().isMobile;
   const [openMobilePrompt, setOpenMobilePrompt] = React.useState(isMobile);
 
-  const { refreshOutline, updatePage, loadDatabasePrompts, testDatabasePromptConfig } = useAppHandlers();
+  const { updatePage, loadDatabasePrompts, testDatabasePromptConfig } = useAppHandlers();
 
   const {
     selectionMode,
@@ -57,7 +57,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
           name,
           icon: view.icon || undefined,
         });
-        void refreshOutline?.();
+        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
       } catch (error) {
         return Promise.reject(error);
       }
@@ -71,7 +71,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
       try {
         const res = await createViewWithContent.apply(request, [parentViewId, name, data]);
 
-        await refreshOutline?.();
+        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         onOpenView(res.view_id);
 
         return res;
@@ -81,7 +81,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
     };
 
     return request;
-  }, [onOpenView, service, workspaceId, chatId, updatePage, refreshOutline]);
+  }, [onOpenView, service, workspaceId, chatId, updatePage]);
 
   useEffect(() => {
     if (onRendered) {
