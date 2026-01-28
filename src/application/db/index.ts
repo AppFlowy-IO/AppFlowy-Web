@@ -145,11 +145,24 @@ export async function openCollabDBWithProvider(
   name: string,
   options?: { awaitSync?: boolean }
 ): Promise<{ doc: YDoc; provider: IndexeddbPersistence }> {
+  const startedAt = Date.now();
+
+  Log.debug('[DB] openCollabDBWithProvider start', {
+    name,
+    awaitSync: options?.awaitSync !== false,
+    alreadyOpened: openedSet.has(name),
+  });
+
   const doc = new Y.Doc({
     guid: name,
   });
 
   await ensureYjsStores(name);
+
+  Log.debug('[DB] openCollabDBWithProvider stores ensured', {
+    name,
+    ensureDurationMs: Date.now() - startedAt,
+  });
 
   const provider = new IndexeddbPersistence(name, doc);
 
@@ -159,6 +172,12 @@ export async function openCollabDBWithProvider(
   });
 
   provider.on('synced', () => {
+    Log.debug('[DB] openCollabDBWithProvider synced', {
+      name,
+      syncDurationMs: Date.now() - startedAt,
+      wasOpened: openedSet.has(name),
+    });
+
     if (!openedSet.has(name)) {
       openedSet.add(name);
     }
@@ -169,6 +188,12 @@ export async function openCollabDBWithProvider(
   if (options?.awaitSync !== false) {
     await promise;
   }
+
+  Log.debug('[DB] openCollabDBWithProvider ready', {
+    name,
+    totalDurationMs: Date.now() - startedAt,
+    awaitedSync: options?.awaitSync !== false,
+  });
 
   return { doc: doc as YDoc, provider };
 }
