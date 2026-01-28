@@ -116,7 +116,7 @@ function Database(props: Database2Props) {
   const getDatabaseId = useCallback(() => {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
-    const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
+    const databaseId = database?.get(YjsDatabaseKey.id);
 
     return databaseId || doc.guid;
   }, [doc]);
@@ -169,6 +169,9 @@ function Database(props: Database2Props) {
 
     const priorityRowIds = getPriorityRowIds();
     const promise = prefetchDatabaseBlobDiff(workspaceId, databaseId, { priorityRowIds })
+      .then(() => {
+        // Prefetch complete - data is now cached
+      })
       .catch(() => {
         // Blob prefetch failed - websocket sync will provide data
         prefetchPromisesRef.current.delete(databaseId);

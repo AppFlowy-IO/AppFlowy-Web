@@ -111,23 +111,22 @@ function AppPage() {
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
   const [error, setError] = React.useState<AppError | null>(null);
 
-  // Track load attempts to detect when loading is stuck
+  // Track in-progress loads to prevent duplicate requests and enable recovery.
   const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
-  // Track current doc for recovery effect timer callback
+  // Ref to access current doc in timer callbacks without stale closures.
   const docRef = useRef<YDoc | undefined>(undefined);
+
   docRef.current = doc;
 
   const loadPageDoc = useCallback(
     async (id: string) => {
       loadAttemptRef.current = { viewId: id, timestamp: Date.now() };
       setError(null);
-      // Don't clear doc immediately - let the key prop handle transitions
-      // Clearing doc creates a blank window that flushSync from websocket can commit
       try {
         const loadedDoc = await loadView(id, false, true);
 
-        // Use flushSync to ensure the doc state update commits immediately
-        // This prevents react-use-websocket's flushSync from discarding our render
+        // flushSync ensures our state commits before websocket sync messages
+        // can trigger their own flushSync (from react-use-websocket).
         flushSync(() => {
           setDoc(loadedDoc);
         });
@@ -150,6 +149,8 @@ function AppPage() {
     [loadView]
   );
 
+  // Load document when viewId changes. Skip if doc already loaded or load in progress
+  // to prevent duplicate requests when outline updates trigger effect re-runs.
   useEffect(() => {
     if (!viewId || layout === undefined || layout === ViewLayout.AIChat) return;
 
@@ -181,8 +182,8 @@ function AppPage() {
     void loadPageDoc(viewId);
   }, [loadPageDoc, viewId, layout, toView, view]);
 
-  // Recovery effect: detect when doc doesn't match viewId and re-trigger load
-  // This handles cases where flushSync from websocket interferes with our state update
+  // Recovery: Re-trigger load if doc doesn't match viewId after timeout.
+  // Acts as safety net for edge cases where initial load didn't complete.
   useEffect(() => {
     if (!viewId || layout === undefined || layout === ViewLayout.AIChat) return;
     if (isDatabaseContainer(view)) return;

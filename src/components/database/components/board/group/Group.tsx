@@ -28,19 +28,16 @@ export const Group = ({ groupId }: GroupProps) => {
   const { paddingStart, paddingEnd, navigateToRow, ensureRowDoc } = context;
   const rowOrders = useRowOrdersSelector();
 
-  // Ensure all row documents are loaded when Board mounts
-  // This is critical for Board view which needs row docs to display cards
-  // Use rowOrders which contains ALL row IDs, not just those in groups
+  // Eagerly load all row documents so Board cards can render with data.
+  // Row docs contain the cell values needed to display card content.
   useEffect(() => {
     if (!ensureRowDoc || !rowOrders || rowOrders.length === 0) {
       return;
     }
 
-    // Load all row documents in parallel
     rowOrders.forEach((row) => {
-      ensureRowDoc(row.id)?.catch(() => {
-        // Silently ignore errors - row doc loading failures are handled elsewhere
-      });
+      // eslint-disable-next-line @typescript-eslint/no-empty-function
+      ensureRowDoc(row.id)?.catch(() => {});
     });
   }, [ensureRowDoc, rowOrders, groupId]);
   const readOnly = useReadOnly();

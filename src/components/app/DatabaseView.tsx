@@ -93,6 +93,7 @@ function DatabaseView(props: ViewComponentProps) {
 
   // Use ref to track if database is available without causing effect re-runs
   const databaseRef = useRef(database);
+
   databaseRef.current = database;
 
   // Ref to track the container element for DOM recovery check
@@ -126,6 +127,7 @@ function DatabaseView(props: ViewComponentProps) {
         // Ignore errors from unobserving destroyed Yjs objects
       }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.guid, databasePageId]);
 
   // Separate effect to observe database deep changes when database becomes available
@@ -193,6 +195,7 @@ function DatabaseView(props: ViewComponentProps) {
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.guid, databasePageId]);
 
   // Recovery mechanism: Check if we have database data but DOM is empty
@@ -237,7 +240,7 @@ function DatabaseView(props: ViewComponentProps) {
   }, [rowId, viewMeta.layout]);
 
   // Check if database has views - this ensures the data is actually populated
-  const hasViews = database?.get(YjsDatabaseKey.views)?.size > 0;
+  const hasViews = (database?.get(YjsDatabaseKey.views)?.size ?? 0) > 0;
 
   // Wait for database data to be available before rendering
   // The Y.js observation above will trigger re-render when data arrives via websocket

@@ -120,7 +120,7 @@ export const useDatabase = () => {
   const dataSection = databaseDoc?.getMap(YjsEditorKey.data_section);
   const database = dataSection?.get(YjsEditorKey.database) as YDatabase;
 
-  // Subscribe to Y.js changes to re-render when database data arrives via websocket
+  // Re-render when database key is added to dataSection (initial load via websocket).
   useEffect(() => {
     if (!dataSection) return;
 
@@ -128,7 +128,6 @@ export const useDatabase = () => {
       forceUpdate((prev) => prev + 1);
     };
 
-    // Observe the data section for when the database key is added
     dataSection.observe(handleChange);
 
     return () => {
@@ -136,7 +135,7 @@ export const useDatabase = () => {
     };
   }, [dataSection, databaseDoc?.guid]);
 
-  // Separate effect to observe database deep changes - re-runs when database becomes available
+  // Re-render on database content changes (rows, fields, views added/modified).
   useEffect(() => {
     if (!database) {
       return;
@@ -172,11 +171,16 @@ export const useIsDatabaseRowPage = () => {
   return useDatabaseContext().isDatabaseRowPage;
 };
 
+/**
+ * Hook to access and observe a row document.
+ * Ensures the row doc is loaded and re-renders when row data changes.
+ */
 export const useRow = (rowId: string) => {
   const { rowDocMap, ensureRowDoc } = useDatabaseContext();
   const [, forceUpdate] = useState(0);
   const rowDoc = rowDocMap?.[rowId];
 
+  // Ensure row document is loaded.
   useEffect(() => {
     let cancelled = false;
 
@@ -197,6 +201,7 @@ export const useRow = (rowId: string) => {
     };
   }, [ensureRowDoc, rowId]);
 
+  // Observe row document for changes and re-render when data updates.
   useEffect(() => {
     if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
     const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
