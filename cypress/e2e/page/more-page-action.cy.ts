@@ -202,35 +202,30 @@ describe('More Page Actions', () => {
         waitForReactUpdate(2000);
 
         // Verify the page was renamed in the sidebar
-        PageSelectors.nameContaining(renamedPageName, { timeout: 10000 }).should('exist');
+        cy.contains(renamedPageName, { timeout: 10000 }).should('exist');
         testLog.info( 'Page renamed successfully in sidebar');
 
-        // Also verify the original name doesn't exist in sidebar page names
-        // Note: We check sidebar specifically because "Getting started" text may exist in page content
-        PageSelectors.names().should('not.contain.text', originalPageName);
+        // Also verify the original name doesn't exist anymore
+        cy.contains(originalPageName).should('not.exist');
         
         // Now refresh the page to verify the rename persisted
         testLog.info( 'Refreshing page to verify persistence...');
         cy.reload();
-
+        
         // Wait for the page to reload completely
         TestTool.waitForPageLoad(3000);
         TestTool.waitForSidebarReady();
         cy.wait(2000);
-
-        // Expand the space to see page names (space may be collapsed after refresh)
-        TestTool.expandSpace(0);
-        waitForReactUpdate(1000);
-
+        
         // Verify the renamed page still exists after refresh
-        PageSelectors.nameContaining(renamedPageName, { timeout: 10000 }).should('exist');
+        cy.contains(renamedPageName, { timeout: 10000 }).should('exist');
         testLog.info( 'Renamed page persisted after refresh');
-
-        // Verify the original name is still gone from sidebar
-        PageSelectors.names().should('not.contain.text', originalPageName);
-
+        
+        // Verify the original name is still gone
+        cy.contains(originalPageName).should('not.exist');
+        
         // Optional: Also verify the page is clickable and can be opened
-        PageSelectors.nameContaining(renamedPageName).click();
+        cy.contains(renamedPageName).click();
         cy.wait(2000);
         
         // Verify we're on the renamed page by checking the URL or page content

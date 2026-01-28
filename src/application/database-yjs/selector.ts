@@ -511,25 +511,76 @@ export function useGroupsSelector() {
   const [groups, setGroups] = useState<string[]>([]);
 
   useEffect(() => {
-    if (!viewId) return;
-    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    if (!viewId || !database) {
+      return;
+    }
 
-    const groupOrders = view?.get(YjsDatabaseKey.groups);
+    let retryIntervalId: ReturnType<typeof setInterval> | null = null;
 
-    if (!groupOrders) return;
+    const updateGroups = () => {
+      const view = database.get(YjsDatabaseKey.views)?.get(viewId);
 
-    const getGroups = () => {
-      return groupOrders.toArray().map((item) => item.get(YjsDatabaseKey.id));
+      if (!view) {
+        setGroups([]);
+        return false;
+      }
+
+      const groupOrders = view.get(YjsDatabaseKey.groups);
+
+      if (!groupOrders) {
+        setGroups([]);
+        return false;
+      }
+
+      const newGroups = groupOrders.toArray().map((item) => item.get(YjsDatabaseKey.id));
+
+      setGroups(newGroups);
+
+      // Clear retry interval once we have groups
+      if (retryIntervalId && newGroups.length > 0) {
+        clearInterval(retryIntervalId);
+        retryIntervalId = null;
+      }
+
+      return newGroups.length > 0;
     };
 
-    const observerEvent = () => setGroups(getGroups());
+    // Attach observer FIRST to avoid missing updates that arrive during setup
+    database.observeDeep(updateGroups);
 
-    setGroups(getGroups());
+    // Then check current state
+    const hasGroups = updateGroups();
 
-    groupOrders.observeDeep(observerEvent);
+    // If groups not found initially, poll briefly to catch race conditions
+    if (!hasGroups) {
+      retryIntervalId = setInterval(() => {
+        const found = updateGroups();
+
+        if (found && retryIntervalId) {
+          clearInterval(retryIntervalId);
+          retryIntervalId = null;
+        }
+      }, 100);
+
+      // Stop polling after 3 seconds max
+      setTimeout(() => {
+        if (retryIntervalId) {
+          clearInterval(retryIntervalId);
+          retryIntervalId = null;
+        }
+      }, 3000);
+    }
 
     return () => {
-      groupOrders.unobserveDeep(observerEvent);
+      if (retryIntervalId) {
+        clearInterval(retryIntervalId);
+      }
+
+      try {
+        database.unobserveDeep(updateGroups);
+      } catch {
+        // Ignore errors from unobserving destroyed Yjs objects
+      }
     };
   }, [database, viewId]);
 
@@ -837,7 +888,7 @@ export function useRowOrdersSelector() {
   );
 
   const onConditionsChange = useCallback(() => {
-    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders).toJSON();
+    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON();
 
     if (!originalRowOrders) return;
 
