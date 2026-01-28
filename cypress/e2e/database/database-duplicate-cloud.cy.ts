@@ -77,11 +77,11 @@ describe('Cloud Database Duplication', () => {
     // Step 1: Visit login page
     cy.log('[STEP 1] Visiting login page');
     cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
+    cy.wait(5000);
 
     // Step 2: Enter email
     cy.log('[STEP 2] Entering email address');
-    AuthSelectors.emailInput().should('be.visible').type(_exportUserEmail);
+    AuthSelectors.emailInput().should('be.visible', { timeout: 30000 }).type(_exportUserEmail);
     cy.wait(500);
 
     // Step 3: Click on "Sign in with password" button

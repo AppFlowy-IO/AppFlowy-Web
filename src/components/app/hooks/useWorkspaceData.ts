@@ -1,3 +1,4 @@
+import { applyPatch, type Operation } from 'fast-json-patch';
 import { sortBy, uniqBy } from 'lodash-es';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -9,6 +10,7 @@ import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } fro
 import { findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import { notification } from '@/proto/messages';
 import { createDeduplicatedNoArgsRequest } from '@/utils/deduplicateRequest';
+import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
@@ -21,11 +23,37 @@ export interface RequestAccessError {
   message: string;
 }
 
-type JsonPatchOperation = {
-  op: string;
-  path: string;
-  value?: unknown;
-};
+type JsonPatchOperation = Operation;
+
+const OUTLINE_VISIBLE_FIELDS = new Set([
+  '/name',
+  '/icon',
+  '/extra',
+  '/is_favorite',
+  '/is_locked',
+  '/is_private',
+  '/is_published',
+  '/layout',
+  '/children',
+  '/view_id',
+  '/parent_view_id',
+  '/prev_view_id',
+  '/created_at',
+  '/created_by',
+]);
+
+const OUTLINE_NON_VISUAL_FIELDS = new Set(['/last_edited_time', '/last_edited_by']);
+
+function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
+  return patch.every((op) => {
+    if (!op.path?.startsWith('/outline')) return false;
+    const path = op.path;
+    if (Array.from(OUTLINE_NON_VISUAL_FIELDS).some((suffix) => path.endsWith(suffix))) {
+      return true;
+    }
+    return !Array.from(OUTLINE_VISIBLE_FIELDS).some((suffix) => path.endsWith(suffix));
+  });
+}
 
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
@@ -170,6 +198,7 @@ export function useWorkspaceData() {
 
       let patch: JsonPatchOperation[] | null = null;
       try {
+        Log.debug('[FolderOutlineChanged] raw diff json', payload.outlineDiffJson);
         patch = JSON.parse(payload.outlineDiffJson) as JsonPatchOperation[];
       } catch (error) {
         console.warn('Failed to parse folder outline diff:', error);
@@ -177,15 +206,41 @@ export function useWorkspaceData() {
       }
 
       if (!patch || !Array.isArray(patch)) return;
-      const replaceOp = patch.find((op) => op.op === 'replace' && op.path === '/outline');
-      if (!replaceOp || !Array.isArray(replaceOp.value)) return;
+      if (isOnlyNonVisualOutlineChange(patch)) {
+        return;
+      }
+      Log.debug('[FolderOutlineChanged] parsed patch', patch);
+
+      const baseOutline = stableOutlineRef.current.filter((view) => !view.extra?.is_hidden_space);
+      const baseDocument = { outline: baseOutline };
+      let patchedOutline: View[] | null = null;
+
+      const fastReplace =
+        patch.length === 1 && patch[0]?.op === 'replace' && patch[0]?.path === '/outline';
+      if (fastReplace && Array.isArray(patch[0]?.value)) {
+        patchedOutline = patch[0].value as View[];
+      } else {
+        try {
+          const result = applyPatch(baseDocument, patch, false, false);
+          const nextDocument = result?.newDocument ?? baseDocument;
+          const nextOutline = (nextDocument as { outline?: unknown }).outline;
+
+          if (!Array.isArray(nextOutline)) return;
+          patchedOutline = nextOutline as View[];
+        } catch (error) {
+          console.warn('Failed to apply folder outline diff:', error);
+          return;
+        }
+      }
+
+      if (!patchedOutline) return;
 
       const existingShareWithMe = stableOutlineRef.current.find(
         (view) => view.extra?.is_hidden_space
       );
       const nextOutline = existingShareWithMe
-        ? [...(replaceOp.value as View[]), existingShareWithMe]
-        : (replaceOp.value as View[]);
+        ? [...patchedOutline, existingShareWithMe]
+        : patchedOutline;
 
       stableOutlineRef.current = nextOutline;
       setOutline(nextOutline);
