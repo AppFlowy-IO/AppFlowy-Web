@@ -102,7 +102,8 @@ function DatabaseView(props: ViewComponentProps) {
   // Use doc.guid as dependency to ensure stable observer lifecycle
   // This prevents premature observer cleanup when doc reference changes
   // Use observeDeep to catch nested database updates from websocket sync
-  // Use flushSync to force immediate commit, countering react-use-websocket's flushSync interference
+  // Schedule flushSync on next microtask to avoid "flushSync called inside lifecycle" warning
+  // when Y.js observer fires during React's commit phase (e.g., from websocket message handling)
   useEffect(() => {
     if (!doc) return;
 
@@ -111,10 +112,13 @@ function DatabaseView(props: ViewComponentProps) {
     if (!section) return;
 
     const handleChange = () => {
-      // Use flushSync to ensure our update commits immediately
-      // This prevents react-use-websocket's flushSync from discarding our render
-      flushSync(() => {
-        forceUpdate((prev) => prev + 1);
+      // Schedule flushSync on next microtask to ensure we're outside React's commit phase
+      // This prevents the "flushSync was called from inside a lifecycle method" warning
+      // while still ensuring our update commits before the next websocket message
+      queueMicrotask(() => {
+        flushSync(() => {
+          forceUpdate((prev) => prev + 1);
+        });
       });
     };
 
@@ -137,9 +141,11 @@ function DatabaseView(props: ViewComponentProps) {
     }
 
     const handleChange = () => {
-      // Use flushSync to ensure our update commits immediately
-      flushSync(() => {
-        forceUpdate((prev) => prev + 1);
+      // Schedule flushSync on next microtask to ensure we're outside React's commit phase
+      queueMicrotask(() => {
+        flushSync(() => {
+          forceUpdate((prev) => prev + 1);
+        });
       });
     };
 

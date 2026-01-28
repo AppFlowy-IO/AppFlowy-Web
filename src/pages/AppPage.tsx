@@ -125,8 +125,41 @@ function AppPage() {
       try {
         const loadedDoc = await loadView(id, false, true);
 
-        // flushSync ensures our state commits before websocket sync messages
-        // can trigger their own flushSync (from react-use-websocket).
+        // DATABASE/DOCUMENT LOADING PROCESS:
+        // ===================================
+        // 1. User navigates to a view (document or database) via URL or sidebar click
+        // 2. This triggers loadPageDoc(viewId) which calls loadView()
+        // 3. loadView() fetches the Y.js document from the server
+        // 4. The YDoc is returned and we need to set it to state via setDoc()
+        //
+        // THE PROBLEM (without flushSync):
+        // ================================
+        // - react-use-websocket library uses flushSync internally for message handling
+        // - When websocket receives sync messages, it calls flushSync to update state
+        // - If we call setDoc() normally (without flushSync), the following can happen:
+        //   a) setDoc() schedules a React state update (batched, async)
+        //   b) Before React processes our update, websocket receives a message
+        //   c) Websocket's flushSync forces React to flush pending updates
+        //   d) This can cause our setDoc() to be processed in an unexpected order
+        //   e) For databases, the Y.js observers in useDatabase() may not trigger
+        //   f) Result: Database shows blank page because component doesn't re-render
+        //
+        // THE SOLUTION (with flushSync):
+        // ==============================
+        // - flushSync forces React to immediately commit our setDoc() update
+        // - This ensures the doc state is set BEFORE any websocket messages arrive
+        // - The component re-renders synchronously with the new doc
+        // - Y.js observers in useDatabase() hook properly observe the database
+        // - Database renders correctly with all rows and columns visible
+        //
+        // RELATED CODE:
+        // =============
+        // - src/application/database-yjs/context.ts: useDatabase() hook needs Y.js
+        //   observers to re-render when database data arrives via websocket
+        // - The observers watch for: dataSection changes, database content changes
+        // - Without these observers + flushSync, the second database created in a
+        //   session will show blank because the component doesn't re-render when
+        //   the Y.js data is populated via websocket sync
         flushSync(() => {
           setDoc(loadedDoc);
         });

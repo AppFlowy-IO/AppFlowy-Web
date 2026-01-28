@@ -283,4 +283,96 @@ describe('Board Row Data Loading', () => {
       });
     });
   });
+
+  /**
+   * Test: Create two Board databases consecutively from the sidebar plus button.
+   *
+   * Regression test for blank page bug:
+   * - First Board creates and displays correctly
+   * - Second Board shows blank page (bug)
+   *
+   * Root cause: When creating the second database, the Y.js observers and
+   * flushSync protection are needed to properly render the database when
+   * data arrives via websocket.
+   */
+  it('should display cards correctly when creating two Boards consecutively', () => {
+    const testEmail = generateRandomEmail();
+
+    cy.task('log', `[TEST START] Create two Boards consecutively - Email: ${testEmail}`);
+
+    cy.visit('/login', { failOnStatusCode: false });
+    cy.wait(2000);
+
+    const authUtils = new AuthTestUtils();
+    authUtils.signInWithTestUrl(testEmail).then(() => {
+      cy.url({ timeout: 30000 }).should('include', '/app');
+      cy.wait(3000);
+
+      // ===== FIRST BOARD =====
+      cy.task('log', '[STEP 1] Creating FIRST Board database from sidebar');
+      AddPageSelectors.inlineAddButton().first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      cy.get('[role="menuitem"]').contains('Board').click({ force: true });
+      cy.wait(5000);
+
+      // Verify first Board loaded
+      cy.task('log', '[STEP 2] Verifying FIRST Board view loaded');
+      BoardSelectors.boardContainer().should('exist', { timeout: 15000 });
+      waitForReactUpdate(3000);
+
+      // Verify first Board has cards
+      cy.task('log', '[STEP 3] Verifying FIRST Board has default cards');
+      BoardSelectors.cards().should('have.length.at.least', 1, { timeout: 15000 });
+      BoardSelectors.boardContainer().contains('To Do').should('be.visible');
+
+      // Verify default card content
+      BoardSelectors.boardContainer().then(($board) => {
+        const hasContent =
+          $board.text().includes('Card 1') ||
+          $board.text().includes('Card 2') ||
+          $board.text().includes('Card 3');
+
+        cy.task('log', `[STEP 3.1] First Board has card content: ${hasContent}`);
+      });
+
+      cy.task('log', '[STEP 4] FIRST Board created successfully');
+
+      // ===== SECOND BOARD =====
+      cy.task('log', '[STEP 5] Creating SECOND Board database from sidebar');
+      AddPageSelectors.inlineAddButton().first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      cy.get('[role="menuitem"]').contains('Board').click({ force: true });
+      cy.wait(5000);
+
+      // CRITICAL: Verify second Board loaded (this is where the bug occurs)
+      cy.task('log', '[STEP 6] Verifying SECOND Board view loaded');
+      BoardSelectors.boardContainer().should('exist', { timeout: 15000 });
+      waitForReactUpdate(3000);
+
+      // CRITICAL: Verify second Board has cards (not blank)
+      cy.task('log', '[STEP 7] Verifying SECOND Board has default cards (not blank)');
+      BoardSelectors.cards().should('have.length.at.least', 1, { timeout: 15000 });
+      BoardSelectors.boardContainer().contains('To Do').should('be.visible');
+
+      // Verify second Board has card content
+      BoardSelectors.boardContainer().then(($board) => {
+        const hasContent =
+          $board.text().includes('Card 1') ||
+          $board.text().includes('Card 2') ||
+          $board.text().includes('Card 3');
+
+        cy.task('log', `[STEP 7.1] Second Board has card content: ${hasContent}`);
+        expect(hasContent, 'Second Board should have card content (not blank)').to.be.true;
+      });
+
+      // Verify all default columns exist
+      cy.task('log', '[STEP 8] Verifying SECOND Board has all default columns');
+      BoardSelectors.boardContainer().contains('Doing').should('be.visible');
+      BoardSelectors.boardContainer().contains('Done').should('be.visible');
+
+      cy.task('log', '[TEST COMPLETE] Both Boards created successfully with cards visible');
+    });
+  });
 });
