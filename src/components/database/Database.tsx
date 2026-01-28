@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   clearDatabaseRowDocSeedCache,
@@ -363,10 +363,27 @@ function Database(props: Database2Props) {
     setRowDocMap({});
   }, [doc.guid]);
 
-  const [openModalRowId, setOpenModalRowId] = useState<string | null>(() => modalRowId || null);
-  const [openModalViewId, setOpenModalViewId] = useState<string | null>(() => (modalRowId ? activeViewId : null));
-  const [openModalRowDatabaseDoc, setOpenModalRowDatabaseDoc] = useState<YDoc | null>(null);
-  const [openModalRowDocMap, setOpenModalRowDocMap] = useState<Record<RowId, YDoc> | null>(null);
+  // Trigger blob prefetch when database opens
+  useEffect(() => {
+    if (workspaceId && doc.guid) {
+      ensureBlobPrefetch()?.catch((error: unknown) => {
+        console.error('[Database] Failed to prefetch blob:', error);
+      });
+    }
+  }, [workspaceId, doc.guid, ensureBlobPrefetch]);
+
+  // Combined modal state to avoid multiple re-renders when updating related values
+  const [modalState, setModalState] = useState<{
+    rowId: string | null;
+    viewId: string | null;
+    databaseDoc: YDoc | null;
+    rowDocMap: Record<RowId, YDoc> | null;
+  }>(() => ({
+    rowId: modalRowId || null,
+    viewId: modalRowId ? activeViewId : null,
+    databaseDoc: null,
+    rowDocMap: null,
+  }));
 
   // Calendar view type map state
   const [calendarViewTypeMap, setCalendarViewTypeMap] = useState<Map<string, CalendarViewType>>(() => new Map());
@@ -401,32 +418,133 @@ function Database(props: Database2Props) {
             return;
           }
 
-          setOpenModalViewId(viewId);
-          setOpenModalRowDatabaseDoc(viewDoc);
-
           const rowDoc = await createNewRowDoc(getRowKey(viewDoc.guid, rowId));
 
           if (!rowDoc) {
             throw new Error('Row document not found');
           }
 
-          setOpenModalRowDocMap({ [rowId]: rowDoc });
+          // Update all modal state in a single setState call
+          setModalState({
+            rowId,
+            viewId,
+            databaseDoc: viewDoc,
+            rowDocMap: { [rowId]: rowDoc },
+          });
+          return;
         } catch (e) {
           console.error(e);
         }
       }
 
-      setOpenModalRowId(rowId);
+      setModalState((prev) => ({ ...prev, rowId }));
     },
     [createNewRowDoc, loadView, navigateToView, onOpenRowPage, readOnly]
   );
 
   const handleCloseRowModal = useCallback(() => {
-    setOpenModalRowId(null);
-    setOpenModalRowDocMap(null);
-    setOpenModalRowDatabaseDoc(null);
-    setOpenModalViewId(null);
+    setModalState({
+      rowId: null,
+      viewId: null,
+      databaseDoc: null,
+      rowDocMap: null,
+    });
   }, []);
+
+  // Memoized callback for modal open change to avoid inline function in JSX
+  const handleModalOpenChange = useCallback(
+    (status: boolean) => {
+      if (!status) {
+        handleCloseRowModal();
+      }
+    },
+    [handleCloseRowModal]
+  );
+
+  // Shared context properties - extracted to reduce duplication between main and modal contexts
+  const sharedContextProps = useMemo(
+    () => ({
+      readOnly,
+      ensureRowDoc,
+      paddingStart: props.paddingStart,
+      paddingEnd: props.paddingEnd,
+      isDocumentBlock: _isDocumentBlock,
+      navigateToRow: handleOpenRow,
+      loadView,
+      createRowDoc: createNewRowDoc,
+      loadViewMeta: props.loadViewMeta,
+      navigateToView,
+      onRendered: props.onRendered,
+      showActions: props.showActions,
+      workspaceId,
+      createDatabaseView: props.createDatabaseView,
+      getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
+      variant: props.variant,
+      calendarViewTypeMap,
+      setCalendarViewType,
+    }),
+    [
+      readOnly,
+      ensureRowDoc,
+      props.paddingStart,
+      props.paddingEnd,
+      _isDocumentBlock,
+      handleOpenRow,
+      loadView,
+      createNewRowDoc,
+      props.loadViewMeta,
+      navigateToView,
+      props.onRendered,
+      props.showActions,
+      workspaceId,
+      props.createDatabaseView,
+      props.getViewIdFromDatabaseId,
+      props.variant,
+      calendarViewTypeMap,
+      setCalendarViewType,
+    ]
+  );
+
+  // Memoize context value to prevent unnecessary re-renders of consumers
+  const mainContextValue = useMemo(
+    () => ({
+      ...sharedContextProps,
+      databaseDoc: doc,
+      databasePageId,
+      activeViewId,
+      rowDocMap,
+      isDatabaseRowPage: !!rowId,
+    }),
+    [sharedContextProps, doc, databasePageId, activeViewId, rowDocMap, rowId]
+  );
+
+  // Memoize modal context value separately - only compute when modal is open
+  const modalContextValue = useMemo(
+    () =>
+      modalState.rowId
+        ? {
+            ...sharedContextProps,
+            databaseDoc: modalState.databaseDoc || doc,
+            databasePageId: modalState.viewId || databasePageId,
+            activeViewId: modalState.viewId || activeViewId,
+            rowDocMap: modalState.rowDocMap || rowDocMap,
+            isDatabaseRowPage: false,
+            closeRowDetailModal: handleCloseRowModal,
+          }
+        : null,
+    [
+      modalState.rowId,
+      modalState.databaseDoc,
+      modalState.viewId,
+      modalState.rowDocMap,
+      sharedContextProps,
+      doc,
+      databasePageId,
+      activeViewId,
+      rowDocMap,
+      handleCloseRowModal,
+    ]
+  );
 
   if (!activeViewId) {
     return <div className={'min-h-[120px] w-full'} />;
@@ -434,18 +552,7 @@ function Database(props: Database2Props) {
 
   return (
     <div className={'flex w-full flex-1 justify-center'}>
-      <DatabaseContextProvider
-        {...props}
-        isDatabaseRowPage={!!rowId}
-        navigateToRow={handleOpenRow}
-        databaseDoc={doc}
-        rowDocMap={rowDocMap}
-        readOnly={readOnly}
-        createRowDoc={createNewRowDoc}
-        ensureRowDoc={ensureRowDoc}
-        calendarViewTypeMap={calendarViewTypeMap}
-        setCalendarViewType={setCalendarViewType}
-      >
+      <DatabaseContextProvider value={mainContextValue}>
         {rowId ? (
           <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
         ) : (
@@ -463,33 +570,13 @@ function Database(props: Database2Props) {
           </div>
         )}
       </DatabaseContextProvider>
-      {openModalRowId && (
-        <DatabaseContextProvider
-          {...props}
-          activeViewId={openModalViewId || activeViewId}
-          databasePageId={openModalViewId || databasePageId}
-          databaseDoc={openModalRowDatabaseDoc || doc}
-          rowDocMap={openModalRowDocMap || rowDocMap}
-          isDatabaseRowPage={false}
-          navigateToRow={handleOpenRow}
-          readOnly={readOnly}
-          createRowDoc={createNewRowDoc}
-          ensureRowDoc={ensureRowDoc}
-          calendarViewTypeMap={calendarViewTypeMap}
-          setCalendarViewType={setCalendarViewType}
-          closeRowDetailModal={handleCloseRowModal}
-        >
+      {modalState.rowId && modalContextValue && (
+        <DatabaseContextProvider value={modalContextValue}>
           <DatabaseRowModal
-            rowId={openModalRowId}
-            open={Boolean(openModalRowId)}
+            rowId={modalState.rowId}
+            open={Boolean(modalState.rowId)}
             openPage={onOpenRowPage}
-            onOpenChange={(status) => {
-              if (!status) {
-                handleCloseRowModal();
-              } else {
-                setOpenModalRowId(openModalRowId);
-              }
-            }}
+            onOpenChange={handleModalOpenChange}
           />
         </DatabaseContextProvider>
       )}

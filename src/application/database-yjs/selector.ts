@@ -1509,11 +1509,12 @@ export function useCalendarEventsSelector() {
   const primaryFieldId = usePrimaryFieldId();
   const rowOrders = useRowOrdersSelector();
   const rows = useRowDocMap();
+  const { ensureRowDoc } = useDatabaseContext();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [emptyEvents, setEmptyEvents] = useState<CalendarEvent[]>([]);
 
   useEffect(() => {
-    if (!field || !rowOrders || !rows || !filedId) return;
+    if (!field || !rowOrders || !filedId) return;
     const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
 
     if (![FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime].includes(fieldType) || !primaryFieldId) return;
@@ -1523,15 +1524,35 @@ export function useCalendarEventsSelector() {
       const emptyEvents: CalendarEvent[] = [];
 
       rowOrders?.forEach((row) => {
+        const doc = rows?.[row.id];
+
+        // If row document isn't loaded yet, trigger loading and add to emptyEvents
+        // The event will move to the correct position once the document loads
+        if (!doc) {
+          if (ensureRowDoc) {
+            const promise = ensureRowDoc(row.id);
+
+            if (promise) {
+              promise.catch((error: unknown) => {
+                console.error('[useCalendarEventsSelector] Failed to ensure row doc:', error);
+              });
+            }
+          }
+
+          emptyEvents.push({
+            id: `${row.id}`,
+            title: '',
+            allDay: true,
+            rowId: row.id,
+          });
+          return;
+        }
+
         const cell = getCell(row.id, filedId, rows);
         const primaryCell = getCell(row.id, primaryFieldId, rows);
         const allDay = !cell?.get(YjsDatabaseKey.include_time);
 
         const title = (primaryCell?.get(YjsDatabaseKey.data) as string) || '';
-
-        const doc = rows?.[row.id];
-
-        if (!doc) return;
 
         const rowSharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
         const databbaseRow = rowSharedRoot?.get(YjsEditorKey.database_row);
@@ -1615,7 +1636,7 @@ export function useCalendarEventsSelector() {
       });
     };
 
-  }, [field, rowOrders, rows, filedId, primaryFieldId]);
+  }, [field, rowOrders, rows, filedId, primaryFieldId, ensureRowDoc]);
 
   return { events, emptyEvents };
 }
@@ -1678,7 +1699,28 @@ export function usePrimaryFieldId() {
 
 export const useRowMetaSelector = (rowId: string) => {
   const [meta, setMeta] = useState<RowMeta | null>();
-  const rowMap = useRowDocMap();
+  const { rowDocMap: rowMap, ensureRowDoc } = useDatabaseContext();
+
+  // Ensure the row document is loaded (same pattern as useRow)
+  useEffect(() => {
+    let cancelled = false;
+
+    if (ensureRowDoc && rowId) {
+      const promise = ensureRowDoc(rowId);
+
+      if (promise) {
+        promise.catch((error: unknown) => {
+          if (!cancelled) {
+            console.error('[useRowMetaSelector] Failed to ensure row doc:', error);
+          }
+        });
+      }
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [ensureRowDoc, rowId]);
 
   const updateMeta = useCallback(() => {
     const row = rowMap?.[rowId];

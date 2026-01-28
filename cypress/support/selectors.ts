@@ -914,6 +914,35 @@ export const CalendarSelectors = {
 };
 
 /**
+ * Board View selectors
+ */
+export const BoardSelectors = {
+  // Board container
+  boardContainer: () => cy.get('.database-board'),
+
+  // Board columns (groups)
+  columns: () => cy.get('[class*="board-column"], [data-testid*="board-column"]'),
+
+  // Board cards
+  cards: () => cy.get('.board-card'),
+
+  // Card by row ID
+  cardByRowId: (rowId: string) => cy.get(`[data-card-id*="${rowId}"]`),
+
+  // Card field content (text inside cards)
+  cardFields: () => cy.get('.board-card [class*="CardField"]'),
+
+  // Card content area
+  cardContent: () => cy.get('.board-card .truncate'),
+
+  // Column headers
+  columnHeaders: () => cy.get('[class*="column-header"], [data-testid*="column-header"]'),
+
+  // New card button
+  newCardButton: () => cy.contains('+ New'),
+};
+
+/**
  * Row Detail Modal selectors
  */
 export const RowDetailSelectors = {

@@ -139,7 +139,23 @@ export const useRow = (rowId: string) => {
   const rowDoc = rowDocMap?.[rowId];
 
   useEffect(() => {
-    void ensureRowDoc?.(rowId);
+    let cancelled = false;
+
+    if (ensureRowDoc && rowId) {
+      const promise = ensureRowDoc(rowId);
+
+      if (promise) {
+        promise.catch((error: unknown) => {
+          if (!cancelled) {
+            console.error('[useRow] Failed to ensure row doc:', error);
+          }
+        });
+      }
+    }
+
+    return () => {
+      cancelled = true;
+    };
   }, [ensureRowDoc, rowId]);
 
   useEffect(() => {
