@@ -756,6 +756,19 @@ export class AFClientService implements AFService {
     return APIService.getMentionableUsers(workspaceId);
   }
 
+  async updatePageMention(workspaceId: string, viewId: string, data: {
+    person_id: string;
+    block_id?: string | null;
+    row_id?: string | null;
+    require_notification: boolean;
+    view_name: string;
+    ancestors?: string[] | null;
+    view_layout?: number | null;
+    is_row_document?: boolean;
+  }) {
+    return APIService.updatePageMention(workspaceId, viewId, data);
+  }
+
   async addRecentPages(workspaceId: string, viewIds: string[]) {
     return APIService.addRecentPages(workspaceId, viewIds);
   }

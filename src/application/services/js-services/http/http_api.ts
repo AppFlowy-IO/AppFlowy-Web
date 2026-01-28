@@ -1971,6 +1971,25 @@ export async function getMentionableUsers(workspaceId: string) {
   return payload.persons;
 }
 
+export interface PageMentionUpdate {
+  person_id: string;
+  block_id?: string | null;
+  row_id?: string | null;
+  require_notification: boolean;
+  view_name: string;
+  ancestors?: string[] | null;
+  view_layout?: number | null;
+  is_row_document?: boolean;
+}
+
+export async function updatePageMention(workspaceId: string, viewId: string, data: PageMentionUpdate) {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/page-mention`;
+
+  return executeAPIVoidRequest(() =>
+    axiosInstance?.put<APIResponse>(url, data)
+  );
+}
+
 export async function addRecentPages(workspaceId: string, viewIds: string[]) {
   const url = `/api/workspace/${workspaceId}/add-recent-pages`;
 

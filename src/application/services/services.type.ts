@@ -92,6 +92,16 @@ export interface WorkspaceService {
   getGuestToMemberConversionInfo: (workspaceId: string, code: string) => Promise<GuestConversionCodeInfo>;
   approveTurnGuestToMember: (workspaceId: string, code: string) => Promise<void>;
   getMentionableUsers: (workspaceId: string) => Promise<MentionablePerson[]>;
+  updatePageMention: (workspaceId: string, viewId: string, data: {
+    person_id: string;
+    block_id?: string | null;
+    row_id?: string | null;
+    require_notification: boolean;
+    view_name: string;
+    ancestors?: string[] | null;
+    view_layout?: number | null;
+    is_row_document?: boolean;
+  }) => Promise<void>;
   addRecentPages: (workspaceId: string, viewIds: string[]) => Promise<void>;
   getShareDetail: (workspaceId: string, viewId: string, ancestorViewIds: string[]) => Promise<{
     view_id: string;

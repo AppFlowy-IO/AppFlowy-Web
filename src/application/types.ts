@@ -395,6 +395,13 @@ export enum YjsDatabaseKey {
   auto_fill = 'auto_fill',
   language = 'language',
   number_of_days = 'number_of_days',
+  // Person type option keys
+  is_single_select = 'is_single_select',
+  fill_with_creator = 'fill_with_creator',
+  disable_notification = 'disable_notification',
+  persons = 'persons',
+  // URL type option keys
+  url = 'url',
 }
 
 /**

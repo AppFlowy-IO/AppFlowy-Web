@@ -930,7 +930,10 @@ function createField(type: FieldType, fieldId: string) {
     case FieldType.Checkbox:
       return createSimpleField(FieldType.Checkbox);
     case FieldType.URL:
-      return createSimpleField(FieldType.URL);
+      return createSimpleField(FieldType.URL, (typeOption) => {
+        typeOption.set(YjsDatabaseKey.url, '');
+        typeOption.set(YjsDatabaseKey.content, '');
+      });
     case FieldType.Checklist:
       return createSimpleField(FieldType.Checklist);
     case FieldType.LastEditedTime:
@@ -940,9 +943,12 @@ function createField(type: FieldType, fieldId: string) {
     case FieldType.Relation:
       return createRelationField(fieldId);
     case FieldType.AISummaries:
-      return createSimpleField(FieldType.AISummaries);
+      return createSimpleField(FieldType.AISummaries, (typeOption) => {
+        typeOption.set(YjsDatabaseKey.auto_fill, false);
+      });
     case FieldType.AITranslations:
       return createSimpleField(FieldType.AITranslations, (typeOption) => {
+        typeOption.set(YjsDatabaseKey.auto_fill, false);
         typeOption.set(YjsDatabaseKey.language, AITranslateLanguage.English);
       });
     case FieldType.Time:
@@ -957,7 +963,12 @@ function createField(type: FieldType, fieldId: string) {
         );
       });
     case FieldType.Person:
-      return createSimpleField(FieldType.Person);
+      return createSimpleField(FieldType.Person, (typeOption) => {
+        typeOption.set(YjsDatabaseKey.is_single_select, false);
+        typeOption.set(YjsDatabaseKey.fill_with_creator, false);
+        typeOption.set(YjsDatabaseKey.disable_notification, false);
+        typeOption.set(YjsDatabaseKey.persons, JSON.stringify([]));
+      });
     case FieldType.Rollup:
       return createRollupField(fieldId);
     default:

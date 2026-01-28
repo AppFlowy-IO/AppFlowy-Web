@@ -13,6 +13,9 @@ export interface PersonFilter extends Filter {
 }
 
 export interface PersonTypeOption {
+  is_single_select: boolean;
+  fill_with_creator: boolean;
+  disable_notification: boolean;
   persons: {
     id: string,
     name?: string,
