@@ -271,10 +271,13 @@ describe('Embedded Database View Isolation', () => {
         .should('be.visible')
         .click({ force: true })
         .clear({ force: true })
-        .type(docName, { force: true })
-        .type('{enter}', { force: true });
-      waitForReactUpdate(1000);
+        .type(docName, { force: true });
+      // Click on editor body to blur title input and trigger name sync
+      EditorSelectors.firstEditor().click({ force: true });
+      // Wait for the name to sync to sidebar (API call + render)
+      waitForReactUpdate(3000);
       expandSpaceInSidebar(spaceName);
+      // Use longer timeout for sidebar to reflect the name change
       PageSelectors.nameContaining(docName, { timeout: 30000 }).should('exist');
 
       // Step 6: Skip initial children verification since sidebar DOM structure can vary
@@ -284,12 +287,17 @@ describe('Embedded Database View Isolation', () => {
       // Step 7: Insert embedded database via slash menu
       cy.task('log', '[STEP 7] Inserting embedded database via slash menu');
       EditorSelectors.firstEditor().should('exist', { timeout: 15000 });
-      EditorSelectors.firstEditor().click({ force: true }).type('/', { force: true });
+      // Click editor first to focus it, then type "/" separately
+      // This pattern matches the working panel_selection.cy.ts test
+      EditorSelectors.firstEditor().click({ force: true });
+      waitForReactUpdate(500);
+      // Type "/" using focused element to trigger slash menu
+      cy.focused().type('/');
       waitForReactUpdate(500);
 
       cy.task('log', '[STEP 7.1] Selecting Linked Grid option');
       SlashCommandSelectors.slashPanel()
-        .should('be.visible', { timeout: 5000 })
+        .should('be.visible', { timeout: 10000 })
         .within(() => {
           SlashCommandSelectors.slashMenuItem(getSlashMenuItemName('linkedGrid')).first().click({ force: true });
         });
