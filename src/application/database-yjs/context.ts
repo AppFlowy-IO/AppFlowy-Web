@@ -114,9 +114,48 @@ export const useCreateRow = () => {
 };
 
 export const useDatabase = () => {
-  const database = useDatabaseContext()
-    .databaseDoc?.getMap(YjsEditorKey.data_section)
-    .get(YjsEditorKey.database) as YDatabase;
+  const context = useDatabaseContext();
+  const databaseDoc = context.databaseDoc;
+  const [, forceUpdate] = useState(0);
+  const dataSection = databaseDoc?.getMap(YjsEditorKey.data_section);
+  const database = dataSection?.get(YjsEditorKey.database) as YDatabase;
+
+  // Subscribe to Y.js changes to re-render when database data arrives via websocket
+  useEffect(() => {
+    if (!dataSection) return;
+
+    const handleChange = () => {
+      forceUpdate((prev) => prev + 1);
+    };
+
+    // Observe the data section for when the database key is added
+    dataSection.observe(handleChange);
+
+    return () => {
+      dataSection.unobserve(handleChange);
+    };
+  }, [dataSection, databaseDoc?.guid]);
+
+  // Separate effect to observe database deep changes - re-runs when database becomes available
+  useEffect(() => {
+    if (!database) {
+      return;
+    }
+
+    const handleChange = () => {
+      forceUpdate((prev) => prev + 1);
+    };
+
+    database.observeDeep(handleChange);
+
+    return () => {
+      try {
+        database.unobserveDeep(handleChange);
+      } catch {
+        // Ignore errors from unobserving destroyed Yjs objects
+      }
+    };
+  }, [database]);
 
   return database;
 };
@@ -235,20 +274,21 @@ export const useReadOnly = () => {
 export const useDatabaseView = () => {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
+  const views = database?.get(YjsDatabaseKey.views);
 
-  return viewId ? database?.get(YjsDatabaseKey.views)?.get(viewId) : undefined;
+  return viewId ? views?.get(viewId) : undefined;
 };
 
 export function useDatabaseFields() {
   const database = useDatabase();
 
-  return database.get(YjsDatabaseKey.fields);
+  return database?.get(YjsDatabaseKey.fields);
 }
 
 export const useDatabaseSelectedView = (viewId: string) => {
   const database = useDatabase();
 
-  return database.get(YjsDatabaseKey.views).get(viewId);
+  return database?.get(YjsDatabaseKey.views)?.get(viewId);
 };
 
 export const useDefaultTimeSetting = (): DefaultTimeSetting => {

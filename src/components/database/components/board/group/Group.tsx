@@ -32,27 +32,17 @@ export const Group = ({ groupId }: GroupProps) => {
   // This is critical for Board view which needs row docs to display cards
   // Use rowOrders which contains ALL row IDs, not just those in groups
   useEffect(() => {
-    if (!ensureRowDoc || !rowOrders || rowOrders.length === 0) return;
-
-    let cancelled = false;
+    if (!ensureRowDoc || !rowOrders || rowOrders.length === 0) {
+      return;
+    }
 
     // Load all row documents in parallel
     rowOrders.forEach((row) => {
-      const promise = ensureRowDoc(row.id);
-
-      if (promise) {
-        promise.catch((error: unknown) => {
-          if (!cancelled) {
-            console.error('[Group] Failed to ensure row doc:', error);
-          }
-        });
-      }
+      ensureRowDoc(row.id)?.catch(() => {
+        // Silently ignore errors - row doc loading failures are handled elsewhere
+      });
     });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [ensureRowDoc, rowOrders]);
+  }, [ensureRowDoc, rowOrders, groupId]);
   const readOnly = useReadOnly();
   const getCards = useCallback(
     (columnId: string) => {

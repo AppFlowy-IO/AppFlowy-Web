@@ -1,4 +1,5 @@
-import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo } from 'react';
+import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
+import { flushSync } from 'react-dom';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -109,19 +110,41 @@ function AppPage() {
   }, [rendered, view]);
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
   const [error, setError] = React.useState<AppError | null>(null);
+
+  // Track load attempts to detect when loading is stuck
+  const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
+  // Track current doc for recovery effect timer callback
+  const docRef = useRef<YDoc | undefined>(undefined);
+  docRef.current = doc;
+
   const loadPageDoc = useCallback(
     async (id: string) => {
+      loadAttemptRef.current = { viewId: id, timestamp: Date.now() };
       setError(null);
-      setDoc(undefined);
+      // Don't clear doc immediately - let the key prop handle transitions
+      // Clearing doc creates a blank window that flushSync from websocket can commit
       try {
-        const doc = await loadView(id, false, true);
+        const loadedDoc = await loadView(id, false, true);
 
-        setDoc(doc);
+        // Use flushSync to ensure the doc state update commits immediately
+        // This prevents react-use-websocket's flushSync from discarding our render
+        flushSync(() => {
+          setDoc(loadedDoc);
+        });
+
+        // Clear the attempt after successful load
+        if (loadAttemptRef.current?.viewId === id) {
+          loadAttemptRef.current = null;
+        }
       } catch (e) {
         const appError = determineErrorType(e);
 
         setError(appError);
         console.error('[AppPage] Error loading view:', formatErrorForLogging(e));
+        // Clear the attempt on error
+        if (loadAttemptRef.current?.viewId === id) {
+          loadAttemptRef.current = null;
+        }
       }
     },
     [loadView]
@@ -149,8 +172,57 @@ function AppPage() {
       return;
     }
 
+    // Skip if we already have the doc for this viewId or if a load is already in progress
+    // This prevents double-loading when `view` dependency changes (e.g., outline updates)
+    if (docRef.current?.object_id === viewId || loadAttemptRef.current?.viewId === viewId) {
+      return;
+    }
+
     void loadPageDoc(viewId);
   }, [loadPageDoc, viewId, layout, toView, view]);
+
+  // Recovery effect: detect when doc doesn't match viewId and re-trigger load
+  // This handles cases where flushSync from websocket interferes with our state update
+  useEffect(() => {
+    if (!viewId || layout === undefined || layout === ViewLayout.AIChat) return;
+    if (isDatabaseContainer(view)) return;
+
+    // Check if doc matches current viewId
+    const docMatchesViewId = doc?.object_id === viewId;
+
+    if (docMatchesViewId) return;
+
+    // Only set recovery timer if there's no active load attempt for this viewId
+    // This prevents multiple timers from being set when effect re-runs due to other dependencies
+    if (loadAttemptRef.current?.viewId === viewId) {
+      // Load already in progress for this viewId, don't set another timer
+      return;
+    }
+
+    // Doc doesn't match and no load in progress - set up a recovery timer
+    const recoveryTimer = setTimeout(() => {
+      // Check if doc now matches (load completed while timer was pending)
+      if (docRef.current?.object_id === viewId) {
+        return;
+      }
+
+      // Double-check the condition after delay
+      if (loadAttemptRef.current?.viewId === viewId) {
+        // Load was attempted but doc still doesn't match
+        const elapsed = Date.now() - loadAttemptRef.current.timestamp;
+
+        if (elapsed > 2000) {
+          // More than 2 seconds since load started - re-trigger
+          void loadPageDoc(viewId);
+        }
+      } else if (!loadAttemptRef.current) {
+        // No load attempt recorded - trigger one
+        void loadPageDoc(viewId);
+      }
+    }, 500);
+
+    return () => clearTimeout(recoveryTimer);
+  }, [viewId, layout, view, doc?.object_id, loadPageDoc]);
 
   useEffect(() => {
     if (layout === ViewLayout.AIChat) {
@@ -211,6 +283,7 @@ function AppPage() {
 
     return docForCurrentView && viewMeta && workspaceId && View ? (
       <View
+        key={viewId}
         requestInstance={requestInstance}
         workspaceId={workspaceId}
         doc={docForCurrentView}
