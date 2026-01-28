@@ -7,6 +7,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
 import { findView, findViewByLayout } from '@/components/_shared/outline/utils';
+import { notification } from '@/proto/messages';
 import { createDeduplicatedNoArgsRequest } from '@/utils/deduplicateRequest';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -19,6 +20,12 @@ export interface RequestAccessError {
   code: number;
   message: string;
 }
+
+type JsonPatchOperation = {
+  op: string;
+  path: string;
+  value?: unknown;
+};
 
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
@@ -156,6 +163,48 @@ export function useWorkspaceData() {
       }
     };
   }, [currentWorkspaceId, eventEmitter, loadOutline]);
+
+  useEffect(() => {
+    const handleFolderOutlineChanged = (payload: notification.IFolderChanged) => {
+      if (!currentWorkspaceId || !payload?.outlineDiffJson) return;
+
+      let patch: JsonPatchOperation[] | null = null;
+      try {
+        patch = JSON.parse(payload.outlineDiffJson) as JsonPatchOperation[];
+      } catch (error) {
+        console.warn('Failed to parse folder outline diff:', error);
+        return;
+      }
+
+      if (!patch || !Array.isArray(patch)) return;
+      const replaceOp = patch.find((op) => op.op === 'replace' && op.path === '/outline');
+      if (!replaceOp || !Array.isArray(replaceOp.value)) return;
+
+      const existingShareWithMe = stableOutlineRef.current.find(
+        (view) => view.extra?.is_hidden_space
+      );
+      const nextOutline = existingShareWithMe
+        ? [...(replaceOp.value as View[]), existingShareWithMe]
+        : (replaceOp.value as View[]);
+
+      stableOutlineRef.current = nextOutline;
+      setOutline(nextOutline);
+
+      if (eventEmitter) {
+        eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, nextOutline || []);
+      }
+    };
+
+    if (eventEmitter) {
+      eventEmitter.on(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
+    }
+
+    return () => {
+      if (eventEmitter) {
+        eventEmitter.off(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
+      }
+    };
+  }, [currentWorkspaceId, eventEmitter, stableOutlineRef]);
 
   // Load favorite views
   const loadFavoriteViews = useCallback(async () => {
