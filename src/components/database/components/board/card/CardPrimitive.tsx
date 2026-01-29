@@ -31,6 +31,7 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
     const fields = useFieldsSelector();
     const meta = useRowMetaSelector(rowId);
     const { selectedCardIds } = useBoardContext();
+
     const selected = useMemo(() => {
       return selectedCardIds.includes(`${columnId}/${rowId}`);
     }, [selectedCardIds, columnId, rowId]);

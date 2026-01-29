@@ -234,6 +234,8 @@ function Database(props: Database2Props) {
         try {
           const rowDoc = await createRowDocFast(rowKey, seed ?? undefined);
 
+          // Bind sync for this row - only visible rows call ensureRowDoc
+          // Non-visible rows rely on blob diff cached data
           registerRowSync(rowKey);
 
           if (!localCachePrimedRef.current) {

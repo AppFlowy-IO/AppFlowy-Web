@@ -1,5 +1,4 @@
-import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
-import { flushSync } from 'react-dom';
+import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -21,6 +20,7 @@ import { useViewOperations } from '@/components/app/hooks/useViewOperations';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 const ViewHelmet = lazy(() => import('@/components/_shared/helmet/ViewHelmet'));
 
@@ -46,7 +46,7 @@ function AppPage() {
     ...handlers
   } = useAppHandlers();
   const { eventEmitter } = handlers;
-  const { getViewReadOnlyStatus } = useViewOperations();
+  const { getViewReadOnlyStatus, bindViewSync } = useViewOperations();
 
   const currentUser = useCurrentUser();
   const service = useService();
@@ -110,6 +110,8 @@ function AppPage() {
   }, [rendered, view]);
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
   const [error, setError] = React.useState<AppError | null>(null);
+  // Track whether sync has been bound for the current doc
+  const [syncBound, setSyncBound] = useState(false);
 
   // Track in-progress loads to prevent duplicate requests and enable recovery.
   const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
@@ -122,47 +124,24 @@ function AppPage() {
     async (id: string) => {
       loadAttemptRef.current = { viewId: id, timestamp: Date.now() };
       setError(null);
+      // Reset sync state when loading new doc
+      setSyncBound(false);
+
       try {
+        // loadView now uses view-loader which:
+        // 1. Opens from IndexedDB cache if available (instant)
+        // 2. Fetches from server only if not cached
+        // 3. Does NOT bind sync - that happens after render
         const loadedDoc = await loadView(id, false, true);
 
-        // DATABASE/DOCUMENT LOADING PROCESS:
-        // ===================================
-        // 1. User navigates to a view (document or database) via URL or sidebar click
-        // 2. This triggers loadPageDoc(viewId) which calls loadView()
-        // 3. loadView() fetches the Y.js document from the server
-        // 4. The YDoc is returned and we need to set it to state via setDoc()
-        //
-        // THE PROBLEM (without flushSync):
-        // ================================
-        // - react-use-websocket library uses flushSync internally for message handling
-        // - When websocket receives sync messages, it calls flushSync to update state
-        // - If we call setDoc() normally (without flushSync), the following can happen:
-        //   a) setDoc() schedules a React state update (batched, async)
-        //   b) Before React processes our update, websocket receives a message
-        //   c) Websocket's flushSync forces React to flush pending updates
-        //   d) This can cause our setDoc() to be processed in an unexpected order
-        //   e) For databases, the Y.js observers in useDatabase() may not trigger
-        //   f) Result: Database shows blank page because component doesn't re-render
-        //
-        // THE SOLUTION (with flushSync):
-        // ==============================
-        // - flushSync forces React to immediately commit our setDoc() update
-        // - This ensures the doc state is set BEFORE any websocket messages arrive
-        // - The component re-renders synchronously with the new doc
-        // - Y.js observers in useDatabase() hook properly observe the database
-        // - Database renders correctly with all rows and columns visible
-        //
-        // RELATED CODE:
-        // =============
-        // - src/application/database-yjs/context.ts: useDatabase() hook needs Y.js
-        //   observers to re-render when database data arrives via websocket
-        // - The observers watch for: dataSection changes, database content changes
-        // - Without these observers + flushSync, the second database created in a
-        //   session will show blank because the component doesn't re-render when
-        //   the Y.js data is populated via websocket sync
-        flushSync(() => {
-          setDoc(loadedDoc);
+        Log.debug('[AppPage] loadPageDoc complete, setting doc state', {
+          viewId: id,
+          docObjectId: loadedDoc.object_id,
         });
+
+        // Set doc state - sync binding happens in separate effect after render
+        // No flushSync needed since WebSocket sync starts AFTER render
+        setDoc(loadedDoc);
 
         // Clear the attempt after successful load
         if (loadAttemptRef.current?.viewId === id) {
@@ -262,8 +241,37 @@ function AppPage() {
     if (layout === ViewLayout.AIChat) {
       setDoc(undefined);
       setError(null);
+      setSyncBound(false);
     }
   }, [layout]);
+
+  // Bind sync AFTER component renders with the doc
+  // This ensures WebSocket sync starts only after UI is ready
+  useEffect(() => {
+    if (!doc || !viewId || syncBound) return;
+
+    // Verify doc matches current viewId
+    if (doc.object_id !== viewId) {
+      Log.debug('[AppPage] bindViewSync skipped - doc viewId mismatch', {
+        docObjectId: doc.object_id,
+        viewId,
+      });
+      return;
+    }
+
+    Log.debug('[AppPage] bindViewSync starting', {
+      viewId,
+      docObjectId: doc.object_id,
+    });
+
+    // Bind sync for the document - starts WebSocket sync
+    const syncContext = bindViewSync(doc);
+
+    if (syncContext) {
+      setSyncBound(true);
+      Log.debug('[AppPage] bindViewSync complete', { viewId });
+    }
+  }, [doc, viewId, syncBound, bindViewSync]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
     if (view) {

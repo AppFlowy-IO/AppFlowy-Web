@@ -28,18 +28,16 @@ export const Group = ({ groupId }: GroupProps) => {
   const { paddingStart, paddingEnd, navigateToRow, ensureRowDoc } = context;
   const rowOrders = useRowOrdersSelector();
 
-  // Eagerly load all row documents so Board cards can render with data.
-  // Row docs contain the cell values needed to display card content.
   useEffect(() => {
     if (!ensureRowDoc || !rowOrders || rowOrders.length === 0) {
       return;
     }
 
     rowOrders.forEach((row) => {
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      ensureRowDoc(row.id)?.catch(() => {});
+      void ensureRowDoc(row.id);
     });
   }, [ensureRowDoc, rowOrders, groupId]);
+
   const readOnly = useReadOnly();
   const getCards = useCallback(
     (columnId: string) => {
