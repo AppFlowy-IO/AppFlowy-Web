@@ -13,10 +13,13 @@ import {
 } from '@/application/database-yjs';
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
+import { openCollabDB } from '@/application/db';
 import { YjsEditor } from '@/application/slate-yjs';
+import { initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
 import {
   BlockType,
   CollabOrigin,
+  Types,
   YDatabaseCell,
   YDatabaseField,
   YDatabaseRow,
@@ -24,6 +27,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { Editor } from '@/components/editor';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -116,29 +120,61 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   );
   const handleCreateDocument = useCallback(
     async (documentId: string) => {
-      if (!createOrphanedView || !documentId) return;
+      if (!documentId) return;
       setLoading(true);
       try {
         setDoc(null);
-        await createOrphanedView({ document_id: documentId });
 
-        await handleOpenDocument(documentId);
+        // Try to create the orphaned view on the server if the function is available
+        // This is optional - the document will sync via WebSocket when Editor binds
+        if (createOrphanedView) {
+          try {
+            await createOrphanedView({ document_id: documentId });
+          } catch (e) {
+            // Server creation failed, but we can still create locally
+            console.warn('[DatabaseRowSubDocument] createOrphanedView failed, creating locally:', e);
+          }
+        }
+
+        // Open the document from IndexedDB (not from server)
+        // This is faster and more reliable for newly created documents
+        const doc = await openCollabDB(documentId);
+
+        // Initialize with empty document structure if needed
+        // Pass true to include initial paragraph - required for Slate editor to render
+        initializeDocumentStructure(doc, true);
+
+        // Store metadata for sync binding (matches loadView behavior)
+        const docWithMeta = doc as YDocWithMeta;
+
+        docWithMeta.object_id = documentId;
+        docWithMeta._collabType = Types.Document;
+        docWithMeta._syncBound = false;
+
+        setDoc(doc);
         // eslint-disable-next-line
       } catch (e: any) {
+        console.error('[DatabaseRowSubDocument] handleCreateDocument failed', e);
         toast.error(e.message);
       } finally {
         setLoading(false);
       }
     },
-    [createOrphanedView, handleOpenDocument]
+    [createOrphanedView]
   );
 
   useEffect(() => {
     if (!documentId) return;
 
     void (async () => {
+      // If checkIfRowDocumentExists is not available, go straight to creating the document
+      if (!checkIfRowDocumentExists) {
+        void handleCreateDocument(documentId);
+        return;
+      }
+
       try {
-        await checkIfRowDocumentExists?.(documentId);
+        await checkIfRowDocumentExists(documentId);
         void handleOpenDocument(documentId);
       } catch (e) {
         void handleCreateDocument(documentId);

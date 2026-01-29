@@ -25,18 +25,69 @@ export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
   const context = useDatabaseContext();
-  const { paddingStart, paddingEnd, navigateToRow, ensureRowDoc } = context;
+  const { paddingStart, paddingEnd, navigateToRow, ensureRowDoc, populateRowDocFromCache, blobPrefetchComplete } =
+    context;
   const rowOrders = useRowOrdersSelector();
 
-  useEffect(() => {
-    if (!ensureRowDoc || !rowOrders || rowOrders.length === 0) {
-      return;
-    }
+  // Store callbacks in refs to avoid triggering effect re-runs (advanced-use-latest pattern)
+  const ensureRowDocRef = useRef(ensureRowDoc);
+  const populateRowDocFromCacheRef = useRef(populateRowDocFromCache);
+  const loadedRowsRef = useRef<Set<string>>(new Set());
 
-    rowOrders.forEach((row) => {
-      void ensureRowDoc(row.id);
-    });
-  }, [ensureRowDoc, rowOrders, groupId]);
+  useEffect(() => {
+    ensureRowDocRef.current = ensureRowDoc;
+    populateRowDocFromCacheRef.current = populateRowDocFromCache;
+  });
+
+  // Reset loaded rows when group changes
+  useEffect(() => {
+    loadedRowsRef.current.clear();
+  }, [groupId]);
+
+  // Eagerly load all row documents so Board cards can render with data.
+  // Try cached data first (fast), then fall back to ensureRowDoc (WebSocket sync).
+  // Uses Promise.all for parallel loading to avoid request waterfalls.
+  useEffect(() => {
+    if (!rowOrders || rowOrders.length === 0) return;
+
+    // Only load rows we haven't loaded yet (avoid re-loading on sort/filter changes)
+    const rowsToLoad = rowOrders.filter((row) => !loadedRowsRef.current.has(row.id));
+
+    if (rowsToLoad.length === 0) return;
+
+    const loadRows = async () => {
+      try {
+        if (blobPrefetchComplete && populateRowDocFromCacheRef.current) {
+          // Load all rows from cache in parallel
+          const results = await Promise.all(
+            rowsToLoad.map((row) => populateRowDocFromCacheRef.current!(row.id))
+          );
+
+          // Mark rows as loaded
+          rowsToLoad.forEach((row) => loadedRowsRef.current.add(row.id));
+
+          // Fall back to ensureRowDoc for any rows not in cache
+          if (ensureRowDocRef.current) {
+            results.forEach((doc, index) => {
+              if (!doc) {
+                ensureRowDocRef.current!(rowsToLoad[index].id)?.catch(() => {});
+              }
+            });
+          }
+        } else if (ensureRowDocRef.current) {
+          // No cache available, use ensureRowDoc directly
+          rowsToLoad.forEach((row) => {
+            ensureRowDocRef.current!(row.id)?.catch(() => {});
+            loadedRowsRef.current.add(row.id);
+          });
+        }
+      } catch {
+        // Silently handle errors - WebSocket sync will provide data as fallback
+      }
+    };
+
+    void loadRows();
+  }, [blobPrefetchComplete, rowOrders]);
 
   const readOnly = useReadOnly();
   const getCards = useCallback(

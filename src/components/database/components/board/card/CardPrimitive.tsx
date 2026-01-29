@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   FieldVisibility,
@@ -64,7 +64,13 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
       [dataCardId, setEditingCardId, setSelectedCardIds]
     );
 
-    const navigateToRow = useDatabaseContext().navigateToRow;
+    const { navigateToRow, bindRowSync } = useDatabaseContext();
+
+    useEffect(() => {
+      if (bindRowSync && rowId) {
+        bindRowSync(rowId);
+      }
+    }, [bindRowSync, rowId]);
 
     const renderCoverImage = useCallback((cover: RowMeta['cover']) => {
       if (!cover) return null;

@@ -106,6 +106,7 @@ function Database(props: Database2Props) {
   const blobPrefetchPromiseRef = useRef<Promise<void> | null>(null);
   const localCachePrimedRef = useRef(false);
   const syncedRowKeysRef = useRef<Set<string>>(new Set());
+  const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
 
   useEffect(() => {
     rowDocMapRef.current = rowDocMap;
@@ -155,6 +156,60 @@ function Database(props: Database2Props) {
     [createRowDoc]
   );
 
+  const bindRowSync = useCallback(
+    (rowId: string) => {
+      if (!createRowDoc || !rowId) return;
+      const databaseId = getDatabaseId();
+      const rowKey = getRowKey(databaseId, rowId);
+
+      registerRowSync(rowKey);
+    },
+    [createRowDoc, getDatabaseId, registerRowSync]
+  );
+
+  const populateRowDocFromCache = useCallback(
+    async (rowId: string): Promise<YDoc | undefined> => {
+      if (!rowId) return undefined;
+      const existing = rowDocMapRef.current[rowId];
+
+      if (existing) return existing;
+
+      const pending = pendingRowDocsRef.current.get(rowId);
+
+      if (pending) return pending;
+
+      const databaseId = getDatabaseId();
+      const rowKey = getRowKey(databaseId, rowId);
+      const seed = takeDatabaseRowDocSeed(rowKey);
+
+      if (!seed) return undefined;
+
+      const promise = (async () => {
+        const rowDoc = await createRowDocFast(rowKey, seed);
+
+        return rowDoc;
+      })();
+
+      pendingRowDocsRef.current.set(rowId, promise);
+
+      try {
+        const rowDoc = await promise;
+
+        if (rowDoc) {
+          setRowDocMap((prev) => {
+            if (prev[rowId]) return prev;
+            return { ...prev, [rowId]: rowDoc };
+          });
+        }
+
+        return rowDoc;
+      } finally {
+        pendingRowDocsRef.current.delete(rowId);
+      }
+    },
+    [getDatabaseId]
+  );
+
   const ensureBlobPrefetch = useCallback(() => {
     const databaseId = getDatabaseId();
 
@@ -170,11 +225,11 @@ function Database(props: Database2Props) {
     const priorityRowIds = getPriorityRowIds();
     const promise = prefetchDatabaseBlobDiff(workspaceId, databaseId, { priorityRowIds })
       .then(() => {
-        // Prefetch complete - data is now cached
+        setBlobPrefetchComplete(true);
       })
       .catch(() => {
-        // Blob prefetch failed - websocket sync will provide data
         prefetchPromisesRef.current.delete(databaseId);
+        setBlobPrefetchComplete(true);
       });
 
     prefetchPromisesRef.current.set(databaseId, promise);
@@ -196,10 +251,18 @@ function Database(props: Database2Props) {
         throw new Error('createRowDoc function is not provided');
       }
 
-      const [rowKeyDatabaseId] = rowKey.split('_rows_');
+      const [rowKeyDatabaseId, rowId] = rowKey.split('_rows_');
       const currentDatabaseId = getDatabaseId();
 
       const rowDoc = await createRowDoc(rowKey);
+
+      // Add the new row doc to rowDocMap so grouping logic can see it immediately
+      if (rowId && rowDoc) {
+        setRowDocMap((prev) => {
+          if (prev[rowId]) return prev;
+          return { ...prev, [rowId]: rowDoc };
+        });
+      }
 
       if (rowKeyDatabaseId && rowKeyDatabaseId === currentDatabaseId && !localCachePrimedRef.current) {
         localCachePrimedRef.current = true;
@@ -281,6 +344,7 @@ function Database(props: Database2Props) {
     localCachePrimedRef.current = false;
     syncedRowKeysRef.current.clear();
     setRowDocMap({});
+    setBlobPrefetchComplete(false);
   }, [doc.guid]);
 
   // Trigger blob prefetch when database opens
@@ -346,20 +410,16 @@ function Database(props: Database2Props) {
             throw new Error('Row document not found');
           }
 
-          // Update all modal state in a single setState call
-          setModalState({
-            rowId,
-            viewId,
-            databaseDoc: viewDoc,
-            rowDocMap: { [rowId]: rowDoc },
-          });
+          // Update URL with row ID parameter - this navigates to the row page
+          onOpenRowPage?.(rowId);
           return;
         } catch (e) {
           console.error(e);
         }
       }
 
-      setModalState((prev) => ({ ...prev, rowId }));
+      // Update URL with row ID parameter - this navigates to the row page
+      onOpenRowPage?.(rowId);
     },
     [createNewRowDoc, loadView, navigateToView, onOpenRowPage, readOnly]
   );
@@ -388,6 +448,9 @@ function Database(props: Database2Props) {
     () => ({
       readOnly,
       ensureRowDoc,
+      populateRowDocFromCache,
+      bindRowSync,
+      blobPrefetchComplete,
       paddingStart: props.paddingStart,
       paddingEnd: props.paddingEnd,
       isDocumentBlock: _isDocumentBlock,
@@ -408,6 +471,9 @@ function Database(props: Database2Props) {
     [
       readOnly,
       ensureRowDoc,
+      populateRowDocFromCache,
+      bindRowSync,
+      blobPrefetchComplete,
       props.paddingStart,
       props.paddingEnd,
       _isDocumentBlock,

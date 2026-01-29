@@ -367,9 +367,10 @@ export function useViewOperations() {
       const collabType = docWithMeta._collabType;
       const viewId = docWithMeta.object_id;
 
-      if (!collabType || !viewId) {
+      // Use explicit undefined check for collabType since Types.Document = 0 is falsy
+      if (collabType === undefined || !viewId) {
         console.warn('[useViewOperations] bindViewSync failed - missing metadata', {
-          hasCollabType: !!collabType,
+          hasCollabType: collabType !== undefined,
           hasViewId: !!viewId,
         });
         return null;

@@ -49,6 +49,9 @@ export interface DatabaseContextState {
   activeViewId: string;
   rowDocMap: Record<RowId, YDoc> | null;
   ensureRowDoc?: (rowId: string) => Promise<YDoc | undefined> | void;
+  populateRowDocFromCache?: (rowId: string) => Promise<YDoc | undefined>;
+  bindRowSync?: (rowId: string) => void;
+  blobPrefetchComplete?: boolean;
   isDatabaseRowPage?: boolean;
   paddingStart?: number;
   paddingEnd?: number;

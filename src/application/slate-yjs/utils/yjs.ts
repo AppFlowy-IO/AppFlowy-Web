@@ -178,9 +178,20 @@ export function appendFirstEmptyParagraph(sharedRoot: YSharedRoot, defaultText: 
   );
 }
 
-export function createEmptyDocument() {
-  const doc = new Y.Doc();
+/**
+ * Initialize a Y.Doc with the minimum document structure needed for AppFlowy.
+ * @param doc - The Y.Doc to initialize
+ * @param includeInitialParagraph - If true, adds a Paragraph block as child of Page.
+ *   This is required for Slate editor to render properly.
+ */
+export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph = false): void {
   const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+
+  // Skip if already initialized
+  if (sharedRoot.has(YjsEditorKey.document)) {
+    return;
+  }
+
   const document = new Y.Map();
   const blocks = new Y.Map() as YBlocks;
   const pageId = nanoid(8);
@@ -188,24 +199,57 @@ export function createEmptyDocument() {
   const childrenMap = new Y.Map() as YChildrenMap;
   const textMap = new Y.Map() as YTextMap;
 
-  const block = new Y.Map();
+  // Create the page block
+  const pageBlock = new Y.Map();
 
-  block.set(YjsEditorKey.block_id, pageId);
-  block.set(YjsEditorKey.block_type, BlockType.Page);
-  block.set(YjsEditorKey.block_children, pageId);
-  block.set(YjsEditorKey.block_external_id, pageId);
-  block.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
-  block.set(YjsEditorKey.block_data, '');
-  blocks.set(pageId, block);
+  pageBlock.set(YjsEditorKey.block_id, pageId);
+  pageBlock.set(YjsEditorKey.block_type, BlockType.Page);
+  pageBlock.set(YjsEditorKey.block_children, pageId);
+  pageBlock.set(YjsEditorKey.block_external_id, pageId);
+  pageBlock.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
+  pageBlock.set(YjsEditorKey.block_data, '');
+  blocks.set(pageId, pageBlock);
 
+  // Set up document structure
   document.set(YjsEditorKey.page_id, pageId);
   document.set(YjsEditorKey.blocks, blocks);
   document.set(YjsEditorKey.meta, meta);
-  childrenMap.set(pageId, new Y.Array());
   meta.set(YjsEditorKey.children_map, childrenMap);
   meta.set(YjsEditorKey.text_map, textMap);
-  sharedRoot.set(YjsEditorKey.document, document);
 
+  // Initialize page children and text
+  const pageChildren = new Y.Array<string>();
+
+  if (includeInitialParagraph) {
+    // Create an empty paragraph block as child of page
+    // The Slate editor requires at least one text block to render properly
+    const paragraphId = nanoid(8);
+    const paragraphBlock = new Y.Map();
+
+    paragraphBlock.set(YjsEditorKey.block_id, paragraphId);
+    paragraphBlock.set(YjsEditorKey.block_type, BlockType.Paragraph);
+    paragraphBlock.set(YjsEditorKey.block_children, paragraphId);
+    paragraphBlock.set(YjsEditorKey.block_external_id, paragraphId);
+    paragraphBlock.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
+    paragraphBlock.set(YjsEditorKey.block_data, '{}');
+    paragraphBlock.set(YjsEditorKey.block_parent, pageId);
+    blocks.set(paragraphId, paragraphBlock);
+
+    pageChildren.push([paragraphId]);
+    childrenMap.set(paragraphId, new Y.Array());
+    textMap.set(paragraphId, new Y.Text());
+  }
+
+  childrenMap.set(pageId, pageChildren);
+  textMap.set(pageId, new Y.Text());
+
+  sharedRoot.set(YjsEditorKey.document, document);
+}
+
+export function createEmptyDocument() {
+  const doc = new Y.Doc();
+
+  initializeDocumentStructure(doc, false);
   return doc;
 }
 
