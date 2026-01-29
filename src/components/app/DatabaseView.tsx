@@ -15,7 +15,11 @@ import { useContainerVisibleViewIds } from '@/components/database/hooks';
 
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
-function DatabaseView(props: ViewComponentProps) {
+type DatabaseViewProps = ViewComponentProps & {
+  bindViewSync?: (doc: ViewComponentProps['doc']) => void;
+};
+
+function DatabaseView(props: DatabaseViewProps) {
   const { viewMeta, uploadFile } = props;
   const [search, setSearch] = useSearchParams();
   const outline = useAppOutline();
@@ -92,12 +96,27 @@ function DatabaseView(props: ViewComponentProps) {
 
   // Ref to track if database is available
   const databaseRef = useRef(database);
+  const pendingUpdateRef = useRef<number | null>(null);
 
   databaseRef.current = database;
 
-  // Simple update function - no debouncing needed since sync is bound after render
+  // Throttle re-renders to avoid render storms during sync
   const triggerUpdate = useCallback(() => {
-    forceUpdate((prev) => prev + 1);
+    if (pendingUpdateRef.current !== null) return;
+
+    pendingUpdateRef.current = window.requestAnimationFrame(() => {
+      pendingUpdateRef.current = null;
+      forceUpdate((prev) => prev + 1);
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pendingUpdateRef.current !== null) {
+        window.cancelAnimationFrame(pendingUpdateRef.current);
+        pendingUpdateRef.current = null;
+      }
+    };
   }, []);
 
   // Observe Y.js data section for changes

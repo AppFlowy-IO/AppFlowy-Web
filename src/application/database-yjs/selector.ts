@@ -829,7 +829,7 @@ export function useRowOrdersSelector() {
   const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
 
   // Background loading of row docs for sorting/filtering
-  const { cachedRowDocs, getRowDocsForConditions } = useBackgroundRowDocLoader(hasConditions);
+  const { cachedRowDocs } = useBackgroundRowDocLoader(hasConditions);
 
   // Merge cached docs with main rowDocMap
   const rowDocsForConditions = useMemo(

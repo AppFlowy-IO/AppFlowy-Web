@@ -59,6 +59,7 @@ export interface DatabaseContextState {
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
+  bindViewSync?: (doc: YDoc) => void;
   createRowDoc?: CreateRowDoc;
   loadViewMeta?: LoadViewMeta;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;

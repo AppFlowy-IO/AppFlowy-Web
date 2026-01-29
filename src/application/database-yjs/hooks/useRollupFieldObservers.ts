@@ -8,6 +8,8 @@ import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { YDatabaseCell, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
+const ROLLUP_OBSERVER_POOL_SIZE = 4;
+
 function getRelationRowIdsFromCell(cell?: YDatabaseCell): string[] {
   if (!cell) return [];
   const data = cell.get(YjsDatabaseKey.data);
@@ -108,7 +110,30 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
       return doc;
     };
 
+    const runWithPool = async (tasks: Array<() => Promise<void>>) => {
+      if (tasks.length === 0) return;
+      let index = 0;
+      const poolSize = Math.min(ROLLUP_OBSERVER_POOL_SIZE, tasks.length);
+
+      await Promise.all(
+        Array.from({ length: poolSize }, async () => {
+          while (!cancelled) {
+            const currentIndex = index;
+
+            if (currentIndex >= tasks.length) {
+              break;
+            }
+
+            index += 1;
+            await tasks[currentIndex]();
+          }
+        })
+      );
+    };
+
     const setup = async () => {
+      const tasks: Array<() => Promise<void>> = [];
+
       for (const rollupFieldId of rollupFieldIds) {
         if (cancelled) return;
         const rollupField = fields.get(rollupFieldId);
@@ -141,20 +166,24 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
           if (relatedRowIds.length === 0) continue;
 
           for (const relatedRowId of relatedRowIds) {
-            if (cancelled) return;
-            const relatedRowDoc = await getRowDoc(getRowKey(docGuid, relatedRowId));
+            tasks.push(async () => {
+              if (cancelled) return;
+              const relatedRowDoc = await getRowDoc(getRowKey(docGuid, relatedRowId));
 
-            if (!relatedRowDoc) continue;
-            const handler = () => {
-              invalidateRollupCell(`${rowId}:${rollupFieldId}`);
-              debouncedChange();
-            };
+              if (!relatedRowDoc) return;
+              const handler = () => {
+                invalidateRollupCell(`${rowId}:${rollupFieldId}`);
+                debouncedChange();
+              };
 
-            relatedRowDoc.getMap(YjsEditorKey.data_section).observeDeep(handler);
-            observers.push({ doc: relatedRowDoc, handler });
+              relatedRowDoc.getMap(YjsEditorKey.data_section).observeDeep(handler);
+              observers.push({ doc: relatedRowDoc, handler });
+            });
           }
         }
       }
+
+      await runWithPool(tasks);
     };
 
     void setup();

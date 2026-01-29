@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useDatabaseContext, useDatabaseView, useRowDocMap } from '@/application/database-yjs/context';
 import { getRowKey } from '@/application/database-yjs/row_meta';
@@ -94,7 +94,14 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
     backgroundCancelledRef.current = false;
 
     const drainQueue = async () => {
-      while (backgroundQueueRef.current.size > 0 && !backgroundCancelledRef.current) {
+      while (!backgroundCancelledRef.current) {
+        if (backgroundQueueRef.current.size === 0) {
+          await new Promise((resolve) => setTimeout(resolve, 0));
+          if (backgroundQueueRef.current.size === 0 || backgroundCancelledRef.current) {
+            break;
+          }
+        }
+
         const batch = Array.from(backgroundQueueRef.current).slice(0, BACKGROUND_BATCH_SIZE);
 
         batch.forEach((rowId) => {
@@ -159,15 +166,18 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
     };
 
     void drainQueue();
-  }, [databaseDoc.guid, hasConditions, rows, view]);
 
-  // Merge cached docs with main rowDocMap
-  const getRowDocsForConditions = useCallback(() => {
-    return { ...cachedRowDocs, ...(rows || {}) };
-  }, [cachedRowDocs, rows]);
+    // Capture ref values for cleanup (react-hooks/exhaustive-deps)
+    const queueRef = backgroundQueueRef.current;
+
+    return () => {
+      backgroundCancelledRef.current = true;
+      queueRef.clear();
+      backgroundLoadingRef.current = false;
+    };
+  }, [databaseDoc.guid, hasConditions, rows, view]);
 
   return {
     cachedRowDocs,
-    getRowDocsForConditions,
   };
 }

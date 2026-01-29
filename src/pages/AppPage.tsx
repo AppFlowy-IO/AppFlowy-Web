@@ -17,6 +17,7 @@ import {
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import { useViewOperations } from '@/components/app/hooks/useViewOperations';
+import type { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
@@ -250,18 +251,25 @@ function AppPage() {
   useEffect(() => {
     if (!doc || !viewId || syncBound) return;
 
+    const docWithMeta = doc as YDocWithMeta;
+
     // Verify doc matches current viewId
-    if (doc.object_id !== viewId) {
+    if (docWithMeta.object_id !== viewId) {
       Log.debug('[AppPage] bindViewSync skipped - doc viewId mismatch', {
-        docObjectId: doc.object_id,
+        docObjectId: docWithMeta.object_id,
         viewId,
       });
       return;
     }
 
+    if (docWithMeta._syncBound) {
+      setSyncBound(true);
+      return;
+    }
+
     Log.debug('[AppPage] bindViewSync starting', {
       viewId,
-      docObjectId: doc.object_id,
+      docObjectId: docWithMeta.object_id,
     });
 
     // Bind sync for the document - starts WebSocket sync
@@ -321,10 +329,40 @@ function AppPage() {
       );
     }
 
-    const View = layout === ViewLayout.Document ? Document : DatabaseView;
+    if (!docForCurrentView || !viewMeta || !workspaceId) {
+      return null;
+    }
 
-    return docForCurrentView && viewMeta && workspaceId && View ? (
-      <View
+    if (layout === ViewLayout.Document) {
+      return (
+        <Document
+          key={viewId}
+          requestInstance={requestInstance}
+          workspaceId={workspaceId}
+          doc={docForCurrentView}
+          readOnly={isReadOnly}
+          viewMeta={viewMeta}
+          navigateToView={toView}
+          loadViewMeta={loadViewMeta}
+          createRowDoc={createRowDoc}
+          appendBreadcrumb={appendBreadcrumb}
+          loadView={loadView}
+          onRendered={onRendered}
+          updatePage={updatePage}
+          addPage={addPage}
+          deletePage={deletePage}
+          openPageModal={openPageModal}
+          loadViews={loadViews}
+          onWordCountChange={setWordCount}
+          uploadFile={handleUploadFile}
+          variant={UIVariant.App}
+          {...handlers}
+        />
+      );
+    }
+
+    return (
+      <DatabaseView
         key={viewId}
         requestInstance={requestInstance}
         workspaceId={workspaceId}
@@ -336,6 +374,7 @@ function AppPage() {
         createRowDoc={createRowDoc}
         appendBreadcrumb={appendBreadcrumb}
         loadView={loadView}
+        bindViewSync={bindViewSync}
         onRendered={onRendered}
         updatePage={updatePage}
         addPage={addPage}
@@ -347,7 +386,7 @@ function AppPage() {
         variant={UIVariant.App}
         {...handlers}
       />
-    ) : null;
+    );
   }, [
     doc,
     layout,
@@ -362,6 +401,7 @@ function AppPage() {
     createRowDoc,
     appendBreadcrumb,
     loadView,
+    bindViewSync,
     onRendered,
     updatePage,
     addPage,

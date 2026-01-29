@@ -70,14 +70,16 @@ export const Group = ({ groupId }: GroupProps) => {
           if (ensureRowDocRef.current) {
             results.forEach((doc, index) => {
               if (!doc) {
-                ensureRowDocRef.current!(rowsToLoad[index].id)?.catch(() => {});
+                // Ignore errors - WebSocket sync provides fallback
+                ensureRowDocRef.current!(rowsToLoad[index].id)?.catch(() => undefined);
               }
             });
           }
         } else if (ensureRowDocRef.current) {
           // No cache available, use ensureRowDoc directly
           rowsToLoad.forEach((row) => {
-            ensureRowDocRef.current!(row.id)?.catch(() => {});
+            // Ignore errors - WebSocket sync provides fallback
+            ensureRowDocRef.current!(row.id)?.catch(() => undefined);
             loadedRowsRef.current.add(row.id);
           });
         }

@@ -36,6 +36,7 @@ export interface Database2Props {
   readOnly?: boolean;
   createRowDoc?: CreateRowDoc;
   loadView?: LoadView;
+  bindViewSync?: (doc: YDoc) => void;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   /**
@@ -91,6 +92,7 @@ function Database(props: Database2Props) {
     appendBreadcrumb,
     readOnly = true,
     loadView,
+    bindViewSync,
     navigateToView,
     modalRowId,
     isDocumentBlock: _isDocumentBlock,
@@ -456,6 +458,7 @@ function Database(props: Database2Props) {
       isDocumentBlock: _isDocumentBlock,
       navigateToRow: handleOpenRow,
       loadView,
+      bindViewSync,
       createRowDoc: createNewRowDoc,
       loadViewMeta: props.loadViewMeta,
       navigateToView,
@@ -479,6 +482,7 @@ function Database(props: Database2Props) {
       _isDocumentBlock,
       handleOpenRow,
       loadView,
+      bindViewSync,
       createNewRowDoc,
       props.loadViewMeta,
       navigateToView,

@@ -40,7 +40,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const database = useDatabase();
   const row = useRowData(rowId) as YDatabaseRow | undefined;
   const checkIfRowDocumentExists = context.checkIfRowDocumentExists;
-  const { createOrphanedView, loadView } = context;
+  const { createOrphanedView, loadView, bindViewSync } = context;
   const currentUser = useCurrentUser();
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
   const editorRef = useRef<YjsEditor | null>(null);
@@ -181,6 +181,18 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       }
     })();
   }, [handleOpenDocument, documentId, handleCreateDocument, checkIfRowDocumentExists]);
+
+  useEffect(() => {
+    if (loading || !doc || !documentId || !bindViewSync) return;
+
+    const docWithMeta = doc as YDocWithMeta;
+
+    if (docWithMeta.object_id && docWithMeta.object_id !== documentId) {
+      return;
+    }
+
+    bindViewSync(doc);
+  }, [loading, doc, documentId, bindViewSync]);
 
   const getMoreAIContext = useCallback(() => {
     return JSON.stringify(properties);

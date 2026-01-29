@@ -45,7 +45,9 @@ export function useViewOperations() {
   // Ref for stable access to awarenessMap in callbacks (prevents bindViewSync recreation)
   const awarenessMapRef = useRef<Record<string, Awareness>>({});
 
-  awarenessMapRef.current = awarenessMap;
+  useEffect(() => {
+    awarenessMapRef.current = { ...awarenessMapRef.current, ...awarenessMap };
+  }, [awarenessMap]);
   const workspaceDatabaseDocMapRef = useRef<Map<string, YDoc>>(new Map());
   const createdRowKeys = useRef<string[]>([]);
   const databaseIdViewIdMapRef = useRef<Map<DatabaseId, ViewId>>(new Map());
@@ -325,13 +327,18 @@ export function useViewOperations() {
 
         // For documents with awareness, create and store awareness
         if (collabType === Types.Document && loadAwareness) {
-          setAwarenessMap((prev) => {
-            if (prev[id]) {
-              return prev;
-            }
+          if (!awarenessMapRef.current[id]) {
+            const awareness = new Awareness(doc);
 
-            return { ...prev, [id]: new Awareness(doc) };
-          });
+            awarenessMapRef.current = { ...awarenessMapRef.current, [id]: awareness };
+            setAwarenessMap((prev) => {
+              if (prev[id]) {
+                return prev;
+              }
+
+              return { ...prev, [id]: awareness };
+            });
+          }
         }
 
         return doc;
@@ -377,8 +384,7 @@ export function useViewOperations() {
       }
 
       // Get awareness for documents if available (use ref for stable callback)
-      // Type assertion needed because TypeScript narrows incorrectly after the null check
-      const awareness = (collabType as Types) === Types.Document ? awarenessMapRef.current[viewId] : undefined;
+      const awareness = collabType === Types.Document ? awarenessMapRef.current[viewId] : undefined;
 
       Log.debug('[useViewOperations] bindViewSync starting', {
         viewId,
