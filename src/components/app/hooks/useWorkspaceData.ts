@@ -25,22 +25,31 @@ export interface RequestAccessError {
 
 type JsonPatchOperation = Operation;
 
-const OUTLINE_VISIBLE_FIELDS = new Set([
-  '/name',
-  '/icon',
-  '/extra',
-  '/is_favorite',
-  '/is_locked',
-  '/is_private',
-  '/is_published',
-  '/layout',
-  '/children',
-  '/view_id',
-  '/parent_view_id',
-  '/prev_view_id',
-  '/created_at',
-  '/created_by',
-]);
+type FolderRid = {
+  timestamp: number;
+  seqNo: number;
+};
+
+function parseFolderRid(value?: string | null): FolderRid | null {
+  if (!value) return null;
+  const [timestampRaw, seqRaw] = value.split('-');
+  const timestamp = Number(timestampRaw);
+  const seqNo = Number(seqRaw);
+
+  if (!Number.isFinite(timestamp) || !Number.isFinite(seqNo)) {
+    return null;
+  }
+
+  return { timestamp, seqNo };
+}
+
+function compareFolderRid(a: FolderRid, b: FolderRid): number {
+  if (a.timestamp !== b.timestamp) {
+    return a.timestamp - b.timestamp;
+  }
+
+  return a.seqNo - b.seqNo;
+}
 
 const OUTLINE_NON_VISUAL_FIELDS = new Set(['/last_edited_time', '/last_edited_by']);
 
@@ -49,11 +58,7 @@ function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
     if (!op.path?.startsWith('/outline')) return false;
     const path = op.path;
 
-    if (Array.from(OUTLINE_NON_VISUAL_FIELDS).some((suffix) => path.endsWith(suffix))) {
-      return true;
-    }
-
-    return !Array.from(OUTLINE_VISIBLE_FIELDS).some((suffix) => path.endsWith(suffix));
+    return Array.from(OUTLINE_NON_VISUAL_FIELDS).some((suffix) => path.endsWith(suffix));
   });
 }
 
@@ -65,6 +70,7 @@ export function useWorkspaceData() {
 
   const [outline, setOutline] = useState<View[]>();
   const stableOutlineRef = useRef<View[]>([]);
+  const lastFolderRidRef = useRef<FolderRid | null>(null);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
@@ -75,6 +81,15 @@ export function useWorkspaceData() {
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
 
   // Load application outline
+  const updateLastFolderRid = useCallback((next: FolderRid | null) => {
+    if (!next) return;
+    const current = lastFolderRidRef.current;
+
+    if (!current || compareFolderRid(next, current) > 0) {
+      lastFolderRidRef.current = next;
+    }
+  }, []);
+
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
       if (!service) return;
@@ -93,7 +108,11 @@ export function useWorkspaceData() {
         }
 
         // Append shareWithMe data as hidden space if available
-        let outlineWithShareWithMe = res;
+        const nextFolderRid = parseFolderRid(res.folderRid);
+
+        updateLastFolderRid(nextFolderRid);
+
+        let outlineWithShareWithMe = res.outline;
 
         if (shareWithMeResult && shareWithMeResult.children && shareWithMeResult.children.length > 0) {
           // Create a hidden space for shareWithMe
@@ -106,7 +125,7 @@ export function useWorkspaceData() {
             },
           };
 
-          outlineWithShareWithMe = [...res, shareWithMeSpace];
+          outlineWithShareWithMe = [...res.outline, shareWithMeSpace];
         }
 
         stableOutlineRef.current = outlineWithShareWithMe;
@@ -173,7 +192,7 @@ export function useWorkspaceData() {
         }
       }
     },
-    [navigate, service, eventEmitter, userWorkspaceInfo?.userId]
+    [navigate, service, eventEmitter, updateLastFolderRid, userWorkspaceInfo?.userId]
   );
 
   useEffect(() => {
@@ -220,7 +239,20 @@ export function useWorkspaceData() {
         void loadOutline(currentWorkspaceId, false);
         return;
       }
+
+      const patchRid = parseFolderRid(payload.folderRid);
+      const currentRid = lastFolderRidRef.current;
+
+      if (patchRid && currentRid && compareFolderRid(patchRid, currentRid) <= 0) {
+        Log.debug('[FolderOutlineChanged] skipped stale patch', {
+          patchRid: payload.folderRid,
+          lastRid: `${currentRid.timestamp}-${currentRid.seqNo}`,
+        });
+        return;
+      }
+
       if (isOnlyNonVisualOutlineChange(patch)) {
+        updateLastFolderRid(patchRid);
         return;
       }
 
@@ -266,6 +298,7 @@ export function useWorkspaceData() {
 
       stableOutlineRef.current = nextOutline;
       setOutline(nextOutline);
+      updateLastFolderRid(patchRid);
 
       if (eventEmitter) {
         eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, nextOutline || []);
@@ -281,7 +314,7 @@ export function useWorkspaceData() {
         eventEmitter.off(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
       }
     };
-  }, [currentWorkspaceId, eventEmitter, loadOutline, stableOutlineRef]);
+  }, [currentWorkspaceId, eventEmitter, loadOutline, stableOutlineRef, updateLastFolderRid]);
 
   // Load favorite views
   const loadFavoriteViews = useCallback(async () => {

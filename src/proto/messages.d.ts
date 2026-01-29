@@ -2133,6 +2133,9 @@ export namespace notification {
 
         /** FolderChanged outlineDiffJson */
         outlineDiffJson?: (string|null);
+
+        /** FolderChanged folderRid */
+        folderRid?: (string|null);
     }
 
     /** Represents a FolderChanged. */
@@ -2146,6 +2149,12 @@ export namespace notification {
 
         /** FolderChanged outlineDiffJson. */
         public outlineDiffJson: string;
+
+        /** FolderChanged folderRid. */
+        public folderRid?: (string|null);
+
+        /** FolderChanged _folderRid. */
+        public _folderRid?: "folderRid";
 
         /**
          * Creates a new FolderChanged instance using the specified properties.

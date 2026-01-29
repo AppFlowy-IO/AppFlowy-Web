@@ -5327,6 +5327,7 @@ export const notification = $root.notification = (() => {
          * @memberof notification
          * @interface IFolderChanged
          * @property {string|null} [outlineDiffJson] FolderChanged outlineDiffJson
+         * @property {string|null} [folderRid] FolderChanged folderRid
          */
 
         /**
@@ -5351,6 +5352,28 @@ export const notification = $root.notification = (() => {
          * @instance
          */
         FolderChanged.prototype.outlineDiffJson = "";
+
+        /**
+         * FolderChanged folderRid.
+         * @member {string|null|undefined} folderRid
+         * @memberof notification.FolderChanged
+         * @instance
+         */
+        FolderChanged.prototype.folderRid = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * FolderChanged _folderRid.
+         * @member {"folderRid"|undefined} _folderRid
+         * @memberof notification.FolderChanged
+         * @instance
+         */
+        Object.defineProperty(FolderChanged.prototype, "_folderRid", {
+            get: $util.oneOfGetter($oneOfFields = ["folderRid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
 
         /**
          * Creates a new FolderChanged instance using the specified properties.
@@ -5378,6 +5401,8 @@ export const notification = $root.notification = (() => {
                 writer = $Writer.create();
             if (message.outlineDiffJson != null && Object.hasOwnProperty.call(message, "outlineDiffJson"))
                 writer.uint32(/* id 1, wireType 2 =*/10).string(message.outlineDiffJson);
+            if (message.folderRid != null && Object.hasOwnProperty.call(message, "folderRid"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.folderRid);
             return writer;
         };
 
@@ -5418,6 +5443,10 @@ export const notification = $root.notification = (() => {
                         message.outlineDiffJson = reader.string();
                         break;
                     }
+                case 2: {
+                        message.folderRid = reader.string();
+                        break;
+                    }
                 default:
                     reader.skipType(tag & 7);
                     break;
@@ -5453,9 +5482,15 @@ export const notification = $root.notification = (() => {
         FolderChanged.verify = function verify(message) {
             if (typeof message !== "object" || message === null)
                 return "object expected";
+            let properties = {};
             if (message.outlineDiffJson != null && message.hasOwnProperty("outlineDiffJson"))
                 if (!$util.isString(message.outlineDiffJson))
                     return "outlineDiffJson: string expected";
+            if (message.folderRid != null && message.hasOwnProperty("folderRid")) {
+                properties._folderRid = 1;
+                if (!$util.isString(message.folderRid))
+                    return "folderRid: string expected";
+            }
             return null;
         };
 
@@ -5473,6 +5508,8 @@ export const notification = $root.notification = (() => {
             let message = new $root.notification.FolderChanged();
             if (object.outlineDiffJson != null)
                 message.outlineDiffJson = String(object.outlineDiffJson);
+            if (object.folderRid != null)
+                message.folderRid = String(object.folderRid);
             return message;
         };
 
@@ -5493,6 +5530,11 @@ export const notification = $root.notification = (() => {
                 object.outlineDiffJson = "";
             if (message.outlineDiffJson != null && message.hasOwnProperty("outlineDiffJson"))
                 object.outlineDiffJson = message.outlineDiffJson;
+            if (message.folderRid != null && message.hasOwnProperty("folderRid")) {
+                object.folderRid = message.folderRid;
+                if (options.oneofs)
+                    object._folderRid = "folderRid";
+            }
             return object;
         };
 

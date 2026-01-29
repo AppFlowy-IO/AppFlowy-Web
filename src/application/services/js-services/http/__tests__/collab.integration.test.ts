@@ -52,7 +52,7 @@ describe('HTTP API - Collaboration Operations', () => {
     describe('Collab Data Operations', () => {
         it('should get page collab', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 const result = await APIService.getPageCollab(testWorkspaceId, outline[0].view_id);
 
@@ -63,7 +63,7 @@ describe('HTTP API - Collaboration Operations', () => {
 
         it('should check if collab exists', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 const result = await APIService.checkIfCollabExists(testWorkspaceId, outline[0].view_id);
 
@@ -73,7 +73,7 @@ describe('HTTP API - Collaboration Operations', () => {
 
         it('should update collab', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     const result = await APIService.updateCollab(
@@ -95,7 +95,7 @@ describe('HTTP API - Collaboration Operations', () => {
 
         it('should get collab', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     const result = await APIService.getCollab(testWorkspaceId, outline[0].view_id, 0);

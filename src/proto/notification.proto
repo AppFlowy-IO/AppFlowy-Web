@@ -81,4 +81,5 @@ message WorkspaceMemberProfileChanged {
 
 message FolderChanged {
     string outline_diff_json = 1;
+    optional string folder_rid = 2;
 }

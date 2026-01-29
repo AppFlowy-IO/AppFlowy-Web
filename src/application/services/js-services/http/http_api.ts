@@ -8,7 +8,11 @@ import { ERROR_CODE } from '@/application/constants';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
 import { parseGoTrueErrorFromUrl } from '@/application/services/js-services/http/gotrue-error';
 import { blobToBytes } from '@/application/services/js-services/http/utils';
-import { AFCloudConfig, WorkspaceMemberProfileUpdate } from '@/application/services/services.type';
+import {
+  AFCloudConfig,
+  AppOutlineResponse,
+  WorkspaceMemberProfileUpdate,
+} from '@/application/services/services.type';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
 import {
   Template,
@@ -908,12 +912,15 @@ export async function getAppRecent(workspaceId: string) {
   ).then((data) => data.views);
 }
 
-export async function getAppOutline(workspaceId: string) {
+export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
   const url = `/api/workspace/${workspaceId}/folder?depth=10`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)
-  ).then((data) => data.children);
+  ).then((data) => ({
+    outline: Array.isArray(data.children) ? data.children : [],
+    folderRid: data.folder_rid,
+  }));
 }
 
 export async function getView(workspaceId: string, viewId: string, depth: number = 1) {

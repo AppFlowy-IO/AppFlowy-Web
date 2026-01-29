@@ -52,7 +52,7 @@ describe('HTTP API - File Upload & Import Operations', () => {
     describe('File Upload Operations', () => {
         it('should handle file upload error gracefully', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 // Create a mock file
                 const file = new File(['test content'], 'test.txt', { type: 'text/plain' });
