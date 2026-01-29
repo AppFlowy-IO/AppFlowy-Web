@@ -9,6 +9,7 @@ import { VideoBlockData, VideoType } from '@/application/types';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 
 import EmbedLink from 'src/components/_shared/image-upload/EmbedLink';
+import { isValidVideoUrl } from '@/utils/video-url';
 
 function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
   const editor = useSlateStatic() as YjsEditor;
@@ -47,6 +48,7 @@ function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
               onDone={handleInsertEmbedLink}
               defaultLink={(entry?.[0].data as VideoBlockData).url}
               placeholder={t('embedVideoLinkPlaceholder')}
+              validator={isValidVideoUrl}
             />
             <div className={'w-full text-center text-sm text-text-secondary'}>{t('videoSupported')}</div>
           </div>
