@@ -786,6 +786,10 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.auto_fill): boolean;
 
   get(key: YjsDatabaseKey.language): bigint;
+
+  // Person
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  get(key: YjsDatabaseKey.is_single_select | YjsDatabaseKey.disable_notification): boolean;
 }
 
 export enum Types {

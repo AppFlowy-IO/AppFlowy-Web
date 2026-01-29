@@ -638,6 +638,26 @@ export const SingleSelectSelectors = {
 };
 
 /**
+ * Person Column selectors
+ */
+export const PersonSelectors = {
+  // Person cell by row and field ID
+  personCell: (rowId: string, fieldId: string) => cy.get(byTestId(`person-cell-${rowId}-${fieldId}`)),
+
+  // All person cells
+  allPersonCells: () => cy.get('[data-testid^="person-cell-"]'),
+
+  // Person cell menu popover
+  personCellMenu: () => cy.get(byTestId('person-cell-menu')),
+
+  // Notify assignee toggle row
+  notifyAssigneeToggle: () => cy.get(byTestId('person-cell-menu')).find('[role="switch"]'),
+
+  // Person option in dropdown
+  personOption: (personId: string) => cy.get(byTestId(`person-option-${personId}`)),
+};
+
+/**
  * Grid Field/Column Header selectors
  */
 export const GridFieldSelectors = {

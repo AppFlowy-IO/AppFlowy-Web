@@ -65,6 +65,7 @@ export function PersonCell({
   return (
     <div
       style={style}
+      data-testid={`person-cell-${rowId}-${fieldId}`}
       className={cn(
         'select-option-cell flex w-full items-center gap-1',
         isEmpty && placeholder ? 'text-text-tertiary' : '',

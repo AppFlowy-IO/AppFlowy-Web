@@ -4,8 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { useCellSelector, useDatabaseViewId, useFieldSelector, usePrimaryFieldId } from '@/application/database-yjs';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
-import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { ReactComponent as NotificationIcon } from '@/assets/icons/mention_send_notification.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useService } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -41,12 +41,13 @@ function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }:
   const [notifyAssignee, setNotifyAssignee] = useState(true);
 
   // Get the row title from primary field for notifications
-  const rowTitle = cellSelectorResult?.cell?.data || '';
+  const rowTitle = (cellSelectorResult?.data as string) || '';
 
   // Get is_single_select and disable_notification from type option
   const { isSingleSelect, disableNotification } = useMemo(() => {
     if (!field) return { isSingleSelect: false, disableNotification: false };
     const typeOption = field.get(YjsDatabaseKey.type_option)?.get(String(field.get(YjsDatabaseKey.type)));
+
     return {
       isSingleSelect: typeOption?.get(YjsDatabaseKey.is_single_select) ?? false,
       disableNotification: typeOption?.get(YjsDatabaseKey.disable_notification) ?? false,
@@ -64,9 +65,11 @@ function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }:
 
       if (isSelected) {
         const newSelectedIds = selectedUserIds.filter((id) => id !== personId);
+
         onUpdateCell(JSON.stringify(newSelectedIds));
       } else {
         const newSelectedIds = isSingleSelect ? [personId] : [...selectedUserIds, personId];
+
         onUpdateCell(JSON.stringify(newSelectedIds));
 
         // Send notification if notifyAssignee is true
@@ -146,6 +149,7 @@ function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }:
           ) : (
             mentionableUsers.map((user) => {
               const isSelected = selectedUserIds.includes(user.person_id);
+
               return (
                 <div
                   key={user.person_id}

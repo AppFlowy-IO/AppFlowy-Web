@@ -21,6 +21,7 @@ function isCacheValid(entry: CacheEntry | undefined): entry is CacheEntry {
 function getCachedUsers(workspaceId: string | undefined): MentionablePerson[] {
   if (!workspaceId) return [];
   const cached = cache.get(workspaceId);
+
   return isCacheValid(cached) ? cached.users : [];
 }
 
@@ -30,6 +31,7 @@ export function useMentionableUsers() {
 
   // Track current workspaceId for race condition prevention
   const workspaceIdRef = useRef(workspaceId);
+
   workspaceIdRef.current = workspaceId;
 
   const [users, setUsers] = useState<MentionablePerson[]>(() => getCachedUsers(workspaceId));
@@ -45,6 +47,7 @@ export function useMentionableUsers() {
 
     // Check cache first
     const cached = cache.get(workspaceId);
+
     if (isCacheValid(cached)) {
       setUsers(cached.users);
       return;
@@ -53,6 +56,7 @@ export function useMentionableUsers() {
     setLoading(true);
     try {
       const fetchedUsers = await service.getMentionableUsers(workspaceId);
+
       // Only update state if workspaceId hasn't changed during fetch
       if (workspaceIdRef.current === workspaceId) {
         cache.set(workspaceId, {
