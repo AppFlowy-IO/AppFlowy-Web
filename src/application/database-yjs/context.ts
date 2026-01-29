@@ -28,6 +28,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -59,7 +60,7 @@ export interface DatabaseContextState {
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => void;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
   createRowDoc?: CreateRowDoc;
   loadViewMeta?: LoadViewMeta;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;

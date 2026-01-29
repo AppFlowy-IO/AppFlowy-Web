@@ -21,6 +21,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
@@ -36,7 +37,7 @@ export interface Database2Props {
   readOnly?: boolean;
   createRowDoc?: CreateRowDoc;
   loadView?: LoadView;
-  bindViewSync?: (doc: YDoc) => void;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   /**

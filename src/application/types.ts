@@ -1,6 +1,7 @@
 import { AxiosInstance } from 'axios';
 import * as Y from 'yjs';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { PromptDatabaseConfiguration } from '@/components/chat';
 
 export type BlockId = string;
@@ -1229,6 +1230,7 @@ export interface ViewComponentProps {
   loadViewMeta?: LoadViewMeta;
   createRowDoc?: CreateRowDoc;
   loadView?: LoadView;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;

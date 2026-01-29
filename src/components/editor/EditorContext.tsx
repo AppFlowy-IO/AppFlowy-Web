@@ -23,7 +23,9 @@ import {
   Subscription,
   MentionablePerson,
   DatabaseRelations,
+  YDoc,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 
 export interface EditorLayoutStyle {
   fontLayout: FontLayout;
@@ -54,6 +56,7 @@ export interface EditorContextState {
   loadViewMeta?: LoadViewMeta;
   loadView?: LoadView;
   createRowDoc?: CreateRowDoc;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;
   jumpBlockId?: string;
   onJumpedBlockId?: () => void;

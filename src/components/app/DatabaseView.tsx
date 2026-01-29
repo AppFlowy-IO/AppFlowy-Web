@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
@@ -16,7 +17,7 @@ import { useContainerVisibleViewIds } from '@/components/database/hooks';
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
 type DatabaseViewProps = ViewComponentProps & {
-  bindViewSync?: (doc: ViewComponentProps['doc']) => void;
+  bindViewSync?: (doc: ViewComponentProps['doc']) => SyncContext | null;
 };
 
 function DatabaseView(props: DatabaseViewProps) {

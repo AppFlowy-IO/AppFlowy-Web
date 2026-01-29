@@ -44,10 +44,11 @@ function AppPage() {
     loadViews,
     setWordCount,
     uploadFile,
+    bindViewSync,
     ...handlers
   } = useAppHandlers();
   const { eventEmitter } = handlers;
-  const { getViewReadOnlyStatus, bindViewSync } = useViewOperations();
+  const { getViewReadOnlyStatus } = useViewOperations();
 
   const currentUser = useCurrentUser();
   const service = useService();
@@ -249,7 +250,7 @@ function AppPage() {
   // Bind sync AFTER component renders with the doc
   // This ensures WebSocket sync starts only after UI is ready
   useEffect(() => {
-    if (!doc || !viewId || syncBound) return;
+    if (!doc || !viewId || syncBound || !bindViewSync) return;
 
     const docWithMeta = doc as YDocWithMeta;
 
@@ -347,6 +348,7 @@ function AppPage() {
           createRowDoc={createRowDoc}
           appendBreadcrumb={appendBreadcrumb}
           loadView={loadView}
+          bindViewSync={bindViewSync}
           onRendered={onRendered}
           updatePage={updatePage}
           addPage={addPage}

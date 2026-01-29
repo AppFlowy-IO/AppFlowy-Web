@@ -26,6 +26,7 @@ export const DatabaseBlock = memo(
     const navigateToView = context?.navigateToView;
     const loadView = context?.loadView;
     const createRowDoc = context?.createRowDoc;
+    const bindViewSync = context?.bindViewSync;
 
     const [hasDatabase, setHasDatabase] = useState(false);
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -37,6 +38,7 @@ export const DatabaseBlock = memo(
     const { doc, notFound, setNotFound } = useDocumentLoader({
       viewId,
       loadView,
+      bindViewSync,
     });
 
     // 2. Visible view IDs from block data

@@ -28,7 +28,9 @@ import {
   UserWorkspaceInfo,
   View,
   ViewIconType,
+  YDoc,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import {
@@ -47,6 +49,7 @@ export interface AppContextType {
   loadViewMeta: LoadViewMeta;
   createRowDoc?: CreateRowDoc;
   loadView: LoadView;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
   outline?: View[];
   viewId?: string;
   wordCount?: Record<string, TextCount>;
@@ -279,6 +282,7 @@ export function useAppHandlers() {
     loadViewMeta: context.loadViewMeta,
     createRowDoc: context.createRowDoc,
     loadView: context.loadView,
+    bindViewSync: context.bindViewSync,
     appendBreadcrumb: context.appendBreadcrumb,
     onChangeWorkspace: context.onChangeWorkspace,
     onRendered: context.onRendered,

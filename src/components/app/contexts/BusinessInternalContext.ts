@@ -23,7 +23,9 @@ import {
   Subscription,
   MentionablePerson,
   UIVariant,
+  YDoc,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 
 // Internal context for business layer
 // This context is only used within the app provider layers
@@ -34,6 +36,7 @@ export interface BusinessInternalContextType {
   loadViewMeta: LoadViewMeta;
   loadView: LoadView;
   createRowDoc?: CreateRowDoc;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
 
   // Outline and hierarchy
   outline?: View[];

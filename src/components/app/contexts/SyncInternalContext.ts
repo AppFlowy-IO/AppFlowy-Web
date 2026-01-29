@@ -4,6 +4,7 @@ import { createContext, useContext } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { YDoc, Types } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 import { UpdateCollabInfo } from '@/components/ws/useSync';
@@ -17,7 +18,7 @@ export interface SyncInternalContextType {
     doc: YDoc;
     collabType: Types;
     awareness?: Awareness;
-  }) => { doc: YDoc };
+  }) => SyncContext;
   eventEmitter: EventEmitter;
   awarenessMap: Record<string, Awareness>;
   lastUpdatedCollab: UpdateCollabInfo | null;
