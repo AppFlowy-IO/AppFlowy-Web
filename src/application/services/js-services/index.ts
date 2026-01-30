@@ -2,6 +2,7 @@ import * as random from 'lib0/random';
 import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
 
+import { CollabVersionRecord } from '@/application/collab-version.type';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { openCollabDB } from '@/application/db';
 import {
@@ -191,7 +192,7 @@ export class AFClientService implements AFService {
   }
 
   async getPublishRowDocument(viewId: string) {
-    const doc = await openCollabDB(viewId);
+    const { doc } = await openCollabDB(viewId);
 
     if (hasCollabCache(doc)) {
       return doc;
@@ -529,7 +530,7 @@ export class AFClientService implements AFService {
 
     const isLoaded = this.viewLoaded.has(name);
 
-    const { doc } = await getPageDoc(
+    const { doc, version } = await getPageDoc(
       async () => {
         try {
           return await fetchPageCollab(workspaceId, viewId);
@@ -554,7 +555,7 @@ export class AFClientService implements AFService {
       this.viewLoaded.add(name);
     }
 
-    return doc;
+    return { doc, version };
   }
 
   async getInvitation(invitationId: string) {
@@ -803,5 +804,21 @@ export class AFClientService implements AFService {
 
   async getShareWithMe(workspaceId: string) {
     return APIService.getShareWithMe(workspaceId);
+  }
+
+  async getCollabHistory(workspaceId: string, viewId: string, since?: Date): Promise<CollabVersionRecord[]> {
+    return APIService.getCollabVersions(workspaceId, viewId, since);
+  }
+
+  async createCollabVersion(workspaceId: string, viewId: string, name: string, snapshot: Uint8Array) {
+    return APIService.createCollabVersion(workspaceId, viewId, name, snapshot);
+  }
+
+  async deleteCollabVersion(workspaceId: string, viewId: string, versionId: string) {
+    return APIService.deleteCollabVersion(workspaceId, viewId, versionId);
+  }
+
+  async revertCollabVersion(workspaceId: string, viewId: string, collabType: Types, versionId: string) {
+    return APIService.revertCollabVersion(workspaceId, viewId, collabType, versionId);
   }
 }
