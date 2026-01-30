@@ -18,7 +18,7 @@ import {
 
 export const ROLLUP_SCHEMA_VERSION = 2;
 
-type RowDocLoader = (rowKey: string) => Promise<YDoc>;
+type RowLoader = (rowKey: string) => Promise<YDoc>;
 
 const ROLLUP_OPTION_KEYS = new Set([
   'relation_field_id',
@@ -134,7 +134,7 @@ async function migrateRowCells(
 export async function migrateDatabaseFieldTypes(
   doc: YDoc,
   options?: {
-    loadRowDoc?: RowDocLoader;
+    loadRow?: RowLoader;
     rowIds?: RowId[];
     commitVersion?: boolean;
   }
@@ -162,12 +162,12 @@ export async function migrateDatabaseFieldTypes(
   });
 
   const rowIds = options?.rowIds ?? collectRowIds(database);
-  const loadRowDoc = options?.loadRowDoc;
+  const loadRow = options?.loadRow;
 
-  if (loadRowDoc && rowIds.length > 0) {
+  if (loadRow && rowIds.length > 0) {
     for (const rowId of rowIds) {
       const rowKey = getRowKey(doc.guid, rowId);
-      const rowDoc = await loadRowDoc(rowKey);
+      const rowDoc = await loadRow(rowKey);
 
       await migrateRowCells(rowDoc, fieldTypeById);
     }

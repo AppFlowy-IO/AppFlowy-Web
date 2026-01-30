@@ -5,8 +5,8 @@ import * as Y from 'yjs';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { openCollabDB } from '@/application/db';
 import {
-  createRowDoc,
-  deleteRowDoc,
+  createRow,
+  deleteRow,
   deleteView,
   getPageDoc,
   getPublishView,
@@ -200,12 +200,12 @@ export class AFClientService implements AFService {
     return Promise.reject(new Error('Document not found'));
   }
 
-  async createRowDoc(rowKey: string) {
-    return createRowDoc(rowKey);
+  async createRow(rowKey: string) {
+    return createRow(rowKey);
   }
 
-  deleteRowDoc(rowKey: string) {
-    return deleteRowDoc(rowKey);
+  deleteRow(rowKey: string) {
+    return deleteRow(rowKey);
   }
 
   async checkIfCollabExists(workspaceId: string, objectId: string) {

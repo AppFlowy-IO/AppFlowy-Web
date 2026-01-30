@@ -34,7 +34,7 @@ function CollabView({ doc }: CollabViewProps) {
 
   const navigateToView = usePublishContext()?.toView;
   const loadViewMeta = usePublishContext()?.loadViewMeta;
-  const createRowDoc = usePublishContext()?.createRowDoc;
+  const createRow = usePublishContext()?.createRow;
   const loadView = usePublishContext()?.loadView;
   const isTemplateThumb = usePublishContext()?.isTemplateThumb;
   const appendBreadcrumb = usePublishContext()?.appendBreadcrumb;
@@ -90,7 +90,7 @@ function CollabView({ doc }: CollabViewProps) {
           doc={doc}
           readOnly={true}
           loadViewMeta={loadViewMeta}
-          createRowDoc={createRowDoc}
+          createRow={createRow}
           navigateToView={navigateToView}
           loadView={loadView}
           isTemplateThumb={isTemplateThumb}

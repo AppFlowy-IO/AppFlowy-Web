@@ -6,7 +6,7 @@ import {
   AppendBreadcrumb,
   LoadView,
   LoadViewMeta,
-  CreateRowDoc,
+  CreateRow,
   CreatePagePayload,
   CreatePageResponse,
   UpdatePagePayload,
@@ -35,7 +35,7 @@ export interface BusinessInternalContextType {
   toView: (viewId: string, blockId?: string, keepSearch?: boolean) => Promise<void>;
   loadViewMeta: LoadViewMeta;
   loadView: LoadView;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
 
   // Outline and hierarchy

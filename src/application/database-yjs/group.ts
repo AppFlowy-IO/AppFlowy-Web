@@ -80,7 +80,7 @@ export function groupByCheckbox(
 
   rows.forEach((row) => {
     // If row document isn't loaded yet, default to 'No' group
-    // The card component will trigger loading via ensureRowDoc
+    // The card component will trigger loading via ensureRow
     if (!rowMetas[row.id]) {
       const defaultGroupName = 'No';
 
@@ -158,7 +158,7 @@ export function groupBySelectOption(
 
   rows.forEach((row) => {
     // If row document isn't loaded yet, put in "No Status" group (fieldId)
-    // The card component will trigger loading via ensureRowDoc
+    // The card component will trigger loading via ensureRow
     if (!rowMetas[row.id]) {
       if (result.has(fieldId)) {
         const group = result.get(fieldId) ?? [];

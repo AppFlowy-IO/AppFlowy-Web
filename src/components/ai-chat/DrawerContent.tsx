@@ -20,7 +20,7 @@ function DrawerContent({
   const {
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
     updatePage,
     addPage,
@@ -210,7 +210,7 @@ function DrawerContent({
             viewMeta={viewMeta}
             navigateToView={toView}
             loadViewMeta={loadViewMeta}
-            createRowDoc={createRowDoc}
+            createRow={createRow}
             loadView={loadView}
             bindViewSync={bindViewSync}
             updatePage={updatePage}

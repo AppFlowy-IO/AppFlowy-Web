@@ -1,7 +1,7 @@
 import { debounce } from 'lodash-es';
 import { useEffect } from 'react';
 
-import { useDatabase, useDatabaseContext, useDatabaseFields, useDatabaseView, useRowDocMap } from '@/application/database-yjs/context';
+import { useDatabase, useDatabaseContext, useDatabaseFields, useDatabaseView, useRowMap } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { parseRelationTypeOption, parseRollupTypeOption } from '@/application/database-yjs/fields';
 import { invalidateRollupCell } from '@/application/database-yjs/rollup/cache';
@@ -33,16 +33,16 @@ function getRelationRowIdsFromCell(cell?: YDatabaseCell): string[] {
  * @param rollupWatchVersion - Version counter to trigger re-setup of observers
  */
 export function useRollupFieldObservers(onConditionsChange: () => void, rollupWatchVersion: number) {
-  const rows = useRowDocMap();
+  const rows = useRowMap();
   const fields = useDatabaseFields();
   const database = useDatabase();
   const view = useDatabaseView();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const filters = view?.get(YjsDatabaseKey.filters);
-  const { loadView, createRowDoc, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
 
   useEffect(() => {
-    if (!rows || !fields || !database || !loadView || !createRowDoc || !getViewIdFromDatabaseId) return;
+    if (!rows || !fields || !database || !loadView || !createRow || !getViewIdFromDatabaseId) return;
 
     // Find rollup fields used in sorts/filters
     const rollupFieldIds = new Set<string>();
@@ -101,7 +101,7 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
 
     const getRowDoc = async (rowKey: string) => {
       if (rowDocCache.has(rowKey)) return rowDocCache.get(rowKey);
-      const doc = await createRowDoc(rowKey);
+      const doc = await createRow(rowKey);
 
       if (doc) {
         rowDocCache.set(rowKey, doc);
@@ -200,7 +200,7 @@ export function useRollupFieldObservers(onConditionsChange: () => void, rollupWa
     fields,
     database,
     loadView,
-    createRowDoc,
+    createRow,
     getViewIdFromDatabaseId,
     sorts,
     filters,

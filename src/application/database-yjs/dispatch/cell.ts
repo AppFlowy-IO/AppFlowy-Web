@@ -10,7 +10,7 @@ import dayjs from 'dayjs';
 import { useCallback } from 'react';
 import * as Y from 'yjs';
 
-import { useRowDocMap } from '@/application/database-yjs/context';
+import { useRowMap } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YDatabaseCell, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
@@ -50,7 +50,7 @@ function updateDateCell(
 }
 
 export function useUpdateCellDispatch(rowId: string, fieldId: string) {
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
   const { field } = useFieldSelector(fieldId);
 
   return useCallback(
@@ -63,7 +63,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         reminderId?: string;
       }
     ) => {
-      const rowDoc = rowDocMap?.[rowId];
+      const rowDoc = rowMap?.[rowId];
 
       if (!rowDoc) {
         Log.warn('[useUpdateCellDispatch] Row doc not found', { rowId, fieldId });
@@ -123,16 +123,16 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       });
     },
-    [field, fieldId, rowDocMap, rowId]
+    [field, fieldId, rowMap, rowId]
   );
 }
 
 export function useUpdateStartEndTimeCell() {
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
 
   return useCallback(
     (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
-      const rowDoc = rowDocMap?.[rowId];
+      const rowDoc = rowMap?.[rowId];
 
       if (!rowDoc) {
         throw new Error(`Row not found`);
@@ -166,6 +166,6 @@ export function useUpdateStartEndTimeCell() {
         row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       });
     },
-    [rowDocMap]
+    [rowMap]
   );
 }

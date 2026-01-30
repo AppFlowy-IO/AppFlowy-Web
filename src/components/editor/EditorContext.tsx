@@ -6,7 +6,7 @@ import { BaseRange, Range } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
 import {
-  CreateRowDoc,
+  CreateRow,
   FontLayout,
   LineHeightLayout,
   LoadView,
@@ -55,7 +55,7 @@ export interface EditorContextState {
   navigateToView?: (viewId: string, blockOrRowId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   loadView?: LoadView;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;
   jumpBlockId?: string;

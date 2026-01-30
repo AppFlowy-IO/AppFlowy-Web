@@ -873,7 +873,7 @@ export interface PublishViewMetaData {
 
 export type AppendBreadcrumb = (view?: View) => void;
 
-export type CreateRowDoc = (rowKey: string) => Promise<YDoc>;
+export type CreateRow = (rowKey: string) => Promise<YDoc>;
 export type LoadView = (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc>;
 
 export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
@@ -1228,7 +1228,7 @@ export interface ViewComponentProps {
   readOnly: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   createOrphanedView?: (payload: { document_id: string }) => Promise<void>;

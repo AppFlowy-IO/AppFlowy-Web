@@ -10,7 +10,7 @@ import {
   CreateDatabaseViewResponse,
   CreatePagePayload,
   CreatePageResponse,
-  CreateRowDoc,
+  CreateRow,
   CreateSpacePayload,
   DatabaseRelations,
   GenerateAISummaryRowPayload,
@@ -47,7 +47,7 @@ import { AppSyncLayer } from './layers/AppSyncLayer';
 export interface AppContextType {
   toView: (viewId: string, blockId?: string, keepSearch?: boolean) => Promise<void>;
   loadViewMeta: LoadViewMeta;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   loadView: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   outline?: View[];
@@ -280,7 +280,7 @@ export function useAppHandlers() {
   return {
     toView: context.toView,
     loadViewMeta: context.loadViewMeta,
-    createRowDoc: context.createRowDoc,
+    createRow: context.createRow,
     loadView: context.loadView,
     bindViewSync: context.bindViewSync,
     appendBreadcrumb: context.appendBreadcrumb,

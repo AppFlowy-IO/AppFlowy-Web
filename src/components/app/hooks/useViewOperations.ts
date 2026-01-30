@@ -407,14 +407,14 @@ export function useViewOperations() {
   );
 
   // Create row document
-  const createRowDoc = useCallback(
+  const createRow = useCallback(
     async (rowKey: string): Promise<YDoc> => {
       if (!currentWorkspaceId || !service) {
         throw new Error('Failed to create row doc');
       }
 
       try {
-        const doc = await service?.createRowDoc(rowKey);
+        const doc = await service?.createRow(rowKey);
 
         if (!doc) {
           throw new Error('Failed to create row doc');
@@ -562,7 +562,7 @@ export function useViewOperations() {
 
     rowKeys.forEach((rowKey) => {
       try {
-        service?.deleteRowDoc(rowKey);
+        service?.deleteRow(rowKey);
       } catch (e) {
         console.error(e);
       }
@@ -572,7 +572,7 @@ export function useViewOperations() {
   return {
     loadView,
     bindViewSync,
-    createRowDoc,
+    createRow,
     toView,
     awarenessMap,
     getViewIdFromDatabaseId,

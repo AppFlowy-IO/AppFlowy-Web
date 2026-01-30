@@ -25,7 +25,7 @@ export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
   const context = useDatabaseContext();
-  const { paddingStart, paddingEnd, navigateToRow, ensureRowDoc, populateRowDocFromCache, blobPrefetchComplete } =
+  const { paddingStart, paddingEnd, navigateToRow, ensureRow, populateRowFromCache, blobPrefetchComplete } =
     context;
   const rowOrders = useRowOrdersSelector();
 
@@ -36,13 +36,13 @@ export const Group = ({ groupId }: GroupProps) => {
   const observedContainerRef = useRef<HTMLDivElement | null>(null);
 
   // Store callbacks in refs to avoid triggering effect re-runs (advanced-use-latest pattern)
-  const ensureRowDocRef = useRef(ensureRowDoc);
-  const populateRowDocFromCacheRef = useRef(populateRowDocFromCache);
+  const ensureRowRef = useRef(ensureRow);
+  const populateRowFromCacheRef = useRef(populateRowFromCache);
   const loadedRowsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
-    ensureRowDocRef.current = ensureRowDoc;
-    populateRowDocFromCacheRef.current = populateRowDocFromCache;
+    ensureRowRef.current = ensureRow;
+    populateRowFromCacheRef.current = populateRowFromCache;
   });
 
   // Set up intersection observer for lazy loading
@@ -84,7 +84,7 @@ export const Group = ({ groupId }: GroupProps) => {
   }, [groupId]);
 
   // Load row documents only when group becomes visible.
-  // Try cached data first (fast), then fall back to ensureRowDoc (WebSocket sync).
+  // Try cached data first (fast), then fall back to ensureRow (WebSocket sync).
   // Uses Promise.all for parallel loading to avoid request waterfalls.
   useEffect(() => {
     // Only load when visible (lazy loading for off-screen groups)
@@ -97,29 +97,29 @@ export const Group = ({ groupId }: GroupProps) => {
 
     const loadRows = async () => {
       try {
-        if (blobPrefetchComplete && populateRowDocFromCacheRef.current) {
+        if (blobPrefetchComplete && populateRowFromCacheRef.current) {
           // Load all rows from cache in parallel
           const results = await Promise.all(
-            rowsToLoad.map((row) => populateRowDocFromCacheRef.current!(row.id))
+            rowsToLoad.map((row) => populateRowFromCacheRef.current!(row.id))
           );
 
           // Mark rows as loaded
           rowsToLoad.forEach((row) => loadedRowsRef.current.add(row.id));
 
-          // Fall back to ensureRowDoc for any rows not in cache
-          if (ensureRowDocRef.current) {
+          // Fall back to ensureRow for any rows not in cache
+          if (ensureRowRef.current) {
             results.forEach((doc, index) => {
               if (!doc) {
                 // Ignore errors - WebSocket sync provides fallback
-                ensureRowDocRef.current!(rowsToLoad[index].id)?.catch(() => undefined);
+                ensureRowRef.current!(rowsToLoad[index].id)?.catch(() => undefined);
               }
             });
           }
-        } else if (ensureRowDocRef.current) {
-          // No cache available, use ensureRowDoc directly
+        } else if (ensureRowRef.current) {
+          // No cache available, use ensureRow directly
           rowsToLoad.forEach((row) => {
             // Ignore errors - WebSocket sync provides fallback
-            ensureRowDocRef.current!(row.id)?.catch(() => undefined);
+            ensureRowRef.current!(row.id)?.catch(() => undefined);
             loadedRowsRef.current.add(row.id);
           });
         }

@@ -6,12 +6,12 @@ import {
   takeDatabaseRowDocSeed,
 } from '@/application/database-blob';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { createRowDocFast } from '@/application/services/js-services/cache';
+import { createRowFast } from '@/application/services/js-services/cache';
 import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  CreateRowDoc,
+  CreateRow,
   LoadView,
   LoadViewMeta,
   RowId,
@@ -35,7 +35,7 @@ export interface Database2Props {
   workspaceId: string;
   doc: YDoc;
   readOnly?: boolean;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   createOrphanedView?: (payload: { document_id: string }) => Promise<void>;
@@ -83,7 +83,7 @@ export interface Database2Props {
 function Database(props: Database2Props) {
   const {
     doc,
-    createRowDoc,
+    createRow,
     activeViewId,
     databasePageId,
     databaseName,
@@ -106,8 +106,8 @@ function Database(props: Database2Props) {
     workspaceId,
   } = props;
 
-  const [rowDocMap, setRowDocMap] = useState<Record<RowId, YDoc>>({});
-  const rowDocMapRef = useRef(rowDocMap);
+  const [rowMap, setRowMap] = useState<Record<RowId, YDoc>>({});
+  const rowMapRef = useRef(rowMap);
   const pendingRowDocsRef = useRef<Map<RowId, Promise<YDoc | undefined>>>(new Map());
   const prefetchPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
   const blobPrefetchPromiseRef = useRef<Promise<void> | null>(null);
@@ -116,8 +116,8 @@ function Database(props: Database2Props) {
   const [blobPrefetchComplete, setBlobPrefetchComplete] = useState(false);
 
   useEffect(() => {
-    rowDocMapRef.current = rowDocMap;
-  }, [rowDocMap]);
+    rowMapRef.current = rowMap;
+  }, [rowMap]);
 
   // Get the actual database ID from the Yjs doc, falling back to doc.guid
   // This is critical because doc.guid might be the view ID instead of the database ID
@@ -154,30 +154,30 @@ function Database(props: Database2Props) {
 
   const registerRowSync = useCallback(
     (rowKey: string) => {
-      if (!createRowDoc) return;
+      if (!createRow) return;
       if (syncedRowKeysRef.current.has(rowKey)) return;
 
       syncedRowKeysRef.current.add(rowKey);
-      void createRowDoc(rowKey);
+      void createRow(rowKey);
     },
-    [createRowDoc]
+    [createRow]
   );
 
   const bindRowSync = useCallback(
     (rowId: string) => {
-      if (!createRowDoc || !rowId) return;
+      if (!createRow || !rowId) return;
       const databaseId = getDatabaseId();
       const rowKey = getRowKey(databaseId, rowId);
 
       registerRowSync(rowKey);
     },
-    [createRowDoc, getDatabaseId, registerRowSync]
+    [createRow, getDatabaseId, registerRowSync]
   );
 
-  const populateRowDocFromCache = useCallback(
+  const populateRowFromCache = useCallback(
     async (rowId: string): Promise<YDoc | undefined> => {
       if (!rowId) return undefined;
-      const existing = rowDocMapRef.current[rowId];
+      const existing = rowMapRef.current[rowId];
 
       if (existing) return existing;
 
@@ -192,7 +192,7 @@ function Database(props: Database2Props) {
       if (!seed) return undefined;
 
       const promise = (async () => {
-        const rowDoc = await createRowDocFast(rowKey, seed);
+        const rowDoc = await createRowFast(rowKey, seed);
 
         return rowDoc;
       })();
@@ -203,7 +203,7 @@ function Database(props: Database2Props) {
         const rowDoc = await promise;
 
         if (rowDoc) {
-          setRowDocMap((prev) => {
+          setRowMap((prev) => {
             if (prev[rowId]) return prev;
             return { ...prev, [rowId]: rowDoc };
           });
@@ -252,20 +252,20 @@ function Database(props: Database2Props) {
     };
   }, [getDatabaseId]);
 
-  const createNewRowDoc = useCallback(
+  const createNewRow = useCallback(
     async (rowKey: string) => {
-      if (!createRowDoc) {
-        throw new Error('createRowDoc function is not provided');
+      if (!createRow) {
+        throw new Error('createRow function is not provided');
       }
 
       const [rowKeyDatabaseId, rowId] = rowKey.split('_rows_');
       const currentDatabaseId = getDatabaseId();
 
-      const rowDoc = await createRowDoc(rowKey);
+      const rowDoc = await createRow(rowKey);
 
-      // Add the new row doc to rowDocMap so grouping logic can see it immediately
+      // Add the new row doc to rowMap so grouping logic can see it immediately
       if (rowId && rowDoc) {
-        setRowDocMap((prev) => {
+        setRowMap((prev) => {
           if (prev[rowId]) return prev;
           return { ...prev, [rowId]: rowDoc };
         });
@@ -278,13 +278,13 @@ function Database(props: Database2Props) {
 
       return rowDoc;
     },
-    [createRowDoc, getDatabaseId, ensureBlobPrefetch]
+    [createRow, getDatabaseId, ensureBlobPrefetch]
   );
 
-  const ensureRowDoc = useCallback(
+  const ensureRow = useCallback(
     async (rowId: string) => {
-      if (!createRowDoc || !rowId) return;
-      const existing = rowDocMapRef.current[rowId];
+      if (!createRow || !rowId) return;
+      const existing = rowMapRef.current[rowId];
 
       if (existing) {
         return existing;
@@ -302,9 +302,9 @@ function Database(props: Database2Props) {
         const seed = takeDatabaseRowDocSeed(rowKey);
 
         try {
-          const rowDoc = await createRowDocFast(rowKey, seed ?? undefined);
+          const rowDoc = await createRowFast(rowKey, seed ?? undefined);
 
-          // Bind sync for this row - only visible rows call ensureRowDoc
+          // Bind sync for this row - only visible rows call ensureRow
           // Non-visible rows rely on blob diff cached data
           registerRowSync(rowKey);
 
@@ -330,7 +330,7 @@ function Database(props: Database2Props) {
         const rowDoc = await promise;
 
         if (rowDoc) {
-          setRowDocMap((prev) => {
+          setRowMap((prev) => {
             if (prev[rowId]) return prev;
             return { ...prev, [rowId]: rowDoc };
           });
@@ -341,16 +341,16 @@ function Database(props: Database2Props) {
         pendingRowDocsRef.current.delete(rowId);
       }
     },
-    [createRowDoc, getDatabaseId, ensureBlobPrefetch, registerRowSync]
+    [createRow, getDatabaseId, ensureBlobPrefetch, registerRowSync]
   );
 
   useEffect(() => {
-    rowDocMapRef.current = {};
+    rowMapRef.current = {};
     pendingRowDocsRef.current.clear();
     blobPrefetchPromiseRef.current = null;
     localCachePrimedRef.current = false;
     syncedRowKeysRef.current.clear();
-    setRowDocMap({});
+    setRowMap({});
     setBlobPrefetchComplete(false);
   }, [doc.guid]);
 
@@ -370,12 +370,12 @@ function Database(props: Database2Props) {
     rowId: string | null;
     viewId: string | null;
     databaseDoc: YDoc | null;
-    rowDocMap: Record<RowId, YDoc> | null;
+    rowMap: Record<RowId, YDoc> | null;
   }>(() => ({
     rowId: modalRowId || null,
     viewId: modalRowId ? activeViewId : null,
     databaseDoc: null,
-    rowDocMap: null,
+    rowMap: null,
   }));
 
   // Calendar view type map state
@@ -411,7 +411,7 @@ function Database(props: Database2Props) {
             return;
           }
 
-          const rowDoc = await createNewRowDoc(getRowKey(viewDoc.guid, rowId));
+          const rowDoc = await createNewRow(getRowKey(viewDoc.guid, rowId));
 
           if (!rowDoc) {
             throw new Error('Row document not found');
@@ -422,7 +422,7 @@ function Database(props: Database2Props) {
             rowId,
             viewId,
             databaseDoc: viewDoc,
-            rowDocMap: { [rowId]: rowDoc },
+            rowMap: { [rowId]: rowDoc },
           });
           return;
         } catch (e) {
@@ -432,7 +432,7 @@ function Database(props: Database2Props) {
 
       setModalState((prev) => ({ ...prev, rowId }));
     },
-    [createNewRowDoc, loadView, navigateToView, onOpenRowPage, readOnly]
+    [createNewRow, loadView, navigateToView, onOpenRowPage, readOnly]
   );
 
   const handleCloseRowModal = useCallback(() => {
@@ -440,7 +440,7 @@ function Database(props: Database2Props) {
       rowId: null,
       viewId: null,
       databaseDoc: null,
-      rowDocMap: null,
+      rowMap: null,
     });
   }, []);
 
@@ -458,8 +458,8 @@ function Database(props: Database2Props) {
   const sharedContextProps = useMemo(
     () => ({
       readOnly,
-      ensureRowDoc,
-      populateRowDocFromCache,
+      ensureRow,
+      populateRowFromCache,
       bindRowSync,
       blobPrefetchComplete,
       paddingStart: props.paddingStart,
@@ -468,7 +468,7 @@ function Database(props: Database2Props) {
       navigateToRow: handleOpenRow,
       loadView,
       bindViewSync,
-      createRowDoc: createNewRowDoc,
+      createRow: createNewRow,
       createOrphanedView,
       checkIfRowDocumentExists,
       loadViewMeta: props.loadViewMeta,
@@ -484,8 +484,8 @@ function Database(props: Database2Props) {
     }),
     [
       readOnly,
-      ensureRowDoc,
-      populateRowDocFromCache,
+      ensureRow,
+      populateRowFromCache,
       bindRowSync,
       blobPrefetchComplete,
       props.paddingStart,
@@ -494,7 +494,7 @@ function Database(props: Database2Props) {
       handleOpenRow,
       loadView,
       bindViewSync,
-      createNewRowDoc,
+      createNewRow,
       createOrphanedView,
       checkIfRowDocumentExists,
       props.loadViewMeta,
@@ -517,10 +517,10 @@ function Database(props: Database2Props) {
       databaseDoc: doc,
       databasePageId,
       activeViewId,
-      rowDocMap,
+      rowMap,
       isDatabaseRowPage: !!rowId,
     };
-  }, [sharedContextProps, doc, databasePageId, activeViewId, rowDocMap, rowId]);
+  }, [sharedContextProps, doc, databasePageId, activeViewId, rowMap, rowId]);
 
   // Memoize modal context value separately - only compute when modal is open
   const modalContextValue = useMemo(
@@ -531,7 +531,7 @@ function Database(props: Database2Props) {
             databaseDoc: modalState.databaseDoc || doc,
             databasePageId: modalState.viewId || databasePageId,
             activeViewId: modalState.viewId || activeViewId,
-            rowDocMap: modalState.rowDocMap || rowDocMap,
+            rowMap: modalState.rowMap || rowMap,
             isDatabaseRowPage: false,
             closeRowDetailModal: handleCloseRowModal,
           }
@@ -540,12 +540,12 @@ function Database(props: Database2Props) {
       modalState.rowId,
       modalState.databaseDoc,
       modalState.viewId,
-      modalState.rowDocMap,
+      modalState.rowMap,
       sharedContextProps,
       doc,
       databasePageId,
       activeViewId,
-      rowDocMap,
+      rowMap,
       handleCloseRowModal,
     ]
   );

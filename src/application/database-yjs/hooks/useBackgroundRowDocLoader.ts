@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { useDatabaseContext, useDatabaseView, useRowDocMap } from '@/application/database-yjs/context';
+import { useDatabaseContext, useDatabaseView, useRowMap } from '@/application/database-yjs/context';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
 import { YDoc, YjsDatabaseKey } from '@/application/types';
@@ -17,7 +17,7 @@ const BACKGROUND_CONCURRENCY = 6;
  * @returns Object containing cached row docs and merged row docs for conditions
  */
 export function useBackgroundRowDocLoader(hasConditions: boolean) {
-  const rows = useRowDocMap();
+  const rows = useRowMap();
   const view = useDatabaseView();
   const { databaseDoc } = useDatabaseContext();
 
@@ -40,7 +40,7 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
     };
   }, []);
 
-  // Clean up cached docs that are now in the main rowDocMap
+  // Clean up cached docs that are now in the main rowMap
   useEffect(() => {
     const cached = cachedRowDocsRef.current;
     let changed = false;

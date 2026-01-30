@@ -12,7 +12,7 @@ import {
   useDatabaseView,
   useDatabaseViewId,
   useRow,
-  useRowDocMap,
+  useRowMap,
 } from '@/application/database-yjs/context';
 import {
   getDateCellStr,
@@ -704,7 +704,7 @@ export function useGetBoardHiddenGroup(groupId: string) {
 
 export function useRowsByGroup(groupId: string) {
   const { columns, fieldId } = useGroup(groupId);
-  const rows = useRowDocMap();
+  const rows = useRowMap();
   const rowOrders = useRowOrdersSelector();
 
   const [visibleColumns, setVisibleColumns] = useState<GroupColumn[]>([]);
@@ -814,13 +814,13 @@ export function useRowsByGroup(groupId: string) {
  * - Observing data changes to trigger re-computation
  */
 export function useRowOrdersSelector() {
-  const rows = useRowDocMap();
+  const rows = useRowMap();
   const view = useDatabaseView();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const fields = useDatabaseFields();
   const filters = view?.get(YjsDatabaseKey.filters);
   const database = useDatabase();
-  const { databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
 
   const [rowOrders, setRowOrders] = useState<Row[]>();
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
@@ -831,7 +831,7 @@ export function useRowOrdersSelector() {
   // Background loading of row docs for sorting/filtering
   const { cachedRowDocs } = useBackgroundRowDocLoader(hasConditions);
 
-  // Merge cached docs with main rowDocMap
+  // Merge cached docs with main rowMap
   const rowDocsForConditions = useMemo(
     () => ({ ...cachedRowDocs, ...(rows || {}) }),
     [cachedRowDocs, rows]
@@ -857,11 +857,11 @@ export function useRowOrdersSelector() {
         rowId,
         fieldId,
         loadView,
-        createRowDoc,
+        createRow,
         getViewIdFromDatabaseId,
       });
     },
-    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId]
+    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]
   );
 
   // Getter for rollup cell value (used in sorting/filtering)
@@ -884,11 +884,11 @@ export function useRowOrdersSelector() {
         rowId,
         fieldId,
         loadView,
-        createRowDoc,
+        createRow,
         getViewIdFromDatabaseId,
       });
     },
-    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId]
+    [rowDocsForConditions, fields, database, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]
   );
 
   const rollupTextGetter = useCallback(
@@ -1080,7 +1080,7 @@ function useRollupCellValue({
   fieldClock: number;
 }) {
   const database = useDatabase();
-  const { databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
   const [value, setValue] = useState<RollupCellValue>({ value: '' });
   const [relationRowIdsKey, setRelationRowIdsKey] = useState('');
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
@@ -1101,10 +1101,10 @@ function useRollupCellValue({
       rowId,
       fieldId,
       loadView,
-      createRowDoc,
+      createRow,
       getViewIdFromDatabaseId,
     };
-  }, [database, row, field, rowId, fieldId, databaseDoc, loadView, createRowDoc, getViewIdFromDatabaseId]);
+  }, [database, row, field, rowId, fieldId, databaseDoc, loadView, createRow, getViewIdFromDatabaseId]);
 
   useEffect(() => {
     if (!rollupContext || fieldType !== FieldType.Rollup) {
@@ -1180,7 +1180,7 @@ function useRollupCellValue({
     const observers: Array<{ doc: YDoc; handler: () => void }> = [];
 
     void (async () => {
-      if (!loadView || !createRowDoc) return;
+      if (!loadView || !createRow) return;
       const viewId = await getViewIdFromDatabaseId?.(relationOption.database_id);
 
       if (!viewId) return;
@@ -1191,7 +1191,7 @@ function useRollupCellValue({
 
       for (const relatedRowId of relatedRowIds) {
         if (cancelled) return;
-        const rowDoc = await createRowDoc(getRowKey(docGuid, relatedRowId));
+        const rowDoc = await createRow(getRowKey(docGuid, relatedRowId));
 
         if (!rowDoc) continue;
         const handler = () => {
@@ -1218,7 +1218,7 @@ function useRollupCellValue({
     database,
     row,
     loadView,
-    createRowDoc,
+    createRow,
     getViewIdFromDatabaseId,
     cellId,
     relationRowIdsKey,
@@ -1311,8 +1311,8 @@ export function useCalendarEventsSelector() {
   const { field } = useFieldSelector(filedId);
   const primaryFieldId = usePrimaryFieldId();
   const rowOrders = useRowOrdersSelector();
-  const rows = useRowDocMap();
-  const { ensureRowDoc } = useDatabaseContext();
+  const rows = useRowMap();
+  const { ensureRow } = useDatabaseContext();
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [emptyEvents, setEmptyEvents] = useState<CalendarEvent[]>([]);
 
@@ -1332,8 +1332,8 @@ export function useCalendarEventsSelector() {
         // If row document isn't loaded yet, trigger loading and add to emptyEvents
         // The event will move to the correct position once the document loads
         if (!doc) {
-          if (ensureRowDoc) {
-            const promise = ensureRowDoc(row.id);
+          if (ensureRow) {
+            const promise = ensureRow(row.id);
 
             if (promise) {
               promise.catch((error: unknown) => {
@@ -1439,7 +1439,7 @@ export function useCalendarEventsSelector() {
       });
     };
 
-  }, [field, rowOrders, rows, filedId, primaryFieldId, ensureRowDoc]);
+  }, [field, rowOrders, rows, filedId, primaryFieldId, ensureRow]);
 
   return { events, emptyEvents };
 }
@@ -1502,14 +1502,14 @@ export function usePrimaryFieldId() {
 
 export const useRowMetaSelector = (rowId: string) => {
   const [meta, setMeta] = useState<RowMeta | null>();
-  const { rowDocMap: rowMap, ensureRowDoc } = useDatabaseContext();
+  const { rowMap, ensureRow } = useDatabaseContext();
 
   // Ensure the row document is loaded (same pattern as useRow)
   useEffect(() => {
     let cancelled = false;
 
-    if (ensureRowDoc && rowId) {
-      const promise = ensureRowDoc(rowId);
+    if (ensureRow && rowId) {
+      const promise = ensureRow(rowId);
 
       if (promise) {
         promise.catch((error: unknown) => {
@@ -1523,7 +1523,7 @@ export const useRowMetaSelector = (rowId: string) => {
     return () => {
       cancelled = true;
     };
-  }, [ensureRowDoc, rowId]);
+  }, [ensureRow, rowId]);
 
   const updateMeta = useCallback(() => {
     const row = rowMap?.[rowId];
@@ -1564,7 +1564,7 @@ export const useRowMetaSelector = (rowId: string) => {
 export const useFieldCellsSelector = (fieldId: string) => {
   const rows = useRowOrdersSelector();
   const [cells, setCells] = useState<Map<string, unknown> | null>(null);
-  const rowMap = useRowDocMap();
+  const rowMap = useRowMap();
   const cellObserverEventsRef = useRef<(() => void)[]>([]);
 
   useEffect(() => {

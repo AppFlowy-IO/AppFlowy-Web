@@ -219,9 +219,17 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
       const existingContext = registeredContexts.current.get(context.doc.guid);
 
-      // If the context is already registered, return it
+      // If the context is already registered, check if it's the same doc instance
       if (existingContext !== undefined) {
-        return existingContext;
+        // If same doc instance, reuse the existing context
+        if (existingContext.doc === context.doc) {
+          Log.debug(`Reusing existing sync context for objectId ${context.doc.guid}`);
+          return existingContext;
+        }
+
+        // Different doc instance - clean up old context and register new one
+        Log.debug(`Replacing stale sync context for objectId ${context.doc.guid} (different doc instance)`);
+        registeredContexts.current.delete(context.doc.guid);
       }
 
       Log.debug(`Registering sync context for objectId ${context.doc.guid} with collabType ${context.collabType}`);

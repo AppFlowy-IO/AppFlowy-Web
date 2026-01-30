@@ -21,7 +21,7 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 // Hook for managing database-related operations
 export function useDatabaseOperations(
   loadView?: (id: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc | null>,
-  createRowDoc?: (rowKey: string) => Promise<YDoc>
+  createRow?: (rowKey: string) => Promise<YDoc>
 ) {
   const { service, currentWorkspaceId } = useAuthInternal();
 
@@ -79,10 +79,10 @@ export function useDatabaseOperations(
             return rowDocsRef.current.get(row.id);
           }
 
-          if (!createRowDoc) return;
+          if (!createRow) return;
 
           const rowKey = getRowKey(doc?.guid || '', row.id);
-          const rowDoc = await createRowDoc(rowKey);
+          const rowDoc = await createRow(rowKey);
 
           const rowSharedRoot = rowDoc?.getMap(YjsEditorKey.data_section);
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -101,7 +101,7 @@ export function useDatabaseOperations(
 
       return Promise.all(rowPromises);
     },
-    [createRowDoc, currentWorkspaceId, loadView]
+    [createRow, currentWorkspaceId, loadView]
   );
 
   // Get fields from database view

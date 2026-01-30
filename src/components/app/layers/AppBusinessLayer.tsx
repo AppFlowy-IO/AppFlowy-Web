@@ -78,7 +78,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
-  const { loadView, createRowDoc, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync } = useViewOperations();
+  const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync } = useViewOperations();
 
   // Initialize page operations
   const loadOutlineAfterLocalMutation = useCallback(
@@ -254,7 +254,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   );
 
   // Initialize database operations
-  const databaseOperations = useDatabaseOperations(enhancedLoadView, createRowDoc);
+  const databaseOperations = useDatabaseOperations(enhancedLoadView, createRow);
 
   // Business context value
   const businessContextValue: BusinessInternalContextType = useMemo(
@@ -264,7 +264,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       toView: enhancedToView,
       loadViewMeta,
       loadView: enhancedLoadView,
-      createRowDoc,
+      createRow,
       bindViewSync,
 
       // Outline and hierarchy
@@ -313,7 +313,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       enhancedToView,
       loadViewMeta,
       enhancedLoadView,
-      createRowDoc,
+      createRow,
       bindViewSync,
       outline,
       breadcrumbs,

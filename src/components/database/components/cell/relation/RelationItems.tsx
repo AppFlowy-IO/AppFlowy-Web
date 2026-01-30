@@ -30,13 +30,13 @@ function RelationItems({
   const viewId = context.databasePageId;
   const relatedDatabaseId = useDatabaseIdFromField(fieldId);
 
-  const createRowDoc = context.createRowDoc;
+  const createRow = context.createRow;
   const loadView = context.loadView;
   const navigateToRow = context.navigateToRow;
   const getViewIdFromDatabaseId = context.getViewIdFromDatabaseId;
 
   const [noAccess, setNoAccess] = useState(false);
-  const [rows, setRows] = useState<DatabaseContextState['rowDocMap'] | null>();
+  const [rows, setRows] = useState<DatabaseContextState['rowMap'] | null>();
   const [relatedFieldId, setRelatedFieldId] = useState<string | undefined>();
   const [relatedViewId, setRelatedViewId] = useState<string | null>(null);
 
@@ -84,13 +84,13 @@ function RelationItems({
   }, [getViewIdFromDatabaseId, relatedDatabaseId]);
 
   useEffect(() => {
-    if (!relatedViewId || !createRowDoc || !docGuid) return;
+    if (!relatedViewId || !createRow || !docGuid) return;
     void (async () => {
       try {
         const rows: Record<string, YDoc> = {};
 
         for (const rowId of rowIds) {
-          const rowDoc = await createRowDoc(getRowKey(docGuid, rowId));
+          const rowDoc = await createRow(getRowKey(docGuid, rowId));
 
           rows[rowId] = rowDoc;
         }
@@ -100,7 +100,7 @@ function RelationItems({
         console.error(e);
       }
     })();
-  }, [createRowDoc, relatedViewId, relatedFieldId, rowIds, docGuid]);
+  }, [createRow, relatedViewId, relatedFieldId, rowIds, docGuid]);
 
   useEffect(() => {
     handleUpdateRowIds();

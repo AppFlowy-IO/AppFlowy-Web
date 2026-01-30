@@ -33,7 +33,7 @@ function AppPage() {
   const {
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
     appendBreadcrumb,
     onRendered,
@@ -47,7 +47,7 @@ function AppPage() {
     bindViewSync,
     ...handlers
   } = useAppHandlers();
-  const { eventEmitter } = handlers;
+  const { eventEmitter, createOrphanedView } = handlers;
   const { getViewReadOnlyStatus } = useViewOperations();
 
   const currentUser = useCurrentUser();
@@ -345,7 +345,7 @@ function AppPage() {
           viewMeta={viewMeta}
           navigateToView={toView}
           loadViewMeta={loadViewMeta}
-          createRowDoc={createRowDoc}
+          createRow={createRow}
           appendBreadcrumb={appendBreadcrumb}
           loadView={loadView}
           bindViewSync={bindViewSync}
@@ -359,6 +359,7 @@ function AppPage() {
           uploadFile={handleUploadFile}
           variant={UIVariant.App}
           {...handlers}
+          createOrphanedView={createOrphanedView}
         />
       );
     }
@@ -373,7 +374,7 @@ function AppPage() {
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
-        createRowDoc={createRowDoc}
+        createRow={createRow}
         appendBreadcrumb={appendBreadcrumb}
         loadView={loadView}
         bindViewSync={bindViewSync}
@@ -387,6 +388,7 @@ function AppPage() {
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
         {...handlers}
+        createOrphanedView={createOrphanedView}
       />
     );
   }, [
@@ -400,7 +402,7 @@ function AppPage() {
     isReadOnly,
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     appendBreadcrumb,
     loadView,
     bindViewSync,
@@ -412,6 +414,7 @@ function AppPage() {
     loadViews,
     setWordCount,
     handleUploadFile,
+    createOrphanedView,
   ]);
 
   useEffect(() => {

@@ -12,7 +12,7 @@
  */
 
 import dayjs from 'dayjs';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
@@ -23,7 +23,7 @@ import {
   useDatabaseView,
   useDatabaseViewId,
   useDocGuid,
-  useRowDocMap,
+  useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
@@ -155,7 +155,7 @@ export function useReorderRowDispatch() {
 export function useMoveCardDispatch() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
-  const rowMap = useRowDocMap();
+  const rowMap = useRowMap();
   const database = useDatabase();
 
   return useCallback(
@@ -481,11 +481,11 @@ export function useDuplicateRowDispatch() {
   const sharedRoot = useSharedRoot();
   const createRow = useCreateRow();
   const guid = useDocGuid();
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
 
   return useCallback(
     async (referenceRowId: string) => {
-      const referenceRowDoc = rowDocMap?.[referenceRowId];
+      const referenceRowDoc = rowMap?.[referenceRowId];
 
       if (!referenceRowDoc) {
         throw new Error(`Row not found`);
@@ -585,19 +585,30 @@ export function useDuplicateRowDispatch() {
 
       return rowId;
     },
-    [createRow, database, guid, rowDocMap, sharedRoot]
+    [createRow, database, guid, rowMap, sharedRoot]
   );
 }
 
 export function useUpdateRowMetaDispatch(rowId: string) {
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
 
-  const rowDoc = rowDocMap?.[rowId];
+  // Store rowMap in a ref so the callback always gets the latest value
+  // This fixes a bug where rowDoc might not be in the map when the hook is first called,
+  // but is added later when the row document loads asynchronously
+  const rowMapRef = useRef(rowMap);
+
+  useEffect(() => {
+    rowMapRef.current = rowMap;
+  });
 
   return useCallback(
     (key: RowMetaKey, value?: string | boolean) => {
+      // Get rowDoc from the ref to always use the latest map
+      const rowDoc = rowMapRef.current?.[rowId];
+
       if (!rowDoc) {
-        throw new Error(`Row not found`);
+        console.warn(`[useUpdateRowMetaDispatch] Row not found: ${rowId}`);
+        return;
       }
 
       const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
@@ -623,6 +634,6 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         }
       });
     },
-    [rowDoc, rowId]
+    [rowId]
   );
 }

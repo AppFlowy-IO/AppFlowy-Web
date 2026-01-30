@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { usePublishContext } from '@/application/publish';
 import {
   AppendBreadcrumb,
-  CreateRowDoc,
+  CreateRow,
   LoadView,
   LoadViewMeta,
   ViewLayout,
@@ -25,7 +25,7 @@ import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 export interface DatabaseProps {
   workspaceId: string;
   doc: YDoc;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   loadView?: LoadView;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;

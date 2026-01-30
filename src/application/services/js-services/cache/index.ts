@@ -235,7 +235,7 @@ export async function getPublishView<
 
   if (!didRevalidate && exist) {
     await migrateDatabaseFieldTypes(doc, {
-      loadRowDoc: createRowDoc,
+      loadRow: createRow,
       commitVersion: strategy !== StrategyType.CACHE_AND_NETWORK,
     });
   }
@@ -288,7 +288,7 @@ export async function getPageDoc<
 
   if (!didRevalidate && exist) {
     await migrateDatabaseFieldTypes(doc, {
-      loadRowDoc: createRowDoc,
+      loadRow: createRow,
       commitVersion: strategy !== StrategyType.CACHE_AND_NETWORK,
     });
   }
@@ -301,7 +301,7 @@ async function updateRows(collab: YDoc, rows: Record<RowId, number[]>) {
 
   for (const [key, value] of Object.entries(rows)) {
     const rowKey = getRowKey(collab.guid, key);
-    const doc = await createRowDoc(rowKey);
+    const doc = await createRow(rowKey);
 
     const dbRow = await db.rows.get(key);
 
@@ -333,7 +333,7 @@ export async function revalidateView<
     applyYDoc(collab, data);
 
     await migrateDatabaseFieldTypes(collab, {
-      loadRowDoc: createRowDoc,
+      loadRow: createRow,
       rowIds: rows ? Object.keys(rows) : undefined,
     });
   } catch (e) {
@@ -406,7 +406,7 @@ export async function revalidatePublishView<
   applyYDoc(collab, data);
 
   await migrateDatabaseFieldTypes(collab, {
-    loadRowDoc: createRowDoc,
+    loadRow: createRow,
     rowIds: rows ? Object.keys(rows) : undefined,
   });
 }
@@ -502,7 +502,7 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   return entry;
 }
 
-export async function createRowDoc(rowKey: string) {
+export async function createRow(rowKey: string) {
   const entry = await getOrCreateRowDocEntry(rowKey);
 
   await entry.whenSynced;
@@ -510,7 +510,7 @@ export async function createRowDoc(rowKey: string) {
   return entry.doc;
 }
 
-export async function createRowDocFast(
+export async function createRowFast(
   rowKey: string,
   seed?: { bytes: Uint8Array; encoderVersion: number }
 ) {
@@ -559,6 +559,6 @@ export function getCachedRowDoc(rowKey: string): YDoc | undefined {
   return rowDocs.get(rowKey)?.doc;
 }
 
-export function deleteRowDoc(rowKey: string) {
+export function deleteRow(rowKey: string) {
   rowDocs.delete(rowKey);
 }
