@@ -67,6 +67,7 @@ export const Group = ({ groupId }: GroupProps) => {
     );
 
     const container = containerRef.current;
+
     if (container) {
       observerRef.current.observe(container);
       observedContainerRef.current = container;
@@ -263,10 +264,12 @@ export const Group = ({ groupId }: GroupProps) => {
           if (observedContainerRef.current && observerRef.current) {
             observerRef.current.unobserve(observedContainerRef.current);
           }
+
           observedContainerRef.current = el;
           if (el && observerRef.current) {
             observerRef.current.observe(el);
           }
+
           if (!el) return;
           const container = getVerticalScrollContainer(el);
 

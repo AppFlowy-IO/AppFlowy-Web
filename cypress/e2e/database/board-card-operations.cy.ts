@@ -181,13 +181,14 @@ describe('Board Card Operations', () => {
       BoardSelectors.boardContainer().contains(cardName).click({ force: true });
       waitForReactUpdate(1500);
 
-      // Step 3: Verify modal opened (check URL has row ID parameter)
+      // Step 3: Verify modal opened (check for MUI Dialog with row content)
       cy.task('log', '[STEP 3] Verifying detail modal/page opened');
-      cy.url().should('include', 'r=');
+      // In edit mode, clicking a card opens a modal (not URL-based navigation)
+      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
 
       // Step 4: Verify card name is visible in the detail view
       cy.task('log', '[STEP 4] Verifying card name in detail view');
-      cy.contains(cardName, { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]').contains(cardName, { timeout: 10000 }).should('be.visible');
 
       cy.task('log', '[TEST COMPLETE] Open card detail modal test passed');
     });
@@ -236,9 +237,10 @@ describe('Board Card Operations', () => {
 
       waitForReactUpdate(2000);
 
-      // Step 5: Go back to board view
-      cy.task('log', '[STEP 5] Going back to board view');
-      cy.go('back');
+      // Step 5: Close the modal to go back to board view
+      cy.task('log', '[STEP 5] Closing modal to go back to board view');
+      // Click outside the dialog or press Escape to close the modal
+      cy.get('body').type('{esc}', { force: true });
       waitForReactUpdate(2000);
 
       // Step 6: Verify the modified name appears

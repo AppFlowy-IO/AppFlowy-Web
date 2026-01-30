@@ -30,6 +30,7 @@ import {
   createBlock,
   dataStringTOJson,
   deleteBlock,
+  ensureBlockInYjs,
   executeOperations,
   extendNextSiblingsToToggleHeading,
   getBlock,
@@ -119,13 +120,19 @@ export function handleCollapsedBreakWithTxn(editor: YjsEditor, sharedRoot: YShar
   const { startBlock, startOffset } = getBreakInfo(editor, sharedRoot, at);
   const [blockNode, path] = startBlock;
   const blockId = blockNode.blockId as string;
-  const block = getBlock(blockId, sharedRoot);
+  const blockType = blockNode.type as BlockType;
+  const blockData = (blockNode.data || {}) as BlockData;
 
-  if (!block) {
-    throw new Error('Block not found');
-  }
+  // Get or create the block in Y.js - handles edge case where Slate has a block that's not in Y.js
+  const block = ensureBlockInYjs(
+    sharedRoot,
+    blockId,
+    blockType,
+    blockData,
+    getPageId(sharedRoot) // Use page as parent if block doesn't exist
+  );
 
-  const blockType = block.get(YjsEditorKey.block_type);
+  // blockType is already defined above from Slate node; after ensureBlockInYjs, Y.js block has same type
   const textId = block.get(YjsEditorKey.block_external_id);
   let yText = getText(textId, sharedRoot);
 

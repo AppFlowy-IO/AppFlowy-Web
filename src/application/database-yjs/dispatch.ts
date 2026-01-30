@@ -1329,6 +1329,7 @@ export function useNewRowDispatch() {
 
         Object.keys(newMeta).forEach((key) => {
           const value = newMeta[key];
+
           if (value) {
             meta.set(key, value);
           }

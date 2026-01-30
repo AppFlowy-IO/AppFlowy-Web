@@ -60,7 +60,6 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     setWordCount,
     uploadFile,
     eventEmitter,
-    createOrphanedView,
     ...handlers
   } = useAppHandlers();
 
@@ -354,7 +353,6 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
         {...handlers}
-        createOrphanedView={createOrphanedView}
       />
     );
   }, [
@@ -376,7 +374,6 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     loadViews,
     setWordCount,
     handleUploadFile,
-    createOrphanedView,
     handlers,
   ]);
 

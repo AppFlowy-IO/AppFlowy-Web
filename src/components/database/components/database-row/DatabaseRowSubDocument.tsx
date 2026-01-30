@@ -26,8 +26,15 @@ import {
   YjsDatabaseKey,
   YjsEditorKey
 } from '@/application/types';
+import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
-import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
+import {
+  useBindViewSync,
+  useCheckIfRowDocumentExists,
+  useCreateOrphanedView,
+  useLoadRowDocument,
+  YDocWithMeta,
+} from '@/components/database/hooks';
 import { Editor } from '@/components/editor';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
@@ -36,18 +43,26 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const meta = useRowMetaSelector(rowId);
   const readOnly = useReadOnly();
   const documentId = meta?.documentId;
-  const context = useDatabaseContext();
   const database = useDatabase();
   const row = useRowData(rowId) as YDatabaseRow | undefined;
-  const checkIfRowDocumentExists = context.checkIfRowDocumentExists;
-  const { createOrphanedView, loadView, bindViewSync } = context;
   const currentUser = useCurrentUser();
+  const workspaceId = useCurrentWorkspaceId();
+
+  // Get context for Editor props (navigateToView, loadView, etc.)
+  const context = useDatabaseContext();
+
+  // Use dedicated hooks instead of getting from context
+  const checkIfRowDocumentExists = useCheckIfRowDocumentExists();
+  const createOrphanedView = useCreateOrphanedView();
+  const bindViewSync = useBindViewSync();
+  const loadRowDocument = useLoadRowDocument();
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
   const editorRef = useRef<YjsEditor | null>(null);
   const lastIsEmptyRef = useRef<boolean | null>(null);
   const pendingMetaUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNonEmptyRef = useRef(false);
   const pendingOpenLocalRef = useRef(false);
+  const docReadyRef = useRef(false); // Track if document is loaded to prevent retry timer from resetting it
 
   const getCellData = useCallback(
     (cell: YDatabaseCell, field: YDatabaseField) => {
@@ -165,29 +180,35 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
   const handleOpenDocument = useCallback(
     async (documentId: string): Promise<boolean> => {
-      if (!loadView) return false;
       setLoading(true);
       try {
+        docReadyRef.current = false;
         setDoc(null);
-        const doc = await loadView(documentId, true);
+        const doc = await loadRowDocument(documentId);
+
+        if (!doc) {
+          Log.debug('[DatabaseRowSubDocument] loadRowDocument returned null', { documentId });
+          return false;
+        }
 
         setDoc(doc);
+        docReadyRef.current = true;
         return true;
         // eslint-disable-next-line
       } catch (e: any) {
-        // Don't show error toast - caller will fall back to creating document
-        Log.debug('[DatabaseRowSubDocument] loadView failed, will create locally', { message: e.message });
+        Log.debug('[DatabaseRowSubDocument] loadRowDocument failed', { message: e.message });
         return false;
       } finally {
         setLoading(false);
       }
     },
-    [loadView]
+    [loadRowDocument]
   );
   const openLocalDocument = useCallback(
     async (documentId: string) => {
       if (!documentId) return;
       try {
+        docReadyRef.current = false;
         setDoc(null);
 
         // Open the document from IndexedDB (not from server)
@@ -196,9 +217,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         // Initialize with empty document structure if needed
         // Pass true to include initial paragraph - required for Slate editor to render
-        initializeDocumentStructure(doc, true);
+        // Pass documentId to ensure page_id matches server's algorithm
+        initializeDocumentStructure(doc, true, documentId);
 
-        // Store metadata for sync binding (matches loadView behavior)
+        // Store metadata for sync binding
         const docWithMeta = doc as YDocWithMeta;
 
         docWithMeta.object_id = documentId;
@@ -206,6 +228,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         docWithMeta._syncBound = false;
 
         setDoc(doc);
+        docReadyRef.current = true;
         Log.debug('[DatabaseRowSubDocument] openLocalDocument ready', {
           rowId,
           documentId,
@@ -231,6 +254,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       });
 
       try {
+        docReadyRef.current = false;
         setDoc(null);
 
         if (requireServerReady) {
@@ -258,6 +282,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           }
         }
 
+        // Create document structure locally - server only creates the view entry
         await openLocalDocument(documentId);
         opened = true;
         return true;
@@ -353,6 +378,18 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       if (retryLoadTimerRef.current) return;
       retryLoadTimerRef.current = setTimeout(async () => {
         if (cancelled) return;
+
+        // If doc is already loaded (e.g., by handleCreateDocument), skip retry
+        // This prevents resetting the editor mid-typing
+        if (docReadyRef.current) {
+          Log.debug('[DatabaseRowSubDocument] skipping retry - doc already loaded', {
+            rowId,
+            documentId,
+          });
+          retryLoadTimerRef.current = null;
+          return;
+        }
+
         retryCount++;
 
         const retried = await handleOpenDocument(documentId);
@@ -428,7 +465,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
                 });
                 await createOrphanedView({ document_id: documentId });
               } catch {
-                // Ignore; we'll retry loadView below.
+                // Ignore; we'll retry loading below.
               }
             }
 
@@ -671,11 +708,12 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     return <EditorSkeleton />;
   }
 
-  if (!document || !doc || !documentId || !row) return null;
+  if (!document || !doc || !documentId || !row || !workspaceId) return null;
   return (
     <Editor
       {...context}
       fullWidth
+      workspaceId={workspaceId}
       viewId={documentId}
       doc={doc}
       readOnly={readOnly}

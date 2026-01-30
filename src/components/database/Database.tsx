@@ -38,7 +38,6 @@ export interface Database2Props {
   createRow?: CreateRow;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
-  createOrphanedView?: (payload: { document_id: string }) => Promise<void>;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
@@ -96,7 +95,6 @@ function Database(props: Database2Props) {
     readOnly = true,
     loadView,
     bindViewSync,
-    createOrphanedView,
     checkIfRowDocumentExists,
     navigateToView,
     modalRowId,
@@ -469,7 +467,6 @@ function Database(props: Database2Props) {
       loadView,
       bindViewSync,
       createRow: createNewRow,
-      createOrphanedView,
       checkIfRowDocumentExists,
       loadViewMeta: props.loadViewMeta,
       navigateToView,
@@ -495,7 +492,6 @@ function Database(props: Database2Props) {
       loadView,
       bindViewSync,
       createNewRow,
-      createOrphanedView,
       checkIfRowDocumentExists,
       props.loadViewMeta,
       navigateToView,

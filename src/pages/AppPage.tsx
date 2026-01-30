@@ -47,7 +47,7 @@ function AppPage() {
     bindViewSync,
     ...handlers
   } = useAppHandlers();
-  const { eventEmitter, createOrphanedView } = handlers;
+  const { eventEmitter } = handlers;
   const { getViewReadOnlyStatus } = useViewOperations();
 
   const currentUser = useCurrentUser();
@@ -359,7 +359,6 @@ function AppPage() {
           uploadFile={handleUploadFile}
           variant={UIVariant.App}
           {...handlers}
-          createOrphanedView={createOrphanedView}
         />
       );
     }
@@ -388,7 +387,6 @@ function AppPage() {
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
         {...handlers}
-        createOrphanedView={createOrphanedView}
       />
     );
   }, [
@@ -414,7 +412,6 @@ function AppPage() {
     loadViews,
     setWordCount,
     handleUploadFile,
-    createOrphanedView,
   ]);
 
   useEffect(() => {

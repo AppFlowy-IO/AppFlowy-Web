@@ -1,5 +1,6 @@
 import { nanoid } from 'nanoid';
 import Delta, { Op } from 'quill-delta';
+import { v5 as uuidv5, validate as uuidValidate } from 'uuid';
 import * as Y from 'yjs';
 
 import {
@@ -22,6 +23,34 @@ import {
   YTextMap,
 } from '@/application/types';
 import { Log } from '@/utils/log';
+
+// UUID namespace OID (same as Rust's uuid::NAMESPACE_OID)
+const UUID_NAMESPACE_OID = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+
+/**
+ * Generate a deterministic page_id from document_id.
+ * This matches the algorithm used by the server in AppFlowy-Collab:
+ *
+ * ```rust
+ * pub fn page_id_from_document_id(document_id: &str) -> Option<String> {
+ *   let doc_id = document_id_from_any_string(document_id);
+ *   Some(Uuid::new_v5(&doc_id, PAGE.as_bytes()).to_string())
+ * }
+ * ```
+ *
+ * @param documentId - The document ID (UUID string)
+ * @returns The page_id as a UUID string
+ */
+export function pageIdFromDocumentId(documentId: string): string {
+  // If documentId is a valid UUID, use it directly as the namespace
+  // Otherwise, generate a deterministic UUID from the string (same as document_id_from_any_string)
+  const docUuid = uuidValidate(documentId)
+    ? documentId
+    : uuidv5(documentId, UUID_NAMESPACE_OID);
+
+  // Generate page_id as UUID v5 with document_id as namespace and "page" as name
+  return uuidv5('page', docUuid);
+}
 
 export function getTextMap(sharedRoot: YSharedRoot) {
   const document = sharedRoot.get(YjsEditorKey.document);
@@ -59,6 +88,78 @@ export function getBlock(blockId: string, sharedRoot: YSharedRoot) {
   const blocks = document.get(YjsEditorKey.blocks) as YBlocks;
 
   return blocks.get(blockId);
+}
+
+/**
+ * Ensure a block exists in Y.js by creating it from Slate node data if needed.
+ * This handles the edge case where the Slate editor has a block that's not in Y.js.
+ */
+export function ensureBlockInYjs(
+  sharedRoot: YSharedRoot,
+  blockId: string,
+  blockType: BlockType,
+  blockData: BlockData,
+  parentId?: string
+): YBlock {
+  let block = getBlock(blockId, sharedRoot);
+
+  if (block) {
+    return block;
+  }
+
+  Log.warn('[ensureBlockInYjs] Block not found in Y.js, creating from Slate data', {
+    blockId,
+    blockType,
+    parentId,
+  });
+
+  // Create the block in Y.js
+  block = new Y.Map() as YBlock;
+  block.set(YjsEditorKey.block_id, blockId);
+  block.set(YjsEditorKey.block_type, blockType);
+  block.set(YjsEditorKey.block_children, blockId);
+  block.set(YjsEditorKey.block_data, JSON.stringify(blockData));
+
+  if (parentId) {
+    block.set(YjsEditorKey.block_parent, parentId);
+  }
+
+  // Add to blocks map
+  const document = getDocument(sharedRoot);
+  const blocks = document.get(YjsEditorKey.blocks) as YBlocks;
+  blocks.set(blockId, block);
+
+  // Create children array
+  const childrenMap = getChildrenMap(sharedRoot);
+  if (!childrenMap.has(blockId)) {
+    childrenMap.set(blockId, new Y.Array());
+  }
+
+  // Create text entry if not an embed block
+  if (!isEmbedBlockTypes(blockType)) {
+    block.set(YjsEditorKey.block_external_id, blockId);
+    block.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
+
+    const textMap = getTextMap(sharedRoot);
+    if (!textMap.has(blockId)) {
+      const yText = new Y.Text();
+      // Apply delta from block data if available
+      if (blockData.delta) {
+        yText.applyDelta(blockData.delta);
+      }
+      textMap.set(blockId, yText);
+    }
+  }
+
+  // If parent is specified, add this block to parent's children
+  if (parentId) {
+    const parentChildren = getChildrenArray(parentId, sharedRoot);
+    if (parentChildren && !parentChildren.toArray().includes(blockId)) {
+      parentChildren.push([blockId]);
+    }
+  }
+
+  return block;
 }
 
 export function generateBlockId() {
@@ -179,12 +280,16 @@ export function appendFirstEmptyParagraph(sharedRoot: YSharedRoot, defaultText: 
 }
 
 /**
- * Initialize a Y.Doc with the minimum document structure needed for AppFlowy.
+ * Initialize a Y.Doc with the standard AppFlowy document structure.
+ *
  * @param doc - The Y.Doc to initialize
  * @param includeInitialParagraph - If true, adds a Paragraph block as child of Page.
  *   This is required for Slate editor to render properly.
+ * @param documentId - Optional document ID to use for generating the page_id.
+ *   When provided, uses the same deterministic algorithm as the server to ensure
+ *   consistency during sync. When not provided, uses nanoid(8) for backwards compatibility.
  */
-export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph = false): void {
+export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph = false, documentId?: string): void {
   const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
 
   // Skip if already initialized
@@ -194,7 +299,9 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
 
   const document = new Y.Map();
   const blocks = new Y.Map() as YBlocks;
-  const pageId = nanoid(8);
+  // Use deterministic page_id from documentId when provided, otherwise fallback to nanoid
+  // The deterministic algorithm matches the server's default_document_data
+  const pageId = documentId ? pageIdFromDocumentId(documentId) : nanoid(8);
   const meta = new Y.Map();
   const childrenMap = new Y.Map() as YChildrenMap;
   const textMap = new Y.Map() as YTextMap;
@@ -271,6 +378,15 @@ export function compatibleDataDeltaToYText(sharedRoot: YSharedRoot, ops: Op[], b
         yText.applyDelta(ops);
 
         const block = getBlock(blockId, sharedRoot);
+
+        if (!block) {
+          console.error('[compatibleDataDeltaToYText] Block not found:', blockId);
+          // Just add the yText to textMap without updating block
+          const textMap = getTextMap(sharedRoot);
+
+          textMap.set(blockId, yText);
+          return;
+        }
 
         block.set(YjsEditorKey.block_external_id, blockId);
         block.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
