@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 import { MentionablePerson } from '@/application/types';
-import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { AppContext } from '@/components/app/app.hooks';
 import { useService } from '@/components/main/app.hooks';
 
 interface CacheEntry {
@@ -27,7 +27,9 @@ function getCachedUsers(workspaceId: string | undefined): MentionablePerson[] {
 
 export function useMentionableUsers() {
   const service = useService();
-  const workspaceId = useCurrentWorkspaceId();
+  // Use AppContext directly to avoid throwing when outside AppProvider (e.g., in publish view)
+  const appContext = useContext(AppContext);
+  const workspaceId = appContext?.currentWorkspaceId;
 
   // Track current workspaceId for race condition prevention
   const workspaceIdRef = useRef(workspaceId);

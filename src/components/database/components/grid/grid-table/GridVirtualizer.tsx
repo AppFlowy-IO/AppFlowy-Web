@@ -194,27 +194,29 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
             );
           })}
         </div>
-        <DatabaseStickyTopOverlay>
-          <GridStickyHeader
-            // eslint-disable-next-line
-            // @ts-ignore
-            row={{
-              index: 0,
-            }}
-            ref={stickyHeaderRef}
-            columns={columns}
-            data={data}
-            totalSize={totalSize}
-            columnItems={columnItems}
-            onScrollLeft={(scrollLeft) => {
-              parentRef.current?.scrollTo({
-                left: scrollLeft,
-                behavior: 'auto',
-              });
-            }}
-            onResizeColumnStart={handleResizeStart}
-          />
-        </DatabaseStickyTopOverlay>
+        {!isDocumentBlock && (
+          <DatabaseStickyTopOverlay>
+            <GridStickyHeader
+              // eslint-disable-next-line
+              // @ts-ignore
+              row={{
+                index: 0,
+              }}
+              ref={stickyHeaderRef}
+              columns={columns}
+              data={data}
+              totalSize={totalSize}
+              columnItems={columnItems}
+              onScrollLeft={(scrollLeft) => {
+                parentRef.current?.scrollTo({
+                  left: scrollLeft,
+                  behavior: 'auto',
+                });
+              }}
+              onResizeColumnStart={handleResizeStart}
+            />
+          </DatabaseStickyTopOverlay>
+        )}
 
         <DatabaseStickyBottomOverlay scrollElement={virtualizer.scrollElement}>
           <DatabaseStickyHorizontalScrollbar
