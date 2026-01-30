@@ -42,7 +42,7 @@ type RollupContext = {
   rowId: RowId;
   fieldId: string;
   loadView: ReturnType<typeof createBlogPostsAuthorsRelationFixture>['loadView'];
-  createRowDoc: ReturnType<typeof createBlogPostsAuthorsRelationFixture>['createRowDoc'];
+  createRow: ReturnType<typeof createBlogPostsAuthorsRelationFixture>['createRow'];
   getViewIdFromDatabaseId: ReturnType<typeof createBlogPostsAuthorsRelationFixture>['getViewIdFromDatabaseId'];
 };
 
@@ -175,7 +175,7 @@ async function primeRollupCache(contexts: RollupContext[]) {
         rowId: context.rowId,
         fieldId: context.fieldId,
         loadView: context.loadView,
-        createRowDoc: context.createRowDoc,
+        createRow: context.createRow,
         getViewIdFromDatabaseId: context.getViewIdFromDatabaseId,
       })
     )
@@ -219,7 +219,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: row.id as RowId,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       }))
     );
@@ -234,7 +234,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: rowId as RowId,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       }).value;
     };
@@ -271,7 +271,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: baseRow1,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       },
     ]);
@@ -334,7 +334,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: baseRow1,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       },
       {
@@ -345,7 +345,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: baseRow2,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       },
     ]);
@@ -366,7 +366,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
             rowId: rowId as RowId,
             fieldId,
             loadView: fixture.loadView,
-            createRowDoc: fixture.createRowDoc,
+            createRow: fixture.createRow,
             getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
           });
         },
@@ -423,7 +423,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: baseRow1,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       },
       {
@@ -434,7 +434,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: baseRow2,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       },
     ]);
@@ -455,7 +455,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
             rowId: rowId as RowId,
             fieldId,
             loadView: fixture.loadView,
-            createRowDoc: fixture.createRowDoc,
+            createRow: fixture.createRow,
             getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
           });
         },
@@ -505,7 +505,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: originalRollupId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -517,7 +517,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: uniqueRollupId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -567,7 +567,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: rollupFieldId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -598,7 +598,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: rollupFieldId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -640,7 +640,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: baseRowId,
         fieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       });
       expect(value.rawNumeric).toBeDefined();
@@ -700,7 +700,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: countEmptyId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     const countNonEmpty = await resolveRollupValue({
@@ -711,7 +711,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: countNonEmptyId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     const percentEmpty = await resolveRollupValue({
@@ -722,7 +722,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: percentEmptyId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     const percentNotEmpty = await resolveRollupValue({
@@ -733,7 +733,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: percentNotEmptyId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -775,7 +775,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: rollupFieldId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -820,7 +820,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: listRollupId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     expect(initialList.value).toBe('Before');
@@ -833,7 +833,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: countRollupId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     expect(initialCount.value).toBe('1');
@@ -847,7 +847,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: listRollupId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     expect(updatedList.value).toBe('After');
@@ -861,7 +861,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: countRollupId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     expect(updatedCount.value).toBe('2');
@@ -911,7 +911,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: earliestId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     const latestValue = await resolveRollupValue({
@@ -922,7 +922,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: latestId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     const rangeValue = await resolveRollupValue({
@@ -933,7 +933,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: rangeId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -997,7 +997,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: checkedId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     const unchecked = await resolveRollupValue({
@@ -1008,7 +1008,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: uncheckedId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -1039,7 +1039,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: percentCheckedId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     const percentUnchecked = await resolveRollupValue({
@@ -1050,7 +1050,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: percentUncheckedId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -1103,7 +1103,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: medianId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
     const mode = await resolveRollupValue({
@@ -1114,7 +1114,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
       rowId: baseRowId,
       fieldId: modeId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDoc,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -1161,7 +1161,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: baseRow1,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       },
       {
@@ -1172,7 +1172,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
         rowId: baseRow2,
         fieldId: rollupFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       },
     ]);
@@ -1193,7 +1193,7 @@ describe('rollup desktop parity (blog_posts + authors)', () => {
             rowId: rowId as RowId,
             fieldId,
             loadView: fixture.loadView,
-            createRowDoc: fixture.createRowDoc,
+            createRow: fixture.createRow,
             getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
           });
         },

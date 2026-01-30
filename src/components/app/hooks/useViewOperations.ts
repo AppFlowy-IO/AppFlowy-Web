@@ -297,18 +297,19 @@ export function useViewOperations() {
 
         // For databases, ensure guid is set to databaseId for sync
         if (collabType === Types.Database) {
-          let databaseId = await getDatabaseId(id);
+          // First try getting databaseId directly from the doc (fast, synchronous)
+          // This works for newly created embedded databases where the doc already has the ID
+          let databaseId = getDatabaseIdFromDoc(doc);
 
-          if (!databaseId) {
-            databaseId = getDatabaseIdFromDoc(doc);
-
-            if (databaseId) {
-              Log.debug('[useViewOperations] databaseId loaded from Yjs document', {
-                viewId: id,
-                databaseId,
-              });
-              databaseIdViewIdMapRef.current.set(databaseId, id);
-            }
+          if (databaseId) {
+            Log.debug('[useViewOperations] databaseId loaded from Yjs document', {
+              viewId: id,
+              databaseId,
+            });
+            databaseIdViewIdMapRef.current.set(databaseId, id);
+          } else {
+            // Fallback to workspace database mapping lookup (async, may timeout)
+            databaseId = (await getDatabaseId(id)) ?? null;
           }
 
           if (!databaseId) {
