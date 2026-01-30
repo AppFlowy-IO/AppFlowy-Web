@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { useDatabaseContext } from '@/application/database-yjs';
+import { useDatabaseContextOptional } from '@/application/database-yjs';
 import { useDeleteRowDispatch, useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
 import { ReactComponent as ArrowLeftIcon } from '@/assets/icons/arrow_left.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
@@ -34,7 +34,8 @@ function DatabaseRowModal({
   onOpenChange: (open: boolean) => void;
   openPage?: (rowId: string) => void;
 }) {
-  const { openPageModalViewId } = useDatabaseContext();
+  const context = useDatabaseContextOptional();
+  const openPageModalViewId = context?.openPageModalViewId;
   const { t } = useTranslation();
   const duplicateRow = useDuplicateRowDispatch();
   const deleteRow = useDeleteRowDispatch();

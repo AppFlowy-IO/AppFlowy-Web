@@ -6,7 +6,7 @@ import {
   getRowTimeString,
   RowMetaKey,
   useDatabase,
-  useDatabaseContext,
+  useDatabaseContextOptional,
   useReadOnly,
   useRowData,
   useRowMetaSelector,
@@ -27,7 +27,7 @@ import {
   YjsDatabaseKey,
   YjsEditorKey
 } from '@/application/types';
-import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import {
   useBindViewSync,
@@ -37,7 +37,7 @@ import {
   YDocWithMeta,
 } from '@/components/database/hooks';
 import { Editor } from '@/components/editor';
-import { useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
 export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
@@ -46,11 +46,12 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const documentId = meta?.documentId;
   const database = useDatabase();
   const row = useRowData(rowId) as YDatabaseRow | undefined;
-  const currentUser = useCurrentUser();
-  const workspaceId = useCurrentWorkspaceId();
+  const currentUser = useCurrentUserOptional();
+  const workspaceId = useCurrentWorkspaceIdOptional();
 
   // Get context for Editor props (navigateToView, loadView, etc.)
-  const context = useDatabaseContext();
+  // Use optional variant to avoid throwing when outside DatabaseContextProvider
+  const context = useDatabaseContextOptional();
 
   // Use dedicated hooks instead of getting from context
   const checkIfRowDocumentExists = useCheckIfRowDocumentExists();
@@ -836,7 +837,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     return <EditorSkeleton />;
   }
 
-  if (!document || !doc || !documentId || !row || !workspaceId) return null;
+  if (!document || !doc || !documentId || !row || !workspaceId || !context) return null;
   return (
     <Editor
       {...context}

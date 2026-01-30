@@ -103,6 +103,15 @@ export const useDatabaseContext = () => {
   return context;
 };
 
+/**
+ * Optional variant of useDatabaseContext that returns undefined
+ * instead of throwing when used outside DatabaseContextProvider.
+ * Use this in components that may render outside database context.
+ */
+export const useDatabaseContextOptional = (): DatabaseContextState | undefined => {
+  return useContext(DatabaseContext) ?? undefined;
+};
+
 export const useDocGuid = () => {
   return useDatabaseContext().databaseDoc.guid;
 };

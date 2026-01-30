@@ -1,14 +1,18 @@
 import { useMemo } from 'react';
 
-import { useDatabaseContext } from '@/application/database-yjs';
+import { useDatabaseContextOptional } from '@/application/database-yjs';
 import { FileMediaCellDataItem } from '@/application/database-yjs/cell.type';
 import { useAuthenticatedImage } from '@/components/_shared/hooks/useAuthenticatedImage';
 import { resolveFileUrl } from '@/utils/file-storage-url';
 
 function PreviewImage({ file, onClick }: { file: FileMediaCellDataItem; onClick: () => void }) {
-  const { workspaceId, databasePageId } = useDatabaseContext();
+  const context = useDatabaseContextOptional();
+  const workspaceId = context?.workspaceId;
+  const databasePageId = context?.databasePageId;
 
   const thumb = useMemo(() => {
+    if (!workspaceId || !databasePageId) return '';
+
     const fileUrl = resolveFileUrl(file.url, workspaceId, databasePageId);
 
     if (!fileUrl) return '';

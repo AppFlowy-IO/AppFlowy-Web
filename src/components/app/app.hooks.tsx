@@ -270,6 +270,26 @@ export function useCurrentWorkspaceId() {
   return context.currentWorkspaceId;
 }
 
+/**
+ * Optional variant of useCurrentWorkspaceId that returns undefined
+ * instead of throwing when used outside AppProvider.
+ * Use this in components that may render in publish views or modals.
+ */
+export function useCurrentWorkspaceIdOptional(): string | undefined {
+  const context = useContext(AppContext);
+
+  return context?.currentWorkspaceId;
+}
+
+/**
+ * Optional variant that returns the full AppContext or undefined.
+ * Use for components that need multiple context values and may render
+ * outside AppProvider.
+ */
+export function useAppContextOptional(): AppContextType | null {
+  return useContext(AppContext);
+}
+
 export function useAppHandlers() {
   const context = useContext(AppContext);
 
