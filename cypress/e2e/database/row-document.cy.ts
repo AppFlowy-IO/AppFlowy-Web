@@ -157,6 +157,71 @@ describe('Row Document Test', () => {
     });
   });
 
+  /**
+   * Test: Focus should not be lost while typing in row document
+   * This tests the fix for the bug where typing would lose focus after a few characters
+   * due to the effect re-running when meta changes.
+   */
+  it('should maintain focus while typing continuously', () => {
+    const testEmail = generateRandomEmail();
+    const cardName = `Focus-${uuidv4().substring(0, 6)}`;
+
+    const authUtils = new AuthTestUtils();
+
+    createBoardAndWait(authUtils, testEmail).then(() => {
+      // Add a new card
+      BoardSelectors.boardContainer()
+        .contains('To Do')
+        .closest('[data-column-id]')
+        .within(() => {
+          cy.contains('New').click({ force: true });
+        });
+      waitForReactUpdate(1000);
+      cy.focused().type(`${cardName}{enter}`, { force: true });
+      waitForReactUpdate(2000);
+
+      // Open row detail modal
+      BoardSelectors.boardContainer().contains(cardName).click({ force: true });
+      RowDetailSelectors.modal().should('exist');
+
+      // Wait for editor to load
+      waitForReactUpdate(3000);
+
+      // Scroll down to make sure editor is visible
+      cy.get('[role="dialog"]')
+        .find('.appflowy-scroll-container')
+        .scrollTo('bottom');
+      waitForReactUpdate(1000);
+
+      // Click into editor
+      cy.get('[role="dialog"]')
+        .find('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]', { timeout: 15000 })
+        .should('exist')
+        .first()
+        .click({ force: true });
+
+      // Type a long sentence with delays to simulate real typing
+      // This would previously fail because focus would be lost after ~2 seconds
+      const longText = 'This is a test sentence that should be typed without losing focus even after several seconds of typing';
+      cy.focused().type(longText, { delay: 50 }); // ~5 seconds of typing
+
+      // Verify the full text was typed (focus was maintained)
+      cy.get('[role="dialog"]').should('contain.text', longText);
+
+      // Close and verify content persisted
+      cy.get('[role="dialog"]').find('.MuiDialogTitle-root, [data-testid="row-detail-header"]').first().click({ force: true });
+      waitForReactUpdate(500);
+      closeRowDetailWithEscape();
+      waitForReactUpdate(2000);
+
+      // Reopen and verify
+      BoardSelectors.boardContainer().contains(cardName).click({ force: true });
+      RowDetailSelectors.modal().should('exist');
+      waitForReactUpdate(3000);
+      cy.get('[role="dialog"]').should('contain.text', longText);
+    });
+  });
+
   it('shows row document indicator after editing row document', () => {
     const testEmail = generateRandomEmail();
     const cardName = `RowDoc-${uuidv4().substring(0, 6)}`;
