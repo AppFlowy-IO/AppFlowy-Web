@@ -87,13 +87,16 @@ function RelationItems({
     if (!relatedViewId || !createRow || !docGuid) return;
     void (async () => {
       try {
-        const rows: Record<string, YDoc> = {};
+        // Load all rows in parallel instead of sequentially (async-parallel optimization)
+        const rowEntries = await Promise.all(
+          rowIds.map(async (rowId) => {
+            const rowDoc = await createRow(getRowKey(docGuid, rowId));
 
-        for (const rowId of rowIds) {
-          const rowDoc = await createRow(getRowKey(docGuid, rowId));
+            return [rowId, rowDoc] as const;
+          })
+        );
 
-          rows[rowId] = rowDoc;
-        }
+        const rows: Record<string, YDoc> = Object.fromEntries(rowEntries);
 
         setRows(rows);
       } catch (e) {

@@ -64,6 +64,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const pendingNonEmptyRef = useRef(false);
   const pendingOpenLocalRef = useRef(false);
   const docReadyRef = useRef(false); // Track if document is loaded to prevent retry timer from resetting it
+  const rowDocEnsuredRef = useRef(false); // Track if row document has been ensured on server to avoid redundant API calls
 
   const getCellData = useCallback(
     (cell: YDatabaseCell, field: YDatabaseField) => {
@@ -194,6 +195,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         setDoc(doc);
         docReadyRef.current = true;
+        rowDocEnsuredRef.current = true; // Document exists on server since we loaded it successfully
         return true;
         // eslint-disable-next-line
       } catch (e: any) {
@@ -252,6 +254,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         setDoc(doc);
         docReadyRef.current = true;
+        rowDocEnsuredRef.current = true; // Document was created on server via createOrphanedView
         Log.debug('[DatabaseRowSubDocument] openDocumentWithState ready', {
           rowId,
           documentId,
@@ -325,6 +328,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         if (requireServerReady) {
           if (!createOrphanedView) {
             Log.debug('[DatabaseRowSubDocument] createOrphanedView not available, returning false');
+            setLoading(false); // Clear loading on early failure
             return false;
           }
 
@@ -334,6 +338,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
             Log.debug('[DatabaseRowSubDocument] createOrphanedView success', { documentId, docStateSize: docState.length });
           } catch (e) {
             Log.error('[DatabaseRowSubDocument] createOrphanedView failed', e);
+            setLoading(false); // Clear loading on error
             return false;
           }
         } else if (createOrphanedView) {
@@ -440,6 +445,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
   useEffect(() => {
     if (!documentId) return;
+
+    // Reset ensured state when documentId changes
+    rowDocEnsuredRef.current = false;
 
     let cancelled = false;
     let retryCount = 0;
@@ -694,6 +702,11 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const ensureRowDocumentExists = useCallback(async () => {
     if (!documentId) return false;
 
+    // Skip if we've already ensured this document exists (memoize to avoid redundant API calls)
+    if (rowDocEnsuredRef.current) {
+      return true;
+    }
+
     let exists = false;
 
     if (checkIfRowDocumentExists) {
@@ -704,17 +717,26 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       }
     }
 
+    // If document already exists, mark as ensured and return early
+    // Don't call createOrphanedView if the document is already on the server
+    if (exists) {
+      rowDocEnsuredRef.current = true;
+      return true;
+    }
+
+    // Only create orphaned view if document doesn't exist
     if (createOrphanedView) {
       try {
         await createOrphanedView({ document_id: documentId });
+        rowDocEnsuredRef.current = true;
         return true;
       } catch {
-        // Fall back to "exists" if we can at least confirm collab presence.
-        return exists;
+        // Creation failed - don't mark as ensured so we can retry
+        return false;
       }
     }
 
-    return exists;
+    return false;
   }, [checkIfRowDocumentExists, createOrphanedView, documentId]);
 
   useEffect(() => {
