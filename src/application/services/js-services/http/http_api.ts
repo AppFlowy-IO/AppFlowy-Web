@@ -974,21 +974,21 @@ export async function deleteCollabVersion(workspaceId: string, objectId: string,
 export async function revertCollabVersion(workspaceId: string, objectId: string, collabType: Types, version: string) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/revert`;
   const response = await axiosInstance?.post<{
-    state_vector: number[],
-    doc_state: number[],
-    collab_version: string | null,
-    version: number, // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
-  }>(url, {
-    data: {
-      version,
-      collabType
+    data : {
+      state_vector: number[],
+      doc_state: number[],
+      collab_version: string | null,
+      version: number, // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
     }
+  }>(url, {
+    version,
+    collab_type: collabType,
   });
 
   if (!response) {
     return Promise.reject('No response');
   } else {
-    const data = response.data;
+    const data = response.data.data;
 
     return {
       stateVector: new Uint8Array(data.state_vector),
