@@ -127,10 +127,12 @@ export function ensureBlockInYjs(
   // Add to blocks map
   const document = getDocument(sharedRoot);
   const blocks = document.get(YjsEditorKey.blocks) as YBlocks;
+
   blocks.set(blockId, block);
 
   // Create children array
   const childrenMap = getChildrenMap(sharedRoot);
+
   if (!childrenMap.has(blockId)) {
     childrenMap.set(blockId, new Y.Array());
   }
@@ -141,12 +143,15 @@ export function ensureBlockInYjs(
     block.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
 
     const textMap = getTextMap(sharedRoot);
+
     if (!textMap.has(blockId)) {
       const yText = new Y.Text();
+
       // Apply delta from block data if available
       if (blockData.delta) {
         yText.applyDelta(blockData.delta);
       }
+
       textMap.set(blockId, yText);
     }
   }
@@ -154,6 +159,7 @@ export function ensureBlockInYjs(
   // If parent is specified, add this block to parent's children
   if (parentId) {
     const parentChildren = getChildrenArray(parentId, sharedRoot);
+
     if (parentChildren && !parentChildren.toArray().includes(blockId)) {
       parentChildren.push([blockId]);
     }

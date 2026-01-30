@@ -91,7 +91,7 @@ export interface AppContextType {
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
-  createOrphanedView?: (payload: { document_id: string }) => Promise<void>;
+  createOrphanedView?: (payload: { document_id: string }) => Promise<Uint8Array>;
   loadDatabasePrompts?: LoadDatabasePrompts;
   testDatabasePromptConfig?: TestDatabasePromptConfig;
   eventEmitter?: EventEmitter;

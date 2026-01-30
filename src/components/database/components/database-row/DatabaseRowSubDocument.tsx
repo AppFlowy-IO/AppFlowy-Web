@@ -619,6 +619,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     scheduleEnsureRowDocumentExists,
     createOrphanedView,
     rowId,
+    doc,
   ]);
 
   useEffect(() => {
