@@ -38,6 +38,8 @@ export interface Database2Props {
   createRowDoc?: CreateRowDoc;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
+  createOrphanedView?: (payload: { document_id: string }) => Promise<void>;
+  checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   /**
@@ -94,6 +96,8 @@ function Database(props: Database2Props) {
     readOnly = true,
     loadView,
     bindViewSync,
+    createOrphanedView,
+    checkIfRowDocumentExists,
     navigateToView,
     modalRowId,
     isDocumentBlock: _isDocumentBlock,
@@ -413,16 +417,20 @@ function Database(props: Database2Props) {
             throw new Error('Row document not found');
           }
 
-          // Update URL with row ID parameter - this navigates to the row page
-          onOpenRowPage?.(rowId);
+          // Update all modal state in a single setState call
+          setModalState({
+            rowId,
+            viewId,
+            databaseDoc: viewDoc,
+            rowDocMap: { [rowId]: rowDoc },
+          });
           return;
         } catch (e) {
           console.error(e);
         }
       }
 
-      // Update URL with row ID parameter - this navigates to the row page
-      onOpenRowPage?.(rowId);
+      setModalState((prev) => ({ ...prev, rowId }));
     },
     [createNewRowDoc, loadView, navigateToView, onOpenRowPage, readOnly]
   );
@@ -461,6 +469,8 @@ function Database(props: Database2Props) {
       loadView,
       bindViewSync,
       createRowDoc: createNewRowDoc,
+      createOrphanedView,
+      checkIfRowDocumentExists,
       loadViewMeta: props.loadViewMeta,
       navigateToView,
       onRendered: props.onRendered,
@@ -485,6 +495,8 @@ function Database(props: Database2Props) {
       loadView,
       bindViewSync,
       createNewRowDoc,
+      createOrphanedView,
+      checkIfRowDocumentExists,
       props.loadViewMeta,
       navigateToView,
       props.onRendered,

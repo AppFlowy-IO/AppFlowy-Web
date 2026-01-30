@@ -1231,6 +1231,8 @@ export interface ViewComponentProps {
   createRowDoc?: CreateRowDoc;
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
+  createOrphanedView?: (payload: { document_id: string }) => Promise<void>;
+  checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;

@@ -1,6 +1,4 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { toast } from 'sonner';
-
 import {
   FieldType,
   getRowTimeString,
@@ -27,8 +25,8 @@ import {
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
-import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
+import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { Editor } from '@/components/editor';
 import { useCurrentUser } from '@/components/main/app.hooks';
 
@@ -46,6 +44,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const editorRef = useRef<YjsEditor | null>(null);
   const lastIsEmptyRef = useRef<boolean | null>(null);
   const pendingMetaUpdateRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNonEmptyRef = useRef(false);
 
   const getCellData = useCallback(
     (cell: YDatabaseCell, field: YDatabaseField) => {
@@ -96,22 +95,27 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
   const [loading, setLoading] = useState(true);
   const [doc, setDoc] = useState<YDoc | null>(null);
+  const retryLoadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const ensureDocRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const document = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
+  const isDocumentEmptyResolved = meta?.isEmptyDocument ?? false;
 
   const handleOpenDocument = useCallback(
-    async (documentId: string) => {
-      if (!loadView) return;
+    async (documentId: string): Promise<boolean> => {
+      if (!loadView) return false;
       setLoading(true);
       try {
         setDoc(null);
         const doc = await loadView(documentId, true);
 
         setDoc(doc);
+        return true;
         // eslint-disable-next-line
       } catch (e: any) {
-        console.error(e);
-        toast.error(e.message);
+        // Don't show error toast - caller will fall back to creating document
+        console.warn('[DatabaseRowSubDocument] loadView failed, will create locally:', e.message);
+        return false;
       } finally {
         setLoading(false);
       }
@@ -155,7 +159,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         // eslint-disable-next-line
       } catch (e: any) {
         console.error('[DatabaseRowSubDocument] handleCreateDocument failed', e);
-        toast.error(e.message);
       } finally {
         setLoading(false);
       }
@@ -166,21 +169,92 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   useEffect(() => {
     if (!documentId) return;
 
+    let cancelled = false;
+
+    const clearRetryTimer = () => {
+      if (retryLoadTimerRef.current) {
+        clearTimeout(retryLoadTimerRef.current);
+        retryLoadTimerRef.current = null;
+      }
+    };
+
+    const scheduleRetry = (createIfStillMissing: boolean) => {
+      if (retryLoadTimerRef.current) return;
+      retryLoadTimerRef.current = setTimeout(async () => {
+        if (cancelled) return;
+        const retried = await handleOpenDocument(documentId);
+        if (retried || cancelled) {
+          return;
+        }
+        retryLoadTimerRef.current = null;
+        if (createIfStillMissing) {
+          void handleCreateDocument(documentId);
+          return;
+        }
+        scheduleRetry(createIfStillMissing);
+      }, 5000);
+    };
+
+    const shouldWaitForRowMeta = !isDocumentEmptyResolved;
+
     void (async () => {
-      // If checkIfRowDocumentExists is not available, go straight to creating the document
+      if (isDocumentEmptyResolved) {
+        void handleCreateDocument(documentId);
+        return;
+      }
+
+      // If checkIfRowDocumentExists is not available, decide based on row meta.
       if (!checkIfRowDocumentExists) {
+        if (shouldWaitForRowMeta) {
+          scheduleRetry(false);
+          return;
+        }
         void handleCreateDocument(documentId);
         return;
       }
 
       try {
-        await checkIfRowDocumentExists(documentId);
-        void handleOpenDocument(documentId);
+        const exists = await checkIfRowDocumentExists(documentId);
+        if (exists) {
+          const success = await handleOpenDocument(documentId);
+          if (!success) {
+            if (createOrphanedView) {
+              try {
+                await createOrphanedView({ document_id: documentId });
+              } catch {
+                // Ignore; we'll retry loadView below.
+              }
+            }
+            scheduleRetry(!shouldWaitForRowMeta);
+          }
+          return;
+        }
+
+        if (shouldWaitForRowMeta) {
+          scheduleRetry(false);
+          return;
+        }
+        void handleCreateDocument(documentId);
       } catch (e) {
+        if (shouldWaitForRowMeta) {
+          scheduleRetry(false);
+          return;
+        }
         void handleCreateDocument(documentId);
       }
     })();
-  }, [handleOpenDocument, documentId, handleCreateDocument, checkIfRowDocumentExists]);
+
+    return () => {
+      cancelled = true;
+      clearRetryTimer();
+    };
+  }, [
+    handleOpenDocument,
+    documentId,
+    handleCreateDocument,
+    checkIfRowDocumentExists,
+    isDocumentEmptyResolved,
+  ]);
 
   useEffect(() => {
     if (loading || !doc || !documentId || !bindViewSync) return;
@@ -237,6 +311,67 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     editorRef.current = editor;
   }, []);
 
+  const ensureRowDocumentExists = useCallback(async () => {
+    if (!documentId) return false;
+
+    let exists = false;
+
+    if (checkIfRowDocumentExists) {
+      try {
+        exists = await checkIfRowDocumentExists(documentId);
+      } catch {
+        // Ignore and fall through to orphaned view creation attempt.
+      }
+    }
+
+    if (createOrphanedView) {
+      try {
+        await createOrphanedView({ document_id: documentId });
+        return true;
+      } catch {
+        // Fall back to "exists" if we can at least confirm collab presence.
+        return exists;
+      }
+    }
+
+    return exists;
+  }, [checkIfRowDocumentExists, createOrphanedView, documentId]);
+
+  const scheduleEnsureRowDocumentExists = useCallback(() => {
+    if (!documentId || ensureDocRetryTimerRef.current) {
+      return;
+    }
+
+    ensureDocRetryTimerRef.current = setTimeout(async () => {
+      ensureDocRetryTimerRef.current = null;
+
+      try {
+        const exists = checkIfRowDocumentExists
+          ? await checkIfRowDocumentExists(documentId)
+          : false;
+
+        if (!exists && createOrphanedView) {
+          await createOrphanedView({ document_id: documentId });
+        }
+
+        if (pendingNonEmptyRef.current) {
+          const editor = editorRef.current;
+          if (editor && !isDocumentEmpty(editor)) {
+            lastIsEmptyRef.current = false;
+            pendingNonEmptyRef.current = false;
+            updateRowMeta(RowMetaKey.IsDocumentEmpty, false);
+            return;
+          }
+          pendingNonEmptyRef.current = false;
+        }
+      } catch {
+        // Keep retrying until the backend accepts the row document.
+      }
+
+      scheduleEnsureRowDocumentExists();
+    }, 5000);
+  }, [checkIfRowDocumentExists, createOrphanedView, documentId, isDocumentEmpty, updateRowMeta]);
+
   useEffect(() => {
     if (!doc) return;
 
@@ -263,13 +398,30 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return;
         }
 
-        lastIsEmptyRef.current = isEmpty;
-
         if (shouldSkipIsDocumentEmptyUpdate(isEmpty)) {
           return;
         }
 
-        updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
+        if (isEmpty) {
+          lastIsEmptyRef.current = isEmpty;
+          pendingNonEmptyRef.current = false;
+          updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
+          return;
+        }
+
+        void (async () => {
+          const ensured = await ensureRowDocumentExists();
+
+          if (ensured) {
+            lastIsEmptyRef.current = isEmpty;
+            pendingNonEmptyRef.current = false;
+            updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
+            return;
+          }
+
+          pendingNonEmptyRef.current = true;
+          scheduleEnsureRowDocumentExists();
+        })();
       }, 0);
     };
 
@@ -282,7 +434,23 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         pendingMetaUpdateRef.current = null;
       }
     };
-  }, [doc, isDocumentEmpty, shouldSkipIsDocumentEmptyUpdate, updateRowMeta]);
+  }, [
+    doc,
+    isDocumentEmpty,
+    shouldSkipIsDocumentEmptyUpdate,
+    updateRowMeta,
+    ensureRowDocumentExists,
+    scheduleEnsureRowDocumentExists,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (ensureDocRetryTimerRef.current) {
+        clearTimeout(ensureDocRetryTimerRef.current);
+        ensureDocRetryTimerRef.current = null;
+      }
+    };
+  }, []);
 
   if (loading) {
     return <EditorSkeleton />;

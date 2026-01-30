@@ -29,6 +29,12 @@ export const Group = ({ groupId }: GroupProps) => {
     context;
   const rowOrders = useRowOrdersSelector();
 
+  // Track visibility for lazy loading (rerender-move-effect-to-event pattern)
+  const [isVisible, setIsVisible] = useState(false);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const observedContainerRef = useRef<HTMLDivElement | null>(null);
+
   // Store callbacks in refs to avoid triggering effect re-runs (advanced-use-latest pattern)
   const ensureRowDocRef = useRef(ensureRowDoc);
   const populateRowDocFromCacheRef = useRef(populateRowDocFromCache);
@@ -39,16 +45,50 @@ export const Group = ({ groupId }: GroupProps) => {
     populateRowDocFromCacheRef.current = populateRowDocFromCache;
   });
 
-  // Reset loaded rows when group changes
+  // Set up intersection observer for lazy loading
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
+      return;
+    }
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        // Once visible, stay visible (no need to unload)
+        if (entries[0]?.isIntersecting) {
+          setIsVisible(true);
+        }
+      },
+      {
+        // Load slightly before entering viewport for smoother UX
+        rootMargin: '100px',
+        threshold: 0,
+      }
+    );
+
+    const container = containerRef.current;
+    if (container) {
+      observerRef.current.observe(container);
+      observedContainerRef.current = container;
+    }
+
+    return () => {
+      observerRef.current?.disconnect();
+    };
+  }, []);
+
+  // Reset loaded rows and visibility when group changes
   useEffect(() => {
     loadedRowsRef.current.clear();
+    setIsVisible(false);
   }, [groupId]);
 
-  // Eagerly load all row documents so Board cards can render with data.
+  // Load row documents only when group becomes visible.
   // Try cached data first (fast), then fall back to ensureRowDoc (WebSocket sync).
   // Uses Promise.all for parallel loading to avoid request waterfalls.
   useEffect(() => {
-    if (!rowOrders || rowOrders.length === 0) return;
+    // Only load when visible (lazy loading for off-screen groups)
+    if (!isVisible || !rowOrders || rowOrders.length === 0) return;
 
     // Only load rows we haven't loaded yet (avoid re-loading on sort/filter changes)
     const rowsToLoad = rowOrders.filter((row) => !loadedRowsRef.current.has(row.id));
@@ -89,7 +129,7 @@ export const Group = ({ groupId }: GroupProps) => {
     };
 
     void loadRows();
-  }, [blobPrefetchComplete, rowOrders]);
+  }, [isVisible, blobPrefetchComplete, rowOrders]);
 
   const readOnly = useReadOnly();
   const getCards = useCallback(
@@ -219,6 +259,14 @@ export const Group = ({ groupId }: GroupProps) => {
         onMouseLeave={() => setIsHover(false)}
         ref={(el) => {
           ref.current = el;
+          containerRef.current = el;
+          if (observedContainerRef.current && observerRef.current) {
+            observerRef.current.unobserve(observedContainerRef.current);
+          }
+          observedContainerRef.current = el;
+          if (el && observerRef.current) {
+            observerRef.current.observe(el);
+          }
           if (!el) return;
           const container = getVerticalScrollContainer(el);
 
