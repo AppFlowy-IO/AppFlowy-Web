@@ -1918,12 +1918,20 @@ export async function generateAITranslateForRow(workspaceId: string, payload: Ge
     .join(', ');
 }
 
-export async function createOrphanedView(workspaceId: string, payload: { document_id: string }) {
+export async function createOrphanedView(workspaceId: string, payload: { document_id: string }): Promise<Uint8Array> {
   const url = `/api/workspace/${workspaceId}/orphaned-view`;
 
-  return executeAPIVoidRequest(() =>
-    axiosInstance?.post<APIResponse>(url, payload)
+  // Server returns doc_state as Vec<u8> which is JSON encoded as number[]
+  const docStateArray = await executeAPIRequest<number[] | null>(() =>
+    axiosInstance?.post<APIResponse<number[] | null>>(url, payload)
   );
+
+  // Validate the response - server must return a valid doc_state array
+  if (!docStateArray || !Array.isArray(docStateArray)) {
+    throw new Error('Server returned invalid doc_state');
+  }
+
+  return new Uint8Array(docStateArray);
 }
 
 export async function getGuestInvitation(workspaceId: string, code: string) {

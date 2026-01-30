@@ -200,7 +200,7 @@ export interface AppService {
   }>;
   generateAISummaryForRow: (workspaceId: string, payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow: (workspaceId: string, payload: GenerateAITranslateRowPayload) => Promise<string>;
-  createOrphanedView: (workspaceId: string, payload: { document_id: string }) => Promise<void>;
+  createOrphanedView: (workspaceId: string, payload: { document_id: string }) => Promise<Uint8Array>;
   checkIfCollabExists: (workspaceId: string, objectId: string) => Promise<boolean>;
 }
 

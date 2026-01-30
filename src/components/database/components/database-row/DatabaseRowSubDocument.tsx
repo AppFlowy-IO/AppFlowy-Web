@@ -1,4 +1,5 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import * as Y from 'yjs';
 
 import {
   FieldType,
@@ -204,6 +205,69 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     },
     [loadRowDocument]
   );
+  // Open document with server-provided doc_state (Y.js update)
+  const openDocumentWithState = useCallback(
+    async (documentId: string, docState: Uint8Array): Promise<boolean> => {
+      if (!documentId) return false;
+      try {
+        docReadyRef.current = false;
+        setDoc(null);
+
+        // Validate docState
+        if (!docState || docState.length === 0) {
+          Log.warn('[DatabaseRowSubDocument] openDocumentWithState received empty docState', {
+            rowId,
+            documentId,
+          });
+          return false;
+        }
+
+        // Open the document from IndexedDB
+        const doc = await openCollabDB(documentId);
+
+        // Apply the server's doc_state to initialize the document
+        // This ensures the document structure matches what the server created
+        Y.applyUpdate(doc, docState);
+
+        // Verify the document has the expected structure after applying server state
+        const dataSection = doc.getMap(YjsEditorKey.data_section);
+        const document = dataSection?.get(YjsEditorKey.document);
+
+        if (!document) {
+          Log.warn('[DatabaseRowSubDocument] openDocumentWithState: doc missing structure after applyUpdate', {
+            rowId,
+            documentId,
+            hasDataSection: !!dataSection,
+            dataKeys: dataSection ? Array.from(dataSection.keys()) : [],
+          });
+          return false;
+        }
+
+        // Store metadata for sync binding
+        const docWithMeta = doc as YDocWithMeta;
+
+        docWithMeta.object_id = documentId;
+        docWithMeta._collabType = Types.Document;
+        docWithMeta._syncBound = false;
+
+        setDoc(doc);
+        docReadyRef.current = true;
+        Log.debug('[DatabaseRowSubDocument] openDocumentWithState ready', {
+          rowId,
+          documentId,
+          docStateSize: docState.length,
+        });
+        return true;
+        // eslint-disable-next-line
+      } catch (e: any) {
+        Log.error('[DatabaseRowSubDocument] openDocumentWithState failed', e);
+        return false;
+      }
+    },
+    [rowId]
+  );
+
+  // Fallback: Open document with local structure (when server unavailable)
   const openLocalDocument = useCallback(
     async (documentId: string) => {
       if (!documentId) return;
@@ -246,6 +310,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       if (!documentId) return false;
       setLoading(true);
       let opened = false;
+      let docState: Uint8Array | null = null;
 
       Log.debug('[DatabaseRowSubDocument] handleCreateDocument', {
         documentId,
@@ -265,8 +330,8 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
           try {
             Log.debug('[DatabaseRowSubDocument] calling createOrphanedView', { documentId });
-            await createOrphanedView({ document_id: documentId });
-            Log.debug('[DatabaseRowSubDocument] createOrphanedView success', { documentId });
+            docState = await createOrphanedView({ document_id: documentId });
+            Log.debug('[DatabaseRowSubDocument] createOrphanedView success', { documentId, docStateSize: docState.length });
           } catch (e) {
             Log.error('[DatabaseRowSubDocument] createOrphanedView failed', e);
             return false;
@@ -274,16 +339,29 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         } else if (createOrphanedView) {
           try {
             Log.debug('[DatabaseRowSubDocument] calling createOrphanedView (non-blocking)', { documentId });
-            await createOrphanedView({ document_id: documentId });
-            Log.debug('[DatabaseRowSubDocument] createOrphanedView success (non-blocking)', { documentId });
+            docState = await createOrphanedView({ document_id: documentId });
+            Log.debug('[DatabaseRowSubDocument] createOrphanedView success (non-blocking)', { documentId, docStateSize: docState.length });
           } catch (e) {
             Log.warn('[DatabaseRowSubDocument] createOrphanedView failed (continuing)', e);
             // Continue to local document if server create fails.
           }
         }
 
-        // Create document structure locally - server only creates the view entry
-        await openLocalDocument(documentId);
+        // Use server's doc_state if available, otherwise create structure locally
+        if (docState && docState.length > 0) {
+          const success = await openDocumentWithState(documentId, docState);
+
+          if (!success) {
+            Log.warn('[DatabaseRowSubDocument] server doc_state invalid, falling back to local', {
+              documentId,
+              docStateSize: docState.length,
+            });
+            await openLocalDocument(documentId);
+          }
+        } else {
+          await openLocalDocument(documentId);
+        }
+
         opened = true;
         return true;
       } finally {
@@ -292,7 +370,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         }
       }
     },
-    [createOrphanedView, openLocalDocument]
+    [createOrphanedView, openDocumentWithState, openLocalDocument]
   );
 
   const scheduleEnsureRowDocumentExists = useCallback(() => {
@@ -418,7 +496,25 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     const shouldWaitForRowMeta = !isDocumentEmptyResolved;
 
     void (async () => {
+      // Skip if doc is already loaded - prevents reloading when meta changes
+      if (docReadyRef.current && doc) {
+        Log.debug('[DatabaseRowSubDocument] skipping effect - doc already loaded', {
+          rowId,
+          documentId,
+        });
+        return;
+      }
+
       if (isDocumentEmptyResolved) {
+        // Skip if doc is already loaded
+        if (docReadyRef.current) {
+          Log.debug('[DatabaseRowSubDocument] row meta says empty but doc already loaded, skipping', {
+            rowId,
+            documentId,
+          });
+          return;
+        }
+
         Log.debug('[DatabaseRowSubDocument] row meta says empty; creating local doc', {
           rowId,
           documentId,
@@ -454,6 +550,15 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           shouldWaitForRowMeta,
         });
         if (exists) {
+          // Skip loading if doc is already ready
+          if (docReadyRef.current) {
+            Log.debug('[DatabaseRowSubDocument] doc exists and already loaded, skipping', {
+              rowId,
+              documentId,
+            });
+            return;
+          }
+
           const success = await handleOpenDocument(documentId);
 
           if (!success) {
