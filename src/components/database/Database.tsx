@@ -1,3 +1,5 @@
+import EventEmitter from 'events';
+
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
@@ -16,6 +18,7 @@ import {
   LoadViewMeta,
   RowId,
   UIVariant,
+  UpdatePagePayload,
   YDatabase,
   YDoc,
   YjsDatabaseKey,
@@ -77,6 +80,21 @@ export interface Database2Props {
    * Used to update the block data in embedded database blocks.
    */
   onViewIdsChanged?: (viewIds: string[]) => void;
+  /**
+   * Update a page/view (name, icon, etc.) in the folder structure.
+   * This is used by database tab rename to sync with the sidebar.
+   */
+  updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
+  /**
+   * Delete a page/view (move to trash).
+   * This is used by database tab delete to sync with the sidebar.
+   */
+  deletePage?: (viewId: string) => Promise<void>;
+  /**
+   * Event emitter for app-wide events like OUTLINE_LOADED.
+   * Used by DatabaseTabs to listen for outline updates after rename/delete.
+   */
+  eventEmitter?: EventEmitter;
 }
 
 function Database(props: Database2Props) {
@@ -474,6 +492,9 @@ function Database(props: Database2Props) {
       showActions: props.showActions,
       workspaceId,
       createDatabaseView: props.createDatabaseView,
+      updatePage: props.updatePage,
+      deletePage: props.deletePage,
+      eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
       variant: props.variant,
       calendarViewTypeMap,
@@ -499,6 +520,9 @@ function Database(props: Database2Props) {
       props.showActions,
       workspaceId,
       props.createDatabaseView,
+      props.updatePage,
+      props.deletePage,
+      props.eventEmitter,
       props.getViewIdFromDatabaseId,
       props.variant,
       calendarViewTypeMap,
