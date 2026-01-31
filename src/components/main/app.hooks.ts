@@ -61,3 +61,23 @@ export function useService() {
 
   return context.service;
 }
+
+/**
+ * Optional variant of useService that returns undefined
+ * instead of throwing when used outside AFConfigContext.
+ */
+export function useServiceOptional(): AFService | undefined {
+  const context = useContext(AFConfigContext);
+
+  return context?.service;
+}
+
+/**
+ * Optional variant of useCurrentUser that returns undefined
+ * instead of throwing when used outside AFConfigContext.
+ */
+export function useCurrentUserOptional(): User | undefined {
+  const context = useContext(AFConfigContext);
+
+  return context?.currentUser;
+}

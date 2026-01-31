@@ -147,7 +147,7 @@ function createFixture({
     .getMap(YjsEditorKey.data_section)
     .get(YjsEditorKey.database_row) as YDatabaseRow;
 
-  const createRowDocFn = async (rowKey: string) => {
+  const createRow = async (rowKey: string) => {
     const rowId = rowKey.includes('_rows_') ? rowKey.split('_rows_').pop() ?? '' : rowKey;
     return relatedRowDocs.get(rowId) ?? null;
   };
@@ -192,7 +192,7 @@ function createFixture({
     relatedDatabaseId,
     relatedViewId,
     relatedRowIds,
-    createRowDocFn,
+    createRow,
     loadView,
     getViewIdFromDatabaseId,
   };
@@ -211,7 +211,7 @@ describe('relation and rollup basics', () => {
         : []
     ).toEqual(fixture.relatedRowIds);
     const rowKey = `${fixture.relatedViewId}_rows_${fixture.relatedRowIds[0]}`;
-    const relatedRowDoc = await fixture.createRowDocFn(rowKey);
+    const relatedRowDoc = await fixture.createRow(rowKey);
     expect(relatedRowDoc).not.toBeNull();
     const context = {
       baseDoc: fixture.baseDoc,
@@ -221,7 +221,7 @@ describe('relation and rollup basics', () => {
       rowId: fixture.baseRowId,
       fieldId: fixture.relationFieldId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDocFn,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     };
 
@@ -270,7 +270,7 @@ describe('relation and rollup basics', () => {
       rowId: fixture.baseRowId,
       fieldId: rollupFieldId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDocFn,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 
@@ -310,7 +310,7 @@ describe('relation and rollup basics', () => {
       rowId: fixture.baseRowId,
       fieldId: rollupFieldId,
       loadView: fixture.loadView,
-      createRowDoc: fixture.createRowDocFn,
+      createRow: fixture.createRow,
       getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
     });
 

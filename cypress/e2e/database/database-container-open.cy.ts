@@ -12,6 +12,12 @@ import {
   waitForReactUpdate,
 } from '../../support/selectors';
 
+/**
+ * Database Container Open Behavior Tests
+ *
+ * Tests that clicking a database container in the sidebar
+ * correctly opens its first child view.
+ */
 describe('Database Container Open Behavior', () => {
   const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const dbName = 'New Database';
@@ -39,39 +45,45 @@ describe('Database Container Open Behavior', () => {
     cy.viewport(1280, 720);
   });
 
-  it('opens the first child view when clicking a database container', () => {
-    const testEmail = generateRandomEmail();
-    testLog.testStart('Database container opens first child');
-    testLog.info(`Test email: ${testEmail}`);
-
+  /**
+   * Helper: Create a Grid database and wait for it to load
+   */
+  const createGridAndWait = (authUtils: AuthTestUtils, testEmail: string) => {
     cy.visit('/login', { failOnStatusCode: false });
     cy.wait(2000);
 
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    return authUtils.signInWithTestUrl(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
       // Create a standalone database (container + first child view)
-      testLog.step(1, 'Create standalone Grid database');
       AddPageSelectors.inlineAddButton().first().click({ force: true });
       waitForReactUpdate(1000);
       AddPageSelectors.addGridButton().should('be.visible').click({ force: true });
 
       // Wait for the database UI to appear
-      // The grid container may exist before it has a stable height; wait for cells to render.
       cy.wait(7000);
       DatabaseGridSelectors.grid().should('exist');
       DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
+    });
+  };
 
-      // Scenario 1 parity: a newly created container has exactly 1 child view
+  it('opens the first child view when clicking a database container', () => {
+    const testEmail = generateRandomEmail();
+    testLog.testStart('Database container opens first child');
+    testLog.info(`Test email: ${testEmail}`);
+
+    const authUtils = new AuthTestUtils();
+    createGridAndWait(authUtils, testEmail).then(() => {
+      // Verify: a newly created container has exactly 1 child view
+      testLog.step(1, 'Verify database has one child view');
       DatabaseViewSelectors.viewTab()
         .should('have.length', 1)
         .first()
         .should('have.attr', 'data-state', 'active')
-        .and('contain.text', 'Grid'); // First tab shows child view name, not container name
+        .and('contain.text', 'Grid');
 
-      // Ensure sidebar is visible and space expanded
+      // Ensure sidebar space is expanded
       SpaceSelectors.itemByName(spaceName).should('exist');
       SpaceSelectors.itemByName(spaceName).then(($space) => {
         const expandedIndicator = $space.find('[data-testid="space-expanded"]');
@@ -83,14 +95,14 @@ describe('Database Container Open Behavior', () => {
         }
       });
 
-      // Capture the currently active viewId (the first child view opened after container creation)
+      // Capture the currently active viewId (the first child view)
       testLog.step(2, 'Capture first child view id');
       currentViewIdFromUrl().then((firstChildViewId) => {
         expect(firstChildViewId).to.not.equal('');
         cy.wrap(firstChildViewId).as('firstChildViewId');
       });
 
-      // Navigate away to a document page so we can click the container again
+      // Navigate away to a document page
       testLog.step(3, 'Navigate away to a new document');
       closeModalsIfOpen();
       AddPageSelectors.inlineAddButton().first().click({ force: true });
@@ -111,8 +123,8 @@ describe('Database Container Open Behavior', () => {
       });
       waitForReactUpdate(2000);
 
-      // Click on the database container in the sidebar and ensure we land on its first child view id
-      testLog.step(4, 'Click container and verify redirect');
+      // Click on the database container in sidebar and verify redirect to first child
+      testLog.step(4, 'Click container and verify redirect to first child');
       PageSelectors.nameContaining(dbName).first().click({ force: true });
 
       cy.get<string>('@firstChildViewId').then((firstChildViewId) => {

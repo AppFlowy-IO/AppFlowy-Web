@@ -32,7 +32,7 @@ export type RelationComputeContext = {
   rowId: RowId;
   fieldId: string;
   loadView?: (viewId: string) => Promise<YDoc | null>;
-  createRowDoc?: (rowKey: string) => Promise<YDoc>;
+  createRow?: (rowKey: string) => Promise<YDoc>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 };
 
@@ -207,9 +207,9 @@ async function computeRelationCellValue(context: RelationComputeContext): Promis
     const values: string[] = [];
 
     for (const relatedRowId of relatedRowIds) {
-      if (!context.createRowDoc) continue;
+      if (!context.createRow) continue;
       const rowKey = getRowKey(relatedDoc.guid, relatedRowId);
-      const relatedRowDoc = await context.createRowDoc(rowKey);
+      const relatedRowDoc = await context.createRow(rowKey);
       const relatedRowRoot = relatedRowDoc.getMap(YjsEditorKey.data_section);
       const relatedRow = relatedRowRoot?.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
 

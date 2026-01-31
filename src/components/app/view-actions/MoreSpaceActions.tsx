@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -49,37 +49,28 @@ function MoreSpaceActions({
     }
   }, [onClose, refreshOutline, service, view.view_id, workspaceId]);
 
-  const actions = useMemo(() => {
-    return [{
-      label: t('space.manage'),
-      icon: <SettingsIcon />,
-      onClick: () => {
-        onClose();
-        openManageSpaceModal(view.view_id);
-      },
-    },
-    {
-      label: t('space.duplicate'),
-      icon: duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon />,
-      disabled: duplicateLoading,
-      onClick: () => {
-        void handleDuplicateClick();
-      },
-    },
-    ];
-  }, [duplicateLoading, handleDuplicateClick, onClose, openManageSpaceModal, t, view.view_id]);
+  const handleManageClick = useCallback(() => {
+    onClose();
+    openManageSpaceModal(view.view_id);
+  }, [onClose, openManageSpaceModal, view.view_id]);
 
   return (
     <DropdownMenuGroup>
-      {actions.map(action => (
-        <DropdownMenuItem
-          key={action.label}
-          onSelect={action.onClick}
-        >
-          {action.icon}
-          {action.label}
-        </DropdownMenuItem>
-      ))}
+      <DropdownMenuItem
+        data-testid={'space-action-manage'}
+        onSelect={handleManageClick}
+      >
+        <SettingsIcon />
+        {t('space.manage')}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        data-testid={'space-action-duplicate'}
+        onSelect={handleDuplicateClick}
+        disabled={duplicateLoading}
+      >
+        {duplicateLoading ? <Progress variant={'primary'} /> : <DuplicateIcon />}
+        {t('space.duplicate')}
+      </DropdownMenuItem>
       <DropdownMenuSeparator className={'w-full'} />
       <DropdownMenuItem
         data-testid="create-new-space-button"
@@ -93,6 +84,7 @@ function MoreSpaceActions({
       </DropdownMenuItem>
       <DropdownMenuSeparator className={'w-full'} />
       <DropdownMenuItem
+        data-testid={'space-action-delete'}
         onSelect={() => {
           onClose();
           openDeleteSpaceModal(view.view_id);
@@ -101,7 +93,6 @@ function MoreSpaceActions({
         <DeleteIcon />
         {t('button.delete')}
       </DropdownMenuItem>
-
     </DropdownMenuGroup>
   );
 }

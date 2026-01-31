@@ -987,6 +987,12 @@ export const RowDetailSelectors = {
   // Dropdown menu items
   duplicateMenuItem: () => cy.get('[role="menuitem"]').contains(/duplicate/i),
   deleteMenuItem: () => cy.get('[role="menuitem"]').contains(/delete/i),
+
+  // Row title input (the actual title field, not the sub-document editor)
+  titleInput: () => cy.get('[data-testid="row-title-input"]'),
+
+  // Delete row confirm button
+  deleteRowConfirmButton: () => cy.get('[data-testid="delete-row-confirm-button"]'),
 };
 
 export function waitForReactUpdate(ms: number = 500) {

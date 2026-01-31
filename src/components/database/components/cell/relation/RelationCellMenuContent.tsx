@@ -34,7 +34,7 @@ function RelationCellMenuContent({
   onClose?: () => void;
 }) {
   const { t } = useTranslation();
-  const { navigateToView, loadView, navigateToRow, createRowDoc } = useDatabaseContext();
+  const { navigateToView, loadView, navigateToRow, createRow } = useDatabaseContext();
   const [element, setElement] = useState<HTMLElement | null>(null);
   const onToggleSelectedRowId = useCallback(
     (rowId: string) => {
@@ -125,7 +125,7 @@ function RelationCellMenuContent({
   );
 
   useEffect(() => {
-    if (!guid || !rowIds || rowIds.length === 0 || !createRowDoc) {
+    if (!guid || !rowIds || rowIds.length === 0 || !createRow) {
       return;
     }
 
@@ -143,7 +143,7 @@ function RelationCellMenuContent({
         }
 
         const rowKey = getRowKey(guid, rowId);
-        const rowDoc = await createRowDoc(rowKey);
+        const rowDoc = await createRow(rowKey);
 
         rowDocsRef.current.set(rowId, rowDoc);
 
@@ -156,7 +156,7 @@ function RelationCellMenuContent({
         });
       }
     })();
-  }, [createRowDoc, getContent, guid, rowIds]);
+  }, [createRow, getContent, guid, rowIds]);
 
   const filteredRowIds = useMemo(() => {
     if (!searchInput) {

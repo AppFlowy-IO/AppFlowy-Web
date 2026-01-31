@@ -8,7 +8,11 @@ import { ERROR_CODE } from '@/application/constants';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
 import { parseGoTrueErrorFromUrl } from '@/application/services/js-services/http/gotrue-error';
 import { blobToBytes } from '@/application/services/js-services/http/utils';
-import { AFCloudConfig, WorkspaceMemberProfileUpdate } from '@/application/services/services.type';
+import {
+  AFCloudConfig,
+  AppOutlineResponse,
+  WorkspaceMemberProfileUpdate,
+} from '@/application/services/services.type';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
 import {
   Template,
@@ -908,12 +912,15 @@ export async function getAppRecent(workspaceId: string) {
   ).then((data) => data.views);
 }
 
-export async function getAppOutline(workspaceId: string) {
+export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
   const url = `/api/workspace/${workspaceId}/folder?depth=10`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)
-  ).then((data) => data.children);
+  ).then((data) => ({
+    outline: Array.isArray(data.children) ? data.children : [],
+    folderRid: data.folder_rid,
+  }));
 }
 
 export async function getView(workspaceId: string, viewId: string, depth: number = 1) {
@@ -1666,6 +1673,7 @@ export async function uploadFile(
   file: File,
   onProgress?: (progress: number) => void
 ) {
+  Log.debug('[UploadFile] starting', { fileName: file.name, fileSize: file.size });
   const url = getAppFlowyFileUploadUrl(workspaceId, viewId);
 
   // Check file size, if over 7MB, check subscription plan
@@ -1701,6 +1709,7 @@ export async function uploadFile(
     });
 
     if (response?.data.code === 0) {
+    Log.debug('[UploadFile] completed', { url });
       return getAppFlowyFileUrl(workspaceId, viewId, response?.data.data.file_id);
     }
 
@@ -1717,6 +1726,10 @@ export async function uploadFile(
     return Promise.reject(handleAPIError(e));
   }
 }
+
+export { uploadFileMultipart } from './multipart-upload';
+export { MULTIPART_THRESHOLD } from './multipart-upload.types';
+export type { MultipartUploadProgress } from './multipart-upload.types';
 
 export async function inviteMembers(workspaceId: string, emails: string[]) {
   const url = `/api/workspace/${workspaceId}/invite`;
@@ -1918,12 +1931,20 @@ export async function generateAITranslateForRow(workspaceId: string, payload: Ge
     .join(', ');
 }
 
-export async function createOrphanedView(workspaceId: string, payload: { document_id: string }) {
+export async function createOrphanedView(workspaceId: string, payload: { document_id: string }): Promise<Uint8Array> {
   const url = `/api/workspace/${workspaceId}/orphaned-view`;
 
-  return executeAPIVoidRequest(() =>
-    axiosInstance?.post<APIResponse>(url, payload)
+  // Server returns doc_state as Vec<u8> which is JSON encoded as number[]
+  const docStateArray = await executeAPIRequest<number[] | null>(() =>
+    axiosInstance?.post<APIResponse<number[] | null>>(url, payload)
   );
+
+  // Validate the response - server must return a valid doc_state array
+  if (!docStateArray || !Array.isArray(docStateArray)) {
+    throw new Error('Server returned invalid doc_state');
+  }
+
+  return new Uint8Array(docStateArray);
 }
 
 export async function getGuestInvitation(workspaceId: string, code: string) {

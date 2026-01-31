@@ -5,8 +5,8 @@ import * as Y from 'yjs';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { openCollabDB } from '@/application/db';
 import {
-  createRowDoc,
-  deleteRowDoc,
+  createRow,
+  deleteRow,
   deleteView,
   getPageDoc,
   getPublishView,
@@ -22,7 +22,7 @@ import {
   fetchPublishViewMeta,
   fetchViewInfo,
 } from '@/application/services/js-services/fetch';
-import { APIService } from '@/application/services/js-services/http';
+import { APIService, uploadFileMultipart } from '@/application/services/js-services/http';
 import { AFService, AFServiceConfig, WorkspaceMemberProfileUpdate } from '@/application/services/services.type';
 import { emit, EventType } from '@/application/session';
 import { afterAuth, AUTH_CALLBACK_URL, withSignIn } from '@/application/session/sign_in';
@@ -200,12 +200,12 @@ export class AFClientService implements AFService {
     return Promise.reject(new Error('Document not found'));
   }
 
-  async createRowDoc(rowKey: string) {
-    return createRowDoc(rowKey);
+  async createRow(rowKey: string) {
+    return createRow(rowKey);
   }
 
-  deleteRowDoc(rowKey: string) {
-    return deleteRowDoc(rowKey);
+  deleteRow(rowKey: string) {
+    return deleteRow(rowKey);
   }
 
   async checkIfCollabExists(workspaceId: string, objectId: string) {
@@ -670,7 +670,12 @@ export class AFClientService implements AFService {
   }
 
   async uploadFile(workspaceId: string, viewId: string, file: File, onProgress?: (progress: number) => void) {
-    return APIService.uploadFile(workspaceId, viewId, file, onProgress);
+    return uploadFileMultipart({
+      workspaceId,
+      viewId,
+      file,
+      onProgress: (p) => onProgress?.(p.percentage / 100),
+    });
   }
 
   deleteWorkspace(workspaceId: string): Promise<void> {

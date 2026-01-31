@@ -1,3 +1,4 @@
+import { applyPatch, type Operation, type ReplaceOperation } from 'fast-json-patch';
 import { sortBy, uniqBy } from 'lodash-es';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -7,7 +8,9 @@ import { APP_EVENTS } from '@/application/constants';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
 import { findView, findViewByLayout } from '@/components/_shared/outline/utils';
+import { notification } from '@/proto/messages';
 import { createDeduplicatedNoArgsRequest } from '@/utils/deduplicateRequest';
+import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
@@ -20,6 +23,45 @@ export interface RequestAccessError {
   message: string;
 }
 
+type JsonPatchOperation = Operation;
+
+type FolderRid = {
+  timestamp: number;
+  seqNo: number;
+};
+
+function parseFolderRid(value?: string | null): FolderRid | null {
+  if (!value) return null;
+  const [timestampRaw, seqRaw] = value.split('-');
+  const timestamp = Number(timestampRaw);
+  const seqNo = Number(seqRaw);
+
+  if (!Number.isFinite(timestamp) || !Number.isFinite(seqNo)) {
+    return null;
+  }
+
+  return { timestamp, seqNo };
+}
+
+function compareFolderRid(a: FolderRid, b: FolderRid): number {
+  if (a.timestamp !== b.timestamp) {
+    return a.timestamp - b.timestamp;
+  }
+
+  return a.seqNo - b.seqNo;
+}
+
+const OUTLINE_NON_VISUAL_FIELDS = new Set(['/last_edited_time', '/last_edited_by']);
+
+function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
+  return patch.every((op) => {
+    if (!op.path?.startsWith('/outline')) return false;
+    const path = op.path;
+
+    return Array.from(OUTLINE_NON_VISUAL_FIELDS).some((suffix) => path.endsWith(suffix));
+  });
+}
+
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
   const { service, currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
@@ -28,6 +70,7 @@ export function useWorkspaceData() {
 
   const [outline, setOutline] = useState<View[]>();
   const stableOutlineRef = useRef<View[]>([]);
+  const lastFolderRidRef = useRef<FolderRid | null>(null);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
@@ -38,6 +81,15 @@ export function useWorkspaceData() {
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
 
   // Load application outline
+  const updateLastFolderRid = useCallback((next: FolderRid | null) => {
+    if (!next) return;
+    const current = lastFolderRidRef.current;
+
+    if (!current || compareFolderRid(next, current) > 0) {
+      lastFolderRidRef.current = next;
+    }
+  }, []);
+
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
       if (!service) return;
@@ -56,7 +108,11 @@ export function useWorkspaceData() {
         }
 
         // Append shareWithMe data as hidden space if available
-        let outlineWithShareWithMe = res;
+        const nextFolderRid = parseFolderRid(res.folderRid);
+
+        updateLastFolderRid(nextFolderRid);
+
+        let outlineWithShareWithMe = res.outline;
 
         if (shareWithMeResult && shareWithMeResult.children && shareWithMeResult.children.length > 0) {
           // Create a hidden space for shareWithMe
@@ -69,7 +125,7 @@ export function useWorkspaceData() {
             },
           };
 
-          outlineWithShareWithMe = [...res, shareWithMeSpace];
+          outlineWithShareWithMe = [...res.outline, shareWithMeSpace];
         }
 
         stableOutlineRef.current = outlineWithShareWithMe;
@@ -136,7 +192,7 @@ export function useWorkspaceData() {
         }
       }
     },
-    [navigate, service, eventEmitter, userWorkspaceInfo?.userId]
+    [navigate, service, eventEmitter, updateLastFolderRid, userWorkspaceInfo?.userId]
   );
 
   useEffect(() => {
@@ -156,6 +212,109 @@ export function useWorkspaceData() {
       }
     };
   }, [currentWorkspaceId, eventEmitter, loadOutline]);
+
+  useEffect(() => {
+    const handleFolderOutlineChanged = (payload: notification.IFolderChanged) => {
+      if (!currentWorkspaceId) return;
+
+      // If no diff JSON provided, fall back to full outline reload
+      if (!payload?.outlineDiffJson) {
+        Log.debug('[FolderOutlineChanged] No diff JSON, reloading outline');
+        void loadOutline(currentWorkspaceId, false);
+        return;
+      }
+
+      let patch: JsonPatchOperation[] | null = null;
+
+      try {
+        Log.debug('[FolderOutlineChanged] raw diff json', payload.outlineDiffJson);
+        patch = JSON.parse(payload.outlineDiffJson) as JsonPatchOperation[];
+      } catch (error) {
+        console.warn('Failed to parse folder outline diff, reloading outline:', error);
+        void loadOutline(currentWorkspaceId, false);
+        return;
+      }
+
+      if (!patch || !Array.isArray(patch)) {
+        void loadOutline(currentWorkspaceId, false);
+        return;
+      }
+
+      const patchRid = parseFolderRid(payload.folderRid);
+      const currentRid = lastFolderRidRef.current;
+
+      if (patchRid && currentRid && compareFolderRid(patchRid, currentRid) <= 0) {
+        Log.debug('[FolderOutlineChanged] skipped stale patch', {
+          patchRid: payload.folderRid,
+          lastRid: `${currentRid.timestamp}-${currentRid.seqNo}`,
+        });
+        return;
+      }
+
+      if (isOnlyNonVisualOutlineChange(patch)) {
+        updateLastFolderRid(patchRid);
+        return;
+      }
+
+      Log.debug('[FolderOutlineChanged] parsed patch', patch);
+
+      const baseOutline = stableOutlineRef.current.filter((view) => !view.extra?.is_hidden_space);
+      const baseDocument = { outline: baseOutline };
+      let patchedOutline: View[] | null = null;
+
+      const firstOp = patch[0];
+      const fastReplace =
+        patch.length === 1 && firstOp?.op === 'replace' && firstOp?.path === '/outline';
+
+      if (fastReplace && firstOp?.op === 'replace') {
+        const replaceOp = firstOp as ReplaceOperation<View[]>;
+
+        if (Array.isArray(replaceOp.value)) {
+          patchedOutline = replaceOp.value;
+        }
+      } else {
+        try {
+          const result = applyPatch(baseDocument, patch, true, false);
+          const nextDocument = result?.newDocument ?? baseDocument;
+          const nextOutline = (nextDocument as { outline?: unknown }).outline;
+
+          if (!Array.isArray(nextOutline)) return;
+          patchedOutline = nextOutline as View[];
+        } catch (error) {
+          console.warn('Failed to apply folder outline diff, reloading outline:', error);
+          void loadOutline(currentWorkspaceId, false);
+          return;
+        }
+      }
+
+      if (!patchedOutline) return;
+
+      const existingShareWithMe = stableOutlineRef.current.find(
+        (view) => view.extra?.is_hidden_space
+      );
+      const nextOutline = existingShareWithMe
+        ? [...patchedOutline, existingShareWithMe]
+        : patchedOutline;
+
+      stableOutlineRef.current = nextOutline;
+      setOutline(nextOutline);
+      updateLastFolderRid(patchRid);
+
+      if (eventEmitter) {
+        eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, nextOutline || []);
+      }
+    };
+
+    if (eventEmitter) {
+      eventEmitter.on(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
+    }
+
+    return () => {
+      if (eventEmitter) {
+        eventEmitter.off(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
+      }
+    };
+  }, [currentWorkspaceId, eventEmitter, loadOutline, stableOutlineRef, updateLastFolderRid]);
 
   // Load favorite views
   const loadFavoriteViews = useCallback(async () => {

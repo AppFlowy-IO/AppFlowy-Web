@@ -25,21 +25,113 @@ export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
   const context = useDatabaseContext();
-  const { paddingStart, paddingEnd, navigateToRow, ensureRowDoc } = context;
+  const { paddingStart, paddingEnd, navigateToRow, ensureRow, populateRowFromCache, blobPrefetchComplete } =
+    context;
   const rowOrders = useRowOrdersSelector();
 
-  // Eagerly load all row documents so Board cards can render with data.
-  // Row docs contain the cell values needed to display card content.
+  // Track visibility for lazy loading (rerender-move-effect-to-event pattern)
+  const [isVisible, setIsVisible] = useState(false);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const observedContainerRef = useRef<HTMLDivElement | null>(null);
+
+  // Store callbacks in refs to avoid triggering effect re-runs (advanced-use-latest pattern)
+  const ensureRowRef = useRef(ensureRow);
+  const populateRowFromCacheRef = useRef(populateRowFromCache);
+  const loadedRowsRef = useRef<Set<string>>(new Set());
+
   useEffect(() => {
-    if (!ensureRowDoc || !rowOrders || rowOrders.length === 0) {
+    ensureRowRef.current = ensureRow;
+    populateRowFromCacheRef.current = populateRowFromCache;
+  });
+
+  // Set up intersection observer for lazy loading
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
       return;
     }
 
-    rowOrders.forEach((row) => {
-      // eslint-disable-next-line @typescript-eslint/no-empty-function
-      ensureRowDoc(row.id)?.catch(() => {});
-    });
-  }, [ensureRowDoc, rowOrders, groupId]);
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        // Once visible, stay visible (no need to unload)
+        if (entries[0]?.isIntersecting) {
+          setIsVisible(true);
+        }
+      },
+      {
+        // Load slightly before entering viewport for smoother UX
+        rootMargin: '100px',
+        threshold: 0,
+      }
+    );
+
+    const container = containerRef.current;
+
+    if (container) {
+      observerRef.current.observe(container);
+      observedContainerRef.current = container;
+    }
+
+    return () => {
+      observerRef.current?.disconnect();
+    };
+  }, []);
+
+  // Reset loaded rows and visibility when group changes
+  useEffect(() => {
+    loadedRowsRef.current.clear();
+    setIsVisible(false);
+  }, [groupId]);
+
+  // Load row documents only when group becomes visible.
+  // Try cached data first (fast), then fall back to ensureRow (WebSocket sync).
+  // Uses Promise.all for parallel loading to avoid request waterfalls.
+  useEffect(() => {
+    // Only load when visible (lazy loading for off-screen groups)
+    if (!isVisible || !rowOrders || rowOrders.length === 0) return;
+
+    // Only load rows we haven't loaded yet (avoid re-loading on sort/filter changes)
+    const rowsToLoad = rowOrders.filter((row) => !loadedRowsRef.current.has(row.id));
+
+    if (rowsToLoad.length === 0) return;
+
+    const loadRows = async () => {
+      try {
+        if (blobPrefetchComplete && populateRowFromCacheRef.current) {
+          // Load all rows from cache in parallel
+          const results = await Promise.all(
+            rowsToLoad.map((row) => populateRowFromCacheRef.current!(row.id))
+          );
+
+          // Mark rows as loaded
+          rowsToLoad.forEach((row) => loadedRowsRef.current.add(row.id));
+
+          // Fall back to ensureRow for any rows not in cache
+          if (ensureRowRef.current) {
+            results.forEach((doc, index) => {
+              if (!doc) {
+                // Ignore errors - WebSocket sync provides fallback
+                ensureRowRef.current!(rowsToLoad[index].id)?.catch(() => undefined);
+              }
+            });
+          }
+        } else if (ensureRowRef.current) {
+          // No cache available, use ensureRow directly
+          rowsToLoad.forEach((row) => {
+            // Ignore errors - WebSocket sync provides fallback
+            ensureRowRef.current!(row.id)?.catch(() => undefined);
+            loadedRowsRef.current.add(row.id);
+          });
+        }
+      } catch {
+        // Silently handle errors - WebSocket sync will provide data as fallback
+      }
+    };
+
+    void loadRows();
+  }, [isVisible, blobPrefetchComplete, rowOrders]);
+
   const readOnly = useReadOnly();
   const getCards = useCallback(
     (columnId: string) => {
@@ -168,6 +260,16 @@ export const Group = ({ groupId }: GroupProps) => {
         onMouseLeave={() => setIsHover(false)}
         ref={(el) => {
           ref.current = el;
+          containerRef.current = el;
+          if (observedContainerRef.current && observerRef.current) {
+            observerRef.current.unobserve(observedContainerRef.current);
+          }
+
+          observedContainerRef.current = el;
+          if (el && observerRef.current) {
+            observerRef.current.observe(el);
+          }
+
           if (!el) return;
           const container = getVerticalScrollContainer(el);
 

@@ -53,7 +53,7 @@ describe('HTTP API - View Operations', () => {
         it('should get view by ID', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
 
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 const viewId = outline[0].view_id;
                 const result = await APIService.getView(testWorkspaceId, viewId, 1);
@@ -65,21 +65,25 @@ describe('HTTP API - View Operations', () => {
             }
         }, 30000);
 
-        it('should create orphaned view', async () => {
+        it('should create orphaned view and return doc_state', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
             const documentId = uuidv4();
 
             try {
-                await APIService.createOrphanedView(testWorkspaceId, {
+                const docState = await APIService.createOrphanedView(testWorkspaceId, {
                     document_id: documentId,
                 });
+
+                // Verify doc_state is returned as Uint8Array
+                expect(docState).toBeInstanceOf(Uint8Array);
+                expect(docState.length).toBeGreaterThan(0);
 
                 // Verify the view was created by checking if the collab exists
                 const exists = await APIService.checkIfCollabExists(testWorkspaceId, documentId);
 
                 expect(exists).toBe(true);
             } catch (error: any) {
-                // May fail for various reasons
+                // May fail for various reasons (e.g., server not configured)
                 expect(error).toBeDefined();
                 expect(error.code).toBeDefined();
             }
@@ -88,7 +92,7 @@ describe('HTTP API - View Operations', () => {
         it('should restore page from trash', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
 
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             const rootViewId = outline[0]?.view_id || testWorkspaceId;
             const { view_id: pageId } = await APIService.addAppPage(testWorkspaceId, rootViewId, {
                 layout: 0,

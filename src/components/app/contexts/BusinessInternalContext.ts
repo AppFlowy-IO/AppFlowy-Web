@@ -6,7 +6,7 @@ import {
   AppendBreadcrumb,
   LoadView,
   LoadViewMeta,
-  CreateRowDoc,
+  CreateRow,
   CreatePagePayload,
   CreatePageResponse,
   UpdatePagePayload,
@@ -23,7 +23,9 @@ import {
   Subscription,
   MentionablePerson,
   UIVariant,
+  YDoc,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 
 // Internal context for business layer
 // This context is only used within the app provider layers
@@ -33,7 +35,8 @@ export interface BusinessInternalContextType {
   toView: (viewId: string, blockId?: string, keepSearch?: boolean) => Promise<void>;
   loadViewMeta: LoadViewMeta;
   loadView: LoadView;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
 
   // Outline and hierarchy
   outline?: View[];
@@ -81,7 +84,7 @@ export interface BusinessInternalContextType {
 
   // Database operations
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
-  createOrphanedView?: (payload: { document_id: string }) => Promise<void>;
+  createOrphanedView?: (payload: { document_id: string }) => Promise<Uint8Array>;
   loadDatabasePrompts?: LoadDatabasePrompts;
   testDatabasePromptConfig?: TestDatabasePromptConfig;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;

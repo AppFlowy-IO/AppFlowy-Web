@@ -68,6 +68,11 @@ export type AFService = PublishService &
     getAxiosInstance: () => AxiosInstance | null;
   };
 
+export interface AppOutlineResponse {
+  outline: View[];
+  folderRid?: string;
+}
+
 export interface AFServiceConfig {
   cloudConfig: AFCloudConfig;
 }
@@ -115,10 +120,10 @@ export interface WorkspaceService {
 
 export interface AppService {
   getPageDoc: (workspaceId: string, viewId: string, errorCallback?: (error: { code: number }) => void) => Promise<YDoc>;
-  createRowDoc: (rowKey: string) => Promise<YDoc>;
-  deleteRowDoc: (rowKey: string) => void;
+  createRow: (rowKey: string) => Promise<YDoc>;
+  deleteRow: (rowKey: string) => void;
   getAppDatabaseViewRelations: (workspaceId: string, databaseStorageId: string) => Promise<DatabaseRelations>;
-  getAppOutline: (workspaceId: string) => Promise<View[]>;
+  getAppOutline: (workspaceId: string) => Promise<AppOutlineResponse>;
   getAppView: (workspaceId: string, viewId: string) => Promise<View>;
   getAppFavorites: (workspaceId: string) => Promise<View[]>;
   getAppRecent: (workspaceId: string) => Promise<View[]>;
@@ -200,7 +205,7 @@ export interface AppService {
   }>;
   generateAISummaryForRow: (workspaceId: string, payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow: (workspaceId: string, payload: GenerateAITranslateRowPayload) => Promise<string>;
-  createOrphanedView: (workspaceId: string, payload: { document_id: string }) => Promise<void>;
+  createOrphanedView: (workspaceId: string, payload: { document_id: string }) => Promise<Uint8Array>;
   checkIfCollabExists: (workspaceId: string, objectId: string) => Promise<boolean>;
 }
 

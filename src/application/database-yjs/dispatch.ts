@@ -14,7 +14,7 @@ import {
   useDatabaseViewId,
   useDefaultTimeSetting,
   useDocGuid,
-  useRowDocMap,
+  useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import {
@@ -582,7 +582,7 @@ export function useReorderRowDispatch() {
 export function useMoveCardDispatch() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
-  const rowMap = useRowDocMap();
+  const rowMap = useRowMap();
   const database = useDatabase();
 
   return useCallback(
@@ -1243,6 +1243,7 @@ export function useNewRowDispatch() {
         initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
+        const meta = rowSharedRoot.get(YjsEditorKey.meta);
 
         const cells = row.get(YjsDatabaseKey.cells);
 
@@ -1321,6 +1322,18 @@ export function useNewRowDispatch() {
         }
 
         row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+        const newMeta = generateRowMeta(rowId, {
+          [RowMetaKey.IsDocumentEmpty]: true,
+        });
+
+        Object.keys(newMeta).forEach((key) => {
+          const value = newMeta[key];
+
+          if (value) {
+            meta.set(key, value);
+          }
+        });
 
         if (shouldOpenRowModal) {
           navigateToRow?.(rowId);
@@ -1487,11 +1500,11 @@ export function useDuplicateRowDispatch() {
   const sharedRoot = useSharedRoot();
   const createRow = useCreateRow();
   const guid = useDocGuid();
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
 
   return useCallback(
     async (referenceRowId: string) => {
-      const referenceRowDoc = rowDocMap?.[referenceRowId];
+      const referenceRowDoc = rowMap?.[referenceRowId];
 
       if (!referenceRowDoc) {
         throw new Error(`Row not found`);
@@ -1591,7 +1604,7 @@ export function useDuplicateRowDispatch() {
 
       return rowId;
     },
-    [createRow, database, guid, rowDocMap, sharedRoot]
+    [createRow, database, guid, rowMap, sharedRoot]
   );
 }
 
@@ -1749,7 +1762,7 @@ export function useShowPropertyDispatch() {
 
 export function useClearCellsWithFieldDispatch() {
   const sharedRoot = useSharedRoot();
-  const rowDocs = useRowDocMap();
+  const rowMap = useRowMap();
 
   return useCallback(
     (fieldId: string) => {
@@ -1757,18 +1770,18 @@ export function useClearCellsWithFieldDispatch() {
         sharedRoot,
         [
           () => {
-            if (!rowDocs) {
+            if (!rowMap) {
               throw new Error(`Row docs not found`);
             }
 
-            const rows = Object.keys(rowDocs);
+            const rows = Object.keys(rowMap);
 
             if (!rows) {
               throw new Error(`Row orders not found`);
             }
 
             rows.forEach((rowId) => {
-              const rowDoc = rowDocs?.[rowId];
+              const rowDoc = rowMap?.[rowId];
 
               if (!rowDoc) {
                 return;
@@ -1788,14 +1801,14 @@ export function useClearCellsWithFieldDispatch() {
         'clearCellsWithFieldDispatch'
       );
     },
-    [rowDocs, sharedRoot]
+    [rowMap, sharedRoot]
   );
 }
 
 export function useDuplicatePropertyDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
-  const rowDocs = useRowDocMap();
+  const rowMap = useRowMap();
 
   return useCallback(
     (fieldId: string) => {
@@ -1907,11 +1920,11 @@ export function useDuplicatePropertyDispatch() {
         'insertDuplicateProperty'
       );
 
-      if (!rowDocs) {
+      if (!rowMap) {
         throw new Error(`Row docs not found`);
       }
 
-      const rows = Object.keys(rowDocs);
+      const rows = Object.keys(rowMap);
 
       if (!rows) {
         throw new Error(`Row orders not found`);
@@ -1919,7 +1932,7 @@ export function useDuplicatePropertyDispatch() {
 
       // Clone cell for each row
       rows.forEach((rowId) => {
-        const rowDoc = rowDocs?.[rowId];
+        const rowDoc = rowMap?.[rowId];
 
         if (!rowDoc) {
           return;
@@ -1947,14 +1960,14 @@ export function useDuplicatePropertyDispatch() {
 
       return newId;
     },
-    [database, rowDocs, sharedRoot]
+    [database, rowMap, sharedRoot]
   );
 }
 
 export function useUpdateRowMetaDispatch(rowId: string) {
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
 
-  const rowDoc = rowDocMap?.[rowId];
+  const rowDoc = rowMap?.[rowId];
 
   return useCallback(
     (key: RowMetaKey, value?: string | boolean) => {
@@ -2020,7 +2033,7 @@ function updateDateCell(
 }
 
 export function useUpdateCellDispatch(rowId: string, fieldId: string) {
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
   const { field } = useFieldSelector(fieldId);
 
   return useCallback(
@@ -2033,7 +2046,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         reminderId?: string;
       }
     ) => {
-      const rowDoc = rowDocMap?.[rowId];
+      const rowDoc = rowMap?.[rowId];
 
       if (!rowDoc) {
         Log.warn('[useUpdateCellDispatch] Row doc not found', { rowId, fieldId });
@@ -2093,16 +2106,16 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
         row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       });
     },
-    [field, fieldId, rowDocMap, rowId]
+    [field, fieldId, rowMap, rowId]
   );
 }
 
 export function useUpdateStartEndTimeCell() {
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
 
   return useCallback(
     (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
-      const rowDoc = rowDocMap?.[rowId];
+      const rowDoc = rowMap?.[rowId];
 
       if (!rowDoc) {
         throw new Error(`Row not found`);
@@ -2138,7 +2151,7 @@ export function useUpdateStartEndTimeCell() {
       });
 
     },
-    [rowDocMap]
+    [rowMap]
   );
 }
 
@@ -2541,15 +2554,15 @@ function generateDateTimeFieldTypeOptions() {
 export function useSwitchPropertyType() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
-  const rowDocMap = useRowDocMap();
+  const rowMap = useRowMap();
 
   return useCallback(
     (fieldId: string, fieldType: FieldType) => {
-      if (!rowDocMap) {
+      if (!rowMap) {
         throw new Error(`Row docs not found`);
       }
 
-      const rows = Object.keys(rowDocMap);
+      const rows = Object.keys(rowMap);
 
       executeOperations(
         sharedRoot,
@@ -2607,7 +2620,7 @@ export function useSwitchPropertyType() {
                   newTypeOption.set(YjsDatabaseKey.format, NumberFormat.Num);
                 } else if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
                   // to Select
-                  const rows = Object.keys(rowDocMap);
+                  const rows = Object.keys(rowMap);
                   let content = '';
 
                   switch (oldFieldType) {
@@ -2636,7 +2649,7 @@ export function useSwitchPropertyType() {
                         options.add('No');
                       } else {
                         rows.forEach((rowId) => {
-                          const rowDoc = rowDocMap[rowId];
+                          const rowDoc = rowMap[rowId];
 
                           if (!rowDoc) {
                             return;
@@ -2707,7 +2720,7 @@ export function useSwitchPropertyType() {
             field.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
             rows.forEach((row) => {
-              const rowDoc = rowDocMap?.[row];
+              const rowDoc = rowMap?.[row];
 
               if (!rowDoc) {
                 return;
@@ -2740,7 +2753,7 @@ export function useSwitchPropertyType() {
         'switchPropertyType'
       );
     },
-    [database, sharedRoot, rowDocMap]
+    [database, sharedRoot, rowMap]
   );
 }
 

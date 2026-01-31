@@ -23,7 +23,7 @@ interface DatabaseContentProps {
   width: number;
   doc: YDoc | null;
   workspaceId: string;
-  createRowDoc?: (rowId: string) => Promise<YDoc>;
+  createRow?: (rowId: string) => Promise<YDoc>;
   loadView?: LoadView;
   navigateToView?: (viewId: string, rowId?: string) => Promise<void>;
   onOpenRowPage: (rowId: string) => Promise<void>;
@@ -48,7 +48,7 @@ export const DatabaseContent = ({
   width,
   doc,
   workspaceId,
-  createRowDoc,
+  createRow,
   loadView,
   navigateToView,
   onOpenRowPage,
@@ -80,7 +80,7 @@ export const DatabaseContent = ({
             doc={doc}
             databasePageId={baseViewId}
             activeViewId={selectedViewId}
-            createRowDoc={createRowDoc}
+            createRow={createRow}
             loadView={loadView}
             navigateToView={navigateToView}
             onOpenRowPage={onOpenRowPage}

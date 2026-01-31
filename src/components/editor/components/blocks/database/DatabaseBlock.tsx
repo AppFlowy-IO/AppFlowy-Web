@@ -25,7 +25,8 @@ export const DatabaseBlock = memo(
     const workspaceId = context.workspaceId;
     const navigateToView = context?.navigateToView;
     const loadView = context?.loadView;
-    const createRowDoc = context?.createRowDoc;
+    const createRow = context?.createRow;
+    const bindViewSync = context?.bindViewSync;
 
     const [hasDatabase, setHasDatabase] = useState(false);
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -37,6 +38,7 @@ export const DatabaseBlock = memo(
     const { doc, notFound, setNotFound } = useDocumentLoader({
       viewId,
       loadView,
+      bindViewSync,
     });
 
     // 2. Visible view IDs from block data
@@ -244,7 +246,7 @@ export const DatabaseBlock = memo(
             width={width}
             doc={doc}
             workspaceId={workspaceId}
-            createRowDoc={createRowDoc}
+            createRow={createRow}
             loadView={loadView}
             navigateToView={navigateToView}
             onOpenRowPage={handleNavigateToRow}
@@ -256,7 +258,7 @@ export const DatabaseBlock = memo(
             onRendered={handleRendered}
             onViewIdsChanged={handleViewIdsChanged}
             // EditorContextState shares common fields with DatabaseContextState but not all
-            // The missing fields (databaseDoc, databasePageId, activeViewId, rowDocMap) are
+            // The missing fields (databaseDoc, databasePageId, activeViewId, rowMap) are
             // explicitly set by DatabaseContent via baseViewId, selectedViewId, and doc props
             context={context as unknown as DatabaseContextState}
           />

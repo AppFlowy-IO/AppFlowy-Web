@@ -6,7 +6,7 @@ import { BaseRange, Range } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
 import {
-  CreateRowDoc,
+  CreateRow,
   FontLayout,
   LineHeightLayout,
   LoadView,
@@ -23,7 +23,9 @@ import {
   Subscription,
   MentionablePerson,
   DatabaseRelations,
+  YDoc,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 
 export interface EditorLayoutStyle {
   fontLayout: FontLayout;
@@ -53,7 +55,8 @@ export interface EditorContextState {
   navigateToView?: (viewId: string, blockOrRowId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   loadView?: LoadView;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;
   jumpBlockId?: string;
   onJumpedBlockId?: () => void;
@@ -70,7 +73,7 @@ export interface EditorContextState {
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   onWordCountChange?: (viewId: string, props: TextCount) => void;
-  uploadFile?: (file: File) => Promise<string>;
+  uploadFile?: (file: File, onProgress?: (progress: number) => void) => Promise<string>;
   requestInstance?: AxiosInstance | null;
   getMoreAIContext?: () => string;
   loadDatabasePrompts?: LoadDatabasePrompts;

@@ -110,6 +110,43 @@ export function getAppFlowyFileUploadUrl(workspaceId: string, viewId: string): s
 }
 
 /**
+ * Constructs URL for creating a multipart upload session
+ * @param workspaceId - The workspace ID
+ * @returns Complete create upload URL
+ */
+export function getMultipartCreateUrl(workspaceId: string): string {
+  return `${getFileStorageBaseUrl()}/${workspaceId}/create_upload`;
+}
+
+/**
+ * Constructs URL for uploading a part in a multipart upload
+ * @param workspaceId - The workspace ID
+ * @param parentDir - The parent directory (view ID)
+ * @param fileId - The file ID
+ * @param uploadId - The upload session ID
+ * @param partNumber - The part number (1-indexed)
+ * @returns Complete upload part URL
+ */
+export function getMultipartUploadPartUrl(
+  workspaceId: string,
+  parentDir: string,
+  fileId: string,
+  uploadId: string,
+  partNumber: number
+): string {
+  return `${getFileStorageBaseUrl()}/${workspaceId}/upload_part/${parentDir}/${fileId}/${uploadId}/${partNumber}`;
+}
+
+/**
+ * Constructs URL for completing a multipart upload
+ * @param workspaceId - The workspace ID
+ * @returns Complete upload completion URL
+ */
+export function getMultipartCompleteUrl(workspaceId: string): string {
+  return `${getFileStorageBaseUrl()}/${workspaceId}/complete_upload`;
+}
+
+/**
  * General purpose file storage URL constructor
  * @param workspaceId - The workspace ID
  * @param viewId - Optional view ID

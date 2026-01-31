@@ -11,17 +11,29 @@ import {
   ViewId,
   ViewLayout,
   YDoc,
-  YjsDatabaseKey,
   YjsEditorKey,
-  YSharedRoot,
 } from '@/application/types';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
+import { getDatabaseIdFromDoc, openView } from '@/application/view-loader';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
+
+/**
+ * Extended YDoc with metadata for deferred sync binding.
+ * These properties are set during loadView and used by bindViewSync.
+ */
+export interface YDocWithMeta extends YDoc {
+  /** The view ID this doc belongs to */
+  object_id?: string;
+  /** The collab type for sync binding */
+  _collabType?: Types;
+  /** Whether sync has been bound for this doc */
+  _syncBound?: boolean;
+}
 
 // Hook for managing view-related operations
 export function useViewOperations() {
@@ -30,6 +42,12 @@ export function useViewOperations() {
   const navigate = useNavigate();
 
   const [awarenessMap, setAwarenessMap] = useState<Record<string, Awareness>>({});
+  // Ref for stable access to awarenessMap in callbacks (prevents bindViewSync recreation)
+  const awarenessMapRef = useRef<Record<string, Awareness>>({});
+
+  useEffect(() => {
+    awarenessMapRef.current = { ...awarenessMapRef.current, ...awarenessMap };
+  }, [awarenessMap]);
   const workspaceDatabaseDocMapRef = useRef<Map<string, YDoc>>(new Map());
   const createdRowKeys = useRef<string[]>([]);
   const databaseIdViewIdMapRef = useRef<Map<DatabaseId, ViewId>>(new Map());
@@ -225,7 +243,16 @@ export function useViewOperations() {
     [currentWorkspaceId]
   );
 
-  // Load view document
+  /**
+   * Load view document WITHOUT binding sync.
+   *
+   * This function:
+   * 1. Opens the Y.Doc from cache (IndexedDB) or fetches from server
+   * 2. Stores metadata (_collabType) on the doc for later sync binding
+   * 3. Returns the doc immediately for rendering
+   *
+   * Call bindViewSync() AFTER render to start WebSocket sync.
+   */
   const loadView = useCallback(
     async (id: string, isSubDocument = false, loadAwareness = false, outline?: View[]) => {
       try {
@@ -233,15 +260,15 @@ export function useViewOperations() {
           throw new Error('Service or workspace not found');
         }
 
-        const workspaceId = currentWorkspaceId;
-        const res = await service?.getPageDoc(workspaceId, id);
+        const view = findView(outline || [], id);
 
-        if (!res) {
-          throw new Error('View not found');
+        // Check for AIChat early
+        if (view?.layout === ViewLayout.AIChat) {
+          return Promise.reject(new Error('AIChat views cannot be loaded as collab documents'));
         }
 
         if (loadAwareness) {
-          // Add recent pages when view is loaded
+          // Add recent pages when view is loaded (fire and forget)
           void (async () => {
             try {
               await service.addRecentPages(currentWorkspaceId, [id]);
@@ -251,119 +278,144 @@ export function useViewOperations() {
           })();
         }
 
-        const view = findView(outline || [], id);
+        // Use view-loader to open document (handles cache vs fetch)
+        const { doc, collabType: detectedCollabType } = await openView(
+          currentWorkspaceId,
+          id,
+          isSubDocument ? ViewLayout.Document : view?.layout
+        );
 
-        let collabType = isSubDocument ? Types.Document : null;
+        // Use detected collab type, or override for sub-documents
+        const collabType = isSubDocument ? Types.Document : detectedCollabType;
 
-        switch (view?.layout) {
-          case ViewLayout.Document:
-            collabType = Types.Document;
-            break;
-          case ViewLayout.Grid:
-          case ViewLayout.Board:
-          case ViewLayout.Calendar:
-            collabType = Types.Database;
-            break;
-          case ViewLayout.AIChat:
-            // AIChat views don't have a collab document type
-            return Promise.reject(new Error('AIChat views cannot be loaded as collab documents'));
-        }
+        Log.debug('[useViewOperations] loadView complete (sync not bound)', {
+          viewId: id,
+          layout: view?.layout,
+          collabType,
+          isSubDocument,
+        });
 
-        // Fallback: If view not found in outline yet (e.g., newly created view),
-        // try to determine type from the Yjs document itself
-        if (collabType === null) {
-          console.warn('[useViewOperations] View not found in outline, checking Yjs document', { viewId: id });
+        // For databases, ensure guid is set to databaseId for sync
+        if (collabType === Types.Database) {
+          // First try getting databaseId directly from the doc (fast, synchronous)
+          // This works for newly created embedded databases where the doc already has the ID
+          let databaseId = getDatabaseIdFromDoc(doc);
 
-          // Check if the document has a database section (database views)
-          const sharedRoot = res.getMap(YjsEditorKey.data_section) as YSharedRoot;
-          const hasDatabase = sharedRoot?.has(YjsEditorKey.database);
-          const hasDocument = sharedRoot?.has(YjsEditorKey.document);
-
-          if (hasDatabase) {
-            collabType = Types.Database;
-          } else if (hasDocument) {
-            collabType = Types.Document;
-          } else {
-            console.error('[useViewOperations] Could not determine view type', {
+          if (databaseId) {
+            Log.debug('[useViewOperations] databaseId loaded from Yjs document', {
               viewId: id,
-              viewLayout: view?.layout,
-              hasDatabase,
-              hasDocument,
+              databaseId,
             });
-            return Promise.reject(new Error(`Invalid view layout: ${view?.layout}`));
+            databaseIdViewIdMapRef.current.set(databaseId, id);
+          } else {
+            // Fallback to workspace database mapping lookup (async, may timeout)
+            databaseId = (await getDatabaseId(id)) ?? null;
           }
+
+          if (!databaseId) {
+            throw new Error('Database not found');
+          }
+
+          doc.guid = databaseId;
         }
 
-        Log.debug('[useViewOperations] loadView resolved layout', { viewId: id, layout: view?.layout, collabType });
+        // Store metadata on doc for deferred sync binding
+        const docWithMeta = doc as YDocWithMeta;
 
-        if (collabType === Types.Document) {
-          let awareness: Awareness | undefined;
+        docWithMeta.object_id = id;
+        docWithMeta._collabType = collabType;
+        docWithMeta._syncBound = false;
 
-          if (loadAwareness) {
+        // For documents with awareness, create and store awareness
+        if (collabType === Types.Document && loadAwareness) {
+          if (!awarenessMapRef.current[id]) {
+            const awareness = new Awareness(doc);
+
+            awarenessMapRef.current = { ...awarenessMapRef.current, [id]: awareness };
             setAwarenessMap((prev) => {
               if (prev[id]) {
-                awareness = prev[id];
                 return prev;
               }
 
-              awareness = new Awareness(res);
               return { ...prev, [id]: awareness };
             });
           }
-
-          const { doc } = registerSyncContext({ doc: res, collabType, awareness });
-
-          // Set the view ID on the doc for React state tracking
-          doc.object_id = id;
-          return doc;
         }
-
-        let databaseId = await getDatabaseId(id);
-
-        if (!databaseId) {
-          const sharedRoot = res.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
-          const database = sharedRoot?.get(YjsEditorKey.database);
-          const fallbackDatabaseId = database?.get(YjsDatabaseKey.id);
-
-          if (fallbackDatabaseId) {
-            Log.debug('[useViewOperations] databaseId loaded from Yjs document', {
-              viewId: id,
-              databaseId: fallbackDatabaseId,
-            });
-            databaseId = fallbackDatabaseId;
-            databaseIdViewIdMapRef.current.set(fallbackDatabaseId, id);
-          }
-        }
-
-        if (!databaseId) {
-          throw new Error('Database not found');
-        }
-
-        const resolvedDatabaseId = databaseId;
-
-        res.guid = resolvedDatabaseId;
-        const { doc } = registerSyncContext({ doc: res, collabType });
-
-        // Set the view ID on the doc for React state tracking
-        doc.object_id = id;
 
         return doc;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [service, currentWorkspaceId, getDatabaseId, registerSyncContext] // Add dependencies to prevent re-creation of functions
+    [service, currentWorkspaceId, getDatabaseId]
+  );
+
+  /**
+   * Bind sync for a loaded document.
+   *
+   * Call this AFTER the component has rendered to start WebSocket sync.
+   * This separation prevents race conditions where sync messages arrive
+   * before the component finishes rendering.
+   *
+   * @param doc - The YDoc returned from loadView
+   * @returns The sync context, or null if already bound or invalid doc
+   */
+  const bindViewSync = useCallback(
+    (doc: YDoc) => {
+      const docWithMeta = doc as YDocWithMeta;
+
+      // Skip if already bound
+      if (docWithMeta._syncBound) {
+        Log.debug('[useViewOperations] bindViewSync skipped - already bound', {
+          viewId: docWithMeta.object_id,
+        });
+        return null;
+      }
+
+      const collabType = docWithMeta._collabType;
+      const viewId = docWithMeta.object_id;
+
+      // Use explicit undefined check for collabType since Types.Document = 0 is falsy
+      if (collabType === undefined || !viewId) {
+        console.warn('[useViewOperations] bindViewSync failed - missing metadata', {
+          hasCollabType: collabType !== undefined,
+          hasViewId: !!viewId,
+        });
+        return null;
+      }
+
+      // Get awareness for documents if available (use ref for stable callback)
+      const awareness = collabType === Types.Document ? awarenessMapRef.current[viewId] : undefined;
+
+      Log.debug('[useViewOperations] bindViewSync starting', {
+        viewId,
+        collabType,
+        hasAwareness: !!awareness,
+      });
+
+      const syncContext = registerSyncContext({ doc, collabType, awareness });
+
+      docWithMeta._syncBound = true;
+
+      Log.debug('[useViewOperations] bindViewSync complete', {
+        viewId,
+        collabType,
+      });
+
+      return syncContext;
+    },
+    [registerSyncContext]
   );
 
   // Create row document
-  const createRowDoc = useCallback(
+  const createRow = useCallback(
     async (rowKey: string): Promise<YDoc> => {
       if (!currentWorkspaceId || !service) {
         throw new Error('Failed to create row doc');
       }
 
       try {
-        const doc = await service?.createRowDoc(rowKey);
+        const doc = await service?.createRow(rowKey);
 
         if (!doc) {
           throw new Error('Failed to create row doc');
@@ -511,7 +563,7 @@ export function useViewOperations() {
 
     rowKeys.forEach((rowKey) => {
       try {
-        service?.deleteRowDoc(rowKey);
+        service?.deleteRow(rowKey);
       } catch (e) {
         console.error(e);
       }
@@ -520,7 +572,8 @@ export function useViewOperations() {
 
   return {
     loadView,
-    createRowDoc,
+    bindViewSync,
+    createRow,
     toView,
     awarenessMap,
     getViewIdFromDatabaseId,

@@ -10,6 +10,7 @@ module.exports = {
   modulePaths: [compilerOptions.baseUrl],
   moduleNameMapper: {
     '^.+\\.svg$': '<rootDir>/src/__mocks__/svgrMock.tsx',
+    '^@/utils/runtime-config$': '<rootDir>/src/__mocks__/runtime-config.ts',
     ...pathsToModuleNameMapper(compilerOptions.paths),
     '^lodash-es(/(.*)|$)': 'lodash$1',
     '^nanoid(/(.*)|$)': 'nanoid$1',

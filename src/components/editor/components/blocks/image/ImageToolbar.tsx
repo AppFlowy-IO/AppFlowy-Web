@@ -8,6 +8,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as DownloadIcon } from '@/assets/icons/download.svg';
 import { ReactComponent as PreviewIcon } from '@/assets/icons/full_screen.svg';
 import { GalleryPreview } from '@/components/_shared/gallery-preview';
 import { notify } from '@/components/_shared/notify';
@@ -58,6 +59,41 @@ function ImageToolbar({ node }: { node: ImageBlockNode }) {
     }
   };
 
+  const onDownloadImage = async () => {
+    const url = node.data.url;
+
+    if (!url) {
+      notify.error('No image URL available');
+      return;
+    }
+
+    try {
+      const blob = await fetchImageBlob(url);
+
+      if (blob) {
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+
+        link.href = blobUrl;
+        // Extract filename from URL or use a default name
+        const urlPath = new URL(url, window.location.origin).pathname;
+        const filename = urlPath.split('/').pop() || 'image';
+
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(blobUrl);
+        notify.success('Image downloaded successfully');
+      } else {
+        notify.error('Failed to download image');
+      }
+    } catch (error) {
+      Log.error('Failed to download image:', error);
+      notify.error('Failed to download image');
+    }
+  };
+
   const onDelete = () => {
     CustomEditor.deleteBlock(editor, node.blockId);
   };
@@ -73,6 +109,10 @@ function ImageToolbar({ node }: { node: ImageBlockNode }) {
 
         <ActionButton onClick={onCopyImage} tooltip={t('button.copy')} data-testid="copy-image-button">
           <CopyIcon />
+        </ActionButton>
+
+        <ActionButton onClick={onDownloadImage} tooltip={t('button.download')} data-testid="download-image-button">
+          <DownloadIcon />
         </ActionButton>
 
         {!readOnly && (

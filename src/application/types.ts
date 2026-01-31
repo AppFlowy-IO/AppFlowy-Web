@@ -1,6 +1,7 @@
 import { AxiosInstance } from 'axios';
 import * as Y from 'yjs';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { PromptDatabaseConfiguration } from '@/components/chat';
 
 export type BlockId = string;
@@ -872,7 +873,7 @@ export interface PublishViewMetaData {
 
 export type AppendBreadcrumb = (view?: View) => void;
 
-export type CreateRowDoc = (rowKey: string) => Promise<YDoc>;
+export type CreateRow = (rowKey: string) => Promise<YDoc>;
 export type LoadView = (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc>;
 
 export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
@@ -1047,6 +1048,7 @@ export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
 }
 
 export interface View {
+  folder_rid?: string;
   view_id: string;
   name: string;
   icon: ViewIcon | null;
@@ -1227,8 +1229,10 @@ export interface ViewComponentProps {
   readOnly: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   loadView?: LoadView;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;

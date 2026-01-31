@@ -605,7 +605,7 @@ describe('filterBy with v069 relation and rollup values', () => {
         rowId,
         fieldId: fixture.relationFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       });
       rollupTexts[rowId] = (
@@ -617,7 +617,7 @@ describe('filterBy with v069 relation and rollup values', () => {
           rowId,
           fieldId: fixture.rollupListFieldId,
           loadView: fixture.loadView,
-          createRowDoc: fixture.createRowDoc,
+          createRow: fixture.createRow,
           getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
         })
       ).value;

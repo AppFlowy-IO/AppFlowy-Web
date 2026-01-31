@@ -6,7 +6,7 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  CreateRowDoc,
+  CreateRow,
   DatabaseRelations,
   DateFormat,
   GenerateAISummaryRowPayload,
@@ -28,6 +28,7 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DefaultTimeSetting, MetadataKey } from '@/application/user-metadata';
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -47,8 +48,11 @@ export interface DatabaseContextState {
    * Defaults to databasePageId when no specific tab is selected via URL.
    */
   activeViewId: string;
-  rowDocMap: Record<RowId, YDoc> | null;
-  ensureRowDoc?: (rowId: string) => Promise<YDoc | undefined> | void;
+  rowMap: Record<RowId, YDoc> | null;
+  ensureRow?: (rowId: string) => Promise<YDoc | undefined> | void;
+  populateRowFromCache?: (rowId: string) => Promise<YDoc | undefined>;
+  bindRowSync?: (rowId: string) => void;
+  blobPrefetchComplete?: boolean;
   isDatabaseRowPage?: boolean;
   paddingStart?: number;
   paddingEnd?: number;
@@ -56,7 +60,8 @@ export interface DatabaseContextState {
   // use different view id to navigate to row
   navigateToRow?: (rowId: string, viewId?: string) => void;
   loadView?: LoadView;
-  createRowDoc?: CreateRowDoc;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  createRow?: CreateRow;
   loadViewMeta?: LoadViewMeta;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   onRendered?: () => void;
@@ -70,7 +75,6 @@ export interface DatabaseContextState {
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
   loadViews?: () => Promise<View[]>;
   uploadFile?: (file: File) => Promise<string>;
-  createOrphanedView?: (payload: { document_id: string }) => Promise<void>;
   loadDatabasePrompts?: LoadDatabasePrompts;
   testDatabasePromptConfig?: TestDatabasePromptConfig;
   requestInstance?: AxiosInstance | null;
@@ -99,6 +103,15 @@ export const useDatabaseContext = () => {
   return context;
 };
 
+/**
+ * Optional variant of useDatabaseContext that returns undefined
+ * instead of throwing when used outside DatabaseContextProvider.
+ * Use this in components that may render outside database context.
+ */
+export const useDatabaseContextOptional = (): DatabaseContextState | undefined => {
+  return useContext(DatabaseContext) ?? undefined;
+};
+
 export const useDocGuid = () => {
   return useDatabaseContext().databaseDoc.guid;
 };
@@ -110,7 +123,7 @@ export const useSharedRoot = () => {
 export const useCreateRow = () => {
   const context = useDatabaseContext();
 
-  return context.createRowDoc;
+  return context.createRow;
 };
 
 export const useDatabase = () => {
@@ -163,8 +176,8 @@ export const useNavigateToRow = () => {
   return useDatabaseContext().navigateToRow;
 };
 
-export const useRowDocMap = () => {
-  return useDatabaseContext().rowDocMap;
+export const useRowMap = () => {
+  return useDatabaseContext().rowMap;
 };
 
 export const useIsDatabaseRowPage = () => {
@@ -176,16 +189,16 @@ export const useIsDatabaseRowPage = () => {
  * Ensures the row doc is loaded and re-renders when row data changes.
  */
 export const useRow = (rowId: string) => {
-  const { rowDocMap, ensureRowDoc } = useDatabaseContext();
+  const { rowMap, ensureRow } = useDatabaseContext();
   const [, forceUpdate] = useState(0);
-  const rowDoc = rowDocMap?.[rowId];
+  const rowDoc = rowMap?.[rowId];
 
   // Ensure row document is loaded.
   useEffect(() => {
     let cancelled = false;
 
-    if (ensureRowDoc && rowId) {
-      const promise = ensureRowDoc(rowId);
+    if (ensureRow && rowId) {
+      const promise = ensureRow(rowId);
 
       if (promise) {
         promise.catch((error: unknown) => {
@@ -199,7 +212,7 @@ export const useRow = (rowId: string) => {
     return () => {
       cancelled = true;
     };
-  }, [ensureRowDoc, rowId]);
+  }, [ensureRow, rowId]);
 
   // Observe row document for changes and re-render when data updates.
   useEffect(() => {

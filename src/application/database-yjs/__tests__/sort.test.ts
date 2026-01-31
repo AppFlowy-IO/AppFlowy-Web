@@ -747,7 +747,7 @@ describe('relation and rollup sort tests (v069)', () => {
         rowId,
         fieldId: fixture.relationFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       });
       rollupValues[rowId] = await resolveRollupValue({
@@ -758,7 +758,7 @@ describe('relation and rollup sort tests (v069)', () => {
         rowId,
         fieldId: fixture.rollupSumFieldId,
         loadView: fixture.loadView,
-        createRowDoc: fixture.createRowDoc,
+        createRow: fixture.createRow,
         getViewIdFromDatabaseId: fixture.getViewIdFromDatabaseId,
       });
     }

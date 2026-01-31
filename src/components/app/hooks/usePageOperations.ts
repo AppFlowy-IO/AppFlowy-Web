@@ -16,7 +16,13 @@ import { findView, findViewInShareWithMe } from '@/components/_shared/outline/ut
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 // Hook for managing page and space operations
-export function usePageOperations({ outline, loadOutline }: { outline?: View[], loadOutline?: (workspaceId: string, force?: boolean) => Promise<void> }) {
+export function usePageOperations({
+  outline,
+  loadOutline,
+}: {
+  outline?: View[];
+  loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
+}) {
   const { service, currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
 
@@ -71,7 +77,7 @@ export function usePageOperations({ outline, loadOutline }: { outline?: View[], 
     [currentWorkspaceId, service, outline, role, loadOutline]
   );
 
-  // Update page
+  // Update page (rename) - uses WebSocket notification for sidebar refresh
   const updatePage = useCallback(
     async (viewId: string, payload: UpdatePagePayload) => {
       if (!currentWorkspaceId || !service) {
@@ -80,13 +86,13 @@ export function usePageOperations({ outline, loadOutline }: { outline?: View[], 
 
       try {
         await service?.updateAppPage(currentWorkspaceId, viewId, payload);
-        await loadOutline?.(currentWorkspaceId, false);
+        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, loadOutline]
+    [currentWorkspaceId, service]
   );
 
   // Update page icon
@@ -106,16 +112,16 @@ export function usePageOperations({ outline, loadOutline }: { outline?: View[], 
     [currentWorkspaceId, service]
   );
 
-  // Update page name
+  // Update page name (rename) - uses WebSocket notification for sidebar refresh
   const updatePageName = useCallback(
     async (viewId: string, name: string) => {
       if (!currentWorkspaceId || !service) {
         throw new Error('No workspace or service found');
       }
 
-
       try {
         await service?.updateAppPageName(currentWorkspaceId, viewId, name);
+        // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         return;
       } catch (e) {
         return Promise.reject(e);

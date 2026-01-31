@@ -17,6 +17,7 @@
 import 'cypress-file-upload';
 import 'cypress-plugin-api';
 import 'cypress-real-events';
+import '@4tw/cypress-drag-drop';
 import './commands';
 
 // Global hooks for console logging

@@ -190,7 +190,7 @@ export type RelationRollupFixture = {
   nameFieldId: string;
   amountFieldId: string;
   loadView: (viewId: string) => Promise<YDoc | null>;
-  createRowDoc: (rowKey: string) => Promise<YDoc | null>;
+  createRow: (rowKey: string) => Promise<YDoc | null>;
   getViewIdFromDatabaseId: (databaseId: string) => Promise<string | null>;
 };
 
@@ -206,7 +206,7 @@ export type AssetRelationRollupFixture = {
   relationFieldId: string;
   relationField: YDatabaseField;
   loadView: (viewId: string) => Promise<YDoc | null>;
-  createRowDoc: (rowKey: string) => Promise<YDoc | null>;
+  createRow: (rowKey: string) => Promise<YDoc | null>;
   getViewIdFromDatabaseId: (databaseId: string) => Promise<string | null>;
 };
 
@@ -795,7 +795,7 @@ export function createBlogPostsAuthorsRelationFixture(
     relationFieldId,
     relationField: integratedRelationField ?? relationField,
     loadView,
-    createRowDoc,
+    createRow: createRowDoc,
     getViewIdFromDatabaseId,
   };
 }
@@ -942,7 +942,7 @@ export function createRelationRollupFixtureFromV069(
     nameFieldId,
     amountFieldId,
     loadView,
-    createRowDoc: createRowDocFn,
+    createRow: createRowDocFn,
     getViewIdFromDatabaseId,
   };
 }
@@ -955,7 +955,7 @@ export async function resolveRelationText(context: {
   rowId: RowId;
   fieldId: string;
   loadView: (viewId: string) => Promise<YDoc | null>;
-  createRowDoc: (rowKey: string) => Promise<YDoc | null>;
+  createRow: (rowKey: string) => Promise<YDoc | null>;
   getViewIdFromDatabaseId: (databaseId: string) => Promise<string | null>;
 }): Promise<string> {
   const cellId = `${context.rowId}:${context.fieldId}`;
@@ -981,7 +981,7 @@ export async function resolveRollupValue(context: {
   rowId: RowId;
   fieldId: string;
   loadView: (viewId: string) => Promise<YDoc | null>;
-  createRowDoc: (rowKey: string) => Promise<YDoc | null>;
+  createRow: (rowKey: string) => Promise<YDoc | null>;
   getViewIdFromDatabaseId: (databaseId: string) => Promise<string | null>;
 }): Promise<{ value: string; rawNumeric?: number; list?: string[] }> {
   const cellId = `${context.rowId}:${context.fieldId}`;

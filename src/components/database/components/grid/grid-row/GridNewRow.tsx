@@ -9,6 +9,7 @@ function GridNewRow() {
 
   return (
     <div
+      data-testid="grid-new-row"
       onClick={() => {
         void onNewRow({ tailing: true });
       }}

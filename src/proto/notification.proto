@@ -11,6 +11,7 @@ message WorkspaceNotification {
         MentionablePersonListChanged mentionable_person_list_changed = 5;
         ServerLimit server_limit = 6;
         WorkspaceMemberProfileChanged workspace_member_profile_changed = 7;
+        FolderChanged folder_changed = 8;
     }
 }
 
@@ -76,4 +77,9 @@ message WorkspaceMemberProfileChanged {
     optional string cover_image_url = 4;
     optional string custom_image_url = 5;
     optional string description = 6;
+}
+
+message FolderChanged {
+    string outline_diff_json = 1;
+    optional string folder_rid = 2;
 }
