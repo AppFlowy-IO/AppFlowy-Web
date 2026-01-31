@@ -63,6 +63,7 @@ import {
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { RepeatedChatMessage } from '@/components/chat';
+import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 
 export class AFClientService implements AFService {
   private clientId: number = random.uint32();
@@ -670,12 +671,18 @@ export class AFClientService implements AFService {
   }
 
   async uploadFile(workspaceId: string, viewId: string, file: File, onProgress?: (progress: number) => void) {
-    return uploadFileMultipart({
-      workspaceId,
-      viewId,
-      file,
-      onProgress: (p) => onProgress?.(p.percentage / 100),
-    });
+    const uploadId = registerUpload();
+
+    try {
+      return await uploadFileMultipart({
+        workspaceId,
+        viewId,
+        file,
+        onProgress: (p) => onProgress?.(p.percentage / 100),
+      });
+    } finally {
+      unregisterUpload(uploadId);
+    }
   }
 
   deleteWorkspace(workspaceId: string): Promise<void> {
