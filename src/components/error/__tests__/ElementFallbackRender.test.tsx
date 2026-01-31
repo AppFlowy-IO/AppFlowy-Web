@@ -1,6 +1,5 @@
 import { expect, describe, it, beforeEach, afterEach } from '@jest/globals';
 import { render, screen } from '@testing-library/react';
-import i18n from 'i18next';
 
 import { ElementFallbackRender } from '../ElementFallbackRender';
 
@@ -17,7 +16,7 @@ jest.mock('i18next', () => ({
   get isInitialized() {
     return mockIsInitialized;
   },
-  t: mockT,
+  t: (key: string) => mockT(key),
 }));
 
 // Variable to control isInitialized state in tests
@@ -45,7 +44,7 @@ describe('ElementFallbackRender', () => {
     it('should render the translated error label', () => {
       render(<ElementFallbackRender {...defaultProps} />);
 
-      expect(i18n.t).toHaveBeenCalledWith('error.generalError');
+      expect(mockT).toHaveBeenCalledWith('error.generalError');
       expect(screen.getByText('An error occurred:')).toBeTruthy();
     });
 
@@ -89,7 +88,7 @@ describe('ElementFallbackRender', () => {
     it('should NOT call i18n.t when not initialized', () => {
       render(<ElementFallbackRender {...defaultProps} />);
 
-      expect(i18n.t).not.toHaveBeenCalled();
+      expect(mockT).not.toHaveBeenCalled();
     });
 
     it('should still render error message', () => {
