@@ -157,7 +157,7 @@ describe('Single Select Column Type', () => {
       cy.log('[STEP 10] Verifying option dropdown works');
       SingleSelectSelectors.allSelectOptionCells().then($cells => {
         if ($cells.length > 0) {
-          SingleSelectSelectors.allSelectOptionCells().first().click();
+          SingleSelectSelectors.allSelectOptionCells().first().click({ force: true });
           waitForReactUpdate(500);
 
           SingleSelectSelectors.selectOptionMenu().then($menu => {
