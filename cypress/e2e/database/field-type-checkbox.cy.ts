@@ -1,8 +1,7 @@
 /**
- * Core field type conversion tests - Checkbox, Time, Checklist
+ * Checkbox field type tests
  *
- * These tests exercise lazy field-type switching on web to mirror desktop behaviour.
- * They focus on core conversions that are reliable and deterministic.
+ * Tests for Checkbox field type conversions and interactions.
  */
 import { FieldType, waitForReactUpdate } from '../../support/selectors';
 import {
@@ -10,14 +9,13 @@ import {
   getLastFieldId,
   getCellsForField,
   getDataRowCellsForField,
-  typeTextIntoCell,
   loginAndCreateGrid,
   addNewProperty,
   editLastProperty,
   setupFieldTypeTest,
 } from '../../support/field-type-test-helpers';
 
-describe('Field Type - Core Conversions', () => {
+describe('Field Type - Checkbox', () => {
   beforeEach(() => {
     setupFieldTypeTest();
   });
@@ -68,65 +66,6 @@ describe('Field Type - Core Conversions', () => {
         $cells.each((_i, el) => values.push(el.textContent || ''));
         expect(values.some((v) => v.toLowerCase().includes('yes'))).to.be.true;
         expect(values.some((v) => v.toLowerCase().includes('no'))).to.be.true;
-      });
-    });
-  });
-
-  it('RichText ↔ Time parses HH:MM / milliseconds and round-trips', () => {
-    const testEmail = generateRandomEmail();
-    loginAndCreateGrid(testEmail);
-
-    addNewProperty(FieldType.RichText);
-    getLastFieldId().as('timeFieldId');
-
-    cy.get<string>('@timeFieldId').then((fieldId) => {
-      typeTextIntoCell(fieldId, 0, '09:30');
-      typeTextIntoCell(fieldId, 1, '34200000');
-    });
-
-    editLastProperty(FieldType.Time);
-
-    // Expect parsed milliseconds shown (either raw ms or formatted)
-    getLastFieldId().then((fieldId) => {
-      getCellsForField(fieldId).then(($cells) => {
-        const values: string[] = [];
-        $cells.each((_i, el) => values.push((el.textContent || '').trim()));
-        expect(values.some((v) => v.includes('34200000') || v.includes('09:30'))).to.be.true;
-      });
-    });
-
-    // Round-trip back to RichText
-    editLastProperty(FieldType.RichText);
-    getLastFieldId().then((fieldId) => {
-      getCellsForField(fieldId).then(($cells) => {
-        const values: string[] = [];
-        $cells.each((_i, el) => values.push((el.textContent || '').trim()));
-        expect(values.some((v) => v.includes('09:30') || v.includes('34200000'))).to.be.true;
-      });
-    });
-  });
-
-  it('RichText ↔ Checklist handles markdown/plain text and preserves content', () => {
-    const testEmail = generateRandomEmail();
-    loginAndCreateGrid(testEmail);
-
-    addNewProperty(FieldType.RichText);
-    getLastFieldId().as('checklistFieldId');
-
-    cy.get<string>('@checklistFieldId').then((fieldId) => {
-      typeTextIntoCell(fieldId, 0, '[x] Done\n[ ] Todo\nPlain line');
-    });
-
-    editLastProperty(FieldType.Checklist);
-
-    // Switch back to RichText to view markdown text
-    editLastProperty(FieldType.RichText);
-    getLastFieldId().then((fieldId) => {
-      getCellsForField(fieldId).then(($cells) => {
-        const values: string[] = [];
-        $cells.each((_i, el) => values.push((el.textContent || '').trim()));
-        const allText = values.join('\n');
-        expect(allText).to.match(/Done|Todo|Plain/i);
       });
     });
   });

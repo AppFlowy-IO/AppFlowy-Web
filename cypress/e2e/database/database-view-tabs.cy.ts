@@ -5,6 +5,7 @@ import {
   AddPageSelectors,
   BreadcrumbSelectors,
   DatabaseViewSelectors,
+  ModalSelectors,
   PageSelectors,
   SpaceSelectors,
   waitForReactUpdate,
@@ -15,6 +16,7 @@ import {
  *
  * Tests for database view tab functionality:
  * - Creating multiple views and immediate appearance
+ * - Renaming views
  * - Tab selection updates sidebar selection
  * - Breadcrumb reflects active tab
  * - Navigation persistence
@@ -103,6 +105,16 @@ describe('Database View Tabs', () => {
   };
 
   /**
+   * Helper: Open tab context menu by label using pointerdown
+   */
+  const openTabMenuByLabel = (label: string) => {
+    cy.contains('[data-testid^="view-tab-"] span', label, { timeout: 10000 })
+      .should('be.visible')
+      .trigger('pointerdown', { button: 2, pointerType: 'mouse', force: true });
+    waitForReactUpdate(500);
+  };
+
+  /**
    * Test: Creates multiple views and verifies immediate appearance
    *
    * Regression test: Previously views wouldn't appear until folder synced (3+ seconds).
@@ -183,6 +195,49 @@ describe('Database View Tabs', () => {
       });
 
       cy.task('log', '[TEST COMPLETE] Multiple views created and persisted');
+    });
+  });
+
+  /**
+   * Test: Renames views correctly and syncs with sidebar
+   */
+  it('renames views correctly', () => {
+    const testEmail = generateRandomEmail();
+
+    cy.task('log', `[TEST] Rename views - Email: ${testEmail}`);
+
+    const authUtils = new AuthTestUtils();
+    createGridAndWait(authUtils, testEmail).then(() => {
+      // Rename Grid -> MyGrid
+      cy.task('log', '[STEP 1] Renaming Grid to MyGrid');
+      openTabMenuByLabel('Grid');
+      DatabaseViewSelectors.tabActionRename().should('be.visible').click({ force: true });
+      ModalSelectors.renameInput().should('be.visible').clear().type('MyGrid');
+      ModalSelectors.renameSaveButton().click({ force: true });
+      waitForReactUpdate(1000);
+      cy.contains('[data-testid^="view-tab-"]', 'MyGrid', { timeout: 10000 }).should('exist');
+
+      // Add a Board view
+      cy.task('log', '[STEP 2] Adding Board view');
+      addViewViaButton('Board');
+      waitForReactUpdate(2000);
+
+      // Rename Board -> MyBoard
+      cy.task('log', '[STEP 3] Renaming Board to MyBoard');
+      openTabMenuByLabel('Board');
+      DatabaseViewSelectors.tabActionRename().should('be.visible').click({ force: true });
+      ModalSelectors.renameInput().should('be.visible').clear().type('MyBoard');
+      ModalSelectors.renameSaveButton().click({ force: true });
+      waitForReactUpdate(1000);
+      cy.contains('[data-testid^="view-tab-"]', 'MyBoard', { timeout: 10000 }).should('exist');
+
+      // Verify both renamed tabs exist
+      cy.task('log', '[STEP 4] Verifying renamed tabs exist');
+      DatabaseViewSelectors.viewTab().should('have.length', 2);
+      cy.contains('[data-testid^="view-tab-"]', 'MyGrid').should('exist');
+      cy.contains('[data-testid^="view-tab-"]', 'MyBoard').should('exist');
+
+      cy.task('log', '[TEST COMPLETE] Views renamed successfully');
     });
   });
 
