@@ -211,9 +211,21 @@ export const enterFilterText = (text: string): void => {
 
 /**
  * Delete the current filter
+ * Ensures the filter menu is open before clicking delete
  */
 export const deleteFilter = (): void => {
-  DatabaseFilterSelectors.deleteFilterButton().click({ force: true });
+  // First, ensure the filter menu is open by clicking the filter chip
+  // Check if delete button is already visible, if not open the menu
+  cy.get('body').then(($body) => {
+    if ($body.find('[data-testid="delete-filter-button"]').length === 0) {
+      // Filter menu not open, click the filter chip to open it
+      DatabaseFilterSelectors.filterCondition().first().click({ force: true });
+      waitForReactUpdate(500);
+    }
+  });
+
+  // Now click the delete button
+  DatabaseFilterSelectors.deleteFilterButton().should('be.visible').click({ force: true });
   waitForReactUpdate(500);
 };
 
