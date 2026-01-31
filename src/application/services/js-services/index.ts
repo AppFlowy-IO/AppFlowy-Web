@@ -22,7 +22,7 @@ import {
   fetchPublishViewMeta,
   fetchViewInfo,
 } from '@/application/services/js-services/fetch';
-import { APIService } from '@/application/services/js-services/http';
+import { APIService, uploadFileMultipart } from '@/application/services/js-services/http';
 import { AFService, AFServiceConfig, WorkspaceMemberProfileUpdate } from '@/application/services/services.type';
 import { emit, EventType } from '@/application/session';
 import { afterAuth, AUTH_CALLBACK_URL, withSignIn } from '@/application/session/sign_in';
@@ -670,7 +670,12 @@ export class AFClientService implements AFService {
   }
 
   async uploadFile(workspaceId: string, viewId: string, file: File, onProgress?: (progress: number) => void) {
-    return APIService.uploadFile(workspaceId, viewId, file, onProgress);
+    return uploadFileMultipart({
+      workspaceId,
+      viewId,
+      file,
+      onProgress: (p) => onProgress?.(p.percentage / 100),
+    });
   }
 
   deleteWorkspace(workspaceId: string): Promise<void> {

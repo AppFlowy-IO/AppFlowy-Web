@@ -300,9 +300,9 @@ function AppPage() {
   }, [view, workspaceId]);
 
   const handleUploadFile = useCallback(
-    (file: File) => {
+    (file: File, onProgress?: (progress: number) => void) => {
       if (viewId && uploadFile) {
-        return uploadFile(viewId, file);
+        return uploadFile(viewId, file, onProgress);
       }
 
       return Promise.reject();

@@ -11,9 +11,11 @@ interface FileDropzoneProps {
   disabled?: boolean;
   placeholder?: string | React.ReactNode;
   loading?: boolean;
+  /** Upload progress value between 0 and 100. When undefined during loading, shows indeterminate state */
+  progress?: number;
 }
 
-function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loading }: FileDropzoneProps) {
+function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loading, progress }: FileDropzoneProps) {
   const { t } = useTranslation();
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -126,7 +128,10 @@ function FileDropzone({ onChange, accept, multiple, disabled, placeholder, loadi
       {loading && (
         <div className='bg-surface-primary/80 absolute inset-0 flex items-center justify-center rounded-[8px] backdrop-blur-sm'>
           <div className='flex flex-col items-center gap-3'>
-            <Progress variant='primary' />
+            <Progress variant='primary' value={progress} />
+            {progress !== undefined && (
+              <span className='text-sm text-text-secondary'>{Math.round(progress)}%</span>
+            )}
           </div>
         </div>
       )}

@@ -52,6 +52,14 @@ export default defineConfig({
 
           // Force disable fullscreen
           launchOptions.args.push('--force-device-scale-factor=1');
+
+          // Enable clipboard permissions for testing
+          launchOptions.preferences = {
+            ...launchOptions.preferences,
+            'profile.content_settings.exceptions.clipboard': {
+              '*': { setting: 1 },
+            },
+          };
         }
 
         return launchOptions;

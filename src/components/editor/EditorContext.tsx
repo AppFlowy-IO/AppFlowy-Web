@@ -73,7 +73,7 @@ export interface EditorContextState {
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   onWordCountChange?: (viewId: string, props: TextCount) => void;
-  uploadFile?: (file: File) => Promise<string>;
+  uploadFile?: (file: File, onProgress?: (progress: number) => void) => Promise<string>;
   requestInstance?: AxiosInstance | null;
   getMoreAIContext?: () => string;
   loadDatabasePrompts?: LoadDatabasePrompts;

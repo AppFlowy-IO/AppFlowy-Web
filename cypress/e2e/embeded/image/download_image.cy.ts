@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate, AddPageSelectors } from '../../../support/selectors';
 
-describe('Copy Image Test', () => {
+describe('Download Image Test', () => {
   const authUtils = new AuthTestUtils();
   const testEmail = `${uuidv4()}@appflowy.io`;
 
@@ -22,25 +22,10 @@ describe('Copy Image Test', () => {
     authUtils.signInWithTestUrl(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForReactUpdate(1000);
-
-      // Mock the clipboard write AFTER navigation to /app
-      cy.window().then((win) => {
-        // Stub the clipboard.write to capture what's being written
-        const writeStub = cy.stub().as('clipboardWrite').resolves();
-        if (win.navigator.clipboard) {
-          cy.stub(win.navigator.clipboard, 'write').callsFake(writeStub);
-        } else {
-          Object.defineProperty(win.navigator, 'clipboard', {
-            value: { write: writeStub },
-            configurable: true,
-            writable: true
-          });
-        }
-      });
     });
   });
 
-  it('should copy image to clipboard when clicking copy button', () => {
+  it('should download image when clicking download button', () => {
     // Create a new page
     AddPageSelectors.inlineAddButton().first().click();
     waitForReactUpdate(500);
@@ -76,13 +61,10 @@ describe('Copy Image Test', () => {
     waitForReactUpdate(1000);
 
     // Upload image directly
-    cy.get('input[type=\"file\"]').attachFile('appflowy.png');
+    cy.get('input[type="file"]').attachFile('appflowy.png');
     waitForReactUpdate(2000);
 
     waitForReactUpdate(2000);
-
-    // Verify we have at least 1 image block
-    cy.get('[data-block-type="image"]').should('have.length.at.least', 1);
 
     // Find the image block and hover to show toolbar
     cy.get('[data-block-type="image"]').first().should('exist');
@@ -90,23 +72,10 @@ describe('Copy Image Test', () => {
     cy.get('[data-block-type="image"]').first().realHover();
     waitForReactUpdate(1000);
 
-    // Click the copy button
-    cy.get('[data-testid="copy-image-button"]').should('exist').click({ force: true });
-    waitForReactUpdate(1000);
+    // Click the download button
+    cy.get('[data-testid="download-image-button"]').should('exist').click({ force: true });
 
-    // Verify clipboard write was called with image data
-    cy.get('@clipboardWrite').should('have.been.called');
-    cy.get('@clipboardWrite').then((stub: any) => {
-      // The clipboard.write is called with an array of ClipboardItems
-      // Each ClipboardItem has a types property
-      expect(stub.called).to.be.true;
-      const args = stub.args[0];
-      expect(args).to.have.length(1);
-      const clipboardItems = args[0];
-      expect(clipboardItems).to.have.length(1);
-      const clipboardItem = clipboardItems[0];
-      // Verify it's writing image/png
-      expect(clipboardItem.types).to.include('image/png');
-    });
+    // Verify success notification appears
+    cy.contains('Image downloaded successfully').should('exist');
   });
 });

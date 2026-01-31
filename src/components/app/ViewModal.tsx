@@ -226,9 +226,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   }, [doc, bindViewSync, syncBound]);
 
   const handleUploadFile = useCallback(
-    (file: File) => {
+    (file: File, onProgress?: (progress: number) => void) => {
       if (resolvedView && uploadFile) {
-        return uploadFile(resolvedView.view_id, file);
+        return uploadFile(resolvedView.view_id, file, onProgress);
       }
 
       return Promise.reject();

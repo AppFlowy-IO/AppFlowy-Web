@@ -2141,7 +2141,7 @@
       },
       "image": {
         "addAnImage": "Add images",
-        "copiedToPasteBoard": "The image link has been copied to the clipboard",
+        "copiedToPasteBoard": "Image copied to clipboard",
         "addAnImageDesktop": "Add an image",
         "addAnImageMobile": "Click to add one or more images",
         "dropImageToInsert": "Drop images to insert",

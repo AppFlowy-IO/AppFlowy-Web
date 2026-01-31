@@ -1666,6 +1666,7 @@ export async function uploadFile(
   file: File,
   onProgress?: (progress: number) => void
 ) {
+  Log.debug('[UploadFile] starting', { fileName: file.name, fileSize: file.size });
   const url = getAppFlowyFileUploadUrl(workspaceId, viewId);
 
   // Check file size, if over 7MB, check subscription plan
@@ -1701,6 +1702,7 @@ export async function uploadFile(
     });
 
     if (response?.data.code === 0) {
+    Log.debug('[UploadFile] completed', { url });
       return getAppFlowyFileUrl(workspaceId, viewId, response?.data.data.file_id);
     }
 
@@ -1717,6 +1719,10 @@ export async function uploadFile(
     return Promise.reject(handleAPIError(e));
   }
 }
+
+export { uploadFileMultipart } from './multipart-upload';
+export { MULTIPART_THRESHOLD } from './multipart-upload.types';
+export type { MultipartUploadProgress } from './multipart-upload.types';
 
 export async function inviteMembers(workspaceId: string, emails: string[]) {
   const url = `/api/workspace/${workspaceId}/invite`;

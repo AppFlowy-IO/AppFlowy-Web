@@ -184,9 +184,9 @@ function DrawerContent({
     } : null;
   }, [view, workspaceId]);
 
-  const handleUploadFile = useCallback((file: File) => {
+  const handleUploadFile = useCallback((file: File, onProgress?: (progress: number) => void) => {
     if(view && uploadFile) {
-      return uploadFile(view.view_id, file);
+      return uploadFile(view.view_id, file, onProgress);
     }
 
     return Promise.reject();
