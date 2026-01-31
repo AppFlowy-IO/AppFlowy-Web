@@ -96,17 +96,17 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
 
     case FieldType.Person:
       try {
-        const personIds = JSON.parse(value.content) as string[];
+        const userIds = JSON.parse(value.content) as string[];
 
         return {
           ...value,
-          personIds,
+          userIds,
         };
       } catch (e) {
         console.error('Error parsing person filter content:', e);
         return {
           ...value,
-          personIds: [],
+          userIds: [],
         };
       }
   }
