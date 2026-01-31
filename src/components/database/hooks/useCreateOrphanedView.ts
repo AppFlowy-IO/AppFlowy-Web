@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 
-import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useDatabaseContext } from '@/application/database-yjs';
 import { useService } from '@/components/main/app.hooks';
 
 /**
@@ -15,7 +15,7 @@ import { useService } from '@/components/main/app.hooks';
  */
 export function useCreateOrphanedView() {
   const service = useService();
-  const workspaceId = useCurrentWorkspaceId();
+  const { workspaceId } = useDatabaseContext();
 
   return useCallback(
     async (payload: { document_id: string }): Promise<Uint8Array> => {

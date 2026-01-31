@@ -524,16 +524,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return;
         }
 
-        Log.debug('[DatabaseRowSubDocument] row meta says empty; creating local doc', {
+        // Document is empty - just open locally without creating on server.
+        // The server document will be created when user actually edits (via handleDocUpdate).
+        Log.debug('[DatabaseRowSubDocument] row meta says empty; opening local doc only (no API call)', {
           rowId,
           documentId,
         });
-        const created = await handleCreateDocument(documentId, true);
-
-        if (!created) {
-          pendingOpenLocalRef.current = true;
-          scheduleEnsureRowDocumentExists();
-        }
+        await openLocalDocument(documentId);
+        setLoading(false);
 
         return;
       }
@@ -629,6 +627,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     createOrphanedView,
     rowId,
     doc,
+    openLocalDocument,
   ]);
 
   useEffect(() => {

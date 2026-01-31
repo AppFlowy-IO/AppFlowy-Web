@@ -450,6 +450,9 @@ importers:
         specifier: 14.0.0-1
         version: 14.0.0-1
     devDependencies:
+      '@4tw/cypress-drag-drop':
+        specifier: ^2.3.1
+        version: 2.3.1(cypress@15.2.0)
       '@babel/preset-env':
         specifier: ^7.24.7
         version: 7.27.2(@babel/core@7.27.1)
@@ -722,6 +725,11 @@ importers:
         version: 1.0.8(vite@5.4.19(@types/node@20.17.47)(sass@1.89.0)(terser@5.44.1))
 
 packages:
+
+  '@4tw/cypress-drag-drop@2.3.1':
+    resolution: {integrity: sha512-ht9Mx0eK+j4UO7fZvHNyCGOQEIj4d5+CZDYdxUCHGL4yvEhdDBH6PT4Lt12Ct+O+8qK8K1K31p7iiOghA8ewxQ==}
+    peerDependencies:
+      cypress: '>=2'
 
   '@acemir/cssom@0.9.23':
     resolution: {integrity: sha512-2kJ1HxBKzPLbmhZpxBiTZggjtgCwKg1ma5RHShxvd6zgqhDEdEkzpiwe7jLkI2p2BrZvFCXIihdoMkl1H39VnA==}
@@ -9710,6 +9718,10 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  '@4tw/cypress-drag-drop@2.3.1(cypress@15.2.0)':
+    dependencies:
+      cypress: 15.2.0
 
   '@acemir/cssom@0.9.23': {}
 

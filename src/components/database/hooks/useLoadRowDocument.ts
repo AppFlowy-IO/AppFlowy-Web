@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 
+import { useDatabaseContext } from '@/application/database-yjs';
 import { Types, ViewLayout, YDoc } from '@/application/types';
 import { openView } from '@/application/view-loader';
-import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Log } from '@/utils/log';
 
 /**
@@ -19,7 +19,7 @@ export interface YDocWithMeta extends YDoc {
  * Returns the document with metadata set for later sync binding.
  */
 export function useLoadRowDocument() {
-  const workspaceId = useCurrentWorkspaceId();
+  const { workspaceId } = useDatabaseContext();
 
   return useCallback(
     async (documentId: string): Promise<YDoc | null> => {
