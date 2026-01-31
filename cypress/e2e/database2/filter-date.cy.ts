@@ -11,6 +11,7 @@ import {
   typeTextIntoCell,
   getPrimaryFieldId,
   addFilterByFieldName,
+  clickFilterChip,
   deleteFilter,
   assertRowCount,
 } from '../../support/filter-test-helpers';
@@ -446,6 +447,292 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
               .and('contain.text', 'Has Date 2');
             DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
               .should('not.contain.text', 'No Date');
+          });
+      });
+    });
+  });
+
+  it('filter by date is on or before', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a DateTime field
+        addFieldWithType(FieldType.DateTime);
+        waitForReactUpdate(1000);
+
+        // Get the date field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const dateFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Early Event');
+            typeTextIntoCell(primaryFieldId, 1, 'Mid Event');
+            typeTextIntoCell(primaryFieldId, 2, 'Late Event');
+            waitForReactUpdate(500);
+
+            // Set dates - first row: 5th
+            clickDateCell(dateFieldId, 0);
+            selectDateByDay(5);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Second row: 15th
+            clickDateCell(dateFieldId, 1);
+            selectDateByDay(15);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Third row: 25th
+            clickDateCell(dateFieldId, 2);
+            selectDateByDay(25);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter on DateTime field
+            addFilterByFieldName('Date');
+            waitForReactUpdate(500);
+
+            // Change condition to "Date On Or Before"
+            changeDateFilterCondition(DateFilterCondition.DateOnOrBefore);
+            waitForReactUpdate(500);
+
+            // Set filter date to 15th
+            setFilterDate(15);
+            waitForReactUpdate(500);
+
+            // Close the filter popover
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify rows on or before 15th are visible (Early Event on 5th, Mid Event on 15th)
+            assertRowCount(2);
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('contain.text', 'Early Event')
+              .and('contain.text', 'Mid Event');
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('not.contain.text', 'Late Event');
+          });
+      });
+    });
+  });
+
+  it('filter by date is on or after', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a DateTime field
+        addFieldWithType(FieldType.DateTime);
+        waitForReactUpdate(1000);
+
+        // Get the date field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const dateFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Early Event');
+            typeTextIntoCell(primaryFieldId, 1, 'Mid Event');
+            typeTextIntoCell(primaryFieldId, 2, 'Late Event');
+            waitForReactUpdate(500);
+
+            // Set dates - first row: 5th
+            clickDateCell(dateFieldId, 0);
+            selectDateByDay(5);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Second row: 15th
+            clickDateCell(dateFieldId, 1);
+            selectDateByDay(15);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Third row: 25th
+            clickDateCell(dateFieldId, 2);
+            selectDateByDay(25);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter on DateTime field
+            addFilterByFieldName('Date');
+            waitForReactUpdate(500);
+
+            // Change condition to "Date On Or After"
+            changeDateFilterCondition(DateFilterCondition.DateOnOrAfter);
+            waitForReactUpdate(500);
+
+            // Set filter date to 15th
+            setFilterDate(15);
+            waitForReactUpdate(500);
+
+            // Close the filter popover
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify rows on or after 15th are visible (Mid Event on 15th, Late Event on 25th)
+            assertRowCount(2);
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('contain.text', 'Mid Event')
+              .and('contain.text', 'Late Event');
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('not.contain.text', 'Early Event');
+          });
+      });
+    });
+  });
+
+  it('date filter - delete filter restores all rows', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a DateTime field
+        addFieldWithType(FieldType.DateTime);
+        waitForReactUpdate(1000);
+
+        // Get the date field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const dateFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Event One');
+            typeTextIntoCell(primaryFieldId, 1, 'Event Two');
+            typeTextIntoCell(primaryFieldId, 2, 'Event Three');
+            waitForReactUpdate(500);
+
+            // Set dates for all rows
+            clickDateCell(dateFieldId, 0);
+            selectDateByDay(5);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            clickDateCell(dateFieldId, 1);
+            selectDateByDay(15);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            clickDateCell(dateFieldId, 2);
+            selectDateByDay(25);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter on DateTime field
+            addFilterByFieldName('Date');
+            waitForReactUpdate(500);
+
+            // Change condition to "Date Is"
+            changeDateFilterCondition(DateFilterCondition.DateIs);
+            waitForReactUpdate(500);
+
+            // Set filter date to 5th (should show only 1 row)
+            setFilterDate(5);
+            waitForReactUpdate(500);
+
+            // Close the filter popover
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify only 1 row matches
+            assertRowCount(1);
+
+            // Delete the filter
+            clickFilterChip();
+            waitForReactUpdate(300);
+            deleteFilter();
+            waitForReactUpdate(500);
+
+            // All rows should be visible again
+            assertRowCount(3);
+          });
+      });
+    });
+  });
+
+  it('date filter - change condition dynamically', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a DateTime field
+        addFieldWithType(FieldType.DateTime);
+        waitForReactUpdate(1000);
+
+        // Get the date field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const dateFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Has Date');
+            typeTextIntoCell(primaryFieldId, 1, 'No Date');
+            typeTextIntoCell(primaryFieldId, 2, 'Also Has Date');
+            waitForReactUpdate(500);
+
+            // Set dates for first and third rows only
+            clickDateCell(dateFieldId, 0);
+            selectDateByDay(10);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            clickDateCell(dateFieldId, 2);
+            selectDateByDay(20);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter with "Date Is Empty"
+            addFilterByFieldName('Date');
+            waitForReactUpdate(500);
+            changeDateFilterCondition(DateFilterCondition.DateIsEmpty);
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 1 row (No Date)
+            assertRowCount(1);
+
+            // Change to "Date Is Not Empty"
+            clickFilterChip();
+            waitForReactUpdate(300);
+            changeDateFilterCondition(DateFilterCondition.DateIsNotEmpty);
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 2 rows (Has Date, Also Has Date)
+            assertRowCount(2);
+
+            // Change to "Date Before" with date 15
+            clickFilterChip();
+            waitForReactUpdate(300);
+            changeDateFilterCondition(DateFilterCondition.DateBefore);
+            waitForReactUpdate(500);
+            setFilterDate(15);
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 1 row (Has Date on 10th)
+            assertRowCount(1);
           });
       });
     });

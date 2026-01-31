@@ -11,6 +11,7 @@ import {
   typeTextIntoCell,
   getPrimaryFieldId,
   addFilterByFieldName,
+  clickFilterChip,
   deleteFilter,
   assertRowCount,
 } from '../../support/filter-test-helpers';
@@ -232,6 +233,122 @@ describe('Database Checkbox Filter Tests (Desktop Parity)', () => {
             assertRowCount(1);
             DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
               .should('contain.text', 'Task A');
+          });
+      });
+    });
+  });
+
+  it('checkbox filter - delete filter restores all rows', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a Checkbox field
+        addFieldWithType(FieldType.Checkbox);
+        waitForReactUpdate(1000);
+
+        // Get the checkbox field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const checkboxFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Task One');
+            typeTextIntoCell(primaryFieldId, 1, 'Task Two');
+            typeTextIntoCell(primaryFieldId, 2, 'Task Three');
+            waitForReactUpdate(500);
+
+            // Check first and third rows
+            toggleCheckbox(checkboxFieldId, 0);
+            toggleCheckbox(checkboxFieldId, 2);
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter for "Is Checked"
+            addFilterByFieldName('Checkbox');
+            waitForReactUpdate(500);
+            changeCheckboxFilterCondition(CheckboxFilterCondition.IsChecked);
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 2 checked rows
+            assertRowCount(2);
+
+            // Delete the filter
+            clickFilterChip();
+            waitForReactUpdate(300);
+            deleteFilter();
+            waitForReactUpdate(500);
+
+            // All rows should be visible again
+            assertRowCount(3);
+          });
+      });
+    });
+  });
+
+  it('checkbox filter - change condition dynamically', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a Checkbox field
+        addFieldWithType(FieldType.Checkbox);
+        waitForReactUpdate(1000);
+
+        // Get the checkbox field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const checkboxFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Checked Task');
+            typeTextIntoCell(primaryFieldId, 1, 'Unchecked Task');
+            typeTextIntoCell(primaryFieldId, 2, 'Also Checked');
+            waitForReactUpdate(500);
+
+            // Check first and third rows
+            toggleCheckbox(checkboxFieldId, 0);
+            toggleCheckbox(checkboxFieldId, 2);
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter for "Is Checked"
+            addFilterByFieldName('Checkbox');
+            waitForReactUpdate(500);
+            changeCheckboxFilterCondition(CheckboxFilterCondition.IsChecked);
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 2 checked rows
+            assertRowCount(2);
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('contain.text', 'Checked Task')
+              .and('contain.text', 'Also Checked');
+
+            // Change to "Is Unchecked"
+            clickFilterChip();
+            waitForReactUpdate(300);
+            changeCheckboxFilterCondition(CheckboxFilterCondition.IsUnchecked);
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 1 unchecked row
+            assertRowCount(1);
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('contain.text', 'Unchecked Task');
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('not.contain.text', 'Checked Task')
+              .and('not.contain.text', 'Also Checked');
           });
       });
     });
