@@ -15,7 +15,7 @@ import { useService } from '@/components/main/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 
 
-function MoreActionsContent ({ itemClicked, viewId }: {
+function MoreActionsContent({ itemClicked, viewId }: {
   itemClicked?: () => void;
   onDeleted?: () => void;
   viewId: string;
@@ -40,20 +40,20 @@ function MoreActionsContent ({ itemClicked, viewId }: {
   const {
     refreshOutline,
   } = useAppHandlers();
-  const handleDuplicateClick = async () => {
+  const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId || !service) return;
     itemClicked?.();
     toast.loading(`${t('moreAction.duplicateView')}...`);
     try {
       await service.duplicateAppPage(workspaceId, viewId);
-      toast.dismiss();
       void refreshOutline?.();
+      itemClicked?.();
       // eslint-disable-next-line
     } catch (e: any) {
       toast.dismiss();
       toast.error(e.message);
     }
-  };
+  }, [workspaceId, service, viewId, refreshOutline, itemClicked, t]);
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const containerRef = useCallback((el: HTMLElement | null) => {
@@ -65,6 +65,7 @@ function MoreActionsContent ({ itemClicked, viewId }: {
     >
       <div ref={containerRef} />
       <DropdownMenuItem
+        data-testid={'more-page-duplicate'}
         className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
         onSelect={handleDuplicateClick}
       >
@@ -81,6 +82,7 @@ function MoreActionsContent ({ itemClicked, viewId }: {
         }}
       >
         <DropdownMenuItem
+          data-testid={'more-page-move-to'}
           onSelect={(e) => {
             e.preventDefault();
           }}

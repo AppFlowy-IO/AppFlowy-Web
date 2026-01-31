@@ -53,7 +53,7 @@ describe('HTTP API - View Operations', () => {
         it('should get view by ID', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
 
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 const viewId = outline[0].view_id;
                 const result = await APIService.getView(testWorkspaceId, viewId, 1);
@@ -92,7 +92,7 @@ describe('HTTP API - View Operations', () => {
         it('should restore page from trash', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
 
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             const rootViewId = outline[0]?.view_id || testWorkspaceId;
             const { view_id: pageId } = await APIService.addAppPage(testWorkspaceId, rootViewId, {
                 layout: 0,

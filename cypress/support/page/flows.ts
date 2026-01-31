@@ -117,11 +117,11 @@ export function openPageFromSidebar(pageName: string) {
  */
 export function expandSpace(spaceIndex: number = 0) {
     testLog.info( `Expanding space at index ${spaceIndex}`);
-    
+
     SpaceSelectors.items().eq(spaceIndex).within(() => {
         SpaceSelectors.expanded().then(($expanded: JQuery<HTMLElement>) => {
             const isExpanded = $expanded.attr('data-expanded') === 'true';
-            
+
             if (!isExpanded) {
                 testLog.info( 'Space is collapsed, expanding it');
                 SpaceSelectors.names().first().click();
@@ -130,8 +130,30 @@ export function expandSpace(spaceIndex: number = 0) {
             }
         });
     });
-    
+
     waitForReactUpdate(500);
+}
+
+/**
+ * Expands a space in the sidebar by its name
+ * Used in cross-tab-sync.cy.ts, document-sidebar-refresh.cy.ts, and other tests
+ * @param spaceName - Name of the space to expand (e.g., 'General')
+ */
+export function expandSpaceByName(spaceName: string) {
+    testLog.info(`Expanding space "${spaceName}" in sidebar`);
+
+    SpaceSelectors.itemByName(spaceName, { timeout: 30000 }).then(($space) => {
+        const expandedIndicator = $space.find('[data-testid="space-expanded"]');
+        const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
+
+        if (!isExpanded) {
+            testLog.info('Space is collapsed, expanding it');
+            SpaceSelectors.itemByName(spaceName).find('[data-testid="space-name"]').click({ force: true });
+            waitForReactUpdate(1000);
+        } else {
+            testLog.info('Space is already expanded');
+        }
+    });
 }
 
 // Internal helper functions (not exported but used by exported functions)

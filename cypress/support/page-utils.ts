@@ -18,7 +18,8 @@ import {
     waitForSidebarReady,
     createPageAndAddContent,
     openPageFromSidebar,
-    expandSpace
+    expandSpace,
+    expandSpaceByName
 } from './page/flows';
 
 // Page management utilities
@@ -62,6 +63,7 @@ export {
     createPageAndAddContent,
     openPageFromSidebar,
     expandSpace,
+    expandSpaceByName,
     getPageByName,
     getPageTitleInput,
     savePageTitle,
@@ -99,7 +101,10 @@ export class TestTool {
     static expandSpace(spaceIndex?: number) {
         return expandSpace(spaceIndex);
     }
-    
+    static expandSpaceByName(spaceName: string) {
+        return expandSpaceByName(spaceName);
+    }
+
     // Page management
     static getPageByName(pageName: string) {
         return getPageByName(pageName);

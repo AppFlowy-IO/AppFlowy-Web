@@ -174,7 +174,7 @@ describe('HTTP API - Invitation & Sharing Operations', () => {
     describe('Share Page Operations', () => {
         it('should share page to emails', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 const testEmail = `share-${uuidv4()}@appflowy.io`;
                 try {
@@ -190,7 +190,7 @@ describe('HTTP API - Invitation & Sharing Operations', () => {
 
         it('should revoke access', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 const testEmail = `revoke-${uuidv4()}@appflowy.io`;
                 try {
@@ -206,7 +206,7 @@ describe('HTTP API - Invitation & Sharing Operations', () => {
 
         it('should get share detail', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     const result = await APIService.getShareDetail(testWorkspaceId, outline[0].view_id, []);
@@ -255,7 +255,7 @@ describe('HTTP API - Invitation & Sharing Operations', () => {
 
         it('should send request access', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     await expect(

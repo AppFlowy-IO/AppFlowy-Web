@@ -24,7 +24,6 @@ import {
 } from '@/application/services/js-services/fetch';
 import { APIService, uploadFileMultipart } from '@/application/services/js-services/http';
 import { AFService, AFServiceConfig, WorkspaceMemberProfileUpdate } from '@/application/services/services.type';
-import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 import { emit, EventType } from '@/application/session';
 import { afterAuth, AUTH_CALLBACK_URL, withSignIn } from '@/application/session/sign_in';
 import { getTokenParsed } from '@/application/session/token';
@@ -64,6 +63,7 @@ import {
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { RepeatedChatMessage } from '@/components/chat';
+import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 
 export class AFClientService implements AFService {
   private clientId: number = random.uint32();

@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
+import { APP_EVENTS } from '@/application/constants';
 import { TextCount, Types, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM, resolveSidebarSelectedViewId } from '@/components/app/hooks/resolveSidebarSelectedViewId';
@@ -30,7 +31,7 @@ const SKIP_NEXT_FOLDER_OUTLINE_REFRESH_TTL_MS =
 // Depends on workspace ID and sync context from previous layers
 export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) => {
   const { currentWorkspaceId } = useAuthInternal();
-  const { lastUpdatedCollab } = useSyncInternal();
+  const { lastUpdatedCollab, eventEmitter } = useSyncInternal();
   const params = useParams();
   const [searchParams] = useSearchParams();
 
@@ -81,28 +82,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync } = useViewOperations();
 
   // Initialize page operations
-  const loadOutlineAfterLocalMutation = useCallback(
-    async (workspaceId: string, force?: boolean) => {
-      // Local mutations typically trigger a folder-collab update echo shortly after we already
-      // refetched the outline. Skip the next folder-collab-driven refresh once to avoid a
-      // second, visually noticeable "refresh" of database UI derived from the outline.
-      skipNextFolderOutlineRefreshRef.current = true;
-      skipNextFolderOutlineRefreshUntilRef.current = Date.now() + SKIP_NEXT_FOLDER_OUTLINE_REFRESH_TTL_MS;
-
-      try {
-        return await loadOutline(workspaceId, force);
-      } catch (e) {
-        // If our local outline reload failed, allow the next folder refresh to proceed so
-        // we can still recover when the folder-collab update arrives.
-        skipNextFolderOutlineRefreshRef.current = false;
-        skipNextFolderOutlineRefreshUntilRef.current = 0;
-        throw e;
-      }
-    },
-    [loadOutline]
-  );
-
-  const pageOperations = usePageOperations({ outline, loadOutline: loadOutlineAfterLocalMutation });
+  const pageOperations = usePageOperations({ outline, loadOutline });
 
   // Check if current view has been deleted
   const viewHasBeenDeleted = useMemo(() => {
@@ -221,6 +201,19 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       debouncedRefreshOutline.cancel();
     };
   }, [debouncedRefreshOutline]);
+
+  useEffect(() => {
+    const handleFolderOutlineChanged = () => {
+      skipNextFolderOutlineRefreshRef.current = true;
+      skipNextFolderOutlineRefreshUntilRef.current = Date.now() + SKIP_NEXT_FOLDER_OUTLINE_REFRESH_TTL_MS;
+    };
+
+    eventEmitter.on(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
+
+    return () => {
+      eventEmitter.off(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
+    };
+  }, [eventEmitter]);
 
   // Refresh outline when a folder collab update is detected
   useEffect(() => {

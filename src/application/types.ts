@@ -1048,6 +1048,7 @@ export interface ViewExtra extends SpaceInfo, DatabaseViewExtra {
 }
 
 export interface View {
+  folder_rid?: string;
   view_id: string;
   name: string;
   icon: ViewIcon | null;

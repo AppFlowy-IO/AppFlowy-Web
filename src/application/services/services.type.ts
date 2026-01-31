@@ -68,6 +68,11 @@ export type AFService = PublishService &
     getAxiosInstance: () => AxiosInstance | null;
   };
 
+export interface AppOutlineResponse {
+  outline: View[];
+  folderRid?: string;
+}
+
 export interface AFServiceConfig {
   cloudConfig: AFCloudConfig;
 }
@@ -118,7 +123,7 @@ export interface AppService {
   createRow: (rowKey: string) => Promise<YDoc>;
   deleteRow: (rowKey: string) => void;
   getAppDatabaseViewRelations: (workspaceId: string, databaseStorageId: string) => Promise<DatabaseRelations>;
-  getAppOutline: (workspaceId: string) => Promise<View[]>;
+  getAppOutline: (workspaceId: string) => Promise<AppOutlineResponse>;
   getAppView: (workspaceId: string, viewId: string) => Promise<View>;
   getAppFavorites: (workspaceId: string) => Promise<View[]>;
   getAppRecent: (workspaceId: string) => Promise<View[]>;

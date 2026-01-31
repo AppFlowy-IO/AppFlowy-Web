@@ -84,7 +84,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should update publish config', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 await expect(
                     APIService.updatePublishConfig(testWorkspaceId, {
@@ -98,7 +98,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should update publish homepage', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     await expect(
@@ -127,7 +127,7 @@ describe('HTTP API - Publish Operations', () => {
     describe('Publish View Operations', () => {
         it('should publish view', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     await APIService.publishView(testWorkspaceId, outline[0].view_id);
@@ -142,7 +142,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should unpublish view', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     await expect(
@@ -157,7 +157,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should get publish info with view ID', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     const result = await APIService.getPublishInfoWithViewId(outline[0].view_id);
@@ -218,7 +218,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should duplicate publish view', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     // For duplicatePublishView, we need published_view_id and dest_view_id
@@ -241,7 +241,7 @@ describe('HTTP API - Publish Operations', () => {
     describe('Publish Comments & Reactions', () => {
         it('should get publish view comments', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     const result = await APIService.getPublishViewComments(outline[0].view_id);
@@ -255,7 +255,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should get reactions', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     const result = await APIService.getReactions(outline[0].view_id);
@@ -269,7 +269,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should create global comment on publish view', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     await APIService.createGlobalCommentOnPublishView(outline[0].view_id, 'Test comment');
@@ -284,7 +284,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should delete global comment on publish view', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     await APIService.deleteGlobalCommentOnPublishView(outline[0].view_id, 'invalid-comment-id');
@@ -299,7 +299,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should add reaction', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     await APIService.addReaction(outline[0].view_id, 'comment-id', '👍');
@@ -314,7 +314,7 @@ describe('HTTP API - Publish Operations', () => {
 
         it('should remove reaction', async () => {
             if (!testWorkspaceId) { throw new Error('testWorkspaceId is not available'); }
-            const outline = await APIService.getAppOutline(testWorkspaceId);
+            const { outline } = await APIService.getAppOutline(testWorkspaceId);
             if (outline.length > 0) {
                 try {
                     await APIService.removeReaction(outline[0].view_id, 'comment-id', '👍');

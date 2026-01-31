@@ -26,4 +26,5 @@ export const APP_EVENTS = {
   MENTIONABLE_PERSON_LIST_CHANGED: 'mentionable-person-list-changed', // Team member changes
   SERVER_LIMIT_CHANGED: 'server-limit-changed',           // Billing/feature limits updated
   WORKSPACE_MEMBER_PROFILE_CHANGED: 'workspace-member-profile-changed', // Workspace member profile updated
+  FOLDER_OUTLINE_CHANGED: 'folder-outline-changed',       // Workspace folder outline diff (sidebar refresh)
 };
