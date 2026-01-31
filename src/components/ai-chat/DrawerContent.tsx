@@ -7,6 +7,7 @@ import { UIVariant, ViewMetaProps, YDoc } from '@/application/types';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { insertDataToDoc } from '@/components/ai-chat/utils';
 import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useService } from '@/components/main/app.hooks';
@@ -19,7 +20,7 @@ function DrawerContent({
   const {
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
     updatePage,
     addPage,
@@ -28,6 +29,7 @@ function DrawerContent({
     loadViews,
     setWordCount,
     uploadFile,
+    bindViewSync,
   } = useAppHandlers();
   const {
     getInsertData,
@@ -45,15 +47,16 @@ function DrawerContent({
   const containerRef = useRef<HTMLDivElement>(null);
   const [notFound, setNotFound] = React.useState(false);
   const [editor, setEditor] = useState<YjsEditor | undefined>(undefined);
+  const [syncBound, setSyncBound] = useState(false);
 
   const onEditorConnected = useCallback((editor: YjsEditor) => {
     setEditor(editor);
   }, []);
 
   const loadPageDoc = useCallback(async(id: string) => {
-
     setNotFound(false);
     setDoc(undefined);
+    setSyncBound(false);
     try {
       const doc = await loadView(id);
 
@@ -72,8 +75,30 @@ function DrawerContent({
       void loadPageDoc(openViewId);
     } else {
       setDoc(undefined);
+      setSyncBound(false);
     }
   }, [openViewId, loadPageDoc]);
+
+  useEffect(() => {
+    if (!doc || !bindViewSync || syncBound) return;
+
+    const docWithMeta = doc.doc as YDocWithMeta;
+
+    if (docWithMeta.object_id !== doc.id) {
+      return;
+    }
+
+    if (docWithMeta._syncBound) {
+      setSyncBound(true);
+      return;
+    }
+
+    const syncContext = bindViewSync(doc.doc);
+
+    if (syncContext) {
+      setSyncBound(true);
+    }
+  }, [doc, bindViewSync, syncBound]);
 
   useEffect(() => {
     const insertData = getInsertData(openViewId);
@@ -185,8 +210,9 @@ function DrawerContent({
             viewMeta={viewMeta}
             navigateToView={toView}
             loadViewMeta={loadViewMeta}
-            createRowDoc={createRowDoc}
+            createRow={createRow}
             loadView={loadView}
+            bindViewSync={bindViewSync}
             updatePage={updatePage}
             addPage={addPage}
             deletePage={deletePage}

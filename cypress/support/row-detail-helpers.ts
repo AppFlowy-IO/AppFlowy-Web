@@ -172,8 +172,9 @@ export const getRowDocument = (): Cypress.Chainable => {
  * Type text into the row document
  */
 export const typeInRowDocument = (text: string): void => {
+  // The editor uses data-testid="editor-content" and role="textbox"
   RowDetailSelectors.documentArea()
-    .find('[contenteditable="true"], .editor-content, .ProseMirror')
+    .find('[data-testid="editor-content"], [role="textbox"][contenteditable="true"], [contenteditable="true"]')
     .first()
     .click({ force: true })
     .type(text, { delay: 30 });

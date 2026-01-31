@@ -1,5 +1,4 @@
-import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
-import { flushSync } from 'react-dom';
+import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -18,9 +17,11 @@ import {
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import { useViewOperations } from '@/components/app/hooks/useViewOperations';
+import type { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { Log } from '@/utils/log';
 
 const ViewHelmet = lazy(() => import('@/components/_shared/helmet/ViewHelmet'));
 
@@ -32,7 +33,7 @@ function AppPage() {
   const {
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
     appendBreadcrumb,
     onRendered,
@@ -43,6 +44,7 @@ function AppPage() {
     loadViews,
     setWordCount,
     uploadFile,
+    bindViewSync,
     ...handlers
   } = useAppHandlers();
   const { eventEmitter } = handlers;
@@ -110,6 +112,8 @@ function AppPage() {
   }, [rendered, view]);
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
   const [error, setError] = React.useState<AppError | null>(null);
+  // Track whether sync has been bound for the current doc
+  const [syncBound, setSyncBound] = useState(false);
 
   // Track in-progress loads to prevent duplicate requests and enable recovery.
   const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
@@ -122,14 +126,24 @@ function AppPage() {
     async (id: string) => {
       loadAttemptRef.current = { viewId: id, timestamp: Date.now() };
       setError(null);
+      // Reset sync state when loading new doc
+      setSyncBound(false);
+
       try {
+        // loadView now uses view-loader which:
+        // 1. Opens from IndexedDB cache if available (instant)
+        // 2. Fetches from server only if not cached
+        // 3. Does NOT bind sync - that happens after render
         const loadedDoc = await loadView(id, false, true);
 
-        // flushSync ensures our state commits before websocket sync messages
-        // can trigger their own flushSync (from react-use-websocket).
-        flushSync(() => {
-          setDoc(loadedDoc);
+        Log.debug('[AppPage] loadPageDoc complete, setting doc state', {
+          viewId: id,
+          docObjectId: loadedDoc.object_id,
         });
+
+        // Set doc state - sync binding happens in separate effect after render
+        // No flushSync needed since WebSocket sync starts AFTER render
+        setDoc(loadedDoc);
 
         // Clear the attempt after successful load
         if (loadAttemptRef.current?.viewId === id) {
@@ -229,8 +243,44 @@ function AppPage() {
     if (layout === ViewLayout.AIChat) {
       setDoc(undefined);
       setError(null);
+      setSyncBound(false);
     }
   }, [layout]);
+
+  // Bind sync AFTER component renders with the doc
+  // This ensures WebSocket sync starts only after UI is ready
+  useEffect(() => {
+    if (!doc || !viewId || syncBound || !bindViewSync) return;
+
+    const docWithMeta = doc as YDocWithMeta;
+
+    // Verify doc matches current viewId
+    if (docWithMeta.object_id !== viewId) {
+      Log.debug('[AppPage] bindViewSync skipped - doc viewId mismatch', {
+        docObjectId: docWithMeta.object_id,
+        viewId,
+      });
+      return;
+    }
+
+    if (docWithMeta._syncBound) {
+      setSyncBound(true);
+      return;
+    }
+
+    Log.debug('[AppPage] bindViewSync starting', {
+      viewId,
+      docObjectId: docWithMeta.object_id,
+    });
+
+    // Bind sync for the document - starts WebSocket sync
+    const syncContext = bindViewSync(doc);
+
+    if (syncContext) {
+      setSyncBound(true);
+      Log.debug('[AppPage] bindViewSync complete', { viewId });
+    }
+  }, [doc, viewId, syncBound, bindViewSync]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
     if (view) {
@@ -280,10 +330,41 @@ function AppPage() {
       );
     }
 
-    const View = layout === ViewLayout.Document ? Document : DatabaseView;
+    if (!docForCurrentView || !viewMeta || !workspaceId) {
+      return null;
+    }
 
-    return docForCurrentView && viewMeta && workspaceId && View ? (
-      <View
+    if (layout === ViewLayout.Document) {
+      return (
+        <Document
+          key={viewId}
+          requestInstance={requestInstance}
+          workspaceId={workspaceId}
+          doc={docForCurrentView}
+          readOnly={isReadOnly}
+          viewMeta={viewMeta}
+          navigateToView={toView}
+          loadViewMeta={loadViewMeta}
+          createRow={createRow}
+          appendBreadcrumb={appendBreadcrumb}
+          loadView={loadView}
+          bindViewSync={bindViewSync}
+          onRendered={onRendered}
+          updatePage={updatePage}
+          addPage={addPage}
+          deletePage={deletePage}
+          openPageModal={openPageModal}
+          loadViews={loadViews}
+          onWordCountChange={setWordCount}
+          uploadFile={handleUploadFile}
+          variant={UIVariant.App}
+          {...handlers}
+        />
+      );
+    }
+
+    return (
+      <DatabaseView
         key={viewId}
         requestInstance={requestInstance}
         workspaceId={workspaceId}
@@ -292,9 +373,10 @@ function AppPage() {
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
-        createRowDoc={createRowDoc}
+        createRow={createRow}
         appendBreadcrumb={appendBreadcrumb}
         loadView={loadView}
+        bindViewSync={bindViewSync}
         onRendered={onRendered}
         updatePage={updatePage}
         addPage={addPage}
@@ -306,7 +388,7 @@ function AppPage() {
         variant={UIVariant.App}
         {...handlers}
       />
-    ) : null;
+    );
   }, [
     doc,
     layout,
@@ -318,9 +400,10 @@ function AppPage() {
     isReadOnly,
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     appendBreadcrumb,
     loadView,
+    bindViewSync,
     onRendered,
     updatePage,
     addPage,

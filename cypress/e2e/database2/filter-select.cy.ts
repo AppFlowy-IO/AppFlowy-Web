@@ -11,6 +11,7 @@ import {
   typeTextIntoCell,
   getPrimaryFieldId,
   addFilterByFieldName,
+  clickFilterChip,
   deleteFilter,
   assertRowCount,
 } from '../../support/filter-test-helpers';
@@ -372,6 +373,296 @@ describe('Database Select Filter Tests (Desktop Parity)', () => {
               .and('contain.text', 'Another Tagged');
             DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
               .should('not.contain.text', 'Untagged Item');
+          });
+      });
+    });
+  });
+
+  it('filter by single select option is not', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a SingleSelect field
+        addFieldWithType(FieldType.SingleSelect);
+        waitForReactUpdate(1000);
+
+        // Get the select field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const selectFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Active Item');
+            typeTextIntoCell(primaryFieldId, 1, 'Inactive Item');
+            typeTextIntoCell(primaryFieldId, 2, 'Another Active');
+            waitForReactUpdate(500);
+
+            // First row: set "Active" status
+            clickSelectCell(selectFieldId, 0);
+            createSelectOption('Active');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Second row: set "Inactive" status
+            clickSelectCell(selectFieldId, 1);
+            createSelectOption('Inactive');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Third row: also set "Active" status
+            clickSelectCell(selectFieldId, 2);
+            selectExistingOption('Active');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter on Select field
+            addFilterByFieldName('Select');
+            waitForReactUpdate(500);
+
+            // Change condition to "Option Is Not"
+            changeSelectFilterCondition(SelectFilterCondition.OptionIsNot);
+            waitForReactUpdate(500);
+
+            // Select "Active" option
+            selectFilterOption('Active');
+            waitForReactUpdate(500);
+
+            // Close the filter popover
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify only row NOT with Active is visible (Inactive Item)
+            assertRowCount(1);
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('contain.text', 'Inactive Item');
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('not.contain.text', 'Active Item')
+              .and('not.contain.text', 'Another Active');
+          });
+      });
+    });
+  });
+
+  it('filter by multi select does not contain option', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a MultiSelect field
+        addFieldWithType(FieldType.MultiSelect);
+        waitForReactUpdate(1000);
+
+        // Get the multi select field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const multiSelectFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Has Python');
+            typeTextIntoCell(primaryFieldId, 1, 'Has JavaScript');
+            typeTextIntoCell(primaryFieldId, 2, 'Has Both');
+            waitForReactUpdate(500);
+
+            // First row: add "Python" tag
+            clickSelectCell(multiSelectFieldId, 0);
+            createSelectOption('Python');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Second row: add "JavaScript" tag
+            clickSelectCell(multiSelectFieldId, 1);
+            createSelectOption('JavaScript');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Third row: add both tags
+            clickSelectCell(multiSelectFieldId, 2);
+            selectExistingOption('Python');
+            selectExistingOption('JavaScript');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter on Multiselect field
+            addFilterByFieldName('Multiselect');
+            waitForReactUpdate(500);
+
+            // Change condition to "Does Not Contain"
+            changeSelectFilterCondition(SelectFilterCondition.OptionDoesNotContain);
+            waitForReactUpdate(500);
+
+            // Select "Python" option
+            selectFilterOption('Python');
+            waitForReactUpdate(500);
+
+            // Close the filter popover
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify only row without Python is visible (Has JavaScript)
+            assertRowCount(1);
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('contain.text', 'Has JavaScript');
+            DatabaseGridSelectors.dataRowCellsForField(primaryFieldId)
+              .should('not.contain.text', 'Has Python')
+              .and('not.contain.text', 'Has Both');
+          });
+      });
+    });
+  });
+
+  it('select filter - delete filter restores all rows', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a SingleSelect field
+        addFieldWithType(FieldType.SingleSelect);
+        waitForReactUpdate(1000);
+
+        // Get the select field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const selectFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Item One');
+            typeTextIntoCell(primaryFieldId, 1, 'Item Two');
+            typeTextIntoCell(primaryFieldId, 2, 'Item Three');
+            waitForReactUpdate(500);
+
+            // Set different statuses
+            clickSelectCell(selectFieldId, 0);
+            createSelectOption('Status A');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            clickSelectCell(selectFieldId, 1);
+            createSelectOption('Status B');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            clickSelectCell(selectFieldId, 2);
+            selectExistingOption('Status A');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter on Select field
+            addFilterByFieldName('Select');
+            waitForReactUpdate(500);
+
+            // Change condition to "Option Is"
+            changeSelectFilterCondition(SelectFilterCondition.OptionIs);
+            waitForReactUpdate(500);
+
+            // Select "Status A" option (should show 2 rows)
+            selectFilterOption('Status A');
+            waitForReactUpdate(500);
+
+            // Close the filter popover
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify 2 rows match
+            assertRowCount(2);
+
+            // Delete the filter
+            clickFilterChip();
+            waitForReactUpdate(300);
+            deleteFilter();
+            waitForReactUpdate(500);
+
+            // All rows should be visible again
+            assertRowCount(3);
+          });
+      });
+    });
+  });
+
+  it('select filter - change condition dynamically', () => {
+    const email = generateRandomEmail();
+    loginAndCreateGrid(email).then(() => {
+      getPrimaryFieldId().then((primaryFieldId) => {
+        // Add a SingleSelect field
+        addFieldWithType(FieldType.SingleSelect);
+        waitForReactUpdate(1000);
+
+        // Get the select field ID
+        cy.get('[data-testid^="grid-field-header-"]')
+          .last()
+          .invoke('attr', 'data-testid')
+          .then((testId) => {
+            const selectFieldId = testId?.replace('grid-field-header-', '') || '';
+
+            // Enter names
+            typeTextIntoCell(primaryFieldId, 0, 'Has Status');
+            typeTextIntoCell(primaryFieldId, 1, 'No Status');
+            typeTextIntoCell(primaryFieldId, 2, 'Different Status');
+            waitForReactUpdate(500);
+
+            // First row: set "Open" status
+            clickSelectCell(selectFieldId, 0);
+            createSelectOption('Open');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(300);
+
+            // Second row: no status (leave empty)
+
+            // Third row: set "Closed" status
+            clickSelectCell(selectFieldId, 2);
+            createSelectOption('Closed');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Verify initial row count
+            assertRowCount(3);
+
+            // Add filter with "Is Empty"
+            addFilterByFieldName('Select');
+            waitForReactUpdate(500);
+            changeSelectFilterCondition(SelectFilterCondition.OptionIsEmpty);
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 1 row (No Status)
+            assertRowCount(1);
+
+            // Change to "Is Not Empty"
+            clickFilterChip();
+            waitForReactUpdate(300);
+            changeSelectFilterCondition(SelectFilterCondition.OptionIsNotEmpty);
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 2 rows (Has Status, Different Status)
+            assertRowCount(2);
+
+            // Change to "Option Is" and select "Open"
+            clickFilterChip();
+            waitForReactUpdate(300);
+            changeSelectFilterCondition(SelectFilterCondition.OptionIs);
+            waitForReactUpdate(500);
+            selectFilterOption('Open');
+            waitForReactUpdate(500);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(500);
+
+            // Should show 1 row (Has Status with Open)
+            assertRowCount(1);
           });
       });
     });

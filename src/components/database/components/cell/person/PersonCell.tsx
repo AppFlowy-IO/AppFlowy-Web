@@ -1,41 +1,73 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 
-import { parsePersonCellData, useFieldSelector } from '@/application/database-yjs';
 import { CellProps, PersonCell as PersonCellType } from '@/application/database-yjs/cell.type';
+import { MentionablePerson } from '@/application/types';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 
-export function PersonCell({ cell, style, placeholder, fieldId, wrap }: CellProps<PersonCellType>) {
-  const { field, clock } = useFieldSelector(fieldId);
+import PersonCellMenu from './PersonCellMenu';
+import { useMentionableUsersWithAutoFetch } from './useMentionableUsers';
 
-  const users = useMemo(() => {
-    return parsePersonCellData(field, cell?.data ?? '');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cell?.data, field, clock]);
+export function PersonCell({
+  cell,
+  style,
+  placeholder,
+  fieldId,
+  rowId,
+  wrap,
+  editing,
+  setEditing,
+}: CellProps<PersonCellType>) {
+  const selectedUserIds = useMemo(() => {
+    if (!cell?.data) return [];
+    try {
+      return JSON.parse(cell.data) as string[];
+    } catch {
+      return [];
+    }
+  }, [cell?.data]);
 
-  const isEmpty = !users || !users.users.length;
+  // Use cached mentionable users - fetch when there are selected users to display
+  const shouldFetch = selectedUserIds.length > 0;
+  const { users: mentionableUsers } = useMentionableUsersWithAutoFetch(shouldFetch);
+
+  const selectedUsers = useMemo(() => {
+    return selectedUserIds
+      .map((id) => mentionableUsers.find((u) => u.person_id === id))
+      .filter(Boolean) as MentionablePerson[];
+  }, [selectedUserIds, mentionableUsers]);
+
+  const isEmpty = selectedUsers.length === 0;
+
+  const handleOpenChange = useCallback(
+    (status: boolean) => {
+      setEditing?.(status);
+    },
+    [setEditing]
+  );
 
   const renderedUsers = useMemo(() => {
-    if (!users) return;
+    return selectedUsers.map((user) => {
+      const displayName = user.name || user.email || '?';
 
-    return users?.users.map((user) => (
-      <div key={user.id} className='min-w-fit max-w-[120px]'>
-        <div className='flex items-center gap-1'>
-          <Avatar className='h-5 w-5 border border-border-primary'>
-            <AvatarImage src={user.avatar_url} alt={''} />
-            <AvatarFallback>
-              {user.avatar_url ? <span className='flex justify-center text-sm'>{user.avatar_url}</span> : user.name}
-            </AvatarFallback>
-          </Avatar>
-          <span className='truncate text-sm'>{user.name}</span>
+      return (
+        <div key={user.person_id} className="min-w-fit max-w-[120px]">
+          <div className="flex items-center gap-1">
+            <Avatar className="h-5 w-5">
+              <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
+              <AvatarFallback className="text-xs">{displayName}</AvatarFallback>
+            </Avatar>
+            <span className="truncate text-sm">{displayName}</span>
+          </div>
         </div>
-      </div>
-    ));
-  }, [users]);
+      );
+    });
+  }, [selectedUsers]);
 
   return (
     <div
       style={style}
+      data-testid={`person-cell-${rowId}-${fieldId}`}
       className={cn(
         'select-option-cell flex w-full items-center gap-1',
         isEmpty && placeholder ? 'text-text-tertiary' : '',
@@ -45,6 +77,15 @@ export function PersonCell({ cell, style, placeholder, fieldId, wrap }: CellProp
       )}
     >
       {isEmpty ? placeholder || null : renderedUsers}
+      {editing ? (
+        <PersonCellMenu
+          fieldId={fieldId}
+          rowId={rowId}
+          open={editing}
+          onOpenChange={handleOpenChange}
+          selectedUserIds={selectedUserIds}
+        />
+      ) : null}
     </div>
   );
 }

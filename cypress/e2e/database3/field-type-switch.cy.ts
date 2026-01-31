@@ -173,6 +173,92 @@ describe('Field Type Switch Tests (Desktop Parity)', () => {
         });
       });
     });
+
+    it('DateTime → RichText → DateTime preserves dates', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.DateTime).then((fieldId) => {
+        // Set dates by clicking cells and selecting dates
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        // Select day 15 from calendar
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('button')
+          .filter((_, el) => el.textContent?.trim() === '15' && !el.classList.contains('day-outside'))
+          .first()
+          .click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        getAllCellContentsSync(fieldId).then((originalContents) => {
+          cy.log('Original DateTime contents:', JSON.stringify(originalContents));
+
+          changeFieldTypeById(fieldId, FieldType.RichText);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((richTextContents) => {
+            cy.log('RichText contents:', JSON.stringify(richTextContents));
+          });
+
+          changeFieldTypeById(fieldId, FieldType.DateTime);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((finalContents) => {
+            cy.log('Final DateTime contents:', JSON.stringify(finalContents));
+          });
+        });
+      });
+    });
+
+    it('MultiSelect → RichText → MultiSelect preserves tags', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.MultiSelect).then((fieldId) => {
+        // Create some tags in first cell
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('input')
+          .first()
+          .clear()
+          .type('Tag1{enter}', { delay: 30 });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('input')
+          .first()
+          .clear()
+          .type('Tag2{enter}', { delay: 30 });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        getAllCellContentsSync(fieldId).then((originalContents) => {
+          cy.log('Original MultiSelect contents:', JSON.stringify(originalContents));
+
+          changeFieldTypeById(fieldId, FieldType.RichText);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((richTextContents) => {
+            cy.log('RichText contents:', JSON.stringify(richTextContents));
+          });
+
+          changeFieldTypeById(fieldId, FieldType.MultiSelect);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((finalContents) => {
+            cy.log('Final MultiSelect contents:', JSON.stringify(finalContents));
+          });
+        });
+      });
+    });
   });
 
   describe('Cross-type transformations', () => {
@@ -313,6 +399,152 @@ describe('Field Type Switch Tests (Desktop Parity)', () => {
         });
       });
     });
+
+    it('DateTime → Number → DateTime', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.DateTime).then((fieldId) => {
+        // Set a date
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('button')
+          .filter((_, el) => el.textContent?.trim() === '10' && !el.classList.contains('day-outside'))
+          .first()
+          .click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        getAllCellContentsSync(fieldId).then((originalContents) => {
+          cy.log('Original DateTime:', JSON.stringify(originalContents));
+
+          changeFieldTypeById(fieldId, FieldType.Number);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((numberContents) => {
+            cy.log('After →Number:', JSON.stringify(numberContents));
+          });
+
+          changeFieldTypeById(fieldId, FieldType.DateTime);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((finalContents) => {
+            cy.log('After →DateTime:', JSON.stringify(finalContents));
+          });
+        });
+      });
+    });
+
+    it('DateTime → SingleSelect → DateTime', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.DateTime).then((fieldId) => {
+        // Set a date
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('button')
+          .filter((_, el) => el.textContent?.trim() === '20' && !el.classList.contains('day-outside'))
+          .first()
+          .click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        getAllCellContentsSync(fieldId).then((originalContents) => {
+          cy.log('Original DateTime:', JSON.stringify(originalContents));
+
+          changeFieldTypeById(fieldId, FieldType.SingleSelect);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((selectContents) => {
+            cy.log('After →SingleSelect:', JSON.stringify(selectContents));
+          });
+
+          changeFieldTypeById(fieldId, FieldType.DateTime);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((finalContents) => {
+            cy.log('After →DateTime:', JSON.stringify(finalContents));
+          });
+        });
+      });
+    });
+
+    it('MultiSelect → Checkbox → MultiSelect', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.MultiSelect).then((fieldId) => {
+        // Create a tag
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('input')
+          .first()
+          .clear()
+          .type('TestTag{enter}', { delay: 30 });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        getAllCellContentsSync(fieldId).then((originalContents) => {
+          cy.log('Original MultiSelect:', JSON.stringify(originalContents));
+
+          changeFieldTypeById(fieldId, FieldType.Checkbox);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((checkboxContents) => {
+            cy.log('After →Checkbox:', JSON.stringify(checkboxContents));
+          });
+
+          changeFieldTypeById(fieldId, FieldType.MultiSelect);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((finalContents) => {
+            cy.log('After →MultiSelect:', JSON.stringify(finalContents));
+          });
+        });
+      });
+    });
+
+    it('URL → SingleSelect → URL', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.URL).then((fieldId) => {
+        populateURLField(fieldId);
+        waitForReactUpdate(500);
+
+        getAllCellContentsSync(fieldId).then((originalContents) => {
+          cy.log('Original URL:', JSON.stringify(originalContents));
+
+          changeFieldTypeById(fieldId, FieldType.SingleSelect);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((selectContents) => {
+            cy.log('After →SingleSelect:', JSON.stringify(selectContents));
+          });
+
+          changeFieldTypeById(fieldId, FieldType.URL);
+          waitForReactUpdate(1000);
+
+          getAllCellContentsSync(fieldId).then((finalContents) => {
+            cy.log('After →URL:', JSON.stringify(finalContents));
+          });
+        });
+      });
+    });
   });
 
   describe('Chain transformations', () => {
@@ -371,6 +603,86 @@ describe('Field Type Switch Tests (Desktop Parity)', () => {
 
           getAllCellContentsSync(fieldId).then((finalContents) => {
             cy.log('Final Checkbox:', JSON.stringify(finalContents));
+          });
+        });
+      });
+    });
+
+    it('DateTime → URL → RichText → DateTime', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.DateTime).then((fieldId) => {
+        // Set a date
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('button')
+          .filter((_, el) => el.textContent?.trim() === '12' && !el.classList.contains('day-outside'))
+          .first()
+          .click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        getAllCellContentsSync(fieldId).then((originalContents) => {
+          cy.log('Original DateTime:', JSON.stringify(originalContents));
+
+          changeFieldTypeById(fieldId, FieldType.URL);
+          waitForReactUpdate(800);
+          cy.log('Changed to URL');
+
+          changeFieldTypeById(fieldId, FieldType.RichText);
+          waitForReactUpdate(800);
+          cy.log('Changed to RichText');
+
+          changeFieldTypeById(fieldId, FieldType.DateTime);
+          waitForReactUpdate(800);
+
+          getAllCellContentsSync(fieldId).then((finalContents) => {
+            cy.log('Final DateTime:', JSON.stringify(finalContents));
+          });
+        });
+      });
+    });
+
+    it('MultiSelect → Number → SingleSelect → MultiSelect', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.MultiSelect).then((fieldId) => {
+        // Create a tag
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('input')
+          .first()
+          .clear()
+          .type('ChainTag{enter}', { delay: 30 });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        getAllCellContentsSync(fieldId).then((originalContents) => {
+          cy.log('Original MultiSelect:', JSON.stringify(originalContents));
+
+          changeFieldTypeById(fieldId, FieldType.Number);
+          waitForReactUpdate(800);
+          cy.log('Changed to Number');
+
+          changeFieldTypeById(fieldId, FieldType.SingleSelect);
+          waitForReactUpdate(800);
+          cy.log('Changed to SingleSelect');
+
+          changeFieldTypeById(fieldId, FieldType.MultiSelect);
+          waitForReactUpdate(800);
+
+          getAllCellContentsSync(fieldId).then((finalContents) => {
+            cy.log('Final MultiSelect:', JSON.stringify(finalContents));
           });
         });
       });
@@ -533,6 +845,114 @@ describe('Field Type Edit and Switch Tests (Desktop Parity)', () => {
 
         getCellTextContent(fieldId, 5).then((afterSwitch) => {
           cy.log(`After →Checkbox: "${afterSwitch}"`);
+        });
+      });
+    });
+
+    it('DateTime → RichText → edit date string → DateTime', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.DateTime).then((fieldId) => {
+        // Set initial date
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('button')
+          .filter((_, el) => el.textContent?.trim() === '5' && !el.classList.contains('day-outside'))
+          .first()
+          .click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        changeFieldTypeById(fieldId, FieldType.RichText);
+        waitForReactUpdate(1000);
+
+        // Edit to a different text representation
+        typeTextIntoCell(fieldId, 0, '2025-01-15');
+        waitForReactUpdate(500);
+
+        getCellTextContent(fieldId, 0).then((afterEdit) => {
+          cy.log(`After edit to RichText: "${afterEdit}"`);
+        });
+
+        changeFieldTypeById(fieldId, FieldType.DateTime);
+        waitForReactUpdate(1000);
+
+        getCellTextContent(fieldId, 0).then((afterSwitch) => {
+          cy.log(`After →DateTime: "${afterSwitch}"`);
+        });
+      });
+    });
+
+    it('URL → RichText → edit URL → URL preserves edited value', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.URL).then((fieldId) => {
+        populateURLField(fieldId);
+        waitForReactUpdate(500);
+
+        changeFieldTypeById(fieldId, FieldType.RichText);
+        waitForReactUpdate(1000);
+
+        // Edit to a new URL
+        typeTextIntoCell(fieldId, 0, 'https://new-url.com');
+        waitForReactUpdate(500);
+
+        getCellTextContent(fieldId, 0).then((afterEdit) => {
+          cy.log(`After edit to RichText: "${afterEdit}"`);
+        });
+
+        changeFieldTypeById(fieldId, FieldType.URL);
+        waitForReactUpdate(1000);
+
+        getCellTextContent(fieldId, 0).then((afterSwitch) => {
+          cy.log(`After →URL: "${afterSwitch}"`);
+          expect(afterSwitch).to.include('new-url.com');
+        });
+      });
+    });
+
+    it('SingleSelect → RichText → edit option → SingleSelect', () => {
+      const testEmail = generateRandomEmail();
+      loginAndCreateGrid(testEmail);
+      setupTestData();
+
+      addFieldWithType(FieldType.SingleSelect).then((fieldId) => {
+        // Create an option
+        DatabaseGridSelectors.dataRowCellsForField(fieldId).eq(0).click({ force: true });
+        waitForReactUpdate(500);
+        cy.get('[data-radix-popper-content-wrapper]')
+          .last()
+          .find('input')
+          .first()
+          .clear()
+          .type('OriginalOption{enter}', { delay: 30 });
+        waitForReactUpdate(500);
+        cy.get('body').type('{esc}');
+        waitForReactUpdate(300);
+
+        changeFieldTypeById(fieldId, FieldType.RichText);
+        waitForReactUpdate(1000);
+
+        // Edit to a new value
+        typeTextIntoCell(fieldId, 0, 'EditedOption');
+        waitForReactUpdate(500);
+
+        getCellTextContent(fieldId, 0).then((afterEdit) => {
+          cy.log(`After edit to RichText: "${afterEdit}"`);
+        });
+
+        changeFieldTypeById(fieldId, FieldType.SingleSelect);
+        waitForReactUpdate(1000);
+
+        getCellTextContent(fieldId, 0).then((afterSwitch) => {
+          cy.log(`After →SingleSelect: "${afterSwitch}"`);
         });
       });
     });

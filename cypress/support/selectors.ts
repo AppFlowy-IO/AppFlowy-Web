@@ -638,6 +638,26 @@ export const SingleSelectSelectors = {
 };
 
 /**
+ * Person Column selectors
+ */
+export const PersonSelectors = {
+  // Person cell by row and field ID
+  personCell: (rowId: string, fieldId: string) => cy.get(byTestId(`person-cell-${rowId}-${fieldId}`)),
+
+  // All person cells
+  allPersonCells: () => cy.get('[data-testid^="person-cell-"]'),
+
+  // Person cell menu popover
+  personCellMenu: () => cy.get(byTestId('person-cell-menu')),
+
+  // Notify assignee toggle row
+  notifyAssigneeToggle: () => cy.get(byTestId('person-cell-menu')).find('[role="switch"]'),
+
+  // Person option in dropdown
+  personOption: (personId: string) => cy.get(byTestId(`person-option-${personId}`)),
+};
+
+/**
  * Grid Field/Column Header selectors
  */
 export const GridFieldSelectors = {
@@ -967,6 +987,12 @@ export const RowDetailSelectors = {
   // Dropdown menu items
   duplicateMenuItem: () => cy.get('[role="menuitem"]').contains(/duplicate/i),
   deleteMenuItem: () => cy.get('[role="menuitem"]').contains(/delete/i),
+
+  // Row title input (the actual title field, not the sub-document editor)
+  titleInput: () => cy.get('[data-testid="row-title-input"]'),
+
+  // Delete row confirm button
+  deleteRowConfirmButton: () => cy.get('[data-testid="delete-row-confirm-button"]'),
 };
 
 export function waitForReactUpdate(ms: number = 500) {

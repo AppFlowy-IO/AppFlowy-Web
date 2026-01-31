@@ -27,6 +27,9 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
     setAddLoading(true);
+    const startTime = Date.now();
+    const MIN_LOADING_TIME = 300; // Minimum time to show spinner for smooth UX
+
     try {
       const viewId = await onAddView(layout, name);
 
@@ -35,7 +38,15 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
       console.error('[AddViewButton] Error adding view:', e);
       toast.error(e instanceof Error ? e.message : 'Failed to add view');
     } finally {
-      setAddLoading(false);
+      // Ensure minimum loading time to prevent jarring UI flicker
+      const elapsed = Date.now() - startTime;
+      const remaining = MIN_LOADING_TIME - elapsed;
+
+      if (remaining > 0) {
+        setTimeout(() => setAddLoading(false), remaining);
+      } else {
+        setAddLoading(false);
+      }
     }
   };
 

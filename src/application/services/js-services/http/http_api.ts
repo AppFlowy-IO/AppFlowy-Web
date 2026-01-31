@@ -1925,12 +1925,20 @@ export async function generateAITranslateForRow(workspaceId: string, payload: Ge
     .join(', ');
 }
 
-export async function createOrphanedView(workspaceId: string, payload: { document_id: string }) {
+export async function createOrphanedView(workspaceId: string, payload: { document_id: string }): Promise<Uint8Array> {
   const url = `/api/workspace/${workspaceId}/orphaned-view`;
 
-  return executeAPIVoidRequest(() =>
-    axiosInstance?.post<APIResponse>(url, payload)
+  // Server returns doc_state as Vec<u8> which is JSON encoded as number[]
+  const docStateArray = await executeAPIRequest<number[] | null>(() =>
+    axiosInstance?.post<APIResponse<number[] | null>>(url, payload)
   );
+
+  // Validate the response - server must return a valid doc_state array
+  if (!docStateArray || !Array.isArray(docStateArray)) {
+    throw new Error('Server returned invalid doc_state');
+  }
+
+  return new Uint8Array(docStateArray);
 }
 
 export async function getGuestInvitation(workspaceId: string, code: string) {
@@ -1976,6 +1984,25 @@ export async function getMentionableUsers(workspaceId: string) {
   );
 
   return payload.persons;
+}
+
+export interface PageMentionUpdate {
+  person_id: string;
+  block_id?: string | null;
+  row_id?: string | null;
+  require_notification: boolean;
+  view_name: string;
+  ancestors?: string[] | null;
+  view_layout?: number | null;
+  is_row_document?: boolean;
+}
+
+export async function updatePageMention(workspaceId: string, viewId: string, data: PageMentionUpdate) {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/page-mention`;
+
+  return executeAPIVoidRequest(() =>
+    axiosInstance?.put<APIResponse>(url, data)
+  );
 }
 
 export async function addRecentPages(workspaceId: string, viewIds: string[]) {

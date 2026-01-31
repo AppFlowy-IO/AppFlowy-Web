@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useState } from 'react';
 
 import { YDoc } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { Log } from '@/utils/log';
 
 interface UseDocumentLoaderProps {
   viewId: string;
   loadView?: (viewId: string) => Promise<YDoc | null>;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
 }
 
 interface UseDocumentLoaderResult {
@@ -25,9 +28,11 @@ interface UseDocumentLoaderResult {
 export function useDocumentLoader({
   viewId,
   loadView,
+  bindViewSync,
 }: UseDocumentLoaderProps): UseDocumentLoaderResult {
   const [doc, setDoc] = useState<YDoc | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [syncBound, setSyncBound] = useState(false);
 
   const loadWithRetry = useCallback(
     async (id: string, retries = 3): Promise<YDoc | null> => {
@@ -63,6 +68,7 @@ export function useDocumentLoader({
         Log.debug('[useDocumentLoader] loaded doc', { viewId });
         setDoc(loadedDoc);
         setNotFound(false);
+        setSyncBound(false);
       } catch (error) {
         console.error('[useDocumentLoader] failed to load doc', { viewId, error });
         setNotFound(true);
@@ -71,6 +77,25 @@ export function useDocumentLoader({
 
     void loadDocument();
   }, [viewId, loadWithRetry]);
+
+  useEffect(() => {
+    if (!doc || !bindViewSync || syncBound) return;
+
+    const docWithMeta = doc as YDocWithMeta;
+
+    if (docWithMeta.object_id !== viewId) return;
+
+    if (docWithMeta._syncBound) {
+      setSyncBound(true);
+      return;
+    }
+
+    const syncContext = bindViewSync(doc);
+
+    if (syncContext) {
+      setSyncBound(true);
+    }
+  }, [doc, bindViewSync, syncBound, viewId]);
 
   return { doc, notFound, setNotFound };
 }

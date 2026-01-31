@@ -1,6 +1,7 @@
 import { AxiosInstance } from 'axios';
 import * as Y from 'yjs';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { PromptDatabaseConfiguration } from '@/components/chat';
 
 export type BlockId = string;
@@ -395,6 +396,13 @@ export enum YjsDatabaseKey {
   auto_fill = 'auto_fill',
   language = 'language',
   number_of_days = 'number_of_days',
+  // Person type option keys
+  is_single_select = 'is_single_select',
+  fill_with_creator = 'fill_with_creator',
+  disable_notification = 'disable_notification',
+  persons = 'persons',
+  // URL type option keys
+  url = 'url',
 }
 
 /**
@@ -779,6 +787,10 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.auto_fill): boolean;
 
   get(key: YjsDatabaseKey.language): bigint;
+
+  // Person
+  // eslint-disable-next-line @typescript-eslint/unified-signatures
+  get(key: YjsDatabaseKey.is_single_select | YjsDatabaseKey.disable_notification): boolean;
 }
 
 export enum Types {
@@ -861,7 +873,7 @@ export interface PublishViewMetaData {
 
 export type AppendBreadcrumb = (view?: View) => void;
 
-export type CreateRowDoc = (rowKey: string) => Promise<YDoc>;
+export type CreateRow = (rowKey: string) => Promise<YDoc>;
 export type LoadView = (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc>;
 
 export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
@@ -1217,8 +1229,10 @@ export interface ViewComponentProps {
   readOnly: boolean;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   loadView?: LoadView;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
+  checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;

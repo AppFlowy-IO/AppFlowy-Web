@@ -97,6 +97,16 @@ export interface WorkspaceService {
   getGuestToMemberConversionInfo: (workspaceId: string, code: string) => Promise<GuestConversionCodeInfo>;
   approveTurnGuestToMember: (workspaceId: string, code: string) => Promise<void>;
   getMentionableUsers: (workspaceId: string) => Promise<MentionablePerson[]>;
+  updatePageMention: (workspaceId: string, viewId: string, data: {
+    person_id: string;
+    block_id?: string | null;
+    row_id?: string | null;
+    require_notification: boolean;
+    view_name: string;
+    ancestors?: string[] | null;
+    view_layout?: number | null;
+    is_row_document?: boolean;
+  }) => Promise<void>;
   addRecentPages: (workspaceId: string, viewIds: string[]) => Promise<void>;
   getShareDetail: (workspaceId: string, viewId: string, ancestorViewIds: string[]) => Promise<{
     view_id: string;
@@ -110,8 +120,8 @@ export interface WorkspaceService {
 
 export interface AppService {
   getPageDoc: (workspaceId: string, viewId: string, errorCallback?: (error: { code: number }) => void) => Promise<YDoc>;
-  createRowDoc: (rowKey: string) => Promise<YDoc>;
-  deleteRowDoc: (rowKey: string) => void;
+  createRow: (rowKey: string) => Promise<YDoc>;
+  deleteRow: (rowKey: string) => void;
   getAppDatabaseViewRelations: (workspaceId: string, databaseStorageId: string) => Promise<DatabaseRelations>;
   getAppOutline: (workspaceId: string) => Promise<AppOutlineResponse>;
   getAppView: (workspaceId: string, viewId: string) => Promise<View>;
@@ -195,7 +205,7 @@ export interface AppService {
   }>;
   generateAISummaryForRow: (workspaceId: string, payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow: (workspaceId: string, payload: GenerateAITranslateRowPayload) => Promise<string>;
-  createOrphanedView: (workspaceId: string, payload: { document_id: string }) => Promise<void>;
+  createOrphanedView: (workspaceId: string, payload: { document_id: string }) => Promise<Uint8Array>;
   checkIfCollabExists: (workspaceId: string, objectId: string) => Promise<boolean>;
 }
 

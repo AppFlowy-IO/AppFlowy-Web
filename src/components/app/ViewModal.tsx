@@ -15,7 +15,7 @@ import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import { useAppHandlers, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
-import { useViewOperations } from '@/components/app/hooks/useViewOperations';
+import { useViewOperations, YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -49,8 +49,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const {
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
+    bindViewSync,
     updatePage,
     addPage,
     deletePage,
@@ -70,6 +71,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // Document state
   const [doc, setDoc] = useState<{ id: string; doc: YDoc } | undefined>(undefined);
   const [notFound, setNotFound] = useState(false);
+  const [syncBound, setSyncBound] = useState(false);
 
   // Fallback view metadata fetched from server (used when view not in outline yet)
   const [fallbackMeta, setFallbackMeta] = useState<FallbackViewMeta | null>(null);
@@ -141,6 +143,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     async (id: string) => {
       setNotFound(false);
       setDoc(undefined);
+      setSyncBound(false);
       try {
         const loadedDoc = await loadView(id, false, true);
 
@@ -196,9 +199,31 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
   const handleClose = useCallback(() => {
     setDoc(undefined);
+    setSyncBound(false);
     setFallbackMeta(null);
     onClose();
   }, [onClose]);
+
+  useEffect(() => {
+    if (!doc || !bindViewSync || syncBound) return;
+
+    const docWithMeta = doc.doc as YDocWithMeta;
+
+    if (docWithMeta.object_id !== doc.id) {
+      return;
+    }
+
+    if (docWithMeta._syncBound) {
+      setSyncBound(true);
+      return;
+    }
+
+    const syncContext = bindViewSync(doc.doc);
+
+    if (syncContext) {
+      setSyncBound(true);
+    }
+  }, [doc, bindViewSync, syncBound]);
 
   const handleUploadFile = useCallback(
     (file: File) => {
@@ -316,8 +341,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
-        createRowDoc={createRowDoc}
+        createRow={createRow}
         loadView={loadView}
+        bindViewSync={bindViewSync}
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
@@ -338,8 +364,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     isReadOnly,
     toView,
     loadViewMeta,
-    createRowDoc,
+    createRow,
     loadView,
+    bindViewSync,
     updatePage,
     addPage,
     deletePage,

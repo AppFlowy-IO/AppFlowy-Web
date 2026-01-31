@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { flushSync } from 'react-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
@@ -16,7 +16,11 @@ import { useContainerVisibleViewIds } from '@/components/database/hooks';
 
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
-function DatabaseView(props: ViewComponentProps) {
+type DatabaseViewProps = ViewComponentProps & {
+  bindViewSync?: (doc: ViewComponentProps['doc']) => SyncContext | null;
+};
+
+function DatabaseView(props: DatabaseViewProps) {
   const { viewMeta, uploadFile } = props;
   const [search, setSearch] = useSearchParams();
   const outline = useAppOutline();
@@ -86,23 +90,38 @@ function DatabaseView(props: ViewComponentProps) {
   const modalRowId = search.get('r-modal') || undefined;
   const doc = props.doc;
 
-  // Observe Y.js changes to re-render when database data arrives via websocket
-  const [renderKey, forceUpdate] = useState(0);
+  // State to trigger re-render when Y.js data changes
+  const [, forceUpdate] = useState(0);
   const dataSection = doc?.getMap(YjsEditorKey.data_section);
   const database = dataSection?.get(YjsEditorKey.database) as YDatabase | undefined;
 
-  // Use ref to track if database is available without causing effect re-runs
+  // Ref to track if database is available
   const databaseRef = useRef(database);
+  const pendingUpdateRef = useRef<number | null>(null);
 
   databaseRef.current = database;
 
-  // Ref to track the container element for DOM recovery check
-  const containerRef = useRef<HTMLDivElement>(null);
+  // Throttle re-renders to avoid render storms during sync
+  const triggerUpdate = useCallback(() => {
+    if (pendingUpdateRef.current !== null) return;
 
-  // Use doc.guid as dependency to ensure stable observer lifecycle
-  // This prevents premature observer cleanup when doc reference changes
-  // Use observeDeep to catch nested database updates from websocket sync
-  // Use flushSync to force immediate commit, countering react-use-websocket's flushSync interference
+    pendingUpdateRef.current = window.requestAnimationFrame(() => {
+      pendingUpdateRef.current = null;
+      forceUpdate((prev) => prev + 1);
+    });
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (pendingUpdateRef.current !== null) {
+        window.cancelAnimationFrame(pendingUpdateRef.current);
+        pendingUpdateRef.current = null;
+      }
+    };
+  }, []);
+
+  // Observe Y.js data section for changes
+  // Sync is bound AFTER render, so these observers only fire after component is mounted
   useEffect(() => {
     if (!doc) return;
 
@@ -110,55 +129,42 @@ function DatabaseView(props: ViewComponentProps) {
 
     if (!section) return;
 
-    const handleChange = () => {
-      // Use flushSync to ensure our update commits immediately
-      // This prevents react-use-websocket's flushSync from discarding our render
-      flushSync(() => {
-        forceUpdate((prev) => prev + 1);
-      });
-    };
-
-    section.observeDeep(handleChange);
+    section.observeDeep(triggerUpdate);
 
     return () => {
       try {
-        section.unobserveDeep(handleChange);
+        section.unobserveDeep(triggerUpdate);
       } catch {
         // Ignore errors from unobserving destroyed Yjs objects
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [doc?.guid, databasePageId]);
+  }, [doc?.guid, databasePageId, triggerUpdate]);
 
-  // Separate effect to observe database deep changes when database becomes available
+  // Observe database deep changes when database becomes available
   useEffect(() => {
-    if (!database) {
-      return;
-    }
+    if (!database) return;
 
-    const handleChange = () => {
-      // Use flushSync to ensure our update commits immediately
-      flushSync(() => {
-        forceUpdate((prev) => prev + 1);
-      });
-    };
-
-    database.observeDeep(handleChange);
+    database.observeDeep(triggerUpdate);
 
     return () => {
       try {
-        database.unobserveDeep(handleChange);
+        database.unobserveDeep(triggerUpdate);
       } catch {
         // Ignore errors from unobserving destroyed Yjs objects
       }
     };
-  }, [database, databasePageId]);
+  }, [database, databasePageId, triggerUpdate]);
 
-  // Polling fallback for race conditions when database data hasn't arrived yet
-  // This handles cases where Y.js observer doesn't fire due to timing issues
-  // NOTE: We don't include `database` in dependencies to prevent effect cancellation during polling
+  // Polling fallback for when database data hasn't arrived yet
+  // This handles edge cases where sync takes longer than expected
   useEffect(() => {
     if (!doc) return;
+
+    // Skip polling if we already have database data
+    if (databaseRef.current && databaseRef.current.get(YjsDatabaseKey.views)?.size > 0) {
+      return;
+    }
 
     let cancelled = false;
     let attempts = 0;
@@ -167,8 +173,8 @@ function DatabaseView(props: ViewComponentProps) {
     const checkForDatabase = () => {
       if (cancelled) return;
 
-      // Check ref first to avoid unnecessary work if component already has database
-      if (databaseRef.current) {
+      // Check if database data has arrived
+      if (databaseRef.current && databaseRef.current.get(YjsDatabaseKey.views)?.size > 0) {
         return;
       }
 
@@ -177,9 +183,7 @@ function DatabaseView(props: ViewComponentProps) {
       const viewsSize = db?.get(YjsDatabaseKey.views)?.size || 0;
 
       if (db && viewsSize > 0) {
-        flushSync(() => {
-          forceUpdate((prev) => prev + 1);
-        });
+        forceUpdate((prev) => prev + 1);
         return;
       }
 
@@ -189,38 +193,15 @@ function DatabaseView(props: ViewComponentProps) {
       }
     };
 
-    // Start polling immediately
-    checkForDatabase();
+    // Start polling after initial render
+    const initialTimeout = setTimeout(checkForDatabase, 100);
 
     return () => {
       cancelled = true;
+      clearTimeout(initialTimeout);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.guid, databasePageId]);
-
-  // Recovery mechanism: Check if we have database data but DOM is empty
-  // This handles cases where flushSync from react-use-websocket discards our render
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    const hasData = database && database.get(YjsDatabaseKey.views)?.size > 0;
-
-    if (!container || !hasData) return;
-
-    // Check if the container has actual content (not just the wrapper div)
-    // The Database component should render children inside the container
-    const hasContent = container.querySelector('.appflowy-database') !== null;
-
-    if (!hasContent) {
-      // Schedule a re-render on next tick to avoid infinite loop
-      const timeoutId = setTimeout(() => {
-        flushSync(() => {
-          forceUpdate((prev) => prev + 1);
-        });
-      }, 0);
-
-      return () => clearTimeout(timeoutId);
-    }
-  }, [database, renderKey, databasePageId]);
 
   const skeleton = useMemo(() => {
     if (rowId) {
@@ -243,12 +224,11 @@ function DatabaseView(props: ViewComponentProps) {
   const hasViews = (database?.get(YjsDatabaseKey.views)?.size ?? 0) > 0;
 
   // Wait for database data to be available before rendering
-  // The Y.js observation above will trigger re-render when data arrives via websocket
+  // The Y.js observers will trigger re-render when data arrives via sync
   if (!activeViewId || !doc || !database || !hasViews) return skeleton;
 
   return (
     <div
-      ref={containerRef}
       key={databasePageId}
       style={{
         minHeight: viewMeta.layout === ViewLayout.Calendar ? 'calc(100vh - 48px)' : undefined,

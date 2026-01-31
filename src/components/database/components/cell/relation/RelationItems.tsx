@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import {
   DatabaseContextState,
   getPrimaryFieldId,
-  useDatabaseContext,
+  useDatabaseContextOptional,
   useDatabaseIdFromField,
 } from '@/application/database-yjs';
 import { RelationCell, RelationCellData } from '@/application/database-yjs/cell.type';
@@ -25,18 +25,18 @@ function RelationItems({
   style?: React.CSSProperties;
   wrap: boolean;
 }) {
-  const context = useDatabaseContext();
+  const context = useDatabaseContextOptional();
   // databasePageId: The main database page ID in the folder structure
-  const viewId = context.databasePageId;
+  const viewId = context?.databasePageId;
   const relatedDatabaseId = useDatabaseIdFromField(fieldId);
 
-  const createRowDoc = context.createRowDoc;
-  const loadView = context.loadView;
-  const navigateToRow = context.navigateToRow;
-  const getViewIdFromDatabaseId = context.getViewIdFromDatabaseId;
+  const createRow = context?.createRow;
+  const loadView = context?.loadView;
+  const navigateToRow = context?.navigateToRow;
+  const getViewIdFromDatabaseId = context?.getViewIdFromDatabaseId;
 
   const [noAccess, setNoAccess] = useState(false);
-  const [rows, setRows] = useState<DatabaseContextState['rowDocMap'] | null>();
+  const [rows, setRows] = useState<DatabaseContextState['rowMap'] | null>();
   const [relatedFieldId, setRelatedFieldId] = useState<string | undefined>();
   const [relatedViewId, setRelatedViewId] = useState<string | null>(null);
 
@@ -45,7 +45,7 @@ function RelationItems({
 
   const [rowIds, setRowIds] = useState([] as string[]);
 
-  const navigateToView = context.navigateToView;
+  const navigateToView = context?.navigateToView;
 
   const handleUpdateRowIds = useCallback(() => {
     const data = cell?.data;
@@ -84,23 +84,26 @@ function RelationItems({
   }, [getViewIdFromDatabaseId, relatedDatabaseId]);
 
   useEffect(() => {
-    if (!relatedViewId || !createRowDoc || !docGuid) return;
+    if (!relatedViewId || !createRow || !docGuid) return;
     void (async () => {
       try {
-        const rows: Record<string, YDoc> = {};
+        // Load all rows in parallel instead of sequentially (async-parallel optimization)
+        const rowEntries = await Promise.all(
+          rowIds.map(async (rowId) => {
+            const rowDoc = await createRow(getRowKey(docGuid, rowId));
 
-        for (const rowId of rowIds) {
-          const rowDoc = await createRowDoc(getRowKey(docGuid, rowId));
+            return [rowId, rowDoc] as const;
+          })
+        );
 
-          rows[rowId] = rowDoc;
-        }
+        const rows: Record<string, YDoc> = Object.fromEntries(rowEntries);
 
         setRows(rows);
       } catch (e) {
         console.error(e);
       }
     })();
-  }, [createRowDoc, relatedViewId, relatedFieldId, rowIds, docGuid]);
+  }, [createRow, relatedViewId, relatedFieldId, rowIds, docGuid]);
 
   useEffect(() => {
     handleUpdateRowIds();

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { db } from '@/application/db';
 import { ViewMeta } from '@/application/db/tables/view_metas';
-import { AppendBreadcrumb, CreateRowDoc, LoadView, LoadViewMeta, View, ViewInfo, ViewLayout } from '@/application/types';
+import { AppendBreadcrumb, CreateRow, LoadView, LoadViewMeta, View, ViewInfo, ViewLayout } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { useService } from '@/components/main/app.hooks';
@@ -17,7 +17,7 @@ export interface PublishContextType {
   viewMeta?: ViewMeta;
   toView: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta: LoadViewMeta;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   loadView: LoadView;
   outline?: View[];
   appendBreadcrumb?: AppendBreadcrumb;
@@ -178,7 +178,7 @@ export const PublishProvider = ({
     if (!rowKeys.length) return;
     rowKeys.forEach((rowKey) => {
       try {
-        service?.deleteRowDoc(rowKey);
+        service?.deleteRow(rowKey);
       } catch (e) {
         console.error(e);
       }
@@ -326,13 +326,13 @@ export const PublishProvider = ({
     }
   }, [namespace, service]);
 
-  const createRowDoc = useCallback(
+  const createRow = useCallback(
     async (rowKey: string) => {
       try {
-        const doc = await service?.createRowDoc(rowKey);
+        const doc = await service?.createRow(rowKey);
 
         if (!doc) {
-          throw new Error('Failed to create row doc');
+          throw new Error('Failed to create row');
         }
 
         createdRowKeys.current.push(rowKey);
@@ -420,7 +420,7 @@ export const PublishProvider = ({
       value={{
         loadView,
         viewMeta,
-        createRowDoc,
+        createRow,
         loadViewMeta,
         toView,
         namespace,

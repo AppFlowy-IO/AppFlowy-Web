@@ -10,7 +10,7 @@ import {
   CreateDatabaseViewResponse,
   CreatePagePayload,
   CreatePageResponse,
-  CreateRowDoc,
+  CreateRow,
   CreateSpacePayload,
   DatabaseRelations,
   GenerateAISummaryRowPayload,
@@ -28,7 +28,9 @@ import {
   UserWorkspaceInfo,
   View,
   ViewIconType,
+  YDoc,
 } from '@/application/types';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import {
@@ -45,8 +47,9 @@ import { AppSyncLayer } from './layers/AppSyncLayer';
 export interface AppContextType {
   toView: (viewId: string, blockId?: string, keepSearch?: boolean) => Promise<void>;
   loadViewMeta: LoadViewMeta;
-  createRowDoc?: CreateRowDoc;
+  createRow?: CreateRow;
   loadView: LoadView;
+  bindViewSync?: (doc: YDoc) => SyncContext | null;
   outline?: View[];
   viewId?: string;
   wordCount?: Record<string, TextCount>;
@@ -88,7 +91,7 @@ export interface AppContextType {
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
-  createOrphanedView?: (payload: { document_id: string }) => Promise<void>;
+  createOrphanedView?: (payload: { document_id: string }) => Promise<Uint8Array>;
   loadDatabasePrompts?: LoadDatabasePrompts;
   testDatabasePromptConfig?: TestDatabasePromptConfig;
   eventEmitter?: EventEmitter;
@@ -267,6 +270,26 @@ export function useCurrentWorkspaceId() {
   return context.currentWorkspaceId;
 }
 
+/**
+ * Optional variant of useCurrentWorkspaceId that returns undefined
+ * instead of throwing when used outside AppProvider.
+ * Use this in components that may render in publish views or modals.
+ */
+export function useCurrentWorkspaceIdOptional(): string | undefined {
+  const context = useContext(AppContext);
+
+  return context?.currentWorkspaceId;
+}
+
+/**
+ * Optional variant that returns the full AppContext or undefined.
+ * Use for components that need multiple context values and may render
+ * outside AppProvider.
+ */
+export function useAppContextOptional(): AppContextType | null {
+  return useContext(AppContext);
+}
+
 export function useAppHandlers() {
   const context = useContext(AppContext);
 
@@ -277,8 +300,9 @@ export function useAppHandlers() {
   return {
     toView: context.toView,
     loadViewMeta: context.loadViewMeta,
-    createRowDoc: context.createRowDoc,
+    createRow: context.createRow,
     loadView: context.loadView,
+    bindViewSync: context.bindViewSync,
     appendBreadcrumb: context.appendBreadcrumb,
     onChangeWorkspace: context.onChangeWorkspace,
     onRendered: context.onRendered,
