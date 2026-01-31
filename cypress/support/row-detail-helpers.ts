@@ -90,21 +90,27 @@ export const setupRowDetailTest = () => {
  * @param rowIndex - Index of the row to open (0-based, data rows only)
  */
 export const openRowDetail = (rowIndex: number = 0): void => {
-  // Hover over the primary cell to trigger expand button visibility
+  // Get the row element and hover over it to trigger expand button visibility
   DatabaseGridSelectors.dataRows()
     .eq(rowIndex)
     .scrollIntoView()
-    .realHover();
+    .should('be.visible')
+    .then(($row) => {
+      // Try realHover first
+      cy.wrap($row).realHover();
+    });
   waitForReactUpdate(500);
 
-  // Click the expand button that appears on hover
-  cy.get('[data-testid="row-expand-button"]')
+  // Wait for expand button to appear and be visible, with retry
+  cy.get('[data-testid="row-expand-button"]', { timeout: 5000 })
+    .should('exist')
     .first()
+    .should('be.visible')
     .click({ force: true });
   waitForReactUpdate(1000);
 
-  // Verify modal is open
-  RowDetailSelectors.modal().should('exist');
+  // Verify modal is open with increased timeout
+  RowDetailSelectors.modal().should('exist').and('be.visible');
 };
 
 /**

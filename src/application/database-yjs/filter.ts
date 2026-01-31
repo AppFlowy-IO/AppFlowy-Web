@@ -114,16 +114,27 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
   return value;
 }
 
+function isValidFilterNode(node: unknown): node is YDatabaseFilter {
+  return node !== null && typeof node === 'object' && typeof (node as YDatabaseFilter).get === 'function';
+}
+
 function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
   const children = filter.get(YjsDatabaseKey.children);
 
   if (!children) return [];
-  if (Array.isArray(children)) return children;
-  if (typeof (children as { toArray?: () => YDatabaseFilter[] }).toArray === 'function') {
-    return (children as { toArray: () => YDatabaseFilter[] }).toArray();
+
+  let childArray: unknown[];
+
+  if (Array.isArray(children)) {
+    childArray = children;
+  } else if (typeof (children as { toArray?: () => unknown[] }).toArray === 'function') {
+    childArray = (children as { toArray: () => unknown[] }).toArray();
+  } else {
+    return [];
   }
 
-  return [];
+  // Filter out invalid children that don't have a .get() method
+  return childArray.filter(isValidFilterNode);
 }
 
 function parseRelationFilterIds(content: string): string[] | null {
@@ -239,6 +250,11 @@ export function filterBy(
   if (filterArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
 
   const evaluateFilter = (filterNode: YDatabaseFilter, row: Row): boolean => {
+    // Validate filterNode is a valid Yjs Map with .get() method
+    if (!filterNode || typeof filterNode.get !== 'function') {
+      return true;
+    }
+
     const filterType = Number(filterNode.get(YjsDatabaseKey.filter_type));
 
     if (filterType === FilterType.And || filterType === FilterType.Or) {

@@ -81,12 +81,15 @@ describe('Database Row Detail Tests (Desktop Parity)', () => {
         waitForReactUpdate(1000);
 
         // Verify the title is shown in the modal
-        cy.get('.MuiDialog-paper').should('contain.text', 'Persistence Test');
+        cy.get('.MuiDialog-paper', { timeout: 10000 })
+          .should('be.visible')
+          .and('contain.text', 'Persistence Test');
 
-        // Find the title input and modify it
-        cy.get('.MuiDialog-paper [data-testid="row-title-input"]')
+        // Find the title input and modify it - use separate commands for reliability
+        cy.get('.MuiDialog-paper [data-testid="row-title-input"]', { timeout: 5000 })
           .should('exist')
-          .click({ force: true })
+          .and('be.visible')
+          .focus()
           .type(' Updated', { delay: 20, force: true });
         waitForReactUpdate(1000);
 
@@ -241,11 +244,15 @@ describe('Database Row Detail Tests (Desktop Parity)', () => {
 
         // Open row detail
         openRowDetail(0);
+        waitForReactUpdate(1000);
 
-        assertRowDetailOpen();
+        // Verify modal is open with explicit wait
+        cy.get('.MuiDialog-paper', { timeout: 10000 })
+          .should('exist')
+          .and('be.visible');
 
-        // Press Escape to close
-        cy.get('body').type('{esc}');
+        // Press Escape to close - use realPress for more reliable key events
+        cy.get('body').realPress('Escape');
         waitForReactUpdate(500);
 
         assertRowDetailClosed();
