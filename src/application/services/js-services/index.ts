@@ -24,6 +24,7 @@ import {
 } from '@/application/services/js-services/fetch';
 import { APIService, uploadFileMultipart } from '@/application/services/js-services/http';
 import { AFService, AFServiceConfig, WorkspaceMemberProfileUpdate } from '@/application/services/services.type';
+import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 import { emit, EventType } from '@/application/session';
 import { afterAuth, AUTH_CALLBACK_URL, withSignIn } from '@/application/session/sign_in';
 import { getTokenParsed } from '@/application/session/token';
@@ -670,12 +671,18 @@ export class AFClientService implements AFService {
   }
 
   async uploadFile(workspaceId: string, viewId: string, file: File, onProgress?: (progress: number) => void) {
-    return uploadFileMultipart({
-      workspaceId,
-      viewId,
-      file,
-      onProgress: (p) => onProgress?.(p.percentage / 100),
-    });
+    const uploadId = registerUpload();
+
+    try {
+      return await uploadFileMultipart({
+        workspaceId,
+        viewId,
+        file,
+        onProgress: (p) => onProgress?.(p.percentage / 100),
+      });
+    } finally {
+      unregisterUpload(uploadId);
+    }
   }
 
   deleteWorkspace(workspaceId: string): Promise<void> {

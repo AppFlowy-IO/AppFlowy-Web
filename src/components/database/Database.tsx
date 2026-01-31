@@ -95,6 +95,10 @@ export interface Database2Props {
    * Used by DatabaseTabs to listen for outline updates after rename/delete.
    */
   eventEmitter?: EventEmitter;
+  /**
+   * Upload a file to storage and return the URL.
+   */
+  uploadFile?: (file: File) => Promise<string>;
 }
 
 function Database(props: Database2Props) {
@@ -499,6 +503,7 @@ function Database(props: Database2Props) {
       variant: props.variant,
       calendarViewTypeMap,
       setCalendarViewType,
+      uploadFile: props.uploadFile,
     }),
     [
       readOnly,
@@ -527,6 +532,7 @@ function Database(props: Database2Props) {
       props.variant,
       calendarViewTypeMap,
       setCalendarViewType,
+      props.uploadFile,
     ]
   );
 
