@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -13,7 +13,6 @@ import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId } from
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { useService } from '@/components/main/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
-import { Progress } from '@/components/ui/progress';
 
 
 function MoreActionsContent ({ itemClicked, viewId }: {
@@ -38,44 +37,38 @@ function MoreActionsContent ({ itemClicked, viewId }: {
     return findView(outline, parentViewId) ?? null;
   }, [outline, parentViewId]);
 
-  const [duplicateLoading, setDuplicateLoading] = useState(false);
   const {
     refreshOutline,
   } = useAppHandlers();
   const handleDuplicateClick = async () => {
     if (!workspaceId || !service) return;
-    setDuplicateLoading(true);
+    itemClicked?.();
+    toast.loading(`${t('moreAction.duplicateView')}...`);
     try {
       await service.duplicateAppPage(workspaceId, viewId);
-
+      toast.dismiss();
       void refreshOutline?.();
       // eslint-disable-next-line
     } catch (e: any) {
+      toast.dismiss();
       toast.error(e.message);
-    } finally {
-      setDuplicateLoading(false);
     }
-
-    itemClicked?.();
   };
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
+  const containerRef = useCallback((el: HTMLElement | null) => {
+    setContainer(el);
+  }, []);
 
   return (
     <DropdownMenuGroup
     >
-      <div
-        ref={el => {
-
-          setContainer(el);
-        }}
-      />
+      <div ref={containerRef} />
       <DropdownMenuItem
         className={`${layout === ViewLayout.AIChat ? 'hidden' : ''}`}
         onSelect={handleDuplicateClick}
-        disabled={duplicateLoading}
       >
-        {duplicateLoading ? <Progress /> : <DuplicateIcon />}
+        <DuplicateIcon />
         {t('button.duplicate')}
       </DropdownMenuItem>
       {container && <MovePagePopover
