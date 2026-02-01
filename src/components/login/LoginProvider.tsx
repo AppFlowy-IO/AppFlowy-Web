@@ -9,17 +9,9 @@ import { ReactComponent as GithubSvg } from '@/assets/login/github.svg';
 import { ReactComponent as GoogleSvg } from '@/assets/login/google.svg';
 import { ReactComponent as SamlSvg } from '@/assets/login/saml.svg';
 import { notify } from '@/components/_shared/notify';
+import SamlLoginDialog from '@/components/login/SamlLoginDialog';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 
 const moreOptionsVariants = {
   hidden: {
@@ -53,10 +45,8 @@ function LoginProvider({
   const [expand, setExpand] = React.useState(false);
   const service = useContext(AFConfigContext)?.service;
 
-  // SAML SSO state
+  // SAML SSO dialog state
   const [samlDialogOpen, setSamlDialogOpen] = useState(false);
-  const [samlEmail, setSamlEmail] = useState('');
-  const [samlLoading, setSamlLoading] = useState(false);
 
   const allOptions = useMemo(
     () => [
@@ -95,33 +85,12 @@ function LoginProvider({
   }, [allOptions, availableProviders]);
 
   // Handle SAML SSO login with email domain
-  const handleSamlLogin = useCallback(async () => {
-    if (!samlEmail) {
-      notify.error(t('web.emailRequired'));
-      return;
-    }
-
-    // Extract domain from email
-    const emailParts = samlEmail.split('@');
-
-    if (emailParts.length !== 2 || !emailParts[1]) {
-      notify.error(t('web.invalidEmail'));
-      return;
-    }
-
-    const domain = emailParts[1];
-
-    setSamlLoading(true);
-    try {
+  const handleSamlSubmit = useCallback(
+    async (domain: string) => {
       await service?.signInSaml({ redirectTo, domain });
-    } catch (e: unknown) {
-      const err = e as { message?: string };
-
-      notify.error(err?.message || t('web.signInError'));
-    } finally {
-      setSamlLoading(false);
-    }
-  }, [samlEmail, service, redirectTo, t]);
+    },
+    [service, redirectTo]
+  );
 
   const handleClick = useCallback(
     async (option: AuthProvider) => {
@@ -234,50 +203,11 @@ function LoginProvider({
         )}
       </AnimatePresence>
 
-      {/* SAML SSO Email Dialog */}
-      <Dialog open={samlDialogOpen} onOpenChange={setSamlDialogOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{t('web.ssoLogin')}</DialogTitle>
-            <DialogDescription>
-              {t('web.ssoLoginDescription')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex flex-col gap-4 py-4">
-            <Input
-              type="email"
-              placeholder={t('web.emailPlaceholder')}
-              value={samlEmail}
-              onChange={(e) => setSamlEmail(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  void handleSamlLogin();
-                }
-              }}
-              disabled={samlLoading}
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setSamlDialogOpen(false);
-                setSamlEmail('');
-              }}
-              disabled={samlLoading}
-            >
-              {t('button.cancel')}
-            </Button>
-            <Button
-              onClick={handleSamlLogin}
-              disabled={samlLoading || !samlEmail}
-            >
-              {samlLoading ? t('web.signingIn') : t('web.continueWithSso')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <SamlLoginDialog
+        open={samlDialogOpen}
+        onOpenChange={setSamlDialogOpen}
+        onSubmit={handleSamlSubmit}
+      />
     </div>
   );
 }

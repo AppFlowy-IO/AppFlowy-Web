@@ -358,7 +358,7 @@ export class AFClientService implements AFService {
   }
 
   @withSignIn()
-  async signInSaml({ domain }: { redirectTo: string; domain: string }) {
+  async signInSaml({ domain }: { redirectTo: string; domain: string }): Promise<void> {
     return APIService.signInSaml(AUTH_CALLBACK_URL, domain);
   }
 
