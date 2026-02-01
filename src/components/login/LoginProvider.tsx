@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import React, { useCallback, useContext, useMemo } from 'react';
+import React, { useCallback, useContext, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AuthProvider } from '@/application/types';
@@ -7,9 +7,19 @@ import { ReactComponent as AppleSvg } from '@/assets/login/apple.svg';
 import { ReactComponent as DiscordSvg } from '@/assets/login/discord.svg';
 import { ReactComponent as GithubSvg } from '@/assets/login/github.svg';
 import { ReactComponent as GoogleSvg } from '@/assets/login/google.svg';
+import { ReactComponent as SamlSvg } from '@/assets/login/saml.svg';
 import { notify } from '@/components/_shared/notify';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
 
 const moreOptionsVariants = {
   hidden: {
@@ -43,6 +53,11 @@ function LoginProvider({
   const [expand, setExpand] = React.useState(false);
   const service = useContext(AFConfigContext)?.service;
 
+  // SAML SSO state
+  const [samlDialogOpen, setSamlDialogOpen] = useState(false);
+  const [samlEmail, setSamlEmail] = useState('');
+  const [samlLoading, setSamlLoading] = useState(false);
+
   const allOptions = useMemo(
     () => [
       {
@@ -65,6 +80,11 @@ function LoginProvider({
         value: AuthProvider.DISCORD,
         Icon: DiscordSvg,
       },
+      {
+        label: t('web.continueWithSaml'),
+        value: AuthProvider.SAML,
+        Icon: SamlSvg,
+      },
     ],
     [t]
   );
@@ -73,6 +93,35 @@ function LoginProvider({
   const options = useMemo(() => {
     return allOptions.filter((option) => availableProviders.includes(option.value));
   }, [allOptions, availableProviders]);
+
+  // Handle SAML SSO login with email domain
+  const handleSamlLogin = useCallback(async () => {
+    if (!samlEmail) {
+      notify.error(t('web.emailRequired'));
+      return;
+    }
+
+    // Extract domain from email
+    const emailParts = samlEmail.split('@');
+
+    if (emailParts.length !== 2 || !emailParts[1]) {
+      notify.error(t('web.invalidEmail'));
+      return;
+    }
+
+    const domain = emailParts[1];
+
+    setSamlLoading(true);
+    try {
+      await service?.signInSaml({ redirectTo, domain });
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+
+      notify.error(err?.message || t('web.signInError'));
+    } finally {
+      setSamlLoading(false);
+    }
+  }, [samlEmail, service, redirectTo, t]);
 
   const handleClick = useCallback(
     async (option: AuthProvider) => {
@@ -90,6 +139,10 @@ function LoginProvider({
           case AuthProvider.DISCORD:
             await service?.signInDiscord({ redirectTo });
             break;
+          case AuthProvider.SAML:
+            // Open SAML dialog to get user's email for domain identification
+            setSamlDialogOpen(true);
+            return;
         }
       } catch (e) {
         notify.error(t('web.signInError'));
@@ -180,6 +233,51 @@ function LoginProvider({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* SAML SSO Email Dialog */}
+      <Dialog open={samlDialogOpen} onOpenChange={setSamlDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t('web.ssoLogin')}</DialogTitle>
+            <DialogDescription>
+              {t('web.ssoLoginDescription')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col gap-4 py-4">
+            <Input
+              type="email"
+              placeholder={t('web.emailPlaceholder')}
+              value={samlEmail}
+              onChange={(e) => setSamlEmail(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  void handleSamlLogin();
+                }
+              }}
+              disabled={samlLoading}
+              autoFocus
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSamlDialogOpen(false);
+                setSamlEmail('');
+              }}
+              disabled={samlLoading}
+            >
+              {t('button.cancel')}
+            </Button>
+            <Button
+              onClick={handleSamlLogin}
+              disabled={samlLoading || !samlEmail}
+            >
+              {samlLoading ? t('web.signingIn') : t('web.continueWithSso')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

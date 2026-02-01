@@ -407,3 +407,40 @@ export function signInDiscord(authUrl: string) {
 
   window.open(url, '_current');
 }
+
+/**
+ * Initiates SAML SSO login flow
+ * @param authUrl - The callback URL after SSO completes
+ * @param domain - The email domain to identify the SSO provider (e.g., "company.com")
+ */
+export async function signInSaml(authUrl: string, domain: string) {
+  try {
+    // POST to /sso endpoint with skip_http_redirect to get IdP URL in JSON
+    // This avoids CORS issues from automatic redirect following
+    const response = await axiosInstance?.post<{ url: string }>('/sso', {
+      domain,
+      redirect_to: authUrl,
+      skip_http_redirect: true,
+    });
+
+    const idpUrl = response?.data?.url;
+
+    if (idpUrl) {
+      // Redirect to the Identity Provider login page
+      window.location.href = idpUrl;
+    } else {
+      return Promise.reject({
+        code: -1,
+        message: 'No SSO redirect URL returned',
+      });
+    }
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { message?: string; msg?: string }; status?: number }; message?: string };
+    const errorMessage = err.response?.data?.message || err.response?.data?.msg || err.message || 'SSO login failed';
+
+    return Promise.reject({
+      code: err.response?.status || -1,
+      message: errorMessage,
+    });
+  }
+}

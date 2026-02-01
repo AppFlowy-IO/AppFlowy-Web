@@ -144,6 +144,7 @@ export interface AppService {
   signInGithub: (params: { redirectTo: string }) => Promise<void>;
   signInDiscord: (params: { redirectTo: string }) => Promise<void>;
   signInApple: (params: { redirectTo: string }) => Promise<void>;
+  signInSaml: (params: { redirectTo: string; domain: string }) => Promise<void>;
   getAuthProviders: () => Promise<AuthProvider[]>;
   getWorkspaces: () => Promise<Workspace[]>;
   getWorkspaceFolder: (workspaceId: string) => Promise<FolderView>;

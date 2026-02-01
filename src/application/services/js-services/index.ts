@@ -357,6 +357,11 @@ export class AFClientService implements AFService {
     return APIService.signInDiscord(AUTH_CALLBACK_URL);
   }
 
+  @withSignIn()
+  async signInSaml({ domain }: { redirectTo: string; domain: string }) {
+    return APIService.signInSaml(AUTH_CALLBACK_URL, domain);
+  }
+
   async getAuthProviders() {
     return APIService.getAuthProviders();
   }
