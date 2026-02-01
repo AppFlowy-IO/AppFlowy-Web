@@ -216,11 +216,11 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
             }
           }
         }
-      } catch (e: any) {
+      } catch (e) {
         Log.warn('[DatabaseRowSubDocument] hasLocalDocContent failed', {
           rowId,
           documentId,
-          message: e?.message,
+          message: e instanceof Error ? e.message : String(e),
         });
       }
 
@@ -277,15 +277,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         docReadyRef.current = true;
         rowDocEnsuredRef.current = true; // Document exists on server since we loaded it successfully
         return true;
-        // eslint-disable-next-line
-      } catch (e: any) {
-        Log.debug('[DatabaseRowSubDocument] loadRowDocument failed', { message: e.message });
+      } catch (e) {
+        Log.debug('[DatabaseRowSubDocument] loadRowDocument failed', { message: e instanceof Error ? e.message : String(e) });
         return false;
       } finally {
         setLoading(false);
       }
     },
-    [loadRowDocument]
+    [loadRowDocument, rowId]
   );
   // Open document with server-provided doc_state (Y.js update)
   const openDocumentWithState = useCallback(

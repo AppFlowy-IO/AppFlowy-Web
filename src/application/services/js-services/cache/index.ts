@@ -1,3 +1,5 @@
+import * as Y from 'yjs';
+
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { closeCollabDB, db, openCollabDB, openCollabDBWithProvider } from '@/application/db';
@@ -573,8 +575,6 @@ type RowSubDocEntry = {
 };
 
 const rowSubDocs = new Map<string, RowSubDocEntry>();
-let rowSubDocLogCount = 0;
-const ROW_SUB_DOC_LOG_LIMIT = 50;
 
 /**
  * Helper to get text content summary from a Y.Doc for debugging.
@@ -582,9 +582,9 @@ const ROW_SUB_DOC_LOG_LIMIT = 50;
 function getDocTextSummary(doc: YDoc): { hasText: boolean; textCount: number; sampleText: string } {
   try {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
-    const document = sharedRoot?.get(YjsEditorKey.document) as any;
-    const meta = document?.get(YjsEditorKey.meta) as any;
-    const textMap = meta?.get(YjsEditorKey.text_map) as any;
+    const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+    const meta = document?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+    const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
 
     if (!textMap) {
       return { hasText: false, textCount: 0, sampleText: '' };
