@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 
+import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import { AppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
@@ -19,7 +20,16 @@ export function AppOverlayProvider ({
   const [manageSpaceId, setManageSpaceId] = useState<string | null>(null);
   const [createSpaceModalOpen, setCreateSpaceModalOpen] = useState(false);
   const [deleteSpaceId, setDeleteSpaceId] = useState<string | null>(null);
+  const [blockingLoaderMessage, setBlockingLoaderMessage] = useState<string | null>(null);
   const { updatePage } = useAppHandlers();
+
+  const showBlockingLoader = useCallback((message?: string) => {
+    setBlockingLoaderMessage(message || 'Loading...');
+  }, []);
+
+  const hideBlockingLoader = useCallback(() => {
+    setBlockingLoaderMessage(null);
+  }, []);
   const outline = useAppOutline();
   const renameView = useMemo(() => {
     if (!renameViewId) return null;
@@ -38,6 +48,8 @@ export function AppOverlayProvider ({
           setCreateSpaceModalOpen(true);
         },
         openDeleteSpaceModal: setDeleteSpaceId,
+        showBlockingLoader,
+        hideBlockingLoader,
       }}
     >
       {children}
@@ -80,6 +92,18 @@ export function AppOverlayProvider ({
           }
         }
       />}
+      {/* Blocking loader overlay - prevents user interaction during operations like duplicate */}
+      {blockingLoaderMessage && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/50"
+          data-testid="blocking-loader"
+        >
+          <div className="flex flex-col items-center gap-4 rounded-lg bg-bg-body p-6 shadow-lg">
+            <LoadingDots />
+            <span className="text-text-title">{blockingLoaderMessage}</span>
+          </div>
+        </div>
+      )}
     </AppOverlayContext.Provider>
   );
 }

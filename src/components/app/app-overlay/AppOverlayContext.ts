@@ -6,6 +6,15 @@ export const AppOverlayContext = createContext<{
   openManageSpaceModal: (viewId: string) => void;
   openCreateSpaceModal: () => void;
   openDeleteSpaceModal: (viewId: string) => void;
+  /**
+   * Show a blocking loading overlay that prevents user interaction.
+   * Used during operations like duplicate to prevent opening incomplete pages.
+   */
+  showBlockingLoader: (message?: string) => void;
+  /**
+   * Hide the blocking loading overlay.
+   */
+  hideBlockingLoader: () => void;
 }>({
   openRenameModal: () => {
     //
@@ -20,6 +29,12 @@ export const AppOverlayContext = createContext<{
     //
   },
   openDeleteSpaceModal: () => {
+    //
+  },
+  showBlockingLoader: () => {
+    //
+  },
+  hideBlockingLoader: () => {
     //
   },
 });

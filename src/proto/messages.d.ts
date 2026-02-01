@@ -785,6 +785,470 @@ export namespace collab {
          */
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
+
+    /** Compression type for collab payloads. */
+    enum PayloadCompressionType {
+        COMPRESSION_NONE = 0,
+        COMPRESSION_ZSTD = 1,
+        COMPRESSION_GZIP = 2
+    }
+
+    /** Properties of a CollabDocStateParams. */
+    interface ICollabDocStateParams {
+
+        /** CollabDocStateParams objectId */
+        objectId?: (string|null);
+
+        /** CollabDocStateParams collabType */
+        collabType?: (number|null);
+
+        /** CollabDocStateParams compression */
+        compression?: (collab.PayloadCompressionType|null);
+
+        /** CollabDocStateParams sv */
+        sv?: (Uint8Array|null);
+
+        /** CollabDocStateParams docState */
+        docState?: (Uint8Array|null);
+    }
+
+    /** Parameters for a single collab document state in batch sync. */
+    class CollabDocStateParams implements ICollabDocStateParams {
+
+        /**
+         * Constructs a new CollabDocStateParams.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: collab.ICollabDocStateParams);
+
+        /** CollabDocStateParams objectId. */
+        public objectId: string;
+
+        /** CollabDocStateParams collabType. */
+        public collabType: number;
+
+        /** CollabDocStateParams compression. */
+        public compression: collab.PayloadCompressionType;
+
+        /** CollabDocStateParams sv. */
+        public sv: Uint8Array;
+
+        /** CollabDocStateParams docState. */
+        public docState: Uint8Array;
+
+        /**
+         * Creates a new CollabDocStateParams instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns CollabDocStateParams instance
+         */
+        public static create(properties?: collab.ICollabDocStateParams): collab.CollabDocStateParams;
+
+        /**
+         * Encodes the specified CollabDocStateParams message. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
+         * @param message CollabDocStateParams message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: collab.ICollabDocStateParams, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified CollabDocStateParams message, length delimited. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
+         * @param message CollabDocStateParams message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: collab.ICollabDocStateParams, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a CollabDocStateParams message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns CollabDocStateParams
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabDocStateParams;
+
+        /**
+         * Decodes a CollabDocStateParams message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns CollabDocStateParams
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabDocStateParams;
+
+        /**
+         * Verifies a CollabDocStateParams message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a CollabDocStateParams message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns CollabDocStateParams
+         */
+        public static fromObject(object: { [k: string]: any }): collab.CollabDocStateParams;
+
+        /**
+         * Creates a plain object from a CollabDocStateParams message. Also converts values to other types if specified.
+         * @param message CollabDocStateParams
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: collab.CollabDocStateParams, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this CollabDocStateParams to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for CollabDocStateParams
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a CollabBatchSyncRequest. */
+    interface ICollabBatchSyncRequest {
+
+        /** CollabBatchSyncRequest items */
+        items?: (collab.ICollabDocStateParams[]|null);
+
+        /** CollabBatchSyncRequest responseCompression */
+        responseCompression?: (collab.PayloadCompressionType|null);
+    }
+
+    /**
+     * Request to sync multiple collab documents in a batch.
+     * Used before operations like duplicate to ensure server has latest state.
+     */
+    class CollabBatchSyncRequest implements ICollabBatchSyncRequest {
+
+        /**
+         * Constructs a new CollabBatchSyncRequest.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: collab.ICollabBatchSyncRequest);
+
+        /** CollabBatchSyncRequest items. */
+        public items: collab.ICollabDocStateParams[];
+
+        /** CollabBatchSyncRequest responseCompression. */
+        public responseCompression: collab.PayloadCompressionType;
+
+        /**
+         * Creates a new CollabBatchSyncRequest instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns CollabBatchSyncRequest instance
+         */
+        public static create(properties?: collab.ICollabBatchSyncRequest): collab.CollabBatchSyncRequest;
+
+        /**
+         * Encodes the specified CollabBatchSyncRequest message. Does not implicitly {@link collab.CollabBatchSyncRequest.verify|verify} messages.
+         * @param message CollabBatchSyncRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: collab.ICollabBatchSyncRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified CollabBatchSyncRequest message, length delimited. Does not implicitly {@link collab.CollabBatchSyncRequest.verify|verify} messages.
+         * @param message CollabBatchSyncRequest message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: collab.ICollabBatchSyncRequest, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a CollabBatchSyncRequest message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns CollabBatchSyncRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabBatchSyncRequest;
+
+        /**
+         * Decodes a CollabBatchSyncRequest message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns CollabBatchSyncRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabBatchSyncRequest;
+
+        /**
+         * Verifies a CollabBatchSyncRequest message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a CollabBatchSyncRequest message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns CollabBatchSyncRequest
+         */
+        public static fromObject(object: { [k: string]: any }): collab.CollabBatchSyncRequest;
+
+        /**
+         * Creates a plain object from a CollabBatchSyncRequest message. Also converts values to other types if specified.
+         * @param message CollabBatchSyncRequest
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: collab.CollabBatchSyncRequest, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this CollabBatchSyncRequest to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for CollabBatchSyncRequest
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a CollabBatchSyncResult. */
+    interface ICollabBatchSyncResult {
+
+        /** CollabBatchSyncResult objectId */
+        objectId?: (string|null);
+
+        /** CollabBatchSyncResult collabType */
+        collabType?: (number|null);
+
+        /** CollabBatchSyncResult compression */
+        compression?: (collab.PayloadCompressionType|null);
+
+        /** CollabBatchSyncResult missingUpdate */
+        missingUpdate?: (Uint8Array|null);
+
+        /** CollabBatchSyncResult error */
+        error?: (string|null);
+
+        /** CollabBatchSyncResult serverStateVector */
+        serverStateVector?: (Uint8Array|null);
+    }
+
+    /** Result for a single collab in batch sync response. */
+    class CollabBatchSyncResult implements ICollabBatchSyncResult {
+
+        /**
+         * Constructs a new CollabBatchSyncResult.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: collab.ICollabBatchSyncResult);
+
+        /** CollabBatchSyncResult objectId. */
+        public objectId: string;
+
+        /** CollabBatchSyncResult collabType. */
+        public collabType: number;
+
+        /** CollabBatchSyncResult compression. */
+        public compression: collab.PayloadCompressionType;
+
+        /** CollabBatchSyncResult missingUpdate. */
+        public missingUpdate: Uint8Array;
+
+        /** CollabBatchSyncResult error. */
+        public error: string;
+
+        /** CollabBatchSyncResult serverStateVector. */
+        public serverStateVector: Uint8Array;
+
+        /**
+         * Creates a new CollabBatchSyncResult instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns CollabBatchSyncResult instance
+         */
+        public static create(properties?: collab.ICollabBatchSyncResult): collab.CollabBatchSyncResult;
+
+        /**
+         * Encodes the specified CollabBatchSyncResult message. Does not implicitly {@link collab.CollabBatchSyncResult.verify|verify} messages.
+         * @param message CollabBatchSyncResult message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: collab.ICollabBatchSyncResult, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified CollabBatchSyncResult message, length delimited. Does not implicitly {@link collab.CollabBatchSyncResult.verify|verify} messages.
+         * @param message CollabBatchSyncResult message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: collab.ICollabBatchSyncResult, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a CollabBatchSyncResult message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns CollabBatchSyncResult
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabBatchSyncResult;
+
+        /**
+         * Decodes a CollabBatchSyncResult message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns CollabBatchSyncResult
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabBatchSyncResult;
+
+        /**
+         * Verifies a CollabBatchSyncResult message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a CollabBatchSyncResult message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns CollabBatchSyncResult
+         */
+        public static fromObject(object: { [k: string]: any }): collab.CollabBatchSyncResult;
+
+        /**
+         * Creates a plain object from a CollabBatchSyncResult message. Also converts values to other types if specified.
+         * @param message CollabBatchSyncResult
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: collab.CollabBatchSyncResult, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this CollabBatchSyncResult to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for CollabBatchSyncResult
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a CollabBatchSyncResponse. */
+    interface ICollabBatchSyncResponse {
+
+        /** CollabBatchSyncResponse results */
+        results?: (collab.ICollabBatchSyncResult[]|null);
+
+        /** CollabBatchSyncResponse responseCompression */
+        responseCompression?: (collab.PayloadCompressionType|null);
+    }
+
+    /** Response from batch sync containing results for each collab. */
+    class CollabBatchSyncResponse implements ICollabBatchSyncResponse {
+
+        /**
+         * Constructs a new CollabBatchSyncResponse.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: collab.ICollabBatchSyncResponse);
+
+        /** CollabBatchSyncResponse results. */
+        public results: collab.ICollabBatchSyncResult[];
+
+        /** CollabBatchSyncResponse responseCompression. */
+        public responseCompression: collab.PayloadCompressionType;
+
+        /**
+         * Creates a new CollabBatchSyncResponse instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns CollabBatchSyncResponse instance
+         */
+        public static create(properties?: collab.ICollabBatchSyncResponse): collab.CollabBatchSyncResponse;
+
+        /**
+         * Encodes the specified CollabBatchSyncResponse message. Does not implicitly {@link collab.CollabBatchSyncResponse.verify|verify} messages.
+         * @param message CollabBatchSyncResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: collab.ICollabBatchSyncResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified CollabBatchSyncResponse message, length delimited. Does not implicitly {@link collab.CollabBatchSyncResponse.verify|verify} messages.
+         * @param message CollabBatchSyncResponse message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: collab.ICollabBatchSyncResponse, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a CollabBatchSyncResponse message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns CollabBatchSyncResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabBatchSyncResponse;
+
+        /**
+         * Decodes a CollabBatchSyncResponse message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns CollabBatchSyncResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabBatchSyncResponse;
+
+        /**
+         * Verifies a CollabBatchSyncResponse message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a CollabBatchSyncResponse message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns CollabBatchSyncResponse
+         */
+        public static fromObject(object: { [k: string]: any }): collab.CollabBatchSyncResponse;
+
+        /**
+         * Creates a plain object from a CollabBatchSyncResponse message. Also converts values to other types if specified.
+         * @param message CollabBatchSyncResponse
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: collab.CollabBatchSyncResponse, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this CollabBatchSyncResponse to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for CollabBatchSyncResponse
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
 }
 
 /** Namespace notification. */

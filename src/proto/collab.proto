@@ -97,3 +97,52 @@ message CollabMessage {
         AccessChanged access_changed = 6;
     }
 }
+
+/**
+ * Compression type for collab payloads.
+ */
+enum PayloadCompressionType {
+    COMPRESSION_NONE = 0;
+    COMPRESSION_ZSTD = 1;
+    COMPRESSION_GZIP = 2;
+}
+
+/**
+ * Parameters for a single collab document state in batch sync.
+ */
+message CollabDocStateParams {
+    string object_id = 1;
+    int32 collab_type = 2;
+    PayloadCompressionType compression = 3;
+    bytes sv = 4;
+    bytes doc_state = 5;
+}
+
+/**
+ * Request to sync multiple collab documents in a batch.
+ * Used before operations like duplicate to ensure server has latest state.
+ */
+message CollabBatchSyncRequest {
+    repeated CollabDocStateParams items = 1;
+    PayloadCompressionType response_compression = 2;
+}
+
+/**
+ * Result for a single collab in batch sync response.
+ */
+message CollabBatchSyncResult {
+    string object_id = 1;
+    int32 collab_type = 2;
+    PayloadCompressionType compression = 3;
+    bytes missing_update = 4;
+    string error = 5;
+    bytes server_state_vector = 6;
+}
+
+/**
+ * Response from batch sync containing results for each collab.
+ */
+message CollabBatchSyncResponse {
+    repeated CollabBatchSyncResult results = 1;
+    PayloadCompressionType response_compression = 2;
+}

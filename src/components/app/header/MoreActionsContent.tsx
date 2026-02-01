@@ -24,6 +24,8 @@ function MoreActionsContent({ itemClicked, viewId }: {
   const { t } = useTranslation();
   const {
     openDeleteModal,
+    showBlockingLoader,
+    hideBlockingLoader,
   } = useAppOverlayContext();
   const service = useService();
   const workspaceId = useCurrentWorkspaceId();
@@ -41,25 +43,28 @@ function MoreActionsContent({ itemClicked, viewId }: {
   const {
     refreshOutline,
   } = useAppHandlers();
-  const { flushAllSync } = useSyncInternal();
+  const { syncAllToServer } = useSyncInternal();
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId || !service) return;
     itemClicked?.();
-    toast.loading(`${t('moreAction.duplicateView')}...`);
+    // Show blocking loader to prevent user from interacting with the UI
+    // (e.g., clicking on the duplicated page before it's fully created)
+    showBlockingLoader(`${t('moreAction.duplicateView')}...`);
     try {
-      // Flush all pending sync updates before duplicating
-      // This ensures all local changes are synced to the server
-      flushAllSync();
+      // Sync all collab documents to the server via HTTP API before duplicating
+      // This is similar to desktop's collab_full_sync_batch - ensures the server
+      // has the latest data before the duplicate operation
+      await syncAllToServer(workspaceId);
       await service.duplicateAppPage(workspaceId, viewId);
-      toast.dismiss();
       void refreshOutline?.();
       itemClicked?.();
       // eslint-disable-next-line
     } catch (e: any) {
-      toast.dismiss();
       toast.error(e.message);
+    } finally {
+      hideBlockingLoader();
     }
-  }, [workspaceId, service, viewId, refreshOutline, itemClicked, t, flushAllSync]);
+  }, [workspaceId, service, viewId, refreshOutline, itemClicked, t, syncAllToServer, showBlockingLoader, hideBlockingLoader]);
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const containerRef = useCallback((el: HTMLElement | null) => {

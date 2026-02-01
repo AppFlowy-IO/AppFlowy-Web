@@ -96,14 +96,13 @@ describe('Duplicate Page', () => {
     });
     testLog.info('Clicked Duplicate');
 
-    // Verify toast appears (indicates duplication started)
-    cy.get('[data-sonner-toast]', { timeout: 5000 }).should('exist');
-    testLog.info('Toast notification appeared');
+    // Verify blocking loader appears (indicates duplication started and blocks interaction)
+    cy.get('[data-testid="blocking-loader"]', { timeout: 5000 }).should('exist');
+    testLog.info('Blocking loader appeared');
 
-    // Wait for duplication to complete and toast to be dismissed (including exit animation)
-    waitForReactUpdate(500);
-    cy.get('[data-sonner-toast]', { timeout: 10000 }).should('not.exist');
-    testLog.info('Toast dismissed - duplication completed');
+    // Wait for duplication to complete and blocking loader to be dismissed
+    cy.get('[data-testid="blocking-loader"]', { timeout: 30000 }).should('not.exist');
+    testLog.info('Blocking loader dismissed - duplication completed');
 
     // Step 7: Find and open the duplicated document
     testLog.step(7, 'Opening the duplicated document');

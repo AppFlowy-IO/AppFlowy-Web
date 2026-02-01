@@ -738,6 +738,81 @@ export async function updateCollab(
   return context;
 }
 
+/**
+ * Batch sync multiple collab documents to the server.
+ * This is the same API that desktop uses before duplicating to ensure
+ * the server has the latest state of all documents.
+ *
+ * @param workspaceId - The workspace ID
+ * @param items - Array of collab items to sync, each containing objectId, collabType, stateVector, and docState
+ * @returns The batch sync response containing results for each collab
+ */
+export async function collabFullSyncBatch(
+  workspaceId: string,
+  items: Array<{
+    objectId: string;
+    collabType: Types;
+    stateVector: Uint8Array;
+    docState: Uint8Array;
+  }>
+): Promise<void> {
+  const url = `/api/workspace/v1/${workspaceId}/collab/full-sync/batch`;
+
+  // Import the collab proto types
+  const { collab } = await import('@/proto/messages');
+
+  // Build the protobuf request
+  const request = collab.CollabBatchSyncRequest.create({
+    items: items.map((item) => ({
+      objectId: item.objectId,
+      collabType: item.collabType,
+      compression: collab.PayloadCompressionType.COMPRESSION_NONE,
+      sv: item.stateVector,
+      docState: item.docState,
+    })),
+    responseCompression: collab.PayloadCompressionType.COMPRESSION_NONE,
+  });
+
+  // Encode the request to binary
+  const encoded = collab.CollabBatchSyncRequest.encode(request).finish();
+
+  let deviceId = localStorage.getItem('x-device-id');
+
+  if (!deviceId) {
+    deviceId = nanoid(8);
+    localStorage.setItem('x-device-id', deviceId);
+  }
+
+  // Send the request with protobuf content type
+  const response = await axiosInstance?.post(url, encoded, {
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'client-version': 'web',
+      'device-id': deviceId,
+    },
+    responseType: 'arraybuffer',
+  });
+
+  if (!response || response.status !== 200) {
+    throw new Error(`Failed to sync collabs: ${response?.status}`);
+  }
+
+  // Decode and check the response for errors
+  const responseData = new Uint8Array(response.data);
+  const batchResponse = collab.CollabBatchSyncResponse.decode(responseData);
+
+  // Check for any errors in the results
+  for (const result of batchResponse.results) {
+    if (result.error) {
+      Log.warn('Collab sync error', {
+        objectId: result.objectId,
+        collabType: result.collabType,
+        error: result.error,
+      });
+    }
+  }
+}
+
 export async function getCollab(workspaceId: string, objectId: string, collabType: Types) {
   const url = `/api/workspace/v1/${workspaceId}/collab/${objectId}`;
 

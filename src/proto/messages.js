@@ -1904,6 +1904,1274 @@ export const collab = $root.collab = (() => {
         return CollabMessage;
     })();
 
+    /**
+     * Compression type for collab payloads.
+     * @name collab.PayloadCompressionType
+     * @enum {number}
+     * @property {number} COMPRESSION_NONE=0 COMPRESSION_NONE value
+     * @property {number} COMPRESSION_ZSTD=1 COMPRESSION_ZSTD value
+     * @property {number} COMPRESSION_GZIP=2 COMPRESSION_GZIP value
+     */
+    collab.PayloadCompressionType = (function() {
+        const valuesById = {}, values = Object.create(valuesById);
+        values[valuesById[0] = "COMPRESSION_NONE"] = 0;
+        values[valuesById[1] = "COMPRESSION_ZSTD"] = 1;
+        values[valuesById[2] = "COMPRESSION_GZIP"] = 2;
+        return values;
+    })();
+
+    collab.CollabDocStateParams = (function() {
+
+        /**
+         * Properties of a CollabDocStateParams.
+         * @memberof collab
+         * @interface ICollabDocStateParams
+         * @property {string|null} [objectId] CollabDocStateParams objectId
+         * @property {number|null} [collabType] CollabDocStateParams collabType
+         * @property {collab.PayloadCompressionType|null} [compression] CollabDocStateParams compression
+         * @property {Uint8Array|null} [sv] CollabDocStateParams sv
+         * @property {Uint8Array|null} [docState] CollabDocStateParams docState
+         */
+
+        /**
+         * Constructs a new CollabDocStateParams.
+         * @memberof collab
+         * @classdesc Parameters for a single collab document state in batch sync.
+         * @implements ICollabDocStateParams
+         * @constructor
+         * @param {collab.ICollabDocStateParams=} [properties] Properties to set
+         */
+        function CollabDocStateParams(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabDocStateParams objectId.
+         * @member {string} objectId
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.objectId = "";
+
+        /**
+         * CollabDocStateParams collabType.
+         * @member {number} collabType
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.collabType = 0;
+
+        /**
+         * CollabDocStateParams compression.
+         * @member {collab.PayloadCompressionType} compression
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.compression = 0;
+
+        /**
+         * CollabDocStateParams sv.
+         * @member {Uint8Array} sv
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.sv = $util.newBuffer([]);
+
+        /**
+         * CollabDocStateParams docState.
+         * @member {Uint8Array} docState
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         */
+        CollabDocStateParams.prototype.docState = $util.newBuffer([]);
+
+        /**
+         * Creates a new CollabDocStateParams instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams=} [properties] Properties to set
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams instance
+         */
+        CollabDocStateParams.create = function create(properties) {
+            return new CollabDocStateParams(properties);
+        };
+
+        /**
+         * Encodes the specified CollabDocStateParams message. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams} message CollabDocStateParams message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabDocStateParams.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.objectId != null && Object.hasOwnProperty.call(message, "objectId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.objectId);
+            if (message.collabType != null && Object.hasOwnProperty.call(message, "collabType"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.collabType);
+            if (message.compression != null && Object.hasOwnProperty.call(message, "compression"))
+                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.compression);
+            if (message.sv != null && Object.hasOwnProperty.call(message, "sv"))
+                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.sv);
+            if (message.docState != null && Object.hasOwnProperty.call(message, "docState"))
+                writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.docState);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabDocStateParams message, length delimited. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.ICollabDocStateParams} message CollabDocStateParams message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabDocStateParams.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabDocStateParams message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabDocStateParams.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabDocStateParams();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.objectId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.collabType = reader.int32();
+                        break;
+                    }
+                case 3: {
+                        message.compression = reader.int32();
+                        break;
+                    }
+                case 4: {
+                        message.sv = reader.bytes();
+                        break;
+                    }
+                case 5: {
+                        message.docState = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabDocStateParams message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabDocStateParams.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabDocStateParams message.
+         * @function verify
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabDocStateParams.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                if (!$util.isString(message.objectId))
+                    return "objectId: string expected";
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                if (!$util.isInteger(message.collabType))
+                    return "collabType: integer expected";
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                switch (message.compression) {
+                default:
+                    return "compression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            if (message.sv != null && message.hasOwnProperty("sv"))
+                if (!(message.sv && typeof message.sv.length === "number" || $util.isString(message.sv)))
+                    return "sv: buffer expected";
+            if (message.docState != null && message.hasOwnProperty("docState"))
+                if (!(message.docState && typeof message.docState.length === "number" || $util.isString(message.docState)))
+                    return "docState: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a CollabDocStateParams message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabDocStateParams} CollabDocStateParams
+         */
+        CollabDocStateParams.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabDocStateParams)
+                return object;
+            let message = new $root.collab.CollabDocStateParams();
+            if (object.objectId != null)
+                message.objectId = String(object.objectId);
+            if (object.collabType != null)
+                message.collabType = object.collabType | 0;
+            switch (object.compression) {
+            default:
+                if (typeof object.compression === "number") {
+                    message.compression = object.compression;
+                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.compression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.compression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.compression = 2;
+                break;
+            }
+            if (object.sv != null)
+                if (typeof object.sv === "string")
+                    $util.base64.decode(object.sv, message.sv = $util.newBuffer($util.base64.length(object.sv)), 0);
+                else if (object.sv.length >= 0)
+                    message.sv = object.sv;
+            if (object.docState != null)
+                if (typeof object.docState === "string")
+                    $util.base64.decode(object.docState, message.docState = $util.newBuffer($util.base64.length(object.docState)), 0);
+                else if (object.docState.length >= 0)
+                    message.docState = object.docState;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabDocStateParams message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {collab.CollabDocStateParams} message CollabDocStateParams
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabDocStateParams.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.objectId = "";
+                object.collabType = 0;
+                object.compression = options.enums === String ? "COMPRESSION_NONE" : 0;
+                if (options.bytes === String)
+                    object.sv = "";
+                else {
+                    object.sv = [];
+                    if (options.bytes !== Array)
+                        object.sv = $util.newBuffer(object.sv);
+                }
+                if (options.bytes === String)
+                    object.docState = "";
+                else {
+                    object.docState = [];
+                    if (options.bytes !== Array)
+                        object.docState = $util.newBuffer(object.docState);
+                }
+            }
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                object.objectId = message.objectId;
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                object.collabType = message.collabType;
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                object.compression = options.enums === String ? $root.collab.PayloadCompressionType[message.compression] === undefined ? message.compression : $root.collab.PayloadCompressionType[message.compression] : message.compression;
+            if (message.sv != null && message.hasOwnProperty("sv"))
+                object.sv = options.bytes === String ? $util.base64.encode(message.sv, 0, message.sv.length) : options.bytes === Array ? Array.prototype.slice.call(message.sv) : message.sv;
+            if (message.docState != null && message.hasOwnProperty("docState"))
+                object.docState = options.bytes === String ? $util.base64.encode(message.docState, 0, message.docState.length) : options.bytes === Array ? Array.prototype.slice.call(message.docState) : message.docState;
+            return object;
+        };
+
+        /**
+         * Converts this CollabDocStateParams to JSON.
+         * @function toJSON
+         * @memberof collab.CollabDocStateParams
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabDocStateParams.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabDocStateParams
+         * @function getTypeUrl
+         * @memberof collab.CollabDocStateParams
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabDocStateParams.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabDocStateParams";
+        };
+
+        return CollabDocStateParams;
+    })();
+
+    collab.CollabBatchSyncRequest = (function() {
+
+        /**
+         * Properties of a CollabBatchSyncRequest.
+         * @memberof collab
+         * @interface ICollabBatchSyncRequest
+         * @property {Array.<collab.ICollabDocStateParams>|null} [items] CollabBatchSyncRequest items
+         * @property {collab.PayloadCompressionType|null} [responseCompression] CollabBatchSyncRequest responseCompression
+         */
+
+        /**
+         * Constructs a new CollabBatchSyncRequest.
+         * @memberof collab
+         * @classdesc Request to sync multiple collab documents in a batch.
+         * Used before operations like duplicate to ensure server has latest state.
+         * @implements ICollabBatchSyncRequest
+         * @constructor
+         * @param {collab.ICollabBatchSyncRequest=} [properties] Properties to set
+         */
+        function CollabBatchSyncRequest(properties) {
+            this.items = [];
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabBatchSyncRequest items.
+         * @member {Array.<collab.ICollabDocStateParams>} items
+         * @memberof collab.CollabBatchSyncRequest
+         * @instance
+         */
+        CollabBatchSyncRequest.prototype.items = $util.emptyArray;
+
+        /**
+         * CollabBatchSyncRequest responseCompression.
+         * @member {collab.PayloadCompressionType} responseCompression
+         * @memberof collab.CollabBatchSyncRequest
+         * @instance
+         */
+        CollabBatchSyncRequest.prototype.responseCompression = 0;
+
+        /**
+         * Creates a new CollabBatchSyncRequest instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {collab.ICollabBatchSyncRequest=} [properties] Properties to set
+         * @returns {collab.CollabBatchSyncRequest} CollabBatchSyncRequest instance
+         */
+        CollabBatchSyncRequest.create = function create(properties) {
+            return new CollabBatchSyncRequest(properties);
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncRequest message. Does not implicitly {@link collab.CollabBatchSyncRequest.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {collab.ICollabBatchSyncRequest} message CollabBatchSyncRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncRequest.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.items != null && message.items.length)
+                for (let i = 0; i < message.items.length; ++i)
+                    $root.collab.CollabDocStateParams.encode(message.items[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.responseCompression != null && Object.hasOwnProperty.call(message, "responseCompression"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.responseCompression);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncRequest message, length delimited. Does not implicitly {@link collab.CollabBatchSyncRequest.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {collab.ICollabBatchSyncRequest} message CollabBatchSyncRequest message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncRequest.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabBatchSyncRequest message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabBatchSyncRequest} CollabBatchSyncRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncRequest.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncRequest();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        if (!(message.items && message.items.length))
+                            message.items = [];
+                        message.items.push($root.collab.CollabDocStateParams.decode(reader, reader.uint32()));
+                        break;
+                    }
+                case 2: {
+                        message.responseCompression = reader.int32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabBatchSyncRequest message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabBatchSyncRequest} CollabBatchSyncRequest
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncRequest.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabBatchSyncRequest message.
+         * @function verify
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabBatchSyncRequest.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.items != null && message.hasOwnProperty("items")) {
+                if (!Array.isArray(message.items))
+                    return "items: array expected";
+                for (let i = 0; i < message.items.length; ++i) {
+                    let error = $root.collab.CollabDocStateParams.verify(message.items[i]);
+                    if (error)
+                        return "items." + error;
+                }
+            }
+            if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
+                switch (message.responseCompression) {
+                default:
+                    return "responseCompression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            return null;
+        };
+
+        /**
+         * Creates a CollabBatchSyncRequest message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabBatchSyncRequest} CollabBatchSyncRequest
+         */
+        CollabBatchSyncRequest.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabBatchSyncRequest)
+                return object;
+            let message = new $root.collab.CollabBatchSyncRequest();
+            if (object.items) {
+                if (!Array.isArray(object.items))
+                    throw TypeError(".collab.CollabBatchSyncRequest.items: array expected");
+                message.items = [];
+                for (let i = 0; i < object.items.length; ++i) {
+                    if (typeof object.items[i] !== "object")
+                        throw TypeError(".collab.CollabBatchSyncRequest.items: object expected");
+                    message.items[i] = $root.collab.CollabDocStateParams.fromObject(object.items[i]);
+                }
+            }
+            switch (object.responseCompression) {
+            default:
+                if (typeof object.responseCompression === "number") {
+                    message.responseCompression = object.responseCompression;
+                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.responseCompression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.responseCompression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.responseCompression = 2;
+                break;
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabBatchSyncRequest message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {collab.CollabBatchSyncRequest} message CollabBatchSyncRequest
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabBatchSyncRequest.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.arrays || options.defaults)
+                object.items = [];
+            if (options.defaults)
+                object.responseCompression = options.enums === String ? "COMPRESSION_NONE" : 0;
+            if (message.items && message.items.length) {
+                object.items = [];
+                for (let j = 0; j < message.items.length; ++j)
+                    object.items[j] = $root.collab.CollabDocStateParams.toObject(message.items[j], options);
+            }
+            if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
+                object.responseCompression = options.enums === String ? $root.collab.PayloadCompressionType[message.responseCompression] === undefined ? message.responseCompression : $root.collab.PayloadCompressionType[message.responseCompression] : message.responseCompression;
+            return object;
+        };
+
+        /**
+         * Converts this CollabBatchSyncRequest to JSON.
+         * @function toJSON
+         * @memberof collab.CollabBatchSyncRequest
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabBatchSyncRequest.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabBatchSyncRequest
+         * @function getTypeUrl
+         * @memberof collab.CollabBatchSyncRequest
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabBatchSyncRequest.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabBatchSyncRequest";
+        };
+
+        return CollabBatchSyncRequest;
+    })();
+
+    collab.CollabBatchSyncResult = (function() {
+
+        /**
+         * Properties of a CollabBatchSyncResult.
+         * @memberof collab
+         * @interface ICollabBatchSyncResult
+         * @property {string|null} [objectId] CollabBatchSyncResult objectId
+         * @property {number|null} [collabType] CollabBatchSyncResult collabType
+         * @property {collab.PayloadCompressionType|null} [compression] CollabBatchSyncResult compression
+         * @property {Uint8Array|null} [missingUpdate] CollabBatchSyncResult missingUpdate
+         * @property {string|null} [error] CollabBatchSyncResult error
+         * @property {Uint8Array|null} [serverStateVector] CollabBatchSyncResult serverStateVector
+         */
+
+        /**
+         * Constructs a new CollabBatchSyncResult.
+         * @memberof collab
+         * @classdesc Result for a single collab in batch sync response.
+         * @implements ICollabBatchSyncResult
+         * @constructor
+         * @param {collab.ICollabBatchSyncResult=} [properties] Properties to set
+         */
+        function CollabBatchSyncResult(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabBatchSyncResult objectId.
+         * @member {string} objectId
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.objectId = "";
+
+        /**
+         * CollabBatchSyncResult collabType.
+         * @member {number} collabType
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.collabType = 0;
+
+        /**
+         * CollabBatchSyncResult compression.
+         * @member {collab.PayloadCompressionType} compression
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.compression = 0;
+
+        /**
+         * CollabBatchSyncResult missingUpdate.
+         * @member {Uint8Array} missingUpdate
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.missingUpdate = $util.newBuffer([]);
+
+        /**
+         * CollabBatchSyncResult error.
+         * @member {string} error
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.error = "";
+
+        /**
+         * CollabBatchSyncResult serverStateVector.
+         * @member {Uint8Array} serverStateVector
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         */
+        CollabBatchSyncResult.prototype.serverStateVector = $util.newBuffer([]);
+
+        /**
+         * Creates a new CollabBatchSyncResult instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {collab.ICollabBatchSyncResult=} [properties] Properties to set
+         * @returns {collab.CollabBatchSyncResult} CollabBatchSyncResult instance
+         */
+        CollabBatchSyncResult.create = function create(properties) {
+            return new CollabBatchSyncResult(properties);
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncResult message. Does not implicitly {@link collab.CollabBatchSyncResult.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {collab.ICollabBatchSyncResult} message CollabBatchSyncResult message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncResult.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.objectId != null && Object.hasOwnProperty.call(message, "objectId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.objectId);
+            if (message.collabType != null && Object.hasOwnProperty.call(message, "collabType"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.collabType);
+            if (message.compression != null && Object.hasOwnProperty.call(message, "compression"))
+                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.compression);
+            if (message.missingUpdate != null && Object.hasOwnProperty.call(message, "missingUpdate"))
+                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.missingUpdate);
+            if (message.error != null && Object.hasOwnProperty.call(message, "error"))
+                writer.uint32(/* id 5, wireType 2 =*/42).string(message.error);
+            if (message.serverStateVector != null && Object.hasOwnProperty.call(message, "serverStateVector"))
+                writer.uint32(/* id 6, wireType 2 =*/50).bytes(message.serverStateVector);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncResult message, length delimited. Does not implicitly {@link collab.CollabBatchSyncResult.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {collab.ICollabBatchSyncResult} message CollabBatchSyncResult message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncResult.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabBatchSyncResult message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabBatchSyncResult} CollabBatchSyncResult
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncResult.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncResult();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.objectId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.collabType = reader.int32();
+                        break;
+                    }
+                case 3: {
+                        message.compression = reader.int32();
+                        break;
+                    }
+                case 4: {
+                        message.missingUpdate = reader.bytes();
+                        break;
+                    }
+                case 5: {
+                        message.error = reader.string();
+                        break;
+                    }
+                case 6: {
+                        message.serverStateVector = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabBatchSyncResult message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabBatchSyncResult} CollabBatchSyncResult
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncResult.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabBatchSyncResult message.
+         * @function verify
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabBatchSyncResult.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                if (!$util.isString(message.objectId))
+                    return "objectId: string expected";
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                if (!$util.isInteger(message.collabType))
+                    return "collabType: integer expected";
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                switch (message.compression) {
+                default:
+                    return "compression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            if (message.missingUpdate != null && message.hasOwnProperty("missingUpdate"))
+                if (!(message.missingUpdate && typeof message.missingUpdate.length === "number" || $util.isString(message.missingUpdate)))
+                    return "missingUpdate: buffer expected";
+            if (message.error != null && message.hasOwnProperty("error"))
+                if (!$util.isString(message.error))
+                    return "error: string expected";
+            if (message.serverStateVector != null && message.hasOwnProperty("serverStateVector"))
+                if (!(message.serverStateVector && typeof message.serverStateVector.length === "number" || $util.isString(message.serverStateVector)))
+                    return "serverStateVector: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a CollabBatchSyncResult message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabBatchSyncResult} CollabBatchSyncResult
+         */
+        CollabBatchSyncResult.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabBatchSyncResult)
+                return object;
+            let message = new $root.collab.CollabBatchSyncResult();
+            if (object.objectId != null)
+                message.objectId = String(object.objectId);
+            if (object.collabType != null)
+                message.collabType = object.collabType | 0;
+            switch (object.compression) {
+            default:
+                if (typeof object.compression === "number") {
+                    message.compression = object.compression;
+                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.compression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.compression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.compression = 2;
+                break;
+            }
+            if (object.missingUpdate != null)
+                if (typeof object.missingUpdate === "string")
+                    $util.base64.decode(object.missingUpdate, message.missingUpdate = $util.newBuffer($util.base64.length(object.missingUpdate)), 0);
+                else if (object.missingUpdate.length >= 0)
+                    message.missingUpdate = object.missingUpdate;
+            if (object.error != null)
+                message.error = String(object.error);
+            if (object.serverStateVector != null)
+                if (typeof object.serverStateVector === "string")
+                    $util.base64.decode(object.serverStateVector, message.serverStateVector = $util.newBuffer($util.base64.length(object.serverStateVector)), 0);
+                else if (object.serverStateVector.length >= 0)
+                    message.serverStateVector = object.serverStateVector;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabBatchSyncResult message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {collab.CollabBatchSyncResult} message CollabBatchSyncResult
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabBatchSyncResult.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.objectId = "";
+                object.collabType = 0;
+                object.compression = options.enums === String ? "COMPRESSION_NONE" : 0;
+                if (options.bytes === String)
+                    object.missingUpdate = "";
+                else {
+                    object.missingUpdate = [];
+                    if (options.bytes !== Array)
+                        object.missingUpdate = $util.newBuffer(object.missingUpdate);
+                }
+                object.error = "";
+                if (options.bytes === String)
+                    object.serverStateVector = "";
+                else {
+                    object.serverStateVector = [];
+                    if (options.bytes !== Array)
+                        object.serverStateVector = $util.newBuffer(object.serverStateVector);
+                }
+            }
+            if (message.objectId != null && message.hasOwnProperty("objectId"))
+                object.objectId = message.objectId;
+            if (message.collabType != null && message.hasOwnProperty("collabType"))
+                object.collabType = message.collabType;
+            if (message.compression != null && message.hasOwnProperty("compression"))
+                object.compression = options.enums === String ? $root.collab.PayloadCompressionType[message.compression] === undefined ? message.compression : $root.collab.PayloadCompressionType[message.compression] : message.compression;
+            if (message.missingUpdate != null && message.hasOwnProperty("missingUpdate"))
+                object.missingUpdate = options.bytes === String ? $util.base64.encode(message.missingUpdate, 0, message.missingUpdate.length) : options.bytes === Array ? Array.prototype.slice.call(message.missingUpdate) : message.missingUpdate;
+            if (message.error != null && message.hasOwnProperty("error"))
+                object.error = message.error;
+            if (message.serverStateVector != null && message.hasOwnProperty("serverStateVector"))
+                object.serverStateVector = options.bytes === String ? $util.base64.encode(message.serverStateVector, 0, message.serverStateVector.length) : options.bytes === Array ? Array.prototype.slice.call(message.serverStateVector) : message.serverStateVector;
+            return object;
+        };
+
+        /**
+         * Converts this CollabBatchSyncResult to JSON.
+         * @function toJSON
+         * @memberof collab.CollabBatchSyncResult
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabBatchSyncResult.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabBatchSyncResult
+         * @function getTypeUrl
+         * @memberof collab.CollabBatchSyncResult
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabBatchSyncResult.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabBatchSyncResult";
+        };
+
+        return CollabBatchSyncResult;
+    })();
+
+    collab.CollabBatchSyncResponse = (function() {
+
+        /**
+         * Properties of a CollabBatchSyncResponse.
+         * @memberof collab
+         * @interface ICollabBatchSyncResponse
+         * @property {Array.<collab.ICollabBatchSyncResult>|null} [results] CollabBatchSyncResponse results
+         * @property {collab.PayloadCompressionType|null} [responseCompression] CollabBatchSyncResponse responseCompression
+         */
+
+        /**
+         * Constructs a new CollabBatchSyncResponse.
+         * @memberof collab
+         * @classdesc Response from batch sync containing results for each collab.
+         * @implements ICollabBatchSyncResponse
+         * @constructor
+         * @param {collab.ICollabBatchSyncResponse=} [properties] Properties to set
+         */
+        function CollabBatchSyncResponse(properties) {
+            this.results = [];
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * CollabBatchSyncResponse results.
+         * @member {Array.<collab.ICollabBatchSyncResult>} results
+         * @memberof collab.CollabBatchSyncResponse
+         * @instance
+         */
+        CollabBatchSyncResponse.prototype.results = $util.emptyArray;
+
+        /**
+         * CollabBatchSyncResponse responseCompression.
+         * @member {collab.PayloadCompressionType} responseCompression
+         * @memberof collab.CollabBatchSyncResponse
+         * @instance
+         */
+        CollabBatchSyncResponse.prototype.responseCompression = 0;
+
+        /**
+         * Creates a new CollabBatchSyncResponse instance using the specified properties.
+         * @function create
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {collab.ICollabBatchSyncResponse=} [properties] Properties to set
+         * @returns {collab.CollabBatchSyncResponse} CollabBatchSyncResponse instance
+         */
+        CollabBatchSyncResponse.create = function create(properties) {
+            return new CollabBatchSyncResponse(properties);
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncResponse message. Does not implicitly {@link collab.CollabBatchSyncResponse.verify|verify} messages.
+         * @function encode
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {collab.ICollabBatchSyncResponse} message CollabBatchSyncResponse message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncResponse.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.results != null && message.results.length)
+                for (let i = 0; i < message.results.length; ++i)
+                    $root.collab.CollabBatchSyncResult.encode(message.results[i], writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
+            if (message.responseCompression != null && Object.hasOwnProperty.call(message, "responseCompression"))
+                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.responseCompression);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified CollabBatchSyncResponse message, length delimited. Does not implicitly {@link collab.CollabBatchSyncResponse.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {collab.ICollabBatchSyncResponse} message CollabBatchSyncResponse message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        CollabBatchSyncResponse.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a CollabBatchSyncResponse message from the specified reader or buffer.
+         * @function decode
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {collab.CollabBatchSyncResponse} CollabBatchSyncResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncResponse.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncResponse();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        if (!(message.results && message.results.length))
+                            message.results = [];
+                        message.results.push($root.collab.CollabBatchSyncResult.decode(reader, reader.uint32()));
+                        break;
+                    }
+                case 2: {
+                        message.responseCompression = reader.int32();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a CollabBatchSyncResponse message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {collab.CollabBatchSyncResponse} CollabBatchSyncResponse
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        CollabBatchSyncResponse.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a CollabBatchSyncResponse message.
+         * @function verify
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        CollabBatchSyncResponse.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.results != null && message.hasOwnProperty("results")) {
+                if (!Array.isArray(message.results))
+                    return "results: array expected";
+                for (let i = 0; i < message.results.length; ++i) {
+                    let error = $root.collab.CollabBatchSyncResult.verify(message.results[i]);
+                    if (error)
+                        return "results." + error;
+                }
+            }
+            if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
+                switch (message.responseCompression) {
+                default:
+                    return "responseCompression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
+                }
+            return null;
+        };
+
+        /**
+         * Creates a CollabBatchSyncResponse message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {collab.CollabBatchSyncResponse} CollabBatchSyncResponse
+         */
+        CollabBatchSyncResponse.fromObject = function fromObject(object) {
+            if (object instanceof $root.collab.CollabBatchSyncResponse)
+                return object;
+            let message = new $root.collab.CollabBatchSyncResponse();
+            if (object.results) {
+                if (!Array.isArray(object.results))
+                    throw TypeError(".collab.CollabBatchSyncResponse.results: array expected");
+                message.results = [];
+                for (let i = 0; i < object.results.length; ++i) {
+                    if (typeof object.results[i] !== "object")
+                        throw TypeError(".collab.CollabBatchSyncResponse.results: object expected");
+                    message.results[i] = $root.collab.CollabBatchSyncResult.fromObject(object.results[i]);
+                }
+            }
+            switch (object.responseCompression) {
+            default:
+                if (typeof object.responseCompression === "number") {
+                    message.responseCompression = object.responseCompression;
+                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.responseCompression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.responseCompression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.responseCompression = 2;
+                break;
+            }
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a CollabBatchSyncResponse message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {collab.CollabBatchSyncResponse} message CollabBatchSyncResponse
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        CollabBatchSyncResponse.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.arrays || options.defaults)
+                object.results = [];
+            if (options.defaults)
+                object.responseCompression = options.enums === String ? "COMPRESSION_NONE" : 0;
+            if (message.results && message.results.length) {
+                object.results = [];
+                for (let j = 0; j < message.results.length; ++j)
+                    object.results[j] = $root.collab.CollabBatchSyncResult.toObject(message.results[j], options);
+            }
+            if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
+                object.responseCompression = options.enums === String ? $root.collab.PayloadCompressionType[message.responseCompression] === undefined ? message.responseCompression : $root.collab.PayloadCompressionType[message.responseCompression] : message.responseCompression;
+            return object;
+        };
+
+        /**
+         * Converts this CollabBatchSyncResponse to JSON.
+         * @function toJSON
+         * @memberof collab.CollabBatchSyncResponse
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        CollabBatchSyncResponse.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for CollabBatchSyncResponse
+         * @function getTypeUrl
+         * @memberof collab.CollabBatchSyncResponse
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        CollabBatchSyncResponse.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/collab.CollabBatchSyncResponse";
+        };
+
+        return CollabBatchSyncResponse;
+    })();
+
     return collab;
 })();
 

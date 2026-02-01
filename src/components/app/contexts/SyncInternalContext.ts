@@ -27,6 +27,12 @@ export interface SyncInternalContextType {
    * This ensures all local changes are sent to the server before operations like duplicate.
    */
   flushAllSync: () => void;
+  /**
+   * Sync all registered collab documents to the server via HTTP API.
+   * This is similar to desktop's collab_full_sync_batch - it sends the full doc state
+   * to ensure the server has the latest data before operations like duplicate.
+   */
+  syncAllToServer: (workspaceId: string) => Promise<void>;
 }
 
 export const SyncInternalContext = createContext<SyncInternalContextType | null>(null);
