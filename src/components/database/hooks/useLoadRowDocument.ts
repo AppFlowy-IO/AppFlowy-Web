@@ -1,8 +1,8 @@
 import { useCallback } from 'react';
 
 import { useDatabaseContext } from '@/application/database-yjs';
-import { Types, ViewLayout, YDoc } from '@/application/types';
-import { openView } from '@/application/view-loader';
+import { Types, YDoc } from '@/application/types';
+import { openRowSubDocument } from '@/application/view-loader';
 import { Log } from '@/utils/log';
 
 /**
@@ -15,8 +15,10 @@ export interface YDocWithMeta extends YDoc {
 }
 
 /**
- * Hook to load a row document from cache or server.
- * Returns the document with metadata set for later sync binding.
+ * Hook to load a row sub-document (document content inside a database row).
+ *
+ * Uses a cached Y.Doc instance to preserve sync state across reopens.
+ * This prevents content loss when the same card is opened multiple times.
  */
 export function useLoadRowDocument() {
   const { workspaceId } = useDatabaseContext();
@@ -29,18 +31,22 @@ export function useLoadRowDocument() {
       }
 
       try {
-        // Use view-loader to open document (handles cache vs fetch)
-        // Pass ViewLayout.Document to ensure correct collab type detection
-        const { doc } = await openView(workspaceId, documentId, ViewLayout.Document);
+        // Use openRowSubDocument which caches Y.Doc instances
+        // This ensures the same doc is reused across card reopens,
+        // preserving sync state and preventing content loss
+        const { doc } = await openRowSubDocument(workspaceId, documentId);
 
         // Set metadata for sync binding
         const docWithMeta = doc as YDocWithMeta;
 
         docWithMeta.object_id = documentId;
         docWithMeta._collabType = Types.Document;
-        docWithMeta._syncBound = false;
+        // Don't reset _syncBound if already bound - reuse existing sync
+        if (docWithMeta._syncBound === undefined) {
+          docWithMeta._syncBound = false;
+        }
 
-        Log.debug('[useLoadRowDocument] loaded', { documentId });
+        Log.debug('[useLoadRowDocument] loaded', { documentId, alreadySyncBound: docWithMeta._syncBound });
 
         return doc;
       } catch (e) {

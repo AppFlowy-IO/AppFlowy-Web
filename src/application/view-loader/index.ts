@@ -11,7 +11,7 @@
  */
 
 import { openCollabDB } from '@/application/db';
-import { hasCollabCache } from '@/application/services/js-services/cache';
+import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { fetchPageCollab } from '@/application/services/js-services/fetch';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
@@ -196,4 +196,54 @@ export function getDatabaseIdFromDoc(doc: YDoc): string | null {
   } catch {
     return null;
   }
+}
+
+// ============================================================================
+// Row Sub-Document (cached)
+// ============================================================================
+
+/**
+ * Open a row sub-document (the document content inside a database row).
+ *
+ * This uses a cache to ensure the same Y.Doc instance is reused when
+ * reopening the same card. This is critical for:
+ * 1. Preserving sync state between opens
+ * 2. Preventing content loss when server updates are applied
+ * 3. Following the same pattern as the desktop application
+ *
+ * @param workspaceId - The workspace ID
+ * @param documentId - The row sub-document ID
+ */
+export async function openRowSubDocument(
+  workspaceId: string,
+  documentId: string
+): Promise<ViewLoaderResult> {
+  const startedAt = Date.now();
+
+  Log.debug('[ViewLoader] openRowSubDocument start', { workspaceId, documentId });
+
+  // Use cached doc to preserve sync state across reopens
+  const doc = await getOrCreateRowSubDoc(documentId);
+
+  // Check cache
+  const fromCache = hasCollabCache(doc);
+
+  Log.debug('[ViewLoader] rowSubDoc cache check', {
+    documentId,
+    fromCache,
+    durationMs: Date.now() - startedAt,
+  });
+
+  // Fetch from server if not cached
+  if (!fromCache) {
+    await fetchAndApply(workspaceId, documentId, doc);
+  }
+
+  Log.debug('[ViewLoader] openRowSubDocument complete', {
+    documentId,
+    fromCache,
+    totalDurationMs: Date.now() - startedAt,
+  });
+
+  return { doc, fromCache, collabType: Types.Document };
 }

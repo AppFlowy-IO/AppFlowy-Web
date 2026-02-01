@@ -562,3 +562,143 @@ export function getCachedRowDoc(rowKey: string): YDoc | undefined {
 export function deleteRow(rowKey: string) {
   rowDocs.delete(rowKey);
 }
+
+// ============================================================================
+// Row Sub-Document Cache (for document content inside database rows)
+// ============================================================================
+
+type RowSubDocEntry = {
+  doc: YDoc;
+  whenSynced: Promise<void>;
+};
+
+const rowSubDocs = new Map<string, RowSubDocEntry>();
+let rowSubDocLogCount = 0;
+const ROW_SUB_DOC_LOG_LIMIT = 50;
+
+/**
+ * Helper to get text content summary from a Y.Doc for debugging.
+ */
+function getDocTextSummary(doc: YDoc): { hasText: boolean; textCount: number; sampleText: string } {
+  try {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+    const document = sharedRoot?.get(YjsEditorKey.document) as any;
+    const meta = document?.get(YjsEditorKey.meta) as any;
+    const textMap = meta?.get(YjsEditorKey.text_map) as any;
+
+    if (!textMap) {
+      return { hasText: false, textCount: 0, sampleText: '' };
+    }
+
+    let textCount = 0;
+    let sampleText = '';
+
+    for (const text of textMap.values()) {
+      const str = text?.toString() || '';
+
+      if (str.length > 0) {
+        textCount++;
+        if (!sampleText) {
+          sampleText = str.slice(0, 50);
+        }
+      }
+    }
+
+    return { hasText: textCount > 0, textCount, sampleText };
+  } catch {
+    return { hasText: false, textCount: 0, sampleText: '' };
+  }
+}
+
+/**
+ * Get or create a cached row sub-document.
+ * This ensures the same Y.Doc instance is reused when reopening a card,
+ * preserving the sync state and preventing content loss.
+ */
+export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
+  const existing = rowSubDocs.get(documentId);
+
+  if (existing) {
+    const textSummary = getDocTextSummary(existing.doc);
+
+    Log.debug('[RowSubDoc] returning cached doc', {
+      documentId,
+      hasDoc: Boolean(existing.doc),
+      ...textSummary,
+    });
+
+    await existing.whenSynced;
+    return existing.doc;
+  }
+
+  Log.debug('[RowSubDoc] creating new doc entry', { documentId });
+
+  const startedAt = Date.now();
+  const { doc, provider } = await openCollabDBWithProvider(documentId, { awaitSync: false });
+
+  // Check initial state
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+  const hasDocument = sharedRoot.has(YjsEditorKey.document);
+  const textBeforeSync = getDocTextSummary(doc);
+
+  Log.debug('[RowSubDoc] opened (before IndexedDB sync)', {
+    documentId,
+    openDurationMs: Date.now() - startedAt,
+    providerSynced: provider.synced,
+    hasDocumentBeforeSync: hasDocument,
+    ...textBeforeSync,
+  });
+
+  const whenSynced = provider.synced
+    ? Promise.resolve()
+    : new Promise<void>((resolve) => {
+        provider.on('synced', () => {
+          const syncedSharedRoot = doc.getMap(YjsEditorKey.data_section);
+          const hasDocAfterSync = syncedSharedRoot.has(YjsEditorKey.document);
+          const textAfterSync = getDocTextSummary(doc);
+
+          Log.debug('[RowSubDoc] IndexedDB synced', {
+            documentId,
+            durationMs: Date.now() - startedAt,
+            hasDocumentAfterSync: hasDocAfterSync,
+            hadDocumentBeforeSync: hasDocument,
+            textBefore: textBeforeSync,
+            textAfter: textAfterSync,
+          });
+
+          resolve();
+        });
+      });
+
+  const entry = { doc, whenSynced };
+
+  rowSubDocs.set(documentId, entry);
+
+  await whenSynced;
+
+  // Log final state after sync
+  const finalTextSummary = getDocTextSummary(doc);
+
+  Log.debug('[RowSubDoc] ready', {
+    documentId,
+    totalDurationMs: Date.now() - startedAt,
+    ...finalTextSummary,
+  });
+
+  return doc;
+}
+
+/**
+ * Get a cached row sub-document if it exists, without creating a new one.
+ */
+export function getCachedRowSubDoc(documentId: string): YDoc | undefined {
+  return rowSubDocs.get(documentId)?.doc;
+}
+
+/**
+ * Remove a row sub-document from the cache.
+ * Call this when the document is no longer needed (e.g., row deleted).
+ */
+export function deleteRowSubDoc(documentId: string) {
+  rowSubDocs.delete(documentId);
+}

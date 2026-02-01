@@ -288,6 +288,61 @@ describe('Board Operations', () => {
         cy.task('log', '[TEST COMPLETE] Rapid card creation test passed');
       });
     });
+
+    it('should preserve row document content when reopening card multiple times', () => {
+      const testEmail = generateRandomEmail();
+      const cardName = `Reopen-${uuidv4().substring(0, 6)}`;
+      const documentContent = `Content-${uuidv4().substring(0, 8)}`;
+      const reopenCount = 3;
+
+      cy.task('log', `[TEST START] Card reopen test - Email: ${testEmail}`);
+
+      const authUtils = new AuthTestUtils();
+      createBoardAndWait(authUtils, testEmail).then(() => {
+        // Add a new card
+        BoardSelectors.boardContainer().contains('New').first().click({ force: true });
+        waitForReactUpdate(500);
+        cy.focused().type(`${cardName}{enter}`, { force: true });
+        waitForReactUpdate(2000);
+
+        BoardSelectors.boardContainer().contains(cardName).should('be.visible');
+
+        // Open card and add content to the row document
+        BoardSelectors.boardContainer().contains(cardName).click({ force: true });
+        waitForReactUpdate(1500);
+
+        cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+
+        // Type content in the row document area (below properties)
+        cy.get('[role="dialog"]').find('[data-block-type]').first().click({ force: true });
+        waitForReactUpdate(500);
+        cy.focused().type(documentContent, { force: true });
+        waitForReactUpdate(2000);
+
+        // Close modal
+        cy.get('body').type('{esc}', { force: true });
+        waitForReactUpdate(2000);
+
+        // Reopen the card multiple times and verify content persists
+        for (let i = 1; i <= reopenCount; i++) {
+          cy.task('log', `[REOPEN ${i}/${reopenCount}] Opening card`);
+
+          BoardSelectors.boardContainer().contains(cardName).click({ force: true });
+          waitForReactUpdate(1500);
+
+          cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+
+          // Verify the document content is still there
+          cy.get('[role="dialog"]').contains(documentContent, { timeout: 10000 }).should('exist');
+
+          // Close modal
+          cy.get('body').type('{esc}', { force: true });
+          waitForReactUpdate(1500);
+        }
+
+        cy.task('log', '[TEST COMPLETE] Card reopen test passed');
+      });
+    });
   });
 
   describe('Card Persistence', () => {

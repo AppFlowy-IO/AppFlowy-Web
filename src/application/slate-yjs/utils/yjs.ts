@@ -24,8 +24,9 @@ import {
 } from '@/application/types';
 import { Log } from '@/utils/log';
 
-// UUID namespace OID (same as Rust's uuid::NAMESPACE_OID)
-const UUID_NAMESPACE_OID = '6ba7b810-9dad-11d1-80b4-00c04fd430c8';
+// UUID namespace OID (same as Rust's Uuid::NAMESPACE_OID)
+// Note: 6ba7b812 (not 6ba7b810 which is NAMESPACE_DNS)
+const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
 
 /**
  * Generate a deterministic page_id from document_id.
@@ -49,7 +50,16 @@ export function pageIdFromDocumentId(documentId: string): string {
     : uuidv5(documentId, UUID_NAMESPACE_OID);
 
   // Generate page_id as UUID v5 with document_id as namespace and "page" as name
-  return uuidv5('page', docUuid);
+  const pageId = uuidv5('page', docUuid);
+
+  Log.debug('[pageIdFromDocumentId]', {
+    documentId,
+    isValidUuid: uuidValidate(documentId),
+    docUuid,
+    pageId,
+  });
+
+  return pageId;
 }
 
 export function getTextMap(sharedRoot: YSharedRoot) {
@@ -300,6 +310,10 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
 
   // Skip if already initialized
   if (sharedRoot.has(YjsEditorKey.document)) {
+    Log.debug('[initializeDocumentStructure] skipped - already initialized', {
+      docGuid: doc.guid,
+      documentId,
+    });
     return;
   }
 
@@ -308,6 +322,13 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
   // Use deterministic page_id from documentId when provided, otherwise fallback to nanoid
   // The deterministic algorithm matches the server's default_document_data
   const pageId = documentId ? pageIdFromDocumentId(documentId) : nanoid(8);
+
+  Log.debug('[initializeDocumentStructure] creating new structure', {
+    docGuid: doc.guid,
+    documentId,
+    pageId,
+    includeInitialParagraph,
+  });
   const meta = new Y.Map();
   const childrenMap = new Y.Map() as YChildrenMap;
   const textMap = new Y.Map() as YTextMap;
@@ -357,6 +378,11 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
   textMap.set(pageId, new Y.Text());
 
   sharedRoot.set(YjsEditorKey.document, document);
+
+  Log.debug('[initializeDocumentStructure] completed', {
+    docGuid: doc.guid,
+    pageId,
+  });
 }
 
 export function createEmptyDocument() {

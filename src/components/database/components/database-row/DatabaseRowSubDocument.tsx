@@ -181,8 +181,55 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     [meta?.isEmptyDocument]
   );
 
+  const hasLocalDocContent = useCallback(
+    async (documentId: string): Promise<boolean> => {
+      try {
+        const localDoc = await openCollabDB(documentId);
+        const sharedRoot = localDoc.getMap(YjsEditorKey.data_section) as Y.Map<unknown> | undefined;
+
+        if (!sharedRoot || !sharedRoot.has(YjsEditorKey.document)) {
+          return false;
+        }
+
+        const document = sharedRoot.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+        const meta = document?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+        const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
+
+        if (textMap) {
+          for (const text of textMap.values()) {
+            if (text?.toString().length) {
+              return true;
+            }
+          }
+        }
+
+        const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<Y.Map<unknown>> | undefined;
+
+        if (blocks) {
+          for (const block of blocks.values()) {
+            const type = block.get(YjsEditorKey.block_type);
+
+            if (type && type !== BlockType.Page && type !== BlockType.Paragraph) {
+              return true;
+            }
+          }
+        }
+      } catch (e: any) {
+        Log.warn('[DatabaseRowSubDocument] hasLocalDocContent failed', {
+          rowId,
+          documentId,
+          message: e?.message,
+        });
+      }
+
+      return false;
+    },
+    [rowId]
+  );
+
   const handleOpenDocument = useCallback(
     async (documentId: string): Promise<boolean> => {
+      Log.debug('[DatabaseRowSubDocument] handleOpenDocument start', { rowId, documentId });
       setLoading(true);
       try {
         docReadyRef.current = false;
@@ -193,6 +240,36 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           Log.debug('[DatabaseRowSubDocument] loadRowDocument returned null', { documentId });
           return false;
         }
+
+        // Log document state after loading
+        const sharedRoot = doc.getMap(YjsEditorKey.data_section) as Y.Map<unknown>;
+        const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+        const docMeta = document?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+        const textMap = docMeta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
+        const pageId = document?.get(YjsEditorKey.page_id);
+
+        let textCount = 0;
+        let sampleText = '';
+
+        if (textMap) {
+          for (const text of textMap.values()) {
+            const str = text?.toString() || '';
+
+            if (str.length > 0) {
+              textCount++;
+              if (!sampleText) sampleText = str.slice(0, 30);
+            }
+          }
+        }
+
+        Log.debug('[DatabaseRowSubDocument] handleOpenDocument loaded', {
+          rowId,
+          documentId,
+          pageId,
+          hasDocument: !!document,
+          textCount,
+          sampleText,
+        });
 
         setDoc(doc);
         docReadyRef.current = true;
@@ -326,6 +403,18 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         docReadyRef.current = false;
         setDoc(null);
 
+        const localHasContent = await hasLocalDocContent(documentId);
+
+        if (localHasContent) {
+          Log.debug('[DatabaseRowSubDocument] local doc has content; skipping server create', {
+            rowId,
+            documentId,
+          });
+          await openLocalDocument(documentId);
+          opened = true;
+          return true;
+        }
+
         if (requireServerReady) {
           if (!createOrphanedView) {
             Log.debug('[DatabaseRowSubDocument] createOrphanedView not available, returning false');
@@ -376,7 +465,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         }
       }
     },
-    [createOrphanedView, openDocumentWithState, openLocalDocument]
+    [createOrphanedView, hasLocalDocContent, openDocumentWithState, openLocalDocument, rowId]
   );
 
   const scheduleEnsureRowDocumentExists = useCallback(() => {
@@ -487,8 +576,21 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         retryLoadTimerRef.current = null;
 
-        // After max retries, create the document anyway
+        // After max retries, create the document anyway unless we already have local content
         if (retryCount >= MAX_RETRIES) {
+          const localHasContent = await hasLocalDocContent(documentId);
+
+          if (localHasContent) {
+            Log.debug('[DatabaseRowSubDocument] max retries reached; local content found, opening local doc', {
+              rowId,
+              documentId,
+              retryCount,
+            });
+            await openLocalDocument(documentId);
+            setLoading(false);
+            return;
+          }
+
           Log.debug('[DatabaseRowSubDocument] max retries reached; creating document', {
             rowId,
             documentId,
@@ -540,6 +642,18 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       if (!checkIfRowDocumentExists) {
         if (shouldWaitForRowMeta) {
           scheduleRetry();
+          return;
+        }
+
+        const localHasContent = await hasLocalDocContent(documentId);
+
+        if (localHasContent) {
+          Log.debug('[DatabaseRowSubDocument] doc not found; local content found, opening local doc', {
+            rowId,
+            documentId,
+          });
+          await openLocalDocument(documentId);
+          setLoading(false);
           return;
         }
 
@@ -598,18 +712,25 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return;
         }
 
-        void handleCreateDocument(documentId, true);
-      } catch (e) {
-        if (shouldWaitForRowMeta) {
-          Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists failed; will retry then create', {
+        const localHasContent = await hasLocalDocContent(documentId);
+
+        if (localHasContent) {
+          Log.debug('[DatabaseRowSubDocument] doc not found; local content found, opening local doc', {
             rowId,
             documentId,
           });
-          scheduleRetry();
+          await openLocalDocument(documentId);
+          setLoading(false);
           return;
         }
 
         void handleCreateDocument(documentId, true);
+      } catch (e) {
+        Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists failed; will retry', {
+          rowId,
+          documentId,
+        });
+        scheduleRetry();
       }
     })();
 
@@ -623,6 +744,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     handleCreateDocument,
     checkIfRowDocumentExists,
     isDocumentEmptyResolved,
+    hasLocalDocContent,
     scheduleEnsureRowDocumentExists,
     createOrphanedView,
     rowId,
