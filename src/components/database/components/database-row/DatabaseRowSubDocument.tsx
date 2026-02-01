@@ -14,6 +14,7 @@ import {
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { openCollabDB } from '@/application/db';
+import { getCachedRowSubDoc, getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
 import { YjsEditor } from '@/application/slate-yjs';
 import { initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
 import {
@@ -184,7 +185,8 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const hasLocalDocContent = useCallback(
     async (documentId: string): Promise<boolean> => {
       try {
-        const localDoc = await openCollabDB(documentId);
+        // Check cached doc first to avoid creating temporary instances
+        const localDoc = getCachedRowSubDoc(documentId) ?? (await openCollabDB(documentId));
         const sharedRoot = localDoc.getMap(YjsEditorKey.data_section) as Y.Map<unknown> | undefined;
 
         if (!sharedRoot || !sharedRoot.has(YjsEditorKey.document)) {
@@ -302,8 +304,8 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return false;
         }
 
-        // Open the document from IndexedDB
-        const doc = await openCollabDB(documentId);
+        // Use cached doc to preserve sync state across reopens
+        const doc = await getOrCreateRowSubDoc(documentId);
 
         // Apply the server's doc_state to initialize the document
         // This ensures the document structure matches what the server created
@@ -356,9 +358,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         docReadyRef.current = false;
         setDoc(null);
 
-        // Open the document from IndexedDB (not from server)
-        // This is faster and more reliable for newly created documents
-        const doc = await openCollabDB(documentId);
+        // Use cached doc to preserve sync state across reopens
+        // This ensures the same Y.Doc instance is reused when reopening,
+        // preventing content loss from "different doc instance" sync replacement
+        const doc = await getOrCreateRowSubDoc(documentId);
 
         // Initialize with empty document structure if needed
         // Pass true to include initial paragraph - required for Slate editor to render
