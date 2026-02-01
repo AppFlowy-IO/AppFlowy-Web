@@ -20,6 +20,12 @@ export interface SyncContext {
    * Emit function to send messages back to the server.
    */
   emit: (reply: messages.IMessage) => void;
+  /**
+   * Flush function to immediately send any pending updates.
+   * This is used before operations like duplicate to ensure all local changes
+   * are synced to the server.
+   */
+  flush?: () => void;
 }
 
 interface AwarenessEvent {
@@ -127,6 +133,7 @@ export const initSync = (ctx: SyncContext) => {
   let onAwarenessChange;
   const updates: Uint8Array[] = [];
   const debounced = debounce(() => {
+    if (updates.length === 0) return; // Skip if no pending updates
     const mergedUpdates = Y.mergeUpdates(updates);
 
     updates.length = 0; // Clear the updates array without GC overhead
@@ -141,6 +148,12 @@ export const initSync = (ctx: SyncContext) => {
       },
     });
   }, 250);
+
+  // Store flush function in context for external access
+  ctx.flush = () => {
+    debounced.flush();
+  };
+
   const onUpdate = (update: Uint8Array, origin: string) => {
     if (origin === 'remote') {
       return; // Ignore remote updates

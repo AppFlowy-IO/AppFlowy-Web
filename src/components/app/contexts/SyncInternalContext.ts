@@ -22,6 +22,11 @@ export interface SyncInternalContextType {
   eventEmitter: EventEmitter;
   awarenessMap: Record<string, Awareness>;
   lastUpdatedCollab: UpdateCollabInfo | null;
+  /**
+   * Flush all pending updates for all registered sync contexts.
+   * This ensures all local changes are sent to the server before operations like duplicate.
+   */
+  flushAllSync: () => void;
 }
 
 export const SyncInternalContext = createContext<SyncInternalContextType | null>(null);

@@ -10,6 +10,7 @@ import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { useService } from '@/components/main/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -40,12 +41,17 @@ function MoreActionsContent({ itemClicked, viewId }: {
   const {
     refreshOutline,
   } = useAppHandlers();
+  const { flushAllSync } = useSyncInternal();
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId || !service) return;
     itemClicked?.();
     toast.loading(`${t('moreAction.duplicateView')}...`);
     try {
+      // Flush all pending sync updates before duplicating
+      // This ensures all local changes are synced to the server
+      flushAllSync();
       await service.duplicateAppPage(workspaceId, viewId);
+      toast.dismiss();
       void refreshOutline?.();
       itemClicked?.();
       // eslint-disable-next-line
@@ -53,7 +59,7 @@ function MoreActionsContent({ itemClicked, viewId }: {
       toast.dismiss();
       toast.error(e.message);
     }
-  }, [workspaceId, service, viewId, refreshOutline, itemClicked, t]);
+  }, [workspaceId, service, viewId, refreshOutline, itemClicked, t, flushAllSync]);
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const containerRef = useCallback((el: HTMLElement | null) => {

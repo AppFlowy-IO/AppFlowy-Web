@@ -40,6 +40,11 @@ export type UpdateCollabInfo = {
 export type SyncContextType = {
   registerSyncContext: (context: RegisterSyncContext) => SyncContext;
   lastUpdatedCollab: UpdateCollabInfo | null;
+  /**
+   * Flush all pending updates for all registered sync contexts.
+   * This ensures all local changes are sent to the server before operations like duplicate.
+   */
+  flushAllSync: () => void;
 };
 
 export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eventEmitter?: EventEmitter): SyncContextType => {
@@ -263,5 +268,18 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     [registeredContexts, sendMessage, postMessage]
   );
 
-  return { registerSyncContext, lastUpdatedCollab };
+  /**
+   * Flush all pending updates for all registered sync contexts.
+   * This ensures all local changes are sent to the server before operations like duplicate.
+   */
+  const flushAllSync = useCallback(() => {
+    Log.debug('Flushing all sync contexts');
+    registeredContexts.current.forEach((context) => {
+      if (context.flush) {
+        context.flush();
+      }
+    });
+  }, []);
+
+  return { registerSyncContext, lastUpdatedCollab, flushAllSync };
 };

@@ -100,13 +100,10 @@ describe('Duplicate Page', () => {
     cy.get('[data-sonner-toast]', { timeout: 5000 }).should('exist');
     testLog.info('Toast notification appeared');
 
-    // Wait for duplication to complete
-    // Don't wait for toast to disappear as it may persist - just wait for operation
-    waitForReactUpdate(3000);
-    testLog.info('Duplication operation completed');
-
-    // Verify no error toast appeared
-    cy.get('[data-sonner-toast][data-type="error"]').should('not.exist');
+    // Wait for duplication to complete and toast to be dismissed (including exit animation)
+    waitForReactUpdate(500);
+    cy.get('[data-sonner-toast]', { timeout: 10000 }).should('not.exist');
+    testLog.info('Toast dismissed - duplication completed');
 
     // Step 7: Find and open the duplicated document
     testLog.step(7, 'Opening the duplicated document');
