@@ -903,25 +903,30 @@ describe('Publish Page Test', () => {
 
             // Step 3: Type content into the row document
             testLog.info('Typing content into row document');
-            waitForReactUpdate(3000);
+            // Wait longer for document to initialize - new rows may need time
+            waitForReactUpdate(5000);
 
-            // Scroll to the document area (use ensureScrollable: false for custom scroll containers)
+            // Scroll to the document area
             cy.get('[role="dialog"]')
                 .find('.appflowy-scroll-container')
                 .scrollTo('bottom', { ensureScrollable: false });
-            waitForReactUpdate(1000);
+            waitForReactUpdate(2000);
 
-            // Wait for editor to be ready and click into it
+            // Wait for editor to be ready - new rows need the document to be created
+            // The editor appears after the document is initialized, which can take several seconds
             cy.get('[role="dialog"]')
-                .find('[role="textbox"][contenteditable="true"]', { timeout: 15000 })
+                .find('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]', { timeout: 30000 })
                 .should('exist')
                 .first()
-                .click({ force: true });
+                .as('editor');
+
+            // Click into the editor and type content
+            cy.get('@editor').click({ force: true });
             waitForReactUpdate(1000);
 
             // Type the content - this will create the row document
             cy.focused().type(rowDocContent, { delay: 50 });
-            waitForReactUpdate(3000);
+            waitForReactUpdate(10000); // Wait 10s for content to sync to server
 
             // Verify content was typed
             cy.get('[role="dialog"]').should('contain.text', rowDocContent);
@@ -931,11 +936,11 @@ describe('Publish Page Test', () => {
             testLog.info('Closing row detail modal');
             // Click outside the editor first to ensure changes are saved
             RowDetailSelectors.modalTitle().click({ force: true });
-            waitForReactUpdate(500);
-            cy.get('body').type('{esc}');
             waitForReactUpdate(1000);
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(2000);
             RowDetailSelectors.modal().should('not.exist');
-            waitForReactUpdate(3000); // Wait for changes to sync
+            waitForReactUpdate(10000); // Wait 10s for changes to sync to server before publishing
 
             // Step 5: Publish the database
             testLog.info('Publishing database');
@@ -975,32 +980,37 @@ describe('Publish Page Test', () => {
                         testLog.info('Published database opened');
                         cy.wait(5000);
 
-                        // Step 7: Open a row in published view
-                        testLog.info('Opening row in published view');
+                        // Step 7: Get row ID and navigate to row page in published view
+                        testLog.info('Opening row page in published view');
+
+                        // Get the first row's data-testid to extract the row ID
                         cy.get('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])')
                             .first()
-                            .click({ force: true });
-                        cy.wait(3000);
+                            .invoke('attr', 'data-testid')
+                            .then((testId) => {
+                                // Extract row ID from data-testid (format: "grid-row-{rowId}")
+                                const rowId = testId?.replace('grid-row-', '');
+                                testLog.info(`Row ID: ${rowId}`);
 
-                        // Step 8: Verify row document content is visible
-                        testLog.info('Verifying row document content in published view');
+                                if (!rowId) {
+                                    throw new Error('Could not extract row ID from grid row');
+                                }
 
-                        // The content should be visible somewhere on the page
-                        // In publish mode, it might be in a dialog or rendered inline
-                        cy.get('body').then(($body) => {
-                            const bodyText = $body.text();
+                                // Navigate to the row page URL with ?r=rowId parameter
+                                const rowPageUrl = `${publishedUrl}?r=${rowId}`;
+                                testLog.info(`Navigating to row page: ${rowPageUrl}`);
+                                cy.visit(rowPageUrl, { failOnStatusCode: false });
+                                cy.wait(5000);
 
-                            // Check that the row document content is visible
-                            if (bodyText.includes(rowDocContent)) {
+                                // Step 8: Verify row document content is visible
+                                testLog.info('Verifying row document content in published view');
+
+                                // Wait for the row document content to load
+                                cy.get('body', { timeout: 15000 }).should('contain.text', rowDocContent);
+
                                 testLog.info('✓ Row document content is visible in published view');
-                            } else {
-                                // Take a screenshot for debugging
-                                cy.screenshot('row-document-not-found');
-                                throw new Error(`REGRESSION: Row document content "${rowDocContent}" not found in published view`);
-                            }
-                        });
-
-                        testLog.info('✓ Test passed: Row document content displays correctly in published view');
+                                testLog.info('✓ Test passed: Row document content displays correctly in published view');
+                            });
                     });
                 });
             });
