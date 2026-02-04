@@ -1638,7 +1638,16 @@
       "addFilter": "Add filter",
       "cannotFindCreatableField": "Cannot find a suitable field to filter by",
       "conditon": "Condition",
-      "where": "Where"
+      "where": "Where",
+      "and": "And",
+      "or": "Or",
+      "nRules": "{{count}} rules",
+      "oneRule": "1 rule",
+      "advancedFilter": "Advanced Filter",
+      "useAdvancedFilter": "Use Advanced Filter",
+      "addToAdvancedFilter": "Add to advanced filter",
+      "addFilterRule": "Add filter rule",
+      "deleteAllFilters": "Delete filter"
     },
     "textFilter": {
       "contains": "Contains",
@@ -1658,8 +1667,11 @@
       }
     },
     "checkboxFilter": {
+      "is": "Is",
       "isChecked": "Checked",
       "isUnchecked": "Unchecked",
+      "checked": "Checked",
+      "unChecked": "Unchecked",
       "choicechipPrefix": {
         "is": "is"
       }

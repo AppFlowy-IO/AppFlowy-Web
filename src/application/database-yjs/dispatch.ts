@@ -3898,3 +3898,14 @@ export function useUpdateCalendarSetting() {
     [sharedRoot, view]
   );
 }
+
+// Re-export advanced filter hooks from modular dispatch
+export {
+  useEnterAdvancedMode,
+  useUpdateRootFilterType,
+  useAddAdvancedFilter,
+  useRemoveAdvancedFilter,
+  useUpdateAdvancedFilter,
+  useExitAdvancedMode,
+  useClearAllFilters,
+} from './dispatch/sort-filter';

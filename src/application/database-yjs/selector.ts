@@ -60,7 +60,7 @@ import { MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
-import { CalendarLayoutSetting, FieldType, FieldVisibility, Filter, RowMeta, SortCondition } from './database.type';
+import { CalendarLayoutSetting, FieldType, FieldVisibility, Filter, FilterType, RowMeta, SortCondition } from './database.type';
 
 export interface Column {
   fieldId: string;
@@ -374,12 +374,26 @@ export function useFiltersSelector() {
     if (!filterOrders) return;
 
     const getFilters = () => {
-      return (filterOrders.toJSON() as { id: string; field_id: string }[]).map((item) => {
-        return {
-          id: item.id,
-          fieldId: item.field_id,
-        };
-      });
+      const rawData = filterOrders.toJSON();
+
+      return (rawData as { id: string; field_id: string; filter_type?: number }[])
+        .filter((item) => {
+          // Filter out AND/OR group filters (used in advanced mode)
+          // These have filter_type of And (1) or Or (2) and no field_id
+          const filterType = item.filter_type;
+
+          if (filterType === FilterType.And || filterType === FilterType.Or) {
+            return false;
+          }
+
+          return true;
+        })
+        .map((item) => {
+          return {
+            id: item.id,
+            fieldId: item.field_id,
+          };
+        });
     };
 
     const observerEvent = () => {
@@ -428,6 +442,322 @@ export function useFilterSelector(filterId: string) {
       filter?.unobserve(observerEvent);
     };
   }, [fields, viewId, filterId, database]);
+  return filterValue;
+}
+
+const DEFAULT_ROOT_INFO = { isHierarchical: false, rootType: null, childCount: 0 } as const;
+
+/**
+ * Returns information about the root filter structure for determining if advanced mode should be enabled
+ */
+export function useRootFilterInfo() {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const [rootInfo, setRootInfo] = useState<{
+    isHierarchical: boolean;
+    rootType: FilterType | null;
+    childCount: number;
+  }>(DEFAULT_ROOT_INFO);
+
+  useEffect(() => {
+    if (!viewId) return;
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filters = view?.get(YjsDatabaseKey.filters);
+
+    if (!filters) return;
+
+    const observerEvent = () => {
+      if (filters.length === 0) {
+        setRootInfo({ isHierarchical: false, rootType: null, childCount: 0 });
+        return;
+      }
+
+      const rootFilter = filters.get(0);
+
+      if (!rootFilter) {
+        setRootInfo({ isHierarchical: false, rootType: null, childCount: 0 });
+        return;
+      }
+
+      // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
+      const isYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
+      const getValue = (key: string): unknown => {
+        if (isYjsMap) {
+          return (rootFilter as { get: (key: string) => unknown }).get(key);
+        }
+
+        return (rootFilter as Record<string, unknown>)[key];
+      };
+
+      const filterType = Number(getValue(YjsDatabaseKey.filter_type));
+
+      if (filterType === FilterType.And || filterType === FilterType.Or) {
+        const children = getValue(YjsDatabaseKey.children);
+        const childCount =
+          children && typeof (children as { length?: number }).length === 'number'
+            ? (children as { length: number }).length
+            : 0;
+
+        setRootInfo({ isHierarchical: true, rootType: filterType, childCount });
+      } else {
+        setRootInfo({ isHierarchical: false, rootType: null, childCount: filters.length });
+      }
+    };
+
+    observerEvent();
+    filters.observeDeep(observerEvent);
+
+    return () => {
+      filters.unobserveDeep(observerEvent);
+    };
+  }, [database, viewId]);
+
+  return rootInfo;
+}
+
+/**
+ * Returns parsed filters from the root filter's children in advanced mode
+ */
+export function useAdvancedFiltersSelector() {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const fields = database?.get(YjsDatabaseKey.fields);
+  const [filters, setFilters] = useState<Filter[]>([]);
+
+  useEffect(() => {
+    if (!viewId || !fields) return;
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filtersArray = view?.get(YjsDatabaseKey.filters);
+
+    // Always set up observer even if array is empty - filters may be added later
+    if (!filtersArray) {
+      setFilters([]);
+      return;
+    }
+
+    const observerEvent = () => {
+      // Return early if no filters
+      if (filtersArray.length === 0) {
+        setFilters([]);
+        return;
+      }
+
+      const rootFilter = filtersArray.get(0);
+
+      if (!rootFilter) {
+        setFilters([]);
+        return;
+      }
+
+      // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
+      const isRootYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
+      const getRootValue = (key: string): unknown => {
+        if (isRootYjsMap) {
+          return (rootFilter as { get: (key: string) => unknown }).get(key);
+        }
+
+        return (rootFilter as Record<string, unknown>)[key];
+      };
+
+      const filterType = Number(getRootValue(YjsDatabaseKey.filter_type));
+
+      // If not in advanced mode, return empty array
+      if (filterType !== FilterType.And && filterType !== FilterType.Or) {
+        setFilters([]);
+        return;
+      }
+
+      const children = getRootValue(YjsDatabaseKey.children);
+
+      if (!children) {
+        setFilters([]);
+        return;
+      }
+
+      const parsedFilters: Filter[] = [];
+
+      // Handle both Yjs Y.Array (with .get() method) and plain JavaScript array (from desktop sync)
+      const isYArray = typeof (children as { get?: unknown }).get === 'function';
+      const childrenArray = children as { length: number; get?: (index: number) => unknown } | unknown[];
+      const childCount = Array.isArray(childrenArray) ? childrenArray.length : (childrenArray as { length: number }).length;
+
+      for (let i = 0; i < childCount; i++) {
+        const child = isYArray
+          ? (childrenArray as { get: (index: number) => unknown }).get(i)
+          : (childrenArray as unknown[])[i];
+
+        if (!child) {
+          continue;
+        }
+
+        // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
+        const isYjsMap = typeof (child as { get?: unknown }).get === 'function';
+        const getValue = (key: string): unknown => {
+          if (isYjsMap) {
+            return (child as { get: (key: string) => unknown }).get(key);
+          }
+
+          return (child as Record<string, unknown>)[key];
+        };
+
+        const fieldId = getValue(YjsDatabaseKey.field_id) as string;
+
+        // Skip if no field_id (this is a nested And/Or, not a Data filter)
+        if (!fieldId) {
+          continue;
+        }
+
+        const field = fields.get(fieldId);
+
+        // Use field type from filter's "ty" key as fallback if field not found
+        // This handles sync delays where filters arrive before fields
+        let fieldType: FieldType;
+
+        if (field) {
+          fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+        } else {
+          // Fallback: use the "ty" field from the filter data (set by desktop)
+          const tyValue = getValue('ty');
+
+          fieldType = tyValue !== undefined ? (Number(tyValue) as FieldType) : FieldType.RichText;
+        }
+
+        // For plain objects, we need to wrap them to work with parseFilter
+        // parseFilter expects objects with .get() method
+        const filterProxy = isYjsMap
+          ? (child as Parameters<typeof parseFilter>[1])
+          : {
+              get: (key: string) => (child as Record<string, unknown>)[key],
+            };
+
+        const parsed = parseFilter(fieldType, filterProxy as Parameters<typeof parseFilter>[1]);
+
+        parsedFilters.push(parsed);
+      }
+
+      setFilters(parsedFilters);
+    };
+
+    observerEvent();
+    filtersArray.observeDeep(observerEvent);
+
+    return () => {
+      filtersArray.unobserveDeep(observerEvent);
+    };
+  }, [database, viewId, fields]);
+
+  return filters;
+}
+
+/**
+ * Returns a single filter from the advanced mode children array
+ */
+export function useAdvancedFilterSelector(filterId: string) {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const fields = database?.get(YjsDatabaseKey.fields);
+  const [filterValue, setFilterValue] = useState<Filter | null>(null);
+
+  useEffect(() => {
+    if (!viewId || !fields) return;
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filtersArray = view?.get(YjsDatabaseKey.filters);
+
+    if (!filtersArray || filtersArray.length === 0) return;
+
+    const observerEvent = () => {
+      const rootFilter = filtersArray.get(0);
+
+      if (!rootFilter) {
+        setFilterValue(null);
+        return;
+      }
+
+      // Handle both Yjs Map and plain object for rootFilter
+      const isRootYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
+      const children = isRootYjsMap
+        ? (rootFilter as { get: (key: string) => unknown }).get(YjsDatabaseKey.children)
+        : (rootFilter as Record<string, unknown>)[YjsDatabaseKey.children];
+
+      if (!children) {
+        setFilterValue(null);
+        return;
+      }
+
+      // Handle both Yjs Y.Array (with .get() method) and plain JavaScript array (from desktop sync)
+      const isYArray = typeof (children as { get?: unknown }).get === 'function';
+      const childrenArray = children as { length: number; get?: (index: number) => unknown } | unknown[];
+      const childCount = Array.isArray(childrenArray) ? childrenArray.length : (childrenArray as { length: number }).length;
+
+      let foundFilter: unknown = null;
+
+      for (let i = 0; i < childCount; i++) {
+        const child = isYArray
+          ? (childrenArray as { get: (index: number) => unknown }).get(i)
+          : (childrenArray as unknown[])[i];
+
+        if (!child) continue;
+
+        // Handle both Yjs Map and plain object
+        const isYjsMap = typeof (child as { get?: unknown }).get === 'function';
+        const childId = isYjsMap
+          ? (child as { get: (key: string) => unknown }).get(YjsDatabaseKey.id)
+          : (child as Record<string, unknown>)[YjsDatabaseKey.id];
+
+        if (childId === filterId) {
+          foundFilter = child;
+          break;
+        }
+      }
+
+      if (!foundFilter) {
+        setFilterValue(null);
+        return;
+      }
+
+      // Handle both Yjs Map and plain object for getting values
+      const isYjsMap = typeof (foundFilter as { get?: unknown }).get === 'function';
+      const getValue = (key: string): unknown => {
+        if (isYjsMap) {
+          return (foundFilter as { get: (key: string) => unknown }).get(key);
+        }
+
+        return (foundFilter as Record<string, unknown>)[key];
+      };
+
+      const fieldId = getValue(YjsDatabaseKey.field_id) as string;
+      const field = fields.get(fieldId);
+
+      // Use field type from filter's "ty" key as fallback if field not found
+      let fieldType: FieldType;
+
+      if (field) {
+        fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+      } else {
+        // Fallback: use the "ty" field from the filter data (set by desktop)
+        const tyValue = getValue('ty');
+
+        fieldType = tyValue !== undefined ? (Number(tyValue) as FieldType) : FieldType.RichText;
+      }
+
+      // For plain objects, wrap them to work with parseFilter
+      const filterProxy = isYjsMap
+        ? (foundFilter as Parameters<typeof parseFilter>[1])
+        : {
+            get: (key: string) => (foundFilter as Record<string, unknown>)[key],
+          };
+
+      setFilterValue(parseFilter(fieldType, filterProxy as Parameters<typeof parseFilter>[1]));
+    };
+
+    observerEvent();
+    filtersArray.observeDeep(observerEvent);
+
+    return () => {
+      filtersArray.unobserveDeep(observerEvent);
+    };
+  }, [database, viewId, fields, filterId]);
+
   return filterValue;
 }
 

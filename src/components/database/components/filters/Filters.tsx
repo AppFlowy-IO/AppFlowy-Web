@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useFiltersSelector, useReadOnly } from '@/application/database-yjs';
+import { useAdvancedFiltersSelector, useFiltersSelector, useReadOnly } from '@/application/database-yjs';
 import { useAddFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as AddFilterSvg } from '@/assets/icons/plus.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
@@ -10,15 +10,34 @@ import { Button } from '@/components/ui/button';
 
 import { useConditionsContext } from '../conditions/context';
 
+import { AdvancedFiltersBadge } from './advanced';
+
 export function Filters() {
   const filters = useFiltersSelector();
+  const advancedFilters = useAdvancedFiltersSelector();
   const { t } = useTranslation();
   const readOnly = useReadOnly();
   const [openPropertiesMenu, setOpenPropertiesMenu] = useState(false);
 
   const addFilter = useAddFilter();
 
-  const setOpenFilterId = useConditionsContext()?.setOpenFilterId;
+  const context = useConditionsContext();
+  const setOpenFilterId = context?.setOpenFilterId;
+
+  const handleAddFilter = useCallback(
+    (fieldId: string) => {
+      const filterId = addFilter(fieldId);
+
+      setOpenFilterId?.(filterId);
+    },
+    [addFilter, setOpenFilterId]
+  );
+
+  // In advanced mode (hierarchical filters), show badge instead of individual filter chips
+  // The selector returns non-empty array only when filters are in hierarchical structure
+  if (advancedFilters.length > 0) {
+    return <AdvancedFiltersBadge count={advancedFilters.length} />;
+  }
 
   return (
     <>
@@ -32,11 +51,7 @@ export function Filters() {
         <PropertiesMenu
           asChild
           searchPlaceholder={t('grid.settings.filterBy')}
-          onSelect={(fieldId) => {
-            const filterId = addFilter(fieldId);
-
-            setOpenFilterId?.(filterId);
-          }}
+          onSelect={handleAddFilter}
           open={openPropertiesMenu}
           onOpenChange={setOpenPropertiesMenu}
         >

@@ -260,3 +260,24 @@ export const getFieldIdByName = (fieldName: string): Cypress.Chainable<string> =
       return testId?.replace('grid-field-header-', '') || '';
     });
 };
+
+/**
+ * Navigate away from the current page and then back to test persistence
+ * This simulates closing and reopening the database view
+ */
+export const navigateAwayAndBack = (): void => {
+  // Store the current URL
+  cy.url().then((currentUrl) => {
+    // Navigate to the app root (away from database)
+    cy.visit('/app', { failOnStatusCode: false });
+    waitForReactUpdate(2000);
+
+    // Navigate back to the database
+    cy.visit(currentUrl, { failOnStatusCode: false });
+    waitForReactUpdate(3000);
+
+    // Wait for the grid to load
+    DatabaseGridSelectors.grid().should('exist');
+    DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
+  });
+};

@@ -6,6 +6,10 @@ interface DatabaseConditionsContextType {
   setExpanded: (expanded: boolean) => void;
   openFilterId?: string;
   setOpenFilterId?: (id?: string) => void;
+
+  // Advanced filter mode
+  isAdvancedMode: boolean;
+  setAdvancedMode: (advanced: boolean) => void;
 }
 
 export function useConditionsContext() {
