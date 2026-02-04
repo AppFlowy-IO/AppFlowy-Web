@@ -4,26 +4,10 @@ import { Editor, Element as SlateElement } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { BlockType } from '@/application/types';
+import { formatTimestamp } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
 import { AIMeetingNode, AIMeetingSpeakerNode, EditorElementProps } from '@/components/editor/editor.type';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-
-const formatTimestamp = (value?: number) => {
-  if (!Number.isFinite(value)) return '';
-
-  const totalSeconds = Math.max(0, Math.floor(value as number));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds
-      .toString()
-      .padStart(2, '0')}`;
-  }
-
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-};
 
 const parseSpeakerInfoMap = (raw: unknown) => {
   if (!raw) return null;

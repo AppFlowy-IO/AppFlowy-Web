@@ -10,6 +10,7 @@ import { BlockType } from '@/application/types';
 import { ReactComponent as NotesIcon } from '@/assets/icons/ai_summary_ref_notes.svg';
 import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_summary_ref_transcript.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/ai_reference_warning.svg';
+import { formatTimestamp } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
 import { RichTooltip } from '@/components/_shared/popover';
 import { useLeafSelected } from '@/components/editor/components/leaf/leaf.hooks';
 import { useTranslation } from 'react-i18next';
@@ -25,23 +26,6 @@ interface ReferenceBlockStatus {
   sourceType?: ReferenceSourceType;
   timestamp?: number;
 }
-
-const formatTimestamp = (value?: number) => {
-  if (!Number.isFinite(value)) return '';
-
-  const totalSeconds = Math.max(0, Math.floor(value as number));
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (hours > 0) {
-    return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds
-      .toString()
-      .padStart(2, '0')}`;
-  }
-
-  return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
-};
 
 const normalizeTimestamp = (value: unknown): number | undefined => {
   if (typeof value === 'number' && Number.isFinite(value)) return value;
@@ -209,7 +193,21 @@ export const InlineReference = memo(
     const yjsEditor = editor as YjsEditor;
     const { t } = useTranslation();
     const editorReadOnly = useReadOnly();
-    const elementReadOnly = editor.isElementReadOnly(text as unknown as Element);
+    const elementReadOnly = useMemo(() => {
+      try {
+        const path = ReactEditor.findPath(editor, text);
+        const match = Editor.above(editor, {
+          at: path,
+          match: (n) => !Editor.isEditor(n) && Element.isElement(n),
+        });
+
+        if (!match) return false;
+
+        return editor.isElementReadOnly(match[0] as Element);
+      } catch {
+        return false;
+      }
+    }, [editor, text]);
     const readOnly = editorReadOnly || elementReadOnly;
     const { isSelected, isCursorBefore, select } = useLeafSelected(text);
     const [open, setOpen] = useState(false);

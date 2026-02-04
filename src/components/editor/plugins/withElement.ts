@@ -36,6 +36,7 @@ export const withElement = (editor: ReactEditor) => {
         BlockType.AIMeetingSummaryBlock,
         BlockType.AIMeetingNotesBlock,
         BlockType.AIMeetingTranscriptionBlock,
+        BlockType.AIMeetingSpeakerBlock,
       ];
 
       const inAiMeetingSection = Editor.above(editor, {
