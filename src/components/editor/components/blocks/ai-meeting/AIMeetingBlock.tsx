@@ -1,17 +1,22 @@
+import { IconButton, Tooltip } from '@mui/material';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element, Node } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 
+import { usePublishContext } from '@/application/publish';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { BlockType } from '@/application/types';
 import { ReactComponent as SummaryIcon } from '@/assets/icons/ai_summary_tab.svg';
 import { ReactComponent as NotesIcon } from '@/assets/icons/ai_notes.svg';
 import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_meeting_transcript_tab.svg';
+import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { AIMeetingNode, EditorElementProps } from '@/components/editor/editor.type';
 import { notify } from '@/components/_shared/notify';
+import { Popover } from '@/components/_shared/popover';
 import { cn } from '@/lib/utils';
+import { copyTextToClipboard } from '@/utils/copy';
 
 import './ai-meeting.scss';
 
@@ -41,6 +46,21 @@ const TAB_DEFS = [
   },
 ] as const;
 
+type CopyLabelKey =
+  | 'document.aiMeeting.copy.summary'
+  | 'document.aiMeeting.copy.notes'
+  | 'document.aiMeeting.copy.transcript';
+type CopySuccessKey =
+  | 'document.aiMeeting.copy.summarySuccess'
+  | 'document.aiMeeting.copy.notesSuccess'
+  | 'document.aiMeeting.copy.transcriptSuccess';
+
+interface CopyMeta {
+  node?: Node;
+  labelKey: CopyLabelKey;
+  successKey: CopySuccessKey;
+}
+
 const hasNodeContent = (node?: Node) => {
   if (!node) return false;
 
@@ -49,12 +69,26 @@ const hasNodeContent = (node?: Node) => {
   return text.length > 0;
 };
 
+const buildCopyText = (node?: Node) => {
+  if (!node || !Element.isElement(node)) return '';
+
+  const lines = node.children
+    .map((child) => CustomEditor.getBlockTextContent(child).trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length) return lines.join('\n');
+
+  return CustomEditor.getBlockTextContent(node).trim();
+};
+
 export const AIMeetingBlock = memo(
   forwardRef<HTMLDivElement, EditorElementProps<AIMeetingNode>>(
     ({ node, children, className, ...attributes }, ref) => {
       const { t } = useTranslation();
       const editor = useSlateStatic() as YjsEditor;
       const slateReadOnly = useReadOnly();
+      const publishContext = usePublishContext();
+      const isPublishedView = Boolean(publishContext);
       const readOnly = slateReadOnly || editor.isElementReadOnly(node as unknown as Element);
       const data = useMemo(() => node.data ?? {}, [node.data]);
 
@@ -118,6 +152,59 @@ export const AIMeetingBlock = memo(
       const activeTab = showNotesDirectly ? notesTab : (availableTabs[activeIndex] ?? fallbackTab);
       const activeTabKey = activeTab?.key ?? 'notes';
 
+      const sectionNodes = useMemo(() => {
+        const childrenList = (node.children ?? []) as Array<Node & { type?: BlockType }>;
+        const summaryNode = childrenList.find((child) => child.type === BlockType.AIMeetingSummaryBlock);
+        const notesNode = childrenList.find((child) => child.type === BlockType.AIMeetingNotesBlock);
+        const transcriptNode = childrenList.find((child) => child.type === BlockType.AIMeetingTranscriptionBlock);
+
+        return {
+          summaryNode,
+          notesNode,
+          transcriptNode,
+        };
+      }, [node.children]);
+
+      const copyMeta = useMemo<CopyMeta>(() => {
+        switch (activeTabKey) {
+          case 'summary':
+            return {
+              node: sectionNodes.summaryNode,
+              labelKey: 'document.aiMeeting.copy.summary',
+              successKey: 'document.aiMeeting.copy.summarySuccess',
+            };
+          case 'transcript':
+            return {
+              node: sectionNodes.transcriptNode,
+              labelKey: 'document.aiMeeting.copy.transcript',
+              successKey: 'document.aiMeeting.copy.transcriptSuccess',
+            };
+          default:
+            return {
+              node: sectionNodes.notesNode,
+              labelKey: 'document.aiMeeting.copy.notes',
+              successKey: 'document.aiMeeting.copy.notesSuccess',
+            };
+        }
+      }, [activeTabKey, sectionNodes.notesNode, sectionNodes.summaryNode, sectionNodes.transcriptNode]);
+
+      const copyText = useMemo(() => {
+        if (!copyMeta.node) return '';
+
+        return buildCopyText(copyMeta.node);
+      }, [copyMeta.node]);
+
+      const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
+      const menuOpen = Boolean(menuAnchor);
+      const handleMenuClose = useCallback(() => setMenuAnchor(null), []);
+      const handleCopy = useCallback(async () => {
+        if (!copyText) return;
+
+        await copyTextToClipboard(copyText);
+        notify.success(t(copyMeta.successKey));
+        handleMenuClose();
+      }, [copyMeta.successKey, copyText, handleMenuClose, t]);
+
       const commitTitle = useCallback(() => {
         const trimmed = title.trim();
 
@@ -177,37 +264,85 @@ export const AIMeetingBlock = memo(
             </div>
           </div>
 
-          <div className="mx-px mb-px rounded-2xl bg-bg-body">
+          <div className="mx-[0.5px] mb-[0.5px] rounded-2xl bg-bg-body">
             {showTabs && (
               <div className="ai-meeting-tabs px-4 pt-3" contentEditable={false}>
-                <div className="flex flex-wrap items-center gap-2">
-                  {availableTabs.map((tab, index) => {
-                    const isActive = index === activeIndex;
-                    const Icon = tab.Icon;
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {availableTabs.map((tab, index) => {
+                      const isActive = index === activeIndex;
+                      const Icon = tab.Icon;
 
-                    return (
-                      <button
-                        key={tab.key}
-                        type="button"
-                        onMouseDown={(event) => event.preventDefault()}
-                        onClick={() => handleTabChange(index)}
-                        className={cn(
-                          'inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
-                          isActive
-                            ? 'bg-fill-list-active text-text-primary'
-                            : 'text-text-secondary hover:bg-fill-list-hover'
-                        )}
-                      >
-                        <Icon
+                      return (
+                        <button
+                          key={tab.key}
+                          type="button"
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => handleTabChange(index)}
                           className={cn(
-                            tab.key === 'notes' ? 'h-4 w-4' : 'h-5 w-5',
-                            'text-current'
+                            'inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium transition-colors',
+                            isActive
+                              ? 'bg-fill-list-active text-text-primary'
+                              : 'text-text-secondary hover:bg-fill-list-hover'
                           )}
-                        />
-                        <span>{t(tab.labelKey)}</span>
-                      </button>
-                    );
-                  })}
+                        >
+                          <Icon
+                            className={cn(
+                              tab.key === 'notes' ? 'h-4 w-4' : 'h-5 w-5',
+                              'text-current'
+                            )}
+                          />
+                          <span>{t(tab.labelKey)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <IconButton
+                      size="small"
+                      onClick={(event) => setMenuAnchor(event.currentTarget)}
+                      className="rounded-md text-text-secondary hover:bg-fill-list-hover"
+                    >
+                      <MoreIcon className="h-5 w-5 text-current" />
+                    </IconButton>
+                    <Popover
+                      open={menuOpen}
+                      anchorEl={menuAnchor}
+                      onClose={handleMenuClose}
+                      anchorOrigin={{
+                        vertical: 'bottom',
+                        horizontal: 'right',
+                      }}
+                      transformOrigin={{
+                        vertical: 'top',
+                        horizontal: 'right',
+                      }}
+                    >
+                      <div className="flex w-[240px] flex-col p-2 text-sm">
+                        {copyText ? (
+                          <button
+                            type="button"
+                            className="flex items-center gap-2 rounded-md px-3 py-2 text-left text-text-primary hover:bg-fill-list-hover"
+                            onClick={handleCopy}
+                          >
+                            {t(copyMeta.labelKey)}
+                          </button>
+                        ) : (
+                          <Tooltip title={t('document.aiMeeting.copy.noContent')}>
+                            <span>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-text-tertiary"
+                                disabled
+                              >
+                                {t(copyMeta.labelKey)}
+                              </button>
+                            </span>
+                          </Tooltip>
+                        )}
+                      </div>
+                    </Popover>
+                  </div>
                 </div>
               </div>
             )}
@@ -222,6 +357,8 @@ export const AIMeetingBlock = memo(
                 if (target.closest('.ai-meeting-reference') || target.closest('.ai-meeting-reference-popover')) {
                   return;
                 }
+
+                if (isPublishedView) return;
 
                 notify.warning(t('document.aiMeeting.readOnlyHint'));
               }}

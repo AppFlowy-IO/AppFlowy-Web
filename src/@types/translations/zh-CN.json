@@ -1257,6 +1257,15 @@
         "sourcesTooltip": "查看来源",
         "deletedTooltip": "来源已删除",
         "deleted": "来源已删除"
+      },
+      "copy": {
+        "summary": "复制摘要",
+        "notes": "复制笔记",
+        "transcript": "复制转录",
+        "summarySuccess": "摘要已复制到剪贴板",
+        "notesSuccess": "笔记已复制到剪贴板",
+        "transcriptSuccess": "转录已复制到剪贴板",
+        "noContent": "没有可复制的内容"
       }
     },
     "date": {

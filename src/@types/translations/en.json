@@ -1959,6 +1959,15 @@
         "sourcesTooltip": "View sources",
         "deletedTooltip": "Source deleted",
         "deleted": "Source was deleted"
+      },
+      "copy": {
+        "summary": "Copy summary",
+        "notes": "Copy notes",
+        "transcript": "Copy transcript",
+        "summarySuccess": "Summary copied to clipboard",
+        "notesSuccess": "Notes copied to clipboard",
+        "transcriptSuccess": "Transcript copied to clipboard",
+        "noContent": "No content to copy"
       }
     },
     "date": {

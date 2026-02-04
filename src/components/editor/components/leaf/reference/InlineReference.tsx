@@ -208,7 +208,9 @@ export const InlineReference = memo(
     const editor = useSlateStatic();
     const yjsEditor = editor as YjsEditor;
     const { t } = useTranslation();
-    const readOnly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
+    const editorReadOnly = useReadOnly();
+    const elementReadOnly = editor.isElementReadOnly(text as unknown as Element);
+    const readOnly = editorReadOnly || elementReadOnly;
     const { isSelected, isCursorBefore, select } = useLeafSelected(text);
     const [open, setOpen] = useState(false);
 
@@ -293,9 +295,12 @@ export const InlineReference = memo(
                             : NaN;
 
                       shouldDelayScroll = !Number.isNaN(currentIndex) ? currentIndex !== targetIndex : true;
-                      CustomEditor.setBlockData(yjsEditor, meetingNode.blockId, {
-                        selected_tab_index: targetIndex,
-                      });
+
+                      if (!editorReadOnly) {
+                        CustomEditor.setBlockData(yjsEditor, meetingNode.blockId, {
+                          selected_tab_index: targetIndex,
+                        });
+                      }
                     }
                   }
 
@@ -350,7 +355,7 @@ export const InlineReference = memo(
           })}
         </div>
       );
-    }, [editor, meetingNode, reference.number, statuses, t, yjsEditor]);
+    }, [editor, editorReadOnly, meetingNode, reference.number, statuses, t, yjsEditor]);
 
     if (!meetingNode || normalizedBlockIds.length === 0) {
       return <>{children}</>;
@@ -385,7 +390,7 @@ export const InlineReference = memo(
           <span
             contentEditable={false}
             className={[
-              'ai-meeting-reference inline-flex items-center ml-1',
+              'ai-meeting-reference inline-flex items-center ml-1 cursor-pointer',
               (isSelected || open) && 'rounded-full bg-fill-list-active',
             ].join(' ')}
             onMouseDown={(event) => event.preventDefault()}
