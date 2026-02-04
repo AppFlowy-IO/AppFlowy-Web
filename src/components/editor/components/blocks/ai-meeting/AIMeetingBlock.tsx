@@ -1,5 +1,5 @@
 import { IconButton, Tooltip } from '@mui/material';
-import { forwardRef, memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element, Node, Text } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
@@ -150,6 +150,19 @@ export const AIMeetingBlock = memo(
       const isPublishedView = Boolean(publishContext);
       const readOnly = slateReadOnly || editor.isElementReadOnly(node as unknown as Element);
       const data = useMemo(() => node.data ?? {}, [node.data]);
+      const containerRef = useRef<HTMLDivElement | null>(null);
+      const setRefs = useCallback(
+        (element: HTMLDivElement | null) => {
+          containerRef.current = element;
+          if (!ref) return;
+          if (typeof ref === 'function') {
+            ref(element);
+          } else {
+            ref.current = element;
+          }
+        },
+        [ref]
+      );
 
       const storedTitle = typeof data.title === 'string' ? data.title.trim() : '';
       const hasStoredTitle = storedTitle.length > 0;
@@ -216,6 +229,42 @@ export const AIMeetingBlock = memo(
       const notesTab = TAB_DEFS.find((tab) => tab.key === 'notes') ?? fallbackTab;
       const activeTab = showNotesDirectly ? notesTab : (availableTabs[activeIndex] ?? fallbackTab);
       const activeTabKey = activeTab?.key ?? 'notes';
+
+      const handleLocalTabSwitch = useCallback(
+        (tabKey?: string) => {
+          if (!tabKey || showNotesDirectly) return;
+
+          const index = availableTabs.findIndex((tab) => tab.key === tabKey);
+
+          if (index < 0) return;
+
+          setActiveIndex(index);
+        },
+        [availableTabs, showNotesDirectly]
+      );
+
+      useEffect(() => {
+        const handler = (event: Event) => {
+          const element = containerRef.current;
+
+          if (!element) return;
+
+          const target = event.target as HTMLElement | null;
+
+          if (!target) return;
+          if (!(target === element || element.contains(target) || target.contains(element))) return;
+
+          const detail = (event as CustomEvent<{ tabKey?: string }>).detail;
+
+          handleLocalTabSwitch(detail?.tabKey);
+        };
+
+        document.addEventListener('ai-meeting-switch-tab', handler as EventListener);
+
+        return () => {
+          document.removeEventListener('ai-meeting-switch-tab', handler as EventListener);
+        };
+      }, [handleLocalTabSwitch]);
 
       const sectionNodes = useMemo(() => {
         const childrenList = (node.children ?? []) as Array<Node & { type?: BlockType }>;
@@ -371,7 +420,7 @@ export const AIMeetingBlock = memo(
       return (
         <div
           {...attributes}
-          ref={ref}
+          ref={setRefs}
           data-ai-meeting-active={activeTabKey}
           className={cn(
             'ai-meeting-block my-2 overflow-hidden rounded-2xl border border-border-primary bg-fill-list-active',

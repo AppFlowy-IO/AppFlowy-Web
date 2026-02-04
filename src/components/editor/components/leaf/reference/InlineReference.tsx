@@ -275,59 +275,80 @@ export const InlineReference = memo(
                 onClick={() => {
                   if (!meetingNode || !status.sourceType) return;
 
-                  let shouldDelayScroll = false;
+                  setOpen(false);
 
-                  if (meetingNode.blockId) {
-                    const tabs = getAvailableTabs(meetingNode);
-                    const targetKey = status.sourceType === 'transcript' ? 'transcript' : 'notes';
-                    const targetIndex = Math.max(0, tabs.indexOf(targetKey));
+                  const run = () => {
+                    let shouldDelayScroll = false;
 
-                    if (targetIndex >= 0 && Number.isFinite(targetIndex)) {
-                      const currentIndexRaw = (meetingNode.data as Record<string, unknown> | undefined)
-                        ?.selected_tab_index;
-                      const currentIndex =
-                        typeof currentIndexRaw === 'number'
-                          ? currentIndexRaw
-                          : typeof currentIndexRaw === 'string'
-                            ? Number(currentIndexRaw)
-                            : NaN;
+                    if (meetingNode.blockId) {
+                      const tabs = getAvailableTabs(meetingNode);
+                      const targetKey = status.sourceType === 'transcript' ? 'transcript' : 'notes';
+                      const targetIndex = Math.max(0, tabs.indexOf(targetKey));
 
-                      shouldDelayScroll = !Number.isNaN(currentIndex) ? currentIndex !== targetIndex : true;
+                      if (targetIndex >= 0 && Number.isFinite(targetIndex)) {
+                        const currentIndexRaw = (meetingNode.data as Record<string, unknown> | undefined)
+                          ?.selected_tab_index;
+                        const currentIndex =
+                          typeof currentIndexRaw === 'number'
+                            ? currentIndexRaw
+                            : typeof currentIndexRaw === 'string'
+                              ? Number(currentIndexRaw)
+                              : NaN;
 
-                      if (!editorReadOnly) {
-                        CustomEditor.setBlockData(yjsEditor, meetingNode.blockId, {
-                          selected_tab_index: targetIndex,
-                        });
+                        const shouldSwitch = !Number.isNaN(currentIndex) ? currentIndex !== targetIndex : true;
+
+                        shouldDelayScroll = shouldSwitch;
+
+                        if (editorReadOnly) {
+                          try {
+                            const meetingDom = ReactEditor.toDOMNode(editor, meetingNode);
+                            const inner = meetingDom.querySelector('.ai-meeting-block');
+                            const target = inner ?? meetingDom;
+
+                            target.dispatchEvent(
+                              new CustomEvent('ai-meeting-switch-tab', {
+                                detail: { tabKey: targetKey },
+                                bubbles: true,
+                              })
+                            );
+                          } catch {
+                            // ignore
+                          }
+                        } else if (shouldSwitch) {
+                          CustomEditor.setBlockData(yjsEditor, meetingNode.blockId, {
+                            selected_tab_index: targetIndex,
+                          });
+                        }
                       }
                     }
-                  }
 
-                  const scrollToTarget = () => {
-                    const entry = findSlateEntryByBlockId(yjsEditor, status.blockId);
+                    const scrollToTarget = () => {
+                      const entry = findSlateEntryByBlockId(yjsEditor, status.blockId);
 
-                    if (entry) {
-                      const [node] = entry;
-                      const dom = ReactEditor.toDOMNode(editor, node);
+                      if (entry) {
+                        const [node] = entry;
+                        const dom = ReactEditor.toDOMNode(editor, node);
 
-                      void smoothScrollIntoViewIfNeeded(dom, {
-                        behavior: 'smooth',
-                        scrollMode: 'if-needed',
-                        block: 'center',
-                      });
-                      dom.className += ' highlight-block';
-                      setTimeout(() => {
-                        dom.className = dom.className.replace('highlight-block', '');
-                      }, 5000);
+                        void smoothScrollIntoViewIfNeeded(dom, {
+                          behavior: 'smooth',
+                          scrollMode: 'if-needed',
+                          block: 'center',
+                        });
+                        dom.className += ' highlight-block';
+                        setTimeout(() => {
+                          dom.className = dom.className.replace('highlight-block', '');
+                        }, 5000);
+                      }
+                    };
+
+                    if (shouldDelayScroll) {
+                      setTimeout(scrollToTarget, 80);
+                    } else {
+                      scrollToTarget();
                     }
                   };
 
-                  if (shouldDelayScroll) {
-                    setTimeout(scrollToTarget, 80);
-                  } else {
-                    scrollToTarget();
-                  }
-
-                  setOpen(false);
+                  setTimeout(run, 360);
                 }}
               >
                 <div className="flex items-center gap-2">
