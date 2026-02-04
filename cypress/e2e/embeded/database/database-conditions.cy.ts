@@ -408,14 +408,13 @@ describe('Database Conditions - Filters and Sorts UI', () => {
 
       waitForReactUpdate(500);
 
-      // The delete button is in a popover rendered at document root
-      // The delete button is on the right side of the filter name dropdown
-      cy.get('[data-slot="popover-content"]').within(() => {
-        // There are typically 3 icon buttons: duplicate, delete, and link
-        // The delete button is usually the second or has an svg with specific attributes
-        // Let's just get all buttons and click the one that looks like delete (middle button usually)
-        cy.get('button').eq(1).click();
-      });
+      // The delete button is now inside a dropdown menu accessed via the "more options" button
+      // First click the more options button to open the dropdown
+      cy.get('[data-testid="filter-more-options-button"]').click();
+      waitForReactUpdate(300);
+
+      // Then click the delete button in the dropdown
+      cy.get('[data-testid="delete-filter-button"]').click();
 
       waitForReactUpdate(1000);
 
