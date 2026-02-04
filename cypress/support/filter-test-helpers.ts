@@ -211,22 +211,55 @@ export const enterFilterText = (text: string): void => {
 
 /**
  * Delete the current filter
- * Ensures the filter menu is open before clicking delete
+ * Handles both normal mode (filter chip menu) and advanced mode (filter panel)
  */
 export const deleteFilter = (): void => {
-  // First, ensure the filter menu is open by clicking the filter chip
-  // Check if delete button is already visible, if not open the menu
   cy.get('body').then(($body) => {
-    if ($body.find('[data-testid="delete-filter-button"]').length === 0) {
-      // Filter menu not open, click the filter chip to open it
-      DatabaseFilterSelectors.filterCondition().first().click({ force: true });
+    // Check if we're in advanced mode (has advanced filters badge or panel)
+    const hasAdvancedBadge = $body.find('[data-testid="advanced-filters-badge"]').length > 0;
+    const hasAdvancedPanel = $body.find('[data-testid="advanced-filter-row"]').length > 0;
+
+    if (hasAdvancedBadge || hasAdvancedPanel) {
+      // Advanced mode: open the panel if needed and delete from there
+      if (!hasAdvancedPanel) {
+        cy.get('[data-testid="advanced-filters-badge"]').click({ force: true });
+        waitForReactUpdate(500);
+      }
+
+      // Click the delete button in the advanced filter panel
+      cy.get('[data-testid="delete-advanced-filter-button"]').first().click({ force: true });
       waitForReactUpdate(500);
+    } else {
+      // Normal mode: use the filter chip menu
+      // First, ensure the filter popover is open
+      const hasFilterPopover = $body.find('[data-radix-popper-content-wrapper]').length > 0;
+
+      if (!hasFilterPopover) {
+        // Filter menu not open, click the filter chip to open it
+        DatabaseFilterSelectors.filterCondition().first().click({ force: true });
+        waitForReactUpdate(500);
+      }
+
+      // Check if delete button is directly visible (e.g., DateTimeFilterMenu)
+      // or if we need to open the "more options" dropdown first
+      cy.get('body').then(($body2) => {
+        const hasDirectDeleteButton = $body2.find('[data-testid="delete-filter-button"]:visible').length > 0;
+
+        if (hasDirectDeleteButton) {
+          // Delete button is directly visible (DateTimeFilterMenu)
+          DatabaseFilterSelectors.deleteFilterButton().click({ force: true });
+          waitForReactUpdate(500);
+        } else {
+          // Need to open the "more options" dropdown first
+          cy.get('[data-testid="filter-more-options-button"]').click({ force: true });
+          waitForReactUpdate(300);
+          // Now click the delete button in the dropdown
+          cy.get('[data-testid="delete-filter-button"]').click({ force: true });
+          waitForReactUpdate(500);
+        }
+      });
     }
   });
-
-  // Now click the delete button
-  DatabaseFilterSelectors.deleteFilterButton().should('be.visible').click({ force: true });
-  waitForReactUpdate(500);
 };
 
 /**

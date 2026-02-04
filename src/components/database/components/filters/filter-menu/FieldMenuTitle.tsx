@@ -72,7 +72,11 @@ function FieldMenuTitle({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align='end' className='min-w-[200px]'>
-            <DropdownMenuItem variant='destructive' onSelect={handleDeleteFilter}>
+            <DropdownMenuItem
+              variant='destructive'
+              onSelect={handleDeleteFilter}
+              data-testid='delete-filter-button'
+            >
               <DeleteIcon className={'h-5 w-5'} />
               {t('grid.settings.deleteFilter')}
             </DropdownMenuItem>
