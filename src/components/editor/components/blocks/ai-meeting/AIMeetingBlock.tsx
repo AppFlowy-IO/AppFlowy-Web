@@ -1,7 +1,7 @@
 import { IconButton, Tooltip } from '@mui/material';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Element, Node } from 'slate';
+import { Element, Node, Text } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { usePublishContext } from '@/application/publish';
@@ -16,7 +16,6 @@ import { AIMeetingNode, EditorElementProps } from '@/components/editor/editor.ty
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
 import { cn } from '@/lib/utils';
-import { copyTextToClipboard } from '@/utils/copy';
 
 import './ai-meeting.scss';
 
@@ -67,6 +66,66 @@ const hasNodeContent = (node?: Node) => {
   const text = CustomEditor.getBlockTextContent(node).trim();
 
   return text.length > 0;
+};
+
+const parseSpeakerInfoMap = (raw: unknown) => {
+  if (!raw) return null;
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, Record<string, unknown>>;
+
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof raw === 'object') {
+    return raw as Record<string, Record<string, unknown>>;
+  }
+
+  return null;
+};
+
+const getBaseSpeakerId = (speakerId: string) => {
+  const [base] = speakerId.split('_');
+
+  return base || speakerId;
+};
+
+const cloneNode = <T extends Node>(node: T): T => {
+  return JSON.parse(JSON.stringify(node)) as T;
+};
+
+const insertSpeakerPrefix = (node: Node, speakerName: string): Node => {
+  if (!Element.isElement(node)) return node;
+
+  const cloned = cloneNode(node);
+  const prefix = `${speakerName}: `;
+
+  const insertIntoChildren = (children: Node[]): boolean => {
+    for (let index = 0; index < children.length; index += 1) {
+      const child = children[index];
+
+      if (Text.isText(child)) {
+        children.splice(index, 0, { text: prefix, bold: true });
+        return true;
+      }
+
+      if (Element.isElement(child)) {
+        const inserted = insertIntoChildren(child.children as Node[]);
+
+        if (inserted) return true;
+      }
+    }
+
+    return false;
+  };
+
+  insertIntoChildren(cloned.children as Node[]);
+
+  return cloned;
 };
 
 const buildCopyText = (node?: Node) => {
@@ -124,6 +183,12 @@ export const AIMeetingBlock = memo(
       const showNotesDirectly = Boolean(data.show_notes_directly);
       const showTabs = !showNotesDirectly && availableTabs.length > 1;
       const fallbackTab = availableTabs[0] ?? TAB_DEFS[1];
+      const speakerInfoMap = useMemo(() => parseSpeakerInfoMap(data.speaker_info_map), [data.speaker_info_map]);
+      const unknownSpeakerLabel = t('document.aiMeeting.speakerUnknown');
+      const getFallbackLabel = useCallback(
+        (id: string) => t('document.aiMeeting.speakerFallback', { id }),
+        [t]
+      );
 
       const selectedIndex = useMemo(() => {
         const raw = data.selected_tab_index;
@@ -194,16 +259,84 @@ export const AIMeetingBlock = memo(
         return buildCopyText(copyMeta.node);
       }, [copyMeta.node]);
 
+      const resolveSpeakerName = useCallback(
+        (speakerId?: string) => {
+          if (!speakerId) return unknownSpeakerLabel;
+
+          const baseId = getBaseSpeakerId(speakerId);
+          const info = speakerInfoMap?.[speakerId] ?? speakerInfoMap?.[baseId];
+          const name = typeof info?.name === 'string' ? info?.name?.trim() : '';
+
+          if (name) return name;
+
+          return getFallbackLabel(baseId);
+        },
+        [getFallbackLabel, speakerInfoMap, unknownSpeakerLabel]
+      );
+
+      const processNodesForCopy = useCallback(
+        (nodes: Node[]) => {
+          const processed: Node[] = [];
+
+          nodes.forEach((node) => {
+            if (Element.isElement(node) && node.type === BlockType.AIMeetingSpeakerBlock) {
+              const speakerData = node.data as Record<string, unknown> | undefined;
+              const speakerId = (speakerData?.speaker_id || speakerData?.speakerId) as string | undefined;
+              const speakerName = resolveSpeakerName(speakerId);
+              const speakerChildren = node.children ?? [];
+
+              speakerChildren.forEach((child, index) => {
+                const clonedChild = cloneNode(child);
+
+                if (index === 0) {
+                  processed.push(insertSpeakerPrefix(clonedChild, speakerName));
+                } else {
+                  processed.push(clonedChild);
+                }
+              });
+              return;
+            }
+
+            processed.push(cloneNode(node));
+          });
+
+          return processed;
+        },
+        [resolveSpeakerName]
+      );
+
       const [menuAnchor, setMenuAnchor] = useState<HTMLElement | null>(null);
       const menuOpen = Boolean(menuAnchor);
       const handleMenuClose = useCallback(() => setMenuAnchor(null), []);
       const handleCopy = useCallback(async () => {
-        if (!copyText) return;
+        if (!copyMeta.node || !Element.isElement(copyMeta.node)) return;
 
-        await copyTextToClipboard(copyText);
+        const processedNodes = processNodesForCopy(copyMeta.node.children ?? []);
+        const plainText = processedNodes
+          .map((node) => CustomEditor.getBlockTextContent(node).trim())
+          .filter((line) => line.length > 0)
+          .join('\n');
+
+        if (!plainText) return;
+
+        const encoded = window.btoa(encodeURIComponent(JSON.stringify(processedNodes)));
+
+        document.addEventListener(
+          'copy',
+          (event: ClipboardEvent) => {
+            event.preventDefault();
+            event.clipboardData?.setData('text/plain', plainText);
+            event.clipboardData?.setData('application/x-slate-fragment', encoded);
+            event.clipboardData?.setData('application/x-appflowy-fragment', encoded);
+          },
+          { once: true }
+        );
+
+        document.execCommand('copy');
+
         notify.success(t(copyMeta.successKey));
         handleMenuClose();
-      }, [copyMeta.successKey, copyText, handleMenuClose, t]);
+      }, [copyMeta.node, copyMeta.successKey, handleMenuClose, processNodesForCopy, t]);
 
       const commitTitle = useCallback(() => {
         const trimmed = title.trim();
