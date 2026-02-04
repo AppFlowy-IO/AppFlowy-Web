@@ -60,7 +60,12 @@ export function traverseBlock(id: string, sharedRoot: YSharedRoot): Element | un
   if (
     slateNode.type === BlockType.SimpleTableBlock ||
     slateNode.type === BlockType.SimpleTableRowBlock ||
-    slateNode.type === BlockType.SimpleTableCellBlock
+    slateNode.type === BlockType.SimpleTableCellBlock ||
+    slateNode.type === BlockType.AIMeetingBlock ||
+    slateNode.type === BlockType.AIMeetingSummaryBlock ||
+    slateNode.type === BlockType.AIMeetingNotesBlock ||
+    slateNode.type === BlockType.AIMeetingTranscriptionBlock ||
+    slateNode.type === BlockType.AIMeetingSpeakerBlock
   ) {
     textId = '';
   }

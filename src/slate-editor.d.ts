@@ -11,6 +11,10 @@ interface EditorInlineAttributes {
   code?: boolean;
   font_family?: string;
   formula?: string;
+  reference?: {
+    blockIds?: string[];
+    number?: number;
+  } | string;
   prism_token?: string;
   class_name?: string;
 

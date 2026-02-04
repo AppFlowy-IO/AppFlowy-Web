@@ -5,6 +5,8 @@ import { Mention } from '@/application/types';
 import FormulaLeaf from '@/components/editor/components/leaf/formula/FormulaLeaf';
 import { Href } from '@/components/editor/components/leaf/href';
 import MentionLeaf from '@/components/editor/components/leaf/mention/MentionLeaf';
+import { InlineReference } from '@/components/editor/components/leaf/reference/InlineReference';
+import { parseInlineReference } from '@/components/editor/components/leaf/reference/utils';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 import { getFontFamily } from '@/utils/font';
@@ -58,7 +60,7 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
     style['backgroundColor'] = renderColor(leaf.af_background_color);
   }
 
-  if (leaf.code && !(leaf.formula || leaf.mention)) {
+  if (leaf.code && !(leaf.formula || leaf.mention || leaf.reference)) {
     newChildren = (
       <span className={cn('bg-border-primary font-medium', style['color'] ? undefined : 'text-[#EB5757]')}>
         {newChildren}
@@ -78,9 +80,11 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
     style['fontFamily'] = getFontFamily(leaf.font_family);
   }
 
-  if (text.text && (leaf.mention || leaf.formula)) {
+  const referenceData = leaf.reference ? parseInlineReference(leaf.reference) : null;
+
+  if (text.text && (leaf.mention || leaf.formula || referenceData)) {
     style['position'] = 'relative';
-    if (leaf.mention) {
+    if (leaf.mention || referenceData) {
       style['display'] = 'inline-block';
     }
 
@@ -92,6 +96,10 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
       <FormulaLeaf formula={leaf.formula} text={text}>
         {newChildren}
       </FormulaLeaf>
+    ) : referenceData ? (
+      <InlineReference reference={referenceData} text={text}>
+        {newChildren}
+      </InlineReference>
     ) : null;
 
     newChildren = node;

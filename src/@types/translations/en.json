@@ -1945,6 +1945,22 @@
       "note": "Note"
     },
     "menuName": "Document",
+    "aiMeeting": {
+      "titleDefault": "Meeting",
+      "tab": {
+        "summary": "Summary",
+        "notes": "Notes",
+        "transcript": "Transcript"
+      },
+      "readOnlyHint": "This content is read-only on web. Please edit it on the desktop app.",
+      "speakerUnknown": "Unknown speaker",
+      "speakerFallback": "Speaker {{id}}",
+      "reference": {
+        "sourcesTooltip": "View sources",
+        "deletedTooltip": "Source deleted",
+        "deleted": "Source was deleted"
+      }
+    },
     "date": {
       "timeHintTextInTwelveHour": "01:00 PM",
       "timeHintTextInTwentyFourHour": "13:00"

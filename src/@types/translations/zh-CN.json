@@ -1243,6 +1243,22 @@
   },
   "document": {
     "menuName": "文档",
+    "aiMeeting": {
+      "titleDefault": "会议",
+      "tab": {
+        "summary": "摘要",
+        "notes": "笔记",
+        "transcript": "转录"
+      },
+      "readOnlyHint": "该内容在 Web 上为只读，请在桌面端编辑。",
+      "speakerUnknown": "未知发言者",
+      "speakerFallback": "发言者 {{id}}",
+      "reference": {
+        "sourcesTooltip": "查看来源",
+        "deletedTooltip": "来源已删除",
+        "deleted": "来源已删除"
+      }
+    },
     "date": {
       "timeHintTextInTwelveHour": "下午 01:00",
       "timeHintTextInTwentyFourHour": "13:00"
