@@ -40,10 +40,16 @@ export const SyncInternalContext = createContext<SyncInternalContextType | null>
 // Hook to access sync internal context
 export function useSyncInternal() {
   const context = useContext(SyncInternalContext);
-  
+
   if (!context) {
     throw new Error('useSyncInternal must be used within a SyncInternalProvider');
   }
-  
+
   return context;
+}
+
+// Optional hook that returns null when not in a SyncInternalProvider
+// Use this for components that may render outside the main app context (e.g., publish view)
+export function useSyncInternalOptional() {
+  return useContext(SyncInternalContext);
 }

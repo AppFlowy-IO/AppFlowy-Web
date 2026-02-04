@@ -42,6 +42,17 @@ export interface Database2Props {
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
+  /**
+   * Load a row sub-document (document content inside a database row).
+   * In app mode: loads from server via authenticated API.
+   * In publish mode: loads from published cache.
+   */
+  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  /**
+   * Create a row document on the server (orphaned view).
+   * Only available in app mode - not provided in publish mode.
+   */
+  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   /**
@@ -118,6 +129,8 @@ function Database(props: Database2Props) {
     loadView,
     bindViewSync,
     checkIfRowDocumentExists,
+    loadRowDocument,
+    createRowDocument,
     navigateToView,
     modalRowId,
     isDocumentBlock: _isDocumentBlock,
@@ -238,6 +251,13 @@ function Database(props: Database2Props) {
   );
 
   const ensureBlobPrefetch = useCallback(() => {
+    // Skip blob prefetch in read-only mode (publish view)
+    // The publish API doesn't support blob/diff endpoint
+    if (readOnly) {
+      setBlobPrefetchComplete(true);
+      return null;
+    }
+
     const databaseId = getDatabaseId();
 
     if (!workspaceId || !databaseId) return null;
@@ -262,7 +282,7 @@ function Database(props: Database2Props) {
     prefetchPromisesRef.current.set(databaseId, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [workspaceId, getDatabaseId, getPriorityRowIds]);
+  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds]);
 
   useEffect(() => {
     const databaseId = getDatabaseId();
@@ -490,6 +510,8 @@ function Database(props: Database2Props) {
       bindViewSync,
       createRow: createNewRow,
       checkIfRowDocumentExists,
+      loadRowDocument,
+      createRowDocument,
       loadViewMeta: props.loadViewMeta,
       navigateToView,
       onRendered: props.onRendered,
@@ -519,6 +541,8 @@ function Database(props: Database2Props) {
       bindViewSync,
       createNewRow,
       checkIfRowDocumentExists,
+      loadRowDocument,
+      createRowDocument,
       props.loadViewMeta,
       navigateToView,
       props.onRendered,

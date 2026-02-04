@@ -9,11 +9,14 @@ import {
   DatabasePromptRow,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
+  Types,
   YDatabase,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
+import { openRowSubDocument } from '@/application/view-loader';
+import { Log } from '@/utils/log';
 import { PromptDatabaseConfiguration } from '@/components/chat';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -278,11 +281,68 @@ export function useDatabaseOperations(
     [service, currentWorkspaceId]
   );
 
+  // Load a row sub-document (document content inside a database row)
+  const loadRowDocument = useCallback(
+    async (documentId: string): Promise<YDoc | null> => {
+      if (!currentWorkspaceId) {
+        Log.warn('[loadRowDocument] workspaceId not available');
+        return null;
+      }
+
+      try {
+        const { doc } = await openRowSubDocument(currentWorkspaceId, documentId);
+
+        // Set metadata for sync binding
+        const docWithMeta = doc as YDoc & {
+          object_id?: string;
+          _collabType?: Types;
+          _syncBound?: boolean;
+        };
+
+        docWithMeta.object_id = documentId;
+        docWithMeta._collabType = Types.Document;
+        if (docWithMeta._syncBound === undefined) {
+          docWithMeta._syncBound = false;
+        }
+
+        Log.debug('[loadRowDocument] loaded', { documentId });
+        return doc;
+      } catch (e) {
+        Log.error('[loadRowDocument] failed to load', e);
+        return null;
+      }
+    },
+    [currentWorkspaceId]
+  );
+
+  // Create a row document on the server (orphaned view)
+  const createRowDocument = useCallback(
+    async (documentId: string): Promise<Uint8Array | null> => {
+      if (!service || !currentWorkspaceId) {
+        Log.warn('[createRowDocument] service or workspaceId not available');
+        return null;
+      }
+
+      try {
+        Log.debug('[createRowDocument] creating', { documentId });
+        const docState = await service.createOrphanedView(currentWorkspaceId, { document_id: documentId });
+
+        return docState;
+      } catch (e) {
+        Log.error('[createRowDocument] failed', e);
+        return null;
+      }
+    },
+    [service, currentWorkspaceId]
+  );
+
   return {
     generateAISummaryForRow,
     generateAITranslateForRow,
     loadDatabasePrompts,
     testDatabasePromptConfig,
     checkIfRowDocumentExists,
+    loadRowDocument,
+    createRowDocument,
   };
 }

@@ -88,6 +88,14 @@ export interface BusinessInternalContextType {
   loadDatabasePrompts?: LoadDatabasePrompts;
   testDatabasePromptConfig?: TestDatabasePromptConfig;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
+  /**
+   * Load a row sub-document (document content inside a database row).
+   */
+  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  /**
+   * Create a row document on the server (orphaned view).
+   */
+  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
 
   // User operations
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;

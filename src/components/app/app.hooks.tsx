@@ -98,6 +98,14 @@ export interface AppContextType {
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   awarenessMap?: Record<string, Awareness>;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
+  /**
+   * Load a row sub-document (document content inside a database row).
+   */
+  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  /**
+   * Create a row document on the server (orphaned view).
+   */
+  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadMentionableUsers?: () => Promise<MentionablePerson[]>;
 }
@@ -334,6 +342,8 @@ export function useAppHandlers() {
     getMentionUser: context.getMentionUser,
     awarenessMap: context.awarenessMap,
     checkIfRowDocumentExists: context.checkIfRowDocumentExists,
+    loadRowDocument: context.loadRowDocument,
+    createRowDocument: context.createRowDocument,
     updatePageIcon: context.updatePageIcon,
     updatePageName: context.updatePageName,
     getViewIdFromDatabaseId: context.getViewIdFromDatabaseId,

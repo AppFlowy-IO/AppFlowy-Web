@@ -1,9 +1,7 @@
 export * from './visibleViewIds';
 
-// Row document hooks
+// Row document sync hook
 export { useBindViewSync } from './useBindViewSync';
-export { useCheckIfRowDocumentExists } from './useCheckIfRowDocumentExists';
-export { useCreateOrphanedView } from './useCreateOrphanedView';
-export { useLoadRowDocument } from './useLoadRowDocument';
 
+// Type for Y.Doc with sync metadata
 export type { YDocWithMeta } from './useBindViewSync';
