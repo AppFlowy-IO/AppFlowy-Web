@@ -1699,6 +1699,7 @@
       "notEmpty": "Is not empty",
       "startDate": "Start date",
       "endDate": "End date",
+      "chooseDate": "Choose a date",
       "choicechipPrefix": {
         "before": "Before",
         "after": "After",
@@ -1723,7 +1724,8 @@
       "contains": "Contains",
       "doesNotContain": "Does not contain",
       "isEmpty": "Is empty",
-      "isNotEmpty": "Is not empty"
+      "isNotEmpty": "Is not empty",
+      "selectPerson": "Select person"
     },
     "field": {
       "label": "Property",

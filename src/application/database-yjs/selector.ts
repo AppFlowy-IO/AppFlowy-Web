@@ -486,7 +486,7 @@ export function useRootFilterInfo() {
           return (rootFilter as { get: (key: string) => unknown }).get(key);
         }
 
-        return (rootFilter as Record<string, unknown>)[key];
+        return (rootFilter as unknown as Record<string, unknown>)[key];
       };
 
       const filterType = Number(getValue(YjsDatabaseKey.filter_type));
@@ -556,7 +556,7 @@ export function useAdvancedFiltersSelector() {
           return (rootFilter as { get: (key: string) => unknown }).get(key);
         }
 
-        return (rootFilter as Record<string, unknown>)[key];
+        return (rootFilter as unknown as Record<string, unknown>)[key];
       };
 
       const filterType = Number(getRootValue(YjsDatabaseKey.filter_type));
@@ -677,7 +677,7 @@ export function useAdvancedFilterSelector(filterId: string) {
       const isRootYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
       const children = isRootYjsMap
         ? (rootFilter as { get: (key: string) => unknown }).get(YjsDatabaseKey.children)
-        : (rootFilter as Record<string, unknown>)[YjsDatabaseKey.children];
+        : (rootFilter as unknown as Record<string, unknown>)[YjsDatabaseKey.children];
 
       if (!children) {
         setFilterValue(null);

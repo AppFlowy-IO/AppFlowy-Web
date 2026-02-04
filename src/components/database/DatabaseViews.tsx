@@ -106,7 +106,7 @@ function DatabaseViews({
     const isYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
     const filterType = isYjsMap
       ? Number((rootFilter as { get: (key: string) => unknown }).get(YjsDatabaseKey.filter_type))
-      : Number((rootFilter as Record<string, unknown>)[YjsDatabaseKey.filter_type]);
+      : Number((rootFilter as unknown as Record<string, unknown>)[YjsDatabaseKey.filter_type]);
 
     if (filterType === FilterType.And || filterType === FilterType.Or) {
       setAdvancedMode(true);

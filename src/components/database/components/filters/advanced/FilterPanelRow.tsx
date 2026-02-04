@@ -30,9 +30,12 @@ import {
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
+import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { FieldDisplay } from '@/components/database/components/field';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -41,6 +44,8 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Progress } from '@/components/ui/progress';
+import { cn } from '@/lib/utils';
 
 import AdvancedDateFilterValueInput from './AdvancedDateFilterValueInput';
 
@@ -234,7 +239,7 @@ function ConditionSelector({ filter, fieldType, onConditionChange, disabled }: C
 // Get conditions based on field type
 function useConditionsForFieldType(
   fieldType: FieldType | null,
-  t: ReturnType<typeof useTranslation>['t']
+  t: (key: string) => string
 ): { value: number; text: string }[] {
   return useMemo(() => {
     if (fieldType === null) return [];
@@ -307,10 +312,10 @@ function useConditionsForFieldType(
 
     if (fieldType === FieldType.Person) {
       return [
-        { value: PersonFilterCondition.Contains, text: t('grid.personFilter.contains') },
-        { value: PersonFilterCondition.DoesNotContain, text: t('grid.personFilter.doesNotContain') },
-        { value: PersonFilterCondition.IsEmpty, text: t('grid.personFilter.isEmpty') },
-        { value: PersonFilterCondition.IsNotEmpty, text: t('grid.personFilter.isNotEmpty') },
+        { value: PersonFilterCondition.PersonContains, text: t('grid.personFilter.contains') },
+        { value: PersonFilterCondition.PersonDoesNotContain, text: t('grid.personFilter.doesNotContain') },
+        { value: PersonFilterCondition.PersonIsEmpty, text: t('grid.personFilter.isEmpty') },
+        { value: PersonFilterCondition.PersonIsNotEmpty, text: t('grid.personFilter.isNotEmpty') },
       ];
     }
 
@@ -452,7 +457,7 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
         value={value}
         onChange={handleChange}
         disabled={disabled}
-        type='number'
+        inputMode='numeric'
         data-testid='advanced-filter-number-input'
       />
     </div>
@@ -596,26 +601,128 @@ function CheckboxValueInput({ filter, disabled }: { filter: CheckboxFilter; disa
   );
 }
 
-// Person Value Input - placeholder for now
+// Person Value Input - shows person picker
 function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled?: boolean }) {
   const { t } = useTranslation();
+  const updateFilter = useUpdateAdvancedFilter();
+  const [open, setOpen] = useState(false);
+
+  // Use cached mentionable users - only fetch when popover is open
+  const { users: mentionableUsers, loading } = useMentionableUsersWithAutoFetch(open);
 
   // Don't show input for isEmpty/isNotEmpty conditions
   const showInput = useMemo(() => {
-    return ![PersonFilterCondition.IsEmpty, PersonFilterCondition.IsNotEmpty].includes(filter.condition);
+    return ![PersonFilterCondition.PersonIsEmpty, PersonFilterCondition.PersonIsNotEmpty].includes(filter.condition);
   }, [filter.condition]);
+
+  const selectedUserIds = useMemo(() => {
+    return filter.userIds || [];
+  }, [filter.userIds]);
+
+  const handleToggleUser = useCallback(
+    (userId: string) => {
+      const isSelected = selectedUserIds.includes(userId);
+      const newSelectedIds = isSelected
+        ? selectedUserIds.filter((id) => id !== userId)
+        : [...selectedUserIds, userId];
+
+      updateFilter({
+        filterId: filter.id,
+        fieldId: filter.fieldId,
+        content: JSON.stringify(newSelectedIds),
+      });
+    },
+    [filter.id, filter.fieldId, selectedUserIds, updateFilter]
+  );
+
+  // Get display text for selected users
+  const displayText = useMemo(() => {
+    if (selectedUserIds.length === 0) {
+      return t('grid.personFilter.selectPerson');
+    }
+
+    if (!mentionableUsers || mentionableUsers.length === 0) {
+      return `${selectedUserIds.length} selected`;
+    }
+
+    const selectedUsers = mentionableUsers.filter((u) => selectedUserIds.includes(u.person_id));
+
+    if (selectedUsers.length === 0) {
+      return `${selectedUserIds.length} selected`;
+    }
+
+    if (selectedUsers.length === 1) {
+      return selectedUsers[0].name || selectedUsers[0].email || 'Unknown';
+    }
+
+    return `${selectedUsers.length} selected`;
+  }, [selectedUserIds, mentionableUsers, t]);
 
   if (!showInput) return <div className='min-w-0 flex-[3]' />;
 
   return (
     <div className='min-w-0 flex-[3]'>
-      <input
-        className='h-7 w-full rounded-md border border-line-border bg-transparent px-2 text-xs text-text-primary placeholder:text-text-caption focus:border-content-blue-400 focus:outline-none disabled:opacity-50'
-        placeholder={t('grid.personFilter.selectPerson')}
-        disabled={disabled}
-        readOnly
-        data-testid='advanced-filter-person-input'
-      />
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <button
+            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            disabled={disabled}
+            data-testid='advanced-filter-person-input'
+          >
+            <span
+              className={cn(
+                'truncate text-xs',
+                selectedUserIds.length > 0 ? 'text-text-primary' : 'text-text-caption'
+              )}
+            >
+              {displayText}
+            </span>
+            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align='start' className='w-[280px] p-0'>
+          <div className='max-h-[240px] overflow-y-auto p-2'>
+            {loading ? (
+              <div className='flex items-center justify-center py-4'>
+                <Progress />
+              </div>
+            ) : !mentionableUsers || mentionableUsers.length === 0 ? (
+              <div className='py-4 text-center text-sm text-text-tertiary'>
+                {t('grid.field.person.noMatches')}
+              </div>
+            ) : (
+              mentionableUsers.map((user) => {
+                const isSelected = selectedUserIds.includes(user.person_id);
+                const displayName = user.name || user.email || '?';
+
+                return (
+                  <div
+                    key={user.person_id}
+                    className={cn(
+                      'flex min-h-[36px] cursor-pointer items-center gap-2 rounded-md px-2 py-1',
+                      'hover:bg-fill-content-hover',
+                      isSelected && 'bg-fill-content-hover'
+                    )}
+                    onClick={() => handleToggleUser(user.person_id)}
+                  >
+                    <Avatar className='h-6 w-6'>
+                      <AvatarImage src={user.avatar_url || undefined} alt={displayName} />
+                      <AvatarFallback className='text-xs'>{displayName.charAt(0).toUpperCase()}</AvatarFallback>
+                    </Avatar>
+                    <div className='flex flex-1 flex-col overflow-hidden'>
+                      <span className='truncate text-sm'>{user.name || user.email}</span>
+                      {user.name && user.email && (
+                        <span className='truncate text-xs text-text-tertiary'>{user.email}</span>
+                      )}
+                    </div>
+                    {isSelected && <CheckIcon className='h-4 w-4 flex-shrink-0 text-text-action' />}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

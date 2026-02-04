@@ -694,7 +694,8 @@ export function useRemoveAdvancedFilter() {
               const isYjsMap = typeof (f as { get?: unknown }).get === 'function';
               const id = isYjsMap
                 ? (f as { get: (key: string) => unknown }).get(YjsDatabaseKey.id)
-                : (f as Record<string, unknown>)[YjsDatabaseKey.id];
+                : (f as unknown as Record<string, unknown>)[YjsDatabaseKey.id];
+
               return id === filterId;
             });
 
@@ -760,12 +761,14 @@ export function useUpdateAdvancedFilter() {
             // Find the filter - need to handle both Yjs Map and plain object (from desktop sync)
             let filterIndex = -1;
             const childrenArray = children.toArray();
+
             for (let i = 0; i < childrenArray.length; i++) {
               const f = childrenArray[i];
               const isYjsMap = typeof (f as { get?: unknown }).get === 'function';
               const id = isYjsMap
                 ? (f as { get: (key: string) => unknown }).get(YjsDatabaseKey.id)
-                : (f as Record<string, unknown>)[YjsDatabaseKey.id];
+                : (f as unknown as Record<string, unknown>)[YjsDatabaseKey.id];
+
               if (id === filterId) {
                 filterIndex = i;
                 break;
