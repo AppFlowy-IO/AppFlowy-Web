@@ -1,4 +1,4 @@
-import { forwardRef, memo, startTransition, useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element, Node } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
@@ -223,12 +223,7 @@ export const AIMeetingBlock = memo(
                   return;
                 }
 
-                startTransition(() => {
-                  notify.info({
-                    message: t('document.aiMeeting.readOnlyHint'),
-                    showActions: false,
-                  });
-                });
+                notify.warning(t('document.aiMeeting.readOnlyHint'));
               }}
             >
               {children}

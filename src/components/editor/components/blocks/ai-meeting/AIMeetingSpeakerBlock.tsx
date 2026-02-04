@@ -143,6 +143,7 @@ export const AIMeetingSpeakerBlock = memo(
     const speakerName = speakerInfo.name;
     const displayTimestamp = useMemo(() => formatTimestamp(timestamp), [timestamp]);
 
+    const avatarColorKey = speakerId || speakerName || unknownSpeakerLabel;
     const avatarLabel = useMemo(() => {
       if (speakerName && speakerName !== unknownSpeakerLabel) {
         return speakerName.trim().charAt(0).toUpperCase();
@@ -167,7 +168,9 @@ export const AIMeetingSpeakerBlock = memo(
             {speakerInfo.avatarUrl ? (
               <AvatarImage src={speakerInfo.avatarUrl} alt={speakerName} />
             ) : (
-              <AvatarFallback name={speakerName}>{avatarLabel}</AvatarFallback>
+              <AvatarFallback name={avatarColorKey}>
+                <span>{avatarLabel}</span>
+              </AvatarFallback>
             )}
           </Avatar>
           <div className="ai-meeting-speaker__name">{speakerName}</div>
