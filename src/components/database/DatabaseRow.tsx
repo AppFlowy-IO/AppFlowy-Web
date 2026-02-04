@@ -3,7 +3,7 @@ import { Suspense } from 'react';
 import { AppendBreadcrumb } from '@/application/types';
 import EditorSkeleton from '@/components/_shared/skeleton/EditorSkeleton';
 import TableSkeleton from '@/components/_shared/skeleton/TableSkeleton';
-import { DatabaseRowProperties, DatabaseRowSubDocument } from '@/components/database/components/database-row';
+import { DatabaseRowProperties, RowSubDocument } from '@/components/database/components/database-row';
 import DatabaseRowHeader from '@/components/database/components/header/DatabaseRowHeader';
 import { cn } from '@/lib/utils';
 
@@ -25,7 +25,7 @@ export function DatabaseRow({ appendBreadcrumb, rowId }: { rowId: string; append
 
           <Suspense fallback={<EditorSkeleton />}>
             <div className={'min-h-[300px]'}>
-              <DatabaseRowSubDocument rowId={rowId} />
+              <RowSubDocument rowId={rowId} />
             </div>
           </Suspense>
         </div>
