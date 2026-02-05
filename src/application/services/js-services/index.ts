@@ -60,7 +60,8 @@ import {
   UploadPublishNamespacePayload,
   ViewIconType,
   WorkspaceMember,
-  YjsEditorKey
+  YDoc,
+  YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { RepeatedChatMessage } from '@/components/chat';
@@ -84,6 +85,14 @@ export class AFClientService implements AFService {
 
   constructor(config: AFServiceConfig) {
     APIService.initAPIService(config.cloudConfig);
+  }
+
+  async createRowDoc(rowKey: string): Promise<YDoc> {
+    throw new Error('Not implemented');
+  }
+
+  deleteRowDoc(rowKey: string){
+    throw new Error('Not implemented');
   }
 
   getAxiosInstance() {
@@ -193,7 +202,7 @@ export class AFClientService implements AFService {
   }
 
   async getPublishRowDocument(viewId: string) {
-    const { doc } = await openCollabDB(viewId);
+    const doc = await openCollabDB(viewId);
 
     if (hasCollabCache(doc)) {
       return doc;
@@ -536,7 +545,7 @@ export class AFClientService implements AFService {
 
     const isLoaded = this.viewLoaded.has(name);
 
-    const { doc, version } = await getPageDoc(
+    const doc = await getPageDoc(
       async () => {
         try {
           return await fetchPageCollab(workspaceId, viewId);
@@ -561,7 +570,7 @@ export class AFClientService implements AFService {
       this.viewLoaded.add(name);
     }
 
-    return { doc, version };
+    return doc;
   }
 
   async getInvitation(invitationId: string) {
@@ -625,10 +634,7 @@ export class AFClientService implements AFService {
     return APIService.uploadDatabaseCsvImportFile(presignedUrl, file, onProgress);
   }
 
-  async getDatabaseCsvImportStatus(
-    workspaceId: string,
-    taskId: string
-  ): Promise<DatabaseCsvImportStatusResponse> {
+  async getDatabaseCsvImportStatus(workspaceId: string, taskId: string): Promise<DatabaseCsvImportStatusResponse> {
     return APIService.getDatabaseCsvImportStatus(workspaceId, taskId);
   }
 
@@ -648,7 +654,11 @@ export class AFClientService implements AFService {
     return APIService.addAppPage(workspaceId, parentViewId, payload);
   }
 
-  async createDatabaseView(workspaceId: string, viewId: string, payload: CreateDatabaseViewPayload): Promise<CreateDatabaseViewResponse> {
+  async createDatabaseView(
+    workspaceId: string,
+    viewId: string,
+    payload: CreateDatabaseViewPayload
+  ): Promise<CreateDatabaseViewResponse> {
     return APIService.createDatabaseView(workspaceId, viewId, payload);
   }
 
@@ -774,16 +784,20 @@ export class AFClientService implements AFService {
     return APIService.getMentionableUsers(workspaceId);
   }
 
-  async updatePageMention(workspaceId: string, viewId: string, data: {
-    person_id: string;
-    block_id?: string | null;
-    row_id?: string | null;
-    require_notification: boolean;
-    view_name: string;
-    ancestors?: string[] | null;
-    view_layout?: number | null;
-    is_row_document?: boolean;
-  }) {
+  async updatePageMention(
+    workspaceId: string,
+    viewId: string,
+    data: {
+      person_id: string;
+      block_id?: string | null;
+      row_id?: string | null;
+      require_notification: boolean;
+      view_name: string;
+      ancestors?: string[] | null;
+      view_layout?: number | null;
+      is_row_document?: boolean;
+    }
+  ) {
     return APIService.updatePageMention(workspaceId, viewId, data);
   }
 

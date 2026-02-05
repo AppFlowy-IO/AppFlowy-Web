@@ -57,10 +57,10 @@ export function useViewOperations() {
   // Register workspace database document for sync
   const registerWorkspaceDatabaseDoc = useCallback(
     async (workspaceId: string, databaseStorageId: string) => {
-      const { doc, version } = await openCollabDB(databaseStorageId);
+      const doc = await openCollabDB(databaseStorageId);
 
       doc.guid = databaseStorageId;
-      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase, version });
+      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase });
 
       workspaceDatabaseDocMapRef.current.clear();
       workspaceDatabaseDocMapRef.current.set(workspaceId, workspaceDatabaseDoc);
@@ -393,7 +393,7 @@ export function useViewOperations() {
         hasAwareness: !!awareness,
       });
 
-      const syncContext = registerSyncContext({ doc, collabType, awareness, version });
+      const syncContext = registerSyncContext({ doc, collabType, awareness });
 
       docWithMeta._syncBound = true;
 
@@ -436,8 +436,7 @@ export function useViewOperations() {
         });
         const syncContext = registerSyncContext({
           doc,
-          collabType: Types.DatabaseRow,
-          version: null, // atm. versions are not used for database rows
+          collabType: Types.DatabaseRow
         });
 
         createdRowKeys.current.push(rowKey);

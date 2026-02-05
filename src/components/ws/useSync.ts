@@ -11,7 +11,7 @@ import { openCollabDB } from '@/application/db';
 import * as http from '@/application/services/js-services/http/http_api';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
 import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types, User } from '@/application/types';
+import { Types, User, YDoc } from '@/application/types';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
@@ -25,10 +25,9 @@ export interface RegisterSyncContext {
    * The Y.Doc instance to be used for collaboration.
    * It must have a valid guid (UUID v4).
    */
-  doc: Y.Doc;
+  doc: YDoc;
   awareness?: awarenessProtocol.Awareness;
   collabType: Types;
-  version: string | null;
   emit?: (reply: messages.IMessage) => void;
 }
 
@@ -396,14 +395,13 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
           // remove stale persisted data for older version and reinitialize it
           await deleteDB(context.doc.guid);
-          const { doc } = await openCollabDB(context.doc.guid, { expectedVersion: newVersion, currentUser: user?.uid });
+          const doc = await openCollabDB(context.doc.guid, { expectedVersion: newVersion, currentUser: user?.uid });
           const awareness = new awarenessProtocol.Awareness(doc);
 
           context = registerSyncContext({
             doc: awareness.doc,
             awareness,
-            collabType: context.collabType,
-            version: newVersion || null,
+            collabType: context.collabType
           });
         }
 
@@ -459,16 +457,15 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       context.doc.emit('reset', [context, version])
       context.doc.destroy();
 
-      const { doc } = await openCollabDB(context.doc.guid, { expectedVersion: version, currentUser: currentUser.uid });
+      const doc = await openCollabDB(context.doc.guid, { expectedVersion: version, currentUser: currentUser.uid });
 
       Y.applyUpdate(doc, docState);
       const awareness = new awarenessProtocol.Awareness(doc);
 
       registerSyncContext({
-        doc: awareness.doc,
+        doc,
         awareness,
-        collabType: context.collabType,
-        version,
+        collabType: context.collabType
       });
     }
   }, [registeredContexts, currentUser, registerSyncContext]);
