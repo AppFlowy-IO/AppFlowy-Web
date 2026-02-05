@@ -1,6 +1,6 @@
 import { expect, describe, it, beforeEach } from '@jest/globals';
 import { render, screen, fireEvent } from '@testing-library/react';
-import React, { useState } from 'react';
+import { useState } from 'react';
 
 import { BlockType } from '@/application/types';
 
@@ -133,7 +133,7 @@ function MockAIMeetingBlock({
           data-testid="title-input"
           value={title}
           readOnly={readOnly}
-          onChange={() => {}}
+          onChange={() => undefined}
         />
       </div>
 
@@ -211,7 +211,11 @@ describe('AIMeetingBlock Component', () => {
       );
 
       expect(screen.getByTestId('ai-meeting-block')).toBeTruthy();
-      const titleInput = screen.getByTestId('title-input') as HTMLInputElement;
+      const titleInput = screen.getByTestId('title-input');
+
+      if (!(titleInput instanceof HTMLInputElement)) {
+        throw new Error('Expected title input to be an HTMLInputElement');
+      }
 
       expect(titleInput.value).toBe('Weekly Standup');
     });
@@ -315,8 +319,8 @@ describe('AIMeetingBlock Component', () => {
       );
 
       // Summary is active initially
-      const summarySection = screen.getByTestId(`section-${BlockType.AIMeetingSummaryBlock}`) as HTMLElement;
-      const notesSection = screen.getByTestId(`section-${BlockType.AIMeetingNotesBlock}`) as HTMLElement;
+      const summarySection = screen.getByTestId(`section-${BlockType.AIMeetingSummaryBlock}`);
+      const notesSection = screen.getByTestId(`section-${BlockType.AIMeetingNotesBlock}`);
 
       expect(summarySection.style.display).toBe('block');
       expect(notesSection.style.display).toBe('none');
