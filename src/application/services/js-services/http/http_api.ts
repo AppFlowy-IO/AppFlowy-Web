@@ -962,7 +962,7 @@ export async function databaseBlobDiff(
   return database_blob.DatabaseBlobDiffResponse.decode(bytes);
 }
 
-export async function getCollabVersions(workspaceId: string, objectId: string, since: Date | undefined) {
+export async function getCollabVersions(workspaceId: string, objectId: string, since?: Date) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
   const from = since?.getTime() || null;
   const response = await axiosInstance?.get<{
@@ -973,7 +973,8 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       name: string | null,
       created_at: string,
       created_by: number | null,
-      is_deleted: boolean
+      is_deleted: boolean,
+      editors: number[],
     }[];
     message: string;
   }>(url, {
@@ -992,7 +993,8 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       parentId: data.parent,
       name: data.name,
       createdAt: new Date(data.created_at),
-      isDeleted: data.is_deleted
+      isDeleted: data.is_deleted,
+      editors: data.editors,
     };
   });
 }

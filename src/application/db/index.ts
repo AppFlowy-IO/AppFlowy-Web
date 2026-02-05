@@ -11,7 +11,7 @@ import {
   workspaceMemberProfileSchema,
   WorkspaceMemberProfileTable,
 } from '@/application/db/tables/workspace_member_profiles';
-import { VersionedDoc, YDoc } from '@/application/types';
+import { YDoc } from '@/application/types';
 import { Log } from '@/utils/log';
 
 type DexieTables = ViewMetasTable & UserTable & rowTable & WorkspaceMemberProfileTable & VersionsTable;
@@ -130,10 +130,10 @@ export interface OpenCollabOptions {
 /**
  * Open the collaboration database, and return a function to close it
  */
-export async function openCollabDB(name: string, options: OpenCollabOptions = {}): Promise<VersionedDoc> {
+export async function openCollabDB(name: string, options: OpenCollabOptions = {}): Promise<YDoc> {
   const doc = new Y.Doc({
     guid: name,
-  });
+  }) as YDoc;
 
   await ensureYjsStores(name);
 
@@ -148,6 +148,7 @@ export async function openCollabDB(name: string, options: OpenCollabOptions = {}
   }
 
   version = options.expectedVersion;
+  doc.version = version;
 
   provider.on('synced', () => {
     if (!openedSet.has(name)) {
@@ -157,7 +158,7 @@ export async function openCollabDB(name: string, options: OpenCollabOptions = {}
 
   await provider.whenSynced;
 
-  return { doc, version };
+  return doc;
 }
 
 export async function openCollabDBWithProvider(
