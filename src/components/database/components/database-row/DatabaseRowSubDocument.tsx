@@ -127,7 +127,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const ensureDocRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const document = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
-  const isDocumentEmptyResolved = meta?.isEmptyDocument ?? false;
+  // undefined = meta hasn't loaded from Yjs yet (wait)
+  // true = meta loaded, document is empty (open locally)
+  // false = meta loaded, document has content (load from server)
+  const isDocumentEmptyResolved = meta == null ? undefined : (meta.isEmptyDocument ?? true);
 
   const isDocumentEmpty = useCallback(
     (editor: YjsEditor) => {
@@ -618,8 +621,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       }, 2000); // Reduced from 5000ms to 2000ms for faster response
     };
 
-    const shouldWaitForRowMeta = !isDocumentEmptyResolved;
-
     void (async () => {
       // Skip if doc is already loaded - prevents reloading when meta changes
       if (docReadyRef.current && doc) {
@@ -627,6 +628,16 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           rowId,
           documentId,
         });
+        return;
+      }
+
+      // Wait for row meta to load before making any decisions
+      if (isDocumentEmptyResolved === undefined) {
+        Log.debug('[DatabaseRowSubDocument] waiting for row meta to load', {
+          rowId,
+          documentId,
+        });
+        scheduleRetry();
         return;
       }
 
@@ -652,13 +663,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         return;
       }
 
-      // If checkIfRowDocumentExists is not available, decide based on row meta.
+      // meta.isEmptyDocument is false - document should exist on server
+      // If checkIfRowDocumentExists is not available, try to load directly.
       if (!checkIfRowDocumentExists) {
-        if (shouldWaitForRowMeta) {
-          scheduleRetry();
-          return;
-        }
-
         const localHasContent = await hasLocalDocContent(documentId);
 
         if (localHasContent) {
@@ -682,7 +689,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           rowId,
           documentId,
           exists,
-          shouldWaitForRowMeta,
         });
         if (exists) {
           // Skip loading if doc is already ready
@@ -715,30 +721,13 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return;
         }
 
-        // Document doesn't exist on server
-        if (shouldWaitForRowMeta) {
-          Log.debug('[DatabaseRowSubDocument] row meta says non-empty but doc not found; will retry then create', {
-            rowId,
-            documentId,
-          });
-          // Still retry a few times in case of race condition, but will create after max retries
-          scheduleRetry();
-          return;
-        }
-
-        const localHasContent = await hasLocalDocContent(documentId);
-
-        if (localHasContent) {
-          Log.debug('[DatabaseRowSubDocument] doc not found; local content found, opening local doc', {
-            rowId,
-            documentId,
-          });
-          await openLocalDocument(documentId);
-          setLoading(false);
-          return;
-        }
-
-        void handleCreateDocument(documentId, true);
+        // Document doesn't exist on server but meta says non-empty
+        Log.debug('[DatabaseRowSubDocument] meta says non-empty but doc not found; will retry then create', {
+          rowId,
+          documentId,
+        });
+        // Retry a few times in case of race condition, will create after max retries
+        scheduleRetry();
       } catch (e) {
         Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists failed; will retry', {
           rowId,
