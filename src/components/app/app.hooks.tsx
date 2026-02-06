@@ -23,6 +23,7 @@ import {
   Subscription,
   TestDatabasePromptConfig,
   TextCount,
+  Types,
   UIVariant,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -120,7 +121,7 @@ export interface AppContextType {
    */
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   getCollabHistory?: (viewId: string) => Promise<CollabVersionRecord[]>;
-  previewCollabVersion?: (viewId: string, versionId: string) => Promise<YDoc | undefined>;
+  previewCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<YDoc | undefined>;
   revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 

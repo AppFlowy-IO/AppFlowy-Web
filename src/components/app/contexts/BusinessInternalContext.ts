@@ -122,7 +122,7 @@ export interface BusinessInternalContextType {
   // Collaboration history
   getCollabHistory?: (viewId: string, since?: Date | undefined) => Promise<CollabVersionRecord[]>;
   previewCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<YDoc | undefined>;
-  revertCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<void>;
+  revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 
 export const BusinessInternalContext = createContext<BusinessInternalContextType | null>(null);
