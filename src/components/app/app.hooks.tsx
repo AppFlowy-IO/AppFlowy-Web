@@ -23,6 +23,7 @@ import {
   Subscription,
   TestDatabasePromptConfig,
   TextCount,
+  Types,
   UIVariant,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -102,7 +103,7 @@ export interface AppContextType {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadMentionableUsers?: () => Promise<MentionablePerson[]>;
   getCollabHistory?: (viewId: string) => Promise<CollabVersionRecord[]>;
-  previewCollabVersion?: (viewId: string, versionId: string) => Promise<YDoc | undefined>;
+  previewCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<YDoc | undefined>;
   revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 

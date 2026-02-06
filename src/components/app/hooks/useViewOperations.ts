@@ -58,10 +58,10 @@ export function useViewOperations() {
   // Register workspace database document for sync
   const registerWorkspaceDatabaseDoc = useCallback(
     async (workspaceId: string, databaseStorageId: string) => {
-      const { doc, version } = await openCollabDB(databaseStorageId);
+      const doc = await openCollabDB(databaseStorageId);
 
       doc.guid = databaseStorageId;
-      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase, version });
+      const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase });
 
       workspaceDatabaseDocMapRef.current.clear();
       workspaceDatabaseDocMapRef.current.set(workspaceId, workspaceDatabaseDoc);
@@ -591,13 +591,12 @@ export function useViewOperations() {
             doc,
             () => {
               try {
-                Y.applyUpdate(doc, docState, CollabOrigin.Local);
+                Y.applyUpdate(doc, docState);
               } catch (e) {
                 Log.error('Error applying Yjs update for document version preview', e);
                 throw e;
               }
-            },
-            CollabOrigin.Local,
+            }
           );
 
           return doc;

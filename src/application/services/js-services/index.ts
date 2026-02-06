@@ -202,7 +202,7 @@ export class AFClientService implements AFService {
   }
 
   async getPublishRowDocument(viewId: string) {
-    const { doc } = await openCollabDB(viewId);
+    const doc = await openCollabDB(viewId);
 
     if (hasCollabCache(doc)) {
       return doc;
@@ -570,7 +570,7 @@ export class AFClientService implements AFService {
       this.viewLoaded.add(name);
     }
 
-    return { doc, version };
+    return doc;
   }
 
   async getInvitation(invitationId: string) {
