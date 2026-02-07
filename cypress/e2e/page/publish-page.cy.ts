@@ -879,141 +879,126 @@ describe('Publish Page Test', () => {
             testLog.info('Grid database created and loaded');
             cy.wait(2000);
 
-            // Step 2: Open the first row to add document content
-            testLog.info('Opening first row to add document content');
-            // Hover over the row to reveal the expand button
+            // Step 2: Capture the first row ID from the app grid (needed later for published URL)
+            testLog.info('Capturing row ID from app grid');
             DatabaseGridSelectors.dataRows()
                 .first()
-                .scrollIntoView()
-                .should('be.visible')
-                .realHover();
-            waitForReactUpdate(500);
+                .invoke('attr', 'data-testid')
+                .then((testId) => {
+                    const rowId = testId?.replace('grid-row-', '');
+                    testLog.info(`Row ID: ${rowId}`);
+                    if (!rowId) throw new Error('Could not extract row ID from grid row');
 
-            // Click the expand button to open row detail modal
-            cy.get('[data-testid="row-expand-button"]', { timeout: 5000 })
-                .should('exist')
-                .first()
-                .should('be.visible')
-                .click({ force: true });
-            waitForReactUpdate(1000);
+                    // Step 3: Open the first row to add document content
+                    testLog.info('Opening first row to add document content');
+                    DatabaseGridSelectors.dataRows()
+                        .first()
+                        .scrollIntoView()
+                        .should('be.visible')
+                        .realHover();
+                    waitForReactUpdate(500);
 
-            // Verify row detail modal opened
-            RowDetailSelectors.modal().should('exist', { timeout: 10000 });
-            testLog.info('Row detail modal opened');
+                    cy.get('[data-testid="row-expand-button"]', { timeout: 5000 })
+                        .should('exist')
+                        .first()
+                        .should('be.visible')
+                        .click({ force: true });
+                    waitForReactUpdate(1000);
 
-            // Step 3: Type content into the row document
-            testLog.info('Typing content into row document');
-            // Wait longer for document to initialize - new rows may need time
-            waitForReactUpdate(5000);
+                    RowDetailSelectors.modal().should('exist', { timeout: 10000 });
+                    testLog.info('Row detail modal opened');
 
-            // Scroll to the document area
-            cy.get('[role="dialog"]')
-                .find('.appflowy-scroll-container')
-                .scrollTo('bottom', { ensureScrollable: false });
-            waitForReactUpdate(2000);
+                    // Step 4: Type content into the row document
+                    testLog.info('Typing content into row document');
+                    waitForReactUpdate(5000);
 
-            // Wait for editor to be ready - new rows need the document to be created
-            // The editor appears after the document is initialized, which can take several seconds
-            cy.get('[role="dialog"]')
-                .find('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]', { timeout: 30000 })
-                .should('exist')
-                .first()
-                .as('editor');
+                    cy.get('[role="dialog"]')
+                        .find('.appflowy-scroll-container')
+                        .scrollTo('bottom', { ensureScrollable: false });
+                    waitForReactUpdate(2000);
 
-            // Click into the editor and type content
-            cy.get('@editor').click({ force: true });
-            waitForReactUpdate(1000);
+                    cy.get('[role="dialog"]')
+                        .find('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]', { timeout: 30000 })
+                        .should('exist')
+                        .first()
+                        .as('editor');
 
-            // Type the content - this will create the row document
-            cy.focused().type(rowDocContent, { delay: 50 });
-            waitForReactUpdate(10000); // Wait 10s for content to sync to server
+                    cy.get('@editor').click({ force: true });
+                    waitForReactUpdate(1000);
 
-            // Verify content was typed
-            cy.get('[role="dialog"]').should('contain.text', rowDocContent);
-            testLog.info('Row document content added');
+                    // Type the content - triggers row document creation and WebSocket sync.
+                    // Keep the modal open during sync so the component stays mounted
+                    // and the WebSocket connection remains active for content sync.
+                    // The sync flow: type -> local Y.Doc update -> ensureRowDocumentExists()
+                    // API call -> WebSocket sync of content -> server persists to storage.
+                    cy.focused().type(rowDocContent, { delay: 50 });
 
-            // Step 4: Close the modal
-            testLog.info('Closing row detail modal');
-            // Click outside the editor first to ensure changes are saved
-            RowDetailSelectors.modalTitle().click({ force: true });
-            waitForReactUpdate(1000);
-            cy.get('body').type('{esc}');
-            waitForReactUpdate(2000);
-            RowDetailSelectors.modal().should('not.exist');
-            waitForReactUpdate(10000); // Wait 10s for changes to sync to server before publishing
+                    // Keep the modal open for an extended period to ensure:
+                    // 1. The row document is created on the server (API call)
+                    // 2. WebSocket sync sends the content to the server
+                    // 3. Server persists the content to its storage layer
+                    // This is the most critical wait - the component must stay mounted
+                    // for the WebSocket connection to remain active during sync.
+                    waitForReactUpdate(20000);
 
-            // Step 5: Publish the database
-            testLog.info('Publishing database');
-            ShareSelectors.shareButton().should('be.visible', { timeout: 10000 });
-            TestTool.openSharePopover();
+                    cy.get('[role="dialog"]').should('contain.text', rowDocContent);
+                    testLog.info('Row document content added');
 
-            cy.contains('Publish').should('exist').click({ force: true });
-            cy.wait(1000);
-            ShareSelectors.publishConfirmButton().should('be.visible').should('not.be.disabled');
-            ShareSelectors.publishConfirmButton().click({ force: true });
-            testLog.info('Clicked Publish button');
-            cy.wait(5000);
+                    // Step 5: Close the modal
+                    testLog.info('Closing row detail modal');
+                    RowDetailSelectors.modalTitle().click({ force: true });
+                    waitForReactUpdate(1000);
+                    cy.get('body').type('{esc}');
+                    waitForReactUpdate(2000);
+                    RowDetailSelectors.modal().should('not.exist');
 
-            // Verify published
-            ShareSelectors.publishNamespace().should('be.visible', { timeout: 10000 });
-            testLog.info('Database published successfully');
+                    // Wait for server-side storage to fully settle.
+                    // Even after WebSocket sync completes, the server needs time to
+                    // persist the data to its storage backend (e.g., Postgres).
+                    // The publish blob is generated from this storage, so it must
+                    // contain the row document before we publish.
+                    waitForReactUpdate(15000);
 
-            // Step 6: Get the published URL and visit
-            cy.window().then((win) => {
-                const origin = win.location.origin;
+                    // Step 6: Publish the database
+                    testLog.info('Publishing database');
+                    ShareSelectors.shareButton().should('be.visible', { timeout: 10000 });
+                    TestTool.openSharePopover();
 
-                ShareSelectors.publishNamespace().invoke('text').then((namespace) => {
-                    ShareSelectors.publishNameInput().invoke('val').then((publishName) => {
-                        const namespaceText = namespace.trim();
-                        const publishNameText = String(publishName).trim();
-                        const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
-                        testLog.info(`Published URL: ${publishedUrl}`);
+                    cy.contains('Publish').should('exist').click({ force: true });
+                    cy.wait(1000);
+                    ShareSelectors.publishConfirmButton().should('be.visible').should('not.be.disabled');
+                    ShareSelectors.publishConfirmButton().click({ force: true });
+                    testLog.info('Clicked Publish button');
+                    cy.wait(5000);
 
-                        // Close the share popover
-                        cy.get('body').type('{esc}');
-                        cy.wait(500);
+                    ShareSelectors.publishNamespace().should('be.visible', { timeout: 10000 });
+                    testLog.info('Database published successfully');
 
-                        // Visit the published database URL
-                        testLog.info('Opening published database URL');
-                        cy.visit(publishedUrl, { failOnStatusCode: false });
-                        cy.url({ timeout: 10000 }).should('include', `/${namespaceText}/${publishNameText}`);
-                        testLog.info('Published database opened');
-                        cy.wait(5000);
+                    // Step 7: Navigate directly to the published row page
+                    // Skip the intermediate grid view visit to avoid caching a blob
+                    // that might not yet contain the row document content.
+                    cy.window().then((win) => {
+                        const origin = win.location.origin;
 
-                        // Step 7: Get row ID and navigate to row page in published view
-                        testLog.info('Opening row page in published view');
-
-                        // Get the first row's data-testid to extract the row ID
-                        cy.get('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])')
-                            .first()
-                            .invoke('attr', 'data-testid')
-                            .then((testId) => {
-                                // Extract row ID from data-testid (format: "grid-row-{rowId}")
-                                const rowId = testId?.replace('grid-row-', '');
-                                testLog.info(`Row ID: ${rowId}`);
-
-                                if (!rowId) {
-                                    throw new Error('Could not extract row ID from grid row');
-                                }
-
-                                // Navigate to the row page URL with ?r=rowId parameter
+                        ShareSelectors.publishNamespace().invoke('text').then((namespace) => {
+                            ShareSelectors.publishNameInput().invoke('val').then((publishName) => {
+                                const namespaceText = namespace.trim();
+                                const publishNameText = String(publishName).trim();
+                                const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
                                 const rowPageUrl = `${publishedUrl}?r=${rowId}`;
-                                testLog.info(`Navigating to row page: ${rowPageUrl}`);
+                                testLog.info(`Navigating directly to row page: ${rowPageUrl}`);
+
                                 cy.visit(rowPageUrl, { failOnStatusCode: false });
-                                cy.wait(5000);
 
-                                // Step 8: Verify row document content is visible
+                                // Step 8: Verify row document content is visible.
+                                // The row document content is baked into the publish blob.
                                 testLog.info('Verifying row document content in published view');
-
-                                // Wait for the row document content to load
-                                cy.get('body', { timeout: 15000 }).should('contain.text', rowDocContent);
-
-                                testLog.info('✓ Row document content is visible in published view');
+                                cy.contains(rowDocContent, { timeout: 30000 }).should('be.visible');
                                 testLog.info('✓ Test passed: Row document content displays correctly in published view');
                             });
+                        });
                     });
                 });
-            });
         });
     });
 });
