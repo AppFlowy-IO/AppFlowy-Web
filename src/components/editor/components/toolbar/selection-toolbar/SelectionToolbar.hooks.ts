@@ -1,14 +1,22 @@
 import { debounce } from 'lodash-es';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Range } from 'slate';
+import { Editor, Element, Range } from 'slate';
 import { ReactEditor, useFocused, useReadOnly, useSlate, useSlateStatic } from 'slate-react';
 
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
+import { BlockType } from '@/application/types';
 import { useAIWriter } from '@/components/chat';
 import { getSelectionPosition } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { Decorate, useEditorContext } from '@/components/editor/EditorContext';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+
+const AI_MEETING_READONLY_TYPES = new Set<BlockType>([
+  BlockType.AIMeetingSummaryBlock,
+  BlockType.AIMeetingNotesBlock,
+  BlockType.AIMeetingTranscriptionBlock,
+  BlockType.AIMeetingSpeakerBlock,
+]);
 
 export function useVisible() {
   const editor = useSlate();
@@ -27,6 +35,32 @@ export function useVisible() {
     return CustomEditor.getTextNodes(editor).length;
   }, [editor, selection]);
   const [visible, setVisible] = useState<boolean>(false);
+  const isSelectionInReadOnly = useMemo(() => {
+    if (!selection) return false;
+
+    const aiMeetingMatch = Editor.above(editor, {
+      at: selection,
+      match: (n) =>
+        !Editor.isEditor(n) &&
+        Element.isElement(n) &&
+        AI_MEETING_READONLY_TYPES.has(n.type as BlockType),
+    });
+
+    if (aiMeetingMatch) return true;
+
+    const elementMatch = Editor.above(editor, {
+      at: selection,
+      match: (n) => !Editor.isEditor(n) && Element.isElement(n),
+    });
+
+    if (!elementMatch) return false;
+
+    try {
+      return editor.isElementReadOnly(elementMatch[0]);
+    } catch {
+      return false;
+    }
+  }, [editor, selection]);
 
   const {
     assistantType,
@@ -45,6 +79,7 @@ export function useVisible() {
         if(!focus) return false;
 
         if(document.getSelection()?.isCollapsed || assistantTypeRef.current !== undefined) return false;
+        if(isSelectionInReadOnly) return false;
 
         return Boolean(selectedText && isExpanded && !isDragging);
       });
@@ -56,7 +91,7 @@ export function useVisible() {
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [focus, forceShow, isDragging, isExpanded, selectedText]);
+  }, [focus, forceShow, isDragging, isExpanded, isSelectionInReadOnly, selectedText]);
 
   useEffect(() => {
     if(!visible) {

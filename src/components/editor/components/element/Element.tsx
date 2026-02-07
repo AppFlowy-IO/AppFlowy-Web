@@ -7,7 +7,7 @@ import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'sl
 import { YjsEditor } from '@/application/slate-yjs';
 import { CONTAINER_BLOCK_TYPES, SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockData, BlockType, ColumnNodeData, YjsEditorKey } from '@/application/types';
-import { AIMeetingBlock } from '@/components/editor/components/blocks/ai-meeting';
+import { AIMeetingBlock, AIMeetingSection, AIMeetingSpeakerBlock } from '@/components/editor/components/blocks/ai-meeting';
 import { BulletedList } from '@/components/editor/components/blocks/bulleted-list';
 import { Callout } from '@/components/editor/components/blocks/callout';
 import { CodeBlock } from '@/components/editor/components/blocks/code';
@@ -216,6 +216,12 @@ export const Element = ({
         return Column;
       case BlockType.AIMeetingBlock:
         return AIMeetingBlock;
+      case BlockType.AIMeetingSummaryBlock:
+      case BlockType.AIMeetingNotesBlock:
+      case BlockType.AIMeetingTranscriptionBlock:
+        return AIMeetingSection;
+      case BlockType.AIMeetingSpeakerBlock:
+        return AIMeetingSpeakerBlock;
       case BlockType.PDFBlock:
         return PDFBlock;
       default:

@@ -136,6 +136,13 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
       if (shouldSkipParentTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
         close();
         return;
+      }
+
+      const aiMeetingRoot = blockElement.closest(`[data-block-type="${BlockType.AIMeetingBlock}"]`);
+
+      if (aiMeetingRoot && node.type !== BlockType.AIMeetingBlock) {
+        close();
+        return;
       } else {
         recalculatePosition(blockElement);
         el.style.opacity = '1';
