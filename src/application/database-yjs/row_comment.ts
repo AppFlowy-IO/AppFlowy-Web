@@ -54,7 +54,7 @@ export function parseComment(commentMap: Y.Map<unknown>): RowComment {
     updatedAt: Number(commentMap.get(RowCommentKey.UpdatedAt) ?? 0),
     isResolved: Boolean(commentMap.get(RowCommentKey.IsResolved)),
     resolvedBy: (commentMap.get(RowCommentKey.ResolvedBy) as string) || null,
-    resolvedAt: commentMap.get(RowCommentKey.ResolvedAt) != null
+    resolvedAt: commentMap.get(RowCommentKey.ResolvedAt) !== null
       ? Number(commentMap.get(RowCommentKey.ResolvedAt))
       : null,
     reactions,

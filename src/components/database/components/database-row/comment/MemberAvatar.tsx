@@ -26,6 +26,7 @@ function MemberAvatar({ uid, size = 'md' }: { uid: string; size?: 'xs' | 'sm' | 
 
 export function getMemberDisplayName(members: Map<string, { name: string; email: string }>, uid: string): string {
   const member = members.get(uid);
+
   return member?.name || member?.email || uid;
 }
 

@@ -59,6 +59,7 @@ export function RowCommentProvider({ rowId, children }: { rowId: string; childre
 
   const members = useMemo(() => {
     const map = new Map<string, MentionablePerson>();
+
     for (const user of mentionableUsers) {
       // Key by person_id (uuid) — matches author_id stored in comments
       map.set(user.person_id, user);
@@ -68,6 +69,7 @@ export function RowCommentProvider({ rowId, children }: { rowId: string; childre
     // (old comments stored uid instead of uuid as authorId)
     if (currentUserUid && currentUser?.uuid) {
       const currentMember = map.get(currentUser.uuid);
+
       if (currentMember && !map.has(currentUserUid)) {
         map.set(currentUserUid, currentMember);
       }
