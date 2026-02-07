@@ -121,6 +121,20 @@ export enum AITranslateLanguage {
   Simplified_Chinese
 }
 
+export enum RowCommentKey {
+  Id = 'id',
+  ParentCommentId = 'parent_comment_id',
+  Content = 'content',
+  AuthorId = 'author_id',
+  CreatedAt = 'created_at',
+  UpdatedAt = 'updated_at',
+  IsResolved = 'is_resolved',
+  ResolvedBy = 'resolved_by',
+  ResolvedAt = 'resolved_at',
+  Reactions = 'reactions',
+  Attachments = 'attachments',
+}
+
 export enum DateGroupCondition {
   Relative = 0,
   Day = 1,

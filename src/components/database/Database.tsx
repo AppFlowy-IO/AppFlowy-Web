@@ -187,11 +187,20 @@ function Database(props: Database2Props) {
 
   const registerRowSync = useCallback(
     (rowKey: string) => {
-      if (!createRow) return;
-      if (syncedRowKeysRef.current.has(rowKey)) return;
+      if (!createRow) {
+        return;
+      }
+
+      if (syncedRowKeysRef.current.has(rowKey)) {
+        return;
+      }
 
       syncedRowKeysRef.current.add(rowKey);
-      void createRow(rowKey);
+      void createRow(rowKey).catch((e) => {
+        console.error('[Database] registerRowSync failed', rowKey, e);
+        // Remove from set so it can be retried
+        syncedRowKeysRef.current.delete(rowKey);
+      });
     },
     [createRow]
   );
@@ -327,6 +336,12 @@ function Database(props: Database2Props) {
       const existing = rowMapRef.current[rowId];
 
       if (existing) {
+        // Ensure sync is registered even for rows loaded via populateRowFromCache,
+        // which loads from IndexedDB without setting up WebSocket sync.
+        const databaseId = getDatabaseId();
+        const rowKey = getRowKey(databaseId, rowId);
+
+        registerRowSync(rowKey);
         return existing;
       }
 

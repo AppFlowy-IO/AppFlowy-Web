@@ -307,6 +307,9 @@ export enum YjsEditorKey {
   block_children = 'children',
   block_external_id = 'external_id',
   block_external_type = 'external_type',
+
+  // row comment
+  comment = 'comment',
 }
 
 export enum YjsFolderKey {
@@ -482,6 +485,8 @@ export interface YSharedRoot extends Y.Map<unknown> {
   get(key: YjsEditorKey.database_row): YDatabaseRow;
 
   get(key: YjsEditorKey.meta): Y.Map<unknown>;
+
+  get(key: YjsEditorKey.comment): Y.Map<Y.Map<unknown>>;
 }
 
 export interface YFolder extends Y.Map<unknown> {

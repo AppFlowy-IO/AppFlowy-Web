@@ -3,6 +3,7 @@ import { Suspense } from 'react';
 import { AppendBreadcrumb } from '@/application/types';
 import EditorSkeleton from '@/components/_shared/skeleton/EditorSkeleton';
 import TableSkeleton from '@/components/_shared/skeleton/TableSkeleton';
+import { RowCommentList } from '@/components/database/components/database-row/comment';
 import { DatabaseRowProperties, RowSubDocument } from '@/components/database/components/database-row';
 import DatabaseRowHeader from '@/components/database/components/header/DatabaseRowHeader';
 import { cn } from '@/lib/utils';
@@ -19,7 +20,17 @@ export function DatabaseRow({ appendBreadcrumb, rowId }: { rowId: string; append
           <Suspense fallback={<TableSkeleton columns={2} rows={4} />}>
             <DatabaseRowProperties rowId={rowId} />
           </Suspense>
-          <div className='px-24 max-sm:px-6'>
+          <div className={'px-24 max-sm:px-6'}>
+            <Separator />
+          </div>
+
+          <Suspense fallback={<div className={'px-24 max-sm:px-6 py-4 text-center text-sm text-text-tertiary'}>...</div>}>
+            <div className={'px-24 max-sm:px-6'}>
+              <RowCommentList rowId={rowId} />
+            </div>
+          </Suspense>
+
+          <div className={'px-24 max-sm:px-6'}>
             <Separator />
           </div>
 
