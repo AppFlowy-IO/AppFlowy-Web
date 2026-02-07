@@ -46,6 +46,7 @@ function generateGroupByField(field: YDatabaseField) {
 
   group.set(YjsDatabaseKey.field_id, fieldId);
   group.set(YjsDatabaseKey.id, `g:${nanoid(6)}`);
+  group.set(YjsDatabaseKey.type, fieldType);
 
   switch (fieldType) {
     case FieldType.SingleSelect:

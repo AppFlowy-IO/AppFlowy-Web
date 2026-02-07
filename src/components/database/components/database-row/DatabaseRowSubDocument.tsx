@@ -27,8 +27,8 @@ import {
   YjsDatabaseKey,
   YjsEditorKey
 } from '@/application/types';
-import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
+import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { YDocWithMeta } from '@/components/database/hooks';
 import { Editor } from '@/components/editor';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
@@ -130,7 +130,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   // undefined = meta hasn't loaded from Yjs yet (wait)
   // true = meta loaded, document is empty (open locally)
   // false = meta loaded, document has content (load from server)
-  const isDocumentEmptyResolved = meta == null ? undefined : (meta.isEmptyDocument ?? true);
+  const isDocumentEmptyResolved = meta === null || meta === undefined ? undefined : (meta.isEmptyDocument ?? true);
 
   const isDocumentEmpty = useCallback(
     (editor: YjsEditor) => {

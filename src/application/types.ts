@@ -351,6 +351,11 @@ export enum YjsDatabaseKey {
   data = 'data',
   iid = 'iid',
   database_id = 'database_id',
+  is_two_way = 'is_two_way',
+  reciprocal_field_id = 'reciprocal_field_id',
+  reciprocal_field_name = 'reciprocal_field_name',
+  source_limit = 'source_limit',
+  target_limit = 'target_limit',
   relation_field_id = 'relation_field_id',
   target_field_id = 'target_field_id',
   calculation_type = 'calculation_type',
@@ -381,12 +386,14 @@ export enum YjsDatabaseKey {
   calculations = 'calculations',
   field_id = 'field_id',
   calculation_value = 'calculation_value',
+  cv = 'cv',
   source_field_type = 'source_field_type', // Added this
   condition = 'condition',
   schema_version = 'schema_version',
   format = 'format',
   filter_type = 'filter_type',
   visible = 'visible',
+  collapsed_group_ids = 'collapsed_group_ids',
   hide_ungrouped_column = 'hide_ungrouped_column',
   collapse_hidden_groups = 'collapse_hidden_groups',
   first_day_of_week = 'first_day_of_week',
@@ -672,10 +679,14 @@ export interface YDatabaseGroup extends Y.Map<unknown> {
 
   get(key: YjsDatabaseKey.field_id): FieldId;
 
+  get(key: YjsDatabaseKey.type): number | string;
+
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.content): string; // "{"hide_empty":false,"condition":2}"
 
   get(key: YjsDatabaseKey.groups): YDatabaseGroupColumns;
+
+  get(key: YjsDatabaseKey.collapsed_group_ids): Y.Array<string> | string[] | undefined;
 }
 
 export type YDatabaseGroupColumns = Y.Array<{ id: string; visible: boolean }>;
@@ -709,7 +720,11 @@ export interface YDatabaseFilter extends Y.Map<unknown> {
 export interface YDatabaseCalculation extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.field_id): FieldId;
 
-  get(key: YjsDatabaseKey.id | YjsDatabaseKey.type | YjsDatabaseKey.calculation_value): string;
+  get(key: YjsDatabaseKey.id | YjsDatabaseKey.cv): string;
+
+  get(key: YjsDatabaseKey.type): string | number;
+
+  get(key: YjsDatabaseKey.calculation_value): string | number | undefined;
 }
 
 export interface YDatabaseFieldSettings extends Y.Map<unknown> {
@@ -767,6 +782,8 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
       | YjsDatabaseKey.condition_value
   ): string;
 
+  get(key: YjsDatabaseKey.reciprocal_field_id | YjsDatabaseKey.reciprocal_field_name): string | undefined;
+
   // CreatedTime, LastEditedTime, DateTime
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.time_format): string | undefined;
@@ -778,14 +795,15 @@ export interface YMapFieldTypeOption extends Y.Map<unknown> {
   // Relation
   get(key: YjsDatabaseKey.database_id): DatabaseId;
 
+  get(key: YjsDatabaseKey.is_two_way | YjsDatabaseKey.include_time): boolean;
+
+  get(key: YjsDatabaseKey.source_limit | YjsDatabaseKey.target_limit): number | undefined;
+
   get(key: YjsDatabaseKey.calculation_type | YjsDatabaseKey.show_as): number;
 
   // Number
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.format): string;
-
-  // LastEditedTime and CreatedTime
-  get(key: YjsDatabaseKey.include_time): boolean;
 
   // AI Translate
   // eslint-disable-next-line @typescript-eslint/unified-signatures

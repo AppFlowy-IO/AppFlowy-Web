@@ -40,7 +40,7 @@ export function GridCalculateRowCell ({ fieldId }: GridCalculateRowCellProps) {
     setCalculation({
       id: item.get(YjsDatabaseKey.id),
       fieldId: item.get(YjsDatabaseKey.field_id),
-      value: item.get(YjsDatabaseKey.calculation_value),
+      value: String(item.get(YjsDatabaseKey.calculation_value) ?? ''),
       type: Number(item.get(YjsDatabaseKey.type)) as CalculationType,
     });
   }, [calculations, fieldId]);
