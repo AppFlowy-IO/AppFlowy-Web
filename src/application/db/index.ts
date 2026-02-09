@@ -190,6 +190,7 @@ export async function openCollabDBWithProvider(
   const doc = new Y.Doc({
     guid: name,
   }) as YDoc;
+
   doc.version = options?.expectedVersion;
 
   await ensureYjsStores(name);
@@ -200,14 +201,15 @@ export async function openCollabDBWithProvider(
   });
 
   let provider = new IndexeddbPersistence(name, doc);
-  let version = await provider.get(name + '/version');
+
+  doc.version = await provider.get(name + '/version');
 
   let resolve: (value: unknown) => void;
   const promise = new Promise((resolveFn) => {
     resolve = resolveFn;
   });
 
-  if (options?.expectedVersion && version !== options.expectedVersion) {
+  if (options?.expectedVersion && doc.version !== options.expectedVersion) {
     // version was provided and it differs from the one we persisted
     await provider.clearData();
     provider = new IndexeddbPersistence(name, doc);
@@ -232,11 +234,12 @@ export async function openCollabDBWithProvider(
 
   Log.debug('[DB] openCollabDBWithProvider ready', {
     name,
+    doc,
     totalDurationMs: Date.now() - startedAt,
     awaitedSync: options?.awaitSync !== false,
   });
 
-  return { doc: doc as YDoc, provider };
+  return { doc, provider };
 }
 
 export async function closeCollabDB(name: string) {

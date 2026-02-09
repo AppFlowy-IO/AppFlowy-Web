@@ -77,7 +77,7 @@ const versionChanged = (context: SyncContext, message: collab.ICollabMessage): b
   const version = message.update?.version || message.syncRequest?.version || null;
 
   if (version && uuidValidate(version)) {
-    return version !== context.version;
+    return version !== context.doc.version;
   } else {
     return false;
   }
@@ -514,7 +514,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
         if (versionChanged(context, message)) {
           const newVersion = message.update?.version || message.syncRequest?.version || undefined;
 
-          Log.debug('Collab version changed:', objectId, context.version, newVersion);
+          Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
           context.doc.emit('reset', [context, newVersion])
           context.doc.destroy();
 
@@ -582,7 +582,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     if (currentUser && context) {
       const { docState } = await http.revertCollabVersion(currentUser.latestWorkspaceId, viewId, context.collabType, version);
 
-      Log.debug('Collab version changed:', viewId, context.version, version);
+      Log.debug('Collab version changed:', viewId, context.doc.version, version);
       context.doc.emit('reset', [context, version])
       context.doc.destroy();
 
