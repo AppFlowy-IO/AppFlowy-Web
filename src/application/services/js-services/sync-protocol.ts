@@ -2,7 +2,7 @@ import { debounce } from 'lodash-es';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
-import { Types } from '@/application/types';
+import { Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -12,11 +12,10 @@ import { Log } from '@/utils/log';
  * and an emit function to send messages back to the server.
  */
 export interface SyncContext {
-  doc: Y.Doc;
+  doc: YDoc;
   awareness?: awarenessProtocol.Awareness;
   collabType: Types;
   lastMessageId?: collab.IRid;
-  version: string | null;
   userMappings?: Y.PermanentUserData;
   /**
    * Emit function to send messages back to the server.
@@ -56,7 +55,7 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
       update: {
         flags: UpdateFlags.Lib0v1,
         payload: update,
-        version: ctx.version
+        version: doc.version
       },
     },
   });
@@ -104,7 +103,7 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
         syncRequest: {
           stateVector: Y.encodeStateVector(doc),
           lastMessageId: ctx.lastMessageId || { timestamp: 0, counter: 0 },
-          version: ctx.version,
+          version: doc.version,
         },
       },
     });
@@ -148,7 +147,7 @@ export const initSync = (ctx: SyncContext) => {
         update: {
           flags: UpdateFlags.Lib0v1,
           payload: mergedUpdates,
-          version: ctx.version,
+          version: doc.version,
         },
       },
     });
@@ -185,7 +184,7 @@ export const initSync = (ctx: SyncContext) => {
       syncRequest: {
         stateVector: Y.encodeStateVector(ctx.doc),
         lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
-        version: ctx.version,
+        version: ctx.doc.version,
       },
     },
   });

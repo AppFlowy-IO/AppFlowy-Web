@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
 import { CollabVersionRecord } from '@/application/collab-version.type';
-import { MentionablePerson, Types, ViewIcon } from '@/application/types';
+import { MentionablePerson, Types, ViewIcon, YjsEditorKey } from '@/application/types';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
@@ -205,7 +205,8 @@ export function DocumentHistoryModal({
 
       try {
         const doc = await previewCollabVersion(viewId, selectedVersionId, Types.Document);
-        //console.log('preview', doc?.getMap('data').toJSON());
+
+        //Log.debug('preview', doc?.getMap(YjsEditorKey.data_section).toJSON());
 
         if (!doc) {
           Log.warn('No doc received for previewing version');
