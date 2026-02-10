@@ -438,6 +438,11 @@ export interface YDoc extends Y.Doc {
    */
   object_id?: string;
 
+  /**
+   * Collab version for this document.
+   */
+  version?: string;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getMap(key: YjsEditorKey.data_section): YSharedRoot | any;
 }
