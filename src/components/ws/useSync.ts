@@ -289,10 +289,19 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       });
 
       if (context.collabType === Types.Document && currentUser) {
-        const userMappings = new Y.PermanentUserData(context.doc);
+        const uid = currentUser.uid;
 
-        userMappings.setUserMapping(context.doc, context.doc.clientID, currentUser.uid);
-        syncContext.userMappings = userMappings;
+        context.doc.on('beforeObserverCalls', (tx: Y.Transaction, doc: Y.Doc) => {
+          if (!syncContext.userMappings && tx.local && tx.changed.size > 0) {
+            // user mappings were not initialized and the currently committed transaction had some changes
+            // made locally
+            const userMappings = new Y.PermanentUserData(doc);
+
+            Log.debug('Remember new user mapping', doc.clientID, uid);
+            userMappings.setUserMapping(doc, doc.clientID, uid);
+            syncContext.userMappings = userMappings;
+          }
+        });
       }
 
       // Initialize the sync process for the new context
@@ -446,7 +455,6 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
   }, [lastBroadcastMessage, registeredContexts, setLastUpdatedCollab]);
 
   const revertCollabVersion = useCallback(async (viewId: string, version: string) => {
-    await deleteDB(viewId);
 
     const context = registeredContexts.current.get(viewId);
 
@@ -456,6 +464,8 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       Log.debug('Collab version changed:', viewId, context.doc.version, version);
       context.doc.emit('reset', [context, version])
       context.doc.destroy();
+
+      await deleteDB(viewId);
 
       const doc = await openCollabDB(context.doc.guid, { expectedVersion: version, currentUser: currentUser.uid });
 
@@ -467,6 +477,8 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
         awareness,
         collabType: context.collabType
       });
+    } else {
+      await deleteDB(viewId);
     }
   }, [registeredContexts, currentUser, registerSyncContext]);
 
