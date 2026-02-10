@@ -333,7 +333,7 @@ export class AFClientService implements AFService {
   }
 
   @withSignIn()
-  async signInOTP(params: { email: string; code: string; type?: 'magiclink' | 'recovery' }) {
+  async signInOTP(params: { email: string; code: string; type?: 'magiclink' | 'recovery' | 'signup' }) {
     return APIService.signInOTP(params);
   }
 

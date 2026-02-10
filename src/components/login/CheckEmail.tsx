@@ -10,9 +10,10 @@ import { cn } from '@/lib/utils';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 
-function CheckEmail ({ email, redirectTo }: {
+function CheckEmail ({ email, redirectTo, otpType }: {
   email: string;
   redirectTo: string;
+  otpType?: 'signup';
 }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
@@ -37,6 +38,7 @@ function CheckEmail ({ email, redirectTo }: {
         email,
         redirectTo,
         code,
+        ...(otpType ? { type: otpType } : {}),
       });
       console.log('[CheckEmail] signInOTP completed successfully');
       // eslint-disable-next-line

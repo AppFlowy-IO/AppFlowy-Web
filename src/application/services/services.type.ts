@@ -134,7 +134,7 @@ export interface AppService {
     email: string;
     code: string;
     redirectTo: string;
-    type?: 'magiclink' | 'recovery';
+    type?: 'magiclink' | 'recovery' | 'signup';
   }) => Promise<void>;
   signInWithPassword: (params: { email: string; password: string; redirectTo: string }) => Promise<void>;
   signUpWithPassword: (params: { email: string; password: string; redirectTo: string }) => Promise<void>;

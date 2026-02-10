@@ -118,9 +118,10 @@ export async function signInWithPassword(params: { email: string; password: stri
 export async function signUpWithPassword(params: { email: string; password: string; redirectTo: string }) {
   try {
     const response = await axiosInstance?.post<{
-      access_token: string;
-      expires_at: number;
-      refresh_token: string;
+      access_token?: string;
+      expires_at?: number;
+      refresh_token?: string;
+      confirmation_sent_at?: string;
     }>('/signup', {
       email: params.email,
       password: params.password,
@@ -129,8 +130,17 @@ export async function signUpWithPassword(params: { email: string; password: stri
     const data = response?.data;
 
     if (data) {
+      // If email confirmation is required, the response won't contain an access_token.
+      // Notify the caller so the UI can redirect to the "check your email" step.
+      if (data.confirmation_sent_at && !data.access_token) {
+        return Promise.reject({
+          code: 0,
+          message: 'confirmation_email_sent',
+        });
+      }
+
       try {
-        await verifyToken(data.access_token);
+        await verifyToken(data.access_token as string);
       } catch (error: unknown) {
         emit(EventType.SESSION_INVALID);
         const err = error as { message?: string; code?: number };
@@ -146,7 +156,7 @@ export async function signUpWithPassword(params: { email: string; password: stri
       }
 
       try {
-        await refreshToken(data.refresh_token);
+        await refreshToken(data.refresh_token as string);
       } catch (error: unknown) {
         emit(EventType.SESSION_INVALID);
         const err = error as { message?: string; code?: number };
@@ -260,7 +270,7 @@ export async function signInOTP({
 }: {
   email: string;
   code: string;
-  type?: 'magiclink' | 'recovery';
+  type?: 'magiclink' | 'recovery' | 'signup';
 }) {
   try {
     const response = await axiosInstance?.post<{
@@ -305,7 +315,7 @@ export async function signInOTP({
         }
 
         // Emit session valid only after everything is complete
-        if (type === 'magiclink') {
+        if (type === 'magiclink' || type === 'signup') {
           emit(EventType.SESSION_VALID);
         }
 
