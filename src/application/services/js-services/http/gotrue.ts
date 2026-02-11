@@ -6,6 +6,7 @@ import { getTokenParsed, saveGoTrueAuth } from '@/application/session/token';
 
 import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
 import { verifyToken } from './http_api';
+import { Log } from '@/utils/log';
 
 export * from './gotrue-error';
 
@@ -122,6 +123,7 @@ export async function signUpWithPassword(params: { email: string; password: stri
       expires_at?: number;
       refresh_token?: string;
       confirmation_sent_at?: string;
+      identities?: unknown[];
     }>('/signup', {
       email: params.email,
       password: params.password,
@@ -129,10 +131,37 @@ export async function signUpWithPassword(params: { email: string; password: stri
 
     const data = response?.data;
 
+    Log.debug('signUpWithPassword response', data);
+
     if (data) {
+      // GoTrue returns 200 with an empty identities array when the email is
+      // already registered and confirmed (to prevent email enumeration).
+      // Treat this as "already registered".
+      if (!data.access_token && Array.isArray(data.identities) && data.identities.length === 0) {
+        return Promise.reject({
+          code: 422,
+          message: 'Email already registered',
+        });
+      }
+
       // If email confirmation is required, the response won't contain an access_token.
       // Notify the caller so the UI can redirect to the "check your email" step.
       if (data.confirmation_sent_at && !data.access_token) {
+        // For already-existing unconfirmed users, GoTrue won't resend the confirmation
+        // email on /signup. Call /resend to ensure the user receives a new OTP.
+        try {
+          const resendRes = await axiosInstance?.post('/resend', {
+            type: 'signup',
+            email: params.email,
+          });
+
+          Log.info('Resend confirmation email response', resendRes?.status, resendRes?.data);
+        } catch (resendErr: unknown) {
+          // Ignore resend errors (e.g. rate limiting) — the user may still
+          // have a valid OTP from the original signup or a previous resend.
+          Log.warn('Resend confirmation email failed', resendErr);
+        }
+
         return Promise.reject({
           code: 0,
           message: 'confirmation_email_sent',
