@@ -13,6 +13,7 @@ import { parseTSVTable } from '@/components/editor/parsers/table-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
 import { processUrl } from '@/utils/url';
+import { isValidVideoUrl } from '@/utils/video-url';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -196,9 +197,7 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
   }
 
   // Check for video URLs
-  const isVideoUrl = isURL(url, {
-    host_whitelist: ['youtube.com', 'www.youtube.com', 'youtu.be', 'vimeo.com'],
-  });
+  const isVideoUrl = isValidVideoUrl(url);
 
   if (isVideoUrl) {
     return insertBlock(editor, {

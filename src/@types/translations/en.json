@@ -2226,7 +2226,11 @@
         "insertVideo": "Add video",
         "invalidVideoUrl": "The source URL is not supported yet.",
         "invalidVideoUrlYouTube": "YouTube is not supported yet.",
-        "supportedFormats": "Supported formats: MP4, WebM, MOV, AVI, FLV, MPEG/M4V, H.264"
+        "supportedFormats": "Supported formats: MP4, WebM, MOV, AVI, FLV, MPEG/M4V, H.264",
+        "errorInvalidUrl": "The video embed couldn't be loaded. Invalid URL.",
+        "errorFacebookPrivacy": "Facebook video couldn't be loaded. Check privacy settings.",
+        "errorFileCors": "Video file couldn't be loaded. Check URL and CORS settings.",
+        "errorGeneric": "The video embed couldn't be loaded. Check URL and privacy settings."
       },
       "file": {
         "name": "File",
