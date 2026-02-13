@@ -159,9 +159,9 @@ export async function openCollabDB(name: string, options: OpenCollabOptions = {}
     await provider.clearData();
     provider = new IndexeddbPersistence(name, doc);
     await provider.set(name + '/version', options.expectedVersion);
+    version = options.expectedVersion;
   }
 
-  version = options.expectedVersion;
   doc.version = version;
 
   provider.on('synced', () => {
@@ -202,7 +202,7 @@ export async function openCollabDBWithProvider(
 
   let provider = new IndexeddbPersistence(name, doc);
 
-  doc.version = await provider.get(name + '/version');
+  doc.version = options?.expectedVersion;
 
   let resolve: (value: unknown) => void;
   const promise = new Promise((resolveFn) => {
