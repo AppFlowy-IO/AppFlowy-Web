@@ -585,7 +585,9 @@ export function useViewOperations() {
         }
 
         if (collabType === Types.Document) {
-          const doc = new Y.Doc();
+          const doc = new Y.Doc() as YDoc;
+
+          doc.version = versionId;
 
           Y.transact(
             doc,
