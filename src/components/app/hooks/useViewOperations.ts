@@ -11,10 +11,10 @@ import {
   ViewId,
   ViewLayout,
   YDoc,
-  YjsEditorKey,
+  YjsEditorKey
 } from '@/application/types';
-import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import { getDatabaseIdFromDoc, openView } from '@/application/view-loader';
+import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
@@ -316,7 +316,7 @@ export function useViewOperations() {
             throw new Error('Database not found');
           }
 
-          doc.guid = databaseId;
+          doc.guid = id;
         }
 
         // Store metadata on doc for deferred sync binding
@@ -436,7 +436,7 @@ export function useViewOperations() {
         });
         const syncContext = registerSyncContext({
           doc,
-          collabType: Types.DatabaseRow,
+          collabType: Types.DatabaseRow
         });
 
         createdRowKeys.current.push(rowKey);

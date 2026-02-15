@@ -14,3 +14,8 @@ message Message {
         notification.WorkspaceNotification notification = 2;
     }
 }
+
+message HttpRealtimeMessage {
+    string device_id = 1;
+    bytes payload = 2;
+}
