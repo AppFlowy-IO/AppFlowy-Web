@@ -1295,6 +1295,7 @@ export interface ViewComponentProps {
   currentUser?: User;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
 }
 
 export interface CreatePagePayload {

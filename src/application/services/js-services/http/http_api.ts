@@ -340,6 +340,80 @@ export function initAPIService(config: AFCloudConfig) {
   };
 
   axiosInstance.interceptors.response.use((response) => response, handleUnauthorized);
+
+  // Retry interceptor: automatic retry with exponential backoff for transient failures.
+  // Only retries GET requests (idempotent) on network errors or 5xx server errors.
+  const RETRY_COUNT = 3;
+  const RETRY_BASE_DELAY = 1000; // 1s, 2s, 4s
+
+  type RetryableAxiosConfig = NonNullable<AxiosError['config']> & {
+    __afRetryCount?: number;
+  };
+
+  axiosInstance.interceptors.response.use(undefined, async (error: unknown) => {
+    if (!axios.isAxiosError(error)) return Promise.reject(error);
+    const config = error.config as RetryableAxiosConfig | undefined;
+
+    if (!config) return Promise.reject(error);
+
+    // Only retry idempotent GET requests
+    if (config.method?.toLowerCase() !== 'get') return Promise.reject(error);
+
+    // Keep retry count on config so it survives axios cloning between retries.
+    const retryCount = config.__afRetryCount ?? 0;
+
+    if (retryCount >= RETRY_COUNT) return Promise.reject(error);
+
+    // Respect explicit request cancellation (AbortController / axios cancel token).
+    const maybeCanceledError: unknown = error;
+    const isCanceled = axios.isCancel(maybeCanceledError) || error.code === 'ERR_CANCELED';
+
+    if (isCanceled) return Promise.reject(error);
+
+    // Retry on network errors (no response) or 5xx server errors
+    const status = error.response?.status;
+    const isRetryable = !error.response || (status !== undefined && status >= 500);
+
+    if (!isRetryable) return Promise.reject(error);
+
+    const nextRetry = retryCount + 1;
+
+    config.__afRetryCount = nextRetry;
+    const delay = RETRY_BASE_DELAY * Math.pow(2, retryCount);
+
+    const waitForBackoff = (ms: number, signal?: AbortSignal) =>
+      new Promise<'elapsed' | 'aborted'>((resolve) => {
+        if (!signal) {
+          setTimeout(() => resolve('elapsed'), ms);
+          return;
+        }
+
+        if (signal.aborted) {
+          resolve('aborted');
+          return;
+        }
+
+        const onAbort = () => {
+          clearTimeout(timer);
+          signal.removeEventListener('abort', onAbort);
+          resolve('aborted');
+        };
+
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', onAbort);
+          resolve('elapsed');
+        }, ms);
+
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
+
+    Log.debug(`[HTTP Retry] Attempt ${nextRetry}/${RETRY_COUNT} for ${config.url} in ${delay}ms`);
+    const backoffResult = await waitForBackoff(delay, config.signal as AbortSignal | undefined);
+
+    if (backoffResult === 'aborted' || config.signal?.aborted) return Promise.reject(error);
+
+    return axiosInstance!(config);
+  });
 }
 
 export async function signInWithUrl(url: string) {

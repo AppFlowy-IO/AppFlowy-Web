@@ -108,6 +108,12 @@ export interface AppContextType {
   createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadMentionableUsers?: () => Promise<MentionablePerson[]>;
+  /**
+   * Schedule deferred cleanup of a sync context after a delay.
+   * If the same objectId is re-registered before the timer fires,
+   * the cleanup is cancelled and the existing context is reused.
+   */
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
 }
 
 // Main AppContext - same as original
@@ -348,6 +354,7 @@ export function useAppHandlers() {
     updatePageName: context.updatePageName,
     getViewIdFromDatabaseId: context.getViewIdFromDatabaseId,
     loadMentionableUsers: context.loadMentionableUsers,
+    scheduleDeferredCleanup: context.scheduleDeferredCleanup,
   };
 }
 

@@ -110,6 +110,10 @@ export interface Database2Props {
    * Upload a file to storage and return the URL.
    */
   uploadFile?: (file: File) => Promise<string>;
+  /**
+   * Schedule deferred cleanup of a sync context after a delay.
+   */
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
 }
 
 function Database(props: Database2Props) {
@@ -419,6 +423,24 @@ function Database(props: Database2Props) {
       });
     }
   }, [workspaceId, getDatabaseId, ensureBlobPrefetch]);
+
+  // Schedule deferred cleanup for all row sync contexts on unmount
+  useEffect(() => {
+    const syncedKeys = syncedRowKeysRef;
+    const cleanup = props.scheduleDeferredCleanup;
+
+    return () => {
+      if (!cleanup) return;
+      syncedKeys.current.forEach((rowKey) => {
+        const rowId = rowKey.split('_rows_')[1];
+
+        if (rowId) {
+          cleanup(rowId);
+        }
+      });
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.scheduleDeferredCleanup]);
 
   // Combined modal state to avoid multiple re-renders when updating related values
   const [modalState, setModalState] = useState<{

@@ -562,6 +562,12 @@ export function getCachedRowDoc(rowKey: string): YDoc | undefined {
 }
 
 export function deleteRow(rowKey: string) {
+  const entry = rowDocs.get(rowKey);
+
+  if (entry) {
+    entry.doc.destroy();
+  }
+
   rowDocs.delete(rowKey);
 }
 
@@ -700,5 +706,11 @@ export function getCachedRowSubDoc(documentId: string): YDoc | undefined {
  * Call this when the document is no longer needed (e.g., row deleted).
  */
 export function deleteRowSubDoc(documentId: string) {
+  const entry = rowSubDocs.get(documentId);
+
+  if (entry) {
+    entry.doc.destroy();
+  }
+
   rowSubDocs.delete(documentId);
 }

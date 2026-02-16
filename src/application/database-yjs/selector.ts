@@ -1296,53 +1296,72 @@ export function useRowOrdersSelector() {
 
   // Observe Yjs data changes
   useEffect(() => {
-    const throttleChange = debounce(onConditionsChange, 200);
-    const scheduleRollupRefresh = debounce(() => {
+    // Single debounced handler for all data changes (consolidated from 4 separate debounced callbacks)
+    const debouncedChange = debounce(() => {
       setRollupWatchVersion((prev) => prev + 1);
+      onConditionsChange();
     }, 200);
 
-    view?.get(YjsDatabaseKey.row_orders)?.observeDeep(throttleChange);
-    const debouncedConditionsChange = debounce(onConditionsChange, 150);
+    view?.get(YjsDatabaseKey.row_orders)?.observeDeep(debouncedChange);
 
     const observers = new Map<string, () => void>();
+    let relationFieldIds: string[] = [];
+    let rollupFieldIds: string[] = [];
+
+    const refreshConditionFieldIds = () => {
+      relationFieldIds = [];
+      rollupFieldIds = [];
+
+      fields?.forEach((field, fieldId) => {
+        const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+        if (fieldType === FieldType.Relation) {
+          relationFieldIds.push(fieldId);
+        }
+
+        if (fieldType === FieldType.Rollup) {
+          rollupFieldIds.push(fieldId);
+        }
+      });
+    };
 
     const handleSortFilterChange = () => {
-      scheduleRollupRefresh();
-      throttleChange();
+      debouncedChange();
     };
 
     const handleFieldChange = () => {
-      if (rows && fields) {
-        fields.forEach((field, fieldId) => {
-          if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Rollup) {
-            Object.keys(rows).forEach((rowId) => {
-              invalidateRollupCell(`${rowId}:${fieldId}`);
-            });
+      refreshConditionFieldIds();
+
+      if (rows) {
+        Object.keys(rows).forEach((rowId) => {
+          for (const fieldId of rollupFieldIds) {
+            invalidateRollupCell(`${rowId}:${fieldId}`);
           }
         });
       }
 
-      scheduleRollupRefresh();
-      throttleChange();
+      debouncedChange();
     };
 
     sorts?.observeDeep(handleSortFilterChange);
     filters?.observeDeep(handleSortFilterChange);
     fields?.observeDeep(handleFieldChange);
 
+    // Keep relation/rollup field IDs updated as schema changes to avoid stale invalidation.
+    refreshConditionFieldIds();
+
     Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
       const observerRowsEvent = () => {
-        fields?.forEach((field, fieldId) => {
-          if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Relation) {
-            invalidateRelationCell(`${rowId}:${fieldId}`);
-          }
+        // Only invalidate relation/rollup fields (O(relation+rollup) instead of O(allFields)).
+        for (const fieldId of relationFieldIds) {
+          invalidateRelationCell(`${rowId}:${fieldId}`);
+        }
 
-          if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Rollup) {
-            invalidateRollupCell(`${rowId}:${fieldId}`);
-          }
-        });
-        scheduleRollupRefresh();
-        debouncedConditionsChange();
+        for (const fieldId of rollupFieldIds) {
+          invalidateRollupCell(`${rowId}:${fieldId}`);
+        }
+
+        debouncedChange();
       };
 
       observers.set(rowId, observerRowsEvent);
@@ -1350,13 +1369,11 @@ export function useRowOrdersSelector() {
     });
 
     return () => {
-      view?.get(YjsDatabaseKey.row_orders)?.unobserveDeep(throttleChange);
+      view?.get(YjsDatabaseKey.row_orders)?.unobserveDeep(debouncedChange);
       sorts?.unobserveDeep(handleSortFilterChange);
       filters?.unobserveDeep(handleSortFilterChange);
       fields?.unobserveDeep(handleFieldChange);
-      scheduleRollupRefresh.cancel();
-      throttleChange.cancel();
-      debouncedConditionsChange.cancel();
+      debouncedChange.cancel();
       Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
         const observer = observers.get(rowId);
 

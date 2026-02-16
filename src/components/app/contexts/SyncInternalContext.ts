@@ -33,6 +33,12 @@ export interface SyncInternalContextType {
    * to ensure the server has the latest data before operations like duplicate.
    */
   syncAllToServer: (workspaceId: string) => Promise<void>;
+  /**
+   * Schedule deferred cleanup of a sync context after a delay.
+   * If the same objectId is re-registered before the timer fires,
+   * the cleanup is cancelled and the existing context is reused.
+   */
+  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void;
 }
 
 export const SyncInternalContext = createContext<SyncInternalContextType | null>(null);
