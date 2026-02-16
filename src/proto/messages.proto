@@ -6,6 +6,14 @@ import "notification.proto";
 package messages;
 
 /**
+ * W3C TraceContext propagation data carried inside WebSocket messages.
+ */
+message TraceContext {
+    string traceparent = 1;
+    string tracestate = 2;
+}
+
+/**
  * All messages send between client/server are wrapped into a `Message`.
  */
 message Message {
@@ -13,4 +21,10 @@ message Message {
         collab.CollabMessage collab_message = 1;
         notification.WorkspaceNotification notification = 2;
     }
+    optional TraceContext trace = 3;
+}
+
+message HttpRealtimeMessage {
+    string device_id = 1;
+    bytes payload = 2;
 }

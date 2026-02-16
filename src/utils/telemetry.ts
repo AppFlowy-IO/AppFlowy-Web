@@ -11,7 +11,7 @@ function ensureInitialized() {
   initialized = true;
 
   const provider = new WebTracerProvider();
-  
+
   provider.register({
     propagator: new W3CTraceContextPropagator(),
   });

@@ -3,6 +3,109 @@ import Long = require("long");
 /** Namespace messages. */
 export namespace messages {
 
+    /** Properties of a TraceContext. */
+    interface ITraceContext {
+
+        /** TraceContext traceparent */
+        traceparent?: (string|null);
+
+        /** TraceContext tracestate */
+        tracestate?: (string|null);
+    }
+
+    /** W3C TraceContext propagation data carried inside WebSocket messages. */
+    class TraceContext implements ITraceContext {
+
+        /**
+         * Constructs a new TraceContext.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: messages.ITraceContext);
+
+        /** TraceContext traceparent. */
+        public traceparent: string;
+
+        /** TraceContext tracestate. */
+        public tracestate: string;
+
+        /**
+         * Creates a new TraceContext instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns TraceContext instance
+         */
+        public static create(properties?: messages.ITraceContext): messages.TraceContext;
+
+        /**
+         * Encodes the specified TraceContext message. Does not implicitly {@link messages.TraceContext.verify|verify} messages.
+         * @param message TraceContext message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: messages.ITraceContext, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified TraceContext message, length delimited. Does not implicitly {@link messages.TraceContext.verify|verify} messages.
+         * @param message TraceContext message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: messages.ITraceContext, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a TraceContext message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns TraceContext
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): messages.TraceContext;
+
+        /**
+         * Decodes a TraceContext message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns TraceContext
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): messages.TraceContext;
+
+        /**
+         * Verifies a TraceContext message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a TraceContext message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns TraceContext
+         */
+        public static fromObject(object: { [k: string]: any }): messages.TraceContext;
+
+        /**
+         * Creates a plain object from a TraceContext message. Also converts values to other types if specified.
+         * @param message TraceContext
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: messages.TraceContext, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this TraceContext to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for TraceContext
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
     /** Properties of a Message. */
     interface IMessage {
 
@@ -11,6 +114,9 @@ export namespace messages {
 
         /** Message notification */
         notification?: (notification.IWorkspaceNotification|null);
+
+        /** Message trace */
+        trace?: (messages.ITraceContext|null);
     }
 
     /** All messages send between client/server are wrapped into a `Message`. */
@@ -27,6 +133,9 @@ export namespace messages {
 
         /** Message notification. */
         public notification?: (notification.IWorkspaceNotification|null);
+
+        /** Message trace. */
+        public trace?: (messages.ITraceContext|null);
 
         /** Message payload. */
         public payload?: ("collabMessage"|"notification");
@@ -103,6 +212,109 @@ export namespace messages {
 
         /**
          * Gets the default type url for Message
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a HttpRealtimeMessage. */
+    interface IHttpRealtimeMessage {
+
+        /** HttpRealtimeMessage deviceId */
+        deviceId?: (string|null);
+
+        /** HttpRealtimeMessage payload */
+        payload?: (Uint8Array|null);
+    }
+
+    /** Represents a HttpRealtimeMessage. */
+    class HttpRealtimeMessage implements IHttpRealtimeMessage {
+
+        /**
+         * Constructs a new HttpRealtimeMessage.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: messages.IHttpRealtimeMessage);
+
+        /** HttpRealtimeMessage deviceId. */
+        public deviceId: string;
+
+        /** HttpRealtimeMessage payload. */
+        public payload: Uint8Array;
+
+        /**
+         * Creates a new HttpRealtimeMessage instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns HttpRealtimeMessage instance
+         */
+        public static create(properties?: messages.IHttpRealtimeMessage): messages.HttpRealtimeMessage;
+
+        /**
+         * Encodes the specified HttpRealtimeMessage message. Does not implicitly {@link messages.HttpRealtimeMessage.verify|verify} messages.
+         * @param message HttpRealtimeMessage message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: messages.IHttpRealtimeMessage, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified HttpRealtimeMessage message, length delimited. Does not implicitly {@link messages.HttpRealtimeMessage.verify|verify} messages.
+         * @param message HttpRealtimeMessage message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: messages.IHttpRealtimeMessage, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a HttpRealtimeMessage message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns HttpRealtimeMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): messages.HttpRealtimeMessage;
+
+        /**
+         * Decodes a HttpRealtimeMessage message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns HttpRealtimeMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): messages.HttpRealtimeMessage;
+
+        /**
+         * Verifies a HttpRealtimeMessage message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a HttpRealtimeMessage message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns HttpRealtimeMessage
+         */
+        public static fromObject(object: { [k: string]: any }): messages.HttpRealtimeMessage;
+
+        /**
+         * Creates a plain object from a HttpRealtimeMessage message. Also converts values to other types if specified.
+         * @param message HttpRealtimeMessage
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: messages.HttpRealtimeMessage, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this HttpRealtimeMessage to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for HttpRealtimeMessage
          * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns The default type url
          */
@@ -1427,12 +1639,6 @@ export namespace notification {
         /** UserProfileChange email. */
         public email?: (string|null);
 
-        /** UserProfileChange _name. */
-        public _name?: "name";
-
-        /** UserProfileChange _email. */
-        public _email?: "email";
-
         /**
          * Creates a new UserProfileChange instance using the specified properties.
          * @param [properties] Properties to set
@@ -2502,18 +2708,6 @@ export namespace notification {
         /** WorkspaceMemberProfileChanged description. */
         public description?: (string|null);
 
-        /** WorkspaceMemberProfileChanged _avatarUrl. */
-        public _avatarUrl?: "avatarUrl";
-
-        /** WorkspaceMemberProfileChanged _coverImageUrl. */
-        public _coverImageUrl?: "coverImageUrl";
-
-        /** WorkspaceMemberProfileChanged _customImageUrl. */
-        public _customImageUrl?: "customImageUrl";
-
-        /** WorkspaceMemberProfileChanged _description. */
-        public _description?: "description";
-
         /**
          * Creates a new WorkspaceMemberProfileChanged instance using the specified properties.
          * @param [properties] Properties to set
@@ -2616,9 +2810,6 @@ export namespace notification {
 
         /** FolderChanged folderRid. */
         public folderRid?: (string|null);
-
-        /** FolderChanged _folderRid. */
-        public _folderRid?: "folderRid";
 
         /**
          * Creates a new FolderChanged instance using the specified properties.

@@ -16,6 +16,233 @@ export const messages = $root.messages = (() => {
      */
     const messages = {};
 
+    messages.TraceContext = (function() {
+
+        /**
+         * Properties of a TraceContext.
+         * @memberof messages
+         * @interface ITraceContext
+         * @property {string|null} [traceparent] TraceContext traceparent
+         * @property {string|null} [tracestate] TraceContext tracestate
+         */
+
+        /**
+         * Constructs a new TraceContext.
+         * @memberof messages
+         * @classdesc W3C TraceContext propagation data carried inside WebSocket messages.
+         * @implements ITraceContext
+         * @constructor
+         * @param {messages.ITraceContext=} [properties] Properties to set
+         */
+        function TraceContext(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * TraceContext traceparent.
+         * @member {string} traceparent
+         * @memberof messages.TraceContext
+         * @instance
+         */
+        TraceContext.prototype.traceparent = "";
+
+        /**
+         * TraceContext tracestate.
+         * @member {string} tracestate
+         * @memberof messages.TraceContext
+         * @instance
+         */
+        TraceContext.prototype.tracestate = "";
+
+        /**
+         * Creates a new TraceContext instance using the specified properties.
+         * @function create
+         * @memberof messages.TraceContext
+         * @static
+         * @param {messages.ITraceContext=} [properties] Properties to set
+         * @returns {messages.TraceContext} TraceContext instance
+         */
+        TraceContext.create = function create(properties) {
+            return new TraceContext(properties);
+        };
+
+        /**
+         * Encodes the specified TraceContext message. Does not implicitly {@link messages.TraceContext.verify|verify} messages.
+         * @function encode
+         * @memberof messages.TraceContext
+         * @static
+         * @param {messages.ITraceContext} message TraceContext message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        TraceContext.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.traceparent != null && Object.hasOwnProperty.call(message, "traceparent"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.traceparent);
+            if (message.tracestate != null && Object.hasOwnProperty.call(message, "tracestate"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.tracestate);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified TraceContext message, length delimited. Does not implicitly {@link messages.TraceContext.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof messages.TraceContext
+         * @static
+         * @param {messages.ITraceContext} message TraceContext message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        TraceContext.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a TraceContext message from the specified reader or buffer.
+         * @function decode
+         * @memberof messages.TraceContext
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {messages.TraceContext} TraceContext
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        TraceContext.decode = function decode(reader, length) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.messages.TraceContext();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                switch (tag >>> 3) {
+                case 1: {
+                        message.traceparent = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.tracestate = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a TraceContext message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof messages.TraceContext
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {messages.TraceContext} TraceContext
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        TraceContext.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a TraceContext message.
+         * @function verify
+         * @memberof messages.TraceContext
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        TraceContext.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.traceparent != null && message.hasOwnProperty("traceparent"))
+                if (!$util.isString(message.traceparent))
+                    return "traceparent: string expected";
+            if (message.tracestate != null && message.hasOwnProperty("tracestate"))
+                if (!$util.isString(message.tracestate))
+                    return "tracestate: string expected";
+            return null;
+        };
+
+        /**
+         * Creates a TraceContext message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof messages.TraceContext
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {messages.TraceContext} TraceContext
+         */
+        TraceContext.fromObject = function fromObject(object) {
+            if (object instanceof $root.messages.TraceContext)
+                return object;
+            let message = new $root.messages.TraceContext();
+            if (object.traceparent != null)
+                message.traceparent = String(object.traceparent);
+            if (object.tracestate != null)
+                message.tracestate = String(object.tracestate);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a TraceContext message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof messages.TraceContext
+         * @static
+         * @param {messages.TraceContext} message TraceContext
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        TraceContext.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.traceparent = "";
+                object.tracestate = "";
+            }
+            if (message.traceparent != null && message.hasOwnProperty("traceparent"))
+                object.traceparent = message.traceparent;
+            if (message.tracestate != null && message.hasOwnProperty("tracestate"))
+                object.tracestate = message.tracestate;
+            return object;
+        };
+
+        /**
+         * Converts this TraceContext to JSON.
+         * @function toJSON
+         * @memberof messages.TraceContext
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        TraceContext.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for TraceContext
+         * @function getTypeUrl
+         * @memberof messages.TraceContext
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        TraceContext.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/messages.TraceContext";
+        };
+
+        return TraceContext;
+    })();
+
     messages.Message = (function() {
 
         /**
@@ -24,6 +251,7 @@ export const messages = $root.messages = (() => {
          * @interface IMessage
          * @property {collab.ICollabMessage|null} [collabMessage] Message collabMessage
          * @property {notification.IWorkspaceNotification|null} [notification] Message notification
+         * @property {messages.ITraceContext|null} [trace] Message trace
          */
 
         /**
@@ -57,6 +285,14 @@ export const messages = $root.messages = (() => {
          */
         Message.prototype.notification = null;
 
+        /**
+         * Message trace.
+         * @member {messages.ITraceContext|null|undefined} trace
+         * @memberof messages.Message
+         * @instance
+         */
+        Message.prototype.trace = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
@@ -68,6 +304,12 @@ export const messages = $root.messages = (() => {
          */
         Object.defineProperty(Message.prototype, "payload", {
             get: $util.oneOfGetter($oneOfFields = ["collabMessage", "notification"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        // Virtual OneOf for proto3 optional field
+        Object.defineProperty(Message.prototype, "_trace", {
+            get: $util.oneOfGetter($oneOfFields = ["trace"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -99,6 +341,8 @@ export const messages = $root.messages = (() => {
                 $root.collab.CollabMessage.encode(message.collabMessage, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
             if (message.notification != null && Object.hasOwnProperty.call(message, "notification"))
                 $root.notification.WorkspaceNotification.encode(message.notification, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
+            if (message.trace != null && Object.hasOwnProperty.call(message, "trace"))
+                $root.messages.TraceContext.encode(message.trace, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
             return writer;
         };
 
@@ -126,14 +370,12 @@ export const messages = $root.messages = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Message.decode = function decode(reader, length, error) {
+        Message.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.messages.Message();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.collabMessage = $root.collab.CollabMessage.decode(reader, reader.uint32());
@@ -141,6 +383,10 @@ export const messages = $root.messages = (() => {
                     }
                 case 2: {
                         message.notification = $root.notification.WorkspaceNotification.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 3: {
+                        message.trace = $root.messages.TraceContext.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -197,6 +443,14 @@ export const messages = $root.messages = (() => {
                         return "notification." + error;
                 }
             }
+            if (message.trace != null && message.hasOwnProperty("trace")) {
+                properties._trace = 1;
+                {
+                    let error = $root.messages.TraceContext.verify(message.trace);
+                    if (error)
+                        return "trace." + error;
+                }
+            }
             return null;
         };
 
@@ -221,6 +475,11 @@ export const messages = $root.messages = (() => {
                 if (typeof object.notification !== "object")
                     throw TypeError(".messages.Message.notification: object expected");
                 message.notification = $root.notification.WorkspaceNotification.fromObject(object.notification);
+            }
+            if (object.trace != null) {
+                if (typeof object.trace !== "object")
+                    throw TypeError(".messages.Message.trace: object expected");
+                message.trace = $root.messages.TraceContext.fromObject(object.trace);
             }
             return message;
         };
@@ -247,6 +506,11 @@ export const messages = $root.messages = (() => {
                 object.notification = $root.notification.WorkspaceNotification.toObject(message.notification, options);
                 if (options.oneofs)
                     object.payload = "notification";
+            }
+            if (message.trace != null && message.hasOwnProperty("trace")) {
+                object.trace = $root.messages.TraceContext.toObject(message.trace, options);
+                if (options.oneofs)
+                    object._trace = "trace";
             }
             return object;
         };
@@ -278,6 +542,242 @@ export const messages = $root.messages = (() => {
         };
 
         return Message;
+    })();
+
+    messages.HttpRealtimeMessage = (function() {
+
+        /**
+         * Properties of a HttpRealtimeMessage.
+         * @memberof messages
+         * @interface IHttpRealtimeMessage
+         * @property {string|null} [deviceId] HttpRealtimeMessage deviceId
+         * @property {Uint8Array|null} [payload] HttpRealtimeMessage payload
+         */
+
+        /**
+         * Constructs a new HttpRealtimeMessage.
+         * @memberof messages
+         * @classdesc Represents a HttpRealtimeMessage.
+         * @implements IHttpRealtimeMessage
+         * @constructor
+         * @param {messages.IHttpRealtimeMessage=} [properties] Properties to set
+         */
+        function HttpRealtimeMessage(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * HttpRealtimeMessage deviceId.
+         * @member {string} deviceId
+         * @memberof messages.HttpRealtimeMessage
+         * @instance
+         */
+        HttpRealtimeMessage.prototype.deviceId = "";
+
+        /**
+         * HttpRealtimeMessage payload.
+         * @member {Uint8Array} payload
+         * @memberof messages.HttpRealtimeMessage
+         * @instance
+         */
+        HttpRealtimeMessage.prototype.payload = $util.newBuffer([]);
+
+        /**
+         * Creates a new HttpRealtimeMessage instance using the specified properties.
+         * @function create
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {messages.IHttpRealtimeMessage=} [properties] Properties to set
+         * @returns {messages.HttpRealtimeMessage} HttpRealtimeMessage instance
+         */
+        HttpRealtimeMessage.create = function create(properties) {
+            return new HttpRealtimeMessage(properties);
+        };
+
+        /**
+         * Encodes the specified HttpRealtimeMessage message. Does not implicitly {@link messages.HttpRealtimeMessage.verify|verify} messages.
+         * @function encode
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {messages.IHttpRealtimeMessage} message HttpRealtimeMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        HttpRealtimeMessage.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.deviceId != null && Object.hasOwnProperty.call(message, "deviceId"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.deviceId);
+            if (message.payload != null && Object.hasOwnProperty.call(message, "payload"))
+                writer.uint32(/* id 2, wireType 2 =*/18).bytes(message.payload);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified HttpRealtimeMessage message, length delimited. Does not implicitly {@link messages.HttpRealtimeMessage.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {messages.IHttpRealtimeMessage} message HttpRealtimeMessage message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        HttpRealtimeMessage.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a HttpRealtimeMessage message from the specified reader or buffer.
+         * @function decode
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {messages.HttpRealtimeMessage} HttpRealtimeMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        HttpRealtimeMessage.decode = function decode(reader, length) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.messages.HttpRealtimeMessage();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                switch (tag >>> 3) {
+                case 1: {
+                        message.deviceId = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.payload = reader.bytes();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a HttpRealtimeMessage message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {messages.HttpRealtimeMessage} HttpRealtimeMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        HttpRealtimeMessage.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a HttpRealtimeMessage message.
+         * @function verify
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        HttpRealtimeMessage.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            if (message.deviceId != null && message.hasOwnProperty("deviceId"))
+                if (!$util.isString(message.deviceId))
+                    return "deviceId: string expected";
+            if (message.payload != null && message.hasOwnProperty("payload"))
+                if (!(message.payload && typeof message.payload.length === "number" || $util.isString(message.payload)))
+                    return "payload: buffer expected";
+            return null;
+        };
+
+        /**
+         * Creates a HttpRealtimeMessage message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {messages.HttpRealtimeMessage} HttpRealtimeMessage
+         */
+        HttpRealtimeMessage.fromObject = function fromObject(object) {
+            if (object instanceof $root.messages.HttpRealtimeMessage)
+                return object;
+            let message = new $root.messages.HttpRealtimeMessage();
+            if (object.deviceId != null)
+                message.deviceId = String(object.deviceId);
+            if (object.payload != null)
+                if (typeof object.payload === "string")
+                    $util.base64.decode(object.payload, message.payload = $util.newBuffer($util.base64.length(object.payload)), 0);
+                else if (object.payload.length >= 0)
+                    message.payload = object.payload;
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a HttpRealtimeMessage message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {messages.HttpRealtimeMessage} message HttpRealtimeMessage
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        HttpRealtimeMessage.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.deviceId = "";
+                if (options.bytes === String)
+                    object.payload = "";
+                else {
+                    object.payload = [];
+                    if (options.bytes !== Array)
+                        object.payload = $util.newBuffer(object.payload);
+                }
+            }
+            if (message.deviceId != null && message.hasOwnProperty("deviceId"))
+                object.deviceId = message.deviceId;
+            if (message.payload != null && message.hasOwnProperty("payload"))
+                object.payload = options.bytes === String ? $util.base64.encode(message.payload, 0, message.payload.length) : options.bytes === Array ? Array.prototype.slice.call(message.payload) : message.payload;
+            return object;
+        };
+
+        /**
+         * Converts this HttpRealtimeMessage to JSON.
+         * @function toJSON
+         * @memberof messages.HttpRealtimeMessage
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        HttpRealtimeMessage.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for HttpRealtimeMessage
+         * @function getTypeUrl
+         * @memberof messages.HttpRealtimeMessage
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        HttpRealtimeMessage.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/messages.HttpRealtimeMessage";
+        };
+
+        return HttpRealtimeMessage;
     })();
 
     return messages;
@@ -392,14 +892,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Rid.decode = function decode(reader, length, error) {
+        Rid.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.Rid();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.timestamp = reader.fixed64();
@@ -639,14 +1137,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        SyncRequest.decode = function decode(reader, length, error) {
+        SyncRequest.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.SyncRequest();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.lastMessageId = $root.collab.Rid.decode(reader, reader.uint32());
@@ -895,14 +1391,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Update.decode = function decode(reader, length, error) {
+        Update.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.Update();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.messageId = $root.collab.Rid.decode(reader, reader.uint32());
@@ -1140,14 +1634,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        AwarenessUpdate.decode = function decode(reader, length, error) {
+        AwarenessUpdate.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.AwarenessUpdate();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.payload = reader.bytes();
@@ -1377,14 +1869,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        AccessChanged.decode = function decode(reader, length, error) {
+        AccessChanged.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.AccessChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.canRead = reader.bool();
@@ -1676,14 +2166,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        CollabMessage.decode = function decode(reader, length, error) {
+        CollabMessage.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabMessage();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.objectId = reader.string();
@@ -2049,14 +2537,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        CollabDocStateParams.decode = function decode(reader, length, error) {
+        CollabDocStateParams.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabDocStateParams();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.objectId = reader.string();
@@ -2359,14 +2845,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        CollabBatchSyncRequest.decode = function decode(reader, length, error) {
+        CollabBatchSyncRequest.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncRequest();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         if (!(message.items && message.items.length))
@@ -2675,14 +3159,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        CollabBatchSyncResult.decode = function decode(reader, length, error) {
+        CollabBatchSyncResult.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncResult();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.objectId = reader.string();
@@ -2996,14 +3478,12 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        CollabBatchSyncResponse.decode = function decode(reader, length, error) {
+        CollabBatchSyncResponse.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabBatchSyncResponse();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         if (!(message.results && message.results.length))
@@ -3360,14 +3840,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        WorkspaceNotification.decode = function decode(reader, length, error) {
+        WorkspaceNotification.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.WorkspaceNotification();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.profileChange = $root.notification.UserProfileChange.decode(reader, reader.uint32());
@@ -3711,23 +4189,13 @@ export const notification = $root.notification = (() => {
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
-        /**
-         * UserProfileChange _name.
-         * @member {"name"|undefined} _name
-         * @memberof notification.UserProfileChange
-         * @instance
-         */
+        // Virtual OneOf for proto3 optional field
         Object.defineProperty(UserProfileChange.prototype, "_name", {
             get: $util.oneOfGetter($oneOfFields = ["name"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
-        /**
-         * UserProfileChange _email.
-         * @member {"email"|undefined} _email
-         * @memberof notification.UserProfileChange
-         * @instance
-         */
+        // Virtual OneOf for proto3 optional field
         Object.defineProperty(UserProfileChange.prototype, "_email", {
             get: $util.oneOfGetter($oneOfFields = ["email"]),
             set: $util.oneOfSetter($oneOfFields)
@@ -3790,14 +4258,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        UserProfileChange.decode = function decode(reader, length, error) {
+        UserProfileChange.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.UserProfileChange();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.uid = reader.int64();
@@ -4053,14 +4519,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        PermissionChanged.decode = function decode(reader, length, error) {
+        PermissionChanged.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.PermissionChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.objectId = reader.string();
@@ -4271,14 +4735,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        SectionChanged.decode = function decode(reader, length, error) {
+        SectionChanged.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.SectionChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.data = reader.string();
@@ -4523,14 +4985,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        MentionablePersonListChanged.decode = function decode(reader, length, error) {
+        MentionablePersonListChanged.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.MentionablePersonListChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.updateMemberRole = $root.notification.UpdateMemberRole.decode(reader, reader.uint32());
@@ -4810,14 +5270,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        NewMember.decode = function decode(reader, length, error) {
+        NewMember.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.NewMember();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.userUuid = reader.string();
@@ -5015,14 +5473,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        RemovedMember.decode = function decode(reader, length, error) {
+        RemovedMember.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.RemovedMember();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.userUuid = reader.string();
@@ -5242,14 +5698,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        UpdateMemberRole.decode = function decode(reader, length, error) {
+        UpdateMemberRole.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.UpdateMemberRole();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.userUuid = reader.string();
@@ -5494,14 +5948,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        PageMention.decode = function decode(reader, length, error) {
+        PageMention.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.PageMention();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.userUuid = reader.string();
@@ -5751,14 +6203,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        ShareViewsChanged.decode = function decode(reader, length, error) {
+        ShareViewsChanged.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.ShareViewsChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.viewId = reader.string();
@@ -6010,14 +6460,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        ServerLimit.decode = function decode(reader, length, error) {
+        ServerLimit.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.ServerLimit();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         if (!(message.features && message.features.length))
@@ -6283,45 +6731,25 @@ export const notification = $root.notification = (() => {
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
-        /**
-         * WorkspaceMemberProfileChanged _avatarUrl.
-         * @member {"avatarUrl"|undefined} _avatarUrl
-         * @memberof notification.WorkspaceMemberProfileChanged
-         * @instance
-         */
+        // Virtual OneOf for proto3 optional field
         Object.defineProperty(WorkspaceMemberProfileChanged.prototype, "_avatarUrl", {
             get: $util.oneOfGetter($oneOfFields = ["avatarUrl"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
-        /**
-         * WorkspaceMemberProfileChanged _coverImageUrl.
-         * @member {"coverImageUrl"|undefined} _coverImageUrl
-         * @memberof notification.WorkspaceMemberProfileChanged
-         * @instance
-         */
+        // Virtual OneOf for proto3 optional field
         Object.defineProperty(WorkspaceMemberProfileChanged.prototype, "_coverImageUrl", {
             get: $util.oneOfGetter($oneOfFields = ["coverImageUrl"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
-        /**
-         * WorkspaceMemberProfileChanged _customImageUrl.
-         * @member {"customImageUrl"|undefined} _customImageUrl
-         * @memberof notification.WorkspaceMemberProfileChanged
-         * @instance
-         */
+        // Virtual OneOf for proto3 optional field
         Object.defineProperty(WorkspaceMemberProfileChanged.prototype, "_customImageUrl", {
             get: $util.oneOfGetter($oneOfFields = ["customImageUrl"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
-        /**
-         * WorkspaceMemberProfileChanged _description.
-         * @member {"description"|undefined} _description
-         * @memberof notification.WorkspaceMemberProfileChanged
-         * @instance
-         */
+        // Virtual OneOf for proto3 optional field
         Object.defineProperty(WorkspaceMemberProfileChanged.prototype, "_description", {
             get: $util.oneOfGetter($oneOfFields = ["description"]),
             set: $util.oneOfSetter($oneOfFields)
@@ -6390,14 +6818,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        WorkspaceMemberProfileChanged.decode = function decode(reader, length, error) {
+        WorkspaceMemberProfileChanged.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.WorkspaceMemberProfileChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.userUuid = reader.string();
@@ -6632,12 +7058,7 @@ export const notification = $root.notification = (() => {
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
-        /**
-         * FolderChanged _folderRid.
-         * @member {"folderRid"|undefined} _folderRid
-         * @memberof notification.FolderChanged
-         * @instance
-         */
+        // Virtual OneOf for proto3 optional field
         Object.defineProperty(FolderChanged.prototype, "_folderRid", {
             get: $util.oneOfGetter($oneOfFields = ["folderRid"]),
             set: $util.oneOfSetter($oneOfFields)
@@ -6698,14 +7119,12 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        FolderChanged.decode = function decode(reader, length, error) {
+        FolderChanged.decode = function decode(reader, length) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.FolderChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
-                if (tag === error)
-                    break;
                 switch (tag >>> 3) {
                 case 1: {
                         message.outlineDiffJson = reader.string();
