@@ -14,6 +14,8 @@ function SpaceItem({
   toggleExpand,
   onClickView,
   onClickSpace,
+  loadingViewIds,
+  loadedViewIds,
 }: {
   view: View;
   width: number;
@@ -22,6 +24,8 @@ function SpaceItem({
   renderExtra?: ({ hovered, view }: { hovered: boolean; view: View }) => React.ReactNode;
   onClickView?: (viewId: string) => void;
   onClickSpace?: (viewId: string) => void;
+  loadingViewIds?: Set<string>;
+  loadedViewIds?: Set<string>;
 }) {
   const [hovered, setHovered] = React.useState<boolean>(false);
   const isExpanded = expandIds.includes(view.view_id);
@@ -70,6 +74,8 @@ function SpaceItem({
     );
   }, [hovered, isExpanded, isPrivate, onClickSpace, renderExtra, toggleExpand, view, width]);
 
+  const isLoading = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
+
   const renderChildren = useMemo(() => {
     return (
       <div
@@ -78,20 +84,28 @@ function SpaceItem({
           display: isExpanded ? 'block' : 'none',
         }}
       >
-        {view?.children?.map((child) => (
-          <ViewItem
-            key={child.view_id}
-            view={child}
-            width={width}
-            renderExtra={renderExtra}
-            expandIds={expandIds}
-            toggleExpand={toggleExpand}
-            onClickView={onClickView}
-          />
-        ))}
+        {isLoading ? (
+          <div className={'flex items-center justify-center py-1'}>
+            <div className={'h-4 w-4 animate-spin rounded-full border-2 border-fill-default border-t-transparent'} />
+          </div>
+        ) : (
+          view?.children?.map((child) => (
+            <ViewItem
+              key={child.view_id}
+              view={child}
+              width={width}
+              renderExtra={renderExtra}
+              expandIds={expandIds}
+              toggleExpand={toggleExpand}
+              onClickView={onClickView}
+              loadingViewIds={loadingViewIds}
+              loadedViewIds={loadedViewIds}
+            />
+          ))
+        )}
       </div>
     );
-  }, [onClickView, isExpanded, view?.children, width, renderExtra, expandIds, toggleExpand]);
+  }, [onClickView, isExpanded, isLoading, view?.children, width, renderExtra, expandIds, toggleExpand, loadingViewIds, loadedViewIds]);
 
   return (
     <div className={'flex h-fit w-full flex-col'} data-testid='space-item'>

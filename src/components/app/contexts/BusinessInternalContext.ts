@@ -43,6 +43,10 @@ export interface BusinessInternalContextType {
   breadcrumbs?: View[];
   appendBreadcrumb?: AppendBreadcrumb;
   refreshOutline?: () => Promise<void>;
+  loadedViewIds?: Set<string>;
+  loadViewChildren?: (viewId: string) => Promise<View[]>;
+  loadViewChildrenBatch?: (viewIds: string[]) => Promise<View[]>;
+  markViewChildrenStale?: (viewId: string) => void;
 
   // Data views
   favoriteViews?: View[];

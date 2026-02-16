@@ -51,6 +51,10 @@ export interface AppContextType {
   loadView: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   outline?: View[];
+  loadedViewIds?: Set<string>;
+  loadViewChildren?: (viewId: string) => Promise<View[]>;
+  loadViewChildrenBatch?: (viewIds: string[]) => Promise<View[]>;
+  markViewChildrenStale?: (viewId: string) => void;
   viewId?: string;
   wordCount?: Record<string, TextCount>;
   setWordCount?: (viewId: string, count: TextCount) => void;
@@ -183,6 +187,46 @@ export function useAppOutline() {
   }
 
   return context.outline;
+}
+
+export function useLoadedViewIds() {
+  const context = useContext(AppContext);
+
+  if (!context) {
+    throw new Error('useLoadedViewIds must be used within an AppProvider');
+  }
+
+  return context.loadedViewIds;
+}
+
+export function useLoadViewChildren() {
+  const context = useContext(AppContext);
+
+  if (!context) {
+    throw new Error('useLoadViewChildren must be used within an AppProvider');
+  }
+
+  return context.loadViewChildren;
+}
+
+export function useLoadViewChildrenBatch() {
+  const context = useContext(AppContext);
+
+  if (!context) {
+    throw new Error('useLoadViewChildrenBatch must be used within an AppProvider');
+  }
+
+  return context.loadViewChildrenBatch;
+}
+
+export function useMarkViewChildrenStale() {
+  const context = useContext(AppContext);
+
+  if (!context) {
+    throw new Error('useMarkViewChildrenStale must be used within an AppProvider');
+  }
+
+  return context.markViewChildrenStale;
 }
 
 export function useAppAwareness(viewId?: string) {

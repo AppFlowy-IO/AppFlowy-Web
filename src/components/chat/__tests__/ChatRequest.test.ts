@@ -453,7 +453,7 @@ describe('ChatRequest', () => {
         const result = await chatRequest.fetchViews();
 
         expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-          `/api/workspace/${workspaceId}/folder?depth=10`
+          `/api/workspace/${workspaceId}/view/${workspaceId}?depth=10`
         );
         expect(result).toEqual(mockFolder);
       });
@@ -490,7 +490,7 @@ describe('ChatRequest', () => {
         const result = await chatRequest.getView('view-1');
 
         expect(mockAxiosInstance.get).toHaveBeenCalledWith(
-          `/api/workspace/${workspaceId}/folder?depth=1&root_view_id=view-1`
+          `/api/workspace/${workspaceId}/view/view-1?depth=1`
         );
         expect(result).toEqual(mockView);
       });

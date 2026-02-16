@@ -1078,6 +1078,7 @@ export interface View {
   layout: ViewLayout;
   extra: ViewExtra | null;
   children: View[];
+  has_children?: boolean;
   is_published: boolean;
   is_private: boolean;
   last_edited_time?: string;

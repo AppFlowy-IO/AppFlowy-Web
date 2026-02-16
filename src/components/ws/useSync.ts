@@ -179,6 +179,10 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     if (wsNotification.folderChanged) {
       eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, wsNotification.folderChanged);
     }
+
+    if (wsNotification.folderViewChanged) {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, wsNotification.folderViewChanged);
+    }
   }, [wsNotification, eventEmitter]);
 
   // Handle workspace notifications from BroadcastChannel
@@ -231,6 +235,10 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
     if (bcNotification.folderChanged) {
       eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, bcNotification.folderChanged);
+    }
+
+    if (bcNotification.folderViewChanged) {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, bcNotification.folderViewChanged);
     }
   }, [bcNotification, eventEmitter]);
 

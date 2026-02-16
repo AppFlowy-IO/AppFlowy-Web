@@ -43,13 +43,14 @@ export function usePageOperations({
       try {
         const response = await service?.addAppPage(currentWorkspaceId, parentViewId, payload);
 
-        await loadOutline?.(currentWorkspaceId, false);
+        // Keep current expanded/loaded subtree state. New page is synced via
+        // WebSocket notifications (FolderViewChanged/FolderChanged).
         return response;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, outline, role, loadOutline]
+    [currentWorkspaceId, service, outline, role]
   );
 
   // Delete a page (move to trash)
