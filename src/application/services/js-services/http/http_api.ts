@@ -1,4 +1,5 @@
-import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
+import { Span } from '@opentelemetry/api';
+import axios, { AxiosError, AxiosInstance, AxiosResponse, InternalAxiosRequestConfig } from 'axios';
 import dayjs from 'dayjs';
 import { omit } from 'lodash-es';
 import { nanoid } from 'nanoid';
@@ -76,6 +77,7 @@ import { database_blob } from '@/proto/database_blob';
 import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
 import { hasProAccessFromPlans } from '@/utils/subscription';
+import { endHttpSpan, startHttpSpan } from '@/utils/telemetry';
 
 export * from './gotrue';
 
@@ -265,6 +267,39 @@ export function initAPIService(config: AFCloudConfig) {
   });
 
   initGrantService(config.gotrueURL);
+
+  // OpenTelemetry: inject W3C Trace Context headers into outgoing requests
+  axiosInstance.interceptors.request.use((config) => {
+    const method = config.method?.toUpperCase() || 'UNKNOWN';
+    const url = config.url || '';
+    const headers = config.headers as unknown as Record<string, string>;
+    const span = startHttpSpan(method, url, headers);
+
+    (config as InternalAxiosRequestConfig & { _otelSpan?: Span })._otelSpan = span;
+
+    return config;
+  });
+
+  axiosInstance.interceptors.response.use(
+    (response) => {
+      const span = (response.config as InternalAxiosRequestConfig & { _otelSpan?: Span })._otelSpan;
+
+      if (span) {
+        endHttpSpan(span);
+      }
+
+      return response;
+    },
+    (error) => {
+      const span = (error?.config as InternalAxiosRequestConfig & { _otelSpan?: Span })?._otelSpan;
+
+      if (span) {
+        endHttpSpan(span, true);
+      }
+
+      return Promise.reject(error);
+    }
+  );
 
   axiosInstance.interceptors.request.use(
     async (config) => {

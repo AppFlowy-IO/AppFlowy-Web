@@ -83,6 +83,15 @@ importers:
       '@mui/x-date-pickers-pro':
         specifier: ^6.18.2
         version: 6.20.2(@emotion/react@11.14.0(@types/react@18.3.21)(react@18.3.1))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@18.3.21)(react@18.3.1))(@types/react@18.3.21)(react@18.3.1))(@mui/material@6.4.11(@emotion/react@11.14.0(@types/react@18.3.21)(react@18.3.1))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@18.3.21)(react@18.3.1))(@types/react@18.3.21)(react@18.3.1))(@types/react@18.3.21)(react-dom@18.3.1(react@18.3.1))(react@18.3.1))(@mui/system@6.4.11(@emotion/react@11.14.0(@types/react@18.3.21)(react@18.3.1))(@emotion/styled@11.14.0(@emotion/react@11.14.0(@types/react@18.3.21)(react@18.3.1))(@types/react@18.3.21)(react@18.3.1))(@types/react@18.3.21)(react@18.3.1))(@types/react@18.3.21)(date-fns@4.1.0)(dayjs@1.11.13)(luxon@3.6.1)(moment@2.30.1)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
+      '@opentelemetry/api':
+        specifier: ^1.9.0
+        version: 1.9.0
+      '@opentelemetry/core':
+        specifier: ^2.5.1
+        version: 2.5.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/sdk-trace-web':
+        specifier: ^2.5.1
+        version: 2.5.1(@opentelemetry/api@1.9.0)
       '@radix-ui/react-alert-dialog':
         specifier: ^1.1.15
         version: 1.1.15(@types/react-dom@18.3.7(@types/react@18.3.21))(@types/react@18.3.21)(react-dom@18.3.1(react@18.3.1))(react@18.3.1)
@@ -2485,6 +2494,38 @@ packages:
   '@nolyfill/is-core-module@1.0.39':
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
+
+  '@opentelemetry/api@1.9.0':
+    resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
+    engines: {node: '>=8.0.0'}
+
+  '@opentelemetry/core@2.5.1':
+    resolution: {integrity: sha512-Dwlc+3HAZqpgTYq0MUyZABjFkcrKTePwuiFVLjahGD8cx3enqihmpAmdgNFO1R4m/sIe5afjJrA25Prqy4NXlA==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.0.0 <1.10.0'
+
+  '@opentelemetry/resources@2.5.1':
+    resolution: {integrity: sha512-BViBCdE/GuXRlp9k7nS1w6wJvY5fnFX5XvuEtWsTAOQFIO89Eru7lGW3WbfbxtCuZ/GbrJfAziXG0w0dpxL7eQ==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.3.0 <1.10.0'
+
+  '@opentelemetry/sdk-trace-base@2.5.1':
+    resolution: {integrity: sha512-iZH3Gw8cxQn0gjpOjJMmKLd9GIaNh/E3v3ST67vyzLSxHBs14HsG4dy7jMYyC5WXGdBVEcM7U/XTF5hCQxjDMw==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.3.0 <1.10.0'
+
+  '@opentelemetry/sdk-trace-web@2.5.1':
+    resolution: {integrity: sha512-4PWFtMJ5nqWMP2YqgKjcMlQlUeN1imUYSXdhy6Xl/3bnO0/Ryo5Y3/kWG8T66uMHo2RpTQLloZjoQACKdbHbxg==}
+    engines: {node: ^18.19.0 || >=20.6.0}
+    peerDependencies:
+      '@opentelemetry/api': '>=1.0.0 <1.10.0'
+
+  '@opentelemetry/semantic-conventions@1.39.0':
+    resolution: {integrity: sha512-R5R9tb2AXs2IRLNKLBJDynhkfmx7mX0vi8NkhZb3gUkPWHn6HXk5J8iQ/dql0U3ApfWym4kXXmBDRGO+oeOfjg==}
+    engines: {node: '>=14'}
 
   '@parcel/watcher-android-arm64@2.5.1':
     resolution: {integrity: sha512-KF8+j9nNbUN8vzOFDpRMsaKBHZ/mcjEjMToVMJOhTozkDonQFFrRcfdLWn6yWKCmJKmdVxSgHiYvTCef4/qcBA==}
@@ -11943,6 +11984,34 @@ snapshots:
       fastq: 1.19.1
 
   '@nolyfill/is-core-module@1.0.39': {}
+
+  '@opentelemetry/api@1.9.0': {}
+
+  '@opentelemetry/core@2.5.1(@opentelemetry/api@1.9.0)':
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/semantic-conventions': 1.39.0
+
+  '@opentelemetry/resources@2.5.1(@opentelemetry/api@1.9.0)':
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/core': 2.5.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/semantic-conventions': 1.39.0
+
+  '@opentelemetry/sdk-trace-base@2.5.1(@opentelemetry/api@1.9.0)':
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/core': 2.5.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/resources': 2.5.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/semantic-conventions': 1.39.0
+
+  '@opentelemetry/sdk-trace-web@2.5.1(@opentelemetry/api@1.9.0)':
+    dependencies:
+      '@opentelemetry/api': 1.9.0
+      '@opentelemetry/core': 2.5.1(@opentelemetry/api@1.9.0)
+      '@opentelemetry/sdk-trace-base': 2.5.1(@opentelemetry/api@1.9.0)
+
+  '@opentelemetry/semantic-conventions@1.39.0': {}
 
   '@parcel/watcher-android-arm64@2.5.1':
     optional: true
