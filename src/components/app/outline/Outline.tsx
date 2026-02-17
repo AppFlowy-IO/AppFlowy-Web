@@ -48,6 +48,8 @@ export function Outline({ width }: { width: number }) {
   >(undefined);
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
   const autoLoadRetryAfterRef = useRef<Map<string, number>>(new Map());
+  const validatingRestoreIdsRef = useRef<Set<string>>(new Set());
+  const validatedExistingRestoreIdsRef = useRef<Set<string>>(new Set());
   const [loadingRevision, setLoadingRevision] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const loadingViewIds = useMemo(() => loadingViewIdsRef.current, [loadingRevision]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -61,8 +63,60 @@ export function Outline({ width }: { width: number }) {
     setPendingAutoLoadIds(restoredExpandedIds);
     loadingViewIdsRef.current = new Set();
     autoLoadRetryAfterRef.current = new Map();
+    validatingRestoreIdsRef.current = new Set();
+    validatedExistingRestoreIdsRef.current = new Set();
     setLoadingRevision((r) => r + 1);
   }, [currentWorkspaceId]);
+
+  // Validate restored expanded IDs that are not in the current tree and prune only truly stale IDs.
+  // This avoids keeping deleted/moved IDs forever, while preserving valid deep IDs.
+  useEffect(() => {
+    if (!outline || outline.length === 0 || !loadViewChildrenBatch || pendingAutoLoadIds.length === 0) return;
+
+    const unknownIds = pendingAutoLoadIds.filter((id) => {
+      if (findView(outline, id)) return false;
+      if (validatedExistingRestoreIdsRef.current.has(id)) return false;
+      if (validatingRestoreIdsRef.current.has(id)) return false;
+      return true;
+    });
+
+    if (unknownIds.length === 0) return;
+
+    unknownIds.forEach((id) => validatingRestoreIdsRef.current.add(id));
+
+    void loadViewChildrenBatch(unknownIds)
+      .then((views) => {
+        const existingIds = new Set((views || []).map((view) => view.view_id));
+        const staleIds = unknownIds.filter((id) => !existingIds.has(id));
+
+        existingIds.forEach((id) => validatedExistingRestoreIdsRef.current.add(id));
+
+        if (staleIds.length === 0) return;
+
+        const staleSet = new Set(staleIds);
+
+        staleIds.forEach((id) => {
+          setOutlineExpands(id, false);
+          loadingViewIdsRef.current.delete(id);
+          autoLoadRetryAfterRef.current.delete(id);
+        });
+
+        setPendingAutoLoadIds((prev) => {
+          const next = prev.filter((id) => !staleSet.has(id));
+
+          return next.length === prev.length ? prev : next;
+        });
+        setExpandViewIds((prev) => {
+          const next = prev.filter((id) => !staleSet.has(id));
+
+          return next.length === prev.length ? prev : next;
+        });
+        setLoadingRevision((r) => r + 1);
+      })
+      .finally(() => {
+        unknownIds.forEach((id) => validatingRestoreIdsRef.current.delete(id));
+      });
+  }, [outline, pendingAutoLoadIds, loadViewChildrenBatch]);
 
   // Drop startup pending ids as soon as they are confirmed loaded.
   useEffect(() => {

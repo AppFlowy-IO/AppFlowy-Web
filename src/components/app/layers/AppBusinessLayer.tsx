@@ -79,7 +79,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync } = useViewOperations();
 
   // Initialize page operations
-  const pageOperations = usePageOperations({ outline });
+  const pageOperations = usePageOperations({ outline, loadOutline });
 
   // Check if current view has been deleted
   const viewHasBeenDeleted = useMemo(() => {
@@ -130,8 +130,17 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     const cacheKey = `${currentWorkspaceId}:${viewId}`;
     const cached = routeViewExistsCacheRef.current.get(cacheKey);
 
-    if (cached !== undefined) {
-      setRouteViewExists(cached);
+    // Cache policy:
+    // - false can be trusted (confirmed not-found)
+    // - true is trusted only while the view is still present in current outline
+    //   to avoid stale positive cache after realtime deletes/moves.
+    if (cached === false) {
+      setRouteViewExists(false);
+      return;
+    }
+
+    if (cached === true && findView(outline ?? [], viewId)) {
+      setRouteViewExists(true);
       return;
     }
 

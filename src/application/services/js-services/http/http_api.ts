@@ -998,7 +998,7 @@ export async function getAppOutline(workspaceId: string): Promise<AppOutlineResp
   }));
 }
 
-export async function getView(workspaceId: string, viewId: string, depth: number = 2) {
+export async function getView(workspaceId: string, viewId: string, depth: number = 1) {
   const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}`;
 
   return executeAPIRequest<View>(() =>
@@ -2171,7 +2171,7 @@ export async function turnIntoMember(workspaceId: string, email: string) {
 
 
 export async function getShareWithMe(workspaceId: string): Promise<View> {
-  const url = `/api/sharing/workspace/${workspaceId}/view/${workspaceId}?depth=1`;
+  const url = `/api/sharing/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)
