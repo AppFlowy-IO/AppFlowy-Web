@@ -26,6 +26,24 @@ import { Log } from '@/utils/log';
 
 const AUTO_LOAD_RETRY_DELAY_MS = 15000;
 
+function collectSubtreeViewIds(rootView: View): string[] {
+  const ids: string[] = [];
+  const stack: View[] = [rootView];
+
+  while (stack.length > 0) {
+    const current = stack.pop();
+
+    if (!current) continue;
+    ids.push(current.view_id);
+
+    for (const child of current.children || []) {
+      stack.push(child);
+    }
+  }
+
+  return ids;
+}
+
 export function Outline({ width }: { width: number }) {
   const outline = useAppOutline();
   const currentWorkspaceId = useCurrentWorkspaceId();
@@ -217,19 +235,36 @@ export function Outline({ width }: { width: number }) {
   }, [fetchableAutoLoadIds, loadViewChildren, loadViewChildrenBatch]);
 
   const toggleExpandView = useCallback((id: string, isExpanded: boolean) => {
+    const collapsedSubtreeIds = !isExpanded
+      ? (() => {
+          const rootView = findView(outline ?? [], id);
+
+          return rootView ? collectSubtreeViewIds(rootView) : [id];
+        })()
+      : [id];
+    const collapsedSubtreeSet = new Set(collapsedSubtreeIds);
+
     // Manual interaction should not be handled by startup auto-load path.
     setPendingAutoLoadIds((prev) => {
-      if (!prev.includes(id)) return prev;
-      return prev.filter((v) => v !== id);
+      const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
+
+      return next.length === prev.length ? prev : next;
     });
 
-    setOutlineExpands(id, isExpanded);
-    setExpandViewIds((prev) => {
-      return isExpanded ? [...prev, id] : prev.filter((v) => v !== id);
-    });
+    if (isExpanded) {
+      setOutlineExpands(id, true);
+      setExpandViewIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+    } else {
+      collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false));
+      setExpandViewIds((prev) => {
+        const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
 
-    if (!isExpanded) {
-      Log.debug('[Outline] [manual-expand] collapse node', { viewId: id });
+        return next.length === prev.length ? prev : next;
+      });
+      Log.debug('[Outline] [manual-expand] collapse node', {
+        viewId: id,
+        collapsedSubtreeIds,
+      });
       markViewChildrenStale?.(id);
     }
 
@@ -257,7 +292,7 @@ export function Outline({ width }: { width: number }) {
         setLoadingRevision((r) => r + 1);
       });
     }
-  }, [loadViewChildren, loadedViewIds, markViewChildrenStale]);
+  }, [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]);
   const { t } = useTranslation();
 
   const renderActions = useCallback(

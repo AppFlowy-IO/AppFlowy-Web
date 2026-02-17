@@ -305,7 +305,8 @@ export function useWorkspaceData() {
         const nextOutline = mergeChildrenIntoOutline(
           stableOutlineRef.current,
           viewId,
-          children
+          children,
+          viewData?.has_children
         );
 
         if (nextOutline !== stableOutlineRef.current) {
@@ -371,7 +372,12 @@ export function useWorkspaceData() {
           if (!viewId) continue;
 
           const children = viewData.children ?? [];
-          const mergedOutline = mergeChildrenIntoOutline(nextOutline, viewId, children);
+          const mergedOutline = mergeChildrenIntoOutline(
+            nextOutline,
+            viewId,
+            children,
+            viewData?.has_children
+          );
 
           if (mergedOutline !== nextOutline) {
             nextOutline = mergedOutline;

@@ -8,13 +8,14 @@ import { View } from '@/application/types';
 export function mergeChildrenIntoOutline(
   outline: View[],
   parentViewId: string,
-  children: View[]
+  children: View[],
+  hasChildrenOverride?: boolean
 ): View[] {
   let changed = false;
 
   const next = outline.map((view) => {
     if (view.view_id === parentViewId) {
-      const nextHasChildren = children.length > 0;
+      const nextHasChildren = hasChildrenOverride ?? (children.length > 0);
 
       // Only create a new object if children/has_children actually differ
       if (view.children === children && view.has_children === nextHasChildren) return view;
@@ -23,7 +24,7 @@ export function mergeChildrenIntoOutline(
     }
 
     if (view.children && view.children.length > 0) {
-      const nextChildren = mergeChildrenIntoOutline(view.children, parentViewId, children);
+      const nextChildren = mergeChildrenIntoOutline(view.children, parentViewId, children, hasChildrenOverride);
 
       if (nextChildren !== view.children) {
         changed = true;

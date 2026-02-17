@@ -109,13 +109,15 @@ function PublishPanel({
     }
   }, [isOwner, isPublisher, loadPublishInfo, t, unpublish, view, viewId]);
 
+  const scopedPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
+
   const renderPublished = useCallback(() => {
-    if (!publishInfo || !view) return null;
+    if (!scopedPublishInfo || !view) return null;
     return (
       <div className={'flex flex-col gap-5'}>
         <PublishLinkPreview
           viewId={viewId}
-          publishInfo={publishInfo}
+          publishInfo={scopedPublishInfo}
           url={url}
           updatePublishConfig={updatePublishConfig}
           onUnPublish={handleUnpublish}
@@ -175,7 +177,7 @@ function PublishPanel({
       </div>
     );
   }, [
-    publishInfo,
+    scopedPublishInfo,
     view,
     url,
     handleUnpublish,
@@ -194,13 +196,11 @@ function PublishPanel({
   const layout = view?.layout;
   const isDatabase =
     layout !== undefined ? [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar].includes(layout) : false;
-  const scopedPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
   const serverPublishedState = Boolean(view?.is_published || scopedPublishInfo);
   // Reconcile local override with fetched/server state:
-  // - unpublish override should immediately force unpublished
-  // - publish override should not force published when publishInfo is missing
-  //   (prevents empty published panel on transient fetch gaps)
-  const hasPublished = publishedOverride === false ? false : serverPublishedState;
+  // - local override is authoritative for immediate UI feedback
+  // - fallback to server-derived state when no local override exists
+  const hasPublished = publishedOverride ?? serverPublishedState;
 
   useEffect(() => {
     if (!hasPublished && isDatabase && view) {

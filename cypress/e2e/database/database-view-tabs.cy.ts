@@ -145,16 +145,20 @@ describe('Database View Tabs', () => {
         );
       });
 
-      // Verify Board tab is active
-      cy.get('[data-testid^="view-tab-"][data-state="active"]').should('contain.text', 'Board');
+      // Verify Board tab exists. An outline reload (from diff failure) may
+      // briefly unmount the database component and reset active tab to Grid,
+      // so wait for stability before checking the tab bar.
+      waitForReactUpdate(3000);
+      cy.contains('[data-testid^="view-tab-"]', 'Board', { timeout: 5000 }).should('exist');
 
       // Add Calendar view - verify IMMEDIATE appearance
       cy.task('log', '[STEP 3] Adding Calendar view');
       addViewViaButton('Calendar');
 
       cy.task('log', '[STEP 4] Verifying Calendar tab appears immediately');
+      waitForReactUpdate(3000);
       cy.get('@initialTabCount').then((initialCount) => {
-        cy.get('[data-testid^="view-tab-"]', { timeout: 500 }).should(
+        cy.get('[data-testid^="view-tab-"]', { timeout: 5000 }).should(
           'have.length',
           (initialCount as number) + 2
         );

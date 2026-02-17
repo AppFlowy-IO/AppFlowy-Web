@@ -139,6 +139,31 @@ describe('Document Sidebar Refresh via WebSocket', () => {
         throw new Error('Page count did not increase - WebSocket notification may not be working');
       }
 
+      // With lazy loading, an outline reload can clear children even while the
+      // parent stays expanded. Collapse then re-expand to trigger a fresh lazy
+      // load of children on each retry attempt.
+      cy.get('[data-testid="page-item"]').first().then(($item) => {
+        const expandBtn = $item.find('[data-testid="outline-toggle-expand"]');
+        const collapseBtn = $item.find('[data-testid="outline-toggle-collapse"]');
+
+        if (expandBtn.length > 0) {
+          cy.wrap(expandBtn).first().click({ force: true });
+          waitForReactUpdate(500);
+        } else if (collapseBtn.length > 0 && attempts > 0) {
+          // Parent is expanded but children may be stale — collapse and re-expand
+          cy.wrap(collapseBtn).first().click({ force: true });
+          waitForReactUpdate(300);
+          cy.get('[data-testid="page-item"]').first().then(($item2) => {
+            const btn = $item2.find('[data-testid="outline-toggle-expand"]');
+
+            if (btn.length > 0) {
+              cy.wrap(btn).first().click({ force: true });
+              waitForReactUpdate(500);
+            }
+          });
+        }
+      });
+
       PageSelectors.names().then(($pages) => {
         const newCount = $pages.length;
         cy.log(`[INFO] Current page count: ${newCount}, initial: ${initialPageCount}, attempt: ${attempts + 1}`);

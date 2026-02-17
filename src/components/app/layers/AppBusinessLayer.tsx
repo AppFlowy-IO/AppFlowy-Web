@@ -19,6 +19,31 @@ interface AppBusinessLayerProps {
 }
 
 const ROUTE_VIEW_EXISTS_CACHE_MAX = 200;
+const ROUTE_NOT_FOUND_MESSAGE_PATTERN = /\b(not\s*found|record\s*not\s*found|view\s*not\s*found|page\s*not\s*found)\b/i;
+
+function isRouteNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const normalizedError = error as {
+    code?: number;
+    status?: number;
+    message?: string;
+    response?: {
+      status?: number;
+      data?: {
+        code?: number;
+        message?: string;
+      };
+    };
+  };
+
+  const statusCode = normalizedError.status ?? normalizedError.response?.status;
+  const appCode = normalizedError.code ?? normalizedError.response?.data?.code;
+  const message = normalizedError.message || normalizedError.response?.data?.message || '';
+
+  if (statusCode === 404 || appCode === 404) return true;
+  return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(message);
+}
 
 // Third layer: Business logic operations
 // Handles all business operations like outline management, page operations, database operations
@@ -156,10 +181,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
           setRouteViewExistsCache(cacheKey, true);
           return true;
         })
-        .catch((error: { code?: number }) => {
+        .catch((error: unknown) => {
           // Only cache "missing" when server confirms not-found.
           // Network/transient/server errors should remain unknown (null).
-          if (error?.code === 404) {
+          if (isRouteNotFoundError(error)) {
             setRouteViewExistsCache(cacheKey, false);
             return false;
           }
