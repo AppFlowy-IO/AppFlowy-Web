@@ -396,7 +396,7 @@ export function useWorkspaceData() {
         return views;
       } catch (e) {
         Log.error('[Outline] [loadViewChildrenBatch] Failed to load children for', uniqueIds, e);
-        return [];
+        throw e;
       } finally {
         uniqueIds.forEach((viewId) => loadingViewIdsRef.current.delete(viewId));
       }

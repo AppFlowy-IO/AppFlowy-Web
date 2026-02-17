@@ -59,7 +59,9 @@ describe('Outline Lazy Loading', () => {
     authUtils.signInWithTestUrl(testEmail);
     waitForSidebarReady();
 
-    cy.get('[data-testid^="space-"]', { timeout: 30000 })
+    // Use :visible to exclude the hidden space-expanded div, ensuring we get the
+    // clickable space header (space-{UUID}) rather than space-item or space-name.
+    cy.get('[data-testid^="space-"][data-expanded]:visible', { timeout: 30000 })
       .first()
       .invoke('attr', 'data-testid')
       .then((spaceTestId) => {
@@ -114,7 +116,8 @@ describe('Outline Lazy Loading', () => {
     authUtils.signInWithTestUrl(testEmail);
     waitForSidebarReady();
 
-    cy.get('[data-testid^="space-"]', { timeout: 30000 })
+    // Use :visible to get the clickable space header (space-{UUID}), not the wrapper
+    cy.get('[data-testid^="space-"][data-expanded]:visible', { timeout: 30000 })
       .first()
       .invoke('attr', 'data-testid')
       .then((spaceTestId) => {
@@ -133,6 +136,9 @@ describe('Outline Lazy Loading', () => {
 
     cy.reload();
     waitForSidebarReady();
+
+    // Wait for the outline restore/pruning logic to complete
+    cy.wait(3000);
 
     cy.window().then((win) => {
       const expandedRaw = win.localStorage.getItem('outline_expanded');
@@ -169,7 +175,35 @@ describe('Outline Lazy Loading', () => {
     authUtils.signInWithTestUrl(testEmail);
     waitForSidebarReady();
 
-    cy.wait(2000).then(() => {
+    // Collect all visible space IDs so we can set up localStorage for batch loading.
+    // Batch loading only triggers when restoring 2+ expanded IDs from localStorage
+    // that exist in the outline tree.
+    const spaceIds: string[] = [];
+
+    cy.get('[data-testid^="space-"][data-expanded]:visible', { timeout: 30000 })
+      .each(($el) => {
+        const testId = $el.attr('data-testid');
+
+        if (testId) {
+          spaceIds.push(extractViewId(testId, 'space-'));
+        }
+      })
+      .then(() => {
+        const expanded: Record<string, boolean> = {};
+
+        spaceIds.forEach((id) => {
+          expanded[id] = true;
+        });
+        cy.window().then((win) => {
+          win.localStorage.setItem('outline_expanded', JSON.stringify(expanded));
+        });
+      });
+
+    // Reload to trigger batch loading of the restored expanded IDs
+    cy.reload();
+    waitForSidebarReady();
+
+    cy.wait(3000).then(() => {
       const matched = seenBatchRequests.filter((req) => req.depth === '1' && req.viewIds.length > 0);
 
       testLog.info(`Observed ${matched.length} depth=1 batch subtree request(s)`);

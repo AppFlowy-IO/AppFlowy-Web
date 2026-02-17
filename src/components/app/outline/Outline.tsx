@@ -113,6 +113,9 @@ export function Outline({ width }: { width: number }) {
         });
         setLoadingRevision((r) => r + 1);
       })
+      .catch(() => {
+        // Keep restored expand ids on transient failures; do not prune.
+      })
       .finally(() => {
         unknownIds.forEach((id) => validatingRestoreIdsRef.current.delete(id));
       });
@@ -190,13 +193,17 @@ export function Outline({ width }: { width: number }) {
     setLoadingRevision((r) => r + 1);
 
     if (loadViewChildrenBatch && fetchableAutoLoadIds.length > 1) {
-      void loadViewChildrenBatch(fetchableAutoLoadIds).finally(() => {
-        for (const id of fetchableAutoLoadIds) {
-          loadingViewIdsRef.current.delete(id);
-        }
+      void loadViewChildrenBatch(fetchableAutoLoadIds)
+        .catch(() => {
+          // No-op: retry scheduling is driven by retryAfter timestamps.
+        })
+        .finally(() => {
+          for (const id of fetchableAutoLoadIds) {
+            loadingViewIdsRef.current.delete(id);
+          }
 
-        setLoadingRevision((r) => r + 1);
-      });
+          setLoadingRevision((r) => r + 1);
+        });
       return;
     }
 

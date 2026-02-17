@@ -298,13 +298,23 @@ describe('Database View Tabs', () => {
       addViewViaButton('Board');
       waitForReactUpdate(3000);
 
+      // Expand database in sidebar so children populate the outline tree.
+      // The breadcrumb relies on findAncestors which searches the outline tree;
+      // with lazy loading, children aren't in the tree until expanded.
+      ensureSpaceExpanded(spaceName);
+      waitForReactUpdate(500);
+      expandDatabaseInSidebar();
+      waitForReactUpdate(2000);
+
       // Switch to Board tab
       DatabaseViewSelectors.viewTab().contains('Board').click({ force: true });
       waitForReactUpdate(1000);
       DatabaseViewSelectors.activeViewTab().should('contain.text', 'Board');
 
-      // Verify breadcrumb shows Board as the active view
-      BreadcrumbSelectors.navigation()
+      // Verify breadcrumb shows Board as the active view.
+      // Use cy.get directly with increased timeout since the breadcrumb only renders
+      // after the outline tree is populated with lazy-loaded children.
+      cy.get('[data-testid="breadcrumb-navigation"]', { timeout: 15000 })
         .find('[data-testid^="breadcrumb-item-"]')
         .should('have.length.at.least', 1)
         .last()
