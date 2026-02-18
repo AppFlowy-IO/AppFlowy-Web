@@ -53,7 +53,6 @@ import { ReactComponent as ToggleHeading3Icon } from '@/assets/icons/toggle_h3.s
 import { ReactComponent as ChevronRight, ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg';
 import { ReactComponent as VideoIcon } from '@/assets/icons/video.svg';
 import { notify } from '@/components/_shared/notify';
-import { flattenViews } from '@/components/_shared/outline/utils';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import { useAIWriter } from '@/components/chat';
@@ -104,8 +103,11 @@ const DatabaseTreeItem: React.FC<{
   allowedIds: Set<string>;
   onSelect: (view: View) => void;
   fallbackTitle: string;
-}> = ({ view, allowedIds, onSelect, fallbackTitle }) => {
+  isSearching?: boolean;
+}> = ({ view, allowedIds, onSelect, fallbackTitle, isSearching }) => {
   const [expanded, setExpanded] = useState(view.extra?.is_space || false);
+  // Auto-expand all nodes when searching so filtered results are visible
+  const effectiveExpanded = isSearching ? true : expanded;
   const isDatabase = allowedIds.has(view.view_id);
   const hasChildren = view.children?.length > 0;
   const name = view.name || fallbackTitle;
@@ -123,7 +125,9 @@ const DatabaseTreeItem: React.FC<{
             onSelect(view);
           }
 
-          setExpanded((prev) => !prev);
+          if (!isSearching) {
+            setExpanded((prev) => !prev);
+          }
         }}
         className={
           'flex h-[28px] w-full cursor-pointer select-none items-center justify-between gap-2 rounded-[8px] px-1.5 text-sm hover:bg-muted'
@@ -136,10 +140,12 @@ const DatabaseTreeItem: React.FC<{
               className={'!h-4 !min-h-4 !w-4 !min-w-4 !p-0 hover:bg-muted-foreground/10'}
               onClick={(e) => {
                 e.stopPropagation();
-                setExpanded((prev) => !prev);
+                if (!isSearching) {
+                  setExpanded((prev) => !prev);
+                }
               }}
             >
-              <ChevronRight className={`transform transition-transform ${expanded ? 'rotate-90' : 'rotate-0'}`} />
+              <ChevronRight className={`transform transition-transform ${effectiveExpanded ? 'rotate-90' : 'rotate-0'}`} />
             </OutlineButton>
           ) : (
             <div style={{ width: 16, height: 16 }} />
@@ -160,7 +166,7 @@ const DatabaseTreeItem: React.FC<{
           </div>
         )}
       </div>
-      {hasChildren && expanded && (
+      {hasChildren && effectiveExpanded && (
         <div className={'flex flex-col gap-1 pl-4'}>
           {view.children?.map((child) => (
             <DatabaseTreeItem
@@ -169,6 +175,7 @@ const DatabaseTreeItem: React.FC<{
               allowedIds={allowedIds}
               onSelect={onSelect}
               fallbackTitle={fallbackTitle}
+              isSearching={isSearching}
             />
           ))}
         </div>
@@ -354,19 +361,40 @@ export function SlashPanel({
       const views = (await loadViews()) || [];
 
       setDatabaseOutline(views);
-      const flatViews = flattenViews(views);
 
-      // Identify databases by their layout type (Grid, Board, Calendar)
-      // ViewLayout enum values: Grid=1, Board=2, Calendar=3
-      const databaseLayouts = [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar];
-      const databaseViews = flatViews.filter((view) => {
-        // view.layout is ViewLayout enum, compare directly
-        return databaseLayouts.includes(view.layout);
-      });
-      // Prefer listing database containers (Desktop parity). Fallback to all database views for
-      // legacy workspaces where containers may not exist yet.
-      const containerDatabaseViews = databaseViews.filter((view) => view.extra?.is_database_container === true);
-      const selectableDatabaseViews = containerDatabaseViews.length > 0 ? containerDatabaseViews : databaseViews;
+      // Collect selectable database IDs by walking the tree structure.
+      // This preserves parent-child relationships so we can distinguish between:
+      // 1. Database containers (v0.10.7+) - always selectable
+      // 2. Legacy top-level databases (pre-v0.10.7) - selectable
+      // 3. Child views of containers/databases - NOT selectable (hidden)
+      const databaseLayouts = new Set([ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar]);
+      const selectableDatabaseViews: View[] = [];
+
+      const collectSelectable = (items: View[], parentIsDatabase: boolean) => {
+        for (const view of items) {
+          if (databaseLayouts.has(view.layout)) {
+            if (view.extra?.is_database_container) {
+              // Case 1: Database container - always selectable
+              selectableDatabaseViews.push(view);
+              collectSelectable(view.children || [], true);
+            } else if (!parentIsDatabase && !view.extra?.embedded) {
+              // Case 2: Legacy top-level database (not a child of another database,
+              // not embedded in a document). These were created before the container
+              // system and should still be linkable via the slash menu.
+              selectableDatabaseViews.push(view);
+              collectSelectable(view.children || [], true);
+            } else {
+              // Case 3: Child view of a database or embedded view - not selectable
+              collectSelectable(view.children || [], parentIsDatabase);
+            }
+          } else {
+            // Non-database view (document, space, etc.) - recurse into children
+            collectSelectable(view.children || [], parentIsDatabase);
+          }
+        }
+      };
+
+      collectSelectable(views, false);
 
       // Build options - databaseId will be fetched from viewMeta when user selects
       // The outline API doesn't include database_relations, so we set empty string here
@@ -376,7 +404,6 @@ export function SlashPanel({
       }));
 
       Log.debug('[SlashPanel] loadDatabasesForPicker:', {
-        totalViews: flatViews.length,
         databaseViews: selectableDatabaseViews.length,
         databaseViewNames: selectableDatabaseViews.map(v => v.name),
       });
@@ -1370,6 +1397,7 @@ export function SlashPanel({
                     void handleSelectDatabase(selectedView.view_id);
                   }}
                   fallbackTitle={t('document.view.placeholder', { defaultValue: 'Untitled' })}
+                  isSearching={!!databaseSearch}
                 />
               ))
             ) : (
