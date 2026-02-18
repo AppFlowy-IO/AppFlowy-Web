@@ -90,7 +90,10 @@ function AppPage() {
         }
       })
       .catch((e) => {
-        console.warn('[AppPage] Failed to fetch view metadata for', viewId, e);
+        if (cancelled) return;
+
+        setError(determineErrorType(e));
+        console.warn('[AppPage] Failed to fetch view metadata for', viewId, formatErrorForLogging(e));
       });
 
     return () => {
@@ -98,8 +101,8 @@ function AppPage() {
     };
   }, [outlineView, viewId, workspaceId, service, fallbackView?.view_id]);
 
-  // Use outline view if available, otherwise use fallback
-  const view = outlineView ?? fallbackView;
+  // Use outline view if available, otherwise use fallback for the active route only.
+  const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null);
   const layout = view?.layout;
 
   const rendered = useContext(AppContext)?.rendered;
@@ -122,10 +125,16 @@ function AppPage() {
   const docRef = useRef<YDoc | undefined>(undefined);
   // Track the previous doc so we can schedule deferred cleanup when navigating away.
   const prevDocRef = useRef<{ doc: YDoc; guid: string; syncBound: boolean } | null>(null);
+  // Track current route to guard async callbacks against stale navigation.
+  const currentViewIdRef = useRef<string | undefined>(viewId);
 
   useEffect(() => {
     docRef.current = doc;
   }, [doc]);
+
+  useEffect(() => {
+    currentViewIdRef.current = viewId;
+  }, [viewId]);
 
   // Keep prevDocRef.syncBound in sync without triggering cleanup logic
   useEffect(() => {
@@ -476,20 +485,26 @@ function AppPage() {
       return Promise.resolve();
     }
 
+    const retryViewId = viewId;
+
     // If the view is still missing from outline, retry metadata fetch first so viewMeta/layout can recover.
     if (!outlineView && workspaceId && service) {
       try {
-        const fetchedView = await service.getAppView(workspaceId, viewId);
+        const fetchedView = await service.getAppView(workspaceId, retryViewId);
 
-        if (fetchedView) {
+        if (fetchedView && fetchedView.view_id === retryViewId && currentViewIdRef.current === retryViewId) {
           setFallbackView(fetchedView);
         }
       } catch (e) {
-        console.warn('[AppPage] Retry metadata fetch failed for', viewId, e);
+        console.warn('[AppPage] Retry metadata fetch failed for', retryViewId, e);
       }
     }
 
-    await loadPageDoc(viewId);
+    if (currentViewIdRef.current !== retryViewId) {
+      return;
+    }
+
+    await loadPageDoc(retryViewId);
   }, [viewId, outlineView, workspaceId, service, loadPageDoc]);
 
   if (!viewId) return null;

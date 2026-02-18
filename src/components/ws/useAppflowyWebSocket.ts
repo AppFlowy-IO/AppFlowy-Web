@@ -2,8 +2,8 @@ import * as random from 'lib0/random';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
-import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { refreshToken } from '@/application/services/js-services/http/gotrue';
+import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
@@ -35,6 +35,89 @@ const JITTER_FACTOR = 0.3; // 30% jitter to prevent thundering herd
 const SLOW_POLL_INTERVAL = 60000; // 60s slow-poll after exhausting fast attempts
 const RECONNECT_NONCE_COOLDOWN = 5000; // 5s minimum between nonce-based reconnections
 const WS_READY_STATE_CLOSED = 3;
+const AUTH_FAILURE_STATUS_CODES = new Set([400, 401, 403]);
+const AUTH_FAILURE_ERROR_MARKERS = [
+  'invalid_grant',
+  'invalid refresh token',
+  'refresh token is invalid',
+  'refresh token has expired',
+  'session_not_found',
+  'session not found',
+  'token expired',
+  'token has expired',
+  'revoked',
+];
+
+type ReconnectAuthStatus = 'ready' | 'auth-failed' | 'transient-failed';
+
+const getRefreshFailureText = (error: unknown): string => {
+  if (typeof error === 'string') {
+    return error.toLowerCase();
+  }
+
+  if (typeof error !== 'object' || error === null) {
+    return '';
+  }
+
+  const typedError = error as {
+    message?: unknown;
+    response?: {
+      data?: unknown;
+    };
+  };
+  const texts: string[] = [];
+
+  if (typeof typedError.message === 'string') {
+    texts.push(typedError.message);
+  }
+
+  const responseData = typedError.response?.data;
+
+  if (typeof responseData === 'string') {
+    texts.push(responseData);
+  } else if (typeof responseData === 'object' && responseData !== null) {
+    const payload = responseData as {
+      error?: unknown;
+      message?: unknown;
+      msg?: unknown;
+      error_description?: unknown;
+    };
+
+    if (typeof payload.error === 'string') {
+      texts.push(payload.error);
+    }
+
+    if (typeof payload.message === 'string') {
+      texts.push(payload.message);
+    }
+
+    if (typeof payload.msg === 'string') {
+      texts.push(payload.msg);
+    }
+
+    if (typeof payload.error_description === 'string') {
+      texts.push(payload.error_description);
+    }
+  }
+
+  return texts.join(' ').toLowerCase();
+};
+
+const isAuthRefreshFailure = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) {
+    return false;
+  }
+
+  const status = (error as { response?: { status?: unknown } }).response?.status;
+
+  if (typeof status === 'number' && AUTH_FAILURE_STATUS_CODES.has(status)) {
+    return true;
+  }
+
+  const message = getRefreshFailureText(error);
+
+  return AUTH_FAILURE_ERROR_MARKERS.some((marker) => message.includes(marker));
+};
 
 export type AppflowyWebSocketType = {
   /**
@@ -122,7 +205,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const slowPollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const lastNonceBumpRef = useRef(0);
   const lastCloseCodeRef = useRef<number | null>(null);
-  const tokenRefreshInFlightRef = useRef<Promise<boolean> | null>(null);
+  const tokenRefreshInFlightRef = useRef<Promise<ReconnectAuthStatus> | null>(null);
 
   const clearSlowPollRecovery = useCallback(() => {
     reconnectStoppedRef.current = false;
@@ -147,34 +230,39 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     setReconnectNonce((n) => n + 1);
   }, []);
 
-  const ensureFreshTokenForReconnect = useCallback(async (): Promise<boolean> => {
+  const ensureFreshTokenForReconnect = useCallback(async (): Promise<ReconnectAuthStatus> => {
     // If token is explicitly provided by caller, we can't refresh it from session state.
-    if (options.token) return true;
+    if (options.token) return 'ready';
 
     const tokenData = getTokenParsed();
 
-    if (!tokenData) return false;
+    if (!tokenData) return 'auth-failed';
 
     const nowUnix = Math.floor(Date.now() / 1000);
     const isExpired = tokenData.expires_at <= nowUnix;
 
-    if (!isExpired) return true;
+    if (!isExpired) return 'ready';
 
     if (tokenRefreshInFlightRef.current) {
       return tokenRefreshInFlightRef.current;
     }
 
     if (!tokenData.refresh_token) {
-      return false;
+      return 'auth-failed';
     }
 
     tokenRefreshInFlightRef.current = refreshToken(tokenData.refresh_token)
       .then((newToken) => {
-        return !!newToken?.access_token;
+        return newToken?.access_token ? 'ready' : 'transient-failed';
       })
       .catch((e) => {
-        Log.warn('Failed to refresh token before WebSocket reconnect', e);
-        return false;
+        if (isAuthRefreshFailure(e)) {
+          Log.warn('Token refresh rejected during WebSocket reconnect', e);
+          return 'auth-failed';
+        }
+
+        Log.warn('Transient token refresh failure during WebSocket reconnect', e);
+        return 'transient-failed';
       })
       .finally(() => {
         tokenRefreshInFlightRef.current = null;
@@ -186,17 +274,20 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const triggerNonceReconnect = useCallback(
     (reason: string, resetRecovery = false) => {
       void (async () => {
-        const ready = await ensureFreshTokenForReconnect();
+        const authStatus = await ensureFreshTokenForReconnect();
 
-        if (!ready) {
-          Log.warn(`WebSocket reconnect auth check failed (${reason}), falling back to session reset + reload`);
-          // Match previous behavior path: if auth refresh cannot recover, force re-auth flow.
-          if (!options.token) {
-            invalidToken();
-          }
+        if (authStatus !== 'ready') {
+          if (authStatus === 'auth-failed') {
+            Log.warn(`WebSocket reconnect auth check failed (${reason}), forcing re-auth flow`);
+            if (!options.token) {
+              invalidToken();
+            }
 
-          if (typeof window !== 'undefined') {
-            window.location.reload();
+            if (typeof window !== 'undefined') {
+              window.location.reload();
+            }
+          } else {
+            Log.warn(`WebSocket reconnect auth check hit transient failure (${reason}), preserving session`);
           }
 
           return;
