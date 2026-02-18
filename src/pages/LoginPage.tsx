@@ -17,6 +17,7 @@ function LoginPage() {
   const email = search.get('email') || '';
   const force = search.get('force') === 'true';
   const redirectTo = search.get('redirectTo') || '';
+  const type = search.get('type') || '';
   const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
 
 
@@ -37,7 +38,7 @@ function LoginPage() {
   const renderContent = useMemo(() => {
     switch (action) {
       case LOGIN_ACTION.CHECK_EMAIL:
-        return <CheckEmail email={email} redirectTo={redirectTo} />;
+        return <CheckEmail email={email} redirectTo={redirectTo} otpType={type === 'signup' ? 'signup' : undefined} />;
       case LOGIN_ACTION.ENTER_PASSWORD:
         return <EnterPassword email={email} redirectTo={redirectTo} />;
       case LOGIN_ACTION.RESET_PASSWORD:
@@ -51,7 +52,7 @@ function LoginPage() {
       default:
         return <Login redirectTo={redirectTo} />;
     }
-  }, [action, email, redirectTo]);
+  }, [action, email, redirectTo, type]);
 
   return (
     <div className={'flex h-screen w-screen items-center justify-center bg-background-primary'}>{renderContent}</div>

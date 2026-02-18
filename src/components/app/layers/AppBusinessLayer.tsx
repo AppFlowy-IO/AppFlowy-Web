@@ -1,17 +1,14 @@
-import { debounce } from 'lodash-es';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
-import { APP_EVENTS } from '@/application/constants';
-import { TextCount, Types, View } from '@/application/types';
+import { TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM, resolveSidebarSelectedViewId } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
 import { AppContextConsumer } from '../components/AppContextConsumer';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { BusinessInternalContext, BusinessInternalContextType } from '../contexts/BusinessInternalContext';
-import { useSyncInternal } from '../contexts/SyncInternalContext';
 import { useDatabaseOperations } from '../hooks/useDatabaseOperations';
 import { usePageOperations } from '../hooks/usePageOperations';
 import { useViewOperations } from '../hooks/useViewOperations';
@@ -21,17 +18,44 @@ interface AppBusinessLayerProps {
   children: React.ReactNode;
 }
 
-const FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS = 1000;
-const SKIP_NEXT_FOLDER_OUTLINE_REFRESH_BUFFER_MS = 5000;
-const SKIP_NEXT_FOLDER_OUTLINE_REFRESH_TTL_MS =
-  FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS + SKIP_NEXT_FOLDER_OUTLINE_REFRESH_BUFFER_MS;
+const ROUTE_VIEW_EXISTS_CACHE_MAX = 200;
+const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
+const ROUTE_NOT_FOUND_MESSAGE_PATTERN = /\b(not\s*found|record\s*not\s*found|view\s*not\s*found|page\s*not\s*found)\b/i;
+
+type RouteViewExistsCacheEntry = {
+  exists: boolean;
+  checkedAt: number;
+};
+
+function isRouteNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+
+  const normalizedError = error as {
+    code?: number;
+    status?: number;
+    message?: string;
+    response?: {
+      status?: number;
+      data?: {
+        code?: number;
+        message?: string;
+      };
+    };
+  };
+
+  const statusCode = normalizedError.status ?? normalizedError.response?.status;
+  const appCode = normalizedError.code ?? normalizedError.response?.data?.code;
+  const message = normalizedError.message || normalizedError.response?.data?.message || '';
+
+  if (statusCode === 404 || appCode === 404) return true;
+  return ROUTE_NOT_FOUND_MESSAGE_PATTERN.test(message);
+}
 
 // Third layer: Business logic operations
 // Handles all business operations like outline management, page operations, database operations
 // Depends on workspace ID and sync context from previous layers
 export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) => {
-  const { currentWorkspaceId } = useAuthInternal();
-  const { lastUpdatedCollab, eventEmitter } = useSyncInternal();
+  const { currentWorkspaceId, service } = useAuthInternal();
   const params = useParams();
   const [searchParams] = useSearchParams();
 
@@ -39,8 +63,8 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const [rendered, setRendered] = useState(false);
   const [openModalViewId, setOpenModalViewId] = useState<string | undefined>(undefined);
   const wordCountRef = useRef<Record<string, TextCount>>({});
-  const skipNextFolderOutlineRefreshRef = useRef(false);
-  const skipNextFolderOutlineRefreshUntilRef = useRef<number>(0);
+  const routeViewExistsCacheRef = useRef<Map<string, RouteViewExistsCacheEntry>>(new Map());
+  const routeViewExistsInFlightRef = useRef<Map<string, Promise<boolean | null>>>(new Map());
 
   // Calculate view ID from params
   const viewId = useMemo(() => {
@@ -68,6 +92,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     getMentionUser,
     loadMentionableUsers,
     stableOutlineRef,
+    loadedViewIds,
+    loadViewChildren,
+    loadViewChildrenBatch,
+    markViewChildrenStale,
   } = useWorkspaceData();
 
   const breadcrumbViewId = useMemo(() => {
@@ -90,24 +118,188 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     return trashList?.some((v) => v.view_id === viewId);
   }, [trashList, viewId]);
 
-  // Check if current view is not found
-  const viewNotFound = useMemo(() => {
-    if (!viewId || !outline || !outline.length) return false;
-    return !findView(outline, viewId);
-  }, [outline, viewId]);
+  const [routeViewExists, setRouteViewExists] = useState<boolean | null>(null);
+
+  const setRouteViewExistsCache = useCallback((key: string, exists: boolean) => {
+    const cache = routeViewExistsCacheRef.current;
+
+    if (cache.size >= ROUTE_VIEW_EXISTS_CACHE_MAX) {
+      const oldestKey = cache.keys().next().value;
+
+      if (oldestKey) {
+        cache.delete(oldestKey);
+      }
+    }
+
+    cache.set(key, {
+      exists,
+      checkedAt: Date.now(),
+    });
+  }, []);
+
+  useEffect(() => {
+    routeViewExistsCacheRef.current.clear();
+    routeViewExistsInFlightRef.current.clear();
+  }, [currentWorkspaceId]);
+
+  // Route-level not-found guard:
+  // 1) If view is in current outline tree, it exists.
+  // 2) Otherwise validate via server to support depth=1 lazy outlines.
+  useEffect(() => {
+    if (!viewId || viewHasBeenDeleted) {
+      setRouteViewExists(null);
+      return;
+    }
+
+    if (findView(outline ?? [], viewId)) {
+      setRouteViewExists(true);
+      return;
+    }
+
+    if (!service || !currentWorkspaceId) {
+      setRouteViewExists(null);
+      return;
+    }
+
+    const cacheKey = `${currentWorkspaceId}:${viewId}`;
+    const cached = routeViewExistsCacheRef.current.get(cacheKey);
+    const cacheExpired = cached
+      ? Date.now() - cached.checkedAt >= ROUTE_VIEW_EXISTS_REVALIDATE_MS
+      : true;
+
+    // Cache policy:
+    // - false can be trusted (confirmed not-found)
+    // - true is reused, but periodically revalidated while route view is
+    //   outside the currently loaded shallow tree to avoid stale positives.
+    if (cached?.exists === false) {
+      setRouteViewExists(false);
+      return;
+    }
+
+    if (cached?.exists === true && !cacheExpired) {
+      setRouteViewExists(true);
+      return;
+    }
+
+    let cancelled = false;
+    const hasCachedTrue = cached?.exists === true;
+
+    if (!hasCachedTrue) {
+      setRouteViewExists(null);
+    } else {
+      // Keep UI stable while doing background revalidation for stale cached true.
+      setRouteViewExists(true);
+    }
+
+    let inFlight = routeViewExistsInFlightRef.current.get(cacheKey);
+
+    if (!inFlight) {
+      inFlight = service
+        .getAppView(currentWorkspaceId, viewId)
+        .then(() => {
+          setRouteViewExistsCache(cacheKey, true);
+          return true;
+        })
+        .catch((error: unknown) => {
+          // Only cache "missing" when server confirms not-found.
+          // Network/transient/server errors should remain unknown (null).
+          if (isRouteNotFoundError(error)) {
+            setRouteViewExistsCache(cacheKey, false);
+            return false;
+          }
+
+          return null;
+        })
+        .then((exists) => {
+          routeViewExistsInFlightRef.current.delete(cacheKey);
+          return exists;
+        });
+      routeViewExistsInFlightRef.current.set(cacheKey, inFlight);
+    }
+
+    void inFlight.then((exists) => {
+      if (!cancelled) {
+        if (exists === null && hasCachedTrue) {
+          setRouteViewExists(true);
+        } else {
+          setRouteViewExists(exists);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [viewId, viewHasBeenDeleted, outline, service, currentWorkspaceId, setRouteViewExistsCache]);
+
+  const viewNotFound = Boolean(viewId && !viewHasBeenDeleted && routeViewExists === false);
 
   // Calculate breadcrumbs based on current view
   const originalCrumbs = useMemo(() => {
     if (!outline || !breadcrumbViewId) return [];
     return findAncestors(outline, breadcrumbViewId) || [];
   }, [outline, breadcrumbViewId]);
+  const [fallbackCrumbs, setFallbackCrumbs] = useState<View[]>([]);
 
-  const [breadcrumbs, setBreadcrumbs] = useState<View[]>(originalCrumbs);
+  useEffect(() => {
+    if (!breadcrumbViewId) {
+      setFallbackCrumbs([]);
+      return;
+    }
+
+    if (originalCrumbs.length > 0) {
+      setFallbackCrumbs([]);
+      return;
+    }
+
+    if (!service || !currentWorkspaceId) {
+      setFallbackCrumbs([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const visited = new Set<string>();
+      const chain: View[] = [];
+      let cursorId: string | undefined = breadcrumbViewId;
+
+      while (cursorId && cursorId !== currentWorkspaceId && !visited.has(cursorId)) {
+        visited.add(cursorId);
+
+        let currentView: View | null = findView(stableOutlineRef.current || [], cursorId);
+
+        if (!currentView) {
+          try {
+            currentView = await service.getAppView(currentWorkspaceId, cursorId);
+          } catch {
+            break;
+          }
+        }
+
+        if (!currentView) break;
+        chain.unshift(currentView);
+        cursorId = currentView.parent_view_id;
+      }
+
+      if (!cancelled) {
+        setFallbackCrumbs(chain);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [breadcrumbViewId, originalCrumbs, service, currentWorkspaceId, stableOutlineRef]);
+
+  const sourceCrumbs = originalCrumbs.length > 0 ? originalCrumbs : fallbackCrumbs;
+
+  const [breadcrumbs, setBreadcrumbs] = useState<View[]>(sourceCrumbs);
 
   // Update breadcrumbs when original crumbs change
   useEffect(() => {
-    setBreadcrumbs(originalCrumbs);
-  }, [originalCrumbs]);
+    setBreadcrumbs(sourceCrumbs);
+  }, [sourceCrumbs]);
 
   // Handle breadcrumb manipulation
   const appendBreadcrumb = useCallback((view?: View) => {
@@ -128,14 +320,24 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     });
   }, []);
 
-  // Load view metadata
+  // Load view metadata — with server fallback for lazy-loaded outline
   const loadViewMeta = useCallback(
     async (viewId: string, callback?: (meta: View) => void) => {
-      const view = findView(stableOutlineRef.current || [], viewId);
       const deletedView = trashList?.find((v) => v.view_id === viewId);
 
       if (deletedView) {
         return Promise.reject(deletedView);
+      }
+
+      let view = findView(stableOutlineRef.current || [], viewId);
+
+      // Server fallback: view not in shallow outline tree
+      if (!view && service && currentWorkspaceId) {
+        try {
+          view = await service.getAppView(currentWorkspaceId, viewId);
+        } catch {
+          // fall through to rejection
+        }
       }
 
       if (!view) {
@@ -154,7 +356,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
         database_relations: workspaceDatabases,
       };
     },
-    [stableOutlineRef, trashList, workspaceDatabases]
+    [stableOutlineRef, trashList, workspaceDatabases, service, currentWorkspaceId]
   );
 
   // Word count management
@@ -176,51 +378,6 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     if (!currentWorkspaceId) return;
     await loadOutline(currentWorkspaceId, false);
   }, [currentWorkspaceId, loadOutline]);
-
-  // Debounced outline refresh for folder updates
-  const debouncedRefreshOutline = useMemo(
-    () =>
-      debounce(() => {
-        // Avoid an extra outline refetch right after a local mutation already requested one.
-        // This prevents a visible "refresh" of database UI state derived from the outline.
-        if (
-          skipNextFolderOutlineRefreshRef.current &&
-          Date.now() < skipNextFolderOutlineRefreshUntilRef.current
-        ) {
-          skipNextFolderOutlineRefreshRef.current = false;
-          return;
-        }
-
-        void refreshOutline();
-      }, FOLDER_OUTLINE_REFRESH_DEBOUNCE_MS),
-    [refreshOutline]
-  );
-
-  useEffect(() => {
-    return () => {
-      debouncedRefreshOutline.cancel();
-    };
-  }, [debouncedRefreshOutline]);
-
-  useEffect(() => {
-    const handleFolderOutlineChanged = () => {
-      skipNextFolderOutlineRefreshRef.current = true;
-      skipNextFolderOutlineRefreshUntilRef.current = Date.now() + SKIP_NEXT_FOLDER_OUTLINE_REFRESH_TTL_MS;
-    };
-
-    eventEmitter.on(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
-
-    return () => {
-      eventEmitter.off(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
-    };
-  }, [eventEmitter]);
-
-  // Refresh outline when a folder collab update is detected
-  useEffect(() => {
-    if (lastUpdatedCollab?.collabType === Types.Folder) {
-      return debouncedRefreshOutline();
-    }
-  }, [debouncedRefreshOutline, lastUpdatedCollab]);
 
   // Enhanced toView that uses loadViewMeta
   const enhancedToView = useCallback(
@@ -265,6 +422,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       breadcrumbs,
       appendBreadcrumb,
       refreshOutline,
+      loadedViewIds,
+      loadViewChildren,
+      loadViewChildrenBatch,
+      markViewChildrenStale,
 
       // Data views
       favoriteViews,
@@ -312,6 +473,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       breadcrumbs,
       appendBreadcrumb,
       refreshOutline,
+      loadedViewIds,
+      loadViewChildren,
+      loadViewChildrenBatch,
+      markViewChildrenStale,
       favoriteViews,
       recentViews,
       trashList,

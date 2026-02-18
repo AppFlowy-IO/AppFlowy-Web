@@ -385,7 +385,7 @@ export class ChatRequest {
   }
 
   async getCurrentView() {
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=1&root_view_id=${this.chatId}`;
+    const url = `/api/workspace/${this.workspaceId}/view/${this.chatId}?depth=1`;
 
     const res = await this.axiosInstance.get<{
       code: number;
@@ -407,7 +407,7 @@ export class ChatRequest {
       return oldView;
     }
 
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=1&root_view_id=${viewId}`;
+    const url = `/api/workspace/${this.workspaceId}/view/${viewId}?depth=1`;
 
     const res = await this.axiosInstance.get<{
       code: number;
@@ -427,7 +427,7 @@ export class ChatRequest {
       return this.folder;
     }
 
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=10`;
+    const url = `/api/workspace/${this.workspaceId}/view/${this.workspaceId}?depth=10`;
 
     const res = await this.axiosInstance.get<{
       code: number;

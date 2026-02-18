@@ -2,7 +2,7 @@ import React, { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { View, ViewIconType } from '@/application/types';
+import { View, ViewIconType, ViewLayout } from '@/application/types';
 import {
   getFirstChildView,
   isDatabaseContainer,
@@ -23,6 +23,8 @@ function ViewItem({
   toggleExpand,
   onClickView,
   parentView,
+  loadingViewIds,
+  loadedViewIds,
 }: {
   view: View;
   width: number;
@@ -32,6 +34,8 @@ function ViewItem({
   toggleExpand: (id: string, isExpand: boolean) => void;
   onClickView?: (viewId: string) => void;
   parentView?: View;
+  loadingViewIds?: Set<string>;
+  loadedViewIds?: Set<string>;
 }) {
   const { t } = useTranslation();
   const selectedViewId = useSidebarSelectedViewId();
@@ -104,7 +108,10 @@ function ViewItem({
     // Determine which left icon to show
     // Use the utility function which properly handles database containers
     const isRefDatabaseView = isRefDbView(view, parentView);
-    const hasChildren = Boolean(view.children?.length);
+    const isLoaded = loadedViewIds?.has(view.view_id) ?? false;
+    const hasConfirmedChildren = Boolean(view.children?.length);
+    // Use server-provided has_children when available; fall back to heuristic for old servers
+    const hasChildren = hasConfirmedChildren || (view.has_children ?? (!isLoaded && view.layout === ViewLayout.Document));
 
     // Calculate left padding based on icon presence
     const showLeftIcon = isRefDatabaseView || hasChildren;
@@ -204,7 +211,10 @@ function ViewItem({
     onClickView,
     viewId,
     handleChangeIcon,
+    loadedViewIds,
   ]);
+
+  const isLoadingChildren = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
 
   const renderChildren = useMemo(() => {
     // Don't pass renderExtra (more button) to children when parent is a database layout
@@ -220,22 +230,30 @@ function ViewItem({
           display: isExpanded ? 'block' : 'none',
         }}
       >
-        {view?.children?.map((child) => (
-          <ViewItem
-            level={level + 1}
-            key={child.view_id}
-            view={child}
-            width={width}
-            renderExtra={childRenderExtra}
-            expandIds={expandIds}
-            toggleExpand={toggleExpand}
-            onClickView={onClickView}
-            parentView={view}
-          />
-        ))}
+        {isLoadingChildren ? (
+          <div className={'flex items-center justify-center py-1'} style={{ paddingLeft: (level + 1) * 16 + 'px' }}>
+            <div className={'h-4 w-4 animate-spin rounded-full border-2 border-fill-default border-t-transparent'} />
+          </div>
+        ) : (
+          view?.children?.map((child) => (
+            <ViewItem
+              level={level + 1}
+              key={child.view_id}
+              view={child}
+              width={width}
+              renderExtra={childRenderExtra}
+              expandIds={expandIds}
+              toggleExpand={toggleExpand}
+              onClickView={onClickView}
+              parentView={view}
+              loadingViewIds={loadingViewIds}
+              loadedViewIds={loadedViewIds}
+            />
+          ))
+        )}
       </div>
     );
-  }, [toggleExpand, onClickView, isExpanded, expandIds, level, renderExtra, view, width]);
+  }, [toggleExpand, onClickView, isExpanded, isLoadingChildren, expandIds, level, renderExtra, view, width, loadingViewIds, loadedViewIds]);
 
   return (
     <div

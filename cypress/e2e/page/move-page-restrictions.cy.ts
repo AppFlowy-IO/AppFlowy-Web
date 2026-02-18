@@ -110,6 +110,14 @@ describe('Move Page Restrictions', () => {
       ModalSelectors.renameInput().should('be.visible').clear().type(sourceName);
       ModalSelectors.renameSaveButton().click({ force: true });
       waitForReactUpdate(2000);
+
+      // With lazy-loaded outline (depth=1), collapse and re-expand
+      // the space to force a fresh load after rename.
+      SpaceSelectors.itemByName(spaceName).find('[data-testid="space-name"]').click({ force: true });
+      waitForReactUpdate(500);
+      SpaceSelectors.itemByName(spaceName).find('[data-testid="space-name"]').click({ force: true });
+      waitForReactUpdate(1000);
+
       PageSelectors.itemByName(sourceName).should('exist');
 
       // 2) Create a document page

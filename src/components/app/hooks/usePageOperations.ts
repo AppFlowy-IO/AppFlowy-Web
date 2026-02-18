@@ -43,7 +43,9 @@ export function usePageOperations({
       try {
         const response = await service?.addAppPage(currentWorkspaceId, parentViewId, payload);
 
-        await loadOutline?.(currentWorkspaceId, false);
+        // Keep a resilient fallback when realtime delivery is unavailable.
+        // This guarantees sidebar eventual consistency after creation.
+        void loadOutline?.(currentWorkspaceId, false);
         return response;
       } catch (e) {
         return Promise.reject(e);

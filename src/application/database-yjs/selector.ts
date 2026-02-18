@@ -1833,16 +1833,29 @@ export function usePrimaryFieldId() {
 export const useRowMetaSelector = (rowId: string) => {
   const [meta, setMeta] = useState<RowMeta | null>();
   const { rowMap, ensureRow } = useDatabaseContext();
+  const [rowDoc, setRowDoc] = useState<YDoc | null>(null);
 
-  // Ensure the row document is loaded (same pattern as useRow)
+  // Ensure the row document is loaded and track it directly
   useEffect(() => {
     let cancelled = false;
+
+    // Check if already available in rowMap
+    const existing = rowMap?.[rowId];
+
+    if (existing) {
+      setRowDoc(existing);
+      return;
+    }
 
     if (ensureRow && rowId) {
       const promise = ensureRow(rowId);
 
       if (promise) {
-        promise.catch((error: unknown) => {
+        promise.then((doc) => {
+          if (!cancelled && doc) {
+            setRowDoc(doc);
+          }
+        }).catch((error: unknown) => {
           if (!cancelled) {
             console.error('[useRowMetaSelector] Failed to ensure row doc:', error);
           }
@@ -1853,40 +1866,64 @@ export const useRowMetaSelector = (rowId: string) => {
     return () => {
       cancelled = true;
     };
-  }, [ensureRow, rowId]);
+  }, [ensureRow, rowId, rowMap]);
 
-  const updateMeta = useCallback(() => {
-    const row = rowMap?.[rowId];
-
-    if (!row || !row.share.has(YjsEditorKey.data_section)) return;
-
-    const rowSharedRoot = row.getMap(YjsEditorKey.data_section);
-
-    const yMeta = rowSharedRoot?.get(YjsEditorKey.meta);
-
-    if (!yMeta) return;
-
-    const meta = getMetaJSON(rowId, yMeta);
-
-    setMeta(meta);
-  }, [rowId, rowMap]);
-
+  // Read meta and observe changes on the row doc.
+  // The meta key may not exist initially (empty Y.Map before sync completes),
+  // so we observe the shared root to detect when the meta key is added.
   useEffect(() => {
-    if (!rowMap) return;
-    updateMeta();
-    const observerEvent = () => updateMeta();
-
-    const rowDoc = rowMap[rowId];
-
     if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
-    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
-    const meta = rowSharedRoot?.get(YjsEditorKey.meta) as YDatabaseMetas;
 
-    meta?.observeDeep(observerEvent);
-    return () => {
-      meta?.unobserveDeep(observerEvent);
+    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+    let metaObserverCleanup: (() => void) | null = null;
+
+    const attachMetaObserver = () => {
+      // Clean up previous observer if any
+      if (metaObserverCleanup) {
+        metaObserverCleanup();
+        metaObserverCleanup = null;
+      }
+
+      const yMeta = rowSharedRoot.get(YjsEditorKey.meta) as YDatabaseMetas | undefined;
+
+      if (!yMeta) return;
+
+      const updateMeta = () => {
+        const meta = getMetaJSON(rowId, yMeta);
+
+        setMeta(meta);
+      };
+
+      updateMeta();
+      yMeta.observeDeep(updateMeta);
+      metaObserverCleanup = () => {
+        try {
+          yMeta.unobserveDeep(updateMeta);
+        } catch {
+          // Ignore errors from unobserving destroyed Yjs objects
+        }
+      };
     };
-  }, [rowId, rowMap, updateMeta]);
+
+    // Watch for the meta key being added to the shared root (arrives via sync)
+    const handleRootChange = () => {
+      if (rowSharedRoot.has(YjsEditorKey.meta)) {
+        attachMetaObserver();
+      }
+    };
+
+    rowSharedRoot.observe(handleRootChange);
+    // Try attaching immediately in case meta already exists
+    attachMetaObserver();
+
+    return () => {
+      if (metaObserverCleanup) {
+        metaObserverCleanup();
+      }
+
+      rowSharedRoot.unobserve(handleRootChange);
+    };
+  }, [rowId, rowDoc]);
 
   return meta;
 };

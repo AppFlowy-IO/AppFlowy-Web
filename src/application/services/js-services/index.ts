@@ -281,6 +281,10 @@ export class AFClientService implements AFService {
     return APIService.getView(workspaceId, viewId);
   }
 
+  async getAppViews(workspaceId: string, viewIds: string[], depth: number = 2) {
+    return APIService.getViews(workspaceId, viewIds, depth);
+  }
+
   async createOrphanedView(workspaceId: string, payload: { document_id: string }) {
     return APIService.createOrphanedView(workspaceId, payload);
   }
@@ -333,7 +337,7 @@ export class AFClientService implements AFService {
   }
 
   @withSignIn()
-  async signInOTP(params: { email: string; code: string; type?: 'magiclink' | 'recovery' }) {
+  async signInOTP(params: { email: string; code: string; type?: 'magiclink' | 'recovery' | 'signup' }) {
     return APIService.signInOTP(params);
   }
 

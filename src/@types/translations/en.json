@@ -3134,6 +3134,25 @@
     "commentAddedSuccessfully": "Comment added successfully.",
     "commentAddedSuccessTip": "You've just added or replied to a comment. Would you like to jump to the top to see the latest comments?"
   },
+  "rowComment": {
+    "comments": "Comments",
+    "addComment": "Add a comment...",
+    "noComments": "No comments yet",
+    "editComment": "Edit",
+    "deleteComment": "Delete",
+    "confirmDelete": "Are you sure you want to delete this comment?",
+    "resolve": "Resolve",
+    "reopen": "Reopen",
+    "reply": "Reply",
+    "open": "Open",
+    "resolved": "Resolved",
+    "edited": "(edited)",
+    "addReply": "Add a reply...",
+    "attachFile": "Attach file",
+    "mention": "Mention someone",
+    "addEmoji": "Add reaction",
+    "moreActions": "More actions"
+  },
   "template": {
     "asTemplate": "Save as template",
     "name": "Template name",

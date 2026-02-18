@@ -988,7 +988,7 @@ export async function getAppRecent(workspaceId: string) {
 }
 
 export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
-  const url = `/api/workspace/${workspaceId}/folder?depth=10`;
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=2`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)
@@ -999,11 +999,25 @@ export async function getAppOutline(workspaceId: string): Promise<AppOutlineResp
 }
 
 export async function getView(workspaceId: string, viewId: string, depth: number = 1) {
-  const url = `/api/workspace/${workspaceId}/folder?depth=${depth}&root_view_id=${viewId}`;
+  const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)
   );
+}
+
+export async function getViews(workspaceId: string, viewIds: string[], depth: number = 2) {
+  if (viewIds.length === 0) return [];
+
+  const query = new URLSearchParams({
+    depth: String(depth),
+    view_ids: viewIds.join(','),
+  });
+  const url = `/api/workspace/${workspaceId}/views?${query.toString()}`;
+
+  return executeAPIRequest<{ views: View[] }>(() =>
+    axiosInstance?.get<APIResponse<{ views: View[] }>>(url)
+  ).then((data) => data.views ?? []);
 }
 
 export async function getPublishNamespace(workspaceId: string) {
@@ -1245,7 +1259,9 @@ function iterateFolder(folder: WorkspaceFolder): FolderView {
     id: folder.view_id,
     name: folder.name,
     icon: folder.icon,
-    isSpace: folder.is_space,
+    // `/view/{id}` payloads expose space flag in `extra.is_space`.
+    // Keep backward compatibility with old `is_space` top-level field.
+    isSpace: folder.is_space ?? folder.extra?.is_space ?? false,
     extra: folder.extra ? JSON.stringify(folder.extra) : null,
     isPrivate: folder.is_private,
     accessLevel: folder.access_level,
@@ -1256,7 +1272,7 @@ function iterateFolder(folder: WorkspaceFolder): FolderView {
 }
 
 export async function getWorkspaceFolder(workspaceId: string): Promise<FolderView> {
-  const url = `/api/workspace/${workspaceId}/folder`;
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
   const payload = await executeAPIRequest<WorkspaceFolder>(() =>
     axiosInstance?.get<APIResponse<WorkspaceFolder>>(url)
   );
@@ -2155,7 +2171,7 @@ export async function turnIntoMember(workspaceId: string, email: string) {
 
 
 export async function getShareWithMe(workspaceId: string): Promise<View> {
-  const url = `/api/sharing/workspace/${workspaceId}/folder`;
+  const url = `/api/sharing/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)
