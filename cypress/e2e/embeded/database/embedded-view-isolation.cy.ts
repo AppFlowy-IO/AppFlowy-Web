@@ -203,9 +203,12 @@ describe('Embedded Database View Isolation', () => {
       expandSpaceInSidebar(spaceName);
       waitForReactUpdate(1000);
 
+      // With the new folder API, database containers may not show children in
+      // the sidebar (no expand toggle for non-Document layouts). Just capture
+      // whatever count we get as the baseline — the important assertion is that
+      // this count does NOT change after embedding.
       getDescendantPageItemCount(dbName).then((count) => {
         cy.task('log', `[STEP 4.1] Original database descendant view count: ${count}`);
-        expect(count).to.be.at.least(1);
         cy.wrap(count).as('originalDbChildCount');
       });
       assertNoChildViewContains(dbName, 'View of');

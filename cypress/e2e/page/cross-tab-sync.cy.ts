@@ -380,13 +380,6 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
     getIframeBody().find('[data-testid="page-name"]:contains("Untitled")', { timeout: 30000 }).should('exist');
     cy.log('[SUCCESS] Document appears in iframe!');
 
-    // Get page count after creation
-    let pageCountAfterCreate = 0;
-    PageSelectors.names().then(($pages) => {
-      pageCountAfterCreate = $pages.length;
-      cy.log(`[INFO] Page count after creating document: ${pageCountAfterCreate}`);
-    });
-
     // Step 9: Delete the document from main window
     cy.log('[STEP 9] Deleting document from main window');
 
@@ -417,32 +410,31 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
     waitForReactUpdate(2000);
 
     // Step 10: Verify iframe's sidebar reflects the deletion via BroadcastChannel
+    // Use direct "Untitled" existence check instead of page count comparison, because
+    // the iframe may have a different page-name count than the main window (e.g. due
+    // to auto-expanded pages with lazy-loaded children).
     cy.log('[STEP 10] Verifying iframe sidebar updated after deletion via BroadcastChannel');
 
-    // Wait for page count to decrease in iframe
-    const waitForIframePageCountDecrease = (attempts = 0, maxAttempts = 30): void => {
+    const waitForUntitledToDisappearInIframe = (attempts = 0, maxAttempts = 30): void => {
       if (attempts >= maxAttempts) {
-        throw new Error('Page count did not decrease in iframe - BroadcastChannel sync may not be working for deletion');
+        throw new Error('"Untitled" did not disappear from iframe - BroadcastChannel sync may not be working for deletion');
       }
 
-      getIframeBody().find('[data-testid="page-name"]').then(($pages) => {
-        const newCount = $pages.length;
-        cy.log(`[INFO] Current page count in iframe: ${newCount}, after create: ${pageCountAfterCreate}, attempt: ${attempts + 1}`);
+      getIframeBody().then(($body) => {
+        const untitledPages = $body.find('[data-testid="page-name"]:contains("Untitled")');
 
-        if (newCount < pageCountAfterCreate) {
+        cy.log(`[INFO] "Untitled" elements in iframe: ${untitledPages.length}, attempt: ${attempts + 1}`);
+
+        if (untitledPages.length === 0) {
           cy.log('[SUCCESS] Iframe sidebar updated after deletion via BroadcastChannel!');
           return;
         }
 
-        // Wait and retry
-        cy.wait(1000).then(() => waitForIframePageCountDecrease(attempts + 1, maxAttempts));
+        cy.wait(1000).then(() => waitForUntitledToDisappearInIframe(attempts + 1, maxAttempts));
       });
     };
 
-    waitForIframePageCountDecrease();
-
-    // Verify "Untitled" page no longer exists in iframe
-    getIframeBody().find('[data-testid="page-name"]:contains("Untitled")').should('not.exist');
+    waitForUntitledToDisappearInIframe();
     cy.log('[SUCCESS] Deleted document removed from iframe sidebar via BroadcastChannel!');
 
     // Step 11: Clean up - remove iframe

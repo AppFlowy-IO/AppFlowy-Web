@@ -3198,6 +3198,7 @@ export const notification = $root.notification = (() => {
          * @property {notification.IServerLimit|null} [serverLimit] WorkspaceNotification serverLimit
          * @property {notification.IWorkspaceMemberProfileChanged|null} [workspaceMemberProfileChanged] WorkspaceNotification workspaceMemberProfileChanged
          * @property {notification.IFolderChanged|null} [folderChanged] WorkspaceNotification folderChanged
+         * @property {notification.IFolderViewChanged|null} [folderViewChanged] WorkspaceNotification folderViewChanged
          */
 
         /**
@@ -3279,17 +3280,25 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.folderChanged = null;
 
+        /**
+         * WorkspaceNotification folderViewChanged.
+         * @member {notification.IFolderViewChanged|null|undefined} folderViewChanged
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.folderViewChanged = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -3333,6 +3342,8 @@ export const notification = $root.notification = (() => {
                 $root.notification.WorkspaceMemberProfileChanged.encode(message.workspaceMemberProfileChanged, writer.uint32(/* id 7, wireType 2 =*/58).fork()).ldelim();
             if (message.folderChanged != null && Object.hasOwnProperty.call(message, "folderChanged"))
                 $root.notification.FolderChanged.encode(message.folderChanged, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
+            if (message.folderViewChanged != null && Object.hasOwnProperty.call(message, "folderViewChanged"))
+                $root.notification.FolderViewChanged.encode(message.folderViewChanged, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
             return writer;
         };
 
@@ -3399,6 +3410,10 @@ export const notification = $root.notification = (() => {
                     }
                 case 8: {
                         message.folderChanged = $root.notification.FolderChanged.decode(reader, reader.uint32());
+                        break;
+                    }
+                case 9: {
+                        message.folderViewChanged = $root.notification.FolderViewChanged.decode(reader, reader.uint32());
                         break;
                     }
                 default:
@@ -3515,6 +3530,16 @@ export const notification = $root.notification = (() => {
                         return "folderChanged." + error;
                 }
             }
+            if (message.folderViewChanged != null && message.hasOwnProperty("folderViewChanged")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.FolderViewChanged.verify(message.folderViewChanged);
+                    if (error)
+                        return "folderViewChanged." + error;
+                }
+            }
             return null;
         };
 
@@ -3569,6 +3594,11 @@ export const notification = $root.notification = (() => {
                 if (typeof object.folderChanged !== "object")
                     throw TypeError(".notification.WorkspaceNotification.folderChanged: object expected");
                 message.folderChanged = $root.notification.FolderChanged.fromObject(object.folderChanged);
+            }
+            if (object.folderViewChanged != null) {
+                if (typeof object.folderViewChanged !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.folderViewChanged: object expected");
+                message.folderViewChanged = $root.notification.FolderViewChanged.fromObject(object.folderViewChanged);
             }
             return message;
         };
@@ -3625,6 +3655,11 @@ export const notification = $root.notification = (() => {
                 object.folderChanged = $root.notification.FolderChanged.toObject(message.folderChanged, options);
                 if (options.oneofs)
                     object.payload = "folderChanged";
+            }
+            if (message.folderViewChanged != null && message.hasOwnProperty("folderViewChanged")) {
+                object.folderViewChanged = $root.notification.FolderViewChanged.toObject(message.folderViewChanged, options);
+                if (options.oneofs)
+                    object.payload = "folderViewChanged";
             }
             return object;
         };
@@ -6833,6 +6868,393 @@ export const notification = $root.notification = (() => {
         };
 
         return FolderChanged;
+    })();
+
+    notification.FolderViewChanged = (function() {
+
+        /**
+         * Properties of a FolderViewChanged.
+         * @memberof notification
+         * @interface IFolderViewChanged
+         * @property {number|null} [changeType] FolderViewChanged changeType
+         * @property {string|null} [viewId] FolderViewChanged viewId
+         * @property {string|null} [viewJson] FolderViewChanged viewJson
+         * @property {string|null} [parentViewId] FolderViewChanged parentViewId
+         * @property {Array.<string>|null} [childViewIds] FolderViewChanged childViewIds
+         * @property {string|null} [folderRid] FolderViewChanged folderRid
+         */
+
+        /**
+         * Constructs a new FolderViewChanged.
+         * @memberof notification
+         * @classdesc Represents a FolderViewChanged.
+         * @implements IFolderViewChanged
+         * @constructor
+         * @param {notification.IFolderViewChanged=} [properties] Properties to set
+         */
+        function FolderViewChanged(properties) {
+            this.childViewIds = [];
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * FolderViewChanged changeType.
+         * @member {number} changeType
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.changeType = 0;
+
+        /**
+         * FolderViewChanged viewId.
+         * @member {string} viewId
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.viewId = "";
+
+        /**
+         * FolderViewChanged viewJson.
+         * @member {string|null|undefined} viewJson
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.viewJson = null;
+
+        /**
+         * FolderViewChanged parentViewId.
+         * @member {string|null|undefined} parentViewId
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.parentViewId = null;
+
+        /**
+         * FolderViewChanged childViewIds.
+         * @member {Array.<string>} childViewIds
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.childViewIds = $util.emptyArray;
+
+        /**
+         * FolderViewChanged folderRid.
+         * @member {string|null|undefined} folderRid
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        FolderViewChanged.prototype.folderRid = null;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * FolderViewChanged _viewJson.
+         * @member {"viewJson"|undefined} _viewJson
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        Object.defineProperty(FolderViewChanged.prototype, "_viewJson", {
+            get: $util.oneOfGetter($oneOfFields = ["viewJson"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * FolderViewChanged _parentViewId.
+         * @member {"parentViewId"|undefined} _parentViewId
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        Object.defineProperty(FolderViewChanged.prototype, "_parentViewId", {
+            get: $util.oneOfGetter($oneOfFields = ["parentViewId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * FolderViewChanged _folderRid.
+         * @member {"folderRid"|undefined} _folderRid
+         * @memberof notification.FolderViewChanged
+         * @instance
+         */
+        Object.defineProperty(FolderViewChanged.prototype, "_folderRid", {
+            get: $util.oneOfGetter($oneOfFields = ["folderRid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new FolderViewChanged instance using the specified properties.
+         * @function create
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {notification.IFolderViewChanged=} [properties] Properties to set
+         * @returns {notification.FolderViewChanged} FolderViewChanged instance
+         */
+        FolderViewChanged.create = function create(properties) {
+            return new FolderViewChanged(properties);
+        };
+
+        /**
+         * Encodes the specified FolderViewChanged message. Does not implicitly {@link notification.FolderViewChanged.verify|verify} messages.
+         * @function encode
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {notification.IFolderViewChanged} message FolderViewChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        FolderViewChanged.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.changeType != null && Object.hasOwnProperty.call(message, "changeType"))
+                writer.uint32(/* id 1, wireType 0 =*/8).uint32(message.changeType);
+            if (message.viewId != null && Object.hasOwnProperty.call(message, "viewId"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.viewId);
+            if (message.viewJson != null && Object.hasOwnProperty.call(message, "viewJson"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.viewJson);
+            if (message.parentViewId != null && Object.hasOwnProperty.call(message, "parentViewId"))
+                writer.uint32(/* id 4, wireType 2 =*/34).string(message.parentViewId);
+            if (message.childViewIds != null && message.childViewIds.length)
+                for (let i = 0; i < message.childViewIds.length; ++i)
+                    writer.uint32(/* id 5, wireType 2 =*/42).string(message.childViewIds[i]);
+            if (message.folderRid != null && Object.hasOwnProperty.call(message, "folderRid"))
+                writer.uint32(/* id 6, wireType 2 =*/50).string(message.folderRid);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified FolderViewChanged message, length delimited. Does not implicitly {@link notification.FolderViewChanged.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {notification.IFolderViewChanged} message FolderViewChanged message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        FolderViewChanged.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes a FolderViewChanged message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.FolderViewChanged} FolderViewChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        FolderViewChanged.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.FolderViewChanged();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.changeType = reader.uint32();
+                        break;
+                    }
+                case 2: {
+                        message.viewId = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.viewJson = reader.string();
+                        break;
+                    }
+                case 4: {
+                        message.parentViewId = reader.string();
+                        break;
+                    }
+                case 5: {
+                        if (!(message.childViewIds && message.childViewIds.length))
+                            message.childViewIds = [];
+                        message.childViewIds.push(reader.string());
+                        break;
+                    }
+                case 6: {
+                        message.folderRid = reader.string();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes a FolderViewChanged message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.FolderViewChanged} FolderViewChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        FolderViewChanged.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies a FolderViewChanged message.
+         * @function verify
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        FolderViewChanged.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            let properties = {};
+            if (message.changeType != null && message.hasOwnProperty("changeType"))
+                if (!$util.isInteger(message.changeType))
+                    return "changeType: integer expected";
+            if (message.viewId != null && message.hasOwnProperty("viewId"))
+                if (!$util.isString(message.viewId))
+                    return "viewId: string expected";
+            if (message.viewJson != null && message.hasOwnProperty("viewJson")) {
+                properties._viewJson = 1;
+                if (!$util.isString(message.viewJson))
+                    return "viewJson: string expected";
+            }
+            if (message.parentViewId != null && message.hasOwnProperty("parentViewId")) {
+                properties._parentViewId = 1;
+                if (!$util.isString(message.parentViewId))
+                    return "parentViewId: string expected";
+            }
+            if (message.childViewIds != null && message.hasOwnProperty("childViewIds")) {
+                if (!Array.isArray(message.childViewIds))
+                    return "childViewIds: array expected";
+                for (let i = 0; i < message.childViewIds.length; ++i)
+                    if (!$util.isString(message.childViewIds[i]))
+                        return "childViewIds: string[] expected";
+            }
+            if (message.folderRid != null && message.hasOwnProperty("folderRid")) {
+                properties._folderRid = 1;
+                if (!$util.isString(message.folderRid))
+                    return "folderRid: string expected";
+            }
+            return null;
+        };
+
+        /**
+         * Creates a FolderViewChanged message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.FolderViewChanged} FolderViewChanged
+         */
+        FolderViewChanged.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.FolderViewChanged)
+                return object;
+            let message = new $root.notification.FolderViewChanged();
+            if (object.changeType != null)
+                message.changeType = object.changeType >>> 0;
+            if (object.viewId != null)
+                message.viewId = String(object.viewId);
+            if (object.viewJson != null)
+                message.viewJson = String(object.viewJson);
+            if (object.parentViewId != null)
+                message.parentViewId = String(object.parentViewId);
+            if (object.childViewIds) {
+                if (!Array.isArray(object.childViewIds))
+                    throw TypeError(".notification.FolderViewChanged.childViewIds: array expected");
+                message.childViewIds = [];
+                for (let i = 0; i < object.childViewIds.length; ++i)
+                    message.childViewIds[i] = String(object.childViewIds[i]);
+            }
+            if (object.folderRid != null)
+                message.folderRid = String(object.folderRid);
+            return message;
+        };
+
+        /**
+         * Creates a plain object from a FolderViewChanged message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {notification.FolderViewChanged} message FolderViewChanged
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        FolderViewChanged.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.arrays || options.defaults)
+                object.childViewIds = [];
+            if (options.defaults) {
+                object.changeType = 0;
+                object.viewId = "";
+            }
+            if (message.changeType != null && message.hasOwnProperty("changeType"))
+                object.changeType = message.changeType;
+            if (message.viewId != null && message.hasOwnProperty("viewId"))
+                object.viewId = message.viewId;
+            if (message.viewJson != null && message.hasOwnProperty("viewJson")) {
+                object.viewJson = message.viewJson;
+                if (options.oneofs)
+                    object._viewJson = "viewJson";
+            }
+            if (message.parentViewId != null && message.hasOwnProperty("parentViewId")) {
+                object.parentViewId = message.parentViewId;
+                if (options.oneofs)
+                    object._parentViewId = "parentViewId";
+            }
+            if (message.childViewIds && message.childViewIds.length) {
+                object.childViewIds = [];
+                for (let j = 0; j < message.childViewIds.length; ++j)
+                    object.childViewIds[j] = message.childViewIds[j];
+            }
+            if (message.folderRid != null && message.hasOwnProperty("folderRid")) {
+                object.folderRid = message.folderRid;
+                if (options.oneofs)
+                    object._folderRid = "folderRid";
+            }
+            return object;
+        };
+
+        /**
+         * Converts this FolderViewChanged to JSON.
+         * @function toJSON
+         * @memberof notification.FolderViewChanged
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        FolderViewChanged.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for FolderViewChanged
+         * @function getTypeUrl
+         * @memberof notification.FolderViewChanged
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        FolderViewChanged.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.FolderViewChanged";
+        };
+
+        return FolderViewChanged;
     })();
 
     return notification;

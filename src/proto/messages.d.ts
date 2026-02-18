@@ -1280,6 +1280,9 @@ export namespace notification {
 
         /** WorkspaceNotification folderChanged */
         folderChanged?: (notification.IFolderChanged|null);
+
+        /** WorkspaceNotification folderViewChanged */
+        folderViewChanged?: (notification.IFolderViewChanged|null);
     }
 
     /** Represents a WorkspaceNotification. */
@@ -1315,8 +1318,11 @@ export namespace notification {
         /** WorkspaceNotification folderChanged. */
         public folderChanged?: (notification.IFolderChanged|null);
 
+        /** WorkspaceNotification folderViewChanged. */
+        public folderViewChanged?: (notification.IFolderViewChanged|null);
+
         /** WorkspaceNotification payload. */
-        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged");
+        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged");
 
         /**
          * Creates a new WorkspaceNotification instance using the specified properties.
@@ -2692,6 +2698,142 @@ export namespace notification {
 
         /**
          * Gets the default type url for FolderChanged
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
+
+    /** Properties of a FolderViewChanged. */
+    interface IFolderViewChanged {
+
+        /** FolderViewChanged changeType */
+        changeType?: (number|null);
+
+        /** FolderViewChanged viewId */
+        viewId?: (string|null);
+
+        /** FolderViewChanged viewJson */
+        viewJson?: (string|null);
+
+        /** FolderViewChanged parentViewId */
+        parentViewId?: (string|null);
+
+        /** FolderViewChanged childViewIds */
+        childViewIds?: (string[]|null);
+
+        /** FolderViewChanged folderRid */
+        folderRid?: (string|null);
+    }
+
+    /** Represents a FolderViewChanged. */
+    class FolderViewChanged implements IFolderViewChanged {
+
+        /**
+         * Constructs a new FolderViewChanged.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: notification.IFolderViewChanged);
+
+        /** FolderViewChanged changeType. */
+        public changeType: number;
+
+        /** FolderViewChanged viewId. */
+        public viewId: string;
+
+        /** FolderViewChanged viewJson. */
+        public viewJson?: (string|null);
+
+        /** FolderViewChanged parentViewId. */
+        public parentViewId?: (string|null);
+
+        /** FolderViewChanged childViewIds. */
+        public childViewIds: string[];
+
+        /** FolderViewChanged folderRid. */
+        public folderRid?: (string|null);
+
+        /** FolderViewChanged _viewJson. */
+        public _viewJson?: "viewJson";
+
+        /** FolderViewChanged _parentViewId. */
+        public _parentViewId?: "parentViewId";
+
+        /** FolderViewChanged _folderRid. */
+        public _folderRid?: "folderRid";
+
+        /**
+         * Creates a new FolderViewChanged instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns FolderViewChanged instance
+         */
+        public static create(properties?: notification.IFolderViewChanged): notification.FolderViewChanged;
+
+        /**
+         * Encodes the specified FolderViewChanged message. Does not implicitly {@link notification.FolderViewChanged.verify|verify} messages.
+         * @param message FolderViewChanged message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: notification.IFolderViewChanged, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified FolderViewChanged message, length delimited. Does not implicitly {@link notification.FolderViewChanged.verify|verify} messages.
+         * @param message FolderViewChanged message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: notification.IFolderViewChanged, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a FolderViewChanged message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns FolderViewChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.FolderViewChanged;
+
+        /**
+         * Decodes a FolderViewChanged message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns FolderViewChanged
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.FolderViewChanged;
+
+        /**
+         * Verifies a FolderViewChanged message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string|null);
+
+        /**
+         * Creates a FolderViewChanged message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns FolderViewChanged
+         */
+        public static fromObject(object: { [k: string]: any }): notification.FolderViewChanged;
+
+        /**
+         * Creates a plain object from a FolderViewChanged message. Also converts values to other types if specified.
+         * @param message FolderViewChanged
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: notification.FolderViewChanged, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this FolderViewChanged to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for FolderViewChanged
          * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
          * @returns The default type url
          */

@@ -125,6 +125,7 @@ export interface AppService {
   getAppDatabaseViewRelations: (workspaceId: string, databaseStorageId: string) => Promise<DatabaseRelations>;
   getAppOutline: (workspaceId: string) => Promise<AppOutlineResponse>;
   getAppView: (workspaceId: string, viewId: string) => Promise<View>;
+  getAppViews: (workspaceId: string, viewIds: string[], depth?: number) => Promise<View[]>;
   getAppFavorites: (workspaceId: string) => Promise<View[]>;
   getAppRecent: (workspaceId: string) => Promise<View[]>;
   getAppTrash: (workspaceId: string) => Promise<View[]>;

@@ -132,7 +132,8 @@ export function isLinkedDatabaseViewUnderDocument(
   //    a. Not marked as a container (desktop behavior), OR
   //    b. Embedded with no children (web workaround for incorrect is_database_container flag)
   const isNonContainerView = !isDatabaseContainer(view);
-  const isEmbeddedWithNoChildren = isEmbeddedView(view) && (!view.children || view.children.length === 0);
+  const hasLoadedChildren = (view.children && view.children.length > 0) || view.has_children === true;
+  const isEmbeddedWithNoChildren = isEmbeddedView(view) && !hasLoadedChildren;
 
   return (
     isDatabaseLayout(view.layout) &&

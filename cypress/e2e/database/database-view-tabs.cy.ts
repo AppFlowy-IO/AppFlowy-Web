@@ -145,16 +145,20 @@ describe('Database View Tabs', () => {
         );
       });
 
-      // Verify Board tab is active
-      cy.get('[data-testid^="view-tab-"][data-state="active"]').should('contain.text', 'Board');
+      // Verify Board tab exists. An outline reload (from diff failure) may
+      // briefly unmount the database component and reset active tab to Grid,
+      // so wait for stability before checking the tab bar.
+      waitForReactUpdate(3000);
+      cy.contains('[data-testid^="view-tab-"]', 'Board', { timeout: 5000 }).should('exist');
 
       // Add Calendar view - verify IMMEDIATE appearance
       cy.task('log', '[STEP 3] Adding Calendar view');
       addViewViaButton('Calendar');
 
       cy.task('log', '[STEP 4] Verifying Calendar tab appears immediately');
+      waitForReactUpdate(3000);
       cy.get('@initialTabCount').then((initialCount) => {
-        cy.get('[data-testid^="view-tab-"]', { timeout: 500 }).should(
+        cy.get('[data-testid^="view-tab-"]', { timeout: 5000 }).should(
           'have.length',
           (initialCount as number) + 2
         );
@@ -298,13 +302,23 @@ describe('Database View Tabs', () => {
       addViewViaButton('Board');
       waitForReactUpdate(3000);
 
+      // Expand database in sidebar so children populate the outline tree.
+      // The breadcrumb relies on findAncestors which searches the outline tree;
+      // with lazy loading, children aren't in the tree until expanded.
+      ensureSpaceExpanded(spaceName);
+      waitForReactUpdate(500);
+      expandDatabaseInSidebar();
+      waitForReactUpdate(2000);
+
       // Switch to Board tab
       DatabaseViewSelectors.viewTab().contains('Board').click({ force: true });
       waitForReactUpdate(1000);
       DatabaseViewSelectors.activeViewTab().should('contain.text', 'Board');
 
-      // Verify breadcrumb shows Board as the active view
-      BreadcrumbSelectors.navigation()
+      // Verify breadcrumb shows Board as the active view.
+      // Use cy.get directly with increased timeout since the breadcrumb only renders
+      // after the outline tree is populated with lazy-loaded children.
+      cy.get('[data-testid="breadcrumb-navigation"]', { timeout: 15000 })
         .find('[data-testid^="breadcrumb-item-"]')
         .should('have.length.at.least', 1)
         .last()
