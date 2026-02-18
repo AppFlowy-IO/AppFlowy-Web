@@ -19,7 +19,13 @@ interface AppBusinessLayerProps {
 }
 
 const ROUTE_VIEW_EXISTS_CACHE_MAX = 200;
+const ROUTE_VIEW_EXISTS_REVALIDATE_MS = 10000;
 const ROUTE_NOT_FOUND_MESSAGE_PATTERN = /\b(not\s*found|record\s*not\s*found|view\s*not\s*found|page\s*not\s*found)\b/i;
+
+type RouteViewExistsCacheEntry = {
+  exists: boolean;
+  checkedAt: number;
+};
 
 function isRouteNotFoundError(error: unknown): boolean {
   if (!error || typeof error !== 'object') return false;
@@ -57,7 +63,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   const [rendered, setRendered] = useState(false);
   const [openModalViewId, setOpenModalViewId] = useState<string | undefined>(undefined);
   const wordCountRef = useRef<Record<string, TextCount>>({});
-  const routeViewExistsCacheRef = useRef<Map<string, boolean>>(new Map());
+  const routeViewExistsCacheRef = useRef<Map<string, RouteViewExistsCacheEntry>>(new Map());
   const routeViewExistsInFlightRef = useRef<Map<string, Promise<boolean | null>>>(new Map());
 
   // Calculate view ID from params
@@ -125,7 +131,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       }
     }
 
-    cache.set(key, exists);
+    cache.set(key, {
+      exists,
+      checkedAt: Date.now(),
+    });
   }, []);
 
   useEffect(() => {
@@ -154,24 +163,34 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
 
     const cacheKey = `${currentWorkspaceId}:${viewId}`;
     const cached = routeViewExistsCacheRef.current.get(cacheKey);
+    const cacheExpired = cached
+      ? Date.now() - cached.checkedAt >= ROUTE_VIEW_EXISTS_REVALIDATE_MS
+      : true;
 
     // Cache policy:
     // - false can be trusted (confirmed not-found)
-    // - true is trusted only while the view is still present in current outline
-    //   to avoid stale positive cache after realtime deletes/moves.
-    if (cached === false) {
+    // - true is reused, but periodically revalidated while route view is
+    //   outside the currently loaded shallow tree to avoid stale positives.
+    if (cached?.exists === false) {
       setRouteViewExists(false);
       return;
     }
 
-    if (cached === true && findView(outline ?? [], viewId)) {
+    if (cached?.exists === true && !cacheExpired) {
       setRouteViewExists(true);
       return;
     }
 
     let cancelled = false;
+    const hasCachedTrue = cached?.exists === true;
 
-    setRouteViewExists(null);
+    if (!hasCachedTrue) {
+      setRouteViewExists(null);
+    } else {
+      // Keep UI stable while doing background revalidation for stale cached true.
+      setRouteViewExists(true);
+    }
+
     let inFlight = routeViewExistsInFlightRef.current.get(cacheKey);
 
     if (!inFlight) {
@@ -200,7 +219,11 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
 
     void inFlight.then((exists) => {
       if (!cancelled) {
-        setRouteViewExists(exists);
+        if (exists === null && hasCachedTrue) {
+          setRouteViewExists(true);
+        } else {
+          setRouteViewExists(exists);
+        }
       }
     });
 

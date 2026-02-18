@@ -110,7 +110,9 @@ export function addViewToOutline(
     if (view.view_id === parentId) {
       // In lazy outline mode, an unloaded parent can have has_children=true
       // with empty children. Don't materialize a partial child list in that case.
-      const parentChildrenLoaded = view.children.length > 0 || view.has_children === false;
+      // Treat has_children undefined as loaded-empty for realtime VIEW_ADDED so
+      // new children appear immediately when backend omits explicit false.
+      const parentChildrenLoaded = view.children.length > 0 || view.has_children !== true;
 
       if (!parentChildrenLoaded) {
         if (view.has_children) return view;

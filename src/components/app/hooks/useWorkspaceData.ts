@@ -299,6 +299,9 @@ export function useWorkspaceData() {
         });
 
         const viewData = await service.getAppView(currentWorkspaceId, viewId);
+
+        updateLastFolderRid(parseFolderRid(viewData?.folder_rid));
+
         const children = viewData?.children ?? [];
 
         // Merge into outline
@@ -330,7 +333,7 @@ export function useWorkspaceData() {
         loadingViewIdsRef.current.delete(viewId);
       }
     },
-    [service, currentWorkspaceId, stableOutlineRef, eventEmitter]
+    [service, currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
   );
 
   const loadViewChildrenBatch = useCallback(
@@ -362,6 +365,11 @@ export function useWorkspaceData() {
         });
 
         const views = await service.getAppViews(currentWorkspaceId, uniqueIds, 1);
+
+        views.forEach((view) => {
+          updateLastFolderRid(parseFolderRid(view?.folder_rid));
+        });
+
         let nextOutline = stableOutlineRef.current;
         let outlineChanged = false;
         let loadedChanged = false;
@@ -407,7 +415,7 @@ export function useWorkspaceData() {
         uniqueIds.forEach((viewId) => loadingViewIdsRef.current.delete(viewId));
       }
     },
-    [service, currentWorkspaceId, stableOutlineRef, eventEmitter]
+    [service, currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
   );
 
   const markViewChildrenStale = useCallback((viewId: string) => {
@@ -546,6 +554,12 @@ export function useWorkspaceData() {
         : patchedOutline;
 
       stableOutlineRef.current = nextOutline;
+      // Outline diff patches can replace loaded subtrees. Invalidate lazy-loaded
+      // cache so future expands refetch authoritative children instead of
+      // trusting stale loaded markers.
+      loadedViewIdsRef.current = new Set();
+      setLoadedViewIdsRevision((r) => r + 1);
+      loadingViewIdsRef.current = new Set();
       setOutline(nextOutline);
       updateLastFolderRid(patchRid);
 
