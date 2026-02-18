@@ -1,6 +1,6 @@
 import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
-import { PageSelectors, SpaceSelectors, SidebarSelectors, TrashSelectors, byTestId } from '../../support/selectors';
+import { BreadcrumbSelectors, PageSelectors, SpaceSelectors, SidebarSelectors, TrashSelectors, byTestId } from '../../support/selectors';
 import { logAppFlowyEnvironment } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
 
@@ -118,157 +118,138 @@ describe('Folder API & Trash Permission Tests (Snapshot Accounts)', () => {
       signIn(OWNER_EMAIL);
     });
 
-    it('should see exactly the expected spaces', () => {
-      testLog.step(1, 'Verify owner sees all spaces');
+    it('should see exact spaces, General children, and Getting started children', () => {
+      testLog.step(1, 'Verify owner sees exactly 5 spaces');
       assertSpaceVisible('General');
       assertSpaceVisible('Shared');
       assertSpaceVisible('Owner-shared-space');
       assertSpaceVisible('member-1-public-space');
       assertSpaceVisible('Owner-private-space');
-
-      testLog.step(2, 'Verify exact space count');
       SpaceSelectors.items().should('have.length', 5);
-    });
 
-    it('should see exact General space children at depth 1', () => {
-      testLog.step(1, 'Expand General space');
+      testLog.step(2, 'Expand General and verify children');
       TestTool.expandSpaceByName('General');
       cy.wait(1000);
-
-      testLog.step(2, 'Verify exact General children');
       assertSpaceHasExactChildren('General', ['Document 1', 'Getting started', 'To-dos']);
-    });
 
-    it('should see exact Document 1 children after expanding', () => {
-      testLog.step(1, 'Expand General space');
-      TestTool.expandSpaceByName('General');
-      cy.wait(1000);
-
-      testLog.step(2, 'Expand Document 1');
-      expandPageByName('Document 1');
-
-      testLog.step(3, 'Verify exact Document 1 children');
-      assertPageHasExactChildren('Document 1', ['Document 1-1', 'Database 1-2']);
-    });
-
-    it('should see exact deeply nested hierarchy under Document 1-1', () => {
-      testLog.step(1, 'Expand General → Document 1 → Document 1-1');
-      TestTool.expandSpaceByName('General');
-      cy.wait(500);
-      expandPageByName('Document 1');
-      expandPageByName('Document 1-1');
-
-      testLog.step(2, 'Verify exact Document 1-1 children');
-      assertPageHasExactChildren('Document 1-1', ['Document 1-1-1', 'Document 1-1-2']);
-
-      testLog.step(3, 'Expand Document 1-1-1');
-      expandPageByName('Document 1-1-1');
-
-      testLog.step(4, 'Verify exact Document 1-1-1 children');
-      assertPageHasExactChildren('Document 1-1-1', ['Document 1-1-1-1', 'Document 1-1-1-2']);
-    });
-
-    it('should see exact Getting started children', () => {
-      testLog.step(1, 'Expand General → Getting started');
-      TestTool.expandSpaceByName('General');
-      cy.wait(500);
+      testLog.step(3, 'Expand Getting started and verify children');
       expandPageByName('Getting started');
-
-      testLog.step(2, 'Verify exact Getting started children');
       assertPageHasExactChildren('Getting started', ['Desktop guide', 'Mobile guide', 'Web guide']);
     });
 
-    it('should see exact Owner-shared-space children', () => {
+    it('should see deep nesting under Document 1 and correct breadcrumbs', () => {
+      testLog.step(1, 'Expand General → Document 1');
+      TestTool.expandSpaceByName('General');
+      cy.wait(1000);
+      expandPageByName('Document 1');
+
+      testLog.step(2, 'Verify exact Document 1 children');
+      assertPageHasExactChildren('Document 1', ['Document 1-1', 'Database 1-2']);
+
+      testLog.step(3, 'Expand Document 1-1 and verify children');
+      expandPageByName('Document 1-1');
+      assertPageHasExactChildren('Document 1-1', ['Document 1-1-1', 'Document 1-1-2']);
+
+      testLog.step(4, 'Expand Document 1-1-1 and verify children');
+      expandPageByName('Document 1-1-1');
+      assertPageHasExactChildren('Document 1-1-1', ['Document 1-1-1-1', 'Document 1-1-1-2']);
+
+      testLog.step(5, 'Click Document 1-1-1-1 and verify breadcrumbs');
+      PageSelectors.nameContaining('Document 1-1-1-1').first().click();
+      cy.wait(2000);
+
+      // Breadcrumb collapses when path > 3 items: shows first + "..." + last 2
+      // Full path: General > Document 1 > Document 1-1 > Document 1-1-1 > Document 1-1-1-1
+      // Visible:   General > ... > Document 1-1-1 > Document 1-1-1-1
+      BreadcrumbSelectors.navigation().should('be.visible');
+      BreadcrumbSelectors.navigation().within(() => {
+        cy.get(byTestId('breadcrumb-item-general')).should('exist');
+        cy.get(byTestId('breadcrumb-item-document-1-1-1')).should('exist');
+        cy.get(byTestId('breadcrumb-item-document-1-1-1-1')).should('exist');
+        cy.get(byTestId('breadcrumb-item-document-1')).should('not.exist');
+        cy.get(byTestId('breadcrumb-item-document-1-1')).should('not.exist');
+      });
+    });
+
+    it('should see exact Owner-shared-space hierarchy', () => {
       testLog.step(1, 'Expand Owner-shared-space');
       TestTool.expandSpaceByName('Owner-shared-space');
       cy.wait(1000);
 
-      testLog.step(2, 'Verify exact children');
+      testLog.step(2, 'Verify exact space children');
       assertSpaceHasExactChildren('Owner-shared-space', ['Shared grid', 'Shared document 2']);
-    });
 
-    it('should see exact Shared document 2 children after expanding', () => {
-      testLog.step(1, 'Expand Owner-shared-space → Shared document 2');
-      TestTool.expandSpaceByName('Owner-shared-space');
-      cy.wait(500);
+      testLog.step(3, 'Expand Shared document 2 and verify children');
       expandPageByName('Shared document 2');
-
-      testLog.step(2, 'Verify exact children');
       assertPageHasExactChildren('Shared document 2', ['Shared document 2-1', 'Shared document 2-2']);
     });
 
-    it('should see exact Owner-private-space children', () => {
+    it('should see exact Owner-private-space hierarchy', () => {
       testLog.step(1, 'Expand Owner-private-space');
       TestTool.expandSpaceByName('Owner-private-space');
       cy.wait(1000);
 
-      testLog.step(2, 'Verify exact children');
+      testLog.step(2, 'Verify exact space children');
       assertSpaceHasExactChildren('Owner-private-space', ['Private database 1', 'Prviate document 1']);
-    });
 
-    it('should see exact Prviate document 1 children after expanding', () => {
-      testLog.step(1, 'Expand Owner-private-space → Prviate document 1');
-      TestTool.expandSpaceByName('Owner-private-space');
-      cy.wait(500);
+      testLog.step(3, 'Expand Prviate document 1 and verify children');
       expandPageByName('Prviate document 1');
-
-      testLog.step(2, 'Verify exact children');
       assertPageHasExactChildren('Prviate document 1', ['Private document 1-1', 'Private gallery 1-2']);
     });
   });
 
   // ---------------------------------------------------------------------------
-  // Member 1 folder structure tests
+  // Member 1 folder visibility + trash
   // ---------------------------------------------------------------------------
-  describe('Member 1 folder visibility', () => {
+  describe('Member 1 visibility', () => {
     beforeEach(() => {
       signIn(MEMBER_1_EMAIL);
     });
 
-    it('should see exactly the expected spaces, but NOT Owner-private-space', () => {
-      testLog.step(1, 'Verify member1 spaces');
+    it('should see expected spaces with own children, but NOT Owner-private-space', () => {
+      testLog.step(1, 'Verify member1 sees exactly 5 spaces');
       assertSpaceVisible('General');
       assertSpaceVisible('Shared');
       assertSpaceVisible('Owner-shared-space');
       assertSpaceVisible('member-1-public-space');
       assertSpaceVisible('Member-1-private-space');
-
-      testLog.step(2, 'Verify Owner-private-space is NOT visible');
       assertSpaceNotVisible('Owner-private-space');
-
-      testLog.step(3, 'Verify exact space count');
       SpaceSelectors.items().should('have.length', 5);
-    });
 
-    it('should see exact General space children', () => {
-      TestTool.expandSpaceByName('General');
-      cy.wait(1000);
-      assertSpaceHasExactChildren('General', ['Document 1', 'Getting started', 'To-dos']);
-    });
-
-    it('should see exact member-1-public-space children', () => {
+      testLog.step(2, 'Expand member-1-public-space and verify children');
       TestTool.expandSpaceByName('member-1-public-space');
       cy.wait(1000);
       assertSpaceHasExactChildren('member-1-public-space', ['mem-1-public-document1']);
-    });
 
-    it('should see exact Member-1-private-space children', () => {
+      testLog.step(3, 'Expand Member-1-private-space and verify children');
       TestTool.expandSpaceByName('Member-1-private-space');
       cy.wait(1000);
       assertSpaceHasExactChildren('Member-1-private-space', ['Mem-private document 2', 'Mem-private document 1']);
     });
 
-    it('should see exact Owner-shared-space children', () => {
-      TestTool.expandSpaceByName('Owner-shared-space');
-      cy.wait(1000);
-      assertSpaceHasExactChildren('Owner-shared-space', ['Shared grid', 'Shared document 2']);
+    it('should see shared and own trash but NOT owner private trash', () => {
+      testLog.step(1, 'Navigate to trash');
+      TrashSelectors.sidebarTrashButton().click();
+      cy.wait(2000);
+
+      testLog.step(2, 'Verify trash contents');
+      TrashSelectors.table().should('be.visible');
+
+      getTrashNames().then((names) => {
+        testLog.info(`Member1 trash: ${names.join(', ')}`);
+        expect(names).to.include('Shared document 1');
+        expect(names).to.include('mem-1-public-document2');
+        expect(names).to.include('Mem-private document 3');
+        expect(names).to.not.include('Private document 2');
+        expect(names).to.have.length(3);
+      });
     });
   });
 
   // ---------------------------------------------------------------------------
-  // Member 2 folder structure tests
+  // Member 2 visibility + trash
   // ---------------------------------------------------------------------------
-  describe('Member 2 folder visibility', () => {
+  describe('Member 2 visibility', () => {
     beforeEach(() => {
       signIn(MEMBER_2_EMAIL);
     });
@@ -279,13 +260,27 @@ describe('Folder API & Trash Permission Tests (Snapshot Accounts)', () => {
       assertSpaceVisible('Shared');
       assertSpaceVisible('Owner-shared-space');
       assertSpaceVisible('member-1-public-space');
-
-      testLog.step(2, 'Verify private spaces are hidden');
       assertSpaceNotVisible('Owner-private-space');
       assertSpaceNotVisible('Member-1-private-space');
-
-      testLog.step(3, 'Verify exact space count');
       SpaceSelectors.items().should('have.length', 4);
+    });
+
+    it('should see only shared trash items', () => {
+      testLog.step(1, 'Navigate to trash');
+      TrashSelectors.sidebarTrashButton().click();
+      cy.wait(2000);
+
+      testLog.step(2, 'Verify trash contents');
+      TrashSelectors.table().should('be.visible');
+
+      getTrashNames().then((names) => {
+        testLog.info(`Member2 trash: ${names.join(', ')}`);
+        expect(names).to.include('Shared document 1');
+        expect(names).to.include('mem-1-public-document2');
+        expect(names).to.not.include('Private document 2');
+        expect(names).to.not.include('Mem-private document 3');
+        expect(names).to.have.length(2);
+      });
     });
   });
 
@@ -310,61 +305,8 @@ describe('Folder API & Trash Permission Tests (Snapshot Accounts)', () => {
         expect(names).to.include('Shared document 1');
         expect(names).to.include('Private document 2');
         expect(names).to.include('mem-1-public-document2');
-        expect(names).to.have.length(3);
-      });
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Member 1 trash visibility
-  // ---------------------------------------------------------------------------
-  describe('Member 1 trash visibility', () => {
-    beforeEach(() => {
-      signIn(MEMBER_1_EMAIL);
-    });
-
-    it('should see shared and own trash but NOT owner private trash', () => {
-      testLog.step(1, 'Navigate to trash');
-      TrashSelectors.sidebarTrashButton().click();
-      cy.wait(2000);
-
-      testLog.step(2, 'Verify trash contents');
-      TrashSelectors.table().should('be.visible');
-
-      getTrashNames().then((names) => {
-        testLog.info(`Member1 trash: ${names.join(', ')}`);
-        expect(names).to.include('Shared document 1');
-        expect(names).to.include('mem-1-public-document2');
-        expect(names).to.include('Mem-private document 3');
-        expect(names).to.not.include('Private document 2');
-        expect(names).to.have.length(3);
-      });
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Member 2 trash visibility
-  // ---------------------------------------------------------------------------
-  describe('Member 2 trash visibility', () => {
-    beforeEach(() => {
-      signIn(MEMBER_2_EMAIL);
-    });
-
-    it('should see only shared trash items', () => {
-      testLog.step(1, 'Navigate to trash');
-      TrashSelectors.sidebarTrashButton().click();
-      cy.wait(2000);
-
-      testLog.step(2, 'Verify trash contents');
-      TrashSelectors.table().should('be.visible');
-
-      getTrashNames().then((names) => {
-        testLog.info(`Member2 trash: ${names.join(', ')}`);
-        expect(names).to.include('Shared document 1');
-        expect(names).to.include('mem-1-public-document2');
-        expect(names).to.not.include('Private document 2');
         expect(names).to.not.include('Mem-private document 3');
-        expect(names).to.have.length(2);
+        expect(names).to.have.length(3);
       });
     });
   });

@@ -239,13 +239,67 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     if (!outline || !breadcrumbViewId) return [];
     return findAncestors(outline, breadcrumbViewId) || [];
   }, [outline, breadcrumbViewId]);
+  const [fallbackCrumbs, setFallbackCrumbs] = useState<View[]>([]);
 
-  const [breadcrumbs, setBreadcrumbs] = useState<View[]>(originalCrumbs);
+  useEffect(() => {
+    if (!breadcrumbViewId) {
+      setFallbackCrumbs([]);
+      return;
+    }
+
+    if (originalCrumbs.length > 0) {
+      setFallbackCrumbs([]);
+      return;
+    }
+
+    if (!service || !currentWorkspaceId) {
+      setFallbackCrumbs([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    void (async () => {
+      const visited = new Set<string>();
+      const chain: View[] = [];
+      let cursorId: string | undefined = breadcrumbViewId;
+
+      while (cursorId && cursorId !== currentWorkspaceId && !visited.has(cursorId)) {
+        visited.add(cursorId);
+
+        let currentView: View | null = findView(stableOutlineRef.current || [], cursorId);
+
+        if (!currentView) {
+          try {
+            currentView = await service.getAppView(currentWorkspaceId, cursorId);
+          } catch {
+            break;
+          }
+        }
+
+        if (!currentView) break;
+        chain.unshift(currentView);
+        cursorId = currentView.parent_view_id;
+      }
+
+      if (!cancelled) {
+        setFallbackCrumbs(chain);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [breadcrumbViewId, originalCrumbs, service, currentWorkspaceId, stableOutlineRef]);
+
+  const sourceCrumbs = originalCrumbs.length > 0 ? originalCrumbs : fallbackCrumbs;
+
+  const [breadcrumbs, setBreadcrumbs] = useState<View[]>(sourceCrumbs);
 
   // Update breadcrumbs when original crumbs change
   useEffect(() => {
-    setBreadcrumbs(originalCrumbs);
-  }, [originalCrumbs]);
+    setBreadcrumbs(sourceCrumbs);
+  }, [sourceCrumbs]);
 
   // Handle breadcrumb manipulation
   const appendBreadcrumb = useCallback((view?: View) => {

@@ -154,15 +154,19 @@ export function removeViewFromOutline(
   remainingChildIds: string[]
 ): View[] {
   let changed = false;
-  const idSet = new Set(remainingChildIds);
 
   const next = outline.map((view) => {
     if (view.view_id === parentId) {
-      const filtered = view.children.filter((c) => idSet.has(c.view_id));
+      const childMap = new Map(view.children.map((c) => [c.view_id, c]));
+      const filtered = remainingChildIds
+        .map((id) => childMap.get(id))
+        .filter((c): c is View => c !== undefined);
       // remainingChildIds comes from server and is authoritative, even if local
       // children are currently unloaded/partial.
       const nextHasChildren = remainingChildIds.length > 0;
-      const childrenUnchanged = filtered.length === view.children.length;
+      const childrenUnchanged =
+        filtered.length === view.children.length &&
+        filtered.every((child, index) => child.view_id === view.children[index]?.view_id);
       const hasChildrenUnchanged = view.has_children === nextHasChildren;
 
       if (childrenUnchanged && hasChildrenUnchanged) return view;
