@@ -73,9 +73,20 @@ describe('Legacy Database - Slash Menu Visibility', () => {
         .click();
       waitForReactUpdate(2000);
 
+      // Step 3b: Expand "Getting started" — Document A is nested under it
+      testLog.step(3, 'Expanding "Getting started" in sidebar');
+      cy.contains('[data-testid="page-name"]', 'Getting started', {
+        timeout: 15000,
+      })
+        .first()
+        .closest('[data-testid="page-item"]')
+        .find('button')
+        .first()
+        .click({ force: true });
+      waitForReactUpdate(2000);
+
       // Step 4: Navigate to "Document A"
-      // "Document A" is nested under "Getting started" which may be collapsed.
-      // Use force:true since it may be in a collapsed subtree.
+      // "Document A" is nested under "Getting started" which we expanded above.
       testLog.step(4, `Navigating to "${TEST_DOCUMENT_NAME}"`);
       cy.contains('[data-testid="page-name"]', TEST_DOCUMENT_NAME, {
         timeout: 15000,
@@ -169,6 +180,18 @@ describe('Legacy Database - Slash Menu Visibility', () => {
       SpaceSelectors.itemByName('General', { timeout: 30000 })
         .should('be.visible')
         .click();
+      waitForReactUpdate(2000);
+
+      // Step 3b: Expand "Getting started" — Document A is nested under it
+      testLog.step(3, 'Expanding "Getting started" in sidebar');
+      cy.contains('[data-testid="page-name"]', 'Getting started', {
+        timeout: 15000,
+      })
+        .first()
+        .closest('[data-testid="page-item"]')
+        .find('button')
+        .first()
+        .click({ force: true });
       waitForReactUpdate(2000);
 
       // Step 4: Navigate to "Document A"
