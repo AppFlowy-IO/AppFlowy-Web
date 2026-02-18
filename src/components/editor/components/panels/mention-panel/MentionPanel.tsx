@@ -118,7 +118,7 @@ export function MentionPanel() {
               mentionable.push(view);
             }
 
-            collectMentionable(view.children || [], isDb);
+            collectMentionable(view.children || [], parentIsDatabase || isDb);
           }
         };
 

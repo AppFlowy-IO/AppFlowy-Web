@@ -389,7 +389,7 @@ export function SlashPanel({
             }
           } else {
             // Non-database view (document, space, etc.) - recurse into children
-            collectSelectable(view.children || [], false);
+            collectSelectable(view.children || [], parentIsDatabase);
           }
         }
       };
