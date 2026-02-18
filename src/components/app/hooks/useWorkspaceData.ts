@@ -22,6 +22,56 @@ import { Log } from '@/utils/log';
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
 
+/**
+ * When the outline is replaced with a new shallow tree (from loadOutline or
+ * a diff patch), previously lazy-loaded deep children are lost.  This helper
+ * re-attaches those children so expanded sidebar nodes don't visually collapse.
+ *
+ * For every view that was marked as "loaded" in the *old* tree and had
+ * children, we check if the same view exists in the *new* tree with empty
+ * children.  If so, we graft the old children back in and keep the view in
+ * the returned `loadedIds` set.
+ */
+function preserveLoadedChildren(
+  newOutline: View[],
+  oldOutline: View[],
+  prevLoadedIds: Set<string>,
+): { outline: View[]; loadedIds: Set<string> } {
+  if (prevLoadedIds.size === 0) {
+    return { outline: newOutline, loadedIds: new Set() };
+  }
+
+  let finalOutline = newOutline;
+  const nextLoadedIds = new Set<string>();
+
+  for (const loadedId of prevLoadedIds) {
+    const oldView = findView(oldOutline, loadedId);
+
+    if (!oldView || !oldView.children || oldView.children.length === 0) continue;
+
+    const newView = findView(finalOutline, loadedId);
+
+    if (!newView) continue; // view was removed from tree
+
+    if (newView.children && newView.children.length > 0) {
+      // Children already present (e.g. restored by a parent's graft)
+      nextLoadedIds.add(loadedId);
+      continue;
+    }
+
+    // Graft old children back into the new shallow tree
+    finalOutline = mergeChildrenIntoOutline(
+      finalOutline,
+      loadedId,
+      oldView.children,
+      oldView.has_children,
+    );
+    nextLoadedIds.add(loadedId);
+  }
+
+  return { outline: finalOutline, loadedIds: nextLoadedIds };
+}
+
 const USER_NO_ACCESS_CODE = 1012;
 const USER_UNAUTHORIZED_CODE = 1024;
 
@@ -102,6 +152,27 @@ export function useWorkspaceData() {
   const loadedViewIds = useMemo(() => loadedViewIdsRef.current, [loadedViewIdsRevision]); // eslint-disable-line react-hooks/exhaustive-deps
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
 
+  // Helper: replace the outline tree while preserving previously lazy-loaded
+  // children so expanded sidebar nodes don't collapse.  Used by both
+  // `loadOutline` and `handleFolderOutlineChanged`.
+  const replaceOutlinePreservingChildren = useCallback((newOutline: View[]) => {
+    const prevOutline = stableOutlineRef.current;
+    const prevLoadedIds = new Set(loadedViewIdsRef.current);
+    const { outline: mergedOutline, loadedIds: nextLoadedIds } = preserveLoadedChildren(
+      newOutline,
+      prevOutline,
+      prevLoadedIds,
+    );
+
+    stableOutlineRef.current = mergedOutline;
+    loadedViewIdsRef.current = nextLoadedIds;
+    setLoadedViewIdsRevision((r) => r + 1);
+    loadingViewIdsRef.current = new Set();
+    setOutline(mergedOutline);
+
+    return mergedOutline;
+  }, []);
+
   // Load application outline
   const updateLastFolderRid = useCallback((next: FolderRid | null) => {
     if (!next) return;
@@ -150,15 +221,10 @@ export function useWorkspaceData() {
           outlineWithShareWithMe = [...res.outline, shareWithMeSpace];
         }
 
-        stableOutlineRef.current = outlineWithShareWithMe;
-        // Full outline replacement invalidates lazy-loaded child cache from previous tree.
-        loadedViewIdsRef.current = new Set();
-        setLoadedViewIdsRevision((r) => r + 1);
-        loadingViewIdsRef.current = new Set();
-        setOutline(outlineWithShareWithMe);
+        const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
 
         if (eventEmitter) {
-          eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, outlineWithShareWithMe || []);
+          eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
         }
 
         if (!force) return;
@@ -272,7 +338,7 @@ export function useWorkspaceData() {
         }
       }
     },
-    [navigate, service, eventEmitter, updateLastFolderRid, userWorkspaceInfo?.userId]
+    [navigate, service, eventEmitter, updateLastFolderRid, userWorkspaceInfo?.userId, replaceOutlinePreservingChildren]
   );
 
   // Load children for a single view (lazy expand)
@@ -553,18 +619,11 @@ export function useWorkspaceData() {
         ? [...patchedOutline, existingShareWithMe]
         : patchedOutline;
 
-      stableOutlineRef.current = nextOutline;
-      // Outline diff patches can replace loaded subtrees. Invalidate lazy-loaded
-      // cache so future expands refetch authoritative children instead of
-      // trusting stale loaded markers.
-      loadedViewIdsRef.current = new Set();
-      setLoadedViewIdsRevision((r) => r + 1);
-      loadingViewIdsRef.current = new Set();
-      setOutline(nextOutline);
+      const mergedOutline = replaceOutlinePreservingChildren(nextOutline);
       updateLastFolderRid(patchRid);
 
       if (eventEmitter) {
-        eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, nextOutline || []);
+        eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
       }
     };
 

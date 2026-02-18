@@ -70,6 +70,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
   const { sendMessage, lastMessage } = ws;
   const { postMessage, lastBroadcastMessage } = bc;
   const registeredContexts = useRef<Map<string, SyncContext>>(new Map());
+  const contextRefCounts = useRef<Map<string, number>>(new Map());
   const destroyListeners = useRef<Map<string, { doc: Y.Doc; handler: () => void }>>(new Map());
   const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
@@ -263,6 +264,27 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     }
   }, []);
 
+  const incrementContextRefCount = useCallback((objectId: string): number => {
+    const nextRefCount = (contextRefCounts.current.get(objectId) ?? 0) + 1;
+
+    contextRefCounts.current.set(objectId, nextRefCount);
+    return nextRefCount;
+  }, []);
+
+  const decrementContextRefCount = useCallback((objectId: string): number => {
+    const currentRefCount = contextRefCounts.current.get(objectId) ?? 0;
+
+    if (currentRefCount <= 1) {
+      contextRefCounts.current.delete(objectId);
+      return 0;
+    }
+
+    const nextRefCount = currentRefCount - 1;
+
+    contextRefCounts.current.set(objectId, nextRefCount);
+    return nextRefCount;
+  }, []);
+
   const unregisterSyncContext = useCallback((objectId: string) => {
     const ctx = registeredContexts.current.get(objectId);
 
@@ -286,6 +308,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     }
 
     registeredContexts.current.delete(objectId);
+    contextRefCounts.current.delete(objectId);
     Log.debug(`Unregistered sync context for objectId ${objectId}`);
   }, []);
 
@@ -293,14 +316,30 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     // Cancel any existing timer for this objectId
     cancelDeferredCleanup(objectId);
 
+    const remainingRefCount = decrementContextRefCount(objectId);
+
+    // Context is still actively used elsewhere; don't schedule teardown yet.
+    if (remainingRefCount > 0) {
+      Log.debug(`Skipped deferred cleanup for objectId ${objectId}; ${remainingRefCount} active owner(s) remain`);
+      return;
+    }
+
     const timer = setTimeout(() => {
       pendingCleanups.current.delete(objectId);
+
+      const activeRefCount = contextRefCounts.current.get(objectId) ?? 0;
+
+      if (activeRefCount > 0) {
+        Log.debug(`Skipped deferred cleanup for objectId ${objectId}; ref count restored to ${activeRefCount}`);
+        return;
+      }
+
       unregisterSyncContext(objectId);
     }, delayMs);
 
     pendingCleanups.current.set(objectId, timer);
     Log.debug(`Scheduled deferred cleanup for objectId ${objectId} in ${delayMs}ms`);
-  }, [cancelDeferredCleanup, unregisterSyncContext]);
+  }, [cancelDeferredCleanup, decrementContextRefCount, unregisterSyncContext]);
 
   const registerSyncContext = useCallback(
     (context: RegisterSyncContext): SyncContext => {
@@ -317,7 +356,9 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       if (existingContext !== undefined) {
         // If same doc instance, reuse the existing context
         if (existingContext.doc === context.doc) {
-          Log.debug(`Reusing existing sync context for objectId ${context.doc.guid}`);
+          const refCount = incrementContextRefCount(context.doc.guid);
+
+          Log.debug(`Reusing existing sync context for objectId ${context.doc.guid}; owner count=${refCount}`);
           return existingContext;
         }
 
@@ -338,8 +379,10 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       registeredContexts.current.set(syncContext.doc.guid, syncContext);
       const handleDocDestroy = () => {
         // Remove the context from the registered contexts when the Y.Doc is destroyed
+        cancelDeferredCleanup(syncContext.doc.guid);
         registeredContexts.current.delete(syncContext.doc.guid);
         destroyListeners.current.delete(syncContext.doc.guid);
+        contextRefCounts.current.delete(syncContext.doc.guid);
       };
 
       syncContext.doc.on('destroy', handleDocDestroy);
@@ -347,10 +390,13 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
       // Initialize the sync process for the new context
       initSync(syncContext);
+      const refCount = incrementContextRefCount(syncContext.doc.guid);
+
+      Log.debug(`Registered sync context for objectId ${syncContext.doc.guid}; owner count=${refCount}`);
 
       return syncContext;
     },
-    [registeredContexts, sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext]
+    [registeredContexts, sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
   );
 
   /**
