@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { getSlashMenuItemName } from '../../support/i18n-constants';
 import { TestTool } from '../../support/page-utils';
 import {
@@ -10,7 +9,6 @@ import {
   ShareSelectors,
   SidebarSelectors,
   SlashCommandSelectors,
-  SpaceSelectors,
   WorkspaceSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
@@ -48,23 +46,6 @@ describe('Template Duplication Test - Document with Embedded Database', () => {
   });
 
   /**
-   * Expand a space in the sidebar by clicking on it
-   */
-  function expandSpaceInSidebar(spaceNameToExpand: string) {
-    testLog.info(`Expanding space "${spaceNameToExpand}" in sidebar`);
-
-    SpaceSelectors.itemByName(spaceNameToExpand).then(($space) => {
-      const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-      const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-      if (!isExpanded) {
-        SpaceSelectors.itemByName(spaceNameToExpand).find('[data-testid="space-name"]').click({ force: true });
-        waitForReactUpdate(500);
-      }
-    });
-  }
-
-  /**
    * Create a new workspace via the workspace dropdown (using default name)
    */
   function createNewWorkspace() {
@@ -97,12 +78,8 @@ describe('Template Duplication Test - Document with Embedded Database', () => {
     testLog.info(`[TEST START] Template duplication test - Email: ${testEmail}`);
 
     // Step 1: Login
-    testLog.info('[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    testLog.info('[STEP 1] Signing in');
+    cy.signIn(testEmail).then(() => {
       testLog.info('[STEP 2] Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
@@ -205,7 +182,7 @@ describe('Template Duplication Test - Document with Embedded Database', () => {
       });
 
       // First, make sure we're on the document page
-      expandSpaceInSidebar(spaceName);
+      TestTool.expandSpaceByName(spaceName);
       waitForReactUpdate(500);
       PageSelectors.nameContaining(docName).first().click({ force: true });
       waitForReactUpdate(2000);

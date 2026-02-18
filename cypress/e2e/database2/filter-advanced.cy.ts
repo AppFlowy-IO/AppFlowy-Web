@@ -19,37 +19,12 @@ import {
   clickFilterChip,
   assertRowCount,
   navigateAwayAndBack,
+  CheckboxFilterCondition,
+  changeCheckboxFilterCondition,
 } from '../../support/filter-test-helpers';
 import { addFieldWithType, toggleCheckbox, FieldType } from '../../support/field-type-helpers';
 import { DatabaseFilterSelectors, DatabaseGridSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
-
-/**
- * Checkbox filter condition enum values
- */
-enum CheckboxFilterCondition {
-  IsChecked = 0,
-  IsUnchecked = 1,
-}
-
-/**
- * Change the checkbox filter condition
- */
-const changeCheckboxFilterCondition = (condition: CheckboxFilterCondition): void => {
-  cy.get('[data-radix-popper-content-wrapper]')
-    .last()
-    .find('button')
-    .filter((_, el) => {
-      const text = el.textContent?.toLowerCase() || '';
-      return text.includes('checked') || text.includes('unchecked');
-    })
-    .first()
-    .click({ force: true });
-  waitForReactUpdate(500);
-
-  cy.get(`[data-testid="filter-condition-${condition}"]`, { timeout: 10000 }).should('be.visible').click({ force: true });
-  waitForReactUpdate(500);
-};
 
 /**
  * Click the "more options" button (three dots) in filter menu

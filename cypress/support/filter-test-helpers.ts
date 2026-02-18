@@ -44,6 +44,14 @@ export enum NumberFilterCondition {
 }
 
 /**
+ * Checkbox filter condition enum values (matching CheckboxFilterCondition)
+ */
+export enum CheckboxFilterCondition {
+  IsChecked = 0,
+  IsUnchecked = 1,
+}
+
+/**
  * Common beforeEach setup for filter tests
  */
 export const setupFilterTest = () => {
@@ -196,6 +204,29 @@ export const changeFilterCondition = (conditionValue: number): void => {
 
   // The dropdown menu items are rendered in a portal, find them
   cy.get(`[data-testid="filter-condition-${conditionValue}"]`, { timeout: 10000 })
+    .should('be.visible')
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Change the checkbox filter condition ("Is checked" / "Is unchecked")
+ */
+export const changeCheckboxFilterCondition = (
+  condition: CheckboxFilterCondition
+): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('button')
+    .filter((_, el) => {
+      const text = el.textContent?.toLowerCase() || '';
+      return text.includes('checked') || text.includes('unchecked');
+    })
+    .first()
+    .click({ force: true });
+  waitForReactUpdate(500);
+
+  cy.get(`[data-testid="filter-condition-${condition}"]`, { timeout: 10000 })
     .should('be.visible')
     .click({ force: true });
   waitForReactUpdate(500);

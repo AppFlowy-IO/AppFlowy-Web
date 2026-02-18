@@ -259,6 +259,8 @@ declare global {
 
 // Register the commands
 Cypress.Commands.add('signIn', (email: string = 'test@example.com') => {
+  cy.visit('/login', { failOnStatusCode: false });
+  cy.wait(1000);
   const authUtils = new AuthTestUtils();
   return authUtils.signInWithTestUrl(email);
 });

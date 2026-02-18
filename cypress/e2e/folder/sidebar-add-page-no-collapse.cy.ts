@@ -1,31 +1,40 @@
 /**
- * Test: Sidebar does not collapse or reload when a page is created from another tab.
+ * Test: Bidirectional sidebar sync between main window and iframe.
  *
  * Uses a fresh user account (no hardcoded snapshot accounts).
  *
  * Flow:
- * 1. Sign in with a new random user
- * 2. Expand the General space — observe the default "Getting started" page
- * 3. Install a reload-detection marker on the main window
- * 4. Open an iframe pointing to the same workspace (simulates a second tab)
- * 5. Create a new document from the iframe via the "New page" button
- * 6. Verify the main window:
- *    a. Did NOT do a full page refresh / reload
- *    b. Sidebar still shows the original pages (no collapse)
- *    c. The newly created page appears via BroadcastChannel sync
- * 7. Cleanup: delete the newly created page
+ * 1. Sign in with a new random user, create a parent page
+ * 2. Open an iframe pointing to the same workspace (second tab)
+ * 3. From main window: create a sub-document under the parent
+ *    → verify it appears in the iframe
+ * 4. From iframe: create a sub-database (Grid) under the parent
+ *    → verify it appears in the main window
+ * 5. From main window: create another sub-document
+ *    → verify it appears in the iframe
+ * 6. From iframe: create another sub-document
+ *    → verify it appears in the main window
+ * 7. Final strict assertions: both sides have all 4 children by view ID,
+ *    no sidebar collapse, no page reload
  */
 
-import { AuthTestUtils } from '../../support/auth-utils';
 import {
   PageSelectors,
   SidebarSelectors,
   byTestId,
+  hoverToShowActions,
   waitForReactUpdate,
 } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
-import { expandSpaceByName } from '../../support/page-utils';
+import { expandPageByName, expandSpaceByName } from '../../support/page-utils';
+import {
+  createTestSyncIframe,
+  getIframeBody,
+  injectCypressMarkerIntoIframe,
+  removeTestSyncIframe,
+  waitForIframeReady,
+} from '../../support/iframe-test-helpers';
 
 const SPACE_NAME = 'General';
 
@@ -33,86 +42,235 @@ const SPACE_NAME = 'General';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/**
- * Signs in with the given email and waits for the app to be ready.
- */
-function signIn(email: string) {
-  cy.visit('/login', { failOnStatusCode: false });
-  cy.wait(1000);
-  const authUtils = new AuthTestUtils();
-  authUtils.signInWithTestUrl(email);
-  SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-  cy.wait(2000);
-}
-
-// ---------------------------------------------------------------------------
-// Iframe helpers (adapted from cross-tab-sync.cy.ts)
-// ---------------------------------------------------------------------------
-
-/**
- * Get the iframe body for interaction.
- */
-function getIframeBody() {
-  return cy
-    .get('#test-sync-iframe')
-    .its('0.contentDocument.body')
-    .should('not.be.empty')
-    .then(cy.wrap);
+interface ChildInfo {
+  viewId: string;
+  name: string;
 }
 
 /**
- * Wait for the iframe app to finish loading (page items rendered).
+ * Use the inline "+" button on a page in the MAIN window to add a child.
+ * `menuItemIndex`: 0 = Document, 1 = Grid, 2 = Board, 3 = Calendar
  */
-function waitForIframeReady() {
-  cy.log('[HELPER] Waiting for iframe to be ready');
-  return cy
-    .get('#test-sync-iframe', { timeout: 30000 })
-    .should('exist')
-    .then(($iframe) => {
-      return new Cypress.Promise((resolve) => {
-        const checkReady = () => {
-          try {
-            const iframeDoc = ($iframe[0] as HTMLIFrameElement).contentDocument;
+function addChildInMainWindow(parentPageName: string, menuItemIndex: number) {
+  hoverToShowActions(PageSelectors.itemByName(parentPageName).first());
+  waitForReactUpdate(1000);
 
-            if (iframeDoc) {
-              const pageItems = iframeDoc.querySelectorAll('[data-testid="page-item"]');
+  // Target only the parent's own row (first direct child), not nested children
+  PageSelectors.itemByName(parentPageName).first().children().first()
+    .find(byTestId('inline-add-page'), { timeout: 5000 })
+    .first()
+    .click({ force: true });
+  waitForReactUpdate(1000);
 
-              if (pageItems.length > 0) {
-                cy.log(`[HELPER] Iframe ready with ${pageItems.length} page items`);
-                resolve(null);
-                return;
-              }
-            }
-          } catch {
-            // Cross-origin or not ready yet
-          }
+  cy.get('[data-slot="dropdown-menu-content"]', { timeout: 5000 })
+    .should('be.visible')
+    .within(() => {
+      cy.get('[role="menuitem"]').eq(menuItemIndex).click();
+    });
 
-          setTimeout(checkReady, 500);
-        };
+  cy.wait(3000);
 
-        setTimeout(checkReady, 3000);
+  // Dismiss any modal/dialog that opens
+  cy.get('body').then(($body) => {
+    if (
+      $body.find('[role="dialog"]').length > 0 ||
+      $body.find('.MuiDialog-container').length > 0
+    ) {
+      cy.get('body').type('{esc}');
+      cy.wait(1000);
+    }
+  });
+  waitForReactUpdate(1000);
+}
+
+/**
+ * Use the inline "+" button on a page in the IFRAME to add a child.
+ * `menuItemIndex`: 0 = Document, 1 = Grid, 2 = Board, 3 = Calendar
+ */
+function addChildInIframe(parentPageName: string, menuItemIndex: number) {
+  // Hover over parent in iframe to reveal "+"
+  getIframeBody()
+    .find(`[data-testid="page-name"]:contains("${parentPageName}")`)
+    .first()
+    .closest(byTestId('page-item'))
+    .children()
+    .first()
+    .trigger('mouseenter', { force: true });
+  waitForReactUpdate(1000);
+
+  // Click inline "+" button
+  getIframeBody()
+    .find(`[data-testid="page-name"]:contains("${parentPageName}")`)
+    .first()
+    .closest(byTestId('page-item'))
+    .find(byTestId('inline-add-page'))
+    .first()
+    .click({ force: true });
+  waitForReactUpdate(1000);
+
+  // Select layout from the dropdown
+  getIframeBody()
+    .find('[data-slot="dropdown-menu-content"]', { timeout: 5000 })
+    .should('be.visible')
+    .find('[role="menuitem"]')
+    .eq(menuItemIndex)
+    .click({ force: true });
+
+  cy.wait(3000);
+
+  // Close any dialog in iframe
+  getIframeBody().then(($body: JQuery<HTMLElement>) => {
+    if (
+      $body.find('[role="dialog"]').length > 0 ||
+      $body.find('.MuiDialog-container').length > 0
+    ) {
+      cy.wrap($body).type('{esc}');
+      cy.wait(1000);
+    }
+
+    const backBtn = $body.find('button:contains("Back to home")');
+
+    if (backBtn.length > 0) {
+      cy.wrap(backBtn).first().click({ force: true });
+      cy.wait(1000);
+    }
+  });
+  waitForReactUpdate(1000);
+}
+
+/**
+ * Collect direct child {viewId, name} under a parent in the main window.
+ */
+function getChildrenInMainWindow(parentPageName: string): Cypress.Chainable<ChildInfo[]> {
+  return PageSelectors.itemByName(parentPageName)
+    .first()
+    .children()
+    .last()
+    .children(byTestId('page-item'))
+    .then(($items) => {
+      return Array.from($items).map(($item) => {
+        const $el = Cypress.$($item);
+        const name = $el.find(byTestId('page-name')).first().text().trim();
+        const testId = $el.children().first().attr('data-testid') ?? '';
+        const viewId = testId.startsWith('page-') ? testId.slice('page-'.length) : testId;
+
+        return { viewId, name };
       });
     });
 }
 
 /**
- * Inject Cypress marker into the iframe so hover-dependent buttons are visible.
+ * Collect direct child {viewId, name} under a parent in the iframe.
  */
-function injectCypressMarkerIntoIframe() {
-  return cy.get('#test-sync-iframe').then(($iframe) => {
-    const iframeWindow = ($iframe[0] as HTMLIFrameElement).contentWindow;
+function getChildrenInIframe(parentPageName: string): Cypress.Chainable<ChildInfo[]> {
+  return getIframeBody()
+    .find(`[data-testid="page-name"]:contains("${parentPageName}")`)
+    .first()
+    .closest(byTestId('page-item'))
+    .children()
+    .last()
+    .children(byTestId('page-item'))
+    .then(($items: JQuery<HTMLElement>) => {
+      return Array.from($items).map(($item) => {
+        const $el = Cypress.$($item);
+        const name = $el.find(byTestId('page-name')).first().text().trim();
+        const testId = $el.children().first().attr('data-testid') ?? '';
+        const viewId = testId.startsWith('page-') ? testId.slice('page-'.length) : testId;
 
-    if (iframeWindow) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (iframeWindow as any).Cypress = true;
+        return { viewId, name };
+      });
+    });
+}
+
+/**
+ * Wait until a parent in the main window has at least `expectedCount` children.
+ */
+function waitForMainWindowChildCount(
+  parentPageName: string,
+  expectedCount: number,
+  attempts = 0,
+  maxAttempts = 30
+): void {
+  if (attempts >= maxAttempts) {
+    throw new Error(
+      `Main window: child count under "${parentPageName}" did not reach ${expectedCount}`
+    );
+  }
+
+  getChildrenInMainWindow(parentPageName).then((children) => {
+    if (children.length >= expectedCount) {
+      testLog.info(
+        `Main window child count: ${children.length} (expected >= ${expectedCount})`
+      );
+      return;
     }
+
+    cy.wait(1000).then(() =>
+      waitForMainWindowChildCount(parentPageName, expectedCount, attempts + 1, maxAttempts)
+    );
   });
 }
 
 /**
- * Install a reload-detection marker on the main window.
- * Sets a property on window that will be lost if the page fully reloads.
+ * Wait until a parent in the iframe has at least `expectedCount` children.
  */
+function waitForIframeChildCount(
+  parentPageName: string,
+  expectedCount: number,
+  attempts = 0,
+  maxAttempts = 30
+): void {
+  if (attempts >= maxAttempts) {
+    throw new Error(
+      `Iframe: child count under "${parentPageName}" did not reach ${expectedCount}`
+    );
+  }
+
+  getChildrenInIframe(parentPageName).then((children) => {
+    if (children.length >= expectedCount) {
+      testLog.info(
+        `Iframe child count: ${children.length} (expected >= ${expectedCount})`
+      );
+      return;
+    }
+
+    cy.wait(1000).then(() =>
+      waitForIframeChildCount(parentPageName, expectedCount, attempts + 1, maxAttempts)
+    );
+  });
+}
+
+/**
+ * Log children summary.
+ */
+function logChildren(label: string, children: ChildInfo[]) {
+  const summary = children.map((c) => `${c.name} [${c.viewId.slice(0, 8)}]`).join(', ');
+
+  testLog.info(`${label} (${children.length}): ${summary}`);
+}
+
+/**
+ * Assert that a list of children contains all expected view IDs.
+ */
+function assertContainsAllViewIds(
+  children: ChildInfo[],
+  expectedViewIds: string[],
+  context: string
+) {
+  const currentViewIds = new Set(children.map((c) => c.viewId));
+
+  for (const viewId of expectedViewIds) {
+    expect(
+      currentViewIds.has(viewId),
+      `[${context}] View ID ${viewId} must be present`
+    ).to.be.true;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Reload detection
+// ---------------------------------------------------------------------------
+
 const RELOAD_MARKER = '__NO_RELOAD_MARKER__';
 
 function installReloadDetection() {
@@ -122,88 +280,15 @@ function installReloadDetection() {
   cy.window().its(RELOAD_MARKER).should('eq', true);
 }
 
-/**
- * Assert that the page has NOT reloaded by checking the marker still exists.
- */
 function assertNoReload() {
   cy.window().its(RELOAD_MARKER).should('eq', true);
-}
-
-/**
- * Create an iframe pointing to the given URL.
- */
-function createIframe(appUrl: string) {
-  cy.document().then((doc) => {
-    const container = doc.createElement('div');
-
-    container.id = 'test-iframe-container';
-    container.style.cssText =
-      'position: fixed; top: 50px; right: 10px; width: 700px; height: 600px; z-index: 9999; border: 3px solid blue; background: white;';
-
-    const iframe = doc.createElement('iframe');
-
-    iframe.id = 'test-sync-iframe';
-    iframe.src = appUrl;
-    iframe.style.cssText = 'width: 100%; height: 100%; border: none;';
-
-    container.appendChild(iframe);
-    doc.body.appendChild(container);
-  });
-}
-
-/**
- * Remove the test iframe if it exists.
- */
-function removeIframe() {
-  cy.document().then((doc) => {
-    const container = doc.getElementById('test-iframe-container');
-
-    if (container) {
-      container.remove();
-    }
-  });
-}
-
-/**
- * Collect all visible page names in the main-window sidebar.
- */
-function getVisiblePageNames(): Cypress.Chainable<string[]> {
-  return PageSelectors.names().then(($names) => {
-    return Array.from($names).map((el) => Cypress.$(el).text().trim());
-  });
-}
-
-/**
- * Retry until the page count in the main window increases beyond `initialCount`.
- */
-function waitForPageCountIncrease(initialCount: number, attempts = 0, maxAttempts = 30): void {
-  if (attempts >= maxAttempts) {
-    throw new Error(
-      'Page count did not increase in main window — BroadcastChannel sync may not be working'
-    );
-  }
-
-  PageSelectors.names().then(($pages) => {
-    const newCount = $pages.length;
-
-    testLog.info(
-      `Page count check: current=${newCount}, initial=${initialCount}, attempt=${attempts + 1}`
-    );
-
-    if (newCount > initialCount) {
-      testLog.info('Page count increased — sync received');
-      return;
-    }
-
-    cy.wait(1000).then(() => waitForPageCountIncrease(initialCount, attempts + 1, maxAttempts));
-  });
 }
 
 // =============================================================================
 // Tests
 // =============================================================================
 
-describe('Sidebar does not collapse or reload when a page is created from another tab (iframe)', () => {
+describe('Sidebar bidirectional sync: main window ↔ iframe', () => {
   before(() => {
     logAppFlowyEnvironment();
   });
@@ -229,48 +314,61 @@ describe('Sidebar does not collapse or reload when a page is created from anothe
   });
 
   afterEach(() => {
-    removeIframe();
+    removeTestSyncIframe();
   });
 
-  it('should keep existing pages visible and not reload after a page is created from an iframe', () => {
+  it('should sync sub-documents and sub-databases bidirectionally without sidebar collapse or reload', () => {
     const testEmail = generateRandomEmail();
+    const allCreatedViewIds: string[] = [];
 
     // ------------------------------------------------------------------
-    // Step 1: Sign in with a fresh user
+    // Step 1: Sign in and create a parent page
     // ------------------------------------------------------------------
     testLog.step(1, 'Sign in with a new user');
-    signIn(testEmail);
+    cy.signIn(testEmail);
+    SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
 
-    // ------------------------------------------------------------------
-    // Step 2: Expand the General space and record initial pages
-    // ------------------------------------------------------------------
-    testLog.step(2, 'Expand General space and record initial pages');
+    testLog.step(2, 'Expand General space');
     expandSpaceByName(SPACE_NAME);
     waitForReactUpdate(1000);
-
-    // The default workspace has at least a "Getting started" page
     PageSelectors.names({ timeout: 10000 }).should('exist');
 
-    let initialPageNames: string[] = [];
-    let initialPageCount = 0;
+    testLog.step(3, 'Create a parent page in General');
+    cy.get(byTestId('new-page-button')).first().click({ force: true });
+    waitForReactUpdate(1000);
 
-    getVisiblePageNames().then((names) => {
-      initialPageNames = names;
-      initialPageCount = names.length;
-      testLog.info(`Initial pages (${initialPageCount}): ${names.join(', ')}`);
+    cy.get(byTestId('new-page-modal'))
+      .should('be.visible')
+      .find(byTestId('space-item'))
+      .contains(SPACE_NAME)
+      .click({ force: true });
+    waitForReactUpdate(500);
+
+    cy.get(byTestId('new-page-modal')).find('button').contains('Add').click({ force: true });
+    waitForReactUpdate(3000);
+
+    // Dismiss any modal
+    cy.get('body').then(($body) => {
+      if (
+        $body.find('[role="dialog"]').length > 0 ||
+        $body.find('.MuiDialog-container').length > 0
+      ) {
+        cy.get('body').type('{esc}');
+        cy.wait(1000);
+      }
     });
 
-    // ------------------------------------------------------------------
-    // Step 3: Install reload detection on the main window
-    // ------------------------------------------------------------------
-    testLog.step(3, 'Install reload detection marker');
-    installReloadDetection();
-    testLog.info('Reload detection installed');
+    const parentPageName = 'Untitled';
+
+    PageSelectors.nameContaining(parentPageName, { timeout: 10000 }).should('exist');
+    testLog.info(`Parent page "${parentPageName}" created`);
 
     // ------------------------------------------------------------------
-    // Step 4: Capture the current app URL and create an iframe
+    // Step 4: Open iframe FIRST, before creating any children
     // ------------------------------------------------------------------
     testLog.step(4, 'Create iframe with same app URL');
+    installReloadDetection();
+
     let appUrl = '';
 
     cy.url().then((url) => {
@@ -279,18 +377,15 @@ describe('Sidebar does not collapse or reload when a page is created from anothe
     });
 
     cy.then(() => {
-      createIframe(appUrl);
+      createTestSyncIframe(appUrl);
     });
 
-    // ------------------------------------------------------------------
-    // Step 5: Wait for iframe to load and expand its space
-    // ------------------------------------------------------------------
-    testLog.step(5, 'Wait for iframe to be ready');
     waitForIframeReady();
     waitForReactUpdate(2000);
     injectCypressMarkerIntoIframe();
     waitForReactUpdate(500);
 
+    // Expand space in iframe
     testLog.info('Expanding space in iframe');
     getIframeBody()
       .find(`[data-testid="space-name"]:contains("${SPACE_NAME}")`)
@@ -299,128 +394,163 @@ describe('Sidebar does not collapse or reload when a page is created from anothe
     waitForReactUpdate(1000);
 
     // ------------------------------------------------------------------
-    // Step 6: Create a new document from the iframe via "New page" button
+    // Step 5: MAIN WINDOW → create sub-document #1
     // ------------------------------------------------------------------
-    testLog.step(6, 'Create new page from iframe');
+    testLog.step(5, 'Main window: create sub-document #1');
+    addChildInMainWindow(parentPageName, 0); // 0 = Document
 
+    // Expand parent in main window to see the child
+    expandPageByName(parentPageName);
+
+    getChildrenInMainWindow(parentPageName).then((children) => {
+      logChildren('Main window children after doc #1', children);
+      expect(children.length).to.eq(1);
+      allCreatedViewIds.push(children[0].viewId);
+      testLog.info(`Doc #1 viewId: ${children[0].viewId}`);
+    });
+
+    // Verify it syncs to iframe — expand parent in iframe first
+    testLog.info('Expanding parent in iframe');
     getIframeBody()
-      .find(byTestId('new-page-button'))
+      .find(`[data-testid="page-name"]:contains("${parentPageName}")`)
+      .first()
+      .closest(byTestId('page-item'))
+      .find(byTestId('outline-toggle-expand'))
       .first()
       .click({ force: true });
     waitForReactUpdate(1000);
 
-    // Select the General space in the new-page modal
-    getIframeBody()
-      .find(byTestId('new-page-modal'))
-      .should('be.visible')
-      .find(byTestId('space-item'))
-      .contains(SPACE_NAME)
-      .click({ force: true });
-    waitForReactUpdate(500);
+    cy.then(() => waitForIframeChildCount(parentPageName, 1));
 
-    // Click "Add" to create the page
-    getIframeBody()
-      .find(byTestId('new-page-modal'))
-      .find('button')
-      .contains('Add')
-      .click({ force: true });
-    waitForReactUpdate(3000);
-
-    // Close any dialog in iframe if needed
-    getIframeBody().then(($body: JQuery<HTMLElement>) => {
-      const backBtn = $body.find('button:contains("Back to home")');
-
-      if (backBtn.length > 0) {
-        cy.wrap(backBtn).first().click({ force: true });
-        waitForReactUpdate(1000);
-      }
+    getChildrenInIframe(parentPageName).then((children) => {
+      logChildren('Iframe children after doc #1 sync', children);
+      assertContainsAllViewIds(children, allCreatedViewIds, 'Iframe after doc #1');
+      testLog.info('Doc #1 synced to iframe');
     });
 
     // ------------------------------------------------------------------
-    // Step 7: Wait for BroadcastChannel sync to the main window
+    // Step 6: IFRAME → create sub-database (Grid)
     // ------------------------------------------------------------------
-    testLog.step(7, 'Wait for page creation to sync to main window');
+    testLog.step(6, 'Iframe: create sub-database (Grid)');
+    addChildInIframe(parentPageName, 1); // 1 = Grid
 
-    // Re-expand space in main window in case it collapsed
-    expandSpaceByName(SPACE_NAME);
-    waitForReactUpdate(1000);
+    getChildrenInIframe(parentPageName).then((children) => {
+      logChildren('Iframe children after grid', children);
+      const newChild = children.find((c) => !allCreatedViewIds.includes(c.viewId));
 
-    // Wait until page count increases
-    cy.then(() => {
-      waitForPageCountIncrease(initialPageCount);
+      expect(newChild, 'New grid child should exist in iframe').to.not.be.undefined;
+      allCreatedViewIds.push(newChild!.viewId);
+      testLog.info(`Grid viewId: ${newChild!.viewId}`);
+    });
+
+    // Verify it syncs to main window
+    cy.then(() => waitForMainWindowChildCount(parentPageName, 2));
+
+    getChildrenInMainWindow(parentPageName).then((children) => {
+      logChildren('Main window children after grid sync', children);
+      assertContainsAllViewIds(children, allCreatedViewIds, 'Main after grid');
+      testLog.info('Grid synced to main window');
     });
 
     // ------------------------------------------------------------------
-    // Step 8: KEY ASSERTION — Verify main window did NOT reload
+    // Step 7: MAIN WINDOW → create sub-document #2
     // ------------------------------------------------------------------
-    testLog.step(8, 'Verify main window did not reload');
+    testLog.step(7, 'Main window: create sub-document #2');
+    addChildInMainWindow(parentPageName, 0); // 0 = Document
+
+    getChildrenInMainWindow(parentPageName).then((children) => {
+      logChildren('Main window children after doc #2', children);
+      const newChild = children.find((c) => !allCreatedViewIds.includes(c.viewId));
+
+      expect(newChild, 'New doc #2 should exist in main window').to.not.be.undefined;
+      allCreatedViewIds.push(newChild!.viewId);
+      testLog.info(`Doc #2 viewId: ${newChild!.viewId}`);
+    });
+
+    // Verify it syncs to iframe
+    cy.then(() => waitForIframeChildCount(parentPageName, 3));
+
+    getChildrenInIframe(parentPageName).then((children) => {
+      logChildren('Iframe children after doc #2 sync', children);
+      assertContainsAllViewIds(children, allCreatedViewIds, 'Iframe after doc #2');
+      testLog.info('Doc #2 synced to iframe');
+    });
+
+    // ------------------------------------------------------------------
+    // Step 8: IFRAME → create sub-document #3
+    // ------------------------------------------------------------------
+    testLog.step(8, 'Iframe: create sub-document #3');
+    addChildInIframe(parentPageName, 0); // 0 = Document
+
+    getChildrenInIframe(parentPageName).then((children) => {
+      logChildren('Iframe children after doc #3', children);
+      const newChild = children.find((c) => !allCreatedViewIds.includes(c.viewId));
+
+      expect(newChild, 'New doc #3 should exist in iframe').to.not.be.undefined;
+      allCreatedViewIds.push(newChild!.viewId);
+      testLog.info(`Doc #3 viewId: ${newChild!.viewId}`);
+    });
+
+    // Verify it syncs to main window
+    cy.then(() => waitForMainWindowChildCount(parentPageName, 4));
+
+    getChildrenInMainWindow(parentPageName).then((children) => {
+      logChildren('Main window children after doc #3 sync', children);
+      assertContainsAllViewIds(children, allCreatedViewIds, 'Main after doc #3');
+      testLog.info('Doc #3 synced to main window');
+    });
+
+    // ------------------------------------------------------------------
+    // Step 9: Final strict assertions
+    // ------------------------------------------------------------------
+    testLog.step(9, 'Final strict assertions on both sides');
+
+    // Assert no page reload
     assertNoReload();
     testLog.info('No page reload occurred');
 
-    // ------------------------------------------------------------------
-    // Step 9: KEY ASSERTION — Verify original pages are STILL visible
-    //         in the main window sidebar (no collapse)
-    // ------------------------------------------------------------------
-    testLog.step(9, 'Verify existing pages are still visible in main window');
+    // Strict assertion on MAIN WINDOW
+    getChildrenInMainWindow(parentPageName).then((children) => {
+      logChildren('FINAL main window children', children);
 
-    getVisiblePageNames().then((currentNames) => {
-      testLog.info(`Current pages: ${currentNames.join(', ')}`);
-
-      // Every initial page must still be present
-      for (const name of initialPageNames) {
-        expect(currentNames).to.include(
-          name,
-          `Original page "${name}" should still be visible after iframe created a new page`
-        );
-        testLog.info(`Confirmed still visible: "${name}"`);
-      }
-
-      // There should be at least one more page than before
-      expect(currentNames.length).to.be.greaterThan(
-        initialPageCount,
-        `Expected more pages after adding from iframe (was ${initialPageCount}, now ${currentNames.length})`
+      expect(children.length).to.eq(
+        4,
+        'Main window: parent should have exactly 4 children (2 docs from main + 1 grid from iframe + 1 doc from iframe)'
       );
 
-      testLog.info(
-        'Sidebar did NOT collapse — all original pages preserved and new page synced'
-      );
-    });
+      assertContainsAllViewIds(children, allCreatedViewIds, 'FINAL main window');
 
-    // ------------------------------------------------------------------
-    // Step 10: Cleanup — delete the newly created page
-    // ------------------------------------------------------------------
-    testLog.step(10, 'Cleanup: delete the newly created page from main window');
-
-    // The new page is "Untitled" (default name for newly created pages)
-    PageSelectors.nameContaining('Untitled')
-      .first()
-      .parents(byTestId('page-item'))
-      .first()
-      .trigger('mouseenter', { force: true });
-    waitForReactUpdate(500);
-
-    PageSelectors.moreActionsButton('Untitled').click({ force: true });
-    waitForReactUpdate(500);
-
-    cy.get(byTestId('view-action-delete')).should('be.visible').click();
-    waitForReactUpdate(500);
-
-    // Confirm deletion if dialog appears
-    cy.get('body').then(($body) => {
-      const confirmButton = $body.find(byTestId('confirm-delete-button'));
-
-      if (confirmButton.length > 0) {
-        cy.get(byTestId('confirm-delete-button')).click({ force: true });
-      } else {
-        const deleteButton = $body.find('button:contains("Delete")');
-
-        if (deleteButton.length > 0) {
-          cy.wrap(deleteButton).first().click({ force: true });
-        }
+      // Verify each child is visible in the DOM
+      for (const child of children) {
+        cy.get(byTestId(`page-${child.viewId}`))
+          .should('exist')
+          .should('be.visible');
+        testLog.info(`Main window: "${child.name}" [${child.viewId}] visible`);
       }
     });
-    waitForReactUpdate(2000);
 
-    testLog.info('Cleanup complete');
+    // Strict assertion on IFRAME (check existence — children may be hidden if parent collapsed)
+    getChildrenInIframe(parentPageName).then((children) => {
+      logChildren('FINAL iframe children', children);
+
+      expect(children.length).to.eq(
+        4,
+        'Iframe: parent should have exactly 4 children (2 docs from main + 1 grid from iframe + 1 doc from iframe)'
+      );
+
+      assertContainsAllViewIds(children, allCreatedViewIds, 'FINAL iframe');
+
+      // Verify each child exists in iframe DOM (visibility depends on expand state)
+      for (const child of children) {
+        getIframeBody()
+          .find(byTestId(`page-${child.viewId}`))
+          .should('exist');
+        testLog.info(`Iframe: "${child.name}" [${child.viewId}] exists`);
+      }
+    });
+
+    testLog.info(
+      'Bidirectional sync verified — all 4 children (2 docs + 1 grid from both sides) present on both sides'
+    );
   });
 });

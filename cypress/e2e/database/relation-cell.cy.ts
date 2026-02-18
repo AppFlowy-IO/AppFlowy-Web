@@ -22,11 +22,11 @@ import {
   ViewActionSelectors,
   ModalSelectors,
   FieldType,
-  byTestId,
   waitForReactUpdate,
 } from '../../support/selectors';
 import { AuthTestUtils } from '../../support/auth-utils';
 import { generateRandomEmail } from '../../support/test-config';
+import { waitForAppReady, waitForGridReady } from '../../support/database-ui-helpers';
 
 /**
  * Relation-specific selectors
@@ -52,15 +52,6 @@ const RelationSelectors = {
 
   // Linked row in cell
   linkedRow: (rowName: string) => cy.contains(rowName),
-};
-
-const waitForAppReady = () => {
-  cy.get(`${byTestId('inline-add-page')}, ${byTestId('new-page-button')}`, { timeout: 20000 }).should('be.visible');
-};
-
-const waitForGridReady = () => {
-  DatabaseGridSelectors.grid().should('exist', { timeout: 30000 });
-  DatabaseGridSelectors.cells().should('have.length.at.least', 1, { timeout: 30000 });
 };
 
 const renameActiveViewTab = (name: string) => {

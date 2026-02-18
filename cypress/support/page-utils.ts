@@ -4,7 +4,7 @@ import { testLog } from './test-helpers';
  * This file aggregates and re-exports all utility functions used in tests
  * 
  * Usage Statistics (as of cleanup):
- * - Total functions exported: 19 (down from 73)
+ * - Total functions exported: 20 (down from 73)
  * - Functions removed: 54 (74% reduction)
  * - Test coverage: All exported functions are actively used in tests
  */
@@ -19,7 +19,8 @@ import {
     createPageAndAddContent,
     openPageFromSidebar,
     expandSpace,
-    expandSpaceByName
+    expandSpaceByName,
+    expandPageByName
 } from './page/flows';
 
 // Page management utilities
@@ -64,6 +65,7 @@ export {
     openPageFromSidebar,
     expandSpace,
     expandSpaceByName,
+    expandPageByName,
     getPageByName,
     getPageTitleInput,
     savePageTitle,
@@ -103,6 +105,9 @@ export class TestTool {
     }
     static expandSpaceByName(spaceName: string) {
         return expandSpaceByName(spaceName);
+    }
+    static expandPageByName(pageName: string) {
+        return expandPageByName(pageName);
     }
 
     // Page management

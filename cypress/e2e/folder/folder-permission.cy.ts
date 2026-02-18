@@ -1,5 +1,4 @@
-import { AuthTestUtils } from '../../support/auth-utils';
-import { TestTool } from '../../support/page-utils';
+import { TestTool, expandPageByName } from '../../support/page-utils';
 import { BreadcrumbSelectors, PageSelectors, SpaceSelectors, SidebarSelectors, TrashSelectors, byTestId } from '../../support/selectors';
 import { logAppFlowyEnvironment } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
@@ -9,30 +8,6 @@ const OWNER_EMAIL = 'cc_group_owner@appflowy.io';
 const MEMBER_1_EMAIL = 'cc_group_mem_1@appflowy.io';
 const MEMBER_2_EMAIL = 'cc_group_mem_2@appflowy.io';
 const GUEST_EMAIL = 'cc_group_guest@appflowy.io';
-
-/**
- * Signs in with the given email and waits for the app to be ready.
- */
-function signIn(email: string) {
-  cy.visit('/login', { failOnStatusCode: false });
-  cy.wait(1000);
-  const authUtils = new AuthTestUtils();
-  authUtils.signInWithTestUrl(email);
-  SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
-  cy.wait(2000);
-}
-
-/**
- * Expands a page (not a space) in the sidebar by clicking its toggle icon.
- * Finds the page-item containing the page name and clicks the expand toggle.
- */
-function expandPageByName(pageName: string) {
-  testLog.info(`Expanding page "${pageName}"`);
-  PageSelectors.itemByName(pageName).within(() => {
-    cy.get(byTestId('outline-toggle-expand')).first().click({ force: true });
-  });
-  cy.wait(1000);
-}
 
 /**
  * Asserts that a space with the given name exists in the sidebar.
@@ -61,7 +36,7 @@ function assertSpaceHasExactChildren(spaceName: string, expectedChildren: string
     .children(byTestId('page-item'))
     .should('have.length', expectedChildren.length)
     .each(($pageItem, index) => {
-      const name = $pageItem.find(byTestId('page-name')).first().text().trim();
+      const name = Cypress.$($pageItem).find(byTestId('page-name')).text().trim();
       expect(expectedChildren).to.include(name, `Unexpected child "${name}" in space "${spaceName}"`);
     });
 }
@@ -78,7 +53,7 @@ function assertPageHasExactChildren(pageName: string, expectedChildren: string[]
     .children(byTestId('page-item'))
     .should('have.length', expectedChildren.length)
     .each(($pageItem) => {
-      const name = $pageItem.find(byTestId('page-name')).first().text().trim();
+      const name = Cypress.$($pageItem).find(byTestId('page-name')).text().trim();
       expect(expectedChildren).to.include(name, `Unexpected child "${name}" under page "${pageName}"`);
     });
 }
@@ -88,15 +63,15 @@ function assertPageHasExactChildren(pageName: string, expectedChildren: string[]
  */
 function getTrashNames(): Cypress.Chainable<string[]> {
   return cy.get('body').then(($body) => {
-    if ($body.find(byTestId('trash-table-row')).length === 0) {
+    const rows = $body.find(byTestId('trash-table-row'));
+
+    if (rows.length === 0) {
       return [] as string[];
     }
 
-    return TrashSelectors.rows().then(($rows) => {
-      return Array.from($rows).map((row) => {
-        const cells = Cypress.$(row).find('td');
-        return cells.first().text().trim();
-      });
+    return Array.from(rows).map((row) => {
+      const cells = Cypress.$(row).find('td');
+      return cells.first().text().trim();
     });
   });
 }
@@ -115,7 +90,8 @@ describe('Folder API & Trash Permission Tests (Snapshot Accounts)', () => {
   // ---------------------------------------------------------------------------
   describe('Owner folder visibility', () => {
     beforeEach(() => {
-      signIn(OWNER_EMAIL);
+      cy.signIn(OWNER_EMAIL);
+      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
     });
 
     it('should see exact spaces, General children, and Getting started children', () => {
@@ -203,7 +179,8 @@ describe('Folder API & Trash Permission Tests (Snapshot Accounts)', () => {
   // ---------------------------------------------------------------------------
   describe('Member 1 visibility', () => {
     beforeEach(() => {
-      signIn(MEMBER_1_EMAIL);
+      cy.signIn(MEMBER_1_EMAIL);
+      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
     });
 
     it('should see expected spaces with own children, but NOT Owner-private-space', () => {
@@ -251,7 +228,8 @@ describe('Folder API & Trash Permission Tests (Snapshot Accounts)', () => {
   // ---------------------------------------------------------------------------
   describe('Member 2 visibility', () => {
     beforeEach(() => {
-      signIn(MEMBER_2_EMAIL);
+      cy.signIn(MEMBER_2_EMAIL);
+      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
     });
 
     it('should see exactly the expected spaces, NOT private ones', () => {
@@ -289,7 +267,8 @@ describe('Folder API & Trash Permission Tests (Snapshot Accounts)', () => {
   // ---------------------------------------------------------------------------
   describe('Owner trash visibility', () => {
     beforeEach(() => {
-      signIn(OWNER_EMAIL);
+      cy.signIn(OWNER_EMAIL);
+      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
     });
 
     it('should see exactly the expected items in trash', () => {
@@ -316,7 +295,8 @@ describe('Folder API & Trash Permission Tests (Snapshot Accounts)', () => {
   // ---------------------------------------------------------------------------
   describe('Guest visibility', () => {
     beforeEach(() => {
-      signIn(GUEST_EMAIL);
+      cy.signIn(GUEST_EMAIL);
+      SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
     });
 
     it('should not see trash button in sidebar', () => {

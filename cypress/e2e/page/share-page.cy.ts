@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { DropdownSelectors, PageSelectors, SidebarSelectors, ShareSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
@@ -27,10 +26,7 @@ describe('Share Page Test', () => {
         });
 
         // 1. Sign in as user A
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(userAEmail).then(() => {
+        cy.signIn(userAEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'User A signed in');
 
@@ -175,10 +171,7 @@ describe('Share Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(userAEmail).then(() => {
+        cy.signIn(userAEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'User A signed in');
 
@@ -285,10 +278,7 @@ describe('Share Page Test', () => {
         const userCEmail = generateRandomEmail();
         const userDEmail = generateRandomEmail();
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(userAEmail).then(() => {
+        cy.signIn(userAEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'User A signed in');
 
@@ -354,10 +344,7 @@ describe('Share Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(userAEmail).then(() => {
+        cy.signIn(userAEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'User A signed in');
 
@@ -436,10 +423,7 @@ describe('Share Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(userAEmail).then(() => {
+        cy.signIn(userAEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'User A signed in');
 
@@ -512,10 +496,7 @@ describe('Share Page Test', () => {
 
         const userCEmail = generateRandomEmail();
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(userAEmail).then(() => {
+        cy.signIn(userAEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'User A signed in');
 
@@ -649,10 +630,7 @@ describe('Share Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(userAEmail).then(() => {
+        cy.signIn(userAEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'User A signed in');
 
@@ -757,10 +735,7 @@ describe('Share Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(userAEmail).then(() => {
+        cy.signIn(userAEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'User A signed in');
 

@@ -16,32 +16,14 @@
 
 import {
   PageSelectors,
-  SpaceSelectors,
   ViewActionSelectors,
   ModalSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
-import { AuthTestUtils } from '../../support/auth-utils';
+import { expandSpaceByName } from '../../support/page-utils';
 
 const _spaceName = 'General';
-
-/**
- * Expand a space in the sidebar by clicking on it if not already expanded
- */
-function expandSpaceInSidebar(spaceNameToExpand: string) {
-  cy.log(`[HELPER] Expanding space "${spaceNameToExpand}" in sidebar`);
-
-  SpaceSelectors.itemByName(spaceNameToExpand, { timeout: 30000 }).then(($space) => {
-    const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-    const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-    if (!isExpanded) {
-      SpaceSelectors.itemByName(spaceNameToExpand).find('[data-testid="space-name"]').click({ force: true });
-      waitForReactUpdate(1000);
-    }
-  });
-}
 
 describe('Document Sidebar Refresh via WebSocket', () => {
   // Handle uncaught exceptions
@@ -68,13 +50,12 @@ describe('Document Sidebar Refresh via WebSocket', () => {
     const uniqueId = Date.now();
     const renamedDocumentName = `Renamed-${uniqueId}`;
     const testEmail = generateRandomEmail();
-    const authUtils = new AuthTestUtils();
 
     cy.log(`[TEST START] Testing sidebar refresh via WebSocket notifications with: ${testEmail}`);
 
     // Step 1-4: Sign in with test user using auth utils
     cy.log('[STEP 1-4] Signing in with test user');
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
 
     // Step 5: Wait for app to fully load
     cy.log('[STEP 5] Waiting for app to fully load');
@@ -83,7 +64,7 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Step 6: Expand the General space
     cy.log('[STEP 6] Expanding General space');
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(1000);
 
     // Expand the first page once before baseline count, so later checks
@@ -105,7 +86,7 @@ describe('Document Sidebar Refresh via WebSocket', () => {
       cy.log(`[INFO] Initial page count: ${initialPageCount}`);
       // Get the first page name to use as parent
       if ($pages.length > 0) {
-        parentPageName = $pages.first().text().trim();
+        parentPageName = Cypress.$($pages[0]).text().trim();
         cy.log(`[INFO] Will use "${parentPageName}" as parent page`);
       }
     });
@@ -129,7 +110,7 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Step 10: Verify sidebar page count increased (WebSocket notification worked!)
     cy.log('[STEP 10] Verifying page count increased via WebSocket notification');
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(1000);
 
     // Parent expansion is done before baseline count, so count growth now reflects
@@ -309,13 +290,12 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
   it('should verify sidebar updates via WebSocket when creating AI chat', () => {
     const testEmail = generateRandomEmail();
-    const authUtils = new AuthTestUtils();
 
     cy.log(`[TEST START] Testing AI chat sidebar refresh via WebSocket notifications with: ${testEmail}`);
 
     // Step 1: Sign in with test user
     cy.log('[STEP 1] Signing in with test user');
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
 
     // Step 2: Wait for app to fully load
     cy.log('[STEP 2] Waiting for app to fully load');
@@ -324,7 +304,7 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Step 3: Expand the General space
     cy.log('[STEP 3] Expanding General space');
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(1000);
 
     // Count existing pages
@@ -353,7 +333,7 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Step 6: Verify sidebar page count increased (WebSocket notification worked!)
     cy.log('[STEP 6] Verifying page count increased via WebSocket notification');
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(1000);
 
     // With lazy loading, the new child page only appears in the sidebar when its

@@ -16,11 +16,11 @@ import {
   PropertyMenuSelectors,
   GridFieldSelectors,
   FieldType,
-  byTestId,
   waitForReactUpdate,
 } from '../../support/selectors';
 import { AuthTestUtils } from '../../support/auth-utils';
 import { generateRandomEmail } from '../../support/test-config';
+import { waitForAppReady } from '../../support/database-ui-helpers';
 
 /**
  * Rollup-specific selectors
@@ -37,10 +37,6 @@ const RollupSelectors = {
 
   // Rollup configuration submenu
   rollupRelationSubmenu: () => cy.get('[data-radix-menu-content]').contains('Relation'),
-};
-
-const waitForAppReady = () => {
-  cy.get(`${byTestId('inline-add-page')}, ${byTestId('new-page-button')}`, { timeout: 20000 }).should('be.visible');
 };
 
 // Rollup is always disabled on web (coming soon), so always skip these tests

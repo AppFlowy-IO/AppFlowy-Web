@@ -1,5 +1,4 @@
 import 'cypress-real-events';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { AddPageSelectors, DatabaseGridSelectors, EditorSelectors, PageSelectors, RowDetailSelectors, ShareSelectors, SidebarSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
@@ -44,10 +43,7 @@ describe('Publish Page Test', () => {
         });
 
         // 1. Sign in
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -261,10 +257,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -318,10 +311,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -384,10 +374,7 @@ describe('Publish Page Test', () => {
         const initialContent = 'Initial published content';
         const updatedContent = 'Updated content after republish';
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -482,10 +469,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -541,10 +525,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -615,10 +596,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -682,10 +660,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
             PageSelectors.names().should('exist', { timeout: 30000 });
@@ -736,10 +711,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -856,10 +828,7 @@ describe('Publish Page Test', () => {
 
         const rowDocContent = `TestRowDoc-${Date.now()}`;
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 

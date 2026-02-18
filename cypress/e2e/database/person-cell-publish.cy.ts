@@ -11,7 +11,6 @@
  * - ElementFallbackRender crashed when i18n context wasn't available
  */
 
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import {
   AddPageSelectors,
@@ -75,11 +74,7 @@ describe('Person Cell in Published Pages', () => {
     testLog.info('[TEST START] Person cell in published database');
 
     // Step 1: Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(1000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
       testLog.info('Signed in successfully');
 
@@ -254,11 +249,7 @@ describe('Person Cell in Published Pages', () => {
       return false; // Ignore other errors for this test
     });
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(1000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
 
       SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });

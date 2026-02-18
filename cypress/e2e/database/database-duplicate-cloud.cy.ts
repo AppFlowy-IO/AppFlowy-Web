@@ -3,7 +3,6 @@ import {
   AuthSelectors,
   DatabaseGridSelectors,
   PageSelectors,
-  SpaceSelectors,
   ViewActionSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
@@ -13,29 +12,13 @@ import {
   RowDetailSelectors,
 } from '../../support/row-detail-helpers';
 import { TestConfig } from '../../support/test-config';
+import { expandSpaceByName } from '../../support/page-utils';
 
 const _exportUserEmail = 'export_user@appflowy.io';
 const _exportUserPassword = 'AppFlowy!@123';
 const _testDatabaseName = 'Database 1';
 const _spaceName = 'General';
 const _gettingStartedPageName = 'Getting started';
-
-/**
- * Expand a space in the sidebar by clicking on it if not already expanded
- */
-function expandSpaceInSidebar(spaceNameToExpand: string) {
-  cy.log(`[HELPER] Expanding space "${spaceNameToExpand}" in sidebar`);
-
-  SpaceSelectors.itemByName(spaceNameToExpand, { timeout: 30000 }).then(($space) => {
-    const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-    const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-    if (!isExpanded) {
-      SpaceSelectors.itemByName(spaceNameToExpand).find('[data-testid="space-name"]').click({ force: true });
-      waitForReactUpdate(1000);
-    }
-  });
-}
 
 /**
  * Expand a page in the sidebar and wait for its children to become visible.
@@ -186,7 +169,7 @@ describe('Cloud Database Duplication', () => {
 
     // Step 11: Expand the General space and Getting started, then open Database 1
     cy.log('[STEP 11] Expanding General space and Getting started page');
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(1000);
     expandPageAndWaitForChildren(_gettingStartedPageName, _testDatabaseName);
     cy.log('[STEP 11.1] Opening Database 1');
@@ -291,7 +274,7 @@ describe('Cloud Database Duplication', () => {
     cy.log('[STEP 21] Opening the original database');
     // With lazy loading, the outline may have reloaded and cleared children.
     // Use retry-capable helper to ensure children are visible.
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(500);
     expandPageAndWaitForChildren(_gettingStartedPageName, _testDatabaseName);
     // Find the original database by looking for elements containing "Database 1" but NOT "(Copy)"

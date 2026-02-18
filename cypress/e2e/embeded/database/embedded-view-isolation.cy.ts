@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
 import {
   AddPageSelectors,
@@ -8,9 +7,9 @@ import {
   ModalSelectors,
   PageSelectors,
   SlashCommandSelectors,
-  SpaceSelectors,
   waitForReactUpdate,
 } from '../../../support/selectors';
+import { expandSpaceByName } from '../../../support/page-utils';
 
 describe('Embedded Database View Isolation', () => {
   const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
@@ -35,30 +34,6 @@ describe('Embedded Database View Isolation', () => {
 
     cy.viewport(1280, 720);
   });
-
-  /**
-   * Expand a space in the sidebar by clicking on it
-   */
-  function expandSpaceInSidebar(spaceNameToExpand: string) {
-    cy.task('log', `[ACTION] Expanding space "${spaceNameToExpand}" in sidebar`);
-
-    // Check if space is already expanded
-    SpaceSelectors.itemByName(spaceNameToExpand, { timeout: 30000 }).then(($space) => {
-      const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-      const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-      if (!isExpanded) {
-        cy.task('log', `[ACTION] Space "${spaceNameToExpand}" is collapsed, clicking to expand`);
-        // Click on the space name to expand it
-        SpaceSelectors.itemByName(spaceNameToExpand, { timeout: 30000 })
-          .find(byTestId('space-name'))
-          .click({ force: true });
-        waitForReactUpdate(500);
-      } else {
-        cy.task('log', `[ACTION] Space "${spaceNameToExpand}" is already expanded`);
-      }
-    });
-  }
 
   /**
    * Expand a page in the sidebar to show its children
@@ -135,7 +110,8 @@ describe('Embedded Database View Isolation', () => {
       cy.task('log', `[ASSERT] "${pageName}" has ${childCount} children`);
 
       // Log the HTML structure for debugging
-      cy.task('log', `[DEBUG] Page item HTML length: ${$pageItem.html().length}`);
+      const htmlLength = ($pageItem[0]?.outerHTML || '').length;
+      cy.task('log', `[DEBUG] Page item HTML length: ${htmlLength}`);
 
       expect(childCount).to.be.at.least(
         expectedMinCount,
@@ -181,12 +157,8 @@ describe('Embedded Database View Isolation', () => {
     cy.task('log', `[TEST START] Testing embedded view appears as document child - Test email: ${testEmail}`);
 
     // Step 1: Login
-    cy.task('log', '[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.task('log', '[STEP 1] Signing in');
+    cy.signIn(testEmail).then(() => {
       cy.task('log', '[STEP 2] Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
@@ -200,7 +172,7 @@ describe('Embedded Database View Isolation', () => {
 
       // Step 4: Capture original database children (database container)
       cy.task('log', '[STEP 4] Capturing original database children');
-      expandSpaceInSidebar(spaceName);
+      expandSpaceByName(spaceName);
       waitForReactUpdate(1000);
 
       // With the new folder API, database containers may not show children in
@@ -220,7 +192,7 @@ describe('Embedded Database View Isolation', () => {
       // This ensures we're not in a nested context (like inside the database modal)
       const closeAllDialogs = () => {
         cy.get('body').then(($body) => {
-          const dialogs = $body.find('[role="dialog"]').filter(':visible');
+          const dialogs = Cypress.$($body).find('[role="dialog"]:visible');
           if (dialogs.length > 0) {
             cy.task('log', `[STEP 5.0] Closing ${dialogs.length} open dialog(s)`);
             cy.get('body').type('{esc}');
@@ -235,7 +207,7 @@ describe('Embedded Database View Isolation', () => {
       // Navigate to a known page first to ensure we're in the correct context
       // Click on "Getting started" page to ensure we're not in any nested context
       cy.task('log', '[STEP 5.0.1] Navigating to Getting started to reset context');
-      expandSpaceInSidebar(spaceName);
+      expandSpaceByName(spaceName);
       PageSelectors.nameContaining('Getting started', { timeout: 10000 }).first().click({ force: true });
       waitForReactUpdate(2000);
 
@@ -280,7 +252,7 @@ describe('Embedded Database View Isolation', () => {
       // Wait for title update API call to complete and sidebar to sync
       // The sidebar update can be slow due to websocket sync, so we wait longer
       waitForReactUpdate(5000);
-      expandSpaceInSidebar(spaceName);
+      expandSpaceByName(spaceName);
 
       // Verify title appears in sidebar - skip strict verification since sidebar sync can be flaky
       // The test can proceed as long as the document exists (even if shown as "Untitled")
@@ -352,7 +324,7 @@ describe('Embedded Database View Isolation', () => {
 
       // 9.0: First expand the space to see pages in sidebar
       cy.task('log', '[STEP 9.0] Expanding space to see pages in sidebar');
-      expandSpaceInSidebar(spaceName);
+      expandSpaceByName(spaceName);
       waitForReactUpdate(1000);
 
       // 9.1: Embedded views render inline in documents, NOT as sidebar children
@@ -362,12 +334,13 @@ describe('Embedded Database View Isolation', () => {
       // Step 10: Verify original database STILL has NO children
       // This is the KEY assertion - embedded views should NOT appear as children of the original database
       cy.task('log', '[STEP 10] Verifying original database did NOT gain embedded children');
-      expandSpaceInSidebar(spaceName);
+      expandSpaceByName(spaceName);
       waitForReactUpdate(500);
 
       cy.get('@originalDbChildCount').then((initialCount) => {
+        const initial = Number(initialCount);
         getDescendantPageItemCount(dbName).then((count) => {
-          expect(count).to.equal(initialCount as number);
+          expect(count).to.equal(initial);
         });
       });
       assertNoChildViewContains(dbName, 'View of');
@@ -416,7 +389,7 @@ describe('Embedded Database View Isolation', () => {
       waitForReactUpdate(2000);
 
       // Expand space again if needed
-      expandSpaceInSidebar(spaceName);
+      expandSpaceByName(spaceName);
       waitForReactUpdate(500);
 
       // Skip document child verification - embedded views render inline, not as sidebar children
@@ -424,8 +397,9 @@ describe('Embedded Database View Isolation', () => {
 
       cy.task('log', '[STEP 13.2] Verifying database did NOT gain embedded children');
       cy.get('@originalDbChildCount').then((initialCount) => {
+        const initial = Number(initialCount);
         getDescendantPageItemCount(dbName).then((count) => {
-          expect(count).to.equal(initialCount as number);
+          expect(count).to.equal(initial);
         });
       });
       assertNoChildViewContains(dbName, 'View of');

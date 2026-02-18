@@ -156,6 +156,20 @@ export function expandSpaceByName(spaceName: string) {
     });
 }
 
+/**
+ * Expands a page in the sidebar by its name.
+ * @param pageName - Name of the page to expand
+ */
+export function expandPageByName(pageName: string) {
+    testLog.info(`Expanding page "${pageName}"`);
+
+    PageSelectors.itemByName(pageName).within(() => {
+        cy.get('[data-testid="outline-toggle-expand"]').first().click({ force: true });
+    });
+
+    waitForReactUpdate(1000);
+}
+
 // Internal helper functions (not exported but used by exported functions)
 
 /**
