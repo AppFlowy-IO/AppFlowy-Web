@@ -7,14 +7,13 @@
  * - Consecutive board creation regression test
  */
 import { v4 as uuidv4 } from 'uuid';
-
-import { AuthTestUtils } from '../../support/auth-utils';
 import {
   AddPageSelectors,
   BoardSelectors,
   RowDetailSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 
 describe('Board Operations', () => {
   const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
@@ -39,27 +38,16 @@ describe('Board Operations', () => {
   /**
    * Helper: Create a Board and wait for it to load
    */
-  const createBoardAndWait = (authUtils: AuthTestUtils, testEmail: string) => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    return authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      // Create Board
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').contains('Board').click({ force: true });
-      cy.wait(5000);
-
-      // Verify Board loaded with default columns and cards
-      BoardSelectors.boardContainer().should('exist', { timeout: 15000 });
-      waitForReactUpdate(3000);
-      BoardSelectors.cards().should('have.length.at.least', 1, { timeout: 15000 });
-      BoardSelectors.boardContainer().contains('To Do').should('be.visible');
-      BoardSelectors.boardContainer().contains('Doing').should('be.visible');
-      BoardSelectors.boardContainer().contains('Done').should('be.visible');
+  const createBoardAndWait = (testEmail: string) => {
+    return signInAndCreateDatabaseView(testEmail, 'Board', {
+      verify: () => {
+        BoardSelectors.boardContainer().should('exist', { timeout: 15000 });
+        waitForReactUpdate(3000);
+        BoardSelectors.cards().should('have.length.at.least', 1, { timeout: 15000 });
+        BoardSelectors.boardContainer().contains('To Do').should('be.visible');
+        BoardSelectors.boardContainer().contains('Doing').should('be.visible');
+        BoardSelectors.boardContainer().contains('Done').should('be.visible');
+      },
     });
   };
 
@@ -72,11 +60,7 @@ describe('Board Operations', () => {
 
       cy.task('log', `[TEST START] Create two Boards consecutively - Email: ${testEmail}`);
 
-      cy.visit('/login', { failOnStatusCode: false });
-      cy.wait(2000);
-
-      const authUtils = new AuthTestUtils();
-      authUtils.signInWithTestUrl(testEmail).then(() => {
+      cy.signIn(testEmail).then(() => {
         cy.url({ timeout: 30000 }).should('include', '/app');
         cy.wait(3000);
 
@@ -121,8 +105,7 @@ describe('Board Operations', () => {
 
       cy.task('log', `[TEST START] Add cards to different columns - Email: ${testEmail}`);
 
-      const authUtils = new AuthTestUtils();
-      createBoardAndWait(authUtils, testEmail).then(() => {
+      createBoardAndWait(testEmail).then(() => {
         // Add card to "To Do"
         BoardSelectors.boardContainer()
           .contains('To Do')
@@ -172,8 +155,7 @@ describe('Board Operations', () => {
 
       cy.task('log', `[TEST START] Modify card title - Email: ${testEmail}`);
 
-      const authUtils = new AuthTestUtils();
-      createBoardAndWait(authUtils, testEmail).then(() => {
+      createBoardAndWait(testEmail).then(() => {
         // Add a new card
         BoardSelectors.boardContainer().contains('New').first().click({ force: true });
         waitForReactUpdate(500);
@@ -216,8 +198,7 @@ describe('Board Operations', () => {
 
       cy.task('log', `[TEST START] Delete card - Email: ${testEmail}`);
 
-      const authUtils = new AuthTestUtils();
-      createBoardAndWait(authUtils, testEmail).then(() => {
+      createBoardAndWait(testEmail).then(() => {
         // Add a new card
         BoardSelectors.boardContainer().contains('New').first().click({ force: true });
         waitForReactUpdate(500);
@@ -264,8 +245,7 @@ describe('Board Operations', () => {
 
       cy.task('log', `[TEST START] Rapid card creation - Email: ${testEmail}`);
 
-      const authUtils = new AuthTestUtils();
-      createBoardAndWait(authUtils, testEmail).then(() => {
+      createBoardAndWait(testEmail).then(() => {
         // Add multiple cards rapidly
         for (let i = 1; i <= cardCount; i++) {
           BoardSelectors.boardContainer().contains('New').first().click({ force: true });
@@ -297,8 +277,7 @@ describe('Board Operations', () => {
 
       cy.task('log', `[TEST START] Card reopen test - Email: ${testEmail}`);
 
-      const authUtils = new AuthTestUtils();
-      createBoardAndWait(authUtils, testEmail).then(() => {
+      createBoardAndWait(testEmail).then(() => {
         // Add a new card
         BoardSelectors.boardContainer().contains('New').first().click({ force: true });
         waitForReactUpdate(500);
@@ -352,8 +331,7 @@ describe('Board Operations', () => {
 
       cy.task('log', `[TEST START] Card persistence - Email: ${testEmail}`);
 
-      const authUtils = new AuthTestUtils();
-      createBoardAndWait(authUtils, testEmail).then(() => {
+      createBoardAndWait(testEmail).then(() => {
         // Add card
         BoardSelectors.boardContainer().contains('New').first().click({ force: true });
         waitForReactUpdate(500);
@@ -382,8 +360,7 @@ describe('Board Operations', () => {
 
       cy.task('log', `[TEST START] Collaboration sync - Email: ${testEmail}`);
 
-      const authUtils = new AuthTestUtils();
-      createBoardAndWait(authUtils, testEmail).then(() => {
+      createBoardAndWait(testEmail).then(() => {
         cy.url().then((currentUrl) => {
           // Add iframe with same page
           cy.document().then((doc) => {

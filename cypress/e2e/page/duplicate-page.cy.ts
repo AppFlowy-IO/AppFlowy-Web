@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import {
   AddPageSelectors,
@@ -36,11 +35,7 @@ describe('Duplicate Page', () => {
 
     // Step 1: Sign in
     testLog.step(1, 'Signing in');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
 
     cy.url().should('include', '/app');
     TestTool.waitForPageLoad(3000);

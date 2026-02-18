@@ -1,15 +1,17 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import {
   WorkspaceSelectors,
   AuthSelectors,
   waitForReactUpdate
 } from '../../support/selectors';
-import { TestConfig, generateRandomEmail } from '../../support/test-config';
+import { generateRandomEmail } from '../../support/test-config';
+import {
+  assertLoginPageReady,
+  signInAndWaitForApp,
+  visitLoginPage,
+} from '../../support/auth-flow-helpers';
 
 describe('Login and Logout Flow', () => {
-  const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
-
   beforeEach(() => {
     // Handle uncaught exceptions
     cy.on('uncaught:exception', (err) => {
@@ -31,28 +33,20 @@ describe('Login and Logout Flow', () => {
 
       // Step 1: Navigate to login page
       cy.log('[STEP 1] Visiting login page');
-      cy.visit('/login', { failOnStatusCode: false });
-      cy.wait(2000);
+      visitLoginPage();
 
       // Step 2: Verify login page elements before authentication
       cy.log('[STEP 2] Verifying login page loaded with all elements');
-      cy.contains('Welcome to AppFlowy').should('be.visible');
-      AuthSelectors.emailInput().should('be.visible');
-      AuthSelectors.passwordSignInButton().should('be.visible');
+      assertLoginPageReady();
 
-      // Step 3: Use AuthTestUtils for authentication (more reliable than manual password entry)
+      // Step 3: Use shared sign-in helper (more reliable than manual password entry)
       cy.log('[STEP 3] Starting authentication process');
-      const authUtils = new AuthTestUtils();
-      authUtils.signInWithTestUrl(testEmail).then(() => {
+      signInAndWaitForApp(testEmail).then(() => {
         cy.log('[STEP 4] Authentication successful');
-
-        // Step 4: Verify successful navigation to app page
-        cy.url({ timeout: 30000 }).should('include', '/app');
-        cy.wait(3000); // Allow app to fully load
 
         // Step 5: Verify workspace is loaded by checking dropdown trigger
         cy.log('[STEP 5] Verifying workspace loaded');
-        WorkspaceSelectors.dropdownTrigger({ timeout: 15000 })
+        WorkspaceSelectors.dropdownTrigger()
           .should('be.visible');
 
         // Step 6: Open workspace dropdown
@@ -90,9 +84,7 @@ describe('Login and Logout Flow', () => {
 
         // Step 12: Verify login page elements are visible after logout
         cy.log('[STEP 12] Verifying login page elements after logout');
-        cy.contains('Welcome to AppFlowy').should('be.visible');
-        AuthSelectors.emailInput().should('be.visible');
-        AuthSelectors.passwordSignInButton().should('be.visible');
+        assertLoginPageReady();
 
         cy.log('[STEP 13] Test completed successfully - Full login and logout flow verified');
       });
@@ -106,23 +98,16 @@ describe('Login and Logout Flow', () => {
       cy.log(`[TEST START] Quick Login and Logout using Test URL - Email: ${testEmail}`);
 
       // Step 1: Visit login page
-      cy.log('[STEP 1] Visiting login page');
-      cy.visit('/login', { failOnStatusCode: false });
-      cy.wait(2000);
+      cy.log('[STEP 1] Signing in');
 
-      // Step 2: Use AuthTestUtils for quick authentication
+      // Step 2: Use shared sign-in helper for quick authentication
       cy.log('[STEP 2] Starting quick authentication with test URL');
-      const authUtils = new AuthTestUtils();
-      authUtils.signInWithTestUrl(testEmail).then(() => {
+      signInAndWaitForApp(testEmail).then(() => {
         cy.log('[STEP 3] Authentication successful');
-
-        // Verify navigation to app page
-        cy.url({ timeout: 30000 }).should('include', '/app');
-        cy.wait(3000); // Allow app to fully load
 
         // Step 4: Verify user is logged in
         cy.log('[STEP 4] Verifying user is logged in');
-        WorkspaceSelectors.dropdownTrigger({ timeout: 15000 })
+        WorkspaceSelectors.dropdownTrigger()
           .should('be.visible');
 
         // Step 5: Open workspace dropdown
@@ -155,8 +140,7 @@ describe('Login and Logout Flow', () => {
         cy.url({ timeout: 10000 }).should('include', '/login');
 
         // Verify login page elements are visible
-        cy.contains('Welcome to AppFlowy').should('be.visible');
-        AuthSelectors.emailInput().should('be.visible');
+        assertLoginPageReady();
 
         cy.log('[STEP 9] Test completed successfully - Quick login and logout verified');
       });
@@ -170,23 +154,16 @@ describe('Login and Logout Flow', () => {
       cy.log(`[TEST START] Cancel Logout Confirmation - Email: ${testEmail}`);
 
       // Step 1: Visit login page
-      cy.log('[STEP 1] Visiting login page');
-      cy.visit('/login', { failOnStatusCode: false });
-      cy.wait(2000);
+      cy.log('[STEP 1] Signing in');
 
-      // Step 2: Use AuthTestUtils for quick authentication
+      // Step 2: Use shared sign-in helper for quick authentication
       cy.log('[STEP 2] Starting authentication');
-      const authUtils = new AuthTestUtils();
-      authUtils.signInWithTestUrl(testEmail).then(() => {
+      signInAndWaitForApp(testEmail).then(() => {
         cy.log('[STEP 3] Authentication successful');
-
-        // Verify navigation to app page
-        cy.url({ timeout: 30000 }).should('include', '/app');
-        cy.wait(3000); // Allow app to fully load
 
         // Step 4: Open workspace dropdown
         cy.log('[STEP 4] Opening workspace dropdown');
-        WorkspaceSelectors.dropdownTrigger({ timeout: 15000 })
+        WorkspaceSelectors.dropdownTrigger()
           .should('be.visible');
         TestTool.openWorkspaceDropdown();
 

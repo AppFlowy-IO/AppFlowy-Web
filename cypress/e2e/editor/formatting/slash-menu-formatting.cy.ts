@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
@@ -22,11 +21,7 @@ describe('Slash Menu - Text Formatting', () => {
     cy.log(`[TEST START] Testing text formatting options - Test email: ${testEmail}`);
 
     // Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
@@ -69,11 +64,7 @@ describe('Slash Menu - Text Formatting', () => {
     cy.log(`[TEST START] Testing Heading 1 selection - Test email: ${testEmail}`);
 
     // Login
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 

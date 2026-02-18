@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import {
     BreadcrumbSelectors,
@@ -38,11 +37,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
         it('should navigate through space and check for breadcrumb availability', () => {
             //                     // Login
             testLog.info('=== Step 1: Login ===');
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -101,11 +96,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
 
         it('should navigate to nested pages and use breadcrumb to go back', () => {
             // Login
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -185,11 +176,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
     describe('Full Breadcrumb Flow Test', () => {
         it('should navigate through General > Get Started > Desktop Guide flow (if available)', () => {
             // Login
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -330,11 +317,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
 
     describe('Breadcrumb Item Verification Tests', () => {
         it('should verify breadcrumb items display correct names and are clickable', () => {
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -405,11 +388,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
         });
 
         it('should verify breadcrumb navigation updates correctly when navigating', () => {
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -486,11 +465,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
 
     describe('Deep Navigation Tests', () => {
         it('should handle breadcrumb navigation for 3+ level deep pages', () => {
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -618,11 +593,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
 
     describe('Breadcrumb After Page Creation Tests', () => {
         it('should show breadcrumb after creating a new nested page', () => {
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -695,11 +666,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
 
     describe('Breadcrumb Text Content Tests', () => {
         it('should verify breadcrumb items contain correct page names', () => {
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -779,11 +746,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
 
     describe('Breadcrumb Edge Cases', () => {
         it('should handle breadcrumb when navigating between different spaces', () => {
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load
@@ -843,11 +806,7 @@ describe('Breadcrumb Navigation Complete Tests', () => {
         });
 
         it('should verify breadcrumb does not appear on top-level pages', () => {
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.get('body').should('be.visible');
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
 
                 // Wait for app to load

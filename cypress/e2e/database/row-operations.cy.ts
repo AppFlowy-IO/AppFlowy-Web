@@ -9,13 +9,12 @@
  * Note: Row operations via row detail modal are tested in row-detail.cy.ts
  */
 import {
-  AddPageSelectors,
   DatabaseGridSelectors,
   RowControlsSelectors,
   waitForReactUpdate
 } from '../../support/selectors';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { generateRandomEmail } from '../../support/test-config';
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 
 describe('Database Row Operations', () => {
   beforeEach(() => {
@@ -35,25 +34,13 @@ describe('Database Row Operations', () => {
    * Helper: Create a grid and wait for it to load
    */
   const createGridAndWait = (testEmail: string) => {
-    cy.log('[STEP] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    return authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.log('[STEP] Authentication successful');
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      cy.log('[STEP] Creating new grid');
-      AddPageSelectors.inlineAddButton().first().should('be.visible').click();
-      waitForReactUpdate(1000);
-      AddPageSelectors.addGridButton().should('be.visible').click();
-      cy.wait(8000);
-
-      cy.log('[STEP] Verifying grid exists');
-      DatabaseGridSelectors.grid().should('exist');
-      DatabaseGridSelectors.cells().should('exist');
+    return signInAndCreateDatabaseView(testEmail, 'Grid', {
+      createWaitMs: 8000,
+      verify: () => {
+        cy.log('[STEP] Verifying grid exists');
+        DatabaseGridSelectors.grid().should('exist');
+        DatabaseGridSelectors.cells().should('exist');
+      },
     });
   };
 

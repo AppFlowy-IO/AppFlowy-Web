@@ -7,14 +7,13 @@
 import 'cypress-real-events';
 
 import { v4 as uuidv4 } from 'uuid';
-
-import { AuthTestUtils } from '../../support/auth-utils';
 import {
   AddPageSelectors,
   BoardSelectors,
   DatabaseGridSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 
 describe('Database View Consistency', () => {
   const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
@@ -39,24 +38,13 @@ describe('Database View Consistency', () => {
   /**
    * Helper: Sign in and create a Grid database
    */
-  const signInAndCreateGrid = (authUtils: AuthTestUtils, testEmail: string) => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    return authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      // Create Grid database
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').contains('Grid').click({ force: true });
-      cy.wait(5000);
-
-      // Verify Grid loaded with default rows
-      cy.get('.database-grid', { timeout: 15000 }).should('exist');
-      DatabaseGridSelectors.dataRows().should('have.length.at.least', 1);
-      waitForReactUpdate(2000);
+  const signInAndCreateGrid = (testEmail: string) => {
+    return signInAndCreateDatabaseView(testEmail, 'Grid', {
+      verify: () => {
+        cy.get('.database-grid', { timeout: 15000 }).should('exist');
+        DatabaseGridSelectors.dataRows().should('have.length.at.least', 1);
+        waitForReactUpdate(2000);
+      },
     });
   };
 
@@ -151,8 +139,7 @@ describe('Database View Consistency', () => {
 
     cy.task('log', `[TEST START] Cross-view data consistency - Email: ${testEmail}`);
 
-    const authUtils = new AuthTestUtils();
-    signInAndCreateGrid(authUtils, testEmail).then(() => {
+    signInAndCreateGrid(testEmail).then(() => {
       // Step 1: Edit first row in Grid view
       cy.task('log', `[STEP 1] Editing row in Grid view: ${gridRow}`);
       editRowInGrid(0, gridRow);

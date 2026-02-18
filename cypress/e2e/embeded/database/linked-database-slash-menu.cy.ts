@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
 import {
   AddPageSelectors,
@@ -34,13 +33,8 @@ describe('Embedded Database - Slash Menu Creation', () => {
     cy.task('log', `[TEST START] Testing slash menu creation - Test email: ${testEmail}`);
 
     // Step 1: Login
-    cy.task('log', '[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    cy.task('log', '[STEP 2] Starting authentication');
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.task('log', '[STEP 1] Starting authentication');
+    cy.signIn(testEmail).then(() => {
       cy.task('log', '[STEP 3] Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
@@ -155,11 +149,7 @@ describe('Embedded Database - Slash Menu Creation', () => {
     cy.task('log', `[TEST START] Testing retry mechanism - Test email: ${testEmail}`);
 
     // Login and setup (similar to previous test)
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 

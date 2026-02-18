@@ -10,8 +10,6 @@
  * - Programmatically close the WebSocket to trigger disconnect
  * - Click "Reconnect" and verify the stub was NOT called and the marker survives
  */
-
-import { AuthTestUtils } from '../../support/auth-utils';
 import { SidebarSelectors, PageSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
@@ -79,9 +77,8 @@ describe('WebSocket Reconnection (No Page Reload)', () => {
     });
     cy.wait(2000);
 
-    const authUtils = new AuthTestUtils();
 
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
     });
 

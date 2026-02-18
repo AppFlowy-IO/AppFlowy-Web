@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { BlockSelectors, EditorSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
@@ -158,10 +157,7 @@ describe('Editor - Drag and Drop Blocks', () => {
 
   it('should reorder Callout block', () => {
     const testEmail = generateRandomEmail();
-    const authUtils = new AuthTestUtils();
-
-    cy.visit('/login', { failOnStatusCode: false });
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.contains('Getting started').click();
 
@@ -208,10 +204,7 @@ describe('Editor - Drag and Drop Blocks', () => {
 
   it('should create and verify grid block with drag handle', () => {
     const testEmail = generateRandomEmail();
-    const authUtils = new AuthTestUtils();
-
-    cy.visit('/login', { failOnStatusCode: false });
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.contains('Getting started').click();
 

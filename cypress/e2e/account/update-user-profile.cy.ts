@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { WorkspaceSelectors, AccountSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 
@@ -21,11 +20,7 @@ describe('Update User Profile', () => {
 
     // Login
     cy.log('Step 1: Logging in to the application');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       // Wait for app to load
       cy.log('Step 2: Waiting for application to load');
       cy.url({ timeout: 30000 }).should('include', '/app');

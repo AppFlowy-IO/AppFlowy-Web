@@ -1,6 +1,4 @@
 import { v4 as uuidv4 } from 'uuid';
-
-import { AuthTestUtils } from '../../support/auth-utils';
 import {
   AddPageSelectors,
   BreadcrumbSelectors,
@@ -10,6 +8,7 @@ import {
   SpaceSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 
 /**
  * Database View Tabs Tests
@@ -44,21 +43,12 @@ describe('Database View Tabs', () => {
   /**
    * Helper: Create a Grid database and wait for it to load
    */
-  const createGridAndWait = (authUtils: AuthTestUtils, testEmail: string) => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    return authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      AddPageSelectors.addGridButton().should('be.visible').click({ force: true });
-      cy.wait(5000);
-
-      cy.get('[class*="appflowy-database"]', { timeout: 15000 }).should('exist');
-      DatabaseViewSelectors.viewTab().should('have.length.at.least', 1);
+  const createGridAndWait = (testEmail: string) => {
+    return signInAndCreateDatabaseView(testEmail, 'Grid', {
+      verify: () => {
+        cy.get('[class*="appflowy-database"]', { timeout: 15000 }).should('exist');
+        DatabaseViewSelectors.viewTab().should('have.length.at.least', 1);
+      },
     });
   };
 
@@ -85,7 +75,7 @@ describe('Database View Tabs', () => {
     PageSelectors.itemByName('New Database', { timeout: 10000 }).then(($dbItem) => {
       const expandToggle = $dbItem.find('[data-testid="outline-toggle-expand"]');
       if (expandToggle.length > 0) {
-        cy.wrap(expandToggle.first()).click({ force: true });
+        cy.wrap(expandToggle[0]).click({ force: true });
         waitForReactUpdate(500);
       }
     });
@@ -125,8 +115,7 @@ describe('Database View Tabs', () => {
 
     cy.task('log', `[TEST] Multiple views creation - Email: ${testEmail}`);
 
-    const authUtils = new AuthTestUtils();
-    createGridAndWait(authUtils, testEmail).then(() => {
+    createGridAndWait(testEmail).then(() => {
       // Get initial tab count
       DatabaseViewSelectors.viewTab().then(($tabs) => {
         cy.wrap($tabs.length).as('initialTabCount');
@@ -139,9 +128,10 @@ describe('Database View Tabs', () => {
       cy.task('log', '[STEP 2] Verifying Board tab appears immediately');
       waitForReactUpdate(200);
       cy.get('@initialTabCount').then((initialCount) => {
+        const initial = Number(initialCount);
         cy.get('[data-testid^="view-tab-"]', { timeout: 1000 }).should(
           'have.length',
-          (initialCount as number) + 1
+          initial + 1
         );
       });
 
@@ -158,9 +148,10 @@ describe('Database View Tabs', () => {
       cy.task('log', '[STEP 4] Verifying Calendar tab appears immediately');
       waitForReactUpdate(3000);
       cy.get('@initialTabCount').then((initialCount) => {
+        const initial = Number(initialCount);
         cy.get('[data-testid^="view-tab-"]', { timeout: 5000 }).should(
           'have.length',
-          (initialCount as number) + 2
+          initial + 2
         );
       });
 
@@ -195,7 +186,7 @@ describe('Database View Tabs', () => {
       // Verify all tabs persist
       cy.task('log', '[STEP 7] Verifying all tabs persist');
       cy.get('@initialTabCount').then((initialCount) => {
-        DatabaseViewSelectors.viewTab().should('have.length', (initialCount as number) + 2);
+        DatabaseViewSelectors.viewTab().should('have.length', Number(initialCount) + 2);
       });
 
       cy.task('log', '[TEST COMPLETE] Multiple views created and persisted');
@@ -210,8 +201,7 @@ describe('Database View Tabs', () => {
 
     cy.task('log', `[TEST] Rename views - Email: ${testEmail}`);
 
-    const authUtils = new AuthTestUtils();
-    createGridAndWait(authUtils, testEmail).then(() => {
+    createGridAndWait(testEmail).then(() => {
       // Rename Grid -> MyGrid
       cy.task('log', '[STEP 1] Renaming Grid to MyGrid');
       openTabMenuByLabel('Grid');
@@ -253,8 +243,7 @@ describe('Database View Tabs', () => {
 
     cy.task('log', `[TEST] Tab selection - Email: ${testEmail}`);
 
-    const authUtils = new AuthTestUtils();
-    createGridAndWait(authUtils, testEmail).then(() => {
+    createGridAndWait(testEmail).then(() => {
       // Add a Board view
       addViewViaButton('Board');
       waitForReactUpdate(3000);
@@ -296,8 +285,7 @@ describe('Database View Tabs', () => {
 
     cy.task('log', `[TEST] Breadcrumb reflects active tab - Email: ${testEmail}`);
 
-    const authUtils = new AuthTestUtils();
-    createGridAndWait(authUtils, testEmail).then(() => {
+    createGridAndWait(testEmail).then(() => {
       // Add a Board view
       addViewViaButton('Board');
       waitForReactUpdate(3000);

@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { PageSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
@@ -37,7 +36,6 @@ describe('Outline Lazy Loading', () => {
   });
 
   it('refetches subtree after collapsing and reopening a space', () => {
-    const authUtils = new AuthTestUtils();
     const testEmail = generateRandomEmail();
 
     let targetSpaceId = '';
@@ -54,9 +52,7 @@ describe('Outline Lazy Loading', () => {
         subtreeRequestCount += 1;
       }
     }).as('getSubtreeView');
-
-    cy.visit('/login', { failOnStatusCode: false });
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
     waitForSidebarReady();
 
     // Use :visible to exclude the hidden space-expanded div, ensuring we get the
@@ -96,7 +92,6 @@ describe('Outline Lazy Loading', () => {
   });
 
   it('prunes invalid expanded ids from localStorage on reload', () => {
-    const authUtils = new AuthTestUtils();
     const testEmail = generateRandomEmail();
 
     let fakeIdRequested = false;
@@ -111,9 +106,7 @@ describe('Outline Lazy Loading', () => {
         fakeIdRequested = true;
       }
     }).as('getSubtreeView');
-
-    cy.visit('/login', { failOnStatusCode: false });
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
     waitForSidebarReady();
 
     // Use :visible to get the clickable space header (space-{UUID}), not the wrapper
@@ -154,7 +147,6 @@ describe('Outline Lazy Loading', () => {
   });
 
   it('logs depth=1 subtree batch requests with one or more ids', () => {
-    const authUtils = new AuthTestUtils();
     const testEmail = generateRandomEmail();
     const seenBatchRequests: Array<{ depth: string | null; viewIds: string[] }> = [];
 
@@ -170,9 +162,7 @@ describe('Outline Lazy Loading', () => {
 
       seenBatchRequests.push({ depth, viewIds });
     }).as('getSubtreeViewsBatch');
-
-    cy.visit('/login', { failOnStatusCode: false });
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
     waitForSidebarReady();
 
     // Collect all visible space IDs so we can set up localStorage for batch loading.

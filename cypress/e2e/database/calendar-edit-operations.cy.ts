@@ -1,9 +1,8 @@
 import 'cypress-real-events';
 
 import { v4 as uuidv4 } from 'uuid';
-
-import { AuthTestUtils } from '../../support/auth-utils';
 import { AddPageSelectors, waitForReactUpdate } from '../../support/selectors';
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 
 /**
  * Calendar Row Loading Tests
@@ -33,23 +32,12 @@ describe('Calendar Row Loading', () => {
   /**
    * Helper: Create a Calendar and wait for it to load
    */
-  const createCalendarAndWait = (authUtils: AuthTestUtils, testEmail: string) => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    return authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      // Create Calendar
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').contains('Calendar').click({ force: true });
-      cy.wait(5000);
-
-      // Verify calendar loaded (month view is default)
-      cy.get('.database-calendar', { timeout: 15000 }).should('exist');
-      cy.get('.fc-daygrid-day', { timeout: 10000 }).should('have.length.at.least', 28);
+  const createCalendarAndWait = (testEmail: string) => {
+    return signInAndCreateDatabaseView(testEmail, 'Calendar', {
+      verify: () => {
+        cy.get('.database-calendar', { timeout: 15000 }).should('exist');
+        cy.get('.fc-daygrid-day', { timeout: 10000 }).should('have.length.at.least', 28);
+      },
     });
   };
 
@@ -90,8 +78,7 @@ describe('Calendar Row Loading', () => {
 
     cy.task('log', `[TEST START] Calendar row loading - Email: ${testEmail}`);
 
-    const authUtils = new AuthTestUtils();
-    createCalendarAndWait(authUtils, testEmail).then(() => {
+    createCalendarAndWait(testEmail).then(() => {
       // Create first event
       cy.task('log', `[STEP 1] Creating first event: ${eventName1}`);
       createEventOnCell(10, eventName1);
@@ -123,8 +110,7 @@ describe('Calendar Row Loading', () => {
 
     cy.task('log', `[TEST START] Calendar to Grid view sync test - Email: ${testEmail}`);
 
-    const authUtils = new AuthTestUtils();
-    createCalendarAndWait(authUtils, testEmail).then(() => {
+    createCalendarAndWait(testEmail).then(() => {
       // Create an event in Calendar view
       cy.task('log', `[STEP 1] Creating event in Calendar: ${eventName}`);
       createEventOnCell(10, eventName);

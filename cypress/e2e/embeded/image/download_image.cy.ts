@@ -1,9 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate, AddPageSelectors } from '../../../support/selectors';
 
 describe('Download Image Test', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = `${uuidv4()}@appflowy.io`;
 
   beforeEach(() => {
@@ -17,9 +15,7 @@ describe('Download Image Test', () => {
         'content-type': 'image/png',
       },
     }).as('getImage');
-
-    cy.visit('/login', { failOnStatusCode: false });
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForReactUpdate(1000);
     });

@@ -1,12 +1,11 @@
 import { v4 as uuidv4 } from 'uuid';
-
-import { AuthTestUtils } from '../../support/auth-utils';
 import {
   AddPageSelectors,
   BoardSelectors,
   RowDetailSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 import { closeRowDetailWithEscape, typeInRowDocument } from '../../support/row-detail-helpers';
 
 /**
@@ -39,22 +38,13 @@ describe('Row Document Test', () => {
     cy.viewport(1280, 720);
   });
 
-  const createBoardAndWait = (authUtils: AuthTestUtils, testEmail: string) => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    return authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').contains('Board').click({ force: true });
-      cy.wait(5000);
-
-      BoardSelectors.boardContainer().should('exist', { timeout: 15000 });
-      waitForReactUpdate(3000);
-      BoardSelectors.cards().should('have.length.at.least', 1, { timeout: 15000 });
+  const createBoardAndWait = (testEmail: string) => {
+    return signInAndCreateDatabaseView(testEmail, 'Board', {
+      verify: () => {
+        BoardSelectors.boardContainer().should('exist', { timeout: 15000 });
+        waitForReactUpdate(3000);
+        BoardSelectors.cards().should('have.length.at.least', 1, { timeout: 15000 });
+      },
     });
   };
 
@@ -66,9 +56,8 @@ describe('Row Document Test', () => {
     const cardName = `Persist-${uuidv4().substring(0, 6)}`;
     const docText = `persist-test-${uuidv4().substring(0, 6)}`;
 
-    const authUtils = new AuthTestUtils();
 
-    createBoardAndWait(authUtils, testEmail).then(() => {
+    createBoardAndWait(testEmail).then(() => {
       // Step 1: Add a new card
       cy.task('log', '[STEP 1] Adding a new card');
       BoardSelectors.boardContainer()
@@ -166,9 +155,8 @@ describe('Row Document Test', () => {
     const testEmail = generateRandomEmail();
     const cardName = `Focus-${uuidv4().substring(0, 6)}`;
 
-    const authUtils = new AuthTestUtils();
 
-    createBoardAndWait(authUtils, testEmail).then(() => {
+    createBoardAndWait(testEmail).then(() => {
       // Add a new card
       BoardSelectors.boardContainer()
         .contains('To Do')
@@ -227,9 +215,8 @@ describe('Row Document Test', () => {
     const cardName = `RowDoc-${uuidv4().substring(0, 6)}`;
     const docText = `row-doc-${uuidv4().substring(0, 6)}`;
 
-    const authUtils = new AuthTestUtils();
 
-    createBoardAndWait(authUtils, testEmail).then(() => {
+    createBoardAndWait(testEmail).then(() => {
       // Add a new card to "To Do"
       BoardSelectors.boardContainer()
         .contains('To Do')

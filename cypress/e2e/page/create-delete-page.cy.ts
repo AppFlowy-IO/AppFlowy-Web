@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { PageSelectors, ModalSelectors, SidebarSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
@@ -30,11 +29,7 @@ describe('Page Create and Delete Tests', () => {
             });
 
             // Step 1: Login
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.wait(2000);
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
                 
                 // Wait for the app to fully load

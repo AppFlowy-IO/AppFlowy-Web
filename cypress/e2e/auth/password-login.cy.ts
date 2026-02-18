@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { TestConfig, generateRandomEmail } from '../../support/test-config';
 import { AuthSelectors } from '../../support/selectors';
+import { goToPasswordStep, visitAuthPath, visitLoginPage } from '../../support/auth-flow-helpers';
 
 describe('Password Login Flow', () => {
   const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
@@ -16,8 +17,7 @@ describe('Password Login Flow', () => {
       cy.log('[TEST START] Testing login page elements');
 
       // Visit login page
-      cy.visit('/login');
-      cy.wait(3000); // Give page time to fully load
+      visitLoginPage(3000); // Give page time to fully load
 
       // Check for login page elements
       cy.log('[STEP 1] Checking for login page title');
@@ -38,8 +38,7 @@ describe('Password Login Flow', () => {
       cy.log(`[TEST START] Testing email entry with: ${testEmail}`);
 
       // Visit login page
-      cy.visit('/login');
-      cy.wait(3000);
+      visitLoginPage(3000);
 
       // Find and fill email input
       cy.log('[STEP 1] Finding email input by placeholder');
@@ -151,23 +150,11 @@ describe('Password Login Flow', () => {
 
       // Visit login page
       cy.log('[STEP 1] Visiting login page');
-      cy.visit('/login');
-      cy.wait(2000);
+      visitLoginPage();
 
       // Enter email
       cy.log('[STEP 2] Entering email address');
-      AuthSelectors.emailInput().should('be.visible').type(testEmail);
-      cy.wait(500);
-
-      // Click on "Sign in with password" button
-      cy.log('[STEP 3] Clicking sign in with password button');
-      AuthSelectors.passwordSignInButton().should('be.visible').click();
-      cy.wait(1000);
-
-      // Verify we're on the password page
-      cy.log('[STEP 4] Verifying password page loaded');
-      cy.url().should('include', 'action=enterPassword');
-      cy.url().should('include', `email=${encodeURIComponent(testEmail)}`);
+      goToPasswordStep(testEmail, { waitMs: 1000, assertEmailInUrl: true });
 
       // Enter password
       cy.log('[STEP 5] Entering password');
@@ -215,8 +202,7 @@ describe('Password Login Flow', () => {
       mockSuccessfulLogin(testEmail, mockUserId, mockAccessToken, mockRefreshToken);
 
       // Navigate directly to password page
-      cy.visit(`/login?action=enterPassword&email=${encodeURIComponent(testEmail)}`);
-      cy.wait(3000);
+      visitAuthPath(`/login?action=enterPassword&email=${encodeURIComponent(testEmail)}`, { waitMs: 3000 });
 
       // Look for password input
       cy.log('[STEP 1] Finding password input field');
@@ -249,8 +235,7 @@ describe('Password Login Flow', () => {
       cy.log('[TEST START] Testing invalid email validation');
 
       // Visit login page
-      cy.visit('/login');
-      cy.wait(3000);
+      visitLoginPage(3000);
 
       // Enter invalid email
       cy.log('[STEP 1] Entering invalid email');
@@ -286,14 +271,11 @@ describe('Password Login Flow', () => {
 
       // Navigate to login
       cy.log('[STEP 1] Navigating to login page');
-      cy.visit('/login');
-      cy.wait(2000);
+      visitLoginPage();
 
       // Enter email and go to password page
       cy.log('[STEP 2] Entering email and navigating to password page');
-      AuthSelectors.emailInput().type(testEmail);
-      AuthSelectors.passwordSignInButton().click();
-      cy.wait(1000);
+      goToPasswordStep(testEmail);
 
       // Enter wrong password
       cy.log('[STEP 3] Entering incorrect password');
@@ -332,14 +314,11 @@ describe('Password Login Flow', () => {
 
       // Navigate to login
       cy.log('[STEP 1] Navigating to login page');
-      cy.visit('/login');
-      cy.wait(2000);
+      visitLoginPage();
 
       // Enter credentials
       cy.log('[STEP 2] Entering email and navigating to password page');
-      AuthSelectors.emailInput().type(testEmail);
-      AuthSelectors.passwordSignInButton().click();
-      cy.wait(1000);
+      goToPasswordStep(testEmail);
 
       // Enter password and submit
       cy.log('[STEP 3] Entering password and submitting');
@@ -371,17 +350,11 @@ describe('Password Login Flow', () => {
 
       // Visit login page
       cy.log('[STEP 1] Visiting login page');
-      cy.visit('/login');
-      cy.wait(2000);
+      visitLoginPage();
 
       // Enter email
       cy.log('[STEP 2] Entering email');
-      AuthSelectors.emailInput().type(testEmail);
-
-      // Navigate to password page
-      cy.log('[STEP 3] Navigating to password page');
-      AuthSelectors.passwordSignInButton().click();
-      cy.wait(1000);
+      goToPasswordStep(testEmail);
 
       // Verify on password page
       cy.log('[STEP 4] Verifying on password page');

@@ -1,9 +1,15 @@
 import { avatarTestUtils } from './avatar-test-utils';
-import { AccountSelectors, AvatarUiSelectors } from '../../../support/selectors';
+import { AvatarUiSelectors } from '../../../support/selectors';
 import { testLog } from '../../../support/test-helpers';
 
-const { generateRandomEmail, setupBeforeEach, imports } = avatarTestUtils;
-const { updateUserMetadata, AuthTestUtils, AvatarSelectors, WorkspaceSelectors } = imports;
+const {
+  generateRandomEmail,
+  setupBeforeEach,
+  signInAndWaitForApp,
+  reloadAndOpenAccountSettings,
+  imports,
+} = avatarTestUtils;
+const { updateUserMetadata, AvatarSelectors, WorkspaceSelectors } = imports;
 
 describe('Avatar API', () => {
   beforeEach(() => {
@@ -13,36 +19,21 @@ describe('Avatar API', () => {
   describe('Avatar Upload via API', () => {
     it('should update avatar URL via API and display in UI', () => {
       const testEmail = generateRandomEmail();
-      const authUtils = new AuthTestUtils();
       const testAvatarUrl = 'https://api.dicebear.com/7.x/avataaars/svg?seed=test';
 
-      testLog.info( 'Step 1: Visit login page');
-      cy.visit('/login', { failOnStatusCode: false });
-      cy.wait(2000);
+      testLog.info('Step 1: Sign in with test account');
+      signInAndWaitForApp(testEmail);
 
-      testLog.info( 'Step 2: Sign in with test account');
-      authUtils.signInWithTestUrl(testEmail);
-
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      testLog.info( 'Step 3: Update avatar via API');
+      testLog.info('Step 2: Update avatar via API');
       updateUserMetadata(testAvatarUrl).then((response) => {
-        testLog.info( `API Response: ${JSON.stringify(response)}`);
+        testLog.info(`API Response: ${JSON.stringify(response)}`);
         expect(response.status).to.equal(200);
       });
 
-      testLog.info( 'Step 4: Reload page to see updated avatar');
-      cy.reload();
-      cy.wait(3000);
+      testLog.info('Step 3: Reload page to see updated avatar');
+      reloadAndOpenAccountSettings();
 
-      testLog.info( 'Step 5: Open Account Settings to verify avatar');
-      WorkspaceSelectors.dropdownTrigger().click();
-      cy.wait(1000);
-      AccountSelectors.settingsButton().click();
-      AvatarSelectors.accountSettingsDialog().should('be.visible');
-
-      testLog.info( 'Step 6: Verify avatar image is displayed in Account Settings');
+      testLog.info('Step 4: Verify avatar image is displayed in Account Settings');
       // Note: Account Settings dialog may not display avatar directly
       // The avatar is displayed via getUserIconUrl which prioritizes workspace member avatar
       // Since we updated user metadata (icon_url), it should be available
@@ -87,104 +78,75 @@ describe('Avatar API', () => {
 
     it('test direct API call', () => {
       const testEmail = generateRandomEmail();
-      const authUtils = new AuthTestUtils();
       const testAvatarUrl = 'https://api.dicebear.com/7.x/avataaars/svg?seed=test';
 
-      testLog.info( '========== Step 1: Visit login page ==========');
-      cy.visit('/login', { failOnStatusCode: false });
-      cy.wait(2000);
+      testLog.info('========== Step 1: Sign in with test account ==========');
+      signInAndWaitForApp(testEmail);
 
-      testLog.info( '========== Step 2: Sign in with test account ==========');
-      authUtils.signInWithTestUrl(testEmail);
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      testLog.info( '========== Step 3: Get token from localStorage ==========');
+      testLog.info('========== Step 2: Get token from localStorage ==========');
       cy.window()
         .its('localStorage')
         .invoke('getItem', 'token')
         .then((tokenStr) => {
-          testLog.info( `Token string: ${tokenStr ? 'Found' : 'Not found'}`);
+          testLog.info(`Token string: ${tokenStr ? 'Found' : 'Not found'}`);
           const token = JSON.parse(tokenStr);
           const accessToken = token.access_token;
-          testLog.info( `Access token: ${accessToken ? 'Present (length: ' + accessToken.length + ')' : 'Missing'}`);
+          testLog.info(`Access token: ${accessToken ? 'Present (length: ' + accessToken.length + ')' : 'Missing'}`);
         });
 
-      testLog.info( '========== Step 4: Making API request ==========');
-      testLog.info( `URL: ${avatarTestUtils.APPFLOWY_BASE_URL}/api/user/update`);
-      testLog.info( `Avatar URL: ${testAvatarUrl}`);
+      testLog.info('========== Step 3: Making API request ==========');
+      testLog.info(`URL: ${avatarTestUtils.APPFLOWY_BASE_URL}/api/user/update`);
+      testLog.info(`Avatar URL: ${testAvatarUrl}`);
 
       updateUserMetadata(testAvatarUrl).then((response) => {
-        testLog.info( '========== Step 5: Checking response ==========');
-        testLog.info( `Response is null: ${response === null}`);
-        testLog.info( `Response type: ${typeof response}`);
-        testLog.info( `Response status: ${response?.status}`);
-        testLog.info( `Response body: ${JSON.stringify(response?.body)}`);
-        testLog.info( `Response headers: ${JSON.stringify(response?.headers)}`);
+        testLog.info('========== Step 4: Checking response ==========');
+        testLog.info(`Response is null: ${response === null}`);
+        testLog.info(`Response type: ${typeof response}`);
+        testLog.info(`Response status: ${response?.status}`);
+        testLog.info(`Response body: ${JSON.stringify(response?.body)}`);
+        testLog.info(`Response headers: ${JSON.stringify(response?.headers)}`);
 
         expect(response).to.not.be.null;
         expect(response.status).to.equal(200);
 
         if (response.body) {
-          testLog.info( `Response body code: ${response.body.code}`);
-          testLog.info( `Response body message: ${response.body.message}`);
+          testLog.info(`Response body code: ${response.body.code}`);
+          testLog.info(`Response body message: ${response.body.message}`);
         }
       });
     });
 
     it('should display emoji as avatar via API', () => {
       const testEmail = generateRandomEmail();
-      const authUtils = new AuthTestUtils();
       const testEmoji = '🎨';
 
-      testLog.info( 'Step 1: Visit login page');
-      cy.visit('/login', { failOnStatusCode: false });
-      cy.wait(2000);
+      testLog.info('Step 1: Sign in with test account');
+      signInAndWaitForApp(testEmail);
 
-      testLog.info( 'Step 2: Sign in with test account');
-      authUtils.signInWithTestUrl(testEmail);
-
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      testLog.info( 'Step 3: Update avatar to emoji via API');
+      testLog.info('Step 2: Update avatar to emoji via API');
       updateUserMetadata(testEmoji).then((response) => {
         expect(response).to.not.be.null;
         expect(response.status).to.equal(200);
       });
 
-      testLog.info( 'Step 4: Reload page');
-      cy.reload();
-      cy.wait(3000);
+      testLog.info('Step 3: Reload page');
+      reloadAndOpenAccountSettings();
 
-      testLog.info( 'Step 5: Open Account Settings');
-      WorkspaceSelectors.dropdownTrigger().click();
-      cy.wait(1000);
-      AccountSelectors.settingsButton().click();
-      AvatarSelectors.accountSettingsDialog().should('be.visible');
-
-      testLog.info( 'Step 6: Verify emoji is displayed in fallback');
+      testLog.info('Step 4: Verify emoji is displayed in fallback');
       AvatarSelectors.avatarFallback().should('contain.text', testEmoji);
     });
 
     it('should display fallback character when no avatar is set', () => {
       const testEmail = generateRandomEmail();
-      const authUtils = new AuthTestUtils();
 
-      testLog.info( 'Step 1: Visit login page');
-      cy.visit('/login', { failOnStatusCode: false });
-      cy.wait(2000);
+      testLog.info('Step 1: Sign in with test account (no avatar set)');
+      signInAndWaitForApp(testEmail).then(() => {
 
-      testLog.info( 'Step 2: Sign in with test account (no avatar set)');
-      authUtils.signInWithTestUrl(testEmail).then(() => {
-        cy.url({ timeout: 30000 }).should('include', '/app');
-        cy.wait(3000);
-
-        testLog.info( 'Step 3: Open workspace dropdown to see avatar');
+        testLog.info('Step 2: Open workspace dropdown to see avatar');
         WorkspaceSelectors.dropdownTrigger().click();
         cy.wait(500);
 
-        testLog.info( 'Step 4: Verify fallback is displayed in workspace dropdown avatar');
+        testLog.info('Step 3: Verify fallback is displayed in workspace dropdown avatar');
         AvatarSelectors.workspaceDropdownAvatar().within(() => {
           AvatarSelectors.avatarFallback().should('be.visible');
         });

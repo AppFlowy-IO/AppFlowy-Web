@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from 'uuid';
 import { TestConfig, generateRandomEmail } from '../../support/test-config';
+import { visitAuthPath, visitLoginPage } from '../../support/auth-flow-helpers';
 
 /**
  * Sign Up Password selectors - using flexible selectors with fallbacks
@@ -23,7 +24,7 @@ describe('Password Sign Up Flow', () => {
   const { gotrueUrl } = TestConfig;
 
   const visitSignUpPage = () => {
-    cy.visit('/login?action=signUpPassword');
+    visitAuthPath('/login?action=signUpPassword', { waitMs: 0 });
     SignUpSelectors.emailInput().should('be.visible');
   };
 
@@ -64,7 +65,7 @@ describe('Password Sign Up Flow', () => {
       cy.log('[TEST START] Testing navigation from login to sign-up');
 
       // Visit login page
-      cy.visit('/login');
+      visitLoginPage(0);
 
       // Check for "Create account" link on login page
       cy.log('[STEP 1] Checking for Create account link');

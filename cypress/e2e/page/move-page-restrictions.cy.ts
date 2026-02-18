@@ -1,6 +1,5 @@
 import { v4 as uuidv4 } from 'uuid';
 
-import { AuthTestUtils } from '../../support/auth-utils';
 import { getSlashMenuItemName } from '../../support/i18n-constants';
 import { testLog } from '../../support/test-helpers';
 import {
@@ -88,11 +87,7 @@ describe('Move Page Restrictions', () => {
     testLog.testStart('Move to disabled for linked database view under document');
     testLog.info(`Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
@@ -208,11 +203,7 @@ describe('Move Page Restrictions', () => {
     testLog.testStart('Move to enabled for regular document pages');
     testLog.info(`Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
@@ -252,11 +243,7 @@ describe('Move Page Restrictions', () => {
     testLog.testStart('Move to enabled for database containers');
     testLog.info(`Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 

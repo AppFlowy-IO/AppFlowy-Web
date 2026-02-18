@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
 import {
   AddPageSelectors,
@@ -57,11 +56,7 @@ describe('Database Conditions - Filters and Sorts UI', () => {
 
     cy.task('log', `[TEST START] Testing DatabaseConditions collapsed height - Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
@@ -181,11 +176,7 @@ describe('Database Conditions - Filters and Sorts UI', () => {
 
     cy.task('log', `[TEST START] Testing DatabaseConditions expanded height - Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
@@ -296,11 +287,7 @@ describe('Database Conditions - Filters and Sorts UI', () => {
 
     cy.task('log', `[TEST START] Testing dynamic height adjustment - Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 

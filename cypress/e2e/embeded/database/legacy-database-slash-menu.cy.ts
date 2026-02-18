@@ -20,7 +20,6 @@
 // - "Trip" - a legacy top-level database (Grid) with child views like "View of Trip"
 // - "To-dos" - a legacy top-level database
 
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
 import {
   EditorSelectors,
@@ -54,11 +53,7 @@ describe('Legacy Database - Slash Menu Visibility', () => {
 
     // Step 1: Login with the legacy test account
     testLog.step(1, `Signing in as ${LEGACY_TEST_EMAIL}`);
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(LEGACY_TEST_EMAIL).then(() => {
+    cy.signIn(LEGACY_TEST_EMAIL).then(() => {
       testLog.success('Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
 
@@ -163,11 +158,7 @@ describe('Legacy Database - Slash Menu Visibility', () => {
 
     // Step 1: Login with the legacy test account
     testLog.step(1, `Signing in as ${LEGACY_TEST_EMAIL}`);
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(LEGACY_TEST_EMAIL).then(() => {
+    cy.signIn(LEGACY_TEST_EMAIL).then(() => {
       testLog.success('Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
 

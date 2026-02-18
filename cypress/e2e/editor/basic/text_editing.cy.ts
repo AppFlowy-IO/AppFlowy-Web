@@ -1,9 +1,7 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate, byTestId } from '../../../support/selectors';
 import { generateRandomEmail, getCmdKey, getWordJumpKey } from '../../../support/test-config';
 
 describe('Basic Text Editing', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
   const cmdKey = getCmdKey();
   const wordJumpKey = getWordJumpKey();
@@ -16,7 +14,7 @@ describe('Basic Text Editing', () => {
     cy.on('uncaught:exception', () => false);
 
     cy.session(testEmail, () => {
-      authUtils.signInWithTestUrl(testEmail);
+      cy.signIn(testEmail);
     }, {
       validate: () => {
         cy.window().then((win) => {

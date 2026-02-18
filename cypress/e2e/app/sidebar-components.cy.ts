@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { PageSelectors, SidebarSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
@@ -29,11 +28,7 @@ describe('Sidebar Components Resilience Tests', () => {
     });
 
     it('should load app without React error boundaries triggering for ShareWithMe and Favorite components', () => {
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info( 'Signed in successfully');
 
@@ -78,11 +73,7 @@ describe('Sidebar Components Resilience Tests', () => {
     });
 
     it('should handle empty favorites gracefully', () => {
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
 
             // Wait for app to fully load
@@ -107,11 +98,7 @@ describe('Sidebar Components Resilience Tests', () => {
     });
 
     it('should handle ShareWithMe with no shared content gracefully', () => {
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
 
             // Wait for app to fully load
@@ -139,11 +126,7 @@ describe('Sidebar Components Resilience Tests', () => {
     });
 
     it('should handle invalid outline data gracefully', () => {
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
 
             // Wait for app to fully load
@@ -173,11 +156,7 @@ describe('Sidebar Components Resilience Tests', () => {
     });
 
     it('should handle favorites with invalid favorited_at dates gracefully', () => {
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
 
             // Wait for app to fully load
