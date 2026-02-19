@@ -195,6 +195,7 @@ export interface AppService {
     onProgress?: (progress: number) => void
   ) => Promise<string>;
   duplicateAppPage: (workspaceId: string, viewId: string) => Promise<void>;
+  invalidateViewCache?: (workspaceId: string, viewId: string) => void;
   joinWorkspaceByInvitationCode: (code: string) => Promise<string>;
   getWorkspaceInfoByInvitationCode: (code: string) => Promise<{
     workspace_id: string;

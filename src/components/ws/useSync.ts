@@ -378,11 +378,9 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
       registeredContexts.current.set(syncContext.doc.guid, syncContext);
       const handleDocDestroy = () => {
-        // Remove the context from the registered contexts when the Y.Doc is destroyed
+        // Reuse normal teardown so pending debounced updates are flushed first.
         cancelDeferredCleanup(syncContext.doc.guid);
-        registeredContexts.current.delete(syncContext.doc.guid);
-        destroyListeners.current.delete(syncContext.doc.guid);
-        contextRefCounts.current.delete(syncContext.doc.guid);
+        unregisterSyncContext(syncContext.doc.guid);
       };
 
       syncContext.doc.on('destroy', handleDocDestroy);
@@ -396,7 +394,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
       return syncContext;
     },
-    [registeredContexts, sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
+    [sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
   );
 
   /**

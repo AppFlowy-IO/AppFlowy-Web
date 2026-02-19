@@ -106,17 +106,13 @@ describe('Database Container - Link Existing Database in Document', () => {
       ViewActionSelectors.renameButton().should('be.visible').click({ force: true });
       ModalSelectors.renameInput().should('be.visible').clear().type(sourceName);
       ModalSelectors.renameSaveButton().click({ force: true });
-      waitForReactUpdate(2000);
+      waitForReactUpdate(3000);
 
-      // With lazy-loaded outline (depth=1), the sidebar may not reflect the
-      // rename until the space children are re-fetched. Collapse and re-expand
-      // the space to force a fresh load.
-      SpaceSelectors.itemByName(spaceName).find('[data-testid="space-name"]').click({ force: true });
-      waitForReactUpdate(500);
-      SpaceSelectors.itemByName(spaceName).find('[data-testid="space-name"]').click({ force: true });
-      waitForReactUpdate(1000);
-
-      PageSelectors.itemByName(sourceName).should('exist');
+      // The rename propagates via a websocket VIEW_FIELDS_CHANGED event which
+      // updates the view name in-place in the sidebar tree.  Do NOT
+      // collapse/re-expand the space here: the depth=1 API re-fetch may not
+      // include the newly-created database container, losing it from the tree.
+      PageSelectors.itemByName(sourceName, { timeout: 15000 }).should('exist');
 
       // 2) Create a document page
       testLog.step(2, 'Create document page');

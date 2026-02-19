@@ -257,25 +257,49 @@ describe('Database Container - Embedded Create/Delete', () => {
         cy.get(`#editor-${docViewId}`).find(BlockSelectors.blockSelector('grid')).should('not.exist');
       });
 
-      // Wait for sidebar to sync after block deletion
-      waitForReactUpdate(3000);
+      // Wait for the server-side cascade deletion to complete AND for the
+      // getAppView cache (5 s TTL) to expire so the next fetch returns fresh data.
+      waitForReactUpdate(6000);
 
       // 5) Verify sidebar: document no longer has the database container child
       testLog.step(5, 'Verify sidebar no longer contains the embedded container');
       ensureSpaceExpanded(spaceName);
 
       cy.get<string>('@docViewId').then((docViewId) => {
-        // Ensure document still exists and is expanded (or try to expand if needed)
-        cy.get(`[data-testid="page-${docViewId}"]`).first().should('exist');
-        ensurePageExpandedByViewId(docViewId);
+        const pageItem = () =>
+          cy.get(`[data-testid="page-${docViewId}"]`).first().closest('[data-testid="page-item"]');
 
-        cy
-          .get(`[data-testid="page-${docViewId}"]`)
-          .first()
-          .closest('[data-testid="page-item"]')
-          .within(() => {
-            PageSelectors.names().should('not.contain.text', dbName);
-          });
+        pageItem().should('exist');
+
+        // Collapse and re-expand the document to force a fresh API fetch.
+        // The websocket VIEW_REMOVED event may not fire for cascade deletions,
+        // so we must manually invalidate the cached sidebar children.
+        pageItem().then(($item) => {
+          const collapseToggle = $item.find('[data-testid="outline-toggle-collapse"]');
+
+          if (collapseToggle.length > 0) {
+            cy.wrap(collapseToggle.first()).click({ force: true });
+            waitForReactUpdate(500);
+          }
+        });
+
+        // Re-expand: triggers loadViewChildren with a fresh (uncached) API call
+        // that should no longer include the deleted database container.
+        pageItem().then(($item) => {
+          const expandToggle = $item.find('[data-testid="outline-toggle-expand"]');
+
+          if (expandToggle.length > 0) {
+            cy.wrap(expandToggle.first()).click({ force: true });
+            waitForReactUpdate(1000);
+          }
+        });
+
+        // After fresh fetch, the document should have no child named "New Database".
+        // If the document now has no children at all (no expand toggle), the assertion
+        // passes trivially.  Otherwise check within the page-item.
+        pageItem().within(() => {
+          PageSelectors.names({ timeout: 15000 }).should('not.contain.text', dbName);
+        });
       });
 
       testLog.testEnd('Embedded database container create/delete');

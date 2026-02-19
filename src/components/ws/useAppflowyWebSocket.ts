@@ -185,8 +185,9 @@ export interface Options {
 export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType => {
   const wsUrl = options.url || wsURL;
   const token = options.token || getTokenParsed()?.access_token;
-  const clientId = options.clientId || random.uint32();
-  const deviceId = options.deviceId || random.uuidv4();
+  // Stable across re-renders: generate once via lazy initializer, not on every render.
+  const [clientId] = useState(() => options.clientId || random.uint32());
+  const [deviceId] = useState(() => options.deviceId || random.uuidv4());
 
   Log.debug('🔗 Start WebSocket connection', {
     url: wsUrl,
@@ -206,6 +207,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const lastNonceBumpRef = useRef(0);
   const lastCloseCodeRef = useRef<number | null>(null);
   const tokenRefreshInFlightRef = useRef<Promise<ReconnectAuthStatus> | null>(null);
+  const isMountedRef = useRef(true);
 
   const clearSlowPollRecovery = useCallback(() => {
     reconnectStoppedRef.current = false;
@@ -276,6 +278,9 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       void (async () => {
         const authStatus = await ensureFreshTokenForReconnect();
 
+        // Guard: component may have unmounted while awaiting token refresh
+        if (!isMountedRef.current) return;
+
         if (authStatus !== 'ready') {
           if (authStatus === 'auth-failed') {
             Log.warn(`WebSocket reconnect auth check failed (${reason}), forcing re-auth flow`);
@@ -302,6 +307,12 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     },
     [ensureFreshTokenForReconnect, clearSlowPollRecovery, bumpReconnectNonce, options.token]
   );
+
+  // Ref always holds the latest triggerNonceReconnect so long-lived callbacks
+  // (setInterval in onReconnectStop, event listeners) never capture a stale version.
+  const triggerNonceReconnectRef = useRef(triggerNonceReconnect);
+
+  triggerNonceReconnectRef.current = triggerNonceReconnect;
 
   const { lastMessage, sendMessage, readyState, getWebSocket } = useWebSocket(url, {
     share: true,
@@ -394,12 +405,13 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
       Log.info('❌ Reconnect stopped after', numAttempts, 'attempts. Starting slow-poll recovery.');
       reconnectStoppedRef.current = true;
 
-      // Start slow-poll: every 60s, check if we're online and try to reconnect
+      // Start slow-poll: every 60s, check if we're online and try to reconnect.
+      // Uses triggerNonceReconnectRef to avoid capturing a stale closure.
       if (!slowPollTimerRef.current) {
         slowPollTimerRef.current = setInterval(() => {
           if (navigator.onLine && document.visibilityState === 'visible') {
             Log.info('Slow-poll: online and visible, attempting graceful reconnect');
-            triggerNonceReconnect('slow-poll', true);
+            triggerNonceReconnectRef.current('slow-poll', true);
           }
         }, SLOW_POLL_INTERVAL);
       }
@@ -445,6 +457,13 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     };
   }, [tryDeferredReconnect]);
 
+  // Mark unmounted so async callbacks (triggerNonceReconnect) can bail out.
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false;
+    };
+  }, []);
+
   const sendProtobufMessage = useCallback(
     (message: messages.IMessage, keep = true): void => {
       Log.debug('sending sync message:', message);
@@ -471,11 +490,16 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     [lastMessage]
   );
 
+  const resolvedOptions = useMemo<Options>(
+    () => ({ ...options, url: wsUrl, clientId, deviceId }),
+    [options, wsUrl, clientId, deviceId]
+  );
+
   return {
     lastMessage: lastProtobufMessage,
     sendMessage: sendProtobufMessage,
     readyState,
-    options,
+    options: resolvedOptions,
     reconnectAttempt,
     reconnect: manualReconnect,
   };

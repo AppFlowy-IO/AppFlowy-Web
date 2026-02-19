@@ -9,7 +9,7 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId, useLoadViewChildren } from '@/components/app/app.hooks';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { useService } from '@/components/main/app.hooks';
@@ -43,6 +43,7 @@ function MoreActionsContent({ itemClicked, viewId }: {
   const {
     refreshOutline,
   } = useAppHandlers();
+  const loadViewChildren = useLoadViewChildren();
   const { syncAllToServer } = useSyncInternal();
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId || !service) return;
@@ -57,6 +58,13 @@ function MoreActionsContent({ itemClicked, viewId }: {
       await syncAllToServer(workspaceId);
       await service.duplicateAppPage(workspaceId, viewId);
       void refreshOutline?.();
+      // The shallow outline (depth=2) doesn't include children beyond space level.
+      // Reload the parent view's children so the new duplicate appears in the sidebar.
+      if (parentViewId) {
+        service.invalidateViewCache?.(workspaceId, parentViewId);
+        void loadViewChildren?.(parentViewId);
+      }
+
       itemClicked?.();
       // eslint-disable-next-line
     } catch (e: any) {
@@ -64,7 +72,7 @@ function MoreActionsContent({ itemClicked, viewId }: {
     } finally {
       hideBlockingLoader();
     }
-  }, [workspaceId, service, viewId, refreshOutline, itemClicked, t, syncAllToServer, showBlockingLoader, hideBlockingLoader]);
+  }, [workspaceId, service, viewId, refreshOutline, loadViewChildren, parentViewId, itemClicked, t, syncAllToServer, showBlockingLoader, hideBlockingLoader]);
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const containerRef = useCallback((el: HTMLElement | null) => {

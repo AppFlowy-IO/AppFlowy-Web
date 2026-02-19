@@ -136,30 +136,28 @@ function AppPage() {
     currentViewIdRef.current = viewId;
   }, [viewId]);
 
-  // Keep prevDocRef.syncBound in sync without triggering cleanup logic
-  useEffect(() => {
-    if (prevDocRef.current && doc && prevDocRef.current.doc === doc) {
-      prevDocRef.current.syncBound = syncBound;
-    }
-  }, [syncBound, doc]);
-
-  // Schedule deferred cleanup when navigating away from a document
+  // Manage prevDocRef lifecycle in a single effect to avoid fragile
+  // cross-effect ordering on the shared mutable ref.
   useEffect(() => {
     if (!doc) return;
 
-    const prevDoc = prevDocRef.current;
+    const prev = prevDocRef.current;
 
-    if (prevDoc?.doc === doc) return;
-
-    // If we had a previous doc with sync bound, schedule its cleanup
-    if (prevDoc && prevDoc.syncBound && prevDoc.guid !== doc.guid && scheduleDeferredCleanup) {
-      scheduleDeferredCleanup(prevDoc.guid);
+    if (prev?.doc === doc) {
+      // Same doc — just keep syncBound in sync.
+      prev.syncBound = syncBound;
+      return;
     }
 
-    // Reset sync state for the newly active doc after previous-doc cleanup is decided.
+    // Different doc — schedule deferred cleanup for the previous one.
+    if (prev && prev.syncBound && prev.guid !== doc.guid && scheduleDeferredCleanup) {
+      scheduleDeferredCleanup(prev.guid);
+    }
+
+    // Reset sync state for the newly active doc.
     setSyncBound(false);
     prevDocRef.current = { doc, guid: doc.guid, syncBound: false };
-  }, [doc, scheduleDeferredCleanup]);
+  }, [doc, syncBound, scheduleDeferredCleanup]);
 
   const loadPageDoc = useCallback(
     async (id: string) => {

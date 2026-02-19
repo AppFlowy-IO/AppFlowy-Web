@@ -104,4 +104,43 @@ describe('useSync deferred cleanup', () => {
     unmount();
     doc.destroy();
   });
+
+  it('flushes pending local updates immediately when doc is destroyed', () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const doc = createDoc('33333333-3333-4333-8333-333333333333');
+    const { result, unmount } = renderHook(() => useSync(ws, bc));
+    const sendMessage = ws.sendMessage as jest.Mock;
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+    });
+
+    // Ignore the initial sync request from initSync.
+    sendMessage.mockClear();
+
+    act(() => {
+      doc.getMap('root').set('k', 'v');
+      doc.destroy();
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        collabMessage: expect.objectContaining({
+          objectId: doc.guid,
+          collabType: Types.DatabaseRow,
+          update: expect.any(Object),
+        }),
+      }),
+    );
+
+    act(() => {
+      jest.advanceTimersByTime(300);
+    });
+
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+
+    unmount();
+  });
 });

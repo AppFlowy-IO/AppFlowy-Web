@@ -64,7 +64,7 @@ export function ConnectBanner() {
     const AUTO_RECONNECT_COOLDOWN_MS = 30000; // 30s cooldown between auto-reconnect attempts
 
     const tryAutoReconnect = () => {
-      if (!isClosed || isLoading) return;
+      // Note: isClosed && !isLoading is guaranteed by the early return above.
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       if (document.visibilityState !== 'visible') return;
 

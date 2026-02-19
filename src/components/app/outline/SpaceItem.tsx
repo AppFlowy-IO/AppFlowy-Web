@@ -85,8 +85,13 @@ function SpaceItem({
         }}
       >
         {isLoading ? (
-          <div className={'flex items-center justify-center py-1'}>
-            <div className={'h-4 w-4 animate-spin rounded-full border-2 border-fill-default border-t-transparent'} />
+          <div className={'flex flex-col'}>
+            {[96, 72, 88].map((w, i) => (
+              <div key={i} className={'flex min-h-[30px] items-center gap-1.5 py-1 px-0.5'} style={{ paddingLeft: '16px' }}>
+                <div className={'h-4 w-4 animate-pulse rounded bg-fill-content-hover'} />
+                <div className={`h-4 animate-pulse rounded bg-fill-content-hover`} style={{ width: `${w}px` }} />
+              </div>
+            ))}
           </div>
         ) : (
           view?.children?.map((child) => (
