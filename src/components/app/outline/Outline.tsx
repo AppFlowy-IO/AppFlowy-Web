@@ -284,13 +284,16 @@ export function Outline({ width }: { width: number }) {
         depth: 1,
       });
 
-      loadingViewIdsRef.current.add(id);
-      setLoadingRevision((r) => r + 1);
-
+      // Call loadViewChildren first — it adds to loadingViewIdsRef synchronously
+      // before the first await. Adding here *before* the call would trip its
+      // in-flight dedup guard and silently skip the API request.
       void loadViewChildren(id).finally(() => {
         loadingViewIdsRef.current.delete(id);
         setLoadingRevision((r) => r + 1);
       });
+
+      // Trigger shimmer UI — loadViewChildren has already set loadingViewIdsRef.
+      setLoadingRevision((r) => r + 1);
     }
   }, [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]);
   const { t } = useTranslation();

@@ -545,9 +545,16 @@ export function useWorkspaceData() {
 
     if (!changed) return;
 
+    // Also invalidate the HTTP cache for the root view so the next
+    // loadViewChildren call makes a fresh API request instead of
+    // returning stale cached data.
+    if (service && currentWorkspaceId) {
+      service.invalidateViewCache?.(currentWorkspaceId, viewId);
+    }
+
     Log.debug('[Outline] [cache] Marked view subtree stale', { viewId, clearedIds: subtreeIds.length });
     setLoadedViewIdsRevision((r) => r + 1);
-  }, [stableOutlineRef]);
+  }, [stableOutlineRef, service, currentWorkspaceId]);
 
   useEffect(() => {
     const handleShareViewsChanged = () => {
