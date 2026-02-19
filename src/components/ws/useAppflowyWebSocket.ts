@@ -1,11 +1,13 @@
+import { type Context, type Span } from '@opentelemetry/api';
 import * as random from 'lib0/random';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import useWebSocket from 'react-use-websocket';
 
 import { getTokenParsed } from '@/application/session/token';
 import { messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
+import { startWsConnectionSpan, endWsConnectionSpan, getWsTraceContext } from '@/utils/telemetry';
 
 const wsURL = getConfigValue('APPFLOWY_WS_BASE_URL', 'ws://localhost:8000/ws/v2');
 
@@ -107,6 +109,7 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   });
   const url = `${options.url}/${options.workspaceId}/?clientId=${options.clientId}&deviceId=${options.deviceId}&token=${options.token}&cv=0.10.0&cp=web`;
   const [reconnectAttempt, setReconnectAttempt] = useState(0);
+  const connectionSpanRef = useRef<{ span: Span; ctx: Context } | null>(null);
   const { lastMessage, sendMessage, readyState, getWebSocket } = useWebSocket(url, {
     share: true,
     heartbeat: {
@@ -172,6 +175,14 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     onOpen: () => {
       Log.info('✅ WebSocket connection opened');
       setReconnectAttempt(0);
+
+      // End any previous connection span (e.g. from a reconnect)
+      if (connectionSpanRef.current) {
+        endWsConnectionSpan(connectionSpanRef.current.span);
+      }
+
+      connectionSpanRef.current = startWsConnectionSpan(options.workspaceId);
+
       const websocket = getWebSocket() as WebSocket | null;
 
       if (websocket && websocket.binaryType !== 'arraybuffer') {
@@ -181,10 +192,22 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
 
     onClose: (event) => {
       Log.info('❌ WebSocket connection closed', event);
+
+      if (connectionSpanRef.current) {
+        const isError = event.code !== CloseCode.NormalClose;
+
+        endWsConnectionSpan(connectionSpanRef.current.span, isError);
+
+        connectionSpanRef.current = null;
+      }
     },
 
     onError: (event) => {
       Log.error('❌ WebSocket error', { event, deviceId: options.deviceId });
+
+      if (connectionSpanRef.current) {
+        connectionSpanRef.current.span.recordException(new Error('WebSocket error'));
+      }
     },
 
     onReconnectStop: (numAttempts) => {
@@ -195,6 +218,10 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const sendProtobufMessage = useCallback(
     (message: messages.IMessage, keep = true): void => {
       Log.debug('sending sync message:', message);
+
+      if (connectionSpanRef.current) {
+        message.trace = getWsTraceContext(connectionSpanRef.current.ctx);
+      }
 
       const protobufMessage = messages.Message.encode(message).finish();
 
@@ -211,6 +238,15 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
     () => (lastMessage ? messages.Message.decode(new Uint8Array(lastMessage.data)) : null),
     [lastMessage]
   );
+
+  useEffect(() => {
+    return () => {
+      if (connectionSpanRef.current) {
+        endWsConnectionSpan(connectionSpanRef.current.span);
+        connectionSpanRef.current = null;
+      }
+    };
+  }, []);
 
   return {
     lastMessage: lastProtobufMessage,
