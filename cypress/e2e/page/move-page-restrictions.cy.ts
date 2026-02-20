@@ -55,14 +55,11 @@ describe('Move Page Restrictions', () => {
       });
   };
 
-  const currentDocumentViewIdFromDialog = () =>
-    cy
-      .get('[role="dialog"]:visible', { timeout: 20000 })
-      .last()
-      .find('[id^="editor-"]:not([id^="editor-title-"])', { timeout: 20000 })
-      .first()
-      .invoke('attr', 'id')
-      .then((id) => (id ?? '').replace('editor-', ''));
+  const currentViewIdFromUrl = () =>
+    cy.location('pathname').then((pathname) => {
+      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
+      return maybeId;
+    });
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
@@ -122,8 +119,13 @@ describe('Move Page Restrictions', () => {
       cy.get('[role="menuitem"]').first().click({ force: true });
       waitForReactUpdate(1000);
 
-      // Capture the document view id
-      currentDocumentViewIdFromDialog().then((viewId) => {
+      // Expand ViewModal to full page so the URL reflects the document view ID
+      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]').last().find('button').first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      // Capture the document view id from the URL
+      currentViewIdFromUrl().then((viewId) => {
         expect(viewId).to.not.equal('');
         cy.wrap(viewId).as('docViewId');
         cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
@@ -254,8 +256,13 @@ describe('Move Page Restrictions', () => {
       cy.get('[role="menuitem"]').first().click({ force: true });
       waitForReactUpdate(1000);
 
-      // Capture the document view id
-      currentDocumentViewIdFromDialog().then((viewId) => {
+      // Expand ViewModal to full page so the URL reflects the document view ID
+      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]').last().find('button').first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      // Capture the document view id from the URL
+      currentViewIdFromUrl().then((viewId) => {
         expect(viewId).to.not.equal('');
         cy.wrap(viewId).as('docViewId');
         cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');

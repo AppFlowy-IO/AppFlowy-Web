@@ -17,14 +17,11 @@ describe('Database Container - Link Existing Database in Document', () => {
   const dbName = 'New Database';
   const spaceName = 'General';
 
-  const currentDocumentViewIdFromDialog = () =>
-    cy
-      .get('[role="dialog"]:visible', { timeout: 20000 })
-      .last()
-      .find('[id^="editor-"]:not([id^="editor-title-"])', { timeout: 20000 })
-      .first()
-      .invoke('attr', 'id')
-      .then((id) => (id ?? '').replace('editor-', ''));
+  const currentViewIdFromUrl = () =>
+    cy.location('pathname').then((pathname) => {
+      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
+      return maybeId;
+    });
 
   const ensureSpaceExpanded = (name: string) => {
     SpaceSelectors.itemByName(name).should('exist');
@@ -120,9 +117,14 @@ describe('Database Container - Link Existing Database in Document', () => {
       cy.get('[role="menuitem"]').first().click({ force: true });
       waitForReactUpdate(1000);
 
-      // Capture the document view id for reliable sidebar targeting.
-      // When creating a document while a database modal is open, the URL may still point to the database view.
-      currentDocumentViewIdFromDialog().then((viewId) => {
+      // When creating a Document via inline add button, it opens in a ViewModal.
+      // Click the expand button (first button in modal header) to navigate to full page view.
+      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+      cy.get('[role="dialog"]').last().find('button').first().click({ force: true });
+      waitForReactUpdate(1000);
+
+      // Now the URL should reflect the new document
+      currentViewIdFromUrl().then((viewId) => {
         expect(viewId).to.not.equal('');
         cy.wrap(viewId).as('docViewId');
         cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
