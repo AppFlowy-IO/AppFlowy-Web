@@ -92,7 +92,9 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
 
     // Step 5: Create an iframe with the same app URL
     cy.log('[STEP 5] Creating iframe with app URL');
-    createTestSyncIframe(appUrl);
+    cy.then(() => {
+      createTestSyncIframe(appUrl);
+    });
 
     // Step 6: Wait for iframe to load and be ready
     cy.log('[STEP 6] Waiting for iframe to load');
@@ -285,9 +287,11 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
 
     // Step 6: Create an iframe AFTER the document is created
     cy.log('[STEP 6] Creating iframe with app URL');
-    createTestSyncIframe(appUrl, {
-      containerStyle:
-        'position: fixed; top: 50px; right: 10px; width: 700px; height: 600px; z-index: 9999; border: 3px solid red; background: white;',
+    cy.then(() => {
+      createTestSyncIframe(appUrl, {
+        containerStyle:
+          'position: fixed; top: 50px; right: 10px; width: 700px; height: 600px; z-index: 9999; border: 3px solid red; background: white;',
+      });
     });
 
     // Wait for iframe to load
