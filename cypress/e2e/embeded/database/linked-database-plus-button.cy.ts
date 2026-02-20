@@ -1,5 +1,5 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
+import { generateRandomEmail } from '../../../support/test-config';
 import {
   AddPageSelectors,
   EditorSelectors,
@@ -8,7 +8,6 @@ import {
 } from '../../../support/selectors';
 
 describe('Embedded Database - Plus Button View Creation', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
 
   const clickAddViewButtonOnConditions = () => {
     // Wait for database to fully load

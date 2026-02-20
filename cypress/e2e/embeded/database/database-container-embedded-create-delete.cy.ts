@@ -1,94 +1,25 @@
-import { v4 as uuidv4 } from 'uuid';
 import { Editor, Element as SlateElement } from 'slate';
 
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
-import { testLog } from '../../../support/test-helpers';
 import {
-  AddPageSelectors,
+  expandSpaceByName,
+  ensurePageExpandedByViewId,
+  closeTopDialogIfNotDocument,
+  createDocumentPageAndNavigate,
+} from '../../../support/page-utils';
+import { testLog } from '../../../support/test-helpers';
+import { generateRandomEmail } from '../../../support/test-config';
+import {
   BlockSelectors,
   byTestId,
   PageSelectors,
   SlashCommandSelectors,
-  SpaceSelectors,
   waitForReactUpdate,
 } from '../../../support/selectors';
 
 describe('Database Container - Embedded Create/Delete', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const dbName = 'New Database';
   const spaceName = 'General';
-
-  const currentViewIdFromUrl = () =>
-    cy.location('pathname').then((pathname) => {
-      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
-      return maybeId;
-    });
-
-  const ensureSpaceExpanded = (name: string) => {
-    SpaceSelectors.itemByName(name).should('exist');
-    SpaceSelectors.itemByName(name).then(($space) => {
-      const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-      const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-      if (!isExpanded) {
-        SpaceSelectors.itemByName(name).find('[data-testid="space-name"]').click({ force: true });
-        waitForReactUpdate(500);
-      }
-    });
-  };
-
-  const ensurePageExpanded = (name: string) => {
-    PageSelectors.itemByName(name).should('exist');
-    PageSelectors.itemByName(name)
-      .find('[data-testid="outline-toggle-collapse"]')
-      .then(($collapse) => {
-        if ($collapse.length > 0) return;
-
-        PageSelectors.itemByName(name)
-          .find('[data-testid="outline-toggle-expand"]')
-          .should('exist')
-          .first()
-          .click({ force: true });
-        waitForReactUpdate(500);
-      });
-  };
-
-  const ensurePageExpandedByViewId = (viewId: string) => {
-    const pageItem = () => PageSelectors.itemByViewId(viewId, { timeout: 30000 });
-
-    pageItem().should('exist');
-    // Wait for either toggle to appear (page has children)
-    pageItem().then(($pageItem) => {
-      const collapseToggle = $pageItem.find('[data-testid="outline-toggle-collapse"]');
-      if (collapseToggle.length > 0) {
-        // Already expanded
-        return;
-      }
-
-      const expandToggle = $pageItem.find('[data-testid="outline-toggle-expand"]');
-      if (expandToggle.length > 0) {
-        cy.wrap(expandToggle.first()).click({ force: true });
-        waitForReactUpdate(500);
-      }
-    });
-  };
-
-  const closeTopDialogIfNotDocument = (docViewId: string) => {
-    cy.get('body').then(($body) => {
-      const dialogs = $body.find('[role="dialog"]').filter(':visible');
-
-      if (dialogs.length === 0) return;
-
-      const topDialog = dialogs.last();
-      const topContainsDocEditor = $body.find(topDialog).find(`#editor-${docViewId}`).length > 0;
-
-      if (!topContainsDocEditor) {
-        cy.task('log', '[modal] Closing top dialog (not the document)');
-        cy.get('body').type('{esc}');
-        waitForReactUpdate(800);
-      }
-    });
-  };
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
@@ -118,22 +49,8 @@ describe('Database Container - Embedded Create/Delete', () => {
 
       // 1) Create a document page
       testLog.step(1, 'Create a document page');
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // When creating a Document via inline add button, it opens in a ViewModal.
-      // Click the expand button (first button in modal header) to navigate to full page view.
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
-      cy.get('[role="dialog"]').find('button').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Now the URL should reflect the new document
-      currentViewIdFromUrl().then((viewId) => {
-        expect(viewId).to.not.equal('');
+      createDocumentPageAndNavigate().then((viewId) => {
         cy.wrap(viewId).as('docViewId');
-        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
       });
       waitForReactUpdate(1000);
 
@@ -165,7 +82,7 @@ describe('Database Container - Embedded Create/Delete', () => {
 
       // 3) Verify sidebar: document has a child database container with a child view
       testLog.step(3, 'Verify sidebar hierarchy: document -> container -> child view');
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
 
       cy.get<string>('@docViewId').then((docViewId) => {
         // Ensure the document is expanded to reveal its children
@@ -263,7 +180,7 @@ describe('Database Container - Embedded Create/Delete', () => {
 
       // 5) Verify sidebar: document no longer has the database container child
       testLog.step(5, 'Verify sidebar no longer contains the embedded container');
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
 
       cy.get<string>('@docViewId').then((docViewId) => {
         const pageItem = () =>

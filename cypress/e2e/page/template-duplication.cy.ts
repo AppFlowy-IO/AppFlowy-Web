@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
 import { getSlashMenuItemName } from '../../support/i18n-constants';
 import { TestTool } from '../../support/page-utils';
 import {
@@ -12,10 +11,10 @@ import {
   WorkspaceSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
+import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
 
 describe('Template Duplication Test - Document with Embedded Database', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const dbName = 'New Database';
   const docName = 'Untitled';
   const spaceName = 'General';

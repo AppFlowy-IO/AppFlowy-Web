@@ -1,9 +1,8 @@
-import { v4 as uuidv4 } from 'uuid';
-
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
+import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 import { testLog } from '../../../support/test-helpers';
+import { generateRandomEmail } from '../../../support/test-config';
 import {
-  AddPageSelectors,
   BlockSelectors,
   DatabaseGridSelectors,
   SlashCommandSelectors,
@@ -11,13 +10,6 @@ import {
 } from '../../../support/selectors';
 
 describe('Embedded Database', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
-
-  const currentViewIdFromUrl = () =>
-    cy.location('pathname').then((pathname) => {
-      const parts = pathname.split('/').filter(Boolean);
-      return parts[parts.length - 1] || '';
-    });
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
@@ -47,20 +39,8 @@ describe('Embedded Database', () => {
       cy.wait(3000);
 
       testLog.step(1, 'Create a document page (opens ViewModal)');
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Expand modal to full page view
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
-      cy.get('[role="dialog"]').find('button').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      currentViewIdFromUrl().then((viewId) => {
-        expect(viewId).to.not.equal('');
+      createDocumentPageAndNavigate().then((viewId) => {
         cy.wrap(viewId).as('docViewId');
-        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
       });
 
       testLog.step(2, 'Open slash menu and insert Grid database');

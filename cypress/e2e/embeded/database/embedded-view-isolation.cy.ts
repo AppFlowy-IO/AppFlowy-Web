@@ -1,5 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
+import { expandSpaceByName } from '../../../support/page-utils';
+import { generateRandomEmail } from '../../../support/test-config';
 import {
   AddPageSelectors,
   byTestId,
@@ -9,10 +11,8 @@ import {
   SlashCommandSelectors,
   waitForReactUpdate,
 } from '../../../support/selectors';
-import { expandSpaceByName } from '../../../support/page-utils';
 
 describe('Embedded Database View Isolation', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const dbName = 'New Database';
   const docName = `Doc ${uuidv4()}`;
   const spaceName = 'General'; // Default space name

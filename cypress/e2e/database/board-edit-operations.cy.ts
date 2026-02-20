@@ -14,10 +14,9 @@ import {
   waitForReactUpdate,
 } from '../../support/selectors';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { generateRandomEmail } from '../../support/test-config';
 
 describe('Board Operations', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
-
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
       if (

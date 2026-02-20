@@ -7,6 +7,7 @@ import {
 } from '../../support/selectors';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
 import { closeRowDetailWithEscape, typeInRowDocument } from '../../support/row-detail-helpers';
+import { generateRandomEmail } from '../../support/test-config';
 
 /**
  * Row Document indicator test (Board view).
@@ -19,8 +20,6 @@ import { closeRowDetailWithEscape, typeInRowDocument } from '../../support/row-d
  * 5) Verify row document indicator appears on the card
  */
 describe('Row Document Test', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
-
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
       if (

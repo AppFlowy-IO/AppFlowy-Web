@@ -4,13 +4,16 @@ import { testLog } from '../test-helpers';
  * Contains high-level test flow operations that orchestrate multiple page interactions
  */
 
-import { 
-    PageSelectors, 
-    SpaceSelectors, 
+import {
+    AddPageSelectors,
+    PageSelectors,
+    SpaceSelectors,
     ModalSelectors,
     SidebarSelectors,
-    waitForReactUpdate 
+    SlashCommandSelectors,
+    waitForReactUpdate
 } from '../selectors';
+import { getSlashMenuItemName } from '../i18n-constants';
 
 /**
  * Waits for the page to fully load
@@ -333,4 +336,83 @@ export function openCommandPalette() {
 export function navigateTo(route: string) {
     testLog.info( `Navigating to: ${route}`);
     cy.visit(route);
+}
+
+/**
+ * Extracts the current view ID from the URL pathname.
+ * The view ID is the last segment of the pathname.
+ */
+export function currentViewIdFromUrl(): Cypress.Chainable<string> {
+    return cy.location('pathname').then((pathname) => {
+        const maybeId = pathname.split('/').filter(Boolean).pop() || '';
+        return maybeId;
+    });
+}
+
+/**
+ * Expands a page in the sidebar by its view ID.
+ * @param viewId - The view ID of the page to expand
+ */
+export function ensurePageExpandedByViewId(viewId: string) {
+    cy.get(`[data-testid="page-${viewId}"]`)
+        .first()
+        .closest('[data-testid="page-item"]')
+        .should('exist')
+        .then(($page) => {
+            const isExpanded = $page.find('[data-testid="outline-toggle-collapse"]').length > 0;
+
+            if (!isExpanded) {
+                cy.wrap($page).find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
+                waitForReactUpdate(500);
+            }
+        });
+}
+
+/**
+ * Creates a document page via the inline add button, expands the ViewModal
+ * to full-page view, and returns the document's view ID.
+ *
+ * The sequence:
+ *   1. Click the inline "+" button
+ *   2. Select the first menu item (Document)
+ *   3. Expand the ViewModal dialog to full page
+ *   4. Extract and return the view ID from the URL
+ *
+ * @returns Cypress chainable resolving to the document view ID string
+ */
+export function createDocumentPageAndNavigate(): Cypress.Chainable<string> {
+    AddPageSelectors.inlineAddButton().first().click({ force: true });
+    waitForReactUpdate(1000);
+    cy.get('[role="menuitem"]').first().click({ force: true });
+    waitForReactUpdate(1000);
+
+    // Expand the ViewModal to full page view
+    cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
+    cy.get('[role="dialog"]').last().find('button').first().click({ force: true });
+    waitForReactUpdate(1000);
+
+    return currentViewIdFromUrl().then((viewId) => {
+        expect(viewId).to.not.equal('');
+        return cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist').then(() => viewId);
+    });
+}
+
+/**
+ * Inserts a linked database into the current document editor via the slash menu.
+ *
+ * @param docViewId - The document's view ID (used to target the correct editor)
+ * @param dbName - Name of the existing database to link
+ */
+export function insertLinkedDatabaseViaSlash(docViewId: string, dbName: string) {
+    cy.get(`#editor-${docViewId}`).should('exist').click('center', { force: true });
+    cy.get(`#editor-${docViewId}`).type('/', { force: true });
+    waitForReactUpdate(500);
+
+    SlashCommandSelectors.slashPanel().should('be.visible').within(() => {
+        SlashCommandSelectors.slashMenuItem(getSlashMenuItemName('linkedGrid')).first().click({ force: true });
+    });
+
+    waitForReactUpdate(1000);
+    SlashCommandSelectors.selectDatabase(dbName);
+    waitForReactUpdate(2000);
 }

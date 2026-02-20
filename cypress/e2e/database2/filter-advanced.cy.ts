@@ -21,6 +21,9 @@ import {
   navigateAwayAndBack,
   CheckboxFilterCondition,
   changeCheckboxFilterCondition,
+  SelectFilterCondition,
+  selectFilterOption,
+  changeSelectFilterCondition,
 } from '../../support/filter-test-helpers';
 import { addFieldWithType, toggleCheckbox, FieldType } from '../../support/field-type-helpers';
 import { DatabaseFilterSelectors, DatabaseGridSelectors, waitForReactUpdate } from '../../support/selectors';
@@ -1022,19 +1025,8 @@ describe('Database Advanced Filter Tests (Desktop Parity)', () => {
 
   describe('Combined Filter Tests:', () => {
     /**
-     * Select filter condition enum values
-     */
-    const SelectFilterCondition = {
-      OptionIs: 0,
-      OptionIsNot: 1,
-      OptionContains: 2,
-      OptionDoesNotContain: 3,
-      OptionIsEmpty: 4,
-      OptionIsNotEmpty: 5,
-    };
-
-    /**
      * Create a select option in the current cell/popover
+     * NOTE: This variant waits for [data-testid="select-option-menu"] unlike the shared helper.
      */
     const createSelectOption = (optionName: string): void => {
       // Wait for the select option menu to appear
@@ -1071,40 +1063,6 @@ describe('Database Advanced Filter Tests (Desktop Parity)', () => {
       cy.get('[data-testid="select-option-menu"]', { timeout: 15000 })
         .should('be.visible')
         .contains(optionName)
-        .click({ force: true });
-      waitForReactUpdate(500);
-    };
-
-    /**
-     * Select an option in the filter popover
-     */
-    const selectFilterOption = (optionName: string): void => {
-      cy.get('[data-radix-popper-content-wrapper]')
-        .last()
-        .find('[role="option"], [data-testid^="select-option-"]')
-        .filter((_, el) => el.textContent?.includes(optionName))
-        .first()
-        .click({ force: true });
-      waitForReactUpdate(500);
-    };
-
-    /**
-     * Change the select filter condition
-     */
-    const changeSelectFilterCondition = (condition: number): void => {
-      cy.get('[data-radix-popper-content-wrapper]')
-        .last()
-        .find('button')
-        .filter((_, el) => {
-          const text = el.textContent?.toLowerCase() || '';
-          return text.includes('is') || text.includes('contains') || text.includes('empty');
-        })
-        .first()
-        .click({ force: true });
-      waitForReactUpdate(500);
-
-      cy.get(`[data-testid="filter-condition-${condition}"]`, { timeout: 10000 })
-        .should('be.visible')
         .click({ force: true });
       waitForReactUpdate(500);
     };

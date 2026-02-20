@@ -326,6 +326,90 @@ export const getFieldIdByName = (fieldName: string): Cypress.Chainable<string> =
 };
 
 /**
+ * Select filter condition enum values (matching SelectOptionFilterCondition)
+ */
+export enum SelectFilterCondition {
+  OptionIs = 0,
+  OptionIsNot = 1,
+  OptionContains = 2,
+  OptionDoesNotContain = 3,
+  OptionIsEmpty = 4,
+  OptionIsNotEmpty = 5,
+}
+
+/**
+ * Create a select option in the current cell/popover
+ */
+export const createSelectOption = (optionName: string): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('input')
+    .first()
+    .clear()
+    .type(`${optionName}{enter}`, { delay: 30 });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Click on a select cell to open the options popover
+ */
+export const clickSelectCell = (fieldId: string, rowIndex: number): void => {
+  DatabaseGridSelectors.dataRowCellsForField(fieldId)
+    .eq(rowIndex)
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Select an existing option from the dropdown
+ */
+export const selectExistingOption = (optionName: string): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .contains(optionName)
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Select an option in the filter popover
+ */
+export const selectFilterOption = (optionName: string): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('[role="option"], [data-testid^="select-option-"]')
+    .filter((_, el) => el.textContent?.includes(optionName))
+    .first()
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Change the select filter condition
+ */
+export const changeSelectFilterCondition = (condition: SelectFilterCondition): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('button')
+    .filter((_, el) => {
+      const text = el.textContent?.toLowerCase() || '';
+      return (
+        text.includes('is') ||
+        text.includes('contains') ||
+        text.includes('empty')
+      );
+    })
+    .first()
+    .click({ force: true });
+  waitForReactUpdate(500);
+
+  cy.get(`[data-testid="filter-condition-${condition}"]`, { timeout: 10000 })
+    .should('be.visible')
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
  * Navigate away from the current page and then back to test persistence
  * This simulates closing and reopening the database view
  */

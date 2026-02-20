@@ -3,6 +3,7 @@ import 'cypress-real-events';
 import { v4 as uuidv4 } from 'uuid';
 import { AddPageSelectors, waitForReactUpdate } from '../../support/selectors';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { generateRandomEmail } from '../../support/test-config';
 
 /**
  * Calendar Row Loading Tests
@@ -10,8 +11,6 @@ import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
  * Tests for calendar event creation, display, and persistence.
  */
 describe('Calendar Row Loading', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
-
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
       if (

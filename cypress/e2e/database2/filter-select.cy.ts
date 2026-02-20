@@ -14,6 +14,12 @@ import {
   clickFilterChip,
   deleteFilter,
   assertRowCount,
+  SelectFilterCondition,
+  createSelectOption,
+  clickSelectCell,
+  selectExistingOption,
+  selectFilterOption,
+  changeSelectFilterCondition,
 } from '../../support/filter-test-helpers';
 import {
   addFieldWithType,
@@ -25,94 +31,6 @@ import {
   waitForReactUpdate,
 } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
-
-/**
- * Select filter condition enum values (matching SelectOptionFilterCondition)
- */
-enum SelectFilterCondition {
-  OptionIs = 0,
-  OptionIsNot = 1,
-  OptionContains = 2,
-  OptionDoesNotContain = 3,
-  OptionIsEmpty = 4,
-  OptionIsNotEmpty = 5,
-}
-
-/**
- * Create a select option in the current cell/popover
- */
-const createSelectOption = (optionName: string): void => {
-  // Type the option name in the input
-  cy.get('[data-radix-popper-content-wrapper]')
-    .last()
-    .find('input')
-    .first()
-    .clear()
-    .type(`${optionName}{enter}`, { delay: 30 });
-  waitForReactUpdate(500);
-};
-
-/**
- * Click on a single select cell to open the options popover
- */
-const clickSelectCell = (fieldId: string, rowIndex: number): void => {
-  DatabaseGridSelectors.dataRowCellsForField(fieldId)
-    .eq(rowIndex)
-    .click({ force: true });
-  waitForReactUpdate(500);
-};
-
-/**
- * Select an existing option from the dropdown
- */
-const selectExistingOption = (optionName: string): void => {
-  cy.get('[data-radix-popper-content-wrapper]')
-    .last()
-    .contains(optionName)
-    .click({ force: true });
-  waitForReactUpdate(500);
-};
-
-/**
- * Select an option in the filter popover
- */
-const selectFilterOption = (optionName: string): void => {
-  // Find and click the option in the filter popover
-  cy.get('[data-radix-popper-content-wrapper]')
-    .last()
-    .find('[role="option"], [data-testid^="select-option-"]')
-    .filter((_, el) => el.textContent?.includes(optionName))
-    .first()
-    .click({ force: true });
-  waitForReactUpdate(500);
-};
-
-/**
- * Change the select filter condition
- */
-const changeSelectFilterCondition = (condition: SelectFilterCondition): void => {
-  // Find the condition dropdown in the filter popover
-  cy.get('[data-radix-popper-content-wrapper]')
-    .last()
-    .find('button')
-    .filter((_, el) => {
-      const text = el.textContent?.toLowerCase() || '';
-      return (
-        text.includes('is') ||
-        text.includes('contains') ||
-        text.includes('empty')
-      );
-    })
-    .first()
-    .click({ force: true });
-  waitForReactUpdate(500);
-
-  // Select the target condition
-  cy.get(`[data-testid="filter-condition-${condition}"]`, { timeout: 10000 })
-    .should('be.visible')
-    .click({ force: true });
-  waitForReactUpdate(500);
-};
 
 describe('Database Select Filter Tests (Desktop Parity)', () => {
   beforeEach(() => {

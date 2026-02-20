@@ -1,7 +1,12 @@
-import { v4 as uuidv4 } from 'uuid';
-
 import { getSlashMenuItemName } from '../../support/i18n-constants';
+import {
+  expandSpaceByName,
+  ensurePageExpandedByViewId,
+  createDocumentPageAndNavigate,
+  insertLinkedDatabaseViaSlash,
+} from '../../support/page-utils';
 import { testLog } from '../../support/test-helpers';
+import { generateRandomEmail } from '../../support/test-config';
 import {
   AddPageSelectors,
   DropdownSelectors,
@@ -24,42 +29,7 @@ import {
  * Mirrors Desktop/Flutter implementation in view_ext.dart canBeDragged().
  */
 describe('Move Page Restrictions', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const spaceName = 'General';
-
-  const ensureSpaceExpanded = (name: string) => {
-    SpaceSelectors.itemByName(name).should('exist');
-    SpaceSelectors.itemByName(name).then(($space) => {
-      const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-      const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-      if (!isExpanded) {
-        SpaceSelectors.itemByName(name).find('[data-testid="space-name"]').click({ force: true });
-        waitForReactUpdate(500);
-      }
-    });
-  };
-
-  const ensurePageExpandedByViewId = (viewId: string) => {
-    cy.get(`[data-testid="page-${viewId}"]`)
-      .first()
-      .closest('[data-testid="page-item"]')
-      .should('exist')
-      .then(($page) => {
-        const isExpanded = $page.find('[data-testid="outline-toggle-collapse"]').length > 0;
-
-        if (!isExpanded) {
-          cy.wrap($page).find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
-          waitForReactUpdate(500);
-        }
-      });
-  };
-
-  const currentViewIdFromUrl = () =>
-    cy.location('pathname').then((pathname) => {
-      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
-      return maybeId;
-    });
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
@@ -95,7 +65,7 @@ describe('Move Page Restrictions', () => {
       AddPageSelectors.addGridButton().should('be.visible').click({ force: true });
 
       // Rename container to a unique name
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
       PageSelectors.itemByName('New Database').should('exist');
       PageSelectors.moreActionsButton('New Database').click({ force: true });
       ViewActionSelectors.renameButton().should('be.visible').click({ force: true });
@@ -114,43 +84,21 @@ describe('Move Page Restrictions', () => {
 
       // 2) Create a document page
       testLog.step(2, 'Create document page');
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Expand ViewModal to full page so the URL reflects the document view ID
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
-      cy.get('[role="dialog"]').last().find('button').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Capture the document view id from the URL
-      currentViewIdFromUrl().then((viewId) => {
-        expect(viewId).to.not.equal('');
+      createDocumentPageAndNavigate().then((viewId) => {
         cy.wrap(viewId).as('docViewId');
-        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
       });
       waitForReactUpdate(1000);
 
       // 3) Insert linked grid via slash menu
       testLog.step(3, 'Insert linked grid via slash menu');
       cy.get<string>('@docViewId').then((docViewId) => {
-        cy.get(`#editor-${docViewId}`).should('exist').click('center', { force: true });
-        cy.get(`#editor-${docViewId}`).type('/', { force: true });
-      });
-      waitForReactUpdate(500);
-
-      SlashCommandSelectors.slashPanel().should('be.visible').within(() => {
-        SlashCommandSelectors.slashMenuItem(getSlashMenuItemName('linkedGrid')).first().click({ force: true });
+        insertLinkedDatabaseViaSlash(docViewId, sourceName);
       });
       waitForReactUpdate(1000);
 
-      SlashCommandSelectors.selectDatabase(sourceName);
-      waitForReactUpdate(3000);
-
       // 4) Expand the document to see linked view in sidebar
       testLog.step(4, 'Expand document and find linked view');
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
       const referencedName = `View of ${sourceName}`;
 
       cy.get<string>('@docViewId').then((docViewId) => {
@@ -210,7 +158,7 @@ describe('Move Page Restrictions', () => {
       cy.wait(3000);
 
       // Wait for sidebar and find Getting started page
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
       waitForReactUpdate(2000);
 
       // Hover over Getting started page
@@ -251,21 +199,8 @@ describe('Move Page Restrictions', () => {
 
       // 1) Create a document page first
       testLog.step(1, 'Create document page');
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Expand ViewModal to full page so the URL reflects the document view ID
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
-      cy.get('[role="dialog"]').last().find('button').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Capture the document view id from the URL
-      currentViewIdFromUrl().then((viewId) => {
-        expect(viewId).to.not.equal('');
+      createDocumentPageAndNavigate().then((viewId) => {
         cy.wrap(viewId).as('docViewId');
-        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
       });
       waitForReactUpdate(1000);
 
@@ -285,7 +220,7 @@ describe('Move Page Restrictions', () => {
 
       // 3) Expand the document to see the database container in sidebar
       testLog.step(3, 'Expand document and find database container');
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
 
       cy.get<string>('@docViewId').then((docViewId) => {
         ensurePageExpandedByViewId(docViewId);

@@ -1,4 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
 import { closeModalsIfOpen, testLog } from '../../support/test-helpers';
 import {
   AddPageSelectors,
@@ -10,6 +9,8 @@ import {
   waitForReactUpdate,
 } from '../../support/selectors';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { generateRandomEmail } from '../../support/test-config';
+import { currentViewIdFromUrl } from '../../support/page-utils';
 
 /**
  * Database Container Open Behavior Tests
@@ -18,15 +19,8 @@ import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
  * correctly opens its first child view.
  */
 describe('Database Container Open Behavior', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const dbName = 'New Database';
   const spaceName = 'General';
-
-  const currentViewIdFromUrl = () =>
-    cy.location('pathname').then((pathname) => {
-      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
-      return maybeId;
-    });
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {

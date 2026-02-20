@@ -1,14 +1,14 @@
-import { v4 as uuidv4 } from 'uuid';
 import {
   AddPageSelectors,
   BreadcrumbSelectors,
   DatabaseViewSelectors,
   ModalSelectors,
   PageSelectors,
-  SpaceSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { generateRandomEmail } from '../../support/test-config';
+import { expandSpaceByName } from '../../support/page-utils';
 
 /**
  * Database View Tabs Tests
@@ -21,7 +21,6 @@ import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
  * - Navigation persistence
  */
 describe('Database View Tabs', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const spaceName = 'General';
 
   beforeEach(() => {
@@ -49,22 +48,6 @@ describe('Database View Tabs', () => {
         cy.get('[class*="appflowy-database"]', { timeout: 15000 }).should('exist');
         DatabaseViewSelectors.viewTab().should('have.length.at.least', 1);
       },
-    });
-  };
-
-  /**
-   * Helper: Ensure space is expanded in sidebar
-   */
-  const ensureSpaceExpanded = (name: string) => {
-    SpaceSelectors.itemByName(name).should('exist');
-    SpaceSelectors.itemByName(name).then(($space) => {
-      const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-      const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-      if (!isExpanded) {
-        SpaceSelectors.itemByName(name).find('[data-testid="space-name"]').click({ force: true });
-        waitForReactUpdate(500);
-      }
     });
   };
 
@@ -157,7 +140,7 @@ describe('Database View Tabs', () => {
 
       // Verify sidebar shows all views
       cy.task('log', '[STEP 5] Verifying sidebar shows all views');
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
       waitForReactUpdate(500);
       expandDatabaseInSidebar();
 
@@ -179,7 +162,7 @@ describe('Database View Tabs', () => {
       cy.get('[role="menuitem"]').first().click({ force: true });
       waitForReactUpdate(2000);
 
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
       PageSelectors.itemByName('New Database', { timeout: 10000 }).first().click({ force: true });
       waitForReactUpdate(3000);
 
@@ -249,7 +232,7 @@ describe('Database View Tabs', () => {
       waitForReactUpdate(3000);
 
       // Expand database in sidebar
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
       waitForReactUpdate(500);
       expandDatabaseInSidebar();
 
@@ -293,7 +276,7 @@ describe('Database View Tabs', () => {
       // Expand database in sidebar so children populate the outline tree.
       // The breadcrumb relies on findAncestors which searches the outline tree;
       // with lazy loading, children aren't in the tree until expanded.
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
       waitForReactUpdate(500);
       expandDatabaseInSidebar();
       waitForReactUpdate(2000);

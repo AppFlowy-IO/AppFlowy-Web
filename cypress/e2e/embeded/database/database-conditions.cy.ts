@@ -1,40 +1,17 @@
-import { v4 as uuidv4 } from 'uuid';
-import { getSlashMenuItemName } from '../../../support/i18n-constants';
+import {
+  closeTopDialogIfNotDocument,
+  createDocumentPageAndNavigate,
+  insertLinkedDatabaseViaSlash,
+} from '../../../support/page-utils';
+import { generateRandomEmail } from '../../../support/test-config';
 import {
   AddPageSelectors,
   DatabaseFilterSelectors,
   DatabaseGridSelectors,
-  EditorSelectors,
-  SlashCommandSelectors,
   waitForReactUpdate,
 } from '../../../support/selectors';
 
 describe('Database Conditions - Filters and Sorts UI', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
-
-  // Helper to get current viewId from URL
-  const currentViewIdFromUrl = () =>
-    cy.location('pathname').then((pathname) => {
-      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
-      return maybeId;
-    });
-
-  // Helper to close dialogs that are NOT the document we're working in
-  const closeTopDialogIfNotDocument = (docViewId: string) => {
-    cy.get('body').then(($body) => {
-      const dialogs = $body.find('[role="dialog"]').filter(':visible');
-      if (dialogs.length === 0) return;
-
-      const topDialog = dialogs.last();
-      const topContainsDocEditor = $body.find(topDialog).find(`#editor-${docViewId}`).length > 0;
-
-      if (!topContainsDocEditor) {
-        cy.get('body').type('{esc}');
-        waitForReactUpdate(500);
-      }
-    });
-  };
-
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
       if (
@@ -73,48 +50,15 @@ describe('Database Conditions - Filters and Sorts UI', () => {
 
       // Create a document
       cy.task('log', '[STEP 5] Creating document at same level as database');
-      AddPageSelectors.inlineAddButton().first().as('addDocBtn0');
-      cy.get('@addDocBtn0').should('be.visible').click();
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').first().as('menuItem0');
-      cy.get('@menuItem0').click();
-      waitForReactUpdate(1000);
-
-      // When creating a Document via inline add button, it opens in a ViewModal.
-      // Click the expand button (first button in modal header) to navigate to full page view.
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
-      cy.get('[role="dialog"]').find('button').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Now the URL should reflect the new document - capture the docViewId
-      currentViewIdFromUrl().then((viewId) => {
-        expect(viewId).to.not.equal('');
+      createDocumentPageAndNavigate().then((viewId) => {
         cy.wrap(viewId).as('docViewId0');
-        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
       });
       waitForReactUpdate(1000);
 
       // Insert linked database
       cy.task('log', '[STEP 6] Inserting linked database');
       cy.get<string>('@docViewId0').then((docViewId) => {
-        cy.get(`#editor-${docViewId}`).should('exist').click('center', { force: true });
-        cy.get(`#editor-${docViewId}`).type('/', { force: true });
-      });
-      waitForReactUpdate(500);
-
-      SlashCommandSelectors.slashPanel()
-        .should('be.visible')
-        .within(() => {
-          SlashCommandSelectors.slashMenuItem(getSlashMenuItemName('linkedGrid')).first().as('linkedGridMenuItem0');
-          cy.get('@linkedGridMenuItem0').click();
-        });
-
-      waitForReactUpdate(1000);
-      SlashCommandSelectors.selectDatabase(dbName);
-      waitForReactUpdate(2000);
-
-      // Close any dialogs that might have opened, but NOT the document itself
-      cy.get<string>('@docViewId0').then((docViewId) => {
+        insertLinkedDatabaseViaSlash(docViewId, dbName);
         closeTopDialogIfNotDocument(docViewId);
       });
 
@@ -199,47 +143,14 @@ describe('Database Conditions - Filters and Sorts UI', () => {
 
       // Create document and insert linked database
       cy.task('log', '[STEP 3] Creating document');
-      AddPageSelectors.inlineAddButton().first().as('addDocBtn');
-      cy.get('@addDocBtn').should('be.visible').click();
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').first().as('menuItem');
-      cy.get('@menuItem').click();
-      waitForReactUpdate(1000);
-
-      // When creating a Document via inline add button, it opens in a ViewModal.
-      // Click the expand button (first button in modal header) to navigate to full page view.
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
-      cy.get('[role="dialog"]').find('button').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Now the URL should reflect the new document - capture the docViewId
-      currentViewIdFromUrl().then((viewId) => {
-        expect(viewId).to.not.equal('');
+      createDocumentPageAndNavigate().then((viewId) => {
         cy.wrap(viewId).as('docViewId1');
-        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
       });
       waitForReactUpdate(1000);
 
       cy.task('log', '[STEP 4] Inserting linked database');
       cy.get<string>('@docViewId1').then((docViewId) => {
-        cy.get(`#editor-${docViewId}`).should('exist').click('center', { force: true });
-        cy.get(`#editor-${docViewId}`).type('/', { force: true });
-      });
-      waitForReactUpdate(500);
-
-      SlashCommandSelectors.slashPanel()
-        .should('be.visible')
-        .within(() => {
-          SlashCommandSelectors.slashMenuItem(getSlashMenuItemName('linkedGrid')).first().as('linkedGridMenuItem');
-          cy.get('@linkedGridMenuItem').click();
-        });
-
-      waitForReactUpdate(1000);
-      SlashCommandSelectors.selectDatabase('New Database');
-      waitForReactUpdate(2000);
-
-      // Close any dialogs that might have opened, but NOT the document itself
-      cy.get<string>('@docViewId1').then((docViewId) => {
+        insertLinkedDatabaseViaSlash(docViewId, 'New Database');
         closeTopDialogIfNotDocument(docViewId);
       });
 
@@ -307,46 +218,13 @@ describe('Database Conditions - Filters and Sorts UI', () => {
       waitForReactUpdate(500);
 
       // Create document and insert linked database
-      AddPageSelectors.inlineAddButton().first().as('addDocBtn2');
-      cy.get('@addDocBtn2').should('be.visible').click();
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').first().as('menuItem2');
-      cy.get('@menuItem2').click();
-      waitForReactUpdate(1000);
-
-      // When creating a Document via inline add button, it opens in a ViewModal.
-      // Click the expand button (first button in modal header) to navigate to full page view.
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
-      cy.get('[role="dialog"]').find('button').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Now the URL should reflect the new document - capture the docViewId
-      currentViewIdFromUrl().then((viewId) => {
-        expect(viewId).to.not.equal('');
+      createDocumentPageAndNavigate().then((viewId) => {
         cy.wrap(viewId).as('docViewId2');
-        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
       });
       waitForReactUpdate(1000);
 
       cy.get<string>('@docViewId2').then((docViewId) => {
-        cy.get(`#editor-${docViewId}`).should('exist').click('center', { force: true });
-        cy.get(`#editor-${docViewId}`).type('/', { force: true });
-      });
-      waitForReactUpdate(500);
-
-      SlashCommandSelectors.slashPanel()
-        .should('be.visible')
-        .within(() => {
-          SlashCommandSelectors.slashMenuItem(getSlashMenuItemName('linkedGrid')).first().as('linkedGridMenuItem2');
-          cy.get('@linkedGridMenuItem2').click();
-        });
-
-      waitForReactUpdate(1000);
-      SlashCommandSelectors.selectDatabase('New Database');
-      waitForReactUpdate(2000);
-
-      // Close any dialogs that might have opened, but NOT the document itself
-      cy.get<string>('@docViewId2').then((docViewId) => {
+        insertLinkedDatabaseViaSlash(docViewId, 'New Database');
         closeTopDialogIfNotDocument(docViewId);
       });
 

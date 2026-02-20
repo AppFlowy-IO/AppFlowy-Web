@@ -20,7 +20,11 @@ import {
     openPageFromSidebar,
     expandSpace,
     expandSpaceByName,
-    expandPageByName
+    expandPageByName,
+    currentViewIdFromUrl,
+    ensurePageExpandedByViewId,
+    createDocumentPageAndNavigate,
+    insertLinkedDatabaseViaSlash
 } from './page/flows';
 
 // Page management utilities
@@ -48,7 +52,8 @@ import {
 
 // Modal utilities
 import {
-    openSharePopover
+    openSharePopover,
+    closeTopDialogIfNotDocument
 } from './page/modal';
 
 // Page action utilities
@@ -66,6 +71,10 @@ export {
     expandSpace,
     expandSpaceByName,
     expandPageByName,
+    currentViewIdFromUrl,
+    ensurePageExpandedByViewId,
+    createDocumentPageAndNavigate,
+    insertLinkedDatabaseViaSlash,
     getPageByName,
     getPageTitleInput,
     savePageTitle,
@@ -78,6 +87,7 @@ export {
     getWorkspaceItems,
     getWorkspaceMemberCounts,
     openSharePopover,
+    closeTopDialogIfNotDocument,
     openViewActionsPopoverForPage,
     deletePageByName
 };
@@ -108,6 +118,18 @@ export class TestTool {
     }
     static expandPageByName(pageName: string) {
         return expandPageByName(pageName);
+    }
+    static currentViewIdFromUrl() {
+        return currentViewIdFromUrl();
+    }
+    static ensurePageExpandedByViewId(viewId: string) {
+        return ensurePageExpandedByViewId(viewId);
+    }
+    static createDocumentPageAndNavigate() {
+        return createDocumentPageAndNavigate();
+    }
+    static insertLinkedDatabaseViaSlash(docViewId: string, dbName: string) {
+        return insertLinkedDatabaseViaSlash(docViewId, dbName);
     }
 
     // Page management
@@ -152,6 +174,9 @@ export class TestTool {
     // Modal operations
     static openSharePopover() {
         return openSharePopover();
+    }
+    static closeTopDialogIfNotDocument(docViewId: string) {
+        return closeTopDialogIfNotDocument(docViewId);
     }
     
     // Page actions
