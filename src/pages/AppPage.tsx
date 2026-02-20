@@ -371,9 +371,12 @@ function AppPage() {
     }
 
     if (layout === ViewLayout.Document) {
+
+      const key = `${viewId}:${docForCurrentView.version}`;
+
       return (
         <Document
-          key={viewId}
+          key={key}
           requestInstance={requestInstance}
           workspaceId={workspaceId}
           doc={docForCurrentView}
