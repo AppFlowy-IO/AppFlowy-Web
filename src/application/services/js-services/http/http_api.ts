@@ -1,10 +1,10 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import dayjs from 'dayjs';
 import { omit } from 'lodash-es';
-import { nanoid } from 'nanoid';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { ERROR_CODE } from '@/application/constants';
+import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
 import { parseGoTrueErrorFromUrl } from '@/application/services/js-services/http/gotrue-error';
 import { blobToBytes } from '@/application/services/js-services/http/utils';
@@ -14,7 +14,6 @@ import {
   WorkspaceMemberProfileUpdate,
 } from '@/application/services/services.type';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
-import { getConfigValue } from '@/utils/runtime-config';
 import {
   Template,
   TemplateCategory,
@@ -76,6 +75,7 @@ import { RepeatedChatMessage } from '@/components/chat';
 import { database_blob } from '@/proto/database_blob';
 import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
+import { getConfigValue } from '@/utils/runtime-config';
 import { hasProAccessFromPlans } from '@/utils/subscription';
 
 export * from './gotrue';
@@ -787,12 +787,7 @@ export async function updateCollab(
   }
 ) {
   const url = `/api/workspace/v1/${workspaceId}/collab/${objectId}/web-update`;
-  let deviceId = localStorage.getItem('x-device-id');
-
-  if (!deviceId) {
-    deviceId = nanoid(8);
-    localStorage.setItem('x-device-id', deviceId);
-  }
+  const deviceId = getOrCreateDeviceId();
 
   await executeAPIVoidRequest(() =>
     axiosInstance?.post<APIResponse>(
@@ -851,12 +846,7 @@ export async function collabFullSyncBatch(
   // Encode the request to binary
   const encoded = collab.CollabBatchSyncRequest.encode(request).finish();
 
-  let deviceId = localStorage.getItem('x-device-id');
-
-  if (!deviceId) {
-    deviceId = nanoid(8);
-    localStorage.setItem('x-device-id', deviceId);
-  }
+  const deviceId = getOrCreateDeviceId();
 
   // Send the request with protobuf content type
   const response = await axiosInstance?.post(url, encoded, {

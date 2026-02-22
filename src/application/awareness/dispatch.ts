@@ -1,6 +1,6 @@
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
-import { useCallback, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Editor } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
@@ -14,6 +14,7 @@ import { convertSlateSelectionToAwareness, generateUserColors } from './utils';
 // User information parameters for awareness synchronization
 export interface UserAwarenessParams {
   uid: number;
+  user_uuid?: string;
   device_id: string;
   user_name: string;
   cursor_color: string;
@@ -35,6 +36,7 @@ export function useDispatchUserAwareness(awareness?: Awareness) {
         cursor_color: userParams.cursor_color,
         selection_color: userParams.selection_color,
         user_avatar: userParams.user_avatar || '',
+        user_uuid: userParams.user_uuid,
       };
 
       const awarenessState: AwarenessState = {
@@ -85,6 +87,7 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
         cursor_color: userParams.cursor_color,
         selection_color: userParams.selection_color,
         user_avatar: userParams.user_avatar || '',
+        user_uuid: userParams.user_uuid,
       };
 
       const awarenessState: AwarenessState = {
@@ -111,6 +114,12 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
   const debounceSyncCursor = useMemo(() => {
     return debounce(syncCursor, 100);
   }, [syncCursor]);
+
+  useEffect(() => {
+    return () => {
+      debounceSyncCursor.cancel();
+    };
+  }, [debounceSyncCursor]);
 
   const dispatchCursor = useCallback(
     (userParams: UserAwarenessParams, editor?: Editor) => {
@@ -169,6 +178,7 @@ export function useDispatchClearAwareness(awareness?: Awareness) {
         cursor_color: generateUserColors(currentUser?.name || '').cursor_color,
         selection_color: generateUserColors(currentUser?.name || '').selection_color,
         user_avatar: userAvatar,
+        user_uuid: currentUser?.uuid,
       }),
     });
 

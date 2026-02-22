@@ -109,6 +109,19 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   // Initialize view operations
   const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync } = useViewOperations();
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const globalWindow = window as typeof window & {
+      Cypress?: unknown;
+      __APPFLOWY_AWARENESS_MAP__?: Record<string, import('y-protocols/awareness').Awareness>;
+    };
+
+    if (globalWindow.Cypress) {
+      globalWindow.__APPFLOWY_AWARENESS_MAP__ = awarenessMap;
+    }
+  }, [awarenessMap]);
+
   // Initialize page operations
   const pageOperations = usePageOperations({ outline, loadOutline });
 

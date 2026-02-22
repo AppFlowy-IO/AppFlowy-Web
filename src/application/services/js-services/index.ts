@@ -1,5 +1,4 @@
 import * as random from 'lib0/random';
-import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
@@ -16,6 +15,7 @@ import {
   hasViewMetaCache,
 } from '@/application/services/js-services/cache';
 import { StrategyType } from '@/application/services/js-services/cache/types';
+import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import {
   fetchPageCollab,
   fetchPublishView,
@@ -67,7 +67,7 @@ import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 
 export class AFClientService implements AFService {
   private clientId: number = random.uint32();
-  private deviceId: string = nanoid(8);
+  private deviceId: string = getOrCreateDeviceId();
 
   private viewLoaded: Set<string> = new Set();
 

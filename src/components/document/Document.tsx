@@ -56,6 +56,7 @@ export const Document = (props: DocumentProps) => {
 
     const userParams = {
       uid: Number(currentUser.uid),
+      user_uuid: currentUser.uuid,
       device_id: deviceId,
       user_name: currentUser.name || 'Anonymous',
       cursor_color: colors.cursor_color,
@@ -123,6 +124,7 @@ export const Document = (props: DocumentProps) => {
 
         const userParams = {
           uid: Number(currentUser.uid),
+          user_uuid: currentUser.uuid,
           device_id: deviceId,
           user_name: currentUser.name || 'Anonymous',
           cursor_color: colors.cursor_color,
