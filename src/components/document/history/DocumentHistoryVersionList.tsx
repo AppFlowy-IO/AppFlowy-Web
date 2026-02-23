@@ -130,11 +130,11 @@ export function VersionList({
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant='ghost' size='icon' className='text-icon-secondary' onClick={onClose}>
+        <Button data-testid="version-history-close-button" variant='ghost' size='icon' className='text-icon-secondary' onClick={onClose}>
           <CloseIcon className='h-5 w-5' />
         </Button>
       </div>
-      <div className='flex-1 overflow-y-auto p-3'>
+      <div data-testid="version-history-list" className='flex-1 overflow-y-auto p-3'>
         {versions.map((version, index) => {
           const createdAt = version.createdAt;
           const title = version.name || format(createdAt, 'PPpp');
@@ -165,6 +165,7 @@ export function VersionList({
       <Separator />
       <div className='flex justify-end px-4 py-3'>
         <Button
+          data-testid="version-history-restore-button"
           className='font-medium'
           onClick={onRestoreClicked}
           disabled={!selectedVersionId || !onRestoreClicked || isRestoring}
@@ -196,6 +197,7 @@ function VersionListItem({
 
   return (
     <Button
+      data-testid={`version-history-item-${id}`}
       variant='ghost'
       onClick={() => {
         onSelect(id);

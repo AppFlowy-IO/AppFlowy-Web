@@ -260,6 +260,7 @@ export function DocumentHistoryModal({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
+        data-testid="version-history-modal"
         className={cn(
           'flex !h-full !w-full rounded-2xl bg-surface-layer-02 p-0',
           '!max-h-[min(920px,_calc(100vh-160px))] !min-h-[min(689px,_calc(100vh-40px))] !min-w-[min(984px,_calc(100vw-40px))] !max-w-[min(1680px,_calc(100vw-240px))] '

@@ -132,6 +132,7 @@ function MoreActionsContent({
       </DropdownMenuItem>
 
       <DropdownMenuItem
+        data-testid="more-page-version-history"
         onSelect={(event) => {
           event.preventDefault();
           onOpenHistory?.();
