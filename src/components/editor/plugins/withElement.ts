@@ -1,4 +1,4 @@
-import { Editor, Element, NodeEntry } from 'slate';
+import { Element, NodeEntry } from 'slate';
 import { ReactEditor } from 'slate-react';
 
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';

@@ -291,7 +291,7 @@ export const fetchSummaryRegenerateTemplateConfig = async (
     try {
       const axiosInstance = createTemplateRequestInstance(requestInstance);
       const response = await axiosInstance.get<APIResponse<unknown> | unknown>('/api/meeting/summary_templates');
-      const responseData = response.data as APIResponse<unknown> | unknown;
+      const responseData = response.data;
       const payload =
         responseData &&
         typeof responseData === 'object' &&
