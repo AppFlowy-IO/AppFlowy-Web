@@ -1266,6 +1266,47 @@
         "notesSuccess": "笔记已复制到剪贴板",
         "transcriptSuccess": "转录已复制到剪贴板",
         "noContent": "没有可复制的内容"
+      },
+      "regenerate": {
+        "regenerate": "重新生成",
+        "generating": "生成中",
+        "summaryTemplate": "摘要模板",
+        "summaryDetail": "摘要详略",
+        "summaryLanguage": "摘要语言",
+        "noSource": "没有可用于重新生成摘要的转录或笔记内容",
+        "success": "摘要已重新生成",
+        "failed": "重新生成摘要失败",
+        "template": {
+          "auto": "自动",
+          "meetingMinutes": "会议纪要",
+          "actionFocused": "行动导向",
+          "executive": "管理层摘要"
+        },
+        "detail": {
+          "concise": "简洁",
+          "balanced": "均衡",
+          "detailed": "详细"
+        },
+        "language": {
+          "english": "英语",
+          "chineseSimplified": "简体中文",
+          "chineseTraditional": "繁體中文",
+          "spanish": "西班牙语",
+          "french": "法语",
+          "german": "德语",
+          "japanese": "日语",
+          "korean": "韩语",
+          "portuguese": "葡萄牙语",
+          "russian": "俄语",
+          "thai": "泰语",
+          "vietnamese": "越南语",
+          "danish": "丹麦语",
+          "finnish": "芬兰语",
+          "norwegian": "挪威语",
+          "dutch": "荷兰语",
+          "italian": "意大利语",
+          "swedish": "瑞典语"
+        }
       }
     },
     "date": {

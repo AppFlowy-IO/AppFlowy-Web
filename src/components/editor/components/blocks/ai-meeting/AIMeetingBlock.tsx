@@ -1,4 +1,4 @@
-import { IconButton, Tooltip } from '@mui/material';
+import { CircularProgress, IconButton, Tooltip } from '@mui/material';
 import { forwardRef, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element, Node } from 'slate';
@@ -6,16 +6,35 @@ import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { BlockType } from '@/application/types';
+import { AIMeetingBlockData, BlockType } from '@/application/types';
 import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_meeting_transcript_tab.svg';
 import { ReactComponent as NotesIcon } from '@/assets/icons/ai_notes.svg';
+import { ReactComponent as RegenerateIcon } from '@/assets/icons/ai_summary.svg';
 import { ReactComponent as SummaryIcon } from '@/assets/icons/ai_summary_tab.svg';
+import { ReactComponent as TemplateApplyIcon } from '@/assets/icons/ai_template_apply.svg';
+import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down_small.svg';
+import { ReactComponent as CheckIcon } from '@/assets/icons/check.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
+import { WriterRequest } from '@/components/chat/request';
+import { AIAssistantType } from '@/components/chat/types';
 import { AIMeetingNode, EditorElementProps } from '@/components/editor/editor.type';
+import { useEditorContext } from '@/components/editor/EditorContext';
 import { cn } from '@/lib/utils';
 
+import {
+  buildSummaryRegeneratePrompt,
+  FALLBACK_SUMMARY_REGENERATE_TEMPLATE_CONFIG,
+  fetchSummaryRegenerateTemplateConfig,
+  getSummaryDetailId,
+  getSummaryLanguageCode,
+  getSummaryTemplateId,
+  normalizeGeneratedSummaryMarkdown,
+  replaceBlockChildrenWithMarkdown,
+  SUMMARY_LANGUAGE_OPTIONS,
+} from './ai-meeting.summary-regenerate';
+import type { SummaryTemplateOption } from './ai-meeting.summary-regenerate';
 import {
   documentFragmentToHTML,
   isRangeInsideElement,
@@ -197,9 +216,10 @@ export const AIMeetingBlock = memo(
     ({ node, children, className, ...attributes }, ref) => {
       const { t } = useTranslation();
       const editor = useSlateStatic() as YjsEditor;
+      const { workspaceId, viewId, requestInstance } = useEditorContext();
       const slateReadOnly = useReadOnly();
       const readOnly = slateReadOnly || editor.isElementReadOnly(node as unknown as Element);
-      const data = useMemo(() => node.data ?? {}, [node.data]);
+      const data = node.data ?? {};
       const containerRef = useRef<HTMLDivElement | null>(null);
       const contentRef = useRef<HTMLDivElement | null>(null);
       const setRefs = useCallback(
@@ -362,6 +382,48 @@ export const AIMeetingBlock = memo(
           hasContent: Boolean(buildCopyText(sectionNode)),
         };
       }, [activeTabKey, sectionNodes.notesNode, sectionNodes.summaryNode, sectionNodes.transcriptNode]);
+
+      const [summaryTemplateConfig, setSummaryTemplateConfig] = useState(
+        FALLBACK_SUMMARY_REGENERATE_TEMPLATE_CONFIG
+      );
+
+      const selectedSummaryTemplate = getSummaryTemplateId(
+        data.summary_template,
+        summaryTemplateConfig.templateOptions
+      );
+      const selectedSummaryDetail = getSummaryDetailId(
+        data.summary_detail,
+        summaryTemplateConfig.detailOptions
+      );
+      const selectedSummaryLanguage = getSummaryLanguageCode(data.summary_language);
+
+      const [isRegeneratingSummary, setIsRegeneratingSummary] = useState(false);
+      const [regenerateMenuAnchor, setRegenerateMenuAnchor] = useState<HTMLElement | null>(null);
+      const regenerateMenuOpen = Boolean(regenerateMenuAnchor);
+      const handleRegenerateMenuClose = useCallback(() => setRegenerateMenuAnchor(null), []);
+
+      const updateSummaryOptions = useCallback(
+        (updates: Partial<Pick<AIMeetingBlockData, 'summary_template' | 'summary_detail' | 'summary_language'>>) => {
+          if (readOnly) return;
+          CustomEditor.setBlockData(editor, node.blockId, updates);
+        },
+        [editor, node.blockId, readOnly]
+      );
+
+      useEffect(() => {
+        let cancelled = false;
+
+        void (async () => {
+          const remoteConfig = await fetchSummaryRegenerateTemplateConfig(requestInstance ?? undefined);
+
+          if (cancelled || !remoteConfig) return;
+          setSummaryTemplateConfig(remoteConfig);
+        })();
+
+        return () => {
+          cancelled = true;
+        };
+      }, [requestInstance]);
 
       const isProgrammaticCopyRef = useRef(false);
 
@@ -535,6 +597,178 @@ export const AIMeetingBlock = memo(
         writePayloadToClipboard,
       ]);
 
+      const handleRegenerateSummary = useCallback(async (overrides?: {
+        templateId?: string;
+        detailId?: string;
+        languageCode?: string;
+      }) => {
+        if (readOnly || isRegeneratingSummary) return;
+
+        const summaryBlockId = (sectionNodes.summaryNode as (Node & { blockId?: string }) | undefined)?.blockId;
+
+        if (!summaryBlockId) return;
+
+        const transcriptText =
+          sectionNodes.transcriptNode && Element.isElement(sectionNodes.transcriptNode)
+            ? buildTranscriptCopyText(sectionNodes.transcriptNode, resolveSpeakerName)
+            : '';
+        const notesText = sectionNodes.notesNode ? buildCopyText(sectionNodes.notesNode) : '';
+
+        if (!transcriptText.trim() && !notesText.trim()) {
+          notify.error(
+            t('document.aiMeeting.regenerate.noSource', {
+              defaultValue: 'No transcript or notes available to regenerate summary',
+            })
+          );
+          return;
+        }
+
+        if (!workspaceId || !viewId) {
+          notify.error(
+            t('document.aiMeeting.regenerate.failed', {
+              defaultValue: 'Failed to regenerate summary',
+            })
+          );
+          return;
+        }
+
+        const sourceText = [
+          transcriptText.trim() ? `Transcript:\n${transcriptText.trim()}` : '',
+          notesText.trim() ? `Manual Notes:\n${notesText.trim()}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n\n');
+        const templateId = getSummaryTemplateId(
+          overrides?.templateId ?? selectedSummaryTemplate,
+          summaryTemplateConfig.templateOptions
+        );
+        const detailId = getSummaryDetailId(
+          overrides?.detailId ?? selectedSummaryDetail,
+          summaryTemplateConfig.detailOptions
+        );
+        const languageCode = getSummaryLanguageCode(overrides?.languageCode ?? selectedSummaryLanguage);
+        const customPrompt = buildSummaryRegeneratePrompt({
+          templateId,
+          detailId,
+          languageCode,
+          templateConfig: summaryTemplateConfig,
+          speakerInfoMap,
+        });
+
+        setIsRegeneratingSummary(true);
+        handleRegenerateMenuClose();
+
+        try {
+          const request = new WriterRequest(workspaceId, viewId, requestInstance ?? undefined);
+          let generatedContent = '';
+
+          const { streamPromise } = await request.fetchAIAssistant(
+            {
+              inputText: sourceText,
+              assistantType: AIAssistantType.CustomPrompt,
+              ragIds: [],
+              completionHistory: [],
+              customPrompt,
+            },
+            (text, comment) => {
+              const candidate = text.trim() ? text : comment;
+
+              generatedContent = candidate;
+            }
+          );
+
+          await streamPromise;
+
+          const normalizedMarkdown = normalizeGeneratedSummaryMarkdown(generatedContent);
+
+          if (!normalizedMarkdown) {
+            throw new Error('Empty generated summary');
+          }
+
+          const replaced = replaceBlockChildrenWithMarkdown({
+            editor,
+            blockId: summaryBlockId,
+            markdown: normalizedMarkdown,
+          });
+
+          if (!replaced) {
+            throw new Error('Unable to replace summary content');
+          }
+
+          notify.success(
+            t('document.aiMeeting.regenerate.success', {
+              defaultValue: 'Summary regenerated',
+            })
+          );
+        } catch (error) {
+          const baseMessage = t('document.aiMeeting.regenerate.failed', {
+            defaultValue: 'Failed to regenerate summary',
+          });
+          const reason =
+            error instanceof Error && error.message.trim()
+              ? error.message.trim()
+              : '';
+
+          console.error('AI meeting regenerate failed:', error);
+          notify.error(reason ? `${baseMessage}: ${reason}` : baseMessage);
+        } finally {
+          setIsRegeneratingSummary(false);
+        }
+      }, [
+        editor,
+        handleRegenerateMenuClose,
+        isRegeneratingSummary,
+        readOnly,
+        requestInstance,
+        resolveSpeakerName,
+        sectionNodes.notesNode,
+        sectionNodes.summaryNode,
+        sectionNodes.transcriptNode,
+        selectedSummaryDetail,
+        selectedSummaryLanguage,
+        selectedSummaryTemplate,
+        speakerInfoMap,
+        summaryTemplateConfig,
+        t,
+        viewId,
+        workspaceId,
+      ]);
+
+      const handleSummaryOptionSelect = useCallback(
+        (updates: Partial<Pick<AIMeetingBlockData, 'summary_template' | 'summary_detail' | 'summary_language'>>) => {
+          if (readOnly || isRegeneratingSummary) return;
+
+          updateSummaryOptions(updates);
+
+          const templateId = getSummaryTemplateId(
+            updates.summary_template ?? selectedSummaryTemplate,
+            summaryTemplateConfig.templateOptions
+          );
+          const detailId = getSummaryDetailId(
+            updates.summary_detail ?? selectedSummaryDetail,
+            summaryTemplateConfig.detailOptions
+          );
+          const languageCode = getSummaryLanguageCode(updates.summary_language ?? selectedSummaryLanguage);
+
+          void handleRegenerateSummary({
+            templateId,
+            detailId,
+            languageCode,
+          });
+        },
+        [
+          handleRegenerateSummary,
+          isRegeneratingSummary,
+          readOnly,
+          selectedSummaryDetail,
+          selectedSummaryLanguage,
+          selectedSummaryTemplate,
+          summaryTemplateConfig.detailOptions,
+          summaryTemplateConfig.templateOptions,
+          updateSummaryOptions,
+        ]
+      );
+
       useEffect(() => {
         const handleSelectionCopy = (event: ClipboardEvent) => {
           if (isProgrammaticCopyRef.current) return;
@@ -648,6 +882,25 @@ export const AIMeetingBlock = memo(
         [editor, node.blockId, readOnly, selectedIndex]
       );
 
+      const showSummaryRegenerate = activeTabKey === 'summary' && activeCopyItem.hasContent;
+      const templateSections = summaryTemplateConfig.templateSections.length
+        ? summaryTemplateConfig.templateSections
+        : FALLBACK_SUMMARY_REGENERATE_TEMPLATE_CONFIG.templateSections;
+      const detailOptions = summaryTemplateConfig.detailOptions.length
+        ? summaryTemplateConfig.detailOptions
+        : FALLBACK_SUMMARY_REGENERATE_TEMPLATE_CONFIG.detailOptions;
+      const getRegenerateOptionLabel = useCallback(
+        (option: Pick<SummaryTemplateOption, 'labelKey' | 'defaultLabel'>) =>
+          option.labelKey ? t(option.labelKey, { defaultValue: option.defaultLabel }) : option.defaultLabel,
+        [t]
+      );
+
+      useEffect(() => {
+        if (activeTabKey !== 'summary') {
+          handleRegenerateMenuClose();
+        }
+      }, [activeTabKey, handleRegenerateMenuClose]);
+
       return (
         <div
           {...attributes}
@@ -711,6 +964,154 @@ export const AIMeetingBlock = memo(
                     })}
                   </div>
                   <div className="flex items-center gap-2">
+                    {showSummaryRegenerate && (
+                      <>
+                        <div className={cn('inline-flex items-stretch', readOnly || isRegeneratingSummary ? 'opacity-60' : '')}>
+                          <button
+                            type="button"
+                            disabled={readOnly || isRegeneratingSummary}
+                            onClick={() => {
+                              void handleRegenerateSummary();
+                            }}
+                            className={cn(
+                              'inline-flex h-8 items-center gap-2 rounded-l-md border border-r-0 border-border-primary py-1.5 pl-4 pr-[10px] text-sm text-text-primary',
+                              readOnly || isRegeneratingSummary
+                                ? 'cursor-not-allowed'
+                                : 'hover:bg-fill-list-hover'
+                            )}
+                          >
+                            {isRegeneratingSummary ? (
+                              <CircularProgress size={16} thickness={4.5} sx={{ color: 'currentColor' }} />
+                            ) : (
+                              <RegenerateIcon className="h-5 w-5" />
+                            )}
+                            <span>
+                              {isRegeneratingSummary
+                                ? t('document.aiMeeting.regenerate.generating', { defaultValue: 'Generating' })
+                                : t('document.aiMeeting.regenerate.regenerate', { defaultValue: 'Regenerate' })}
+                            </span>
+                          </button>
+                          <button
+                            type="button"
+                            disabled={readOnly || isRegeneratingSummary}
+                            onClick={(event) => setRegenerateMenuAnchor(event.currentTarget)}
+                            className={cn(
+                              'inline-flex h-8 items-center rounded-r-md border border-border-primary px-3 text-text-secondary',
+                              readOnly || isRegeneratingSummary
+                                ? 'cursor-not-allowed'
+                                : 'hover:bg-fill-list-hover'
+                            )}
+                          >
+                            <ArrowDownIcon className="h-4 w-4" />
+                          </button>
+                        </div>
+                        <Popover
+                          open={regenerateMenuOpen}
+                          anchorEl={regenerateMenuAnchor}
+                          onClose={handleRegenerateMenuClose}
+                          anchorOrigin={{
+                            vertical: 'bottom',
+                            horizontal: 'right',
+                          }}
+                          transformOrigin={{
+                            vertical: 'top',
+                            horizontal: 'right',
+                          }}
+                        >
+                          <div className="flex w-[240px] flex-col p-2 text-sm">
+                            {templateSections.map((section, sectionIndex) => (
+                              <div key={section.id}>
+                                <div className="px-2 py-1 text-xs text-text-tertiary">{section.title}</div>
+                                {section.options.map((option) => {
+                                  const selected = selectedSummaryTemplate === option.id;
+
+                                  return (
+                                    <button
+                                      key={option.id}
+                                      type="button"
+                                      className={cn(
+                                        'group flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-text-primary hover:bg-fill-list-hover'
+                                      )}
+                                      onClick={() => handleSummaryOptionSelect({ summary_template: option.id })}
+                                    >
+                                      <span className="flex items-center gap-2">
+                                        {option.icon ? <span>{option.icon}</span> : null}
+                                        <span>{getRegenerateOptionLabel(option)}</span>
+                                      </span>
+                                      {selected ? (
+                                        <CheckIcon className="h-4 w-4 text-fill-theme-thick" />
+                                      ) : (
+                                        <TemplateApplyIcon className="h-4 w-4 text-text-secondary opacity-0 transition-opacity group-hover:opacity-100" />
+                                      )}
+                                    </button>
+                                  );
+                                })}
+                                {sectionIndex < templateSections.length - 1 && (
+                                  <div className="my-1 border-t border-border-primary" />
+                                )}
+                              </div>
+                            ))}
+                            <div className="my-1 border-t border-border-primary" />
+                            <div className="px-2 py-1 text-xs text-text-tertiary">
+                              {t('document.aiMeeting.regenerate.summaryDetail', {
+                                defaultValue: 'Summary detail',
+                              })}
+                            </div>
+                            {detailOptions.map((option) => {
+                              const selected = selectedSummaryDetail === option.id;
+
+                              return (
+                                <button
+                                  key={option.id}
+                                  type="button"
+                                  className={cn(
+                                    'group flex items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-text-primary hover:bg-fill-list-hover'
+                                  )}
+                                  onClick={() => handleSummaryOptionSelect({ summary_detail: option.id })}
+                                >
+                                  <span>{getRegenerateOptionLabel(option)}</span>
+                                  {selected ? (
+                                    <CheckIcon className="h-4 w-4 text-fill-theme-thick" />
+                                  ) : (
+                                    <TemplateApplyIcon className="h-4 w-4 text-text-secondary opacity-0 transition-opacity group-hover:opacity-100" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                            <div className="my-1 border-t border-border-primary" />
+                            <div className="px-2 py-1 text-xs text-text-tertiary">
+                              {t('document.aiMeeting.regenerate.summaryLanguage', {
+                                defaultValue: 'Summary language',
+                              })}
+                            </div>
+                            <div className="max-h-[360px] overflow-y-auto">
+                              {SUMMARY_LANGUAGE_OPTIONS.map((option) => {
+                                const selected =
+                                  selectedSummaryLanguage.toLowerCase() === option.code.toLowerCase();
+
+                                return (
+                                  <button
+                                    key={option.code}
+                                    type="button"
+                                    className={cn(
+                                      'group flex w-full items-center justify-between gap-3 rounded-md px-2 py-1.5 text-left text-text-primary hover:bg-fill-list-hover'
+                                    )}
+                                    onClick={() => handleSummaryOptionSelect({ summary_language: option.code })}
+                                  >
+                                    <span>{t(option.labelKey, { defaultValue: option.defaultLabel })}</span>
+                                    {selected ? (
+                                      <CheckIcon className="h-4 w-4 text-fill-theme-thick" />
+                                    ) : (
+                                      <TemplateApplyIcon className="h-4 w-4 text-text-secondary opacity-0 transition-opacity group-hover:opacity-100" />
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        </Popover>
+                      </>
+                    )}
                     <IconButton
                       size="small"
                       onClick={(event) => setMenuAnchor(event.currentTarget)}

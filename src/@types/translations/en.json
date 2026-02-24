@@ -1969,6 +1969,47 @@
         "notesSuccess": "Notes copied to clipboard",
         "transcriptSuccess": "Transcript copied to clipboard",
         "noContent": "No content to copy"
+      },
+      "regenerate": {
+        "regenerate": "Regenerate",
+        "generating": "Generating",
+        "summaryTemplate": "Summary template",
+        "summaryDetail": "Summary detail",
+        "summaryLanguage": "Summary language",
+        "noSource": "No transcript or notes available to regenerate summary",
+        "success": "Summary regenerated",
+        "failed": "Failed to regenerate summary",
+        "template": {
+          "auto": "Auto",
+          "meetingMinutes": "Meeting minutes",
+          "actionFocused": "Action focused",
+          "executive": "Executive"
+        },
+        "detail": {
+          "concise": "Concise",
+          "balanced": "Balanced",
+          "detailed": "Detailed"
+        },
+        "language": {
+          "english": "English",
+          "chineseSimplified": "Chinese (Simplified)",
+          "chineseTraditional": "Chinese (Traditional)",
+          "spanish": "Spanish",
+          "french": "French",
+          "german": "German",
+          "japanese": "Japanese",
+          "korean": "Korean",
+          "portuguese": "Portuguese",
+          "russian": "Russian",
+          "thai": "Thai",
+          "vietnamese": "Vietnamese",
+          "danish": "Danish",
+          "finnish": "Finnish",
+          "norwegian": "Norwegian",
+          "dutch": "Dutch",
+          "italian": "Italian",
+          "swedish": "Swedish"
+        }
       }
     },
     "date": {
