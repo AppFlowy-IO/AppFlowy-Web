@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { AddPageSelectors, DropdownSelectors, EditorSelectors, ModalSelectors, PageSelectors, SpaceSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
@@ -31,13 +30,7 @@ describe('Page Edit Tests', () => {
             });
 
             // Step 1: Sign up with a new account
-            cy.visit('/login', {
-                failOnStatusCode: false
-            });
-            cy.wait(2000);
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail);
+            cy.signIn(testEmail);
 
             cy.url().should('include', '/app');
             TestTool.waitForPageLoad(3000);

@@ -22,11 +22,10 @@ import {
   ViewActionSelectors,
   ModalSelectors,
   FieldType,
-  byTestId,
   waitForReactUpdate,
 } from '../../support/selectors';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { generateRandomEmail } from '../../support/test-config';
+import { waitForAppReady, waitForGridReady } from '../../support/database-ui-helpers';
 
 /**
  * Relation-specific selectors
@@ -52,15 +51,6 @@ const RelationSelectors = {
 
   // Linked row in cell
   linkedRow: (rowName: string) => cy.contains(rowName),
-};
-
-const waitForAppReady = () => {
-  cy.get(`${byTestId('inline-add-page')}, ${byTestId('new-page-button')}`, { timeout: 20000 }).should('be.visible');
-};
-
-const waitForGridReady = () => {
-  DatabaseGridSelectors.grid().should('exist', { timeout: 30000 });
-  DatabaseGridSelectors.cells().should('have.length.at.least', 1, { timeout: 30000 });
 };
 
 const renameActiveViewTab = (name: string) => {
@@ -111,11 +101,7 @@ describeIfEnabled('Relation Cell Type', () => {
   it('should open relation cell popup when clicking on a relation cell', () => {
     const testEmail = generateRandomEmail();
     cy.log(`[TEST] Relation cell popup test - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 
@@ -220,11 +206,7 @@ describeIfEnabled('Relation Cell Type', () => {
     const targetDbName = `Relation Target ${uniqueSuffix}`;
 
     cy.log(`[TEST] Link rows from another database - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 
@@ -345,11 +327,7 @@ describeIfEnabled('Relation Cell Type', () => {
   it('should open relation popup from row detail panel', () => {
     const testEmail = generateRandomEmail();
     cy.log(`[TEST] Relation popup in row detail - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 
@@ -448,11 +426,7 @@ describeIfEnabled('Relation Cell Type', () => {
     const targetDbName = `Relation Target ${uniqueSuffix}`;
 
     cy.log(`[TEST] Click relation link opens row detail - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 
@@ -603,11 +577,7 @@ describeIfEnabled('Relation Cell Type', () => {
     const targetDbName = `Relation Target ${uniqueSuffix}`;
 
     cy.log(`[TEST] Rename related row updates cell - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 
@@ -761,11 +731,7 @@ describeIfEnabled('Relation Cell Type', () => {
     const renamedDbName = 'RenamedDatabase';
 
     cy.log(`[TEST] Rename database updates field header - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 

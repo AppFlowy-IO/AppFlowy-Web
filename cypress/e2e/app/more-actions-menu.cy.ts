@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { DropdownSelectors, PageSelectors, SidebarSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
@@ -28,11 +27,7 @@ describe('More Actions Menu', () => {
   });
 
   it('should render all menu items correctly in More Actions popover', () => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
       TestTool.waitForPageLoad(3000);
       TestTool.waitForSidebarReady();
@@ -68,11 +63,7 @@ describe('More Actions Menu', () => {
   });
 
   it('should close menu on Escape key', () => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
       TestTool.waitForPageLoad(3000);
       TestTool.waitForSidebarReady();
@@ -105,11 +96,7 @@ describe('More Actions Menu', () => {
   });
 
   it('should not have render errors after removing useMemo', () => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
       TestTool.waitForPageLoad(3000);
       TestTool.waitForSidebarReady();

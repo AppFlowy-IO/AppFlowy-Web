@@ -8,7 +8,6 @@ import {
   FieldType,
   waitForReactUpdate,
 } from '../../support/selectors';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { generateRandomEmail } from '../../support/test-config';
 
 describe('Person Cell', () => {
@@ -32,18 +31,13 @@ describe('Person Cell', () => {
     const testEmail = generateRandomEmail();
     cy.log(`[TEST START] Person Cell Test - Test email: ${testEmail}`);
 
-    cy.log('[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    cy.log('[STEP 2] Starting authentication');
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.log('[STEP 3] Authentication successful');
+    cy.log('[STEP 1] Starting authentication');
+    cy.signIn(testEmail).then(() => {
+      cy.log('[STEP 2] Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(5000);
 
-      cy.log('[STEP 3.1] Verifying workspace loaded');
+      cy.log('[STEP 2.1] Verifying workspace loaded');
       cy.get('body').should('exist');
       cy.wait(2000);
 

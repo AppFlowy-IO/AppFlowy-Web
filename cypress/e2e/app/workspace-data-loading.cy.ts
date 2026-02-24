@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { PageSelectors, SidebarSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
@@ -33,11 +32,7 @@ describe('Workspace Data Loading', () => {
   });
 
   it('should load workspace outline with sidebar visible after async optimization', () => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
       testLog.info('Signed in successfully');
 
@@ -57,11 +52,7 @@ describe('Workspace Data Loading', () => {
   });
 
   it('should handle shareWithMe API failure gracefully (outline still loads)', () => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
 
       // Wait for app to fully load
@@ -97,11 +88,7 @@ describe('Workspace Data Loading', () => {
   });
 
   it('should not have React error boundaries triggered during workspace loading', () => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
 
       // Wait for app to fully load

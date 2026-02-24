@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { ShareSelectors, SidebarSelectors, PageSelectors } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
@@ -35,11 +34,7 @@ describe('Publish Manage - Subscription and Namespace Tests', () => {
    * Helper to sign in, publish a page, and open the publish manage panel
    */
   const setupPublishManagePanel = (email: string) => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(1000);
-    const authUtils = new AuthTestUtils();
-
-    return authUtils.signInWithTestUrl(email).then(() => {
+    return cy.signIn(email).then(() => {
       cy.url().should('include', '/app');
       testLog.info('Signed in');
 
@@ -168,9 +163,8 @@ describe('Publish Manage - Subscription and Namespace Tests', () => {
     });
 
     cy.wait(500);
-    const authUtils = new AuthTestUtils();
 
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url().should('include', '/app');
       testLog.info('Signed in (self-hosted mode)');
 

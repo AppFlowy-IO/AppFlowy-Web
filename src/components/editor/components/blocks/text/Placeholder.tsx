@@ -60,6 +60,12 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
           // ignore
         }
 
+        // Show placeholder when the document is empty (single empty paragraph)
+        // This matches the desktop "Enter a / to insert a block, or start typing" behavior
+        if(editor.children.length <= 1) {
+          return t('cardDetails.notesPlaceholder');
+        }
+
         return '';
       }
 
@@ -118,7 +124,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block, t]);
+  }, [block, editor.children.length, t]);
 
   const selectedPlaceholder = useMemo(() => {
 

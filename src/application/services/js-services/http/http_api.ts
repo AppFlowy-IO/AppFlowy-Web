@@ -1,10 +1,10 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import dayjs from 'dayjs';
 import { omit } from 'lodash-es';
-import { nanoid } from 'nanoid';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { ERROR_CODE } from '@/application/constants';
+import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import { initGrantService, refreshToken } from '@/application/services/js-services/http/gotrue';
 import { parseGoTrueErrorFromUrl } from '@/application/services/js-services/http/gotrue-error';
 import { blobToBytes } from '@/application/services/js-services/http/utils';
@@ -75,6 +75,7 @@ import { RepeatedChatMessage } from '@/components/chat';
 import { database_blob } from '@/proto/database_blob';
 import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
+import { getConfigValue } from '@/utils/runtime-config';
 import { hasProAccessFromPlans } from '@/utils/subscription';
 
 export * from './gotrue';
@@ -340,6 +341,80 @@ export function initAPIService(config: AFCloudConfig) {
   };
 
   axiosInstance.interceptors.response.use((response) => response, handleUnauthorized);
+
+  // Retry interceptor: automatic retry with exponential backoff for transient failures.
+  // Only retries GET requests (idempotent) on network errors or 5xx server errors.
+  const RETRY_COUNT = 3;
+  const RETRY_BASE_DELAY = 1000; // 1s, 2s, 4s
+
+  type RetryableAxiosConfig = NonNullable<AxiosError['config']> & {
+    __afRetryCount?: number;
+  };
+
+  axiosInstance.interceptors.response.use(undefined, async (error: unknown) => {
+    if (!axios.isAxiosError(error)) return Promise.reject(error);
+    const config = error.config as RetryableAxiosConfig | undefined;
+
+    if (!config) return Promise.reject(error);
+
+    // Only retry idempotent GET requests
+    if (config.method?.toLowerCase() !== 'get') return Promise.reject(error);
+
+    // Keep retry count on config so it survives axios cloning between retries.
+    const retryCount = config.__afRetryCount ?? 0;
+
+    if (retryCount >= RETRY_COUNT) return Promise.reject(error);
+
+    // Respect explicit request cancellation (AbortController / axios cancel token).
+    const maybeCanceledError: unknown = error;
+    const isCanceled = axios.isCancel(maybeCanceledError) || error.code === 'ERR_CANCELED';
+
+    if (isCanceled) return Promise.reject(error);
+
+    // Retry on network errors (no response) or 5xx server errors
+    const status = error.response?.status;
+    const isRetryable = !error.response || (status !== undefined && status >= 500);
+
+    if (!isRetryable) return Promise.reject(error);
+
+    const nextRetry = retryCount + 1;
+
+    config.__afRetryCount = nextRetry;
+    const delay = RETRY_BASE_DELAY * Math.pow(2, retryCount);
+
+    const waitForBackoff = (ms: number, signal?: AbortSignal) =>
+      new Promise<'elapsed' | 'aborted'>((resolve) => {
+        if (!signal) {
+          setTimeout(() => resolve('elapsed'), ms);
+          return;
+        }
+
+        if (signal.aborted) {
+          resolve('aborted');
+          return;
+        }
+
+        const onAbort = () => {
+          clearTimeout(timer);
+          signal.removeEventListener('abort', onAbort);
+          resolve('aborted');
+        };
+
+        const timer = setTimeout(() => {
+          signal.removeEventListener('abort', onAbort);
+          resolve('elapsed');
+        }, ms);
+
+        signal.addEventListener('abort', onAbort, { once: true });
+      });
+
+    Log.debug(`[HTTP Retry] Attempt ${nextRetry}/${RETRY_COUNT} for ${config.url} in ${delay}ms`);
+    const backoffResult = await waitForBackoff(delay, config.signal as AbortSignal | undefined);
+
+    if (backoffResult === 'aborted' || config.signal?.aborted) return Promise.reject(error);
+
+    return axiosInstance!(config);
+  });
 }
 
 export async function signInWithUrl(url: string) {
@@ -712,12 +787,7 @@ export async function updateCollab(
   }
 ) {
   const url = `/api/workspace/v1/${workspaceId}/collab/${objectId}/web-update`;
-  let deviceId = localStorage.getItem('x-device-id');
-
-  if (!deviceId) {
-    deviceId = nanoid(8);
-    localStorage.setItem('x-device-id', deviceId);
-  }
+  const deviceId = getOrCreateDeviceId();
 
   await executeAPIVoidRequest(() =>
     axiosInstance?.post<APIResponse>(
@@ -776,12 +846,7 @@ export async function collabFullSyncBatch(
   // Encode the request to binary
   const encoded = collab.CollabBatchSyncRequest.encode(request).finish();
 
-  let deviceId = localStorage.getItem('x-device-id');
-
-  if (!deviceId) {
-    deviceId = nanoid(8);
-    localStorage.setItem('x-device-id', deviceId);
-  }
+  const deviceId = getOrCreateDeviceId();
 
   // Send the request with protobuf content type
   const response = await axiosInstance?.post(url, encoded, {
@@ -988,7 +1053,7 @@ export async function getAppRecent(workspaceId: string) {
 }
 
 export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
-  const url = `/api/workspace/${workspaceId}/folder?depth=10`;
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=2`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)
@@ -999,11 +1064,25 @@ export async function getAppOutline(workspaceId: string): Promise<AppOutlineResp
 }
 
 export async function getView(workspaceId: string, viewId: string, depth: number = 1) {
-  const url = `/api/workspace/${workspaceId}/folder?depth=${depth}&root_view_id=${viewId}`;
+  const url = `/api/workspace/${workspaceId}/view/${viewId}?depth=${depth}`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)
   );
+}
+
+export async function getViews(workspaceId: string, viewIds: string[], depth: number = 2) {
+  if (viewIds.length === 0) return [];
+
+  const query = new URLSearchParams({
+    depth: String(depth),
+    view_ids: viewIds.join(','),
+  });
+  const url = `/api/workspace/${workspaceId}/views?${query.toString()}`;
+
+  return executeAPIRequest<{ views: View[] }>(() =>
+    axiosInstance?.get<APIResponse<{ views: View[] }>>(url)
+  ).then((data) => data.views ?? []);
 }
 
 export async function getPublishNamespace(workspaceId: string) {
@@ -1245,7 +1324,9 @@ function iterateFolder(folder: WorkspaceFolder): FolderView {
     id: folder.view_id,
     name: folder.name,
     icon: folder.icon,
-    isSpace: folder.is_space,
+    // `/view/{id}` payloads expose space flag in `extra.is_space`.
+    // Keep backward compatibility with old `is_space` top-level field.
+    isSpace: folder.is_space ?? folder.extra?.is_space ?? false,
     extra: folder.extra ? JSON.stringify(folder.extra) : null,
     isPrivate: folder.is_private,
     accessLevel: folder.access_level,
@@ -1256,7 +1337,7 @@ function iterateFolder(folder: WorkspaceFolder): FolderView {
 }
 
 export async function getWorkspaceFolder(workspaceId: string): Promise<FolderView> {
-  const url = `/api/workspace/${workspaceId}/folder`;
+  const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
   const payload = await executeAPIRequest<WorkspaceFolder>(() =>
     axiosInstance?.get<APIResponse<WorkspaceFolder>>(url)
   );
@@ -1529,6 +1610,10 @@ export async function createImportTask(file: File) {
     axiosInstance?.post<APIResponse<{ task_id: string; presigned_url: string }>>(url, {
       workspace_name: fileName,
       content_length: file.size,
+    }, {
+      headers: {
+        'X-Host': getConfigValue('APPFLOWY_BASE_URL', ''),
+      },
     })
   ).then((data) => ({
     taskId: data.task_id,
@@ -1566,7 +1651,11 @@ export async function createDatabaseCsvImportTask(
   const url = `/api/workspace/${workspaceId}/database/import/csv`;
 
   return executeAPIRequest<DatabaseCsvImportCreateResponse>(() =>
-    axiosInstance?.post<APIResponse<DatabaseCsvImportCreateResponse>>(url, payload)
+    axiosInstance?.post<APIResponse<DatabaseCsvImportCreateResponse>>(url, payload, {
+      headers: {
+        'X-Host': getConfigValue('APPFLOWY_BASE_URL', ''),
+      },
+    })
   );
 }
 
@@ -2155,7 +2244,7 @@ export async function turnIntoMember(workspaceId: string, email: string) {
 
 
 export async function getShareWithMe(workspaceId: string): Promise<View> {
-  const url = `/api/sharing/workspace/${workspaceId}/folder`;
+  const url = `/api/sharing/workspace/${workspaceId}/view/${workspaceId}?depth=50`;
 
   return executeAPIRequest<View>(() =>
     axiosInstance?.get<APIResponse<View>>(url)

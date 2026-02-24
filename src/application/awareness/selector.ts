@@ -12,6 +12,43 @@ import { convertAwarenessSelection } from './utils';
 // Re-export types for backward compatibility
 export type { AwarenessMetadata, AwarenessSelection, AwarenessState, AwarenessUser, Cursor } from './types';
 
+const getAwarenessIdentityKey = (uuid: string | undefined, uid: number, deviceId: string) => {
+  if (uuid) {
+    return `uuid:${uuid}`;
+  }
+
+  if (Number.isFinite(uid)) {
+    return `uid:${uid}`;
+  }
+
+  return `device:${deviceId}`;
+};
+
+const getNormalizedMetadata = (rawMetadata?: string): AwarenessMetadata | null => {
+  if (!rawMetadata) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawMetadata) as Record<string, unknown>;
+
+    if (!parsed || typeof parsed !== 'object') {
+      return null;
+    }
+
+    return {
+      user_name: typeof parsed.user_name === 'string' ? parsed.user_name : '',
+      cursor_color: typeof parsed.cursor_color === 'string' ? parsed.cursor_color : '',
+      selection_color: typeof parsed.selection_color === 'string' ? parsed.selection_color : '',
+      user_avatar: typeof parsed.user_avatar === 'string' ? parsed.user_avatar : '',
+      user_uuid: typeof parsed.user_uuid === 'string' ? parsed.user_uuid : undefined,
+    };
+  } catch (error) {
+    Log.warn('Failed to parse awareness metadata', { error });
+    return null;
+  }
+};
+
 export function useUsersSelector(awareness?: Awareness) {
   const [users, setUsers] = useState<AwarenessUser[]>([]);
 
@@ -27,10 +64,15 @@ export function useUsersSelector(awareness?: Awareness) {
         }
 
         const uid = Number(state.user.uid);
-        const meta = JSON.parse(state.metadata || '{}') as AwarenessMetadata;
+        const meta = getNormalizedMetadata(state.metadata);
+
+        if (!meta) {
+          return;
+        }
 
         users.push({
           uid,
+          uuid: meta.user_uuid,
           name: meta.user_name,
           timestamp: state.timestamp,
           device_id: state.user.device_id,
@@ -42,7 +84,7 @@ export function useUsersSelector(awareness?: Awareness) {
       setUsers(
         uniqBy(
           users.sort((a, b) => b.timestamp - a.timestamp),
-          'uid'
+          (user) => getAwarenessIdentityKey(user.uuid, user.uid, user.device_id)
         ).filter((user) => !!user.name)
       );
     };
@@ -60,6 +102,7 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
   const [cursors, setCursors] = useState<Cursor[]>([]);
   const editor = useSlate();
   const service = useService();
+  const localDeviceId = service?.getDeviceId();
 
   useEffect(() => {
     const renderCursors = () => {
@@ -72,11 +115,13 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
         }
 
         const uid = Number(state.user.uid);
-        const meta = JSON.parse(state.metadata || '{}') as AwarenessMetadata;
+        const meta = getNormalizedMetadata(state.metadata);
 
-        const deviceId = service?.getDeviceId();
+        if (!meta) {
+          return;
+        }
 
-        if (deviceId === state.user.device_id) {
+        if (localDeviceId && localDeviceId === state.user.device_id) {
           return;
         }
 
@@ -85,6 +130,7 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
 
           cursors.push({
             uid,
+            uuid: meta.user_uuid,
             name: meta.user_name,
             cursorColor: meta.cursor_color,
             selectionColor: meta.selection_color,
@@ -100,14 +146,14 @@ export function useRemoteSelectionsSelector(awareness?: Awareness) {
       setCursors(
         uniqBy(
           cursors.sort((a, b) => b.timestamp - a.timestamp),
-          'uid'
+          (cursor) => getAwarenessIdentityKey(cursor.uuid, cursor.uid, cursor.deviceId)
         )
       );
     };
 
     awareness?.on('change', renderCursors);
     return () => awareness?.off('change', renderCursors);
-  }, [awareness, service]);
+  }, [awareness, localDeviceId]);
 
   const cursorsWithBaseRange = useMemo(() => {
     if (!cursors.length || !editor || !editor.children[0]) return [];

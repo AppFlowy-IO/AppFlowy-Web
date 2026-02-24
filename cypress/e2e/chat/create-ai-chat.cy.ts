@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { AddPageSelectors, PageSelectors, ModalSelectors, SidebarSelectors, ChatSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
@@ -39,11 +38,7 @@ describe('AI Chat Creation and Navigation Tests', () => {
 
             // Step 1: Login
             testLog.info( '=== Step 1: Login ===');
-            cy.visit('/login', { failOnStatusCode: false });
-            cy.wait(2000);
-
-            const authUtils = new AuthTestUtils();
-            authUtils.signInWithTestUrl(testEmail).then(() => {
+            cy.signIn(testEmail).then(() => {
                 cy.url().should('include', '/app');
                 
                 // Wait for the app to fully load

@@ -12,6 +12,7 @@ message WorkspaceNotification {
         ServerLimit server_limit = 6;
         WorkspaceMemberProfileChanged workspace_member_profile_changed = 7;
         FolderChanged folder_changed = 8;
+        FolderViewChanged folder_view_changed = 9;
     }
 }
 
@@ -82,4 +83,19 @@ message WorkspaceMemberProfileChanged {
 message FolderChanged {
     string outline_diff_json = 1;
     optional string folder_rid = 2;
+}
+
+message FolderViewChanged {
+    // 0=VIEW_FIELDS_CHANGED, 1=VIEW_ADDED, 2=VIEW_REMOVED, 3=CHILDREN_REORDERED
+    uint32 change_type = 1;
+    // The changed view_id (types 0,1) or parent_view_id (types 2,3)
+    string view_id = 2;
+    // JSON-serialized FolderView (present for types 0,1; absent for 2,3)
+    optional string view_json = 3;
+    // Parent view ID (for type 1=VIEW_ADDED)
+    optional string parent_view_id = 4;
+    // Remaining/reordered child IDs (for types 2,3)
+    repeated string child_view_ids = 5;
+    // Dedup token
+    optional string folder_rid = 6;
 }

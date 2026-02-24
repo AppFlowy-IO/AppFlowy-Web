@@ -25,7 +25,6 @@ import {
   DatabaseGridSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { generateRandomEmail } from '../../support/test-config';
 
 describe('Calendar Basic Tests (Desktop Parity)', () => {
@@ -35,13 +34,7 @@ describe('Calendar Basic Tests (Desktop Parity)', () => {
 
   it('create calendar view', () => {
     const email = generateRandomEmail();
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(1500);
-    const authUtils = new AuthTestUtils();
-
-    authUtils.signInWithTestUrl(email).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(4000);
+    loginAndCreateCalendar(email).then(() => {
 
       // Create a new calendar
       AddPageSelectors.inlineAddButton().first().click({ force: true });

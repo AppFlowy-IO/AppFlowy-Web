@@ -1,6 +1,5 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
+import { generateRandomEmail } from '../../../support/test-config';
 import {
   AddPageSelectors,
   DatabaseGridSelectors,
@@ -11,7 +10,6 @@ import {
 } from '../../../support/selectors';
 
 describe('Embedded Database - Bottom Scroll Preservation', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
@@ -38,14 +36,9 @@ describe('Embedded Database - Bottom Scroll Preservation', () => {
     cy.task('log', `[TEST START] Testing scroll preservation for ${databaseType} at bottom - Test email: ${testEmail}`);
 
     // Step 1: Login
-    cy.task('log', '[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    cy.task('log', '[STEP 2] Starting authentication');
-    authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.task('log', '[STEP 3] Authentication successful');
+    cy.task('log', '[STEP 1] Starting authentication');
+    cy.signIn(testEmail).then(() => {
+      cy.task('log', '[STEP 2] Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 

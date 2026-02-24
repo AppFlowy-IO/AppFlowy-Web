@@ -730,6 +730,22 @@ describe('view-utils', () => {
         expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(true);
       });
 
+      it('returns false for embedded database container with has_children=true but empty children (lazy loading)', () => {
+        const view = createMockView({
+          view_id: 'lazy-container',
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true, embedded: true },
+          children: [], // Children not loaded yet (lazy loading)
+          has_children: true, // Server indicates children exist
+        });
+        const parentView = createMockView({
+          view_id: 'parent-doc',
+          layout: ViewLayout.Document,
+        });
+
+        expect(isLinkedDatabaseViewUnderDocument(view, parentView)).toBe(false);
+      });
+
       it('returns false for embedded database view with is_database_container=true AND children', () => {
         const childView = createMockView({
           view_id: 'child-view',

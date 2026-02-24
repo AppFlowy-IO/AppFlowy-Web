@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -19,8 +19,7 @@ const READY_STATE = {
 
 export function ConnectBanner() {
   const [readyState, setReadyState] = useState<number>(READY_STATE.CONNECTING);
-  const [isStableConnection, setIsStableConnection] = useState(false);
-  const autoReconnectAttemptedRef = useRef(false);
+  const autoReconnectAttemptedRef = useRef(0); // timestamp of last auto-reconnect attempt
   const { eventEmitter } = useAppHandlers();
   const { t } = useTranslation();
 
@@ -30,11 +29,6 @@ export function ConnectBanner() {
 
     const handleWebSocketStatus = (status: number) => {
       setReadyState(status);
-
-      // If the connection is closed, set the connection to unstable
-      if (status === READY_STATE.CLOSED) {
-        setIsStableConnection(false);
-      }
     };
 
     eventEmitter.on(APP_EVENTS.WEBSOCKET_STATUS, handleWebSocketStatus);
@@ -44,47 +38,43 @@ export function ConnectBanner() {
     };
   }, [eventEmitter]);
 
-  // Listen to connection stability: The connection is considered stable after 2 seconds of OPEN state
-  useEffect(() => {
-    if (readyState === READY_STATE.OPEN) {
-      setIsStableConnection(true);
-    } else {
-      setIsStableConnection(false);
-    }
-  }, [readyState]);
-
   // Manual reconnect
   const handleReconnect = useCallback(() => {
     if (!eventEmitter) return;
     eventEmitter.emit(APP_EVENTS.RECONNECT_WEBSOCKET);
   }, [eventEmitter]);
 
-  const isLoading = useMemo(() => {
-    return readyState === READY_STATE.CONNECTING || readyState === READY_STATE.CLOSING;
-  }, [readyState]);
+  const isLoading = readyState === READY_STATE.CONNECTING || readyState === READY_STATE.CLOSING;
+  const isClosed = readyState === READY_STATE.CLOSED;
+  const isOpen = readyState === READY_STATE.OPEN;
 
-  const isClosed = useMemo(() => {
-    return readyState === READY_STATE.CLOSED;
-  }, [readyState]);
-
+  // Reset cooldown only when connection is fully re-established.
   useEffect(() => {
-    if (!isClosed) {
-      autoReconnectAttemptedRef.current = false;
+    if (isOpen) {
+      autoReconnectAttemptedRef.current = 0;
     }
-  }, [isClosed]);
+  }, [isOpen]);
 
-  // Automatically trigger reconnect when the user returns to the page and the socket is closed
+  // Automatically trigger reconnect when the user returns to the page and the socket is closed.
+  // Allows multiple attempts with a 30-second cooldown between each.
   useEffect(() => {
     if (!isClosed || isLoading) return;
     if (typeof window === 'undefined' || typeof document === 'undefined') return;
 
+    const AUTO_RECONNECT_COOLDOWN_MS = 30000; // 30s cooldown between auto-reconnect attempts
+
     const tryAutoReconnect = () => {
-      if (autoReconnectAttemptedRef.current) return;
-      if (!isClosed || isLoading) return;
+      // Note: isClosed && !isLoading is guaranteed by the early return above.
       if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
       if (document.visibilityState !== 'visible') return;
 
-      autoReconnectAttemptedRef.current = true;
+      const now = Date.now();
+      const lastAttemptTime = autoReconnectAttemptedRef.current;
+
+      // Enforce cooldown between attempts
+      if (lastAttemptTime > 0 && now - lastAttemptTime < AUTO_RECONNECT_COOLDOWN_MS) return;
+
+      autoReconnectAttemptedRef.current = now;
 
       Log.debug('Trying to auto reconnect');
       handleReconnect();
@@ -109,8 +99,8 @@ export function ConnectBanner() {
     };
   }, [handleReconnect, isClosed, isLoading]);
 
-  // Only hide the banner when the connection is stable
-  if (isStableConnection && readyState === READY_STATE.OPEN) {
+  // Hide the banner when the connection is open and stable
+  if (isOpen) {
     return (
       <div
         className='fixed left-0 right-0 top-0 z-50 overflow-hidden transition-all duration-300 ease-in-out'
@@ -119,28 +109,26 @@ export function ConnectBanner() {
     );
   }
 
-  // The conditions for displaying the banner: connecting, unstable connection, or closed
-  const shouldShowBanner = isLoading || isClosed || (readyState === READY_STATE.OPEN && !isStableConnection);
-
-  if (!shouldShowBanner) {
+  // Show the banner when connecting or closed
+  if (!isLoading && !isClosed) {
     return null;
   }
 
   return (
-    <div className='absolute left-0 top-[48px] z-50 w-full bg-surface-container-layer-01 transition-all duration-300 ease-in-out'>
+    <div data-testid='connect-banner' className='absolute left-0 top-[48px] z-50 w-full bg-surface-container-layer-01 transition-all duration-300 ease-in-out'>
       <div className='flex h-[52px] items-center px-4 py-3'>
         <div className='flex items-center space-x-2'>
-          {(isLoading || (readyState === READY_STATE.OPEN && !isStableConnection)) && (
+          {isLoading && (
             <>
               <Progress variant={'primary'} />
-              <span className='text-sm text-text-secondary'>{t('connecting')}</span>
+              <span data-testid='connect-banner-connecting' className='text-sm text-text-secondary'>{t('connecting')}</span>
             </>
           )}
           {isClosed && (
             <>
               <CloudOffIcon className='h-5 w-5 text-text-tertiary' />
-              <span className='text-sm text-text-secondary'>{t('disconnected')}</span>
-              <Button variant='outline' size='sm' className='ml-2' onClick={handleReconnect}>
+              <span data-testid='connect-banner-disconnected' className='text-sm text-text-secondary'>{t('disconnected')}</span>
+              <Button data-testid='connect-banner-reconnect' variant='outline' size='sm' className='ml-2' onClick={handleReconnect}>
                 {t('reconnect')}
               </Button>
             </>

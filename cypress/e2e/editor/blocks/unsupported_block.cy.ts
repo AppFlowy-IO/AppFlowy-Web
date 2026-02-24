@@ -1,11 +1,9 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
 // This test requires __TEST_DOC__ which is only exposed in dev mode
 // Tests will be skipped in CI where production builds are used
 describe('Unsupported Block Display', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
 
   before(() => {
@@ -33,7 +31,7 @@ describe('Unsupported Block Display', () => {
     cy.session(
       testEmail,
       () => {
-        authUtils.signInWithTestUrl(testEmail);
+        cy.signIn(testEmail);
       },
       {
         validate: () => {

@@ -1,9 +1,7 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { BlockSelectors, EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail, getCmdKey } from '../../../support/test-config';
 
 describe('Editor Navigation & Interaction', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
   const cmdKey = getCmdKey();
 
@@ -15,7 +13,7 @@ describe('Editor Navigation & Interaction', () => {
     cy.on('uncaught:exception', () => false);
 
     cy.session(testEmail, () => {
-      authUtils.signInWithTestUrl(testEmail);
+      cy.signIn(testEmail);
     }, {
       validate: () => {
         cy.window().then((win) => {

@@ -1,9 +1,7 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Editor Lists Manipulation', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
 
   before(() => {
@@ -14,7 +12,7 @@ describe('Editor Lists Manipulation', () => {
     cy.on('uncaught:exception', () => false);
     
     cy.session(testEmail, () => {
-      authUtils.signInWithTestUrl(testEmail);
+      cy.signIn(testEmail);
     }, {
       validate: () => {
         cy.window().then((win) => {

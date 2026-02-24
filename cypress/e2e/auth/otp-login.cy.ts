@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import { TestConfig, generateRandomEmail } from '../../support/test-config';
 import { AuthSelectors } from '../../support/selectors';
+import { visitAuthPath } from '../../support/auth-flow-helpers';
 
 /**
  * OTP Login Flow Tests
@@ -23,6 +24,9 @@ import { AuthSelectors } from '../../support/selectors';
  */
 describe('OTP Login Flow', () => {
   const { baseUrl, gotrueUrl, apiUrl } = TestConfig;
+  const visitLoginWithRedirect = (encodedRedirectTo: string) => {
+    visitAuthPath(`/login?redirectTo=${encodedRedirectTo}`);
+  };
 
   beforeEach(() => {
     // Handle uncaught exceptions
@@ -92,8 +96,7 @@ describe('OTP Login Flow', () => {
 
       // Visit login page with encoded redirectTo parameter
       cy.log('[STEP 1] Visiting login page with redirectTo parameter');
-      cy.visit(`/login?redirectTo=${encodedRedirectTo}`);
-      cy.wait(2000);
+      visitLoginWithRedirect(encodedRedirectTo);
 
       // Enter email
       cy.log('[STEP 2] Entering email address');
@@ -223,8 +226,7 @@ describe('OTP Login Flow', () => {
 
       // Visit login page
       cy.log('[STEP 1] Visiting login page');
-      cy.visit(`/login?redirectTo=${encodedRedirectTo}`);
-      cy.wait(2000);
+      visitLoginWithRedirect(encodedRedirectTo);
 
       // Enter email and request magic link
       cy.log('[STEP 2] Entering email and requesting magic link');
@@ -287,8 +289,7 @@ describe('OTP Login Flow', () => {
 
       // Visit login page
       cy.log('[STEP 1] Visiting login page');
-      cy.visit(`/login?redirectTo=${encodedRedirectTo}`);
-      cy.wait(2000);
+      visitLoginWithRedirect(encodedRedirectTo);
 
       // Enter email and request magic link
       cy.log('[STEP 2] Entering email and requesting magic link');
@@ -341,8 +342,7 @@ describe('OTP Login Flow', () => {
 
       // Visit login page
       cy.log('[STEP 1] Visiting login page');
-      cy.visit(`/login?redirectTo=${encodedRedirectTo}`);
-      cy.wait(2000);
+      visitLoginWithRedirect(encodedRedirectTo);
 
       // Enter email and request magic link
       cy.log('[STEP 2] Entering email and requesting magic link');
@@ -444,8 +444,7 @@ describe('OTP Login Flow', () => {
 
       // Visit login page with User A's workspace-specific redirect URL
       cy.log('[STEP 1] Visiting login page with User A workspace redirect URL');
-      cy.visit(`/login?redirectTo=${encodedRedirectTo}`);
-      cy.wait(2000);
+      visitLoginWithRedirect(encodedRedirectTo);
 
       // Enter email (User B)
       cy.log('[STEP 2] User B entering email address');

@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo } from 'react';
+import React, { Suspense, useCallback, useMemo } from 'react';
 
 import { usePublishContext } from '@/application/publish';
 import { UIVariant, ViewComponentProps, ViewLayout, YDoc } from '@/application/types';
@@ -41,6 +41,23 @@ function CollabView({ doc }: CollabViewProps) {
   const onRendered = usePublishContext()?.onRendered;
   const rendered = usePublishContext()?.rendered;
   const getViewIdFromDatabaseId = usePublishContext()?.getViewIdFromDatabaseId;
+
+  // Create loadRowDocument function for publish mode using loadView
+  const loadRowDocument = useCallback(
+    async (documentId: string): Promise<YDoc | null> => {
+      if (!loadView) return null;
+      try {
+        // loadView with isSubDocument=true calls getPublishRowDocument
+        const doc = await loadView(documentId, true);
+
+        return doc || null;
+      } catch {
+        return null;
+      }
+    },
+    [loadView]
+  );
+
   const className = useMemo(() => {
     const classList = ['relative w-full flex-1'];
 
@@ -93,6 +110,8 @@ function CollabView({ doc }: CollabViewProps) {
           createRow={createRow}
           navigateToView={navigateToView}
           loadView={loadView}
+          loadRowDocument={loadRowDocument}
+          // createRowDocument is NOT provided in publish mode (read-only)
           isTemplateThumb={isTemplateThumb}
           appendBreadcrumb={appendBreadcrumb}
           variant={UIVariant.Publish}

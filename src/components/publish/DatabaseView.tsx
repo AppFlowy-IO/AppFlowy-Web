@@ -27,6 +27,10 @@ export interface DatabaseProps {
   doc: YDoc;
   createRow?: CreateRow;
   loadView?: LoadView;
+  /**
+   * Load a row sub-document from published cache.
+   */
+  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   viewMeta: ViewMetaProps;

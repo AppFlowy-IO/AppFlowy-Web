@@ -6,7 +6,7 @@ import { openCollabDBWithProvider } from '@/application/db';
 import { YDoc, YjsDatabaseKey } from '@/application/types';
 
 const BACKGROUND_BATCH_SIZE = 24;
-const BACKGROUND_CONCURRENCY = 6;
+const BACKGROUND_CONCURRENCY = 12;
 
 /**
  * Hook that handles background loading of row documents for sorting/filtering.

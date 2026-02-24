@@ -23,6 +23,7 @@ export function useAllContextData(awarenessMap: Record<string, Awareness>): AppC
     // From SyncInternalContext (may be null if no workspace ID)
     eventEmitter: syncData?.eventEmitter,
     awarenessMap: awarenessMap, // Use the awareness map from business layer
+    scheduleDeferredCleanup: syncData?.scheduleDeferredCleanup,
 
     // From BusinessInternalContext - all business operations and state (may be null if no workspace ID)
     ...businessData,

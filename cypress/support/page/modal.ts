@@ -52,3 +52,25 @@ export function clickOutsideModal() {
 
     testLog.info( 'Modal closed');
 }
+
+/**
+ * Closes the top-most visible dialog unless it contains the given document editor.
+ * Useful when inserting embedded databases opens an extra modal on top of the document.
+ * @param docViewId - The view ID of the document editor to preserve
+ */
+export function closeTopDialogIfNotDocument(docViewId: string) {
+    cy.get('body').then(($body) => {
+        const dialogs = ($body as unknown as JQuery).find('[role="dialog"]').filter(':visible');
+
+        if (dialogs.length === 0) return;
+
+        const topDialog = dialogs.last();
+        const topContainsDocEditor = topDialog.find(`#editor-${docViewId}`).length > 0;
+
+        if (!topContainsDocEditor) {
+            testLog.info('Closing top dialog (not the document)');
+            cy.get('body').type('{esc}');
+            waitForReactUpdate(800);
+        }
+    });
+}

@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
 import {
   EditorSelectors,
@@ -30,11 +29,10 @@ describe('Embedded Database - Bottom Scroll Preservation (Simplified)', () => {
     cy.task('log', `[TEST] Email: ${testEmail}`);
 
     // Login
-    const authUtils = new AuthTestUtils();
 
     // Use cy.session for authentication like the working tests
     cy.session(testEmail, () => {
-      authUtils.signInWithTestUrl(testEmail);
+      cy.signIn(testEmail);
     }, {
       validate: () => {
         cy.window().then((win) => {

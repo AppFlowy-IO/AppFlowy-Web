@@ -1419,3 +1419,429 @@ describe('desktop grid filter parity', () => {
     expect(result).toEqual([fixture.rowIds[0], fixture.rowIds[1], fixture.rowIds[3], fixture.rowIds[5]]);
   });
 });
+
+describe('desktop sync filter parsing (plain objects)', () => {
+  /**
+   * When filters are synced from desktop to web, the children array inside
+   * And/Or root filters may contain plain JavaScript objects instead of Yjs Maps.
+   * This happens because Yjs converts nested data to plain objects during sync.
+   *
+   * The web selectors need to handle both:
+   * - Yjs Maps (with .get() method) - created by web
+   * - Plain objects (direct property access) - synced from desktop
+   *
+   * These tests verify that parseFilter works correctly when given a proxy wrapper
+   * that provides a .get() method for plain object property access.
+   */
+
+  const { parseFilter } = require('@/application/database-yjs/filter');
+
+  /**
+   * Creates a proxy wrapper for a plain object that provides a .get() method,
+   * simulating how the selector handles desktop-synced filter data.
+   */
+  function wrapPlainObjectAsFilter(plainObject: Record<string, unknown>) {
+    return {
+      get: (key: string) => plainObject[key],
+    };
+  }
+
+  it('parses text filter from plain object (desktop sync scenario)', () => {
+    // Simulate filter data as it arrives from desktop sync
+    const plainFilterData = {
+      id: 'filter-desktop-1',
+      field_id: 'text-field',
+      filter_type: FilterType.Data,
+      condition: TextFilterCondition.TextContains,
+      content: 'test',
+      ty: FieldType.RichText, // Desktop stores field type in 'ty' key
+    };
+
+    const filterProxy = wrapPlainObjectAsFilter(plainFilterData);
+    const parsed = parseFilter(FieldType.RichText, filterProxy);
+
+    expect(parsed.id).toBe('filter-desktop-1');
+    expect(parsed.fieldId).toBe('text-field');
+    expect(parsed.filterType).toBe(FilterType.Data);
+    expect(parsed.condition).toBe(TextFilterCondition.TextContains);
+    expect(parsed.content).toBe('test');
+  });
+
+  it('parses number filter from plain object (desktop sync scenario)', () => {
+    const plainFilterData = {
+      id: 'filter-desktop-2',
+      field_id: 'number-field',
+      filter_type: FilterType.Data,
+      condition: NumberFilterCondition.GreaterThan,
+      content: '100',
+      ty: FieldType.Number,
+    };
+
+    const filterProxy = wrapPlainObjectAsFilter(plainFilterData);
+    const parsed = parseFilter(FieldType.Number, filterProxy);
+
+    expect(parsed.id).toBe('filter-desktop-2');
+    expect(parsed.fieldId).toBe('number-field');
+    expect(parsed.condition).toBe(NumberFilterCondition.GreaterThan);
+    expect(parsed.content).toBe('100');
+  });
+
+  it('parses checkbox filter from plain object (desktop sync scenario)', () => {
+    const plainFilterData = {
+      id: 'filter-desktop-3',
+      field_id: 'checkbox-field',
+      filter_type: FilterType.Data,
+      condition: CheckboxFilterCondition.IsChecked,
+      content: '',
+      ty: FieldType.Checkbox,
+    };
+
+    const filterProxy = wrapPlainObjectAsFilter(plainFilterData);
+    const parsed = parseFilter(FieldType.Checkbox, filterProxy);
+
+    expect(parsed.id).toBe('filter-desktop-3');
+    expect(parsed.fieldId).toBe('checkbox-field');
+    expect(parsed.condition).toBe(CheckboxFilterCondition.IsChecked);
+  });
+
+  it('parses select option filter from plain object (desktop sync scenario)', () => {
+    const plainFilterData = {
+      id: 'filter-desktop-4',
+      field_id: 'select-field',
+      filter_type: FilterType.Data,
+      condition: SelectOptionFilterCondition.OptionIs,
+      content: 'opt-1,opt-2',
+      ty: FieldType.SingleSelect,
+    };
+
+    const filterProxy = wrapPlainObjectAsFilter(plainFilterData);
+    const parsed = parseFilter(FieldType.SingleSelect, filterProxy);
+
+    expect(parsed.id).toBe('filter-desktop-4');
+    expect(parsed.fieldId).toBe('select-field');
+    expect(parsed.condition).toBe(SelectOptionFilterCondition.OptionIs);
+    expect(parsed.optionIds).toEqual(['opt-1', 'opt-2']);
+  });
+
+  it('parses date filter from plain object (desktop sync scenario)', () => {
+    const timestamp = dayjs('2024-01-15').startOf('day').unix();
+    const plainFilterData = {
+      id: 'filter-desktop-5',
+      field_id: 'date-field',
+      filter_type: FilterType.Data,
+      condition: DateFilterCondition.DateStartsOn,
+      content: JSON.stringify({ timestamp }),
+      ty: FieldType.DateTime,
+    };
+
+    const filterProxy = wrapPlainObjectAsFilter(plainFilterData);
+    const parsed = parseFilter(FieldType.DateTime, filterProxy);
+
+    expect(parsed.id).toBe('filter-desktop-5');
+    expect(parsed.fieldId).toBe('date-field');
+    expect(parsed.condition).toBe(DateFilterCondition.DateStartsOn);
+    expect(parsed.timestamp).toBe(timestamp);
+  });
+
+  it('parses date range filter from plain object (desktop sync scenario)', () => {
+    const start = dayjs('2024-01-01').startOf('day').unix();
+    const end = dayjs('2024-01-31').startOf('day').unix();
+    const plainFilterData = {
+      id: 'filter-desktop-6',
+      field_id: 'date-field',
+      filter_type: FilterType.Data,
+      condition: DateFilterCondition.DateStartsBetween,
+      content: JSON.stringify({ start, end }),
+      ty: FieldType.DateTime,
+    };
+
+    const filterProxy = wrapPlainObjectAsFilter(plainFilterData);
+    const parsed = parseFilter(FieldType.DateTime, filterProxy);
+
+    expect(parsed.id).toBe('filter-desktop-6');
+    expect(parsed.condition).toBe(DateFilterCondition.DateStartsBetween);
+    expect(parsed.start).toBe(start);
+    expect(parsed.end).toBe(end);
+  });
+
+  it('handles filter with BigInt values from desktop (converted to number)', () => {
+    // Desktop may store values as BigInt, but when synced they become numbers
+    // or need to be converted via Number()
+    const plainFilterData = {
+      id: 'filter-desktop-7',
+      field_id: 'text-field',
+      filter_type: BigInt(2), // FilterType.Data as BigInt
+      condition: BigInt(2), // TextFilterCondition.TextContains as BigInt
+      content: 'search',
+      ty: BigInt(0), // FieldType.RichText as BigInt
+    };
+
+    const filterProxy = wrapPlainObjectAsFilter(plainFilterData);
+    const parsed = parseFilter(FieldType.RichText, filterProxy);
+
+    // parseFilter uses Number() to convert, so BigInt should work
+    expect(parsed.filterType).toBe(2);
+    expect(parsed.condition).toBe(2);
+  });
+
+  it('handles empty content in desktop-synced filter', () => {
+    const plainFilterData = {
+      id: 'filter-desktop-8',
+      field_id: 'text-field',
+      filter_type: FilterType.Data,
+      condition: TextFilterCondition.TextIsEmpty,
+      content: '',
+      ty: FieldType.RichText,
+    };
+
+    const filterProxy = wrapPlainObjectAsFilter(plainFilterData);
+    const parsed = parseFilter(FieldType.RichText, filterProxy);
+
+    expect(parsed.id).toBe('filter-desktop-8');
+    expect(parsed.condition).toBe(TextFilterCondition.TextIsEmpty);
+    expect(parsed.content).toBe('');
+  });
+
+  it('simulates full desktop sync scenario with hierarchical filter structure', () => {
+    // This simulates the exact structure that arrives from desktop:
+    // - Root filter is an And/Or group (stored as Yjs Map)
+    // - Children are stored as plain objects (after Yjs array sync)
+
+    const doc = new Y.Doc();
+    const rootFilter = doc.getMap('root') as YDatabaseFilter;
+
+    // Set up root as AND filter
+    rootFilter.set(YjsDatabaseKey.id, 'root-and');
+    rootFilter.set(YjsDatabaseKey.filter_type, FilterType.And);
+
+    // Create children array with plain objects (simulating desktop sync)
+    const childrenArray = new Y.Array();
+
+    // When Yjs syncs from desktop, nested maps become plain objects
+    // We simulate this by pushing plain objects to the array
+    const plainChild1 = {
+      id: 'child-1',
+      field_id: 'text-field',
+      filter_type: FilterType.Data,
+      condition: TextFilterCondition.TextContains,
+      content: 'alpha',
+      ty: FieldType.RichText,
+    };
+
+    const plainChild2 = {
+      id: 'child-2',
+      field_id: 'number-field',
+      filter_type: FilterType.Data,
+      condition: NumberFilterCondition.GreaterThan,
+      content: '10',
+      ty: FieldType.Number,
+    };
+
+    // Note: In real Yjs sync, push would accept Yjs types, but after sync
+    // from desktop, accessing via .get(index) returns plain objects
+    childrenArray.push([plainChild1, plainChild2]);
+    rootFilter.set(YjsDatabaseKey.children, childrenArray);
+
+    // Verify the structure
+    const children = rootFilter.get(YjsDatabaseKey.children) as Y.Array<unknown>;
+    expect(children.length).toBe(2);
+
+    // Access children like the selector does
+    const child0 = children.get(0);
+    const child1 = children.get(1);
+
+    // Verify children are plain objects (no .get method)
+    expect(typeof (child0 as { get?: unknown }).get).toBe('undefined');
+    expect(typeof (child1 as { get?: unknown }).get).toBe('undefined');
+
+    // Parse using proxy wrapper (as the selector does)
+    const proxy0 = wrapPlainObjectAsFilter(child0 as Record<string, unknown>);
+    const proxy1 = wrapPlainObjectAsFilter(child1 as Record<string, unknown>);
+
+    const parsed0 = parseFilter(FieldType.RichText, proxy0);
+    const parsed1 = parseFilter(FieldType.Number, proxy1);
+
+    expect(parsed0.id).toBe('child-1');
+    expect(parsed0.fieldId).toBe('text-field');
+    expect(parsed0.condition).toBe(TextFilterCondition.TextContains);
+
+    expect(parsed1.id).toBe('child-2');
+    expect(parsed1.fieldId).toBe('number-field');
+    expect(parsed1.condition).toBe(NumberFilterCondition.GreaterThan);
+  });
+});
+
+describe('desktop sync filter operations (delete/update with plain objects)', () => {
+  /**
+   * Tests for operations on filters that contain plain objects from desktop sync.
+   * The useRemoveAdvancedFilter and useUpdateAdvancedFilter hooks need to handle
+   * finding filters by ID when the children array contains plain objects instead
+   * of Yjs Maps.
+   */
+
+  /**
+   * Helper function to check if an item is a Yjs Map (has .get method)
+   * and get the ID appropriately - mimics the fix in sort-filter.ts
+   */
+  function getFilterId(item: unknown): string | undefined {
+    const isYjsMap = typeof (item as { get?: unknown }).get === 'function';
+    if (isYjsMap) {
+      return (item as { get: (key: string) => unknown }).get(YjsDatabaseKey.id) as string;
+    }
+    return (item as Record<string, unknown>)[YjsDatabaseKey.id] as string;
+  }
+
+  it('finds filter by ID when children are plain objects (desktop sync scenario)', () => {
+    const doc = new Y.Doc();
+    const rootFilter = doc.getMap('root') as YDatabaseFilter;
+
+    rootFilter.set(YjsDatabaseKey.id, 'root-and');
+    rootFilter.set(YjsDatabaseKey.filter_type, FilterType.And);
+
+    const childrenArray = new Y.Array();
+
+    // Push plain objects (simulating desktop sync)
+    const plainChild1 = {
+      [YjsDatabaseKey.id]: 'filter-1',
+      [YjsDatabaseKey.field_id]: 'text-field',
+      [YjsDatabaseKey.filter_type]: FilterType.Data,
+      [YjsDatabaseKey.condition]: TextFilterCondition.TextContains,
+      [YjsDatabaseKey.content]: 'test',
+    };
+
+    const plainChild2 = {
+      [YjsDatabaseKey.id]: 'filter-2',
+      [YjsDatabaseKey.field_id]: 'number-field',
+      [YjsDatabaseKey.filter_type]: FilterType.Data,
+      [YjsDatabaseKey.condition]: NumberFilterCondition.Equal,
+      [YjsDatabaseKey.content]: '42',
+    };
+
+    childrenArray.push([plainChild1, plainChild2]);
+    rootFilter.set(YjsDatabaseKey.children, childrenArray);
+
+    const children = rootFilter.get(YjsDatabaseKey.children) as Y.Array<unknown>;
+
+    // Find filter by ID using the helper (mimics the fix)
+    const targetId = 'filter-2';
+    let foundIndex = -1;
+    for (let i = 0; i < children.length; i++) {
+      const id = getFilterId(children.get(i));
+      if (id === targetId) {
+        foundIndex = i;
+        break;
+      }
+    }
+
+    expect(foundIndex).toBe(1);
+  });
+
+  it('finds filter by ID when using findIndex with plain objects', () => {
+    const doc = new Y.Doc();
+    const childrenArray = doc.getArray('children');
+
+    // Push plain objects
+    childrenArray.push([
+      { [YjsDatabaseKey.id]: 'filter-a', [YjsDatabaseKey.field_id]: 'field-1' },
+      { [YjsDatabaseKey.id]: 'filter-b', [YjsDatabaseKey.field_id]: 'field-2' },
+      { [YjsDatabaseKey.id]: 'filter-c', [YjsDatabaseKey.field_id]: 'field-3' },
+    ]);
+
+    // Use findIndex with the fix pattern
+    const targetId = 'filter-b';
+    const index = childrenArray.toArray().findIndex((f) => {
+      const isYjsMap = typeof (f as { get?: unknown }).get === 'function';
+      const id = isYjsMap
+        ? (f as { get: (key: string) => unknown }).get(YjsDatabaseKey.id)
+        : (f as Record<string, unknown>)[YjsDatabaseKey.id];
+      return id === targetId;
+    });
+
+    expect(index).toBe(1);
+  });
+
+  it('returns -1 when filter ID not found in plain objects', () => {
+    const doc = new Y.Doc();
+    const childrenArray = doc.getArray('children');
+
+    childrenArray.push([
+      { [YjsDatabaseKey.id]: 'filter-1' },
+      { [YjsDatabaseKey.id]: 'filter-2' },
+    ]);
+
+    const targetId = 'non-existent';
+    const index = childrenArray.toArray().findIndex((f) => {
+      const isYjsMap = typeof (f as { get?: unknown }).get === 'function';
+      const id = isYjsMap
+        ? (f as { get: (key: string) => unknown }).get(YjsDatabaseKey.id)
+        : (f as Record<string, unknown>)[YjsDatabaseKey.id];
+      return id === targetId;
+    });
+
+    expect(index).toBe(-1);
+  });
+
+  it('handles detection of Yjs Map vs plain object', () => {
+    // Test the detection logic used in the fix
+    const plainObject = { [YjsDatabaseKey.id]: 'plain-filter' };
+
+    const doc = new Y.Doc();
+    const yjsMap = doc.getMap('filter');
+    yjsMap.set(YjsDatabaseKey.id, 'yjs-filter');
+
+    // Plain object should not have .get method
+    const plainIsYjs = typeof (plainObject as { get?: unknown }).get === 'function';
+    expect(plainIsYjs).toBe(false);
+
+    // Yjs Map should have .get method
+    const yjsIsYjs = typeof (yjsMap as { get?: unknown }).get === 'function';
+    expect(yjsIsYjs).toBe(true);
+
+    // Both should be able to retrieve the ID correctly
+    const getFilterId = (item: unknown): string | undefined => {
+      const isYjsMap = typeof (item as { get?: unknown }).get === 'function';
+      if (isYjsMap) {
+        return (item as { get: (key: string) => unknown }).get(YjsDatabaseKey.id) as string;
+      }
+      return (item as Record<string, unknown>)[YjsDatabaseKey.id] as string;
+    };
+
+    expect(getFilterId(plainObject)).toBe('plain-filter');
+    expect(getFilterId(yjsMap)).toBe('yjs-filter');
+  });
+
+  it('can delete filter from children array with plain objects', () => {
+    const doc = new Y.Doc();
+    const childrenArray = doc.getArray('children');
+
+    childrenArray.push([
+      { [YjsDatabaseKey.id]: 'filter-to-keep' },
+      { [YjsDatabaseKey.id]: 'filter-to-delete' },
+      { [YjsDatabaseKey.id]: 'another-to-keep' },
+    ]);
+
+    expect(childrenArray.length).toBe(3);
+
+    // Find and delete
+    const targetId = 'filter-to-delete';
+    const index = childrenArray.toArray().findIndex((f) => {
+      const isYjsMap = typeof (f as { get?: unknown }).get === 'function';
+      const id = isYjsMap
+        ? (f as { get: (key: string) => unknown }).get(YjsDatabaseKey.id)
+        : (f as Record<string, unknown>)[YjsDatabaseKey.id];
+      return id === targetId;
+    });
+
+    expect(index).toBe(1);
+
+    childrenArray.delete(index);
+
+    expect(childrenArray.length).toBe(2);
+
+    // Verify remaining filters
+    const remaining = childrenArray.toArray().map((f) => {
+      return (f as Record<string, unknown>)[YjsDatabaseKey.id];
+    });
+    expect(remaining).toEqual(['filter-to-keep', 'another-to-keep']);
+  });
+});

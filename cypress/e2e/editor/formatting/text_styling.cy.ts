@@ -1,9 +1,7 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail, getCmdKey } from '../../../support/test-config';
 
 describe('Editor Text Styling & Formatting', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
   const cmdKey = getCmdKey();
 
@@ -18,7 +16,7 @@ describe('Editor Text Styling & Formatting', () => {
     cy.session(testEmail, () => {
       // Logic to sign in
       // We need to ensure this runs fully only once
-      authUtils.signInWithTestUrl(testEmail);
+      cy.signIn(testEmail);
     }, {
       validate: () => {
         // Validate session is still active by checking cookies or localStorage

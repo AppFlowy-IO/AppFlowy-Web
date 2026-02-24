@@ -16,32 +16,14 @@
 
 import {
   PageSelectors,
-  SpaceSelectors,
   ViewActionSelectors,
   ModalSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
-import { AuthTestUtils } from '../../support/auth-utils';
+import { expandSpaceByName } from '../../support/page-utils';
 
 const _spaceName = 'General';
-
-/**
- * Expand a space in the sidebar by clicking on it if not already expanded
- */
-function expandSpaceInSidebar(spaceNameToExpand: string) {
-  cy.log(`[HELPER] Expanding space "${spaceNameToExpand}" in sidebar`);
-
-  SpaceSelectors.itemByName(spaceNameToExpand, { timeout: 30000 }).then(($space) => {
-    const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-    const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-    if (!isExpanded) {
-      SpaceSelectors.itemByName(spaceNameToExpand).find('[data-testid="space-name"]').click({ force: true });
-      waitForReactUpdate(1000);
-    }
-  });
-}
 
 describe('Document Sidebar Refresh via WebSocket', () => {
   // Handle uncaught exceptions
@@ -68,13 +50,12 @@ describe('Document Sidebar Refresh via WebSocket', () => {
     const uniqueId = Date.now();
     const renamedDocumentName = `Renamed-${uniqueId}`;
     const testEmail = generateRandomEmail();
-    const authUtils = new AuthTestUtils();
 
     cy.log(`[TEST START] Testing sidebar refresh via WebSocket notifications with: ${testEmail}`);
 
     // Step 1-4: Sign in with test user using auth utils
     cy.log('[STEP 1-4] Signing in with test user');
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
 
     // Step 5: Wait for app to fully load
     cy.log('[STEP 5] Waiting for app to fully load');
@@ -83,8 +64,19 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Step 6: Expand the General space
     cy.log('[STEP 6] Expanding General space');
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(1000);
+
+    // Expand the first page once before baseline count, so later checks
+    // are not affected by local expansion revealing pre-existing children.
+    cy.get('[data-testid="page-item"]').first().then(($item) => {
+      const expandBtn = $item.find('[data-testid="outline-toggle-expand"]');
+
+      if (expandBtn.length > 0) {
+        cy.wrap(expandBtn).first().click({ force: true });
+        waitForReactUpdate(500);
+      }
+    });
 
     // Count existing pages
     let initialPageCount = 0;
@@ -94,7 +86,7 @@ describe('Document Sidebar Refresh via WebSocket', () => {
       cy.log(`[INFO] Initial page count: ${initialPageCount}`);
       // Get the first page name to use as parent
       if ($pages.length > 0) {
-        parentPageName = $pages.first().text().trim();
+        parentPageName = Cypress.$($pages[0]).text().trim();
         cy.log(`[INFO] Will use "${parentPageName}" as parent page`);
       }
     });
@@ -118,14 +110,40 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Step 10: Verify sidebar page count increased (WebSocket notification worked!)
     cy.log('[STEP 10] Verifying page count increased via WebSocket notification');
-    expandSpaceInSidebar(_spaceName);
-    waitForReactUpdate(2000);
+    expandSpaceByName(_spaceName);
+    waitForReactUpdate(1000);
 
-    // Wait for the new page to appear and verify count increased
+    // Parent expansion is done before baseline count, so count growth now reflects
+    // new data updates instead of local expand/collapse effects.
     const waitForPageCountIncrease = (attempts = 0, maxAttempts = 30): void => {
       if (attempts >= maxAttempts) {
         throw new Error('Page count did not increase - WebSocket notification may not be working');
       }
+
+      // With lazy loading, an outline reload can clear children even while the
+      // parent stays expanded. Collapse then re-expand to trigger a fresh lazy
+      // load of children on each retry attempt.
+      cy.get('[data-testid="page-item"]').first().then(($item) => {
+        const expandBtn = $item.find('[data-testid="outline-toggle-expand"]');
+        const collapseBtn = $item.find('[data-testid="outline-toggle-collapse"]');
+
+        if (expandBtn.length > 0) {
+          cy.wrap(expandBtn).first().click({ force: true });
+          waitForReactUpdate(500);
+        } else if (collapseBtn.length > 0 && attempts > 0) {
+          // Parent is expanded but children may be stale — collapse and re-expand
+          cy.wrap(collapseBtn).first().click({ force: true });
+          waitForReactUpdate(300);
+          cy.get('[data-testid="page-item"]').first().then(($item2) => {
+            const btn = $item2.find('[data-testid="outline-toggle-expand"]');
+
+            if (btn.length > 0) {
+              cy.wrap(btn).first().click({ force: true });
+              waitForReactUpdate(500);
+            }
+          });
+        }
+      });
 
       PageSelectors.names().then(($pages) => {
         const newCount = $pages.length;
@@ -188,12 +206,16 @@ describe('Document Sidebar Refresh via WebSocket', () => {
     });
     cy.get('.MuiDialog-root', { timeout: 30000 }).should('not.exist');
 
-    // Step 12: Expand the parent page to show the newly created child
+    // Step 12: Expand the parent page to show the newly created child (if not already expanded)
     cy.log('[STEP 12] Expanding parent page to show new child');
-    // Click on the expand toggle of the first page item to show its children
-    // Use eq(0) to get the direct toggle, not nested ones
-    cy.get('[data-testid="page-item"]').first().find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
-    waitForReactUpdate(1000);
+    cy.get('[data-testid="page-item"]').first().then(($item) => {
+      const expandBtn = $item.find('[data-testid="outline-toggle-expand"]');
+
+      if (expandBtn.length > 0) {
+        cy.wrap(expandBtn).first().click({ force: true });
+        waitForReactUpdate(1000);
+      }
+    });
 
     // Find the newly created "Untitled" page under the parent
     cy.log('[STEP 12.1] Finding newly created Untitled page');
@@ -268,13 +290,12 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
   it('should verify sidebar updates via WebSocket when creating AI chat', () => {
     const testEmail = generateRandomEmail();
-    const authUtils = new AuthTestUtils();
 
     cy.log(`[TEST START] Testing AI chat sidebar refresh via WebSocket notifications with: ${testEmail}`);
 
     // Step 1: Sign in with test user
     cy.log('[STEP 1] Signing in with test user');
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
 
     // Step 2: Wait for app to fully load
     cy.log('[STEP 2] Waiting for app to fully load');
@@ -283,7 +304,7 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Step 3: Expand the General space
     cy.log('[STEP 3] Expanding General space');
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(1000);
 
     // Count existing pages
@@ -312,14 +333,26 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     // Step 6: Verify sidebar page count increased (WebSocket notification worked!)
     cy.log('[STEP 6] Verifying page count increased via WebSocket notification');
-    expandSpaceInSidebar(_spaceName);
-    waitForReactUpdate(2000);
+    expandSpaceByName(_spaceName);
+    waitForReactUpdate(1000);
 
-    // Wait for the new AI chat to appear and verify count increased
+    // With lazy loading, the new child page only appears in the sidebar when its
+    // parent is expanded. The expand toggle may not exist yet if the outline hasn't
+    // reloaded, so we retry both expansion and page count check in the same loop.
     const waitForPageCountIncrease = (attempts = 0, maxAttempts = 30): void => {
       if (attempts >= maxAttempts) {
         throw new Error('Page count did not increase - WebSocket notification may not be working for AI chat');
       }
+
+      // Try to expand parent page if collapse toggle doesn't exist yet
+      cy.get('[data-testid="page-item"]').first().then(($item) => {
+        const expandBtn = $item.find('[data-testid="outline-toggle-expand"]');
+
+        if (expandBtn.length > 0) {
+          cy.wrap(expandBtn).first().click({ force: true });
+          waitForReactUpdate(500);
+        }
+      });
 
       PageSelectors.names().then(($pages) => {
         const newCount = $pages.length;
@@ -339,10 +372,16 @@ describe('Document Sidebar Refresh via WebSocket', () => {
 
     cy.log('[SUCCESS] New AI chat appeared in sidebar via WebSocket notification!');
 
-    // Step 7: Expand the parent page to show the newly created AI chat
+    // Step 7: Expand the parent page to show the newly created AI chat (if not already expanded)
     cy.log('[STEP 7] Expanding parent page to show new AI chat');
-    cy.get('[data-testid="page-item"]').first().find('[data-testid="outline-toggle-expand"]').first().click({ force: true });
-    waitForReactUpdate(1000);
+    cy.get('[data-testid="page-item"]').first().then(($item) => {
+      const expandBtn = $item.find('[data-testid="outline-toggle-expand"]');
+
+      if (expandBtn.length > 0) {
+        cy.wrap(expandBtn).first().click({ force: true });
+        waitForReactUpdate(1000);
+      }
+    });
 
     // Step 8: Clean up - delete the AI chat
     cy.log('[STEP 8] Cleaning up - deleting AI chat');

@@ -111,7 +111,14 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
       toast.success(t('signUp.signUpSuccess'));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
-      if (error.code === 422) {
+      if (error.message === 'confirmation_email_sent') {
+        // Email confirmation is required — redirect to check email page
+        const encodedRedirect = encodeURIComponent(redirectTo);
+        const encodedEmail = encodeURIComponent(email);
+
+        window.location.href = `/login?action=checkEmail&email=${encodedEmail}&redirectTo=${encodedRedirect}&type=signup`;
+        return;
+      } else if (error.code === 422) {
         setEmailError(t('signUp.emailAlreadyRegistered'));
       } else if (error.code === 429) {
         toast.error(t('tooManyRequests'));

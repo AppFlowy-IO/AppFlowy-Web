@@ -1,10 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
-
-import { AuthTestUtils } from '../../support/auth-utils';
 import { AddPageSelectors, PageIconSelectors, waitForReactUpdate } from '../../support/selectors';
 
 describe('Page Icon Upload', () => {
-  const authUtils = new AuthTestUtils();
   let testEmail: string;
 
   beforeEach(() => {
@@ -29,8 +26,7 @@ describe('Page Icon Upload', () => {
     cy.intercept('PUT', '**/api/file_storage/**').as('fileUpload');
 
     // 1. Sign in
-    cy.visit('/login', { failOnStatusCode: false });
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForReactUpdate(2000);
     });
@@ -82,8 +78,7 @@ describe('Page Icon Upload', () => {
 
   it('should display emoji icon correctly', () => {
     // 1. Sign in
-    cy.visit('/login', { failOnStatusCode: false });
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForReactUpdate(2000);
     });

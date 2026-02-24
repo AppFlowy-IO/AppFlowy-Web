@@ -26,13 +26,31 @@ function PublishPanel({
 }) {
   const { t } = useTranslation();
   const { publish, unpublish } = useAppHandlers();
-  const { url, loadPublishInfo, view, publishInfo, loading, isOwner, isPublisher, updatePublishConfig } =
+  const {
+    url,
+    loadPublishInfo,
+    view,
+    publishInfo,
+    publishInfoViewId,
+    loading,
+    isOwner,
+    isPublisher,
+    updatePublishConfig,
+  } =
     useLoadPublishInfo(viewId);
   const [unpublishLoading, setUnpublishLoading] = React.useState<boolean>(false);
   const [publishLoading, setPublishLoading] = React.useState<boolean>(false);
+  // Track publish/unpublish actions locally so the panel updates immediately,
+  // even when the view object (e.g. server fallback) has a stale is_published flag.
+  const [publishedOverride, setPublishedOverride] = React.useState<boolean | undefined>(undefined);
   const [visibleViewId, setVisibleViewId] = React.useState<string[] | undefined>(undefined);
   const [commentEnabled, setCommentEnabled] = React.useState<boolean | undefined>(undefined);
   const [duplicateEnabled, setDuplicateEnabled] = React.useState<boolean | undefined>(undefined);
+
+  // Reset session-local overrides when the target view changes
+  useEffect(() => {
+    setPublishedOverride(undefined);
+  }, [viewId]);
 
   useEffect(() => {
     if (opened) {
@@ -41,11 +59,11 @@ function PublishPanel({
   }, [loadPublishInfo, opened]);
 
   useEffect(() => {
-    if (opened && publishInfo) {
+    if (opened && publishInfo && publishInfoViewId === viewId) {
       setCommentEnabled(publishInfo.commentEnabled);
       setDuplicateEnabled(publishInfo.duplicateEnabled);
     }
-  }, [opened, publishInfo]);
+  }, [opened, publishInfo, publishInfoViewId, viewId]);
 
   const handlePublish = useCallback(
     async (publishName?: string) => {
@@ -56,6 +74,7 @@ function PublishPanel({
 
       try {
         await publish(view, newPublishName, visibleViewId);
+        setPublishedOverride(true);
         await loadPublishInfo();
         notify.success(t('publish.publishSuccessfully'));
         // eslint-disable-next-line
@@ -79,6 +98,7 @@ function PublishPanel({
 
     try {
       await unpublish(viewId);
+      setPublishedOverride(false);
       await loadPublishInfo();
       notify.success(t('publish.unpublishSuccessfully'));
       // eslint-disable-next-line
@@ -89,13 +109,15 @@ function PublishPanel({
     }
   }, [isOwner, isPublisher, loadPublishInfo, t, unpublish, view, viewId]);
 
+  const scopedPublishInfo = publishInfoViewId === viewId ? publishInfo : undefined;
+
   const renderPublished = useCallback(() => {
-    if (!publishInfo || !view) return null;
+    if (!scopedPublishInfo || !view) return null;
     return (
       <div className={'flex flex-col gap-5'}>
         <PublishLinkPreview
           viewId={viewId}
-          publishInfo={publishInfo}
+          publishInfo={scopedPublishInfo}
           url={url}
           updatePublishConfig={updatePublishConfig}
           onUnPublish={handleUnpublish}
@@ -155,7 +177,7 @@ function PublishPanel({
       </div>
     );
   }, [
-    publishInfo,
+    scopedPublishInfo,
     view,
     url,
     handleUnpublish,
@@ -174,7 +196,11 @@ function PublishPanel({
   const layout = view?.layout;
   const isDatabase =
     layout !== undefined ? [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar].includes(layout) : false;
-  const hasPublished = view?.is_published;
+  const serverPublishedState = Boolean(view?.is_published || scopedPublishInfo);
+  // Reconcile local override with fetched/server state:
+  // - local override is authoritative for immediate UI feedback
+  // - fallback to server-derived state when no local override exists
+  const hasPublished = publishedOverride ?? serverPublishedState;
 
   useEffect(() => {
     if (!hasPublished && isDatabase && view) {
@@ -281,7 +307,7 @@ function PublishPanel({
           }}
           className={'overflow-hidden'}
         >
-          {view?.is_published ? renderPublished() : renderUnpublished()}
+          {hasPublished ? renderPublished() : renderUnpublished()}
         </div>
       </div>
     </div>

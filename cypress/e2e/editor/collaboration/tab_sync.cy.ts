@@ -1,9 +1,7 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Editor Tab Synchronization', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
   let testPageUrl: string;
 
@@ -15,7 +13,7 @@ describe('Editor Tab Synchronization', () => {
     cy.on('uncaught:exception', () => false);
     
     cy.session(testEmail, () => {
-      authUtils.signInWithTestUrl(testEmail);
+      cy.signIn(testEmail);
     }, {
       validate: () => {
         cy.window().then((win) => {
@@ -86,6 +84,6 @@ describe('Editor Tab Synchronization', () => {
     waitForReactUpdate(2000);
 
     // 4. Verify in Main Window with longer timeout
-    EditorSelectors.slateEditor({ timeout: 15000 }).should('contain.text', 'Hello from Main and Iframe');
+    EditorSelectors.slateEditor().should('contain.text', 'Hello from Main and Iframe');
   });
 });

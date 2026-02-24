@@ -44,6 +44,14 @@ export enum NumberFilterCondition {
 }
 
 /**
+ * Checkbox filter condition enum values (matching CheckboxFilterCondition)
+ */
+export enum CheckboxFilterCondition {
+  IsChecked = 0,
+  IsUnchecked = 1,
+}
+
+/**
  * Common beforeEach setup for filter tests
  */
 export const setupFilterTest = () => {
@@ -202,6 +210,29 @@ export const changeFilterCondition = (conditionValue: number): void => {
 };
 
 /**
+ * Change the checkbox filter condition ("Is checked" / "Is unchecked")
+ */
+export const changeCheckboxFilterCondition = (
+  condition: CheckboxFilterCondition
+): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('button')
+    .filter((_, el) => {
+      const text = el.textContent?.toLowerCase() || '';
+      return text.includes('checked') || text.includes('unchecked');
+    })
+    .first()
+    .click({ force: true });
+  waitForReactUpdate(500);
+
+  cy.get(`[data-testid="filter-condition-${condition}"]`, { timeout: 10000 })
+    .should('be.visible')
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
  * Enter text into the filter input
  */
 export const enterFilterText = (text: string): void => {
@@ -211,22 +242,55 @@ export const enterFilterText = (text: string): void => {
 
 /**
  * Delete the current filter
- * Ensures the filter menu is open before clicking delete
+ * Handles both normal mode (filter chip menu) and advanced mode (filter panel)
  */
 export const deleteFilter = (): void => {
-  // First, ensure the filter menu is open by clicking the filter chip
-  // Check if delete button is already visible, if not open the menu
   cy.get('body').then(($body) => {
-    if ($body.find('[data-testid="delete-filter-button"]').length === 0) {
-      // Filter menu not open, click the filter chip to open it
-      DatabaseFilterSelectors.filterCondition().first().click({ force: true });
+    // Check if we're in advanced mode (has advanced filters badge or panel)
+    const hasAdvancedBadge = $body.find('[data-testid="advanced-filters-badge"]').length > 0;
+    const hasAdvancedPanel = $body.find('[data-testid="advanced-filter-row"]').length > 0;
+
+    if (hasAdvancedBadge || hasAdvancedPanel) {
+      // Advanced mode: open the panel if needed and delete from there
+      if (!hasAdvancedPanel) {
+        cy.get('[data-testid="advanced-filters-badge"]').click({ force: true });
+        waitForReactUpdate(500);
+      }
+
+      // Click the delete button in the advanced filter panel
+      cy.get('[data-testid="delete-advanced-filter-button"]').first().click({ force: true });
       waitForReactUpdate(500);
+    } else {
+      // Normal mode: use the filter chip menu
+      // First, ensure the filter popover is open
+      const hasFilterPopover = $body.find('[data-radix-popper-content-wrapper]').length > 0;
+
+      if (!hasFilterPopover) {
+        // Filter menu not open, click the filter chip to open it
+        DatabaseFilterSelectors.filterCondition().first().click({ force: true });
+        waitForReactUpdate(500);
+      }
+
+      // Check if delete button is directly visible (e.g., DateTimeFilterMenu)
+      // or if we need to open the "more options" dropdown first
+      cy.get('body').then(($body2) => {
+        const hasDirectDeleteButton = $body2.find('[data-testid="delete-filter-button"]:visible').length > 0;
+
+        if (hasDirectDeleteButton) {
+          // Delete button is directly visible (DateTimeFilterMenu)
+          DatabaseFilterSelectors.deleteFilterButton().click({ force: true });
+          waitForReactUpdate(500);
+        } else {
+          // Need to open the "more options" dropdown first
+          cy.get('[data-testid="filter-more-options-button"]').click({ force: true });
+          waitForReactUpdate(300);
+          // Now click the delete button in the dropdown
+          cy.get('[data-testid="delete-filter-button"]').click({ force: true });
+          waitForReactUpdate(500);
+        }
+      });
     }
   });
-
-  // Now click the delete button
-  DatabaseFilterSelectors.deleteFilterButton().should('be.visible').click({ force: true });
-  waitForReactUpdate(500);
 };
 
 /**
@@ -259,4 +323,109 @@ export const getFieldIdByName = (fieldName: string): Cypress.Chainable<string> =
     .then((testId) => {
       return testId?.replace('grid-field-header-', '') || '';
     });
+};
+
+/**
+ * Select filter condition enum values (matching SelectOptionFilterCondition)
+ */
+export enum SelectFilterCondition {
+  OptionIs = 0,
+  OptionIsNot = 1,
+  OptionContains = 2,
+  OptionDoesNotContain = 3,
+  OptionIsEmpty = 4,
+  OptionIsNotEmpty = 5,
+}
+
+/**
+ * Create a select option in the current cell/popover
+ */
+export const createSelectOption = (optionName: string): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('input')
+    .first()
+    .clear()
+    .type(`${optionName}{enter}`, { delay: 30 });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Click on a select cell to open the options popover
+ */
+export const clickSelectCell = (fieldId: string, rowIndex: number): void => {
+  DatabaseGridSelectors.dataRowCellsForField(fieldId)
+    .eq(rowIndex)
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Select an existing option from the dropdown
+ */
+export const selectExistingOption = (optionName: string): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .contains(optionName)
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Select an option in the filter popover
+ */
+export const selectFilterOption = (optionName: string): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('[role="option"], [data-testid^="select-option-"]')
+    .filter((_, el) => el.textContent?.includes(optionName))
+    .first()
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Change the select filter condition
+ */
+export const changeSelectFilterCondition = (condition: SelectFilterCondition): void => {
+  cy.get('[data-radix-popper-content-wrapper]')
+    .last()
+    .find('button')
+    .filter((_, el) => {
+      const text = el.textContent?.toLowerCase() || '';
+      return (
+        text.includes('is') ||
+        text.includes('contains') ||
+        text.includes('empty')
+      );
+    })
+    .first()
+    .click({ force: true });
+  waitForReactUpdate(500);
+
+  cy.get(`[data-testid="filter-condition-${condition}"]`, { timeout: 10000 })
+    .should('be.visible')
+    .click({ force: true });
+  waitForReactUpdate(500);
+};
+
+/**
+ * Navigate away from the current page and then back to test persistence
+ * This simulates closing and reopening the database view
+ */
+export const navigateAwayAndBack = (): void => {
+  // Store the current URL
+  cy.url().then((currentUrl) => {
+    // Navigate to the app root (away from database)
+    cy.visit('/app', { failOnStatusCode: false });
+    waitForReactUpdate(2000);
+
+    // Navigate back to the database
+    cy.visit(currentUrl, { failOnStatusCode: false });
+    waitForReactUpdate(3000);
+
+    // Wait for the grid to load
+    DatabaseGridSelectors.grid().should('exist');
+    DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
+  });
 };

@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { useDatabase, useDatabaseViewsSelector } from '@/application/database-yjs';
+import { FilterType } from '@/application/database-yjs/database.type';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { Board } from '@/components/database/board';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
@@ -73,6 +74,47 @@ function DatabaseViews({
   }, []);
   const [openFilterId, setOpenFilterId] = useState<string>();
 
+  // Advanced filter mode state
+  const [isAdvancedMode, setAdvancedMode] = useState(false);
+
+  // Auto-detect advanced mode on mount/view change and auto-expand when filters exist
+  useEffect(() => {
+    if (!activeViewId || !views) return;
+
+    const view = views.get(activeViewId);
+
+    if (!view) return;
+
+    const filters = view.get(YjsDatabaseKey.filters);
+
+    if (!filters || filters.length === 0) {
+      setAdvancedMode(false);
+      return;
+    }
+
+    // Auto-expand when filters exist (from desktop sync or any source)
+    setConditionsExpanded(true);
+
+    const rootFilter = filters.get(0);
+
+    if (!rootFilter) {
+      setAdvancedMode(false);
+      return;
+    }
+
+    // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
+    const isYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
+    const filterType = isYjsMap
+      ? Number((rootFilter as { get: (key: string) => unknown }).get(YjsDatabaseKey.filter_type))
+      : Number((rootFilter as unknown as Record<string, unknown>)[YjsDatabaseKey.filter_type]);
+
+    if (filterType === FilterType.And || filterType === FilterType.Or) {
+      setAdvancedMode(true);
+    } else {
+      setAdvancedMode(false);
+    }
+  }, [activeViewId, views]);
+
   // Get active view from selector state, or directly from Yjs if not yet in state
   // This handles the race condition when a new view is created but selector hasn't updated yet
   const activeView = useMemo(() => {
@@ -141,6 +183,8 @@ function DatabaseViews({
           setExpanded,
           openFilterId,
           setOpenFilterId,
+          isAdvancedMode,
+          setAdvancedMode,
         }}
       >
         <DatabaseTabs

@@ -1,9 +1,7 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Block Merging', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
 
   before(() => {
@@ -12,9 +10,7 @@ describe('Block Merging', () => {
 
   beforeEach(() => {
     cy.on('uncaught:exception', () => false);
-    cy.visit('/login', { failOnStatusCode: false });
-
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.contains('Getting started', { timeout: 10000 }).should('be.visible').click();
       cy.wait(3000);

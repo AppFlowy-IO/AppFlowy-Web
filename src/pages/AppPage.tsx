@@ -45,6 +45,7 @@ function AppPage() {
     setWordCount,
     uploadFile,
     bindViewSync,
+    scheduleDeferredCleanup,
     ...handlers
   } = useAppHandlers();
   const { eventEmitter } = handlers;
@@ -89,7 +90,10 @@ function AppPage() {
         }
       })
       .catch((e) => {
-        console.warn('[AppPage] Failed to fetch view metadata for', viewId, e);
+        if (cancelled) return;
+
+        setError(determineErrorType(e));
+        console.warn('[AppPage] Failed to fetch view metadata for', viewId, formatErrorForLogging(e));
       });
 
     return () => {
@@ -97,8 +101,8 @@ function AppPage() {
     };
   }, [outlineView, viewId, workspaceId, service, fallbackView?.view_id]);
 
-  // Use outline view if available, otherwise use fallback
-  const view = outlineView ?? fallbackView;
+  // Use outline view if available, otherwise use fallback for the active route only.
+  const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null);
   const layout = view?.layout;
 
   const rendered = useContext(AppContext)?.rendered;
@@ -119,15 +123,46 @@ function AppPage() {
   const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
   // Ref to access current doc in timer callbacks without stale closures.
   const docRef = useRef<YDoc | undefined>(undefined);
+  // Track the previous doc so we can schedule deferred cleanup when navigating away.
+  const prevDocRef = useRef<{ doc: YDoc; guid: string; syncBound: boolean } | null>(null);
+  // Track current route to guard async callbacks against stale navigation.
+  const currentViewIdRef = useRef<string | undefined>(viewId);
 
-  docRef.current = doc;
+  useEffect(() => {
+    docRef.current = doc;
+  }, [doc]);
+
+  useEffect(() => {
+    currentViewIdRef.current = viewId;
+  }, [viewId]);
+
+  // Manage prevDocRef lifecycle in a single effect to avoid fragile
+  // cross-effect ordering on the shared mutable ref.
+  useEffect(() => {
+    if (!doc) return;
+
+    const prev = prevDocRef.current;
+
+    if (prev?.doc === doc) {
+      // Same doc — just keep syncBound in sync.
+      prev.syncBound = syncBound;
+      return;
+    }
+
+    // Different doc — schedule deferred cleanup for the previous one.
+    if (prev && prev.syncBound && prev.guid !== doc.guid && scheduleDeferredCleanup) {
+      scheduleDeferredCleanup(prev.guid);
+    }
+
+    // Reset sync state for the newly active doc.
+    setSyncBound(false);
+    prevDocRef.current = { doc, guid: doc.guid, syncBound: false };
+  }, [doc, syncBound, scheduleDeferredCleanup]);
 
   const loadPageDoc = useCallback(
     async (id: string) => {
       loadAttemptRef.current = { viewId: id, timestamp: Date.now() };
       setError(null);
-      // Reset sync state when loading new doc
-      setSyncBound(false);
 
       try {
         // loadView now uses view-loader which:
@@ -214,27 +249,28 @@ function AppPage() {
       return;
     }
 
-    // Doc doesn't match and no load in progress - set up a recovery timer
+    // Doc doesn't match and no load in progress - set up a recovery timer.
+    // Use 5s delay to give slow networks sufficient time before retrying.
     const recoveryTimer = setTimeout(() => {
       // Check if doc now matches (load completed while timer was pending)
       if (docRef.current?.object_id === viewId) {
         return;
       }
 
-      // Double-check the condition after delay
+      // Don't fire recovery if a load is currently in-flight for this viewId
       if (loadAttemptRef.current?.viewId === viewId) {
-        // Load was attempted but doc still doesn't match
         const elapsed = Date.now() - loadAttemptRef.current.timestamp;
 
-        if (elapsed > 2000) {
-          // More than 2 seconds since load started - re-trigger
+        if (elapsed > 10000) {
+          // More than 10 seconds since load started - likely stuck, re-trigger
           void loadPageDoc(viewId);
         }
+        // Otherwise, still in-flight — let it finish
       } else if (!loadAttemptRef.current) {
         // No load attempt recorded - trigger one
         void loadPageDoc(viewId);
       }
-    }, 500);
+    }, 5000);
 
     return () => clearTimeout(recoveryTimer);
   }, [viewId, layout, view, doc?.object_id, loadPageDoc]);
@@ -386,6 +422,7 @@ function AppPage() {
         onWordCountChange={setWordCount}
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
         {...handlers}
       />
     );
@@ -412,6 +449,7 @@ function AppPage() {
     loadViews,
     setWordCount,
     handleUploadFile,
+    scheduleDeferredCleanup,
   ]);
 
   useEffect(() => {
@@ -440,12 +478,39 @@ function AppPage() {
     };
   }, [eventEmitter, viewId, currentUser?.email]);
 
+  const handleRetry = useCallback(async () => {
+    if (!viewId) {
+      return Promise.resolve();
+    }
+
+    const retryViewId = viewId;
+
+    // If the view is still missing from outline, retry metadata fetch first so viewMeta/layout can recover.
+    if (!outlineView && workspaceId && service) {
+      try {
+        const fetchedView = await service.getAppView(workspaceId, retryViewId);
+
+        if (fetchedView && fetchedView.view_id === retryViewId && currentViewIdRef.current === retryViewId) {
+          setFallbackView(fetchedView);
+        }
+      } catch (e) {
+        console.warn('[AppPage] Retry metadata fetch failed for', retryViewId, e);
+      }
+    }
+
+    if (currentViewIdRef.current !== retryViewId) {
+      return;
+    }
+
+    await loadPageDoc(retryViewId);
+  }, [viewId, outlineView, workspaceId, service, loadPageDoc]);
+
   if (!viewId) return null;
   return (
     <div ref={ref} className={'relative h-full w-full'}>
       {helmet}
 
-      {error ? <RecordNotFound viewId={viewId} error={error} /> : <div className={'h-full w-full'}>{viewDom}</div>}
+      {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : <div className={'h-full w-full'}>{viewDom}</div>}
       {view && <Help />}
     </div>
   );

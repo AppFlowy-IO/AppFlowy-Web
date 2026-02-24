@@ -55,12 +55,24 @@ export type SyncContextType = {
    * @returns Promise that resolves when all syncs are complete
    */
   syncAllToServer: (workspaceId: string) => Promise<void>;
+  /**
+   * Schedule deferred cleanup of a sync context after a delay.
+   * If the same objectId is re-registered before the timer fires,
+   * the cleanup is cancelled and the existing context is reused.
+   *
+   * @param objectId - The Y.Doc guid to schedule cleanup for
+   * @param delayMs - Delay in milliseconds (default: 10_000)
+   */
+  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void;
 };
 
 export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eventEmitter?: EventEmitter): SyncContextType => {
   const { sendMessage, lastMessage } = ws;
   const { postMessage, lastBroadcastMessage } = bc;
   const registeredContexts = useRef<Map<string, SyncContext>>(new Map());
+  const contextRefCounts = useRef<Map<string, number>>(new Map());
+  const destroyListeners = useRef<Map<string, { doc: Y.Doc; handler: () => void }>>(new Map());
+  const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
 
   // Extract specific values to use as primitive dependencies
@@ -179,6 +191,10 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     if (wsNotification.folderChanged) {
       eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, wsNotification.folderChanged);
     }
+
+    if (wsNotification.folderViewChanged) {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, wsNotification.folderViewChanged);
+    }
   }, [wsNotification, eventEmitter]);
 
   // Handle workspace notifications from BroadcastChannel
@@ -232,7 +248,98 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     if (bcNotification.folderChanged) {
       eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, bcNotification.folderChanged);
     }
+
+    if (bcNotification.folderViewChanged) {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, bcNotification.folderViewChanged);
+    }
   }, [bcNotification, eventEmitter]);
+
+  const cancelDeferredCleanup = useCallback((objectId: string) => {
+    const timer = pendingCleanups.current.get(objectId);
+
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      pendingCleanups.current.delete(objectId);
+      Log.debug(`Cancelled deferred cleanup for objectId ${objectId}`);
+    }
+  }, []);
+
+  const incrementContextRefCount = useCallback((objectId: string): number => {
+    const nextRefCount = (contextRefCounts.current.get(objectId) ?? 0) + 1;
+
+    contextRefCounts.current.set(objectId, nextRefCount);
+    return nextRefCount;
+  }, []);
+
+  const decrementContextRefCount = useCallback((objectId: string): number => {
+    const currentRefCount = contextRefCounts.current.get(objectId) ?? 0;
+
+    if (currentRefCount <= 1) {
+      contextRefCounts.current.delete(objectId);
+      return 0;
+    }
+
+    const nextRefCount = currentRefCount - 1;
+
+    contextRefCounts.current.set(objectId, nextRefCount);
+    return nextRefCount;
+  }, []);
+
+  const unregisterSyncContext = useCallback((objectId: string) => {
+    const ctx = registeredContexts.current.get(objectId);
+
+    if (!ctx) return;
+
+    // Flush pending local updates before removing observers
+    if (ctx.flush) {
+      ctx.flush();
+    }
+
+    // Remove update/awareness observers
+    if (ctx._cleanup) {
+      ctx._cleanup();
+    }
+
+    const destroyListener = destroyListeners.current.get(objectId);
+
+    if (destroyListener) {
+      destroyListener.doc.off('destroy', destroyListener.handler);
+      destroyListeners.current.delete(objectId);
+    }
+
+    registeredContexts.current.delete(objectId);
+    contextRefCounts.current.delete(objectId);
+    Log.debug(`Unregistered sync context for objectId ${objectId}`);
+  }, []);
+
+  const scheduleDeferredCleanup = useCallback((objectId: string, delayMs = 10_000) => {
+    // Cancel any existing timer for this objectId
+    cancelDeferredCleanup(objectId);
+
+    const remainingRefCount = decrementContextRefCount(objectId);
+
+    // Context is still actively used elsewhere; don't schedule teardown yet.
+    if (remainingRefCount > 0) {
+      Log.debug(`Skipped deferred cleanup for objectId ${objectId}; ${remainingRefCount} active owner(s) remain`);
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      pendingCleanups.current.delete(objectId);
+
+      const activeRefCount = contextRefCounts.current.get(objectId) ?? 0;
+
+      if (activeRefCount > 0) {
+        Log.debug(`Skipped deferred cleanup for objectId ${objectId}; ref count restored to ${activeRefCount}`);
+        return;
+      }
+
+      unregisterSyncContext(objectId);
+    }, delayMs);
+
+    pendingCleanups.current.set(objectId, timer);
+    Log.debug(`Scheduled deferred cleanup for objectId ${objectId} in ${delayMs}ms`);
+  }, [cancelDeferredCleanup, decrementContextRefCount, unregisterSyncContext]);
 
   const registerSyncContext = useCallback(
     (context: RegisterSyncContext): SyncContext => {
@@ -240,19 +347,24 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
         throw new Error(`Invalid Y.Doc guid: ${context.doc.guid}. It must be a valid UUID v4.`);
       }
 
+      // Cancel any pending deferred cleanup for this doc
+      cancelDeferredCleanup(context.doc.guid);
+
       const existingContext = registeredContexts.current.get(context.doc.guid);
 
       // If the context is already registered, check if it's the same doc instance
       if (existingContext !== undefined) {
         // If same doc instance, reuse the existing context
         if (existingContext.doc === context.doc) {
-          Log.debug(`Reusing existing sync context for objectId ${context.doc.guid}`);
+          const refCount = incrementContextRefCount(context.doc.guid);
+
+          Log.debug(`Reusing existing sync context for objectId ${context.doc.guid}; owner count=${refCount}`);
           return existingContext;
         }
 
         // Different doc instance - clean up old context and register new one
         Log.debug(`Replacing stale sync context for objectId ${context.doc.guid} (different doc instance)`);
-        registeredContexts.current.delete(context.doc.guid);
+        unregisterSyncContext(context.doc.guid);
       }
 
       Log.debug(`Registering sync context for objectId ${context.doc.guid} with collabType ${context.collabType}`);
@@ -265,17 +377,24 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       const syncContext = context as SyncContext;
 
       registeredContexts.current.set(syncContext.doc.guid, syncContext);
-      context.doc.on('destroy', () => {
-        // Remove the context from the registered contexts when the Y.Doc is destroyed
-        registeredContexts.current.delete(context.doc.guid);
-      });
+      const handleDocDestroy = () => {
+        // Reuse normal teardown so pending debounced updates are flushed first.
+        cancelDeferredCleanup(syncContext.doc.guid);
+        unregisterSyncContext(syncContext.doc.guid);
+      };
+
+      syncContext.doc.on('destroy', handleDocDestroy);
+      destroyListeners.current.set(syncContext.doc.guid, { doc: syncContext.doc, handler: handleDocDestroy });
 
       // Initialize the sync process for the new context
       initSync(syncContext);
+      const refCount = incrementContextRefCount(syncContext.doc.guid);
+
+      Log.debug(`Registered sync context for objectId ${syncContext.doc.guid}; owner count=${refCount}`);
 
       return syncContext;
     },
-    [registeredContexts, sendMessage, postMessage]
+    [sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
   );
 
   /**
@@ -347,5 +466,15 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     }
   }, [flushAllSync]);
 
-  return { registerSyncContext, lastUpdatedCollab, flushAllSync, syncAllToServer };
+  // Cancel all pending deferred cleanup timers on unmount
+  useEffect(() => {
+    const timers = pendingCleanups.current;
+
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
+
+  return { registerSyncContext, lastUpdatedCollab, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
 };

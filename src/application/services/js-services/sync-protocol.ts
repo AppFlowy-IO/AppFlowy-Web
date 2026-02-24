@@ -26,6 +26,11 @@ export interface SyncContext {
    * are synced to the server.
    */
   flush?: () => void;
+  /**
+   * Cleanup function to remove update/awareness observers and cancel debounced sends.
+   * Set by initSync, called during deferred sync context cleanup.
+   */
+  _cleanup?: () => void;
 }
 
 interface AwarenessEvent {
@@ -130,7 +135,7 @@ export const initSync = (ctx: SyncContext) => {
     Log.debug('[Database] row sync start', { rowId: doc.guid });
   }
 
-  let onAwarenessChange;
+  let onAwarenessChange: ((event: AwarenessEvent, origin: string) => void) | undefined;
   const updates: Uint8Array[] = [];
   const debounced = debounce(() => {
     if (updates.length === 0) return; // Skip if no pending updates
@@ -209,8 +214,20 @@ export const initSync = (ctx: SyncContext) => {
     });
   }
 
-  // return cleanup function to remove listeners
-  return { onUpdate, onAwarenessChange };
+  // Build a single cleanup function that tears down all observers
+  const cleanup = () => {
+    debounced.cancel();
+    doc.off('update', onUpdate);
+    if (awareness && onAwarenessChange) {
+      awareness.off('change', onAwarenessChange);
+    }
+
+    ctx.flush = undefined;
+  };
+
+  ctx._cleanup = cleanup;
+
+  return { cleanup };
 };
 
 /**

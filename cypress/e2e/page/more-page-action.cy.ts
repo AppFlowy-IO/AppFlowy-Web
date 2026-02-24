@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { DropdownSelectors, ModalSelectors, PageSelectors, ViewActionSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
@@ -23,11 +22,7 @@ describe('More Page Actions', () => {
         });
 
         // Sign in first
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail);
+        cy.signIn(testEmail);
 
         cy.url().should('include', '/app');
         TestTool.waitForPageLoad(3000);
@@ -80,11 +75,7 @@ describe('More Page Actions', () => {
         });
 
         // Sign in first
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail);
+        cy.signIn(testEmail);
 
         cy.url().should('include', '/app');
         TestTool.waitForPageLoad(3000);
@@ -145,11 +136,7 @@ describe('More Page Actions', () => {
         });
 
         // Sign in first
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail);
+        cy.signIn(testEmail);
 
         cy.url().should('include', '/app');
         TestTool.waitForPageLoad(3000);

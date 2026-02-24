@@ -33,6 +33,12 @@ export interface SyncInternalContextType {
    * to ensure the server has the latest data before operations like duplicate.
    */
   syncAllToServer: (workspaceId: string) => Promise<void>;
+  /**
+   * Schedule deferred cleanup of a sync context after a delay.
+   * If the same objectId is re-registered before the timer fires,
+   * the cleanup is cancelled and the existing context is reused.
+   */
+  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void;
 }
 
 export const SyncInternalContext = createContext<SyncInternalContextType | null>(null);
@@ -40,10 +46,16 @@ export const SyncInternalContext = createContext<SyncInternalContextType | null>
 // Hook to access sync internal context
 export function useSyncInternal() {
   const context = useContext(SyncInternalContext);
-  
+
   if (!context) {
     throw new Error('useSyncInternal must be used within a SyncInternalProvider');
   }
-  
+
   return context;
+}
+
+// Optional hook that returns null when not in a SyncInternalProvider
+// Use this for components that may render outside the main app context (e.g., publish view)
+export function useSyncInternalOptional() {
+  return useContext(SyncInternalContext);
 }

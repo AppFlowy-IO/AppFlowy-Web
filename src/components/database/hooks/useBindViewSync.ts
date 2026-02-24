@@ -2,7 +2,7 @@ import { useCallback } from 'react';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, YDoc } from '@/application/types';
-import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
+import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
 import { Log } from '@/utils/log';
 
 /**
@@ -19,7 +19,7 @@ export interface YDocWithMeta extends YDoc {
  * Should be called AFTER the component renders with the document.
  */
 export function useBindViewSync() {
-  const syncContext = useSyncInternal();
+  const syncContext = useSyncInternalOptional();
   const registerSyncContext = syncContext?.registerSyncContext;
 
   return useCallback(

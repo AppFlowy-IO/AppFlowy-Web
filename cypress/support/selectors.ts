@@ -484,6 +484,23 @@ export const DatabaseFilterSelectors = {
 
   // Property/field item by name (searches within popover)
   propertyItemByName: (name: string) => cy.contains('[data-item-id]', name),
+
+  // Advanced filter selectors
+
+  // More options button in filter menu (three dots)
+  filterMoreOptionsButton: () => cy.get(byTestId('filter-more-options-button')),
+
+  // Advanced filters badge (shows "N rules")
+  advancedFiltersBadge: () => cy.get(byTestId('advanced-filters-badge')),
+
+  // Filter panel rows (inside advanced filter panel)
+  filterPanelRows: () => cy.get('.border-b.border-border-divider').filter(':has([data-item-id], button)'),
+
+  // And/Or operator toggle button in filter panel
+  filterOperatorToggle: () => cy.get('[data-slot="dropdown-menu-trigger"]').filter(':contains("And"), :contains("Or")'),
+
+  // Delete all filters button
+  deleteAllFiltersButton: () => cy.contains('button', /delete filter/i),
 };
 
 /**

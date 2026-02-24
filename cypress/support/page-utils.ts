@@ -4,7 +4,7 @@ import { testLog } from './test-helpers';
  * This file aggregates and re-exports all utility functions used in tests
  * 
  * Usage Statistics (as of cleanup):
- * - Total functions exported: 19 (down from 73)
+ * - Total functions exported: 20 (down from 73)
  * - Functions removed: 54 (74% reduction)
  * - Test coverage: All exported functions are actively used in tests
  */
@@ -19,7 +19,12 @@ import {
     createPageAndAddContent,
     openPageFromSidebar,
     expandSpace,
-    expandSpaceByName
+    expandSpaceByName,
+    expandPageByName,
+    currentViewIdFromUrl,
+    ensurePageExpandedByViewId,
+    createDocumentPageAndNavigate,
+    insertLinkedDatabaseViaSlash
 } from './page/flows';
 
 // Page management utilities
@@ -47,7 +52,8 @@ import {
 
 // Modal utilities
 import {
-    openSharePopover
+    openSharePopover,
+    closeTopDialogIfNotDocument
 } from './page/modal';
 
 // Page action utilities
@@ -64,6 +70,11 @@ export {
     openPageFromSidebar,
     expandSpace,
     expandSpaceByName,
+    expandPageByName,
+    currentViewIdFromUrl,
+    ensurePageExpandedByViewId,
+    createDocumentPageAndNavigate,
+    insertLinkedDatabaseViaSlash,
     getPageByName,
     getPageTitleInput,
     savePageTitle,
@@ -76,6 +87,7 @@ export {
     getWorkspaceItems,
     getWorkspaceMemberCounts,
     openSharePopover,
+    closeTopDialogIfNotDocument,
     openViewActionsPopoverForPage,
     deletePageByName
 };
@@ -103,6 +115,21 @@ export class TestTool {
     }
     static expandSpaceByName(spaceName: string) {
         return expandSpaceByName(spaceName);
+    }
+    static expandPageByName(pageName: string) {
+        return expandPageByName(pageName);
+    }
+    static currentViewIdFromUrl() {
+        return currentViewIdFromUrl();
+    }
+    static ensurePageExpandedByViewId(viewId: string) {
+        return ensurePageExpandedByViewId(viewId);
+    }
+    static createDocumentPageAndNavigate() {
+        return createDocumentPageAndNavigate();
+    }
+    static insertLinkedDatabaseViaSlash(docViewId: string, dbName: string) {
+        return insertLinkedDatabaseViaSlash(docViewId, dbName);
     }
 
     // Page management
@@ -147,6 +174,9 @@ export class TestTool {
     // Modal operations
     static openSharePopover() {
         return openSharePopover();
+    }
+    static closeTopDialogIfNotDocument(docViewId: string) {
+        return closeTopDialogIfNotDocument(docViewId);
     }
     
     // Page actions

@@ -14,49 +14,16 @@ import {
   clickFilterChip,
   deleteFilter,
   assertRowCount,
+  CheckboxFilterCondition,
+  changeCheckboxFilterCondition,
 } from '../../support/filter-test-helpers';
 import {
   addFieldWithType,
   toggleCheckbox,
   FieldType,
 } from '../../support/field-type-helpers';
-import {
-  DatabaseFilterSelectors,
-  DatabaseGridSelectors,
-  waitForReactUpdate,
-} from '../../support/selectors';
+import { DatabaseFilterSelectors, DatabaseGridSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
-
-/**
- * Checkbox filter condition enum values (matching CheckboxFilterCondition)
- */
-enum CheckboxFilterCondition {
-  IsChecked = 0,
-  IsUnchecked = 1,
-}
-
-/**
- * Change the checkbox filter condition
- */
-const changeCheckboxFilterCondition = (condition: CheckboxFilterCondition): void => {
-  // Find the condition dropdown in the filter popover and click it
-  cy.get('[data-radix-popper-content-wrapper]')
-    .last()
-    .find('button')
-    .filter((_, el) => {
-      const text = el.textContent?.toLowerCase() || '';
-      return text.includes('checked') || text.includes('unchecked');
-    })
-    .first()
-    .click({ force: true });
-  waitForReactUpdate(500);
-
-  // Select the target condition
-  cy.get(`[data-testid="filter-condition-${condition}"]`, { timeout: 10000 })
-    .should('be.visible')
-    .click({ force: true });
-  waitForReactUpdate(500);
-};
 
 describe('Database Checkbox Filter Tests (Desktop Parity)', () => {
   beforeEach(() => {

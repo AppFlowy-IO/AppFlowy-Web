@@ -38,7 +38,7 @@ export type RelationComputeContext = {
 
 const RELATION_CACHE_TTL_MS = 5_000;
 const RELATION_CACHE_PRUNE_INTERVAL_MS = 2_000;
-const RELATION_MAX_CONCURRENCY = 4;
+const RELATION_MAX_CONCURRENCY = 8;
 const RELATION_RELATED_DOC_CACHE_MAX = 50;
 
 class Semaphore {

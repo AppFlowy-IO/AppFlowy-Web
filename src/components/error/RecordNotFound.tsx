@@ -16,11 +16,13 @@ function RecordNotFound({
   noContent,
   isViewNotFound,
   error,
+  onRetry,
 }: {
   viewId?: string;
   noContent?: boolean;
   isViewNotFound?: boolean;
   error?: AppError;
+  onRetry?: () => void | Promise<void>;
 }) {
   const { t } = useTranslation();
   const currentWorkspaceId = useCurrentWorkspaceId();
@@ -36,8 +38,15 @@ function RecordNotFound({
 
   const handleRetry = async () => {
     setRetrying(true);
-    await new Promise((resolve) => setTimeout(resolve, 300));
-    window.location.reload();
+    if (onRetry) {
+      try {
+        await onRetry();
+      } finally {
+        setRetrying(false);
+      }
+    } else {
+      window.location.reload();
+    }
   };
 
   if (error) {

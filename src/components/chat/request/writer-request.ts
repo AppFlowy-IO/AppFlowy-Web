@@ -169,7 +169,7 @@ export class WriterRequest {
   };
   
   async getView(viewId: string) {
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=1&root_view_id=${viewId}`;
+    const url = `/api/workspace/${this.workspaceId}/view/${viewId}?depth=1`;
 
     const res = await this.axiosInstance.get<{
       code: number;
@@ -185,7 +185,7 @@ export class WriterRequest {
   }
 
   fetchViews = async() => {
-    const url = `/api/workspace/${this.workspaceId}/folder?depth=10`;
+    const url = `/api/workspace/${this.workspaceId}/view/${this.workspaceId}?depth=10`;
 
     const res = await this.axiosInstance.get<{
       code: number;

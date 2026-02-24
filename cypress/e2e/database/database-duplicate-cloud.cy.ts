@@ -3,7 +3,6 @@ import {
   AuthSelectors,
   DatabaseGridSelectors,
   PageSelectors,
-  SpaceSelectors,
   ViewActionSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
@@ -13,6 +12,7 @@ import {
   RowDetailSelectors,
 } from '../../support/row-detail-helpers';
 import { TestConfig } from '../../support/test-config';
+import { expandSpaceByName } from '../../support/page-utils';
 
 const _exportUserEmail = 'export_user@appflowy.io';
 const _exportUserPassword = 'AppFlowy!@123';
@@ -21,35 +21,57 @@ const _spaceName = 'General';
 const _gettingStartedPageName = 'Getting started';
 
 /**
- * Expand a space in the sidebar by clicking on it if not already expanded
+ * Expand a page in the sidebar and wait for its children to become visible.
+ *
+ * With lazy loading, the outline may reload and clear children even while the
+ * page stays in the "expanded" state. This helper handles that by collapsing
+ * and re-expanding if needed, then retrying until children appear.
  */
-function expandSpaceInSidebar(spaceNameToExpand: string) {
-  cy.log(`[HELPER] Expanding space "${spaceNameToExpand}" in sidebar`);
+function expandPageAndWaitForChildren(pageName: string, childNameContains: string, maxAttempts = 15) {
+  cy.log(`[HELPER] Expanding page "${pageName}" and waiting for child "${childNameContains}"`);
 
-  SpaceSelectors.itemByName(spaceNameToExpand, { timeout: 30000 }).then(($space) => {
-    const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-    const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-    if (!isExpanded) {
-      SpaceSelectors.itemByName(spaceNameToExpand).find('[data-testid="space-name"]').click({ force: true });
-      waitForReactUpdate(1000);
+  const tryExpand = (attempts: number): void => {
+    if (attempts >= maxAttempts) {
+      throw new Error(`Child "${childNameContains}" not found under "${pageName}" after ${maxAttempts} attempts`);
     }
-  });
-}
 
-/**
- * Expand a page in the sidebar by clicking its expand toggle if not already expanded
- */
-function expandPageInSidebar(pageName: string) {
-  cy.log(`[HELPER] Expanding page "${pageName}" in sidebar`);
+    PageSelectors.itemByName(pageName, { timeout: 10000 }).then(($pageItem) => {
+      const expandToggle = $pageItem.find('[data-testid="outline-toggle-expand"]');
+      const collapseToggle = $pageItem.find('[data-testid="outline-toggle-collapse"]');
 
-  PageSelectors.itemByName(pageName, { timeout: 30000 }).then(($pageItem) => {
-    const expandToggle = $pageItem.find('[data-testid="outline-toggle-expand"]');
-    if (expandToggle.length > 0) {
-      cy.wrap(expandToggle).first().click({ force: true });
-      waitForReactUpdate(1000);
-    }
-  });
+      if (expandToggle.length > 0) {
+        // Page is collapsed - expand it
+        cy.wrap(expandToggle).first().click({ force: true });
+        waitForReactUpdate(1000);
+      } else if (collapseToggle.length > 0 && attempts > 0) {
+        // Page is expanded but children may be stale from outline reload.
+        // Collapse and re-expand to trigger a fresh children fetch.
+        cy.wrap(collapseToggle).first().click({ force: true });
+        waitForReactUpdate(500);
+        PageSelectors.itemByName(pageName).then(($item) => {
+          const btn = $item.find('[data-testid="outline-toggle-expand"]');
+          if (btn.length > 0) {
+            cy.wrap(btn).first().click({ force: true });
+            waitForReactUpdate(1000);
+          }
+        });
+      }
+    });
+
+    // Check if the target child is now visible
+    cy.get('body').then(($body) => {
+      const found = $body.find(`[data-testid="page-name"]:contains("${childNameContains}")`).length > 0;
+
+      if (found) {
+        cy.log(`[SUCCESS] Child "${childNameContains}" found under "${pageName}"`);
+        return;
+      }
+
+      cy.wait(1000).then(() => tryExpand(attempts + 1));
+    });
+  };
+
+  tryExpand(0);
 }
 
 describe('Cloud Database Duplication', () => {
@@ -147,10 +169,9 @@ describe('Cloud Database Duplication', () => {
 
     // Step 11: Expand the General space and Getting started, then open Database 1
     cy.log('[STEP 11] Expanding General space and Getting started page');
-    expandSpaceInSidebar(_spaceName);
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(1000);
-    expandPageInSidebar(_gettingStartedPageName);
-    waitForReactUpdate(1000);
+    expandPageAndWaitForChildren(_gettingStartedPageName, _testDatabaseName);
     cy.log('[STEP 11.1] Opening Database 1');
     PageSelectors.nameContaining(_testDatabaseName).first().click({ force: true });
     waitForReactUpdate(3000);
@@ -251,11 +272,11 @@ describe('Cloud Database Duplication', () => {
 
     // Step 21: Open the original database
     cy.log('[STEP 21] Opening the original database');
-    // Ensure space and Getting started are still expanded
-    expandSpaceInSidebar(_spaceName);
+    // With lazy loading, the outline may have reloaded and cleared children.
+    // Use retry-capable helper to ensure children are visible.
+    expandSpaceByName(_spaceName);
     waitForReactUpdate(500);
-    expandPageInSidebar(_gettingStartedPageName);
-    waitForReactUpdate(500);
+    expandPageAndWaitForChildren(_gettingStartedPageName, _testDatabaseName);
     // Find the original database by looking for elements containing "Database 1" but NOT "(Copy)"
     PageSelectors.nameContaining(_testDatabaseName)
       .filter((index, el) => {

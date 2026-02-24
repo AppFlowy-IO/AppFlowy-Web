@@ -1,9 +1,7 @@
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { EditorSelectors, SlashCommandSelectors, waitForReactUpdate } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 
 describe('Panel Selection - Shift+Arrow Keys', () => {
-  const authUtils = new AuthTestUtils();
   const testEmail = generateRandomEmail();
 
   before(() => {
@@ -14,7 +12,7 @@ describe('Panel Selection - Shift+Arrow Keys', () => {
     cy.on('uncaught:exception', () => false);
 
     cy.session(testEmail, () => {
-      authUtils.signInWithTestUrl(testEmail);
+      cy.signIn(testEmail);
     }, {
       validate: () => {
         cy.window().then((win) => {

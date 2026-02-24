@@ -1,6 +1,3 @@
-import { v4 as uuidv4 } from 'uuid';
-
-import { AuthTestUtils } from '../../support/auth-utils';
 import { closeModalsIfOpen, testLog } from '../../support/test-helpers';
 import {
   AddPageSelectors,
@@ -11,6 +8,9 @@ import {
   SpaceSelectors,
   waitForReactUpdate,
 } from '../../support/selectors';
+import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
+import { generateRandomEmail } from '../../support/test-config';
+import { currentViewIdFromUrl } from '../../support/page-utils';
 
 /**
  * Database Container Open Behavior Tests
@@ -19,15 +19,8 @@ import {
  * correctly opens its first child view.
  */
 describe('Database Container Open Behavior', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const dbName = 'New Database';
   const spaceName = 'General';
-
-  const currentViewIdFromUrl = () =>
-    cy.location('pathname').then((pathname) => {
-      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
-      return maybeId;
-    });
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
@@ -48,23 +41,13 @@ describe('Database Container Open Behavior', () => {
   /**
    * Helper: Create a Grid database and wait for it to load
    */
-  const createGridAndWait = (authUtils: AuthTestUtils, testEmail: string) => {
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    return authUtils.signInWithTestUrl(testEmail).then(() => {
-      cy.url({ timeout: 30000 }).should('include', '/app');
-      cy.wait(3000);
-
-      // Create a standalone database (container + first child view)
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      AddPageSelectors.addGridButton().should('be.visible').click({ force: true });
-
-      // Wait for the database UI to appear
-      cy.wait(7000);
-      DatabaseGridSelectors.grid().should('exist');
-      DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
+  const createGridAndWait = (testEmail: string) => {
+    return signInAndCreateDatabaseView(testEmail, 'Grid', {
+      createWaitMs: 7000,
+      verify: () => {
+        DatabaseGridSelectors.grid().should('exist');
+        DatabaseGridSelectors.cells().should('have.length.greaterThan', 0);
+      },
     });
   };
 
@@ -73,8 +56,7 @@ describe('Database Container Open Behavior', () => {
     testLog.testStart('Database container opens first child');
     testLog.info(`Test email: ${testEmail}`);
 
-    const authUtils = new AuthTestUtils();
-    createGridAndWait(authUtils, testEmail).then(() => {
+    createGridAndWait(testEmail).then(() => {
       // Verify: a newly created container has exactly 1 child view
       testLog.step(1, 'Verify database has one child view');
       DatabaseViewSelectors.viewTab()

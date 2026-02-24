@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { TestTool } from '../../support/page-utils';
 import { WorkspaceSelectors, SidebarSelectors, PageSelectors } from '../../support/selectors';
 import { generateRandomEmail, getTestEnvironment } from '../../support/test-config';
@@ -37,15 +36,10 @@ describe('User Feature Tests', () => {
                 return true;
             });
 
-            cy.visit('/login', { failOnStatusCode: false });
-
-            cy.wait(2000);
-
-            // Now test the authentication flow using signInWithTestUrl
+            // Now test the authentication flow using shared sign-in helper
             const randomEmail = generateRandomEmail();
-            const authUtils = new AuthTestUtils();
 
-            authUtils.signInWithTestUrl(randomEmail).then(() => {
+            cy.signIn(randomEmail).then(() => {
                 // Verify we're on the app page
                 cy.url().should('include', '/app');
 

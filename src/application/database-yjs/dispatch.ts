@@ -173,6 +173,7 @@ function generateGroupByField(field: YDatabaseField) {
 
   group.set(YjsDatabaseKey.field_id, fieldId);
   group.set(YjsDatabaseKey.id, `g:${nanoid(6)}`);
+  group.set(YjsDatabaseKey.type, fieldType);
 
   switch (fieldType) {
     case FieldType.SingleSelect:
@@ -3898,3 +3899,14 @@ export function useUpdateCalendarSetting() {
     [sharedRoot, view]
   );
 }
+
+// Re-export advanced filter hooks from modular dispatch
+export {
+  useEnterAdvancedMode,
+  useUpdateRootFilterType,
+  useAddAdvancedFilter,
+  useRemoveAdvancedFilter,
+  useUpdateAdvancedFilter,
+  useExitAdvancedMode,
+  useClearAllFilters,
+} from './dispatch/sort-filter';

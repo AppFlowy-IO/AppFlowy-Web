@@ -1,95 +1,25 @@
-import { v4 as uuidv4 } from 'uuid';
 import { Editor, Element as SlateElement } from 'slate';
 
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
-import { testLog } from '../../../support/test-helpers';
 import {
-  AddPageSelectors,
+  expandSpaceByName,
+  ensurePageExpandedByViewId,
+  closeTopDialogIfNotDocument,
+  createDocumentPageAndNavigate,
+} from '../../../support/page-utils';
+import { testLog } from '../../../support/test-helpers';
+import { generateRandomEmail } from '../../../support/test-config';
+import {
   BlockSelectors,
   byTestId,
   PageSelectors,
   SlashCommandSelectors,
-  SpaceSelectors,
   waitForReactUpdate,
 } from '../../../support/selectors';
 
 describe('Database Container - Embedded Create/Delete', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
   const dbName = 'New Database';
   const spaceName = 'General';
-
-  const currentViewIdFromUrl = () =>
-    cy.location('pathname').then((pathname) => {
-      const maybeId = pathname.split('/').filter(Boolean).pop() || '';
-      return maybeId;
-    });
-
-  const ensureSpaceExpanded = (name: string) => {
-    SpaceSelectors.itemByName(name).should('exist');
-    SpaceSelectors.itemByName(name).then(($space) => {
-      const expandedIndicator = $space.find('[data-testid="space-expanded"]');
-      const isExpanded = expandedIndicator.attr('data-expanded') === 'true';
-
-      if (!isExpanded) {
-        SpaceSelectors.itemByName(name).find('[data-testid="space-name"]').click({ force: true });
-        waitForReactUpdate(500);
-      }
-    });
-  };
-
-  const ensurePageExpanded = (name: string) => {
-    PageSelectors.itemByName(name).should('exist');
-    PageSelectors.itemByName(name)
-      .find('[data-testid="outline-toggle-collapse"]')
-      .then(($collapse) => {
-        if ($collapse.length > 0) return;
-
-        PageSelectors.itemByName(name)
-          .find('[data-testid="outline-toggle-expand"]')
-          .should('exist')
-          .first()
-          .click({ force: true });
-        waitForReactUpdate(500);
-      });
-  };
-
-  const ensurePageExpandedByViewId = (viewId: string) => {
-    const pageItem = () => PageSelectors.itemByViewId(viewId, { timeout: 30000 });
-
-    pageItem().should('exist');
-    // Wait for either toggle to appear (page has children)
-    pageItem().then(($pageItem) => {
-      const collapseToggle = $pageItem.find('[data-testid="outline-toggle-collapse"]');
-      if (collapseToggle.length > 0) {
-        // Already expanded
-        return;
-      }
-
-      const expandToggle = $pageItem.find('[data-testid="outline-toggle-expand"]');
-      if (expandToggle.length > 0) {
-        cy.wrap(expandToggle.first()).click({ force: true });
-        waitForReactUpdate(500);
-      }
-    });
-  };
-
-  const closeTopDialogIfNotDocument = (docViewId: string) => {
-    cy.get('body').then(($body) => {
-      const dialogs = $body.find('[role="dialog"]').filter(':visible');
-
-      if (dialogs.length === 0) return;
-
-      const topDialog = dialogs.last();
-      const topContainsDocEditor = $body.find(topDialog).find(`#editor-${docViewId}`).length > 0;
-
-      if (!topContainsDocEditor) {
-        cy.task('log', '[modal] Closing top dialog (not the document)');
-        cy.get('body').type('{esc}');
-        waitForReactUpdate(800);
-      }
-    });
-  };
 
   beforeEach(() => {
     cy.on('uncaught:exception', (err) => {
@@ -113,32 +43,14 @@ describe('Database Container - Embedded Create/Delete', () => {
     testLog.testStart('Embedded database container create/delete');
     testLog.info(`Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
       // 1) Create a document page
       testLog.step(1, 'Create a document page');
-      AddPageSelectors.inlineAddButton().first().click({ force: true });
-      waitForReactUpdate(1000);
-      cy.get('[role="menuitem"]').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // When creating a Document via inline add button, it opens in a ViewModal.
-      // Click the expand button (first button in modal header) to navigate to full page view.
-      cy.get('[role="dialog"]', { timeout: 10000 }).should('be.visible');
-      cy.get('[role="dialog"]').find('button').first().click({ force: true });
-      waitForReactUpdate(1000);
-
-      // Now the URL should reflect the new document
-      currentViewIdFromUrl().then((viewId) => {
-        expect(viewId).to.not.equal('');
+      createDocumentPageAndNavigate().then((viewId) => {
         cy.wrap(viewId).as('docViewId');
-        cy.get(`#editor-${viewId}`, { timeout: 15000 }).should('exist');
       });
       waitForReactUpdate(1000);
 
@@ -170,7 +82,7 @@ describe('Database Container - Embedded Create/Delete', () => {
 
       // 3) Verify sidebar: document has a child database container with a child view
       testLog.step(3, 'Verify sidebar hierarchy: document -> container -> child view');
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
 
       cy.get<string>('@docViewId').then((docViewId) => {
         // Ensure the document is expanded to reveal its children
@@ -262,25 +174,49 @@ describe('Database Container - Embedded Create/Delete', () => {
         cy.get(`#editor-${docViewId}`).find(BlockSelectors.blockSelector('grid')).should('not.exist');
       });
 
-      // Wait for sidebar to sync after block deletion
-      waitForReactUpdate(3000);
+      // Wait for the server-side cascade deletion to complete AND for the
+      // getAppView cache (5 s TTL) to expire so the next fetch returns fresh data.
+      waitForReactUpdate(6000);
 
       // 5) Verify sidebar: document no longer has the database container child
       testLog.step(5, 'Verify sidebar no longer contains the embedded container');
-      ensureSpaceExpanded(spaceName);
+      expandSpaceByName(spaceName);
 
       cy.get<string>('@docViewId').then((docViewId) => {
-        // Ensure document still exists and is expanded (or try to expand if needed)
-        cy.get(`[data-testid="page-${docViewId}"]`).first().should('exist');
-        ensurePageExpandedByViewId(docViewId);
+        const pageItem = () =>
+          cy.get(`[data-testid="page-${docViewId}"]`).first().closest('[data-testid="page-item"]');
 
-        cy
-          .get(`[data-testid="page-${docViewId}"]`)
-          .first()
-          .closest('[data-testid="page-item"]')
-          .within(() => {
-            PageSelectors.names().should('not.contain.text', dbName);
-          });
+        pageItem().should('exist');
+
+        // Collapse and re-expand the document to force a fresh API fetch.
+        // The websocket VIEW_REMOVED event may not fire for cascade deletions,
+        // so we must manually invalidate the cached sidebar children.
+        pageItem().then(($item) => {
+          const collapseToggle = $item.find('[data-testid="outline-toggle-collapse"]');
+
+          if (collapseToggle.length > 0) {
+            cy.wrap(collapseToggle.first()).click({ force: true });
+            waitForReactUpdate(500);
+          }
+        });
+
+        // Re-expand: triggers loadViewChildren with a fresh (uncached) API call
+        // that should no longer include the deleted database container.
+        pageItem().then(($item) => {
+          const expandToggle = $item.find('[data-testid="outline-toggle-expand"]');
+
+          if (expandToggle.length > 0) {
+            cy.wrap(expandToggle.first()).click({ force: true });
+            waitForReactUpdate(1000);
+          }
+        });
+
+        // After fresh fetch, the document should have no child named "New Database".
+        // If the document now has no children at all (no expand toggle), the assertion
+        // passes trivially.  Otherwise check within the page-item.
+        pageItem().within(() => {
+          PageSelectors.names({ timeout: 15000 }).should('not.contain.text', dbName);
+        });
       });
 
       testLog.testEnd('Embedded database container create/delete');

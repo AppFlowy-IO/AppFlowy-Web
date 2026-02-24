@@ -16,11 +16,10 @@ import {
   PropertyMenuSelectors,
   GridFieldSelectors,
   FieldType,
-  byTestId,
   waitForReactUpdate,
 } from '../../support/selectors';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { generateRandomEmail } from '../../support/test-config';
+import { waitForAppReady } from '../../support/database-ui-helpers';
 
 /**
  * Rollup-specific selectors
@@ -37,10 +36,6 @@ const RollupSelectors = {
 
   // Rollup configuration submenu
   rollupRelationSubmenu: () => cy.get('[data-radix-menu-content]').contains('Relation'),
-};
-
-const waitForAppReady = () => {
-  cy.get(`${byTestId('inline-add-page')}, ${byTestId('new-page-button')}`, { timeout: 20000 }).should('be.visible');
 };
 
 // Rollup is always disabled on web (coming soon), so always skip these tests
@@ -83,11 +78,7 @@ describeIfEnabled('Rollup Cell Type', () => {
   it.skip('should display count of related rows in rollup field', () => {
     const testEmail = generateRandomEmail();
     cy.log(`[TEST] Rollup count test - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 
@@ -243,11 +234,7 @@ describeIfEnabled('Rollup Cell Type', () => {
   it.skip('should update rollup when relations change', () => {
     const testEmail = generateRandomEmail();
     cy.log(`[TEST] Rollup reactivity test - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 
@@ -403,11 +390,7 @@ describeIfEnabled('Rollup Cell Type', () => {
   it('should show rollup configuration options in property menu', () => {
     const testEmail = generateRandomEmail();
     cy.log(`[TEST] Rollup configuration UI test - Email: ${testEmail}`);
-
-    cy.visit('/login', { failOnStatusCode: false });
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       waitForAppReady();
 

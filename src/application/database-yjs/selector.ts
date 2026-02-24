@@ -60,7 +60,7 @@ import { MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
-import { CalendarLayoutSetting, FieldType, FieldVisibility, Filter, RowMeta, SortCondition } from './database.type';
+import { CalendarLayoutSetting, FieldType, FieldVisibility, Filter, FilterType, RowMeta, SortCondition } from './database.type';
 
 export interface Column {
   fieldId: string;
@@ -374,12 +374,26 @@ export function useFiltersSelector() {
     if (!filterOrders) return;
 
     const getFilters = () => {
-      return (filterOrders.toJSON() as { id: string; field_id: string }[]).map((item) => {
-        return {
-          id: item.id,
-          fieldId: item.field_id,
-        };
-      });
+      const rawData = filterOrders.toJSON();
+
+      return (rawData as { id: string; field_id: string; filter_type?: number }[])
+        .filter((item) => {
+          // Filter out AND/OR group filters (used in advanced mode)
+          // These have filter_type of And (1) or Or (2) and no field_id
+          const filterType = item.filter_type;
+
+          if (filterType === FilterType.And || filterType === FilterType.Or) {
+            return false;
+          }
+
+          return true;
+        })
+        .map((item) => {
+          return {
+            id: item.id,
+            fieldId: item.field_id,
+          };
+        });
     };
 
     const observerEvent = () => {
@@ -428,6 +442,322 @@ export function useFilterSelector(filterId: string) {
       filter?.unobserve(observerEvent);
     };
   }, [fields, viewId, filterId, database]);
+  return filterValue;
+}
+
+const DEFAULT_ROOT_INFO = { isHierarchical: false, rootType: null, childCount: 0 } as const;
+
+/**
+ * Returns information about the root filter structure for determining if advanced mode should be enabled
+ */
+export function useRootFilterInfo() {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const [rootInfo, setRootInfo] = useState<{
+    isHierarchical: boolean;
+    rootType: FilterType | null;
+    childCount: number;
+  }>(DEFAULT_ROOT_INFO);
+
+  useEffect(() => {
+    if (!viewId) return;
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filters = view?.get(YjsDatabaseKey.filters);
+
+    if (!filters) return;
+
+    const observerEvent = () => {
+      if (filters.length === 0) {
+        setRootInfo({ isHierarchical: false, rootType: null, childCount: 0 });
+        return;
+      }
+
+      const rootFilter = filters.get(0);
+
+      if (!rootFilter) {
+        setRootInfo({ isHierarchical: false, rootType: null, childCount: 0 });
+        return;
+      }
+
+      // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
+      const isYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
+      const getValue = (key: string): unknown => {
+        if (isYjsMap) {
+          return (rootFilter as { get: (key: string) => unknown }).get(key);
+        }
+
+        return (rootFilter as unknown as Record<string, unknown>)[key];
+      };
+
+      const filterType = Number(getValue(YjsDatabaseKey.filter_type));
+
+      if (filterType === FilterType.And || filterType === FilterType.Or) {
+        const children = getValue(YjsDatabaseKey.children);
+        const childCount =
+          children && typeof (children as { length?: number }).length === 'number'
+            ? (children as { length: number }).length
+            : 0;
+
+        setRootInfo({ isHierarchical: true, rootType: filterType, childCount });
+      } else {
+        setRootInfo({ isHierarchical: false, rootType: null, childCount: filters.length });
+      }
+    };
+
+    observerEvent();
+    filters.observeDeep(observerEvent);
+
+    return () => {
+      filters.unobserveDeep(observerEvent);
+    };
+  }, [database, viewId]);
+
+  return rootInfo;
+}
+
+/**
+ * Returns parsed filters from the root filter's children in advanced mode
+ */
+export function useAdvancedFiltersSelector() {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const fields = database?.get(YjsDatabaseKey.fields);
+  const [filters, setFilters] = useState<Filter[]>([]);
+
+  useEffect(() => {
+    if (!viewId || !fields) return;
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filtersArray = view?.get(YjsDatabaseKey.filters);
+
+    // Always set up observer even if array is empty - filters may be added later
+    if (!filtersArray) {
+      setFilters([]);
+      return;
+    }
+
+    const observerEvent = () => {
+      // Return early if no filters
+      if (filtersArray.length === 0) {
+        setFilters([]);
+        return;
+      }
+
+      const rootFilter = filtersArray.get(0);
+
+      if (!rootFilter) {
+        setFilters([]);
+        return;
+      }
+
+      // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
+      const isRootYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
+      const getRootValue = (key: string): unknown => {
+        if (isRootYjsMap) {
+          return (rootFilter as { get: (key: string) => unknown }).get(key);
+        }
+
+        return (rootFilter as unknown as Record<string, unknown>)[key];
+      };
+
+      const filterType = Number(getRootValue(YjsDatabaseKey.filter_type));
+
+      // If not in advanced mode, return empty array
+      if (filterType !== FilterType.And && filterType !== FilterType.Or) {
+        setFilters([]);
+        return;
+      }
+
+      const children = getRootValue(YjsDatabaseKey.children);
+
+      if (!children) {
+        setFilters([]);
+        return;
+      }
+
+      const parsedFilters: Filter[] = [];
+
+      // Handle both Yjs Y.Array (with .get() method) and plain JavaScript array (from desktop sync)
+      const isYArray = typeof (children as { get?: unknown }).get === 'function';
+      const childrenArray = children as { length: number; get?: (index: number) => unknown } | unknown[];
+      const childCount = Array.isArray(childrenArray) ? childrenArray.length : (childrenArray as { length: number }).length;
+
+      for (let i = 0; i < childCount; i++) {
+        const child = isYArray
+          ? (childrenArray as { get: (index: number) => unknown }).get(i)
+          : (childrenArray as unknown[])[i];
+
+        if (!child) {
+          continue;
+        }
+
+        // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
+        const isYjsMap = typeof (child as { get?: unknown }).get === 'function';
+        const getValue = (key: string): unknown => {
+          if (isYjsMap) {
+            return (child as { get: (key: string) => unknown }).get(key);
+          }
+
+          return (child as Record<string, unknown>)[key];
+        };
+
+        const fieldId = getValue(YjsDatabaseKey.field_id) as string;
+
+        // Skip if no field_id (this is a nested And/Or, not a Data filter)
+        if (!fieldId) {
+          continue;
+        }
+
+        const field = fields.get(fieldId);
+
+        // Use field type from filter's "ty" key as fallback if field not found
+        // This handles sync delays where filters arrive before fields
+        let fieldType: FieldType;
+
+        if (field) {
+          fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+        } else {
+          // Fallback: use the "ty" field from the filter data (set by desktop)
+          const tyValue = getValue('ty');
+
+          fieldType = tyValue !== undefined ? (Number(tyValue) as FieldType) : FieldType.RichText;
+        }
+
+        // For plain objects, we need to wrap them to work with parseFilter
+        // parseFilter expects objects with .get() method
+        const filterProxy = isYjsMap
+          ? (child as Parameters<typeof parseFilter>[1])
+          : {
+              get: (key: string) => (child as Record<string, unknown>)[key],
+            };
+
+        const parsed = parseFilter(fieldType, filterProxy as Parameters<typeof parseFilter>[1]);
+
+        parsedFilters.push(parsed);
+      }
+
+      setFilters(parsedFilters);
+    };
+
+    observerEvent();
+    filtersArray.observeDeep(observerEvent);
+
+    return () => {
+      filtersArray.unobserveDeep(observerEvent);
+    };
+  }, [database, viewId, fields]);
+
+  return filters;
+}
+
+/**
+ * Returns a single filter from the advanced mode children array
+ */
+export function useAdvancedFilterSelector(filterId: string) {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const fields = database?.get(YjsDatabaseKey.fields);
+  const [filterValue, setFilterValue] = useState<Filter | null>(null);
+
+  useEffect(() => {
+    if (!viewId || !fields) return;
+    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+    const filtersArray = view?.get(YjsDatabaseKey.filters);
+
+    if (!filtersArray || filtersArray.length === 0) return;
+
+    const observerEvent = () => {
+      const rootFilter = filtersArray.get(0);
+
+      if (!rootFilter) {
+        setFilterValue(null);
+        return;
+      }
+
+      // Handle both Yjs Map and plain object for rootFilter
+      const isRootYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
+      const children = isRootYjsMap
+        ? (rootFilter as { get: (key: string) => unknown }).get(YjsDatabaseKey.children)
+        : (rootFilter as unknown as Record<string, unknown>)[YjsDatabaseKey.children];
+
+      if (!children) {
+        setFilterValue(null);
+        return;
+      }
+
+      // Handle both Yjs Y.Array (with .get() method) and plain JavaScript array (from desktop sync)
+      const isYArray = typeof (children as { get?: unknown }).get === 'function';
+      const childrenArray = children as { length: number; get?: (index: number) => unknown } | unknown[];
+      const childCount = Array.isArray(childrenArray) ? childrenArray.length : (childrenArray as { length: number }).length;
+
+      let foundFilter: unknown = null;
+
+      for (let i = 0; i < childCount; i++) {
+        const child = isYArray
+          ? (childrenArray as { get: (index: number) => unknown }).get(i)
+          : (childrenArray as unknown[])[i];
+
+        if (!child) continue;
+
+        // Handle both Yjs Map and plain object
+        const isYjsMap = typeof (child as { get?: unknown }).get === 'function';
+        const childId = isYjsMap
+          ? (child as { get: (key: string) => unknown }).get(YjsDatabaseKey.id)
+          : (child as Record<string, unknown>)[YjsDatabaseKey.id];
+
+        if (childId === filterId) {
+          foundFilter = child;
+          break;
+        }
+      }
+
+      if (!foundFilter) {
+        setFilterValue(null);
+        return;
+      }
+
+      // Handle both Yjs Map and plain object for getting values
+      const isYjsMap = typeof (foundFilter as { get?: unknown }).get === 'function';
+      const getValue = (key: string): unknown => {
+        if (isYjsMap) {
+          return (foundFilter as { get: (key: string) => unknown }).get(key);
+        }
+
+        return (foundFilter as Record<string, unknown>)[key];
+      };
+
+      const fieldId = getValue(YjsDatabaseKey.field_id) as string;
+      const field = fields.get(fieldId);
+
+      // Use field type from filter's "ty" key as fallback if field not found
+      let fieldType: FieldType;
+
+      if (field) {
+        fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+      } else {
+        // Fallback: use the "ty" field from the filter data (set by desktop)
+        const tyValue = getValue('ty');
+
+        fieldType = tyValue !== undefined ? (Number(tyValue) as FieldType) : FieldType.RichText;
+      }
+
+      // For plain objects, wrap them to work with parseFilter
+      const filterProxy = isYjsMap
+        ? (foundFilter as Parameters<typeof parseFilter>[1])
+        : {
+            get: (key: string) => (foundFilter as Record<string, unknown>)[key],
+          };
+
+      setFilterValue(parseFilter(fieldType, filterProxy as Parameters<typeof parseFilter>[1]));
+    };
+
+    observerEvent();
+    filtersArray.observeDeep(observerEvent);
+
+    return () => {
+      filtersArray.unobserveDeep(observerEvent);
+    };
+  }, [database, viewId, fields, filterId]);
+
   return filterValue;
 }
 
@@ -966,53 +1296,72 @@ export function useRowOrdersSelector() {
 
   // Observe Yjs data changes
   useEffect(() => {
-    const throttleChange = debounce(onConditionsChange, 200);
-    const scheduleRollupRefresh = debounce(() => {
+    // Single debounced handler for all data changes (consolidated from 4 separate debounced callbacks)
+    const debouncedChange = debounce(() => {
       setRollupWatchVersion((prev) => prev + 1);
+      onConditionsChange();
     }, 200);
 
-    view?.get(YjsDatabaseKey.row_orders)?.observeDeep(throttleChange);
-    const debouncedConditionsChange = debounce(onConditionsChange, 150);
+    view?.get(YjsDatabaseKey.row_orders)?.observeDeep(debouncedChange);
 
     const observers = new Map<string, () => void>();
+    let relationFieldIds: string[] = [];
+    let rollupFieldIds: string[] = [];
+
+    const refreshConditionFieldIds = () => {
+      relationFieldIds = [];
+      rollupFieldIds = [];
+
+      fields?.forEach((field, fieldId) => {
+        const fieldType = Number(field.get(YjsDatabaseKey.type));
+
+        if (fieldType === FieldType.Relation) {
+          relationFieldIds.push(fieldId);
+        }
+
+        if (fieldType === FieldType.Rollup) {
+          rollupFieldIds.push(fieldId);
+        }
+      });
+    };
 
     const handleSortFilterChange = () => {
-      scheduleRollupRefresh();
-      throttleChange();
+      debouncedChange();
     };
 
     const handleFieldChange = () => {
-      if (rows && fields) {
-        fields.forEach((field, fieldId) => {
-          if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Rollup) {
-            Object.keys(rows).forEach((rowId) => {
-              invalidateRollupCell(`${rowId}:${fieldId}`);
-            });
+      refreshConditionFieldIds();
+
+      if (rows) {
+        Object.keys(rows).forEach((rowId) => {
+          for (const fieldId of rollupFieldIds) {
+            invalidateRollupCell(`${rowId}:${fieldId}`);
           }
         });
       }
 
-      scheduleRollupRefresh();
-      throttleChange();
+      debouncedChange();
     };
 
     sorts?.observeDeep(handleSortFilterChange);
     filters?.observeDeep(handleSortFilterChange);
     fields?.observeDeep(handleFieldChange);
 
+    // Keep relation/rollup field IDs updated as schema changes to avoid stale invalidation.
+    refreshConditionFieldIds();
+
     Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
       const observerRowsEvent = () => {
-        fields?.forEach((field, fieldId) => {
-          if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Relation) {
-            invalidateRelationCell(`${rowId}:${fieldId}`);
-          }
+        // Only invalidate relation/rollup fields (O(relation+rollup) instead of O(allFields)).
+        for (const fieldId of relationFieldIds) {
+          invalidateRelationCell(`${rowId}:${fieldId}`);
+        }
 
-          if (Number(field.get(YjsDatabaseKey.type)) === FieldType.Rollup) {
-            invalidateRollupCell(`${rowId}:${fieldId}`);
-          }
-        });
-        scheduleRollupRefresh();
-        debouncedConditionsChange();
+        for (const fieldId of rollupFieldIds) {
+          invalidateRollupCell(`${rowId}:${fieldId}`);
+        }
+
+        debouncedChange();
       };
 
       observers.set(rowId, observerRowsEvent);
@@ -1020,13 +1369,11 @@ export function useRowOrdersSelector() {
     });
 
     return () => {
-      view?.get(YjsDatabaseKey.row_orders)?.unobserveDeep(throttleChange);
+      view?.get(YjsDatabaseKey.row_orders)?.unobserveDeep(debouncedChange);
       sorts?.unobserveDeep(handleSortFilterChange);
       filters?.unobserveDeep(handleSortFilterChange);
       fields?.unobserveDeep(handleFieldChange);
-      scheduleRollupRefresh.cancel();
-      throttleChange.cancel();
-      debouncedConditionsChange.cancel();
+      debouncedChange.cancel();
       Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
         const observer = observers.get(rowId);
 
@@ -1503,16 +1850,29 @@ export function usePrimaryFieldId() {
 export const useRowMetaSelector = (rowId: string) => {
   const [meta, setMeta] = useState<RowMeta | null>();
   const { rowMap, ensureRow } = useDatabaseContext();
+  const [rowDoc, setRowDoc] = useState<YDoc | null>(null);
 
-  // Ensure the row document is loaded (same pattern as useRow)
+  // Ensure the row document is loaded and track it directly
   useEffect(() => {
     let cancelled = false;
+
+    // Check if already available in rowMap
+    const existing = rowMap?.[rowId];
+
+    if (existing) {
+      setRowDoc(existing);
+      return;
+    }
 
     if (ensureRow && rowId) {
       const promise = ensureRow(rowId);
 
       if (promise) {
-        promise.catch((error: unknown) => {
+        promise.then((doc) => {
+          if (!cancelled && doc) {
+            setRowDoc(doc);
+          }
+        }).catch((error: unknown) => {
           if (!cancelled) {
             console.error('[useRowMetaSelector] Failed to ensure row doc:', error);
           }
@@ -1523,40 +1883,64 @@ export const useRowMetaSelector = (rowId: string) => {
     return () => {
       cancelled = true;
     };
-  }, [ensureRow, rowId]);
+  }, [ensureRow, rowId, rowMap]);
 
-  const updateMeta = useCallback(() => {
-    const row = rowMap?.[rowId];
-
-    if (!row || !row.share.has(YjsEditorKey.data_section)) return;
-
-    const rowSharedRoot = row.getMap(YjsEditorKey.data_section);
-
-    const yMeta = rowSharedRoot?.get(YjsEditorKey.meta);
-
-    if (!yMeta) return;
-
-    const meta = getMetaJSON(rowId, yMeta);
-
-    setMeta(meta);
-  }, [rowId, rowMap]);
-
+  // Read meta and observe changes on the row doc.
+  // The meta key may not exist initially (empty Y.Map before sync completes),
+  // so we observe the shared root to detect when the meta key is added.
   useEffect(() => {
-    if (!rowMap) return;
-    updateMeta();
-    const observerEvent = () => updateMeta();
-
-    const rowDoc = rowMap[rowId];
-
     if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
-    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
-    const meta = rowSharedRoot?.get(YjsEditorKey.meta) as YDatabaseMetas;
 
-    meta?.observeDeep(observerEvent);
-    return () => {
-      meta?.unobserveDeep(observerEvent);
+    const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+    let metaObserverCleanup: (() => void) | null = null;
+
+    const attachMetaObserver = () => {
+      // Clean up previous observer if any
+      if (metaObserverCleanup) {
+        metaObserverCleanup();
+        metaObserverCleanup = null;
+      }
+
+      const yMeta = rowSharedRoot.get(YjsEditorKey.meta) as YDatabaseMetas | undefined;
+
+      if (!yMeta) return;
+
+      const updateMeta = () => {
+        const meta = getMetaJSON(rowId, yMeta);
+
+        setMeta(meta);
+      };
+
+      updateMeta();
+      yMeta.observeDeep(updateMeta);
+      metaObserverCleanup = () => {
+        try {
+          yMeta.unobserveDeep(updateMeta);
+        } catch {
+          // Ignore errors from unobserving destroyed Yjs objects
+        }
+      };
     };
-  }, [rowId, rowMap, updateMeta]);
+
+    // Watch for the meta key being added to the shared root (arrives via sync)
+    const handleRootChange = () => {
+      if (rowSharedRoot.has(YjsEditorKey.meta)) {
+        attachMetaObserver();
+      }
+    };
+
+    rowSharedRoot.observe(handleRootChange);
+    // Try attaching immediately in case meta already exists
+    attachMetaObserver();
+
+    return () => {
+      if (metaObserverCleanup) {
+        metaObserverCleanup();
+      }
+
+      rowSharedRoot.unobserve(handleRootChange);
+    };
+  }, [rowId, rowDoc]);
 
   return meta;
 };

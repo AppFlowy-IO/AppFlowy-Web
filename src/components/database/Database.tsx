@@ -42,6 +42,17 @@ export interface Database2Props {
   loadView?: LoadView;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
+  /**
+   * Load a row sub-document (document content inside a database row).
+   * In app mode: loads from server via authenticated API.
+   * In publish mode: loads from published cache.
+   */
+  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  /**
+   * Create a row document on the server (orphaned view).
+   * Only available in app mode - not provided in publish mode.
+   */
+  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   /**
@@ -99,6 +110,10 @@ export interface Database2Props {
    * Upload a file to storage and return the URL.
    */
   uploadFile?: (file: File) => Promise<string>;
+  /**
+   * Schedule deferred cleanup of a sync context after a delay.
+   */
+  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
 }
 
 function Database(props: Database2Props) {
@@ -118,6 +133,8 @@ function Database(props: Database2Props) {
     loadView,
     bindViewSync,
     checkIfRowDocumentExists,
+    loadRowDocument,
+    createRowDocument,
     navigateToView,
     modalRowId,
     isDocumentBlock: _isDocumentBlock,
@@ -174,11 +191,20 @@ function Database(props: Database2Props) {
 
   const registerRowSync = useCallback(
     (rowKey: string) => {
-      if (!createRow) return;
-      if (syncedRowKeysRef.current.has(rowKey)) return;
+      if (!createRow) {
+        return;
+      }
+
+      if (syncedRowKeysRef.current.has(rowKey)) {
+        return;
+      }
 
       syncedRowKeysRef.current.add(rowKey);
-      void createRow(rowKey);
+      void createRow(rowKey).catch((e) => {
+        console.error('[Database] registerRowSync failed', rowKey, e);
+        // Remove from set so it can be retried
+        syncedRowKeysRef.current.delete(rowKey);
+      });
     },
     [createRow]
   );
@@ -238,6 +264,13 @@ function Database(props: Database2Props) {
   );
 
   const ensureBlobPrefetch = useCallback(() => {
+    // Skip blob prefetch in read-only mode (publish view)
+    // The publish API doesn't support blob/diff endpoint
+    if (readOnly) {
+      setBlobPrefetchComplete(true);
+      return null;
+    }
+
     const databaseId = getDatabaseId();
 
     if (!workspaceId || !databaseId) return null;
@@ -262,7 +295,7 @@ function Database(props: Database2Props) {
     prefetchPromisesRef.current.set(databaseId, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [workspaceId, getDatabaseId, getPriorityRowIds]);
+  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds]);
 
   useEffect(() => {
     const databaseId = getDatabaseId();
@@ -307,6 +340,12 @@ function Database(props: Database2Props) {
       const existing = rowMapRef.current[rowId];
 
       if (existing) {
+        // Ensure sync is registered even for rows loaded via populateRowFromCache,
+        // which loads from IndexedDB without setting up WebSocket sync.
+        const databaseId = getDatabaseId();
+        const rowKey = getRowKey(databaseId, rowId);
+
+        registerRowSync(rowKey);
         return existing;
       }
 
@@ -384,6 +423,24 @@ function Database(props: Database2Props) {
       });
     }
   }, [workspaceId, getDatabaseId, ensureBlobPrefetch]);
+
+  // Schedule deferred cleanup for all row sync contexts on unmount
+  useEffect(() => {
+    const syncedKeys = syncedRowKeysRef;
+    const cleanup = props.scheduleDeferredCleanup;
+
+    return () => {
+      if (!cleanup) return;
+      syncedKeys.current.forEach((rowKey) => {
+        const rowId = rowKey.split('_rows_')[1];
+
+        if (rowId) {
+          cleanup(rowId);
+        }
+      });
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [props.scheduleDeferredCleanup]);
 
   // Combined modal state to avoid multiple re-renders when updating related values
   const [modalState, setModalState] = useState<{
@@ -490,6 +547,8 @@ function Database(props: Database2Props) {
       bindViewSync,
       createRow: createNewRow,
       checkIfRowDocumentExists,
+      loadRowDocument,
+      createRowDocument,
       loadViewMeta: props.loadViewMeta,
       navigateToView,
       onRendered: props.onRendered,
@@ -519,6 +578,8 @@ function Database(props: Database2Props) {
       bindViewSync,
       createNewRow,
       checkIfRowDocumentExists,
+      loadRowDocument,
+      createRowDocument,
       props.loadViewMeta,
       navigateToView,
       props.onRendered,

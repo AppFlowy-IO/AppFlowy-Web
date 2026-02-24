@@ -1,6 +1,5 @@
-import { v4 as uuidv4 } from 'uuid';
-import { AuthTestUtils } from '../../../support/auth-utils';
 import { getSlashMenuItemName } from '../../../support/i18n-constants';
+import { generateRandomEmail } from '../../../support/test-config';
 import {
   AddPageSelectors,
   EditorSelectors,
@@ -9,7 +8,6 @@ import {
 } from '../../../support/selectors';
 
 describe('Embedded Database - Plus Button View Creation', () => {
-  const generateRandomEmail = () => `${uuidv4()}@appflowy.io`;
 
   const clickAddViewButtonOnConditions = () => {
     // Wait for database to fully load
@@ -50,13 +48,8 @@ describe('Embedded Database - Plus Button View Creation', () => {
     cy.task('log', `[TEST START] Testing plus button view creation - Test email: ${testEmail}`);
 
     // Step 1: Login
-    cy.task('log', '[STEP 1] Visiting login page');
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    cy.task('log', '[STEP 2] Starting authentication');
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.task('log', '[STEP 1] Starting authentication');
+    cy.signIn(testEmail).then(() => {
       cy.task('log', '[STEP 3] Authentication successful');
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
@@ -202,11 +195,7 @@ describe('Embedded Database - Plus Button View Creation', () => {
 
     cy.task('log', `[TEST START] Testing view creation performance - Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 
@@ -305,11 +294,7 @@ describe('Embedded Database - Plus Button View Creation', () => {
 
     cy.task('log', `[TEST START] Testing scroll behavior with multiple views - Test email: ${testEmail}`);
 
-    cy.visit('/login', { failOnStatusCode: false });
-    cy.wait(2000);
-
-    const authUtils = new AuthTestUtils();
-    authUtils.signInWithTestUrl(testEmail).then(() => {
+    cy.signIn(testEmail).then(() => {
       cy.url({ timeout: 30000 }).should('include', '/app');
       cy.wait(3000);
 

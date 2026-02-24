@@ -7,7 +7,6 @@ import {
   RowMetaKey,
   useDatabase,
   useDatabaseContextOptional,
-  useReadOnly,
   useRowData,
   useRowMetaSelector,
 } from '@/application/database-yjs';
@@ -28,37 +27,44 @@ import {
   YjsDatabaseKey,
   YjsEditorKey
 } from '@/application/types';
-import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
-import {
-  useBindViewSync,
-  useCheckIfRowDocumentExists,
-  useCreateOrphanedView,
-  useLoadRowDocument,
-  YDocWithMeta,
-} from '@/components/database/hooks';
+import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
+import { YDocWithMeta } from '@/components/database/hooks';
 import { Editor } from '@/components/editor';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
+/**
+ * DatabaseRowSubDocument - Full-featured component for row documents in app mode.
+ *
+ * This component handles:
+ * - Loading documents from server
+ * - Creating new documents when needed
+ * - WebSocket sync for real-time collaboration
+ * - Document update tracking and meta updates
+ *
+ * For publish mode (read-only), use PublishRowSubDocument instead.
+ * The RowSubDocument wrapper handles mode selection automatically.
+ */
 export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const meta = useRowMetaSelector(rowId);
-  const readOnly = useReadOnly();
   const documentId = meta?.documentId;
   const database = useDatabase();
   const row = useRowData(rowId) as YDatabaseRow | undefined;
   const currentUser = useCurrentUserOptional();
   const workspaceId = useCurrentWorkspaceIdOptional();
 
-  // Get context for Editor props (navigateToView, loadView, etc.)
-  // Use optional variant to avoid throwing when outside DatabaseContextProvider
+  // Get context for Editor props and row document operations
+  // The context provides mode-specific implementations:
+  // - App mode: authenticated APIs, WebSocket sync
+  // - Publish mode: published cache, no writes
   const context = useDatabaseContextOptional();
 
-  // Use dedicated hooks instead of getting from context
-  const checkIfRowDocumentExists = useCheckIfRowDocumentExists();
-  const createOrphanedView = useCreateOrphanedView();
-  const bindViewSync = useBindViewSync();
-  const loadRowDocument = useLoadRowDocument();
+  // Row document operations from context (mode-specific implementations)
+  const loadRowDocument = context?.loadRowDocument;
+  const createRowDocument = context?.createRowDocument;
+  const checkIfRowDocumentExists = context?.checkIfRowDocumentExists;
+  const bindViewSync = context?.bindViewSync;
   const updateRowMeta = useUpdateRowMetaDispatch(rowId);
   const editorRef = useRef<YjsEditor | null>(null);
   const lastIsEmptyRef = useRef<boolean | null>(null);
@@ -121,7 +127,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   const ensureDocRetryTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const document = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.document);
-  const isDocumentEmptyResolved = meta?.isEmptyDocument ?? false;
+  // undefined = meta hasn't loaded from Yjs yet (wait)
+  // true = meta loaded, document is empty (open locally)
+  // false = meta loaded, document has content (load from server)
+  const isDocumentEmptyResolved = meta === null || meta === undefined ? undefined : (meta.isEmptyDocument ?? true);
 
   const isDocumentEmpty = useCallback(
     (editor: YjsEditor) => {
@@ -236,6 +245,12 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       try {
         docReadyRef.current = false;
         setDoc(null);
+
+        if (!loadRowDocument) {
+          Log.debug('[DatabaseRowSubDocument] loadRowDocument not available', { documentId });
+          return false;
+        }
+
         const doc = await loadRowDocument(documentId);
 
         if (!doc) {
@@ -333,7 +348,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         setDoc(doc);
         docReadyRef.current = true;
-        rowDocEnsuredRef.current = true; // Document was created on server via createOrphanedView
+        rowDocEnsuredRef.current = true; // Document was created on server via createRowDocument
         Log.debug('[DatabaseRowSubDocument] openDocumentWithState ready', {
           rowId,
           documentId,
@@ -398,7 +413,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       Log.debug('[DatabaseRowSubDocument] handleCreateDocument', {
         documentId,
         requireServerReady,
-        hasCreateOrphanedView: !!createOrphanedView,
+        hasCreateOrphanedView: !!createRowDocument,
       });
 
       try {
@@ -418,28 +433,28 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         }
 
         if (requireServerReady) {
-          if (!createOrphanedView) {
-            Log.debug('[DatabaseRowSubDocument] createOrphanedView not available, returning false');
+          if (!createRowDocument) {
+            Log.debug('[DatabaseRowSubDocument] createRowDocument not available, returning false');
             setLoading(false); // Clear loading on early failure
             return false;
           }
 
           try {
-            Log.debug('[DatabaseRowSubDocument] calling createOrphanedView', { documentId });
-            docState = await createOrphanedView({ document_id: documentId });
-            Log.debug('[DatabaseRowSubDocument] createOrphanedView success', { documentId, docStateSize: docState.length });
+            Log.debug('[DatabaseRowSubDocument] calling createRowDocument', { documentId });
+            docState = await createRowDocument(documentId);
+            Log.debug('[DatabaseRowSubDocument] createRowDocument success', { documentId, docStateSize: docState?.length ?? 0 });
           } catch (e) {
-            Log.error('[DatabaseRowSubDocument] createOrphanedView failed', e);
+            Log.error('[DatabaseRowSubDocument] createRowDocument failed', e);
             setLoading(false); // Clear loading on error
             return false;
           }
-        } else if (createOrphanedView) {
+        } else if (createRowDocument) {
           try {
-            Log.debug('[DatabaseRowSubDocument] calling createOrphanedView (non-blocking)', { documentId });
-            docState = await createOrphanedView({ document_id: documentId });
-            Log.debug('[DatabaseRowSubDocument] createOrphanedView success (non-blocking)', { documentId, docStateSize: docState.length });
+            Log.debug('[DatabaseRowSubDocument] calling createRowDocument (non-blocking)', { documentId });
+            docState = await createRowDocument(documentId);
+            Log.debug('[DatabaseRowSubDocument] createRowDocument success (non-blocking)', { documentId, docStateSize: docState?.length ?? 0 });
           } catch (e) {
-            Log.warn('[DatabaseRowSubDocument] createOrphanedView failed (continuing)', e);
+            Log.warn('[DatabaseRowSubDocument] createRowDocument failed (continuing)', e);
             // Continue to local document if server create fails.
           }
         }
@@ -467,7 +482,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         }
       }
     },
-    [createOrphanedView, hasLocalDocContent, openDocumentWithState, openLocalDocument, rowId]
+    [createRowDocument, hasLocalDocContent, openDocumentWithState, openLocalDocument, rowId]
   );
 
   const scheduleEnsureRowDocumentExists = useCallback(() => {
@@ -489,15 +504,15 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           exists,
         });
 
-        if (!exists && createOrphanedView) {
-          Log.debug('[DatabaseRowSubDocument] createOrphanedView retry', {
+        if (!exists && createRowDocument) {
+          Log.debug('[DatabaseRowSubDocument] createRowDocument retry', {
             rowId,
             documentId,
           });
-          await createOrphanedView({ document_id: documentId });
+          await createRowDocument(documentId);
         }
 
-        if (pendingOpenLocalRef.current && (exists || createOrphanedView)) {
+        if (pendingOpenLocalRef.current && (exists || createRowDocument)) {
           pendingOpenLocalRef.current = false;
           await openLocalDocument(documentId);
           setLoading(false);
@@ -527,7 +542,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     }, 5000);
   }, [
     checkIfRowDocumentExists,
-    createOrphanedView,
+    createRowDocument,
     documentId,
     isDocumentEmpty,
     updateRowMeta,
@@ -606,8 +621,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       }, 2000); // Reduced from 5000ms to 2000ms for faster response
     };
 
-    const shouldWaitForRowMeta = !isDocumentEmptyResolved;
-
     void (async () => {
       // Skip if doc is already loaded - prevents reloading when meta changes
       if (docReadyRef.current && doc) {
@@ -615,6 +628,16 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           rowId,
           documentId,
         });
+        return;
+      }
+
+      // Wait for row meta to load before making any decisions
+      if (isDocumentEmptyResolved === undefined) {
+        Log.debug('[DatabaseRowSubDocument] waiting for row meta to load', {
+          rowId,
+          documentId,
+        });
+        scheduleRetry();
         return;
       }
 
@@ -640,13 +663,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         return;
       }
 
-      // If checkIfRowDocumentExists is not available, decide based on row meta.
+      // meta.isEmptyDocument is false - document should exist on server
+      // If checkIfRowDocumentExists is not available, try to load directly.
       if (!checkIfRowDocumentExists) {
-        if (shouldWaitForRowMeta) {
-          scheduleRetry();
-          return;
-        }
-
         const localHasContent = await hasLocalDocContent(documentId);
 
         if (localHasContent) {
@@ -670,7 +689,6 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           rowId,
           documentId,
           exists,
-          shouldWaitForRowMeta,
         });
         if (exists) {
           // Skip loading if doc is already ready
@@ -685,13 +703,13 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           const success = await handleOpenDocument(documentId);
 
           if (!success) {
-            if (createOrphanedView) {
+            if (createRowDocument) {
               try {
-                Log.debug('[DatabaseRowSubDocument] createOrphanedView after load failure', {
+                Log.debug('[DatabaseRowSubDocument] createRowDocument after load failure', {
                   rowId,
                   documentId,
                 });
-                await createOrphanedView({ document_id: documentId });
+                await createRowDocument(documentId);
               } catch {
                 // Ignore; we'll retry loading below.
               }
@@ -703,30 +721,13 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return;
         }
 
-        // Document doesn't exist on server
-        if (shouldWaitForRowMeta) {
-          Log.debug('[DatabaseRowSubDocument] row meta says non-empty but doc not found; will retry then create', {
-            rowId,
-            documentId,
-          });
-          // Still retry a few times in case of race condition, but will create after max retries
-          scheduleRetry();
-          return;
-        }
-
-        const localHasContent = await hasLocalDocContent(documentId);
-
-        if (localHasContent) {
-          Log.debug('[DatabaseRowSubDocument] doc not found; local content found, opening local doc', {
-            rowId,
-            documentId,
-          });
-          await openLocalDocument(documentId);
-          setLoading(false);
-          return;
-        }
-
-        void handleCreateDocument(documentId, true);
+        // Document doesn't exist on server but meta says non-empty
+        Log.debug('[DatabaseRowSubDocument] meta says non-empty but doc not found; will retry then create', {
+          rowId,
+          documentId,
+        });
+        // Retry a few times in case of race condition, will create after max retries
+        scheduleRetry();
       } catch (e) {
         Log.debug('[DatabaseRowSubDocument] checkIfRowDocumentExists failed; will retry', {
           rowId,
@@ -748,7 +749,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     isDocumentEmptyResolved,
     hasLocalDocContent,
     scheduleEnsureRowDocumentExists,
-    createOrphanedView,
+    createRowDocument,
     rowId,
     doc,
     openLocalDocument,
@@ -806,17 +807,15 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
   const shouldSkipIsDocumentEmptyUpdate = useCallback(
     (isEmpty: boolean) => {
-      if (readOnly) {
-        return true;
-      }
-
+      // Skip update if meta already says non-empty and we're reporting empty
+      // (meta is authoritative once content was added)
       if (meta?.isEmptyDocument === false && isEmpty) {
         return true;
       }
 
       return false;
     },
-    [meta?.isEmptyDocument, readOnly]
+    [meta?.isEmptyDocument]
   );
 
   const handleEditorConnected = useCallback((editor: YjsEditor) => {
@@ -842,16 +841,16 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     }
 
     // If document already exists, mark as ensured and return early
-    // Don't call createOrphanedView if the document is already on the server
+    // Don't call createRowDocument if the document is already on the server
     if (exists) {
       rowDocEnsuredRef.current = true;
       return true;
     }
 
     // Only create orphaned view if document doesn't exist
-    if (createOrphanedView) {
+    if (createRowDocument) {
       try {
-        await createOrphanedView({ document_id: documentId });
+        await createRowDocument(documentId);
         rowDocEnsuredRef.current = true;
         return true;
       } catch {
@@ -861,7 +860,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     }
 
     return false;
-  }, [checkIfRowDocumentExists, createOrphanedView, documentId]);
+  }, [checkIfRowDocumentExists, createRowDocument, documentId]);
 
   useEffect(() => {
     if (!doc) return;
@@ -961,6 +960,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   }
 
   if (!document || !doc || !documentId || !row || !workspaceId || !context) return null;
+
   return (
     <Editor
       {...context}
@@ -968,7 +968,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       workspaceId={workspaceId}
       viewId={documentId}
       doc={doc}
-      readOnly={readOnly}
+      readOnly={false}
       getMoreAIContext={getMoreAIContext}
       onEditorConnected={handleEditorConnected}
     />

@@ -1,4 +1,3 @@
-import { AuthTestUtils } from '../../support/auth-utils';
 import { SidebarSelectors, WorkspaceSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import enTranslations from '../../../src/@types/translations/en.json';
@@ -29,11 +28,7 @@ describe('Workspace Upgrade Entry', () => {
     });
 
     it('shows Upgrade to Pro Plan for workspace owners', function () {
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(2000);
-
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
 
             SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });

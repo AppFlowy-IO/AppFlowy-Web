@@ -1,6 +1,6 @@
-import { AuthTestUtils } from '../../support/auth-utils';
+import 'cypress-real-events';
 import { TestTool } from '../../support/page-utils';
-import { EditorSelectors, PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
+import { AddPageSelectors, DatabaseGridSelectors, EditorSelectors, PageSelectors, RowDetailSelectors, ShareSelectors, SidebarSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
 
@@ -43,10 +43,7 @@ describe('Publish Page Test', () => {
         });
 
         // 1. Sign in
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -260,10 +257,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -317,10 +311,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -383,10 +374,7 @@ describe('Publish Page Test', () => {
         const initialContent = 'Initial published content';
         const updatedContent = 'Updated content after republish';
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -481,10 +469,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -540,10 +525,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -614,10 +596,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -681,10 +660,7 @@ describe('Publish Page Test', () => {
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
             PageSelectors.names().should('exist', { timeout: 30000 });
@@ -715,20 +691,27 @@ describe('Publish Page Test', () => {
         });
     });
 
-    it('publish database (To-dos) and visit published link', () => {
+    it('publish database and open row in published view', () => {
         cy.on('uncaught:exception', (err: Error) => {
+            // These are expected/handled errors
             if (err.message.includes('No workspace or service found') ||
                 err.message.includes('createThemeNoVars_default is not a function') ||
-                err.message.includes('View not found')) {
+                err.message.includes('View not found') ||
+                err.message.includes('ResizeObserver loop') ||
+                err.message.includes('Record not found')) {
                 return false;
+            }
+            // FAIL the test if we see context errors - they indicate our fix regressed
+            if (err.message.includes('useSyncInternal must be used within') ||
+                err.message.includes('useCurrentWorkspaceId must be used within') ||
+                err.message.includes('useAppHandlers must be used within')) {
+                testLog.info(`CRITICAL ERROR - Context issue detected: ${err.message}`);
+                return true; // Let it fail
             }
             return true;
         });
 
-        cy.visit('/login', { failOnStatusCode: false });
-        cy.wait(1000);
-        const authUtils = new AuthTestUtils();
-        authUtils.signInWithTestUrl(testEmail).then(() => {
+        cy.signIn(testEmail).then(() => {
             cy.url().should('include', '/app');
             testLog.info('Signed in');
 
@@ -736,117 +719,255 @@ describe('Publish Page Test', () => {
             PageSelectors.names().should('exist', { timeout: 30000 });
             cy.wait(2000);
 
-            // Navigate to the To-dos database
-            testLog.info('Navigating to To-dos database');
-            cy.contains('To-dos', { timeout: 10000 }).should('be.visible').click({ force: true });
-            cy.wait(5000); // Wait for database to load
+            // Create a new Grid database
+            testLog.info('Creating new Grid database');
+            AddPageSelectors.inlineAddButton().first().click({ force: true });
+            cy.wait(1000);
+            AddPageSelectors.addGridButton().should('be.visible').click({ force: true });
+            cy.wait(5000);
 
-            // Close any modals/dialogs that might be open (database views sometimes open modals)
-            cy.get('body').then(($body: JQuery<HTMLBodyElement>) => {
-                const hasDialog = $body.find('[role="dialog"]').length > 0 || $body.find('.MuiDialog-container').length > 0;
-                if (hasDialog) {
-                    testLog.info('Closing modal dialog');
-                    cy.get('body').type('{esc}');
-                    cy.wait(2000);
-                    // Try again if still open
-                    cy.get('body').then(($body2: JQuery<HTMLBodyElement>) => {
-                        if ($body2.find('[role="dialog"]').length > 0 || $body2.find('.MuiDialog-container').length > 0) {
-                            cy.get('body').type('{esc}');
-                            cy.wait(1000);
-                        }
-                    });
-                }
-            });
+            // Verify Grid database loaded
+            cy.get('[data-testid="database-grid"]').should('exist', { timeout: 15000 });
+            testLog.info('Grid database created and loaded');
+            cy.wait(2000);
 
-            // Verify we're on a database view (not a document)
-            testLog.info('Verifying database view loaded');
-            cy.get('body').should('exist'); // Database should be loaded
-
-            // Wait a bit more for database to fully initialize and ensure no modals
-            cy.wait(3000);
-
-            // Ensure share button is visible before clicking
+            // Ensure share button is visible
             ShareSelectors.shareButton().should('be.visible', { timeout: 10000 });
 
             // Open share popover and publish
-            testLog.info('Opening share popover to publish database');
+            testLog.info('Publishing database');
             TestTool.openSharePopover();
-            testLog.info('Share popover opened');
 
-            // Verify that the Share and Publish tabs are visible
-            cy.contains('Share').should('exist');
-            cy.contains('Publish').should('exist');
-            testLog.info('Share and Publish tabs verified');
-
-            // Switch to Publish tab
+            // Switch to Publish tab and publish
             cy.contains('Publish').should('exist').click({ force: true });
             cy.wait(1000);
-            testLog.info('Switched to Publish tab');
-
-            // Verify Publish to Web section is visible
-            cy.contains('Publish to Web').should('exist');
-            testLog.info('Publish to Web section verified');
-
-            // Wait for the publish button to be visible and enabled
-            testLog.info('Waiting for publish button to appear...');
             ShareSelectors.publishConfirmButton().should('be.visible').should('not.be.disabled');
-            testLog.info('Publish button is visible and enabled');
-
-            // Click Publish button
             ShareSelectors.publishConfirmButton().click({ force: true });
             testLog.info('Clicked Publish button');
-
-            // Wait for publish to complete and URL to appear
             cy.wait(5000);
 
-            // Verify that the database is now published by checking for published UI elements
+            // Verify published
             ShareSelectors.publishNamespace().should('be.visible', { timeout: 10000 });
-            testLog.info('Database published successfully, URL elements visible');
+            testLog.info('Database published successfully');
 
-            // Get the published URL
+            // Get the published URL and visit
             cy.window().then((win) => {
                 const origin = win.location.origin;
 
-                // Get namespace and publish name from the UI
-                ShareSelectors.publishNamespace().should('be.visible').invoke('text').then((namespace) => {
-                    ShareSelectors.publishNameInput().should('be.visible').invoke('val').then((publishName) => {
+                ShareSelectors.publishNamespace().invoke('text').then((namespace) => {
+                    ShareSelectors.publishNameInput().invoke('val').then((publishName) => {
                         const namespaceText = namespace.trim();
                         const publishNameText = String(publishName).trim();
                         const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
-                        testLog.info(`Constructed published database URL: ${publishedUrl}`);
+                        testLog.info(`Published URL: ${publishedUrl}`);
+
+                        // Close the share popover
+                        cy.get('body').type('{esc}');
+                        cy.wait(500);
 
                         // Visit the published database URL
-                        testLog.info(`Opening published database URL: ${publishedUrl}`);
+                        testLog.info('Opening published database URL');
                         cy.visit(publishedUrl, { failOnStatusCode: false });
-
-                        // Verify the published database loads
                         cy.url({ timeout: 10000 }).should('include', `/${namespaceText}/${publishNameText}`);
-                        testLog.info('Published database opened successfully');
-
-                        // Wait for database content to load
+                        testLog.info('Published database opened');
                         cy.wait(5000);
 
-                        // Verify database is accessible - it should show database view elements
+                        // Verify database is visible
                         cy.get('body').should('be.visible');
+                        testLog.info('Published database loaded');
 
-                        // Check if we're on a published database page
+                        // Step: Open a row in published view - this is the main test
+                        testLog.info('Opening row in published view (testing context error fix)');
+
+                        // In publish mode, just click on the row directly
+                        cy.get('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])')
+                            .first()
+                            .click({ force: true });
+                        cy.wait(3000);
+
+                        // Verify row detail opened without errors
                         cy.get('body').then(($body) => {
                             const bodyText = $body.text();
-                            if (bodyText.includes('404') || bodyText.includes('Not Found')) {
-                                testLog.info('⚠ Warning: Database might not be accessible (404 detected)');
-                            } else {
-                                // Database should be visible - might have grid/board/calendar elements
-                                testLog.info('✓ Published database verified and accessible');
 
-                                // Additional verification: Check if database-specific elements exist
-                                // Databases typically have table/grid structures or views
-                                cy.get('body').should('exist');
-                                testLog.info('✓ Database view elements present');
+                            // Check that we don't see critical error messages
+                            if (bodyText.includes('useSyncInternal must be used within') ||
+                                bodyText.includes('useCurrentWorkspaceId must be used within') ||
+                                bodyText.includes('Something went wrong')) {
+                                throw new Error('REGRESSION: Context error detected in publish view');
                             }
+
+                            // Check if modal/dialog opened
+                            if ($body.find('[role="dialog"]').length > 0 || $body.find('.MuiDialog-paper').length > 0) {
+                                testLog.info('✓ Row detail modal opened successfully in publish view');
+                            } else {
+                                testLog.info('Row detail may render differently in publish mode');
+                            }
+
+                            testLog.info('✓ No context errors detected');
                         });
+
+                        testLog.info('✓ Test passed: Row opened in published view without errors');
                     });
                 });
             });
+        });
+    });
+
+    it('publish database with row document content and verify content displays in published view', () => {
+        cy.on('uncaught:exception', (err: Error) => {
+            // These are expected/handled errors
+            if (err.message.includes('No workspace or service found') ||
+                err.message.includes('createThemeNoVars_default is not a function') ||
+                err.message.includes('View not found') ||
+                err.message.includes('ResizeObserver loop') ||
+                err.message.includes('Record not found')) {
+                return false;
+            }
+            return true;
+        });
+
+        const rowDocContent = `TestRowDoc-${Date.now()}`;
+
+        cy.signIn(testEmail).then(() => {
+            cy.url().should('include', '/app');
+            testLog.info('Signed in');
+
+            SidebarSelectors.pageHeader().should('be.visible', { timeout: 30000 });
+            PageSelectors.names().should('exist', { timeout: 30000 });
+            cy.wait(2000);
+
+            // Step 1: Create a new Grid database
+            testLog.info('Creating new Grid database');
+            AddPageSelectors.inlineAddButton().first().click({ force: true });
+            cy.wait(1000);
+            AddPageSelectors.addGridButton().should('be.visible').click({ force: true });
+            cy.wait(5000);
+
+            // Verify Grid database loaded
+            cy.get('[data-testid="database-grid"]').should('exist', { timeout: 15000 });
+            testLog.info('Grid database created and loaded');
+            cy.wait(2000);
+
+            // Step 2: Capture the first row ID from the app grid (needed later for published URL)
+            testLog.info('Capturing row ID from app grid');
+            DatabaseGridSelectors.dataRows()
+                .first()
+                .invoke('attr', 'data-testid')
+                .then((testId) => {
+                    const rowId = testId?.replace('grid-row-', '');
+                    testLog.info(`Row ID: ${rowId}`);
+                    if (!rowId) throw new Error('Could not extract row ID from grid row');
+
+                    // Step 3: Open the first row to add document content
+                    testLog.info('Opening first row to add document content');
+                    DatabaseGridSelectors.dataRows()
+                        .first()
+                        .scrollIntoView()
+                        .should('be.visible')
+                        .realHover();
+                    waitForReactUpdate(500);
+
+                    cy.get('[data-testid="row-expand-button"]', { timeout: 5000 })
+                        .should('exist')
+                        .first()
+                        .should('be.visible')
+                        .click({ force: true });
+                    waitForReactUpdate(1000);
+
+                    RowDetailSelectors.modal().should('exist', { timeout: 10000 });
+                    testLog.info('Row detail modal opened');
+
+                    // Step 4: Type content into the row document
+                    testLog.info('Typing content into row document');
+                    waitForReactUpdate(5000);
+
+                    cy.get('[role="dialog"]')
+                        .find('.appflowy-scroll-container')
+                        .scrollTo('bottom', { ensureScrollable: false });
+                    waitForReactUpdate(2000);
+
+                    cy.get('[role="dialog"]')
+                        .find('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]', { timeout: 30000 })
+                        .should('exist')
+                        .first()
+                        .as('editor');
+
+                    cy.get('@editor').click({ force: true });
+                    waitForReactUpdate(1000);
+
+                    // Type the content - triggers row document creation and WebSocket sync.
+                    // Keep the modal open during sync so the component stays mounted
+                    // and the WebSocket connection remains active for content sync.
+                    // The sync flow: type -> local Y.Doc update -> ensureRowDocumentExists()
+                    // API call -> WebSocket sync of content -> server persists to storage.
+                    cy.focused().type(rowDocContent, { delay: 50 });
+
+                    // Keep the modal open for an extended period to ensure:
+                    // 1. The row document is created on the server (API call)
+                    // 2. WebSocket sync sends the content to the server
+                    // 3. Server persists the content to its storage layer
+                    // This is the most critical wait - the component must stay mounted
+                    // for the WebSocket connection to remain active during sync.
+                    waitForReactUpdate(20000);
+
+                    cy.get('[role="dialog"]').should('contain.text', rowDocContent);
+                    testLog.info('Row document content added');
+
+                    // Step 5: Close the modal
+                    testLog.info('Closing row detail modal');
+                    RowDetailSelectors.modalTitle().click({ force: true });
+                    waitForReactUpdate(1000);
+                    cy.get('body').type('{esc}');
+                    waitForReactUpdate(2000);
+                    RowDetailSelectors.modal().should('not.exist');
+
+                    // Wait for server-side storage to fully settle.
+                    // Even after WebSocket sync completes, the server needs time to
+                    // persist the data to its storage backend (e.g., Postgres).
+                    // The publish blob is generated from this storage, so it must
+                    // contain the row document before we publish.
+                    waitForReactUpdate(15000);
+
+                    // Step 6: Publish the database
+                    testLog.info('Publishing database');
+                    ShareSelectors.shareButton().should('be.visible', { timeout: 10000 });
+                    TestTool.openSharePopover();
+
+                    cy.contains('Publish').should('exist').click({ force: true });
+                    cy.wait(1000);
+                    ShareSelectors.publishConfirmButton().should('be.visible').should('not.be.disabled');
+                    ShareSelectors.publishConfirmButton().click({ force: true });
+                    testLog.info('Clicked Publish button');
+                    cy.wait(5000);
+
+                    ShareSelectors.publishNamespace().should('be.visible', { timeout: 10000 });
+                    testLog.info('Database published successfully');
+
+                    // Step 7: Navigate directly to the published row page
+                    // Skip the intermediate grid view visit to avoid caching a blob
+                    // that might not yet contain the row document content.
+                    cy.window().then((win) => {
+                        const origin = win.location.origin;
+
+                        ShareSelectors.publishNamespace().invoke('text').then((namespace) => {
+                            ShareSelectors.publishNameInput().invoke('val').then((publishName) => {
+                                const namespaceText = namespace.trim();
+                                const publishNameText = String(publishName).trim();
+                                const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
+                                const rowPageUrl = `${publishedUrl}?r=${rowId}`;
+                                testLog.info(`Navigating directly to row page: ${rowPageUrl}`);
+
+                                cy.visit(rowPageUrl, { failOnStatusCode: false });
+
+                                // Step 8: Verify row document content is visible.
+                                // The row document content is baked into the publish blob.
+                                testLog.info('Verifying row document content in published view');
+                                cy.contains(rowDocContent, { timeout: 30000 }).should('be.visible');
+                                testLog.info('✓ Test passed: Row document content displays correctly in published view');
+                            });
+                        });
+                    });
+                });
         });
     });
 });

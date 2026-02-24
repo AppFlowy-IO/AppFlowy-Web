@@ -1,5 +1,4 @@
 import * as random from 'lib0/random';
-import { nanoid } from 'nanoid';
 import * as Y from 'yjs';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
@@ -16,6 +15,7 @@ import {
   hasViewMetaCache,
 } from '@/application/services/js-services/cache';
 import { StrategyType } from '@/application/services/js-services/cache/types';
+import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import {
   fetchPageCollab,
   fetchPublishView,
@@ -67,7 +67,7 @@ import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 
 export class AFClientService implements AFService {
   private clientId: number = random.uint32();
-  private deviceId: string = nanoid(8);
+  private deviceId: string = getOrCreateDeviceId();
 
   private viewLoaded: Set<string> = new Set();
 
@@ -277,8 +277,66 @@ export class AFClientService implements AFService {
     return APIService.getAppOutline(workspaceId);
   }
 
+  // In-flight dedup + short-lived result cache for getAppView.
+  // Multiple components (AppPage, AppBusinessLayer, useViewMeta) independently call
+  // getAppView for the same view during renders/re-renders. The in-flight map deduplicates
+  // concurrent requests; the result cache prevents redundant sequential requests caused by
+  // React re-renders (e.g. when workspaceDatabases state changes trigger useViewMeta effects).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _getAppViewInFlight = new Map<string, Promise<any>>();
+
+  private _getAppViewCache = new Map<string, { data: unknown; expiresAt: number }>();
+
+  private static readonly VIEW_CACHE_TTL_MS = 5000;
+
   async getAppView(workspaceId: string, viewId: string) {
-    return APIService.getView(workspaceId, viewId);
+    const key = `${workspaceId}:${viewId}`;
+
+    // 1. Return cached result if still fresh
+    const cached = this._getAppViewCache.get(key);
+
+    if (cached) {
+      if (Date.now() < cached.expiresAt) {
+        return cached.data;
+      }
+
+      // Eagerly evict expired entry
+      this._getAppViewCache.delete(key);
+    }
+
+    // 2. Share in-flight request if one exists
+    const existing = this._getAppViewInFlight.get(key);
+
+    if (existing) {
+      return existing;
+    }
+
+    // 3. Make the actual request
+    const request = APIService.getView(workspaceId, viewId)
+      .then((result) => {
+        this._getAppViewCache.set(key, {
+          data: result,
+          expiresAt: Date.now() + AFClientService.VIEW_CACHE_TTL_MS,
+        });
+        return result;
+      })
+      .finally(() => {
+        this._getAppViewInFlight.delete(key);
+      });
+
+    this._getAppViewInFlight.set(key, request);
+    return request;
+  }
+
+  invalidateViewCache(workspaceId: string, viewId: string) {
+    const key = `${workspaceId}:${viewId}`;
+
+    this._getAppViewCache.delete(key);
+    this._getAppViewInFlight.delete(key);
+  }
+
+  async getAppViews(workspaceId: string, viewIds: string[], depth: number = 2) {
+    return APIService.getViews(workspaceId, viewIds, depth);
   }
 
   async createOrphanedView(workspaceId: string, payload: { document_id: string }) {
@@ -333,7 +391,7 @@ export class AFClientService implements AFService {
   }
 
   @withSignIn()
-  async signInOTP(params: { email: string; code: string; type?: 'magiclink' | 'recovery' }) {
+  async signInOTP(params: { email: string; code: string; type?: 'magiclink' | 'recovery' | 'signup' }) {
     return APIService.signInOTP(params);
   }
 

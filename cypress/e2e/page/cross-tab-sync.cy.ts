@@ -18,67 +18,16 @@ import {
   waitForReactUpdate,
 } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
-import { AuthTestUtils } from '../../support/auth-utils';
 import { expandSpaceByName } from '../../support/page-utils';
+import {
+  createTestSyncIframe,
+  getIframeBody,
+  injectCypressMarkerIntoIframe,
+  removeTestSyncIframe,
+  waitForIframeReady,
+} from '../../support/iframe-test-helpers';
 
 const SPACE_NAME = 'General';
-
-/**
- * Get iframe body for interaction
- */
-function getIframeBody() {
-  return cy
-    .get('#test-sync-iframe')
-    .its('0.contentDocument.body')
-    .should('not.be.empty')
-    .then(cy.wrap);
-}
-
-/**
- * Wait for iframe to be ready with app loaded
- */
-function waitForIframeReady() {
-  cy.log('[HELPER] Waiting for iframe to be ready');
-  return cy.get('#test-sync-iframe', { timeout: 30000 })
-    .should('exist')
-    .then(($iframe) => {
-      return new Cypress.Promise((resolve) => {
-        const checkReady = () => {
-          try {
-            const iframeDoc = $iframe[0].contentDocument;
-            if (iframeDoc) {
-              const pageItems = iframeDoc.querySelectorAll('[data-testid="page-item"]');
-              if (pageItems.length > 0) {
-                cy.log(`[HELPER] Iframe ready with ${pageItems.length} page items`);
-                resolve(null);
-                return;
-              }
-            }
-          } catch (e) {
-            // Cross-origin or not ready yet
-          }
-          setTimeout(checkReady, 500);
-        };
-        // Start checking after a delay
-        setTimeout(checkReady, 3000);
-      });
-    });
-}
-
-/**
- * Inject Cypress marker into iframe to enable test mode
- * This allows hover-dependent buttons to be visible in the iframe
- */
-function injectCypressMarkerIntoIframe() {
-  cy.log('[HELPER] Injecting Cypress marker into iframe');
-  return cy.get('#test-sync-iframe').then(($iframe) => {
-    const iframeWindow = $iframe[0].contentWindow;
-    if (iframeWindow) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      (iframeWindow as any).Cypress = true;
-    }
-  });
-}
 
 describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
   // Handle uncaught exceptions
@@ -103,15 +52,18 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
     cy.viewport(1400, 900);
   });
 
+  afterEach(() => {
+    removeTestSyncIframe();
+  });
+
   it('should sync sidebar when creating a view from iframe', () => {
     const testEmail = generateRandomEmail();
-    const authUtils = new AuthTestUtils();
 
     cy.log(`[TEST START] Testing cross-tab sync when creating view from iframe with: ${testEmail}`);
 
     // Step 1: Sign in with test user
     cy.log('[STEP 1] Signing in with test user');
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
 
     // Step 2: Wait for app to fully load
     cy.log('[STEP 2] Waiting for app to fully load');
@@ -140,20 +92,8 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
 
     // Step 5: Create an iframe with the same app URL
     cy.log('[STEP 5] Creating iframe with app URL');
-    cy.document().then((doc) => {
-      // Create iframe container
-      const iframeContainer = doc.createElement('div');
-      iframeContainer.id = 'test-iframe-container';
-      iframeContainer.style.cssText = 'position: fixed; top: 50px; right: 10px; width: 700px; height: 600px; z-index: 9999; border: 3px solid blue; background: white;';
-
-      // Create iframe
-      const iframe = doc.createElement('iframe');
-      iframe.id = 'test-sync-iframe';
-      iframe.src = appUrl;
-      iframe.style.cssText = 'width: 100%; height: 100%; border: none;';
-
-      iframeContainer.appendChild(iframe);
-      doc.body.appendChild(iframeContainer);
+    cy.then(() => {
+      createTestSyncIframe(appUrl);
     });
 
     // Step 6: Wait for iframe to load and be ready
@@ -233,9 +173,7 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
 
     // Step 10: Clean up - remove iframe and delete the document
     cy.log('[STEP 10] Cleaning up');
-    cy.get('#test-iframe-container').then(($container) => {
-      $container.remove();
-    });
+    removeTestSyncIframe();
     waitForReactUpdate(500);
 
     // Delete the created document from main window
@@ -266,13 +204,12 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
 
   it('should sync sidebar when deleting a view from main window to iframe', () => {
     const testEmail = generateRandomEmail();
-    const authUtils = new AuthTestUtils();
 
     cy.log(`[TEST START] Testing cross-tab sync when deleting view from main window with: ${testEmail}`);
 
     // Step 1: Sign in with test user
     cy.log('[STEP 1] Signing in with test user');
-    authUtils.signInWithTestUrl(testEmail);
+    cy.signIn(testEmail);
 
     // Step 2: Wait for app to fully load
     cy.log('[STEP 2] Waiting for app to fully load');
@@ -350,18 +287,11 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
 
     // Step 6: Create an iframe AFTER the document is created
     cy.log('[STEP 6] Creating iframe with app URL');
-    cy.document().then((doc) => {
-      const iframeContainer = doc.createElement('div');
-      iframeContainer.id = 'test-iframe-container';
-      iframeContainer.style.cssText = 'position: fixed; top: 50px; right: 10px; width: 700px; height: 600px; z-index: 9999; border: 3px solid red; background: white;';
-
-      const iframe = doc.createElement('iframe');
-      iframe.id = 'test-sync-iframe';
-      iframe.src = appUrl;
-      iframe.style.cssText = 'width: 100%; height: 100%; border: none;';
-
-      iframeContainer.appendChild(iframe);
-      doc.body.appendChild(iframeContainer);
+    cy.then(() => {
+      createTestSyncIframe(appUrl, {
+        containerStyle:
+          'position: fixed; top: 50px; right: 10px; width: 700px; height: 600px; z-index: 9999; border: 3px solid red; background: white;',
+      });
     });
 
     // Wait for iframe to load
@@ -379,13 +309,6 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
     // Verify "Untitled" page appears in iframe
     getIframeBody().find('[data-testid="page-name"]:contains("Untitled")', { timeout: 30000 }).should('exist');
     cy.log('[SUCCESS] Document appears in iframe!');
-
-    // Get page count after creation
-    let pageCountAfterCreate = 0;
-    PageSelectors.names().then(($pages) => {
-      pageCountAfterCreate = $pages.length;
-      cy.log(`[INFO] Page count after creating document: ${pageCountAfterCreate}`);
-    });
 
     // Step 9: Delete the document from main window
     cy.log('[STEP 9] Deleting document from main window');
@@ -417,39 +340,36 @@ describe('Cross-Tab/Iframe Synchronization via BroadcastChannel', () => {
     waitForReactUpdate(2000);
 
     // Step 10: Verify iframe's sidebar reflects the deletion via BroadcastChannel
+    // Use direct "Untitled" existence check instead of page count comparison, because
+    // the iframe may have a different page-name count than the main window (e.g. due
+    // to auto-expanded pages with lazy-loaded children).
     cy.log('[STEP 10] Verifying iframe sidebar updated after deletion via BroadcastChannel');
 
-    // Wait for page count to decrease in iframe
-    const waitForIframePageCountDecrease = (attempts = 0, maxAttempts = 30): void => {
+    const waitForUntitledToDisappearInIframe = (attempts = 0, maxAttempts = 30): void => {
       if (attempts >= maxAttempts) {
-        throw new Error('Page count did not decrease in iframe - BroadcastChannel sync may not be working for deletion');
+        throw new Error('"Untitled" did not disappear from iframe - BroadcastChannel sync may not be working for deletion');
       }
 
-      getIframeBody().find('[data-testid="page-name"]').then(($pages) => {
-        const newCount = $pages.length;
-        cy.log(`[INFO] Current page count in iframe: ${newCount}, after create: ${pageCountAfterCreate}, attempt: ${attempts + 1}`);
+      getIframeBody().then(($body) => {
+        const untitledPages = $body.find('[data-testid="page-name"]:contains("Untitled")');
 
-        if (newCount < pageCountAfterCreate) {
+        cy.log(`[INFO] "Untitled" elements in iframe: ${untitledPages.length}, attempt: ${attempts + 1}`);
+
+        if (untitledPages.length === 0) {
           cy.log('[SUCCESS] Iframe sidebar updated after deletion via BroadcastChannel!');
           return;
         }
 
-        // Wait and retry
-        cy.wait(1000).then(() => waitForIframePageCountDecrease(attempts + 1, maxAttempts));
+        cy.wait(1000).then(() => waitForUntitledToDisappearInIframe(attempts + 1, maxAttempts));
       });
     };
 
-    waitForIframePageCountDecrease();
-
-    // Verify "Untitled" page no longer exists in iframe
-    getIframeBody().find('[data-testid="page-name"]:contains("Untitled")').should('not.exist');
+    waitForUntitledToDisappearInIframe();
     cy.log('[SUCCESS] Deleted document removed from iframe sidebar via BroadcastChannel!');
 
     // Step 11: Clean up - remove iframe
     cy.log('[STEP 11] Cleaning up - removing iframe');
-    cy.get('#test-iframe-container').then(($container) => {
-      $container.remove();
-    });
+    removeTestSyncIframe();
 
     cy.log('[TEST COMPLETE] Cross-tab sync for view deletion (main→iframe) verified successfully!');
   });

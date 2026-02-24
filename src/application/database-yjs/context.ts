@@ -63,6 +63,18 @@ export interface DatabaseContextState {
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   createRow?: CreateRow;
   loadViewMeta?: LoadViewMeta;
+  /**
+   * Load a row sub-document (document content inside a database row).
+   * In app mode: loads from server via authenticated API.
+   * In publish mode: loads from published cache.
+   */
+  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
+  /**
+   * Create a row document on the server (orphaned view).
+   * Only available in app mode - not provided in publish mode.
+   * Returns the doc_state (Y.js update) to initialize the local document.
+   */
+  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   onRendered?: () => void;
   showActions?: boolean;
