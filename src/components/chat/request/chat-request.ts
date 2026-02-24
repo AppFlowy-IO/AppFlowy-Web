@@ -20,6 +20,7 @@ import {
   ChatMessageMetadata, StreamType,
 } from '@/components/chat/types';
 import { ModelList } from '@/components/chat/types/ai-model';
+import { extractNextJsonObject } from './stream-json-parser';
 
 export interface ChatSettings {
   name: string;
@@ -302,28 +303,12 @@ export class ChatRequest {
           buffer += decoder.decode(chunk, { stream: true });
 
           while(buffer.length > 0) {
-            const openBraceIndex = buffer.indexOf('{');
+            const extracted = extractNextJsonObject(buffer);
 
-            if(openBraceIndex === -1) break;
-
-            let closeBraceIndex = -1;
-            let depth = 0;
-
-            for(let i = openBraceIndex; i < buffer.length; i++) {
-              if(buffer[i] === '{') depth++;
-              if(buffer[i] === '}') depth--;
-              if(depth === 0) {
-                closeBraceIndex = i;
-                break;
-              }
-            }
-
-            if(closeBraceIndex === -1) break;
-
-            const jsonStr = buffer.slice(openBraceIndex, closeBraceIndex + 1);
+            if(!extracted) break;
 
             try {
-              const data = JSON.parse(jsonStr);
+              const data = JSON.parse(extracted.jsonStr);
 
               Object.entries(data).forEach(([key, value]) => {
                 if(key === StreamType.META_DATA) {
@@ -342,7 +327,7 @@ export class ChatRequest {
               console.error('Failed to parse JSON:', e);
             }
 
-            buffer = buffer.slice(closeBraceIndex + 1);
+            buffer = buffer.slice(extracted.nextIndex);
           }
         }
 

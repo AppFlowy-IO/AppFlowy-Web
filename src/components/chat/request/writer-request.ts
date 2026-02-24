@@ -16,6 +16,7 @@ import {
   View,
 } from '@/components/chat/types';
 import { AvailableModel } from '@/components/chat/types/ai-model';
+import { extractNextJsonObject } from './stream-json-parser';
 
 export class WriterRequest {
   private axiosInstance: AxiosInstance = createInitialInstance();
@@ -116,28 +117,12 @@ export class WriterRequest {
           buffer += decoder.decode(chunk, { stream: true });
 
           while(buffer.length > 0) {
-            const openBraceIndex = buffer.indexOf('{');
+            const extracted = extractNextJsonObject(buffer);
 
-            if(openBraceIndex === -1) break;
-
-            let closeBraceIndex = -1;
-            let depth = 0;
-
-            for(let i = openBraceIndex; i < buffer.length; i++) {
-              if(buffer[i] === '{') depth++;
-              if(buffer[i] === '}') depth--;
-              if(depth === 0) {
-                closeBraceIndex = i;
-                break;
-              }
-            }
-
-            if(closeBraceIndex === -1) break;
-
-            const jsonStr = buffer.slice(openBraceIndex, closeBraceIndex + 1);
+            if(!extracted) break;
 
             try {
-              const data = JSON.parse(jsonStr);
+              const data = JSON.parse(extracted.jsonStr);
 
               Object.entries(data).forEach(([key, value]) => {
                 if(key === StreamType.META_DATA || key === StreamType.KEEP_ALIVE_KEY) {
@@ -157,14 +142,19 @@ export class WriterRequest {
               console.error('Failed to parse JSON:', e);
             }
 
-            buffer = buffer.slice(closeBraceIndex + 1);
+            buffer = buffer.slice(extracted.nextIndex);
           }
+        }
+
+        if(!text.trim() && !comment.trim()) {
+          throw new Error('Empty AI summary result from stream');
         }
 
         onMessage(text, comment, true);
 
       } catch(error) {
         console.error('Stream reading error:', error);
+        throw error;
       } finally {
         reader.releaseLock();
         try {
