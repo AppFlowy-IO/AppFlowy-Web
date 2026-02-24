@@ -32,24 +32,6 @@ export const withElement = (editor: ReactEditor) => {
         return true;
       }
 
-      const aiMeetingReadOnlyTypes = [
-        BlockType.AIMeetingSummaryBlock,
-        BlockType.AIMeetingNotesBlock,
-        BlockType.AIMeetingTranscriptionBlock,
-        BlockType.AIMeetingSpeakerBlock,
-      ];
-
-      const inAiMeetingSection = Editor.above(editor, {
-        at: path,
-        match: (n) =>
-          !Editor.isEditor(n) &&
-          Element.isElement(n) &&
-          aiMeetingReadOnlyTypes.includes(n.type as BlockType),
-      });
-
-      if (inAiMeetingSection) {
-        return true;
-      }
 
     } catch (e) {
       //

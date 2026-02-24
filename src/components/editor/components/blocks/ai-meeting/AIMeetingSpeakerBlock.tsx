@@ -3,11 +3,20 @@ import { useTranslation } from 'react-i18next';
 import { Editor, Element as SlateElement } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
+import { getUserIconUrl } from '@/application/user-metadata';
 import { BlockType } from '@/application/types';
 import { formatTimestamp } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
+import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { AIMeetingNode, AIMeetingSpeakerNode, EditorElementProps } from '@/components/editor/editor.type';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+
+// Returns true only for actual image/URL sources (not emojis or non-URL strings)
+const isImageSource = (value?: string) => {
+  if (!value) return false;
+  return /^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:') || value.startsWith('/');
+};
 
 const parseSpeakerInfoMap = (raw: unknown) => {
   if (!raw) return null;
@@ -127,7 +136,32 @@ export const AIMeetingSpeakerBlock = memo(
     const speakerName = speakerInfo.name;
     const displayTimestamp = useMemo(() => formatTimestamp(timestamp), [timestamp]);
 
-    const avatarColorKey = speakerId || speakerName || unknownSpeakerLabel;
+    const currentUser = useCurrentUserOptional();
+    const { users: mentionableUsers } = useMentionableUsersWithAutoFetch(true);
+
+    // Resolve the raw avatar value: may be an image URL, an emoji, or empty
+    const resolvedAvatar = useMemo(() => {
+      // 1. Speaker info map may already have an avatar URL (set by Flutter write-back)
+      if (speakerInfo.avatarUrl) return speakerInfo.avatarUrl;
+
+      if (!speakerInfo.email) return '';
+
+      // 2. Try workspace member data (avatar_url or custom_image_url)
+      const member = mentionableUsers.find((u) => u.email === speakerInfo.email);
+      const memberAvatar = member?.avatar_url || member?.custom_image_url || '';
+
+      if (memberAvatar) return memberAvatar;
+
+      // 3. If speaker is the current logged-in user, use their profile icon (metadata.icon_url)
+      //    This covers emoji avatars like 🤖 that aren't exposed by the mentionable-person API
+      if (currentUser?.email === speakerInfo.email) {
+        return getUserIconUrl(currentUser);
+      }
+
+      return '';
+    }, [speakerInfo.avatarUrl, speakerInfo.email, mentionableUsers, currentUser]);
+
+    const avatarColorKey = speakerName || speakerId || unknownSpeakerLabel;
     const avatarLabel = useMemo(() => {
       if (speakerName && speakerName !== unknownSpeakerLabel) {
         return speakerName.trim().charAt(0).toUpperCase();
@@ -149,13 +183,15 @@ export const AIMeetingSpeakerBlock = memo(
             shape="circle"
             className="ai-meeting-speaker__avatar"
           >
-            {speakerInfo.avatarUrl ? (
-              <AvatarImage src={speakerInfo.avatarUrl} alt={speakerName} />
-            ) : (
-              <AvatarFallback name={avatarColorKey}>
+            {/* Only pass real image URLs to AvatarImage; emojis handled in fallback */}
+            <AvatarImage src={isImageSource(resolvedAvatar) ? resolvedAvatar : undefined} alt={speakerName} />
+            <AvatarFallback name={avatarColorKey}>
+              {resolvedAvatar && !isImageSource(resolvedAvatar) ? (
+                <span className="text-xs">{resolvedAvatar}</span>
+              ) : (
                 <span>{avatarLabel}</span>
-              </AvatarFallback>
-            )}
+              )}
+            </AvatarFallback>
           </Avatar>
           <div className="ai-meeting-speaker__name">{speakerName}</div>
           {displayTimestamp && <div className="ai-meeting-speaker__timestamp">{displayTimestamp}</div>}

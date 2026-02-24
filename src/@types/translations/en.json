@@ -1953,6 +1953,7 @@
         "transcript": "Transcript"
       },
       "readOnlyHint": "This content is read-only on web. Please edit it on the desktop app.",
+      "notesPlaceholder": "Add your notes… AI will turn them into a clean, share-ready summary.",
       "speakerUnknown": "Unknown speaker",
       "speakerFallback": "Speaker {{id}}",
       "reference": {

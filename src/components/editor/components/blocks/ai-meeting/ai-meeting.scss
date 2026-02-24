@@ -26,9 +26,10 @@
     margin-left: 0 !important;
   }
 
+  // Reset margin for all child blocks inside transcript, notes, and summary sections
+  .block-element[data-block-type="ai_meeting_transcription"] > .flex.w-full.flex-col > .block-element,
   .block-element[data-block-type="ai_meeting_summary"] > .flex.w-full.flex-col > .block-element,
-  .block-element[data-block-type="ai_meeting_notes"] > .flex.w-full.flex-col > .block-element,
-  .block-element[data-block-type="ai_meeting_transcription"] > .flex.w-full.flex-col > .block-element {
+  .block-element[data-block-type="ai_meeting_notes"] > .flex.w-full.flex-col > .block-element {
     margin-left: 0 !important;
   }
 
@@ -44,7 +45,7 @@
     align-items: center;
     gap: 10px;
     color: var(--text-secondary);
-    font-size: 13px;
+    font-size: 14px;
   }
 
   .ai-meeting-speaker__avatar {
@@ -65,7 +66,7 @@
 
   .ai-meeting-speaker__timestamp {
     color: var(--text-tertiary);
-    font-size: 12px;
+    font-size: 14px;
   }
 
   .ai-meeting-speaker__content {

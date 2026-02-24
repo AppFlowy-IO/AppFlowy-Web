@@ -30,7 +30,6 @@ export const AIMeetingSection = memo(
       <div
         ref={ref}
         {...attributes}
-        contentEditable={false}
         className={cn(getSectionClassName(node.type as BlockType), className)}
       >
         {children}
