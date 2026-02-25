@@ -1,10 +1,5 @@
 import { getCollabVersions } from '@/application/services/js-services/http/http_api';
 
-interface DeleteItem {
-  clock: number;
-  len: number;
-}
-
 export interface CollabVersion {
   versionId: string,
   parentId: string | null,

@@ -44,6 +44,25 @@ type CollabDocResetPayload = {
   awareness?: Awareness;
 };
 
+export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
+  const isMobile = getPlatform().isMobile;
+
+  if (isMobile) return true; // Mobile has highest priority - always readonly
+
+  if (!outline) return false;
+
+  // Check if view exists in shareWithMe
+  const shareWithMeView = findViewInShareWithMe(outline, viewId);
+
+  if (shareWithMeView?.access_level !== undefined) {
+    // If found in shareWithMe, check access level
+    return shareWithMeView.access_level <= AccessLevel.ReadAndComment;
+  }
+
+  // If not found in shareWithMe, default is false (editable)
+  return false;
+}
+
 // Hook for managing view-related operations
 export function useViewOperations() {
   const { service, currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
@@ -226,23 +245,8 @@ export function useViewOperations() {
   );
 
   // Check if view should be readonly based on access permissions
-  const getViewReadOnlyStatus = useCallback((viewId: string, outline?: View[]) => {
-    const isMobile = getPlatform().isMobile;
-
-    if (isMobile) return true; // Mobile has highest priority - always readonly
-
-    if (!outline) return false;
-
-    // Check if view exists in shareWithMe
-    const shareWithMeView = findViewInShareWithMe(outline, viewId);
-
-    if (shareWithMeView?.access_level !== undefined) {
-      // If found in shareWithMe, check access level
-      return shareWithMeView.access_level <= AccessLevel.ReadAndComment;
-    }
-
-    // If not found in shareWithMe, default is false (editable)
-    return false;
+  const getViewReadOnlyStatusFromOutline = useCallback((viewId: string, outline?: View[]) => {
+    return getViewReadOnlyStatus(viewId, outline);
   }, []);
 
   const getViewIdFromDatabaseId = useCallback(
@@ -670,7 +674,7 @@ export function useViewOperations() {
     toView,
     awarenessMap,
     getViewIdFromDatabaseId,
-    getViewReadOnlyStatus,
+    getViewReadOnlyStatus: getViewReadOnlyStatusFromOutline,
     getCollabHistory,
     previewCollabVersion,
   };

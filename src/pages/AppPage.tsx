@@ -16,7 +16,7 @@ import {
   useCurrentWorkspaceId,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
-import { useViewOperations } from '@/components/app/hooks/useViewOperations';
+import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
 import type { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -49,7 +49,6 @@ function AppPage() {
     ...handlers
   } = useAppHandlers();
   const { eventEmitter } = handlers;
-  const { getViewReadOnlyStatus } = useViewOperations();
 
   const currentUser = useCurrentUser();
   const service = useService();
@@ -393,7 +392,7 @@ function AppPage() {
   const isReadOnly = useMemo(() => {
     if (!viewId) return false;
     return getViewReadOnlyStatus(viewId, outline);
-  }, [getViewReadOnlyStatus, viewId, outline]);
+  }, [viewId, outline]);
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)

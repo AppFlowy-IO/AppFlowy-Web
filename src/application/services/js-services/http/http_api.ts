@@ -1013,7 +1013,13 @@ export async function previewCollabVersion(workspaceId: string, objectId: string
   return new Uint8Array(response.data);
 }
 
-export async function createCollabVersion(workspaceId: string, objectId: string, name: string, ySnapshot: Uint8Array) {
+export async function createCollabVersion(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types,
+  name: string,
+  ySnapshot: Uint8Array
+) {
   const snapshot = toBase64(ySnapshot);
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
   const response = await axiosInstance?.post<{
@@ -1021,7 +1027,9 @@ export async function createCollabVersion(workspaceId: string, objectId: string,
     message: string;
     data: string;
   }>(url, {
-    snapshot, name
+    snapshot,
+    name,
+    collab_type: collabType,
   });
 
   if (!response) {

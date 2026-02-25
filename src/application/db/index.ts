@@ -46,6 +46,25 @@ db.version(2)
     }
   });
 
+// Version 3: Add collab_versions table
+db.version(3)
+  .stores({
+    ...viewMetasSchema,
+    ...userSchema,
+    ...rowSchema,
+    ...workspaceMemberProfileSchema,
+    ...versionSchema,
+  })
+  .upgrade(async (transaction) => {
+    try {
+      // Touch the new store so Dexie creates it for users upgrading from version 2.
+      await transaction.table('collab_versions').count();
+    } catch (error) {
+      console.error('Failed to initialize collab_versions store during upgrade:', error);
+      throw error;
+    }
+  });
+
 const openedSet = new Set<string>();
 const ensuredStores = new Map<string, Promise<void>>();
 

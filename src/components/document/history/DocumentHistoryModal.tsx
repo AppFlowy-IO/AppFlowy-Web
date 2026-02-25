@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
@@ -24,7 +24,7 @@ type VersionPreviewBodyProps = {
   viewId: string;
 } & Partial<Omit<EditorContextState, 'workspaceId' | 'viewId' | 'readOnly'>>;
 
-function VersionPreviewBody({
+const VersionPreviewBody = memo(function VersionPreviewBody({
   loading,
   error,
   activeDoc,
@@ -57,7 +57,7 @@ function VersionPreviewBody({
       />
     </div>
   );
-}
+});
 
 export function DocumentHistoryModal({
   open,
@@ -150,17 +150,26 @@ export function DocumentHistoryModal({
     setDateFilter(filter);
   }, []);
 
+  const clearPreviewDocs = useCallback(() => {
+    previewYDocRef.current.forEach((doc) => {
+      doc.destroy();
+    });
+    previewYDocRef.current.clear();
+  }, []);
+
   const handleRestore = useCallback(async () => {
-    if (!viewId || !selectedVersionId || !revertCollabVersion) {
+    const versionId = selectedVersionIdRef.current;
+
+    if (!viewId || !versionId || !revertCollabVersion) {
       return;
     }
 
     setIsRestoring(true);
     setError(null);
     try {
-      await revertCollabVersion(viewId, selectedVersionId);
-      previewYDocRef.current.clear();
+      await revertCollabVersion(viewId, versionId);
       setActiveDoc(null);
+      clearPreviewDocs();
 
       const updatedVersions = await refreshVersions();
 
@@ -177,7 +186,7 @@ export function DocumentHistoryModal({
     } finally {
       setIsRestoring(false);
     }
-  }, [viewId, selectedVersionId, revertCollabVersion, refreshVersions]);
+  }, [viewId, revertCollabVersion, refreshVersions, clearPreviewDocs]);
 
   const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
@@ -208,6 +217,7 @@ export function DocumentHistoryModal({
   useEffect(() => {
     if (!open) {
       setActiveDoc(null);
+      clearPreviewDocs();
       return;
     }
 
@@ -229,7 +239,12 @@ export function DocumentHistoryModal({
       try {
         const doc = await previewCollabVersion(viewId, previewVersionId, Types.Document);
 
-        if (!doc || cancelled) {
+        if (!doc) {
+          return;
+        }
+
+        if (cancelled) {
+          doc.destroy();
           return;
         }
 
@@ -246,7 +261,18 @@ export function DocumentHistoryModal({
     return () => {
       cancelled = true;
     };
-  }, [open, previewCollabVersion, selectedVersionId, viewId]);
+  }, [open, previewCollabVersion, selectedVersionId, viewId, clearPreviewDocs]);
+
+  useEffect(() => {
+    setActiveDoc(null);
+    clearPreviewDocs();
+  }, [viewId, clearPreviewDocs]);
+
+  useEffect(() => {
+    return () => {
+      clearPreviewDocs();
+    };
+  }, [clearPreviewDocs]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

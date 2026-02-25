@@ -13,5 +13,5 @@ export type VersionsTable = {
 };
 
 export const versionSchema = {
-  collab_versions: 'version',
+  collab_versions: 'versionId',
 };

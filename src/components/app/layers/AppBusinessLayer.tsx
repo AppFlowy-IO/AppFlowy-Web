@@ -57,7 +57,7 @@ function isRouteNotFoundError(error: unknown): boolean {
 // Depends on workspace ID and sync context from previous layers
 export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) => {
   const { currentWorkspaceId, service } = useAuthInternal();
-  const { lastUpdatedCollab, eventEmitter, revertCollabVersion } = useSyncInternal();
+  const { revertCollabVersion } = useSyncInternal();
   const params = useParams();
   const [searchParams] = useSearchParams();
 

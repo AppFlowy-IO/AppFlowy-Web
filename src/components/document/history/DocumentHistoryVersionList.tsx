@@ -23,7 +23,7 @@ import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
-export function VersionList({
+export const VersionList = memo(function VersionList({
   versions,
   selectedVersionId,
   onSelect,
@@ -49,6 +49,26 @@ export function VersionList({
   onClose?: () => void;
 }) {
   const { t } = useTranslation();
+  const handleSelectAll = useCallback((event: Event) => {
+    event.preventDefault();
+    onDateFilterChange('all');
+  }, [onDateFilterChange]);
+  const handleSelectLast7Days = useCallback((event: Event) => {
+    event.preventDefault();
+    onDateFilterChange('last7Days');
+  }, [onDateFilterChange]);
+  const handleSelectLast30Days = useCallback((event: Event) => {
+    event.preventDefault();
+    onDateFilterChange('last30Days');
+  }, [onDateFilterChange]);
+  const handleSelectLast60Days = useCallback((event: Event) => {
+    event.preventDefault();
+    onDateFilterChange('last60Days');
+  }, [onDateFilterChange]);
+  const handleToggleOnlyMine = useCallback((event: Event) => {
+    event.preventDefault();
+    onOnlyShowMineChange(!onlyShowMine);
+  }, [onOnlyShowMineChange, onlyShowMine]);
 
   return (
     <div className='flex h-full flex-col'>
@@ -68,10 +88,7 @@ export function VersionList({
           <DropdownMenuContent align='end'>
             <DropdownMenuGroup>
               <DropdownMenuItem
-                onClick={(e) => {
-                  e.preventDefault();
-                  onDateFilterChange('all');
-                }}
+                onSelect={handleSelectAll}
               >
                 <TimeIcon className='h-5 w-5' />
                 <span className='flex-1'>{t('versionHistory.all')}</span>
@@ -80,30 +97,21 @@ export function VersionList({
               {isPro && (
                 <>
                   <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onDateFilterChange('last7Days');
-                    }}
+                    onSelect={handleSelectLast7Days}
                   >
                     <TimeIcon className='h-5 w-5' />
                     <span className='flex-1'>{t('versionHistory.last7Days')}</span>
                     {dateFilter === 'last7Days' && <TickIcon className='h-5 w-5 text-icon-info-thick' />}
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onDateFilterChange('last30Days');
-                    }}
+                    onSelect={handleSelectLast30Days}
                   >
                     <TimeIcon className='h-5 w-5' />
                     <span className='flex-1'>{t('versionHistory.last30Days')}</span>
                     {dateFilter === 'last30Days' && <TickIcon className='h-5 w-5 text-icon-info-thick' />}
                   </DropdownMenuItem>
                   <DropdownMenuItem
-                    onClick={(e) => {
-                      e.preventDefault();
-                      onDateFilterChange('last60Days');
-                    }}
+                    onSelect={handleSelectLast60Days}
                   >
                     <TimeIcon className='h-5 w-5' />
                     <span className='flex-1'>{t('versionHistory.last60Days')}</span>
@@ -116,14 +124,11 @@ export function VersionList({
             <DropdownMenuGroup>
               <DropdownMenuItem
                 className='flex items-center justify-items-center'
-                onClick={(e) => {
-                  e.preventDefault();
-                  onOnlyShowMineChange(!onlyShowMine);
-                }}
+                onSelect={handleToggleOnlyMine}
               >
                 <UserIcon className='h-5 w-5' />
                 <span className='flex-1'>{t('versionHistory.onlyYours')}</span>
-                <Switch checked={onlyShowMine} onCheckedChange={onOnlyShowMineChange} />
+                <Switch checked={onlyShowMine} className='pointer-events-none' tabIndex={-1} aria-hidden />
               </DropdownMenuItem>
             </DropdownMenuGroup>
           </DropdownMenuContent>
@@ -174,7 +179,7 @@ export function VersionList({
       </div>
     </div>
   );
-}
+});
 
 const VersionListItem = memo(function VersionListItem({
   id,

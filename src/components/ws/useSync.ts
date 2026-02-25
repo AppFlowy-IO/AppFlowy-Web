@@ -12,7 +12,7 @@ import * as http from '@/application/services/js-services/http/http_api';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
 import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, User, YDoc } from '@/application/types';
-import { useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 import { collab, messages } from '@/proto/messages';
@@ -103,6 +103,30 @@ const versionChanged = (context: SyncContext, message: collab.ICollabMessage): b
   return incomingVersion !== localVersion;
 };
 
+const DELETE_DB_TIMEOUT_MS = 1500;
+
+async function deleteDocDatabaseWithTimeout(name: string, timeoutMs = DELETE_DB_TIMEOUT_MS): Promise<void> {
+  const deletePromise = deleteDB(name)
+    .then(() => 'deleted' as const)
+    .catch((error) => {
+      Log.warn('[useSync] Failed to delete collab IndexedDB', { name, error });
+      return 'failed' as const;
+    });
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+  const timeoutPromise = new Promise<'timeout'>((resolve) => {
+    timeoutHandle = setTimeout(() => resolve('timeout'), timeoutMs);
+  });
+  const result = await Promise.race([deletePromise, timeoutPromise]);
+
+  if (timeoutHandle) {
+    clearTimeout(timeoutHandle);
+  }
+
+  if (result === 'timeout') {
+    Log.warn('[useSync] Timed out deleting collab IndexedDB, continuing reset', { name, timeoutMs });
+  }
+}
+
 export const useSync = (
   ws: AppflowyWebSocketType,
   bc: BroadcastChannelType,
@@ -127,7 +151,7 @@ export const useSync = (
   const bcCollabMessage = lastBroadcastMessage?.collabMessage;
   const wsNotification = lastMessage?.notification;
   const bcNotification = lastBroadcastMessage?.notification;
-  const currentUser = useCurrentUser();
+  const currentUser = useCurrentUserOptional();
 
   // Handle workspace notifications from WebSocket
   // This handles notifications received directly from the server via WebSocket connection.
@@ -469,7 +493,7 @@ export const useSync = (
           skipFlushOnDestroy.current.add(previousDoc.guid);
           previousDoc.destroy();
 
-          await deleteDB(previousDoc.guid);
+          await deleteDocDatabaseWithTimeout(previousDoc.guid);
 
           const nextDoc = (await openCollabDB(previousDoc.guid, {
             expectedVersion: newVersion,
@@ -654,7 +678,7 @@ export const useSync = (
       skipFlushOnDestroy.current.add(previousDoc.guid);
       previousDoc.destroy();
 
-      await deleteDB(previousDoc.guid);
+      await deleteDocDatabaseWithTimeout(previousDoc.guid);
 
       const doc = (await openCollabDB(previousDoc.guid, {
         expectedVersion: nextVersion,
