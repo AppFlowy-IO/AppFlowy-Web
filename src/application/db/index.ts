@@ -152,7 +152,7 @@ export interface OpenCollabOptions {
 export async function openCollabDB(name: string, options: OpenCollabOptions = {}): Promise<YDoc> {
   // `name` is the canonical collab object id for this local IndexedDB-backed doc.
   // Set Y.Doc guid to the same value so reopen/close/sync paths address the same document identity.
-  const doc = new Y.Doc({
+  let doc = new Y.Doc({
     guid: name,
   }) as YDoc;
 
@@ -164,6 +164,9 @@ export async function openCollabDB(name: string, options: OpenCollabOptions = {}
   if (options.expectedVersion && version !== options.expectedVersion) {
     // version was provided and it differs from the one we persisted
     await provider.clearData();
+    doc = new Y.Doc({
+      guid: name,
+    }) as YDoc;
     provider = new IndexeddbPersistence(name, doc);
     await provider.set(name + '/version', options.expectedVersion);
     version = options.expectedVersion;
@@ -195,7 +198,7 @@ export async function openCollabDBWithProvider(
   });
 
   // Keep guid equal to `name` because provider persistence and sync registration use this object id.
-  const doc = new Y.Doc({
+  let doc = new Y.Doc({
     guid: name,
   }) as YDoc;
 
@@ -217,6 +220,9 @@ export async function openCollabDBWithProvider(
   if (options?.expectedVersion && version !== options.expectedVersion) {
     // version was provided and it differs from the one we persisted
     await provider.clearData();
+    doc = new Y.Doc({
+      guid: name,
+    }) as YDoc;
     provider = new IndexeddbPersistence(name, doc);
     await provider.set(name + '/version', options.expectedVersion);
     version = options.expectedVersion;

@@ -1,6 +1,5 @@
 import EventEmitter from 'events';
 
-import { deleteDB } from 'lib0/indexeddb';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { validate as uuidValidate } from 'uuid';
 import * as awarenessProtocol from 'y-protocols/awareness';
@@ -102,30 +101,6 @@ const versionChanged = (context: SyncContext, message: collab.ICollabMessage): b
 
   return incomingVersion !== localVersion;
 };
-
-const DELETE_DB_TIMEOUT_MS = 1500;
-
-async function deleteDocDatabaseWithTimeout(name: string, timeoutMs = DELETE_DB_TIMEOUT_MS): Promise<void> {
-  const deletePromise = deleteDB(name)
-    .then(() => 'deleted' as const)
-    .catch((error) => {
-      Log.warn('[useSync] Failed to delete collab IndexedDB', { name, error });
-      return 'failed' as const;
-    });
-  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
-  const timeoutPromise = new Promise<'timeout'>((resolve) => {
-    timeoutHandle = setTimeout(() => resolve('timeout'), timeoutMs);
-  });
-  const result = await Promise.race([deletePromise, timeoutPromise]);
-
-  if (timeoutHandle) {
-    clearTimeout(timeoutHandle);
-  }
-
-  if (result === 'timeout') {
-    Log.warn('[useSync] Timed out deleting collab IndexedDB, continuing reset', { name, timeoutMs });
-  }
-}
 
 export const useSync = (
   ws: AppflowyWebSocketType,
@@ -514,16 +489,6 @@ export const useSync = (
           };
 
           Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
-          previousDoc.emit('reset', [context, newVersion]);
-          context.discardPendingUpdates?.();
-          skipFlushOnDestroy.current.add(previousDoc.guid);
-          previousDoc.destroy();
-
-          await deleteDocDatabaseWithTimeout(previousDoc.guid);
-
-          if (shouldAbortReset()) {
-            return;
-          }
 
           const nextDoc = (await openCollabDB(previousDoc.guid, {
             expectedVersion: newVersion,
@@ -541,6 +506,12 @@ export const useSync = (
           nextDoc.object_id = previousDoc.object_id;
           nextDoc._collabType = previousDoc._collabType;
           nextDoc._syncBound = true;
+
+          // Keep the current doc active until the replacement doc is ready.
+          previousDoc.emit('reset', [context, newVersion]);
+          context.discardPendingUpdates?.();
+          skipFlushOnDestroy.current.add(previousDoc.guid);
+          previousDoc.destroy();
 
           context = registerSyncContext({
             doc: nextDoc,
@@ -708,20 +679,24 @@ export const useSync = (
       );
       const nextVersion = serverVersion || version;
 
+      let doc: (YDoc & SyncDocMeta) | null = null;
+
+      try {
+        doc = (await openCollabDB(previousDoc.guid, {
+          expectedVersion: nextVersion,
+          currentUser: currentUser.uid,
+        })) as YDoc & SyncDocMeta;
+        Y.applyUpdate(doc, docState);
+      } catch (error) {
+        doc?.destroy();
+        throw error;
+      }
+
       Log.debug('Collab version changed:', viewId, context.doc.version, nextVersion);
       previousDoc.emit('reset', [context, nextVersion]);
       context.discardPendingUpdates?.();
       skipFlushOnDestroy.current.add(previousDoc.guid);
       previousDoc.destroy();
-
-      await deleteDocDatabaseWithTimeout(previousDoc.guid);
-
-      const doc = (await openCollabDB(previousDoc.guid, {
-        expectedVersion: nextVersion,
-        currentUser: currentUser.uid,
-      })) as YDoc & SyncDocMeta;
-
-      Y.applyUpdate(doc, docState);
       doc.object_id = previousDoc.object_id;
       doc._collabType = previousDoc._collabType;
       doc._syncBound = true;
