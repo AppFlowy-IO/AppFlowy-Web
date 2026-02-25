@@ -98,42 +98,6 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
   const bcCollabMessage = lastBroadcastMessage?.collabMessage;
   const wsNotification = lastMessage?.notification;
   const bcNotification = lastBroadcastMessage?.notification;
-
-  useEffect(() => {
-    if (!wsCollabMessage) return;
-
-    const objectId = wsCollabMessage.objectId!;
-    const context = registeredContexts.current.get(objectId);
-
-    if (context) {
-      handleMessage(context, wsCollabMessage);
-    }
-
-    const updateTimestamp = wsCollabMessage.update?.messageId?.timestamp;
-    const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-    Log.debug('Received collab message:', wsCollabMessage.collabType, publishedAt, wsCollabMessage);
-
-    setLastUpdatedCollab({ objectId, publishedAt, collabType: wsCollabMessage.collabType as Types });
-  }, [wsCollabMessage]);
-
-  useEffect(() => {
-    if (!bcCollabMessage) return;
-
-    const objectId = bcCollabMessage.objectId!;
-    const context = registeredContexts.current.get(objectId);
-
-    if (context) {
-      handleMessage(context, bcCollabMessage);
-    }
-
-    const updateTimestamp = bcCollabMessage.update?.messageId?.timestamp;
-    const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-    Log.debug('Received broadcasted collab message:', bcCollabMessage.collabType, publishedAt, bcCollabMessage);
-
-    setLastUpdatedCollab({ objectId, publishedAt, collabType: bcCollabMessage.collabType as Types });
-  }, [bcCollabMessage]);
   const currentUser = useCurrentUser();
 
   // Handle workspace notifications from WebSocket
@@ -511,7 +475,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
   }, []);
 
   useEffect(() => {
-    const message = lastMessage?.collabMessage;
+    const message = wsCollabMessage;
     let stop = false;
 
     const applyMessage = async (message: ICollabMessage, user?: User) => {
@@ -524,7 +488,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
           const newVersion = message.update?.version || message.syncRequest?.version || undefined;
 
           Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
-          context.doc.emit('reset', [context, newVersion])
+          context.doc.emit('reset', [context, newVersion]);
           context.doc.destroy();
 
           if (stop) {
@@ -539,7 +503,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
           context = registerSyncContext({
             doc: awareness.doc,
             awareness,
-            collabType: context.collabType
+            collabType: context.collabType,
           });
         }
 
@@ -555,16 +519,18 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     };
 
     if (message) {
-      applyMessage(message, currentUser).catch(console.error);
+      applyMessage(message, currentUser).catch((error) => {
+        Log.error('Failed to apply collab message', error);
+      });
     }
 
     return () => {
       stop = true;
     };
-  }, [lastMessage, registeredContexts, setLastUpdatedCollab, registerSyncContext, currentUser]);
+  }, [wsCollabMessage, registerSyncContext, currentUser]);
 
   useEffect(() => {
-    const message = lastBroadcastMessage?.collabMessage;
+    const message = bcCollabMessage;
 
     if (message) {
       const objectId = message.objectId!;
@@ -581,17 +547,16 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
       setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
     }
-  }, [lastBroadcastMessage, registeredContexts, setLastUpdatedCollab]);
+  }, [bcCollabMessage]);
 
   const revertCollabVersion = useCallback(async (viewId: string, version: string) => {
-
     const context = registeredContexts.current.get(viewId);
 
     if (currentUser && context) {
       const { docState } = await http.revertCollabVersion(currentUser.latestWorkspaceId, viewId, context.collabType, version);
 
       Log.debug('Collab version changed:', viewId, context.doc.version, version);
-      context.doc.emit('reset', [context, version])
+      context.doc.emit('reset', [context, version]);
       context.doc.destroy();
 
       await deleteDB(viewId);
@@ -604,12 +569,12 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       registerSyncContext({
         doc,
         awareness,
-        collabType: context.collabType
+        collabType: context.collabType,
       });
     } else {
       await deleteDB(viewId);
     }
-  }, [registeredContexts, currentUser, registerSyncContext]);
+  }, [currentUser, registerSyncContext]);
 
   return { registerSyncContext, lastUpdatedCollab, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
 };

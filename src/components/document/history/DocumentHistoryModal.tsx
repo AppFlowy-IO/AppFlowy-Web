@@ -1,19 +1,63 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
 import { CollabVersionRecord } from '@/application/collab-version.type';
-import { MentionablePerson, Types, ViewIcon, YjsEditorKey } from '@/application/types';
+import { MentionablePerson, Types, ViewIcon } from '@/application/types';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { Editor } from '@/components/editor';
+import { EditorContextState } from '@/components/editor/EditorContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
 import { VersionList } from './DocumentHistoryVersionList';
+
+type VersionPreviewBodyProps = {
+  loading: boolean;
+  error: string | null;
+  activeDoc: Y.Doc | null;
+  workspaceId?: string;
+  viewId: string;
+} & Partial<Omit<EditorContextState, 'workspaceId' | 'viewId' | 'readOnly'>>;
+
+const VersionPreviewBody = memo(function VersionPreviewBody({
+  loading,
+  error,
+  activeDoc,
+  workspaceId,
+  viewId,
+  ...editorProps
+}: VersionPreviewBodyProps) {
+  if (loading) {
+    return <ComponentLoading />;
+  }
+
+  if (error) {
+    return <EmptyState message={error} />;
+  }
+
+  if (!activeDoc) {
+    return null;
+  }
+
+  return (
+    <div style={{ pointerEvents: 'none' }}>
+      <Editor
+        workspaceId={workspaceId || ''}
+        viewId={viewId}
+        readOnly
+        doc={activeDoc}
+        fullWidth
+        {...editorProps}
+        uploadFile={undefined}
+      />
+    </div>
+  );
+});
 
 export function DocumentHistoryModal({
   open,
@@ -80,12 +124,8 @@ export function DocumentHistoryModal({
       return true;
     });
 
-    if (filtered.length > 0 && !filtered.some((version) => version.versionId === selectedVersionId)) {
-      setSelectedVersionId(filtered[0].versionId);
-    }
-
     return filtered;
-  }, [versions, onlyShowMine, currentUser, dateFilter, selectedVersionId]);
+  }, [versions, onlyShowMine, currentUser, dateFilter]);
 
   const authorMap = useMemo(() => {
     const map = new Map<string, MentionablePerson>();
@@ -116,16 +156,9 @@ export function DocumentHistoryModal({
     }
   }, [viewId, getCollabHistory]);
 
-  const handleSetDateFilter = useCallback(
-    (filter: 'all' | 'last7Days' | 'last30Days' | 'last60Days') => {
-      if (dateFilter === filter) {
-        return;
-      }
-
-      setDateFilter(filter);
-    },
-    [dateFilter]
-  );
+  const handleSetDateFilter = useCallback((filter: 'all' | 'last7Days' | 'last30Days' | 'last60Days') => {
+    setDateFilter(filter);
+  }, []);
 
   const refreshAuthors = useCallback(async () => {
     if (!open || !loadMentionableUsers) {
@@ -149,7 +182,7 @@ export function DocumentHistoryModal({
     setIsRestoring(true);
     setError(null);
     try {
-      void revertCollabVersion(viewId, selectedVersionId);
+      await revertCollabVersion(viewId, selectedVersionId);
       previewYDocRef.current.clear();
       setActiveDoc(null);
 
@@ -187,75 +220,53 @@ export function DocumentHistoryModal({
   }, [open, refreshAuthors]);
 
   useEffect(() => {
+    if (visibleVersions.length > 0 && !visibleVersions.some((v) => v.versionId === selectedVersionId)) {
+      setSelectedVersionId(visibleVersions[0].versionId);
+    }
+  }, [visibleVersions, selectedVersionId]);
+
+  useEffect(() => {
+    if (!open) {
+      setActiveDoc(null);
+      return;
+    }
+
+    if (!selectedVersionId || !viewId || !previewCollabVersion) {
+      setActiveDoc(null);
+      return;
+    }
+
+    let cancelled = false;
+    const previewVersionId = selectedVersionId;
+    const cachedDoc = previewYDocRef.current.get(previewVersionId);
+
+    if (cachedDoc) {
+      setActiveDoc(cachedDoc);
+      return;
+    }
+
     void (async () => {
-      if (!selectedVersionId) {
-        Log.warn('No selected version id for previewing version');
-      }
-
-      const cachedDoc = previewYDocRef.current.get(selectedVersionId);
-
-      if (cachedDoc) {
-        setActiveDoc(cachedDoc);
-        return;
-      }
-
-      if (!viewId || !previewCollabVersion) {
-        return;
-      }
-
       try {
-        const doc = await previewCollabVersion(viewId, selectedVersionId, Types.Document);
+        const doc = await previewCollabVersion(viewId, previewVersionId, Types.Document);
 
-        //Log.debug('preview', doc?.getMap(YjsEditorKey.data_section).toJSON());
-
-        if (!doc) {
-          Log.warn('No doc received for previewing version');
+        if (!doc || cancelled) {
           return;
         }
 
-        previewYDocRef.current.set(selectedVersionId, doc);
+        previewYDocRef.current.set(previewVersionId, doc);
         setActiveDoc(doc);
-
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      } catch (e: any) {
-        // do nothing
+      } catch (error) {
+        if (!cancelled) {
+          Log.warn('Failed to preview document version', error);
+          setActiveDoc(null);
+        }
       }
     })();
-  }, [previewCollabVersion, selectedVersionId, viewId, workspaceId]);
 
-  useEffect(() => {
-    if (!open && visibleVersions.length > 0) {
-      setSelectedVersionId(visibleVersions[0].versionId);
-    }
-  }, [open, visibleVersions]);
-
-  const PreviewBody = useMemo(() => {
-    if (loading) {
-      return <ComponentLoading />;
-    }
-
-    if (error) {
-      return <EmptyState message={error} />;
-    }
-
-    if (!activeDoc) {
-      return <></>;
-    }
-
-    return (
-      <div style={{ pointerEvents: 'none' }}>
-        <Editor
-          workspaceId={workspaceId || ''}
-          viewId={viewId}
-          readOnly={true}
-          doc={activeDoc}
-          fullWidth
-          {...props}
-          uploadFile={undefined}
-        />
-      </div>
-    );
-  }, [activeDoc, error, loading, props, viewId, workspaceId]);
+    return () => {
+      cancelled = true;
+    };
+  }, [open, previewCollabVersion, selectedVersionId, viewId]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -271,7 +282,16 @@ export function DocumentHistoryModal({
           <DialogHeader className='border-b border-border px-6 py-4'>
             <DialogTitle>{view?.name || t('untitled')}</DialogTitle>
           </DialogHeader>
-          <div className='flex-1 overflow-hidden'>{PreviewBody}</div>
+          <div className='flex-1 overflow-hidden'>
+            <VersionPreviewBody
+              loading={loading}
+              error={error}
+              activeDoc={activeDoc}
+              workspaceId={workspaceId}
+              viewId={viewId}
+              {...(props as Partial<Omit<EditorContextState, 'workspaceId' | 'viewId' | 'readOnly'>>)}
+            />
+          </div>
         </div>
         <div className='order-1 flex w-full max-w-full flex-col rounded-r-2xl border-border-primary bg-surface-container-layer-01 md:order-2 md:w-[280px] md:border-l'>
           <VersionList

@@ -131,17 +131,19 @@ function MoreActionsContent({
         {t('button.delete')}
       </DropdownMenuItem>
 
-      <DropdownMenuItem
-        data-testid="more-page-version-history"
-        onSelect={(event) => {
-          event.preventDefault();
-          onOpenHistory?.();
-          itemClicked?.();
-        }}
-      >
-        <TimeIcon />
-        {t('versionHistory.versionHistory')}
-      </DropdownMenuItem>
+      {isDocument && onOpenHistory && (
+        <DropdownMenuItem
+          data-testid="more-page-version-history"
+          onSelect={(event) => {
+            event.preventDefault();
+            onOpenHistory();
+            itemClicked?.();
+          }}
+        >
+          <TimeIcon />
+          {t('versionHistory.versionHistory')}
+        </DropdownMenuItem>
+      )}
 
     </DropdownMenuGroup>
   );

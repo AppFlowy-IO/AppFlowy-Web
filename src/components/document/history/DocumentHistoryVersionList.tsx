@@ -1,8 +1,9 @@
 import { format } from 'date-fns';
-import { useState } from 'react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CollabVersionRecord } from '@/application/collab-version.type';
+import { MentionablePerson } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
@@ -22,7 +23,6 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
-import { MentionablePerson } from '@/application/types';
 
 export function VersionList({
   versions,
@@ -178,7 +178,7 @@ export function VersionList({
   );
 }
 
-function VersionListItem({
+const VersionListItem = memo(function VersionListItem({
   id,
   title,
   selected,
@@ -191,21 +191,15 @@ function VersionListItem({
   selected: boolean;
   isFirst: boolean;
   isLast: boolean;
-  onSelect: (id: string) => void;
+  onSelect: () => void;
 }) {
-  const [isHovered, setIsHovered] = useState(false);
-
   return (
     <Button
       data-testid={`version-history-item-${id}`}
       variant='ghost'
-      onClick={() => {
-        onSelect(id);
-      }}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+      onClick={onSelect}
       className={cn(
-        'relative flex w-full items-start justify-start gap-3 rounded-400 py-0 pl-4 pr-3',
+        'group relative flex w-full items-start justify-start gap-3 rounded-400 py-0 pl-4 pr-3',
         selected && 'bg-fill-content-hover'
       )}
     >
@@ -217,11 +211,11 @@ function VersionListItem({
           selected ? 'border-border-theme-thick' : 'border-icon-tertiary'
         )}
       >
-        <div className={cn('h-2 w-2 rounded-100', isHovered || selected ? 'bg-fill-content-hover' : '')} />
+        <div className={cn('h-2 w-2 rounded-100', selected ? 'bg-fill-content-hover' : 'group-hover:bg-fill-content-hover')} />
       </div>
       <span className='ml-8 flex flex-1 flex-col items-start py-3 text-sm'>
         <span className={selected ? 'font-medium text-text-info' : 'text-text-primary'}>{title}</span>
       </span>
     </Button>
   );
-}
+});
