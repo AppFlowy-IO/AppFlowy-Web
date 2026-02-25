@@ -28,6 +28,7 @@ type SyncDocMeta = {
 
 type CollabDocResetPayload = {
   objectId: string;
+  viewId?: string;
   doc: YDoc;
 };
 
@@ -435,6 +436,10 @@ export const useSync = (
 
       if (context) {
         if (options?.allowVersionReset && versionChanged(context, message)) {
+          if (options?.isCancelled?.()) {
+            return;
+          }
+
           const newVersion = message.update?.version || message.syncRequest?.version || undefined;
           const previousDoc = context.doc as YDoc & SyncDocMeta;
 
@@ -444,15 +449,7 @@ export const useSync = (
           skipFlushOnDestroy.current.add(previousDoc.guid);
           previousDoc.destroy();
 
-          if (options?.isCancelled?.()) {
-            return;
-          }
-
           await deleteDB(previousDoc.guid);
-
-          if (options?.isCancelled?.()) {
-            return;
-          }
 
           const nextDoc = (await openCollabDB(previousDoc.guid, {
             expectedVersion: newVersion,
@@ -472,6 +469,7 @@ export const useSync = (
 
           eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
             objectId: previousDoc.guid,
+            viewId: previousDoc.object_id,
             doc: context.doc,
           } satisfies CollabDocResetPayload);
         }
@@ -599,9 +597,19 @@ export const useSync = (
     }
 
     lastHandledBcMessageRef.current = message;
-    applyCollabMessage(message, { allowVersionReset: true, user: currentUser }).catch((error) => {
+    let stop = false;
+
+    applyCollabMessage(message, {
+      allowVersionReset: true,
+      user: currentUser,
+      isCancelled: () => stop,
+    }).catch((error) => {
       Log.error('Failed to apply broadcasted collab message', error);
     });
+
+    return () => {
+      stop = true;
+    };
   }, [bcCollabMessage, currentUser, applyCollabMessage]);
 
   const revertCollabVersion = useCallback(async (viewId: string, version: string) => {
@@ -645,6 +653,7 @@ export const useSync = (
 
       eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
         objectId: previousDoc.guid,
+        viewId: previousDoc.object_id,
         doc,
       } satisfies CollabDocResetPayload);
     } else {

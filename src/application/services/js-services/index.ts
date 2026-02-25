@@ -60,7 +60,6 @@ import {
   UploadPublishNamespacePayload,
   ViewIconType,
   WorkspaceMember,
-  YDoc,
   YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
@@ -85,14 +84,6 @@ export class AFClientService implements AFService {
 
   constructor(config: AFServiceConfig) {
     APIService.initAPIService(config.cloudConfig);
-  }
-
-  async createRowDoc(rowKey: string): Promise<YDoc> {
-    throw new Error('Not implemented');
-  }
-
-  deleteRowDoc(rowKey: string) {
-    throw new Error('Not implemented');
   }
 
   getAxiosInstance() {

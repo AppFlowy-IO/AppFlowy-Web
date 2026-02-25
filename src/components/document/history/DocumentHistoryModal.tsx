@@ -1,9 +1,9 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
 import { CollabVersionRecord } from '@/application/collab-version.type';
-import { MentionablePerson, Types, ViewIcon } from '@/application/types';
+import { Types, ViewIcon } from '@/application/types';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
@@ -24,7 +24,7 @@ type VersionPreviewBodyProps = {
   viewId: string;
 } & Partial<Omit<EditorContextState, 'workspaceId' | 'viewId' | 'readOnly'>>;
 
-const VersionPreviewBody = memo(function VersionPreviewBody({
+function VersionPreviewBody({
   loading,
   error,
   activeDoc,
@@ -57,7 +57,7 @@ const VersionPreviewBody = memo(function VersionPreviewBody({
       />
     </div>
   );
-});
+}
 
 export function DocumentHistoryModal({
   open,
@@ -74,7 +74,6 @@ export function DocumentHistoryModal({
   };
 }) {
   const {
-    loadMentionableUsers,
     getSubscriptions,
     getCollabHistory,
     previewCollabVersion,
@@ -89,7 +88,6 @@ export function DocumentHistoryModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selectedVersionId, setSelectedVersionId] = useState<string>('');
-  const [mentionables, setMentionables] = useState<MentionablePerson[]>([]);
   const [dateFilter, setDateFilter] = useState<'all' | 'last7Days' | 'last30Days' | 'last60Days'>('all');
   const [onlyShowMine, setOnlyShowMine] = useState(false);
   const previewYDocRef = useRef<Map<string, Y.Doc>>(new Map());
@@ -152,20 +150,6 @@ export function DocumentHistoryModal({
     setDateFilter(filter);
   }, []);
 
-  const refreshAuthors = useCallback(async () => {
-    if (!loadMentionableUsers) {
-      return;
-    }
-
-    try {
-      const users = await loadMentionableUsers();
-
-      setMentionables(users ?? []);
-    } catch (error) {
-      console.error('Failed to load mentionable users', error);
-    }
-  }, [loadMentionableUsers]);
-
   const handleRestore = useCallback(async () => {
     if (!viewId || !selectedVersionId || !revertCollabVersion) {
       return;
@@ -204,14 +188,6 @@ export function DocumentHistoryModal({
 
     void refreshVersions();
   }, [open, refreshVersions]);
-
-  useEffect(() => {
-    if (!open) {
-      return;
-    }
-
-    void refreshAuthors();
-  }, [open, refreshAuthors]);
 
   selectedVersionIdRef.current = selectedVersionId;
 

@@ -85,7 +85,7 @@ describe('AppPage database container', () => {
       handlers: {
         toView,
         loadViewMeta: jest.fn(),
-        createRowDoc: jest.fn(),
+        createRow: jest.fn(),
         loadView,
         appendBreadcrumb: jest.fn(),
         onRendered: jest.fn(),
@@ -149,7 +149,7 @@ describe('AppPage database container', () => {
       handlers: {
         toView,
         loadViewMeta: jest.fn(),
-        createRowDoc: jest.fn(),
+        createRow: jest.fn(),
         loadView,
         appendBreadcrumb: jest.fn(),
         onRendered: jest.fn(),

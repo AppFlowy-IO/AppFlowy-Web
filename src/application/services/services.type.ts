@@ -123,8 +123,8 @@ export interface WorkspaceService {
 
 export interface AppService {
   getPageDoc: (workspaceId: string, viewId: string, errorCallback?: (error: { code: number }) => void) => Promise<YDoc>;
-  createRowDoc: (rowKey: string) => Promise<YDoc>;
-  deleteRowDoc: (rowKey: string) => void;
+  createRow: (rowKey: string) => Promise<YDoc>;
+  deleteRow: (rowKey: string) => void;
   getAppDatabaseViewRelations: (workspaceId: string, databaseStorageId: string) => Promise<DatabaseRelations>;
   getAppOutline: (workspaceId: string) => Promise<AppOutlineResponse>;
   getAppView: (workspaceId: string, viewId: string) => Promise<View>;

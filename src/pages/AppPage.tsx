@@ -321,13 +321,23 @@ function AppPage() {
   useEffect(() => {
     if (!eventEmitter) return;
 
-    const handleCollabDocReset = ({ objectId, doc: nextDoc }: { objectId: string; doc: YDoc }) => {
+    const handleCollabDocReset = ({ objectId, viewId: resetViewId, doc: nextDoc }: { objectId: string; viewId?: string; doc: YDoc }) => {
       setDoc((currentDoc) => {
         if (!currentDoc || currentDoc.guid !== objectId) {
           return currentDoc;
         }
 
         const currentDocWithMeta = currentDoc as YDocWithMeta;
+
+        // Guard against cross-view replacements for shared-guid docs (e.g. database layouts).
+        if (resetViewId && currentDocWithMeta.object_id && currentDocWithMeta.object_id !== resetViewId) {
+          return currentDoc;
+        }
+
+        if (resetViewId && currentViewIdRef.current && currentViewIdRef.current !== resetViewId) {
+          return currentDoc;
+        }
+
         const nextDocWithMeta = nextDoc as YDocWithMeta;
 
         if (!nextDocWithMeta.object_id) {
