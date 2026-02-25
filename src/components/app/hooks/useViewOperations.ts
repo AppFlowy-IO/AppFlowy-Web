@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
+import { APP_EVENTS } from '@/application/constants';
 import { openCollabDB } from '@/application/db';
 import {
   AccessLevel,
@@ -36,10 +37,17 @@ export interface YDocWithMeta extends YDoc {
   _syncBound?: boolean;
 }
 
+type CollabDocResetPayload = {
+  objectId: string;
+  viewId?: string;
+  doc: YDoc;
+  awareness?: Awareness;
+};
+
 // Hook for managing view-related operations
 export function useViewOperations() {
   const { service, currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
-  const { registerSyncContext } = useSyncInternal();
+  const { registerSyncContext, eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
 
   const [awarenessMap, setAwarenessMap] = useState<Record<string, Awareness>>({});
@@ -49,6 +57,28 @@ export function useViewOperations() {
   useEffect(() => {
     awarenessMapRef.current = { ...awarenessMapRef.current, ...awarenessMap };
   }, [awarenessMap]);
+
+  useEffect(() => {
+    const handleCollabDocReset = ({ viewId, awareness }: CollabDocResetPayload) => {
+      if (!viewId || !awareness) {
+        return;
+      }
+
+      awarenessMapRef.current = { ...awarenessMapRef.current, [viewId]: awareness };
+      setAwarenessMap((prev) => {
+        if (prev[viewId] === awareness) {
+          return prev;
+        }
+
+        return { ...prev, [viewId]: awareness };
+      });
+    };
+
+    eventEmitter.on(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    return () => {
+      eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    };
+  }, [eventEmitter]);
   const workspaceDatabaseDocMapRef = useRef<Map<string, YDoc>>(new Map());
   const createdRowKeys = useRef<string[]>([]);
   const databaseIdViewIdMapRef = useRef<Map<DatabaseId, ViewId>>(new Map());

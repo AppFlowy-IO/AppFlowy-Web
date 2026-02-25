@@ -30,6 +30,7 @@ type CollabDocResetPayload = {
   objectId: string;
   viewId?: string;
   doc: YDoc;
+  awareness?: awarenessProtocol.Awareness;
 };
 
 export interface RegisterSyncContext {
@@ -455,7 +456,8 @@ export const useSync = (
             expectedVersion: newVersion,
             currentUser: options?.user?.uid,
           })) as YDoc & SyncDocMeta;
-          const awareness = new awarenessProtocol.Awareness(nextDoc);
+          const nextAwareness =
+            context.collabType === Types.Document ? new awarenessProtocol.Awareness(nextDoc) : undefined;
 
           nextDoc.object_id = previousDoc.object_id;
           nextDoc._collabType = previousDoc._collabType;
@@ -463,7 +465,7 @@ export const useSync = (
 
           context = registerSyncContext({
             doc: nextDoc,
-            awareness,
+            awareness: nextAwareness,
             collabType: context.collabType,
           });
 
@@ -471,6 +473,7 @@ export const useSync = (
             objectId: previousDoc.guid,
             viewId: previousDoc.object_id,
             doc: context.doc,
+            awareness: nextAwareness,
           } satisfies CollabDocResetPayload);
         }
 
@@ -643,11 +646,11 @@ export const useSync = (
       doc.object_id = previousDoc.object_id;
       doc._collabType = previousDoc._collabType;
       doc._syncBound = true;
-      const awareness = new awarenessProtocol.Awareness(doc);
+      const nextAwareness = context.collabType === Types.Document ? new awarenessProtocol.Awareness(doc) : undefined;
 
       registerSyncContext({
         doc,
-        awareness,
+        awareness: nextAwareness,
         collabType: context.collabType,
       });
 
@@ -655,9 +658,10 @@ export const useSync = (
         objectId: previousDoc.guid,
         viewId: previousDoc.object_id,
         doc,
+        awareness: nextAwareness,
       } satisfies CollabDocResetPayload);
     } else {
-      await deleteDB(viewId);
+      throw new Error('Unable to restore version: sync context is unavailable. Please reopen the document and retry.');
     }
   }, [workspaceId, currentUser, eventEmitter, registerSyncContext]);
 

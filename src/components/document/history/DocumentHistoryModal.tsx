@@ -192,7 +192,15 @@ export function DocumentHistoryModal({
   selectedVersionIdRef.current = selectedVersionId;
 
   useEffect(() => {
-    if (visibleVersions.length > 0 && !visibleVersions.some((v) => v.versionId === selectedVersionIdRef.current)) {
+    if (visibleVersions.length === 0) {
+      if (selectedVersionIdRef.current) {
+        setSelectedVersionId('');
+      }
+
+      return;
+    }
+
+    if (!visibleVersions.some((v) => v.versionId === selectedVersionIdRef.current)) {
       setSelectedVersionId(visibleVersions[0].versionId);
     }
   }, [visibleVersions]);
