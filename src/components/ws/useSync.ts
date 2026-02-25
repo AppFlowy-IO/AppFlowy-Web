@@ -87,14 +87,21 @@ export type SyncContextType = {
 };
 
 const versionChanged = (context: SyncContext, message: collab.ICollabMessage): boolean => {
-  const version = message.update?.version || message.syncRequest?.version || null;
+  const incomingVersion = message.update?.version || message.syncRequest?.version || null;
+  const localVersion = context.doc.version;
 
-  if (version && uuidValidate(version)) {
-    return version !== context.doc.version;
-  } else {
+  // Legacy local docs may not have a persisted version yet.
+  // Only trigger destructive reset when both versions are known and different.
+  if (!incomingVersion || !uuidValidate(incomingVersion)) {
     return false;
   }
-}
+
+  if (!localVersion || !uuidValidate(localVersion)) {
+    return false;
+  }
+
+  return incomingVersion !== localVersion;
+};
 
 export const useSync = (
   ws: AppflowyWebSocketType,
@@ -436,6 +443,18 @@ export const useSync = (
       let context = registeredContexts.current.get(objectId);
 
       if (context) {
+        const incomingVersion = message.update?.version || message.syncRequest?.version || null;
+
+        // Migrate legacy docs with unknown local version to the incoming server version
+        // without clearing local cached state.
+        if (incomingVersion && uuidValidate(incomingVersion)) {
+          const localVersion = context.doc.version;
+
+          if (!localVersion || !uuidValidate(localVersion)) {
+            context.doc.version = incomingVersion;
+          }
+        }
+
         if (options?.allowVersionReset && versionChanged(context, message)) {
           if (options?.isCancelled?.()) {
             return;
