@@ -1,5 +1,5 @@
 import { format } from 'date-fns';
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CollabVersionRecord } from '@/application/collab-version.type';
@@ -147,7 +147,7 @@ export function VersionList({
               selected={selectedVersionId === version.versionId}
               isFirst={index === 0}
               isLast={index === versions.length - 1}
-              onSelect={() => onSelect(version.versionId)}
+              onSelect={onSelect}
             />
           );
         })}
@@ -191,13 +191,17 @@ const VersionListItem = memo(function VersionListItem({
   selected: boolean;
   isFirst: boolean;
   isLast: boolean;
-  onSelect: () => void;
+  onSelect: (id: string) => void;
 }) {
+  const handleSelect = useCallback(() => {
+    onSelect(id);
+  }, [id, onSelect]);
+
   return (
     <Button
       data-testid={`version-history-item-${id}`}
       variant='ghost'
-      onClick={onSelect}
+      onClick={handleSelect}
       className={cn(
         'group relative flex w-full items-start justify-start gap-3 rounded-400 py-0 pl-4 pr-3',
         selected && 'bg-fill-content-hover'

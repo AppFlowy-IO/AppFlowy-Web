@@ -90,6 +90,8 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
   const contextRefCounts = useRef<Map<string, number>>(new Map());
   const destroyListeners = useRef<Map<string, { doc: Y.Doc; handler: () => void }>>(new Map());
   const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
+  const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
   const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
 
   // Extract specific values to use as primitive dependencies
@@ -395,6 +397,59 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     [currentUser, sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
   );
 
+  const applyCollabMessage = useCallback(
+    async (
+      message: ICollabMessage,
+      options?: {
+        allowVersionReset?: boolean;
+        user?: User;
+        isCancelled?: () => boolean;
+      }
+    ) => {
+      const objectId = message.objectId!;
+      let context = registeredContexts.current.get(objectId);
+
+      if (context) {
+        if (options?.allowVersionReset && versionChanged(context, message)) {
+          const newVersion = message.update?.version || message.syncRequest?.version || undefined;
+
+          Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
+          context.doc.emit('reset', [context, newVersion]);
+          context.doc.destroy();
+
+          if (options?.isCancelled?.()) {
+            return;
+          }
+
+          await deleteDB(context.doc.guid);
+
+          if (options?.isCancelled?.()) {
+            return;
+          }
+
+          const doc = await openCollabDB(context.doc.guid, { expectedVersion: newVersion, currentUser: options?.user?.uid });
+          const awareness = new awarenessProtocol.Awareness(doc);
+
+          context = registerSyncContext({
+            doc: awareness.doc,
+            awareness,
+            collabType: context.collabType,
+          });
+        }
+
+        handleMessage(context, message);
+      }
+
+      const updateTimestamp = message.update?.messageId?.timestamp;
+      const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
+
+      Log.debug('Received collab message:', message.collabType, publishedAt, message);
+
+      setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
+    },
+    [registerSyncContext]
+  );
+
   /**
    * Flush all pending updates for all registered sync contexts.
    * This ensures all local changes are sent to the server via WebSocket.
@@ -476,78 +531,39 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
   useEffect(() => {
     const message = wsCollabMessage;
+
+    if (!message || message === lastHandledWsMessageRef.current) {
+      return;
+    }
+
+    lastHandledWsMessageRef.current = message;
     let stop = false;
 
-    const applyMessage = async (message: ICollabMessage, user?: User) => {
-      const objectId = message.objectId!;
-      let context = registeredContexts.current.get(objectId);
-
-      if (context) {
-        // if version has changed, we need to reset document state
-        if (versionChanged(context, message)) {
-          const newVersion = message.update?.version || message.syncRequest?.version || undefined;
-
-          Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
-          context.doc.emit('reset', [context, newVersion]);
-          context.doc.destroy();
-
-          if (stop) {
-            return;
-          }
-
-          // remove stale persisted data for older version and reinitialize it
-          await deleteDB(context.doc.guid);
-          const doc = await openCollabDB(context.doc.guid, { expectedVersion: newVersion, currentUser: user?.uid });
-          const awareness = new awarenessProtocol.Awareness(doc);
-
-          context = registerSyncContext({
-            doc: awareness.doc,
-            awareness,
-            collabType: context.collabType,
-          });
-        }
-
-        handleMessage(context, message);
-      }
-
-      const updateTimestamp = message.update?.messageId?.timestamp;
-      const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-      Log.debug('Received collab message:', message.collabType, publishedAt, message);
-
-      setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
-    };
-
-    if (message) {
-      applyMessage(message, currentUser).catch((error) => {
-        Log.error('Failed to apply collab message', error);
-      });
-    }
+    applyCollabMessage(message, {
+      allowVersionReset: true,
+      user: currentUser,
+      isCancelled: () => stop,
+    }).catch((error) => {
+      Log.error('Failed to apply collab message', error);
+    });
 
     return () => {
       stop = true;
     };
-  }, [wsCollabMessage, registerSyncContext, currentUser]);
+  }, [wsCollabMessage, currentUser, applyCollabMessage]);
 
   useEffect(() => {
     const message = bcCollabMessage;
 
-    if (message) {
-      const objectId = message.objectId!;
-      const context = registeredContexts.current.get(objectId);
-
-      if (context) {
-        handleMessage(context, message);
-      }
-
-      const updateTimestamp = message.update?.messageId?.timestamp;
-      const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-      Log.debug('Received broadcasted collab message:', message.collabType, publishedAt, message);
-
-      setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
+    if (!message || message === lastHandledBcMessageRef.current) {
+      return;
     }
-  }, [bcCollabMessage]);
+
+    lastHandledBcMessageRef.current = message;
+    applyCollabMessage(message, { allowVersionReset: true, user: currentUser }).catch((error) => {
+      Log.error('Failed to apply broadcasted collab message', error);
+    });
+  }, [bcCollabMessage, currentUser, applyCollabMessage]);
 
   const revertCollabVersion = useCallback(async (viewId: string, version: string) => {
     const context = registeredContexts.current.get(viewId);
