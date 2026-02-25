@@ -94,6 +94,7 @@ export function DocumentHistoryModal({
   const [activeDoc, setActiveDoc] = useState<Y.Doc | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
   const selectedVersionIdRef = useRef(selectedVersionId);
+  const activeViewIdRef = useRef(viewId);
 
   const visibleVersions = useMemo(() => {
     let filtered = [...versions];
@@ -131,18 +132,30 @@ export function DocumentHistoryModal({
       return [];
     }
 
+    const requestViewId = viewId;
+
     setLoading(true);
     setError(null);
     try {
-      const data = await getCollabHistory(viewId);
+      const data = await getCollabHistory(requestViewId);
+
+      if (activeViewIdRef.current !== requestViewId) {
+        return [];
+      }
 
       setVersions(data);
       return data;
     } catch (error) {
+      if (activeViewIdRef.current !== requestViewId) {
+        return [];
+      }
+
       setError(error instanceof Error ? error.message : String(error));
       return [];
     } finally {
-      setLoading(false);
+      if (activeViewIdRef.current === requestViewId) {
+        setLoading(false);
+      }
     }
   }, [viewId, getCollabHistory]);
 
@@ -199,6 +212,10 @@ export function DocumentHistoryModal({
   }, [open, refreshVersions]);
 
   selectedVersionIdRef.current = selectedVersionId;
+
+  useEffect(() => {
+    activeViewIdRef.current = viewId;
+  }, [viewId]);
 
   useEffect(() => {
     if (visibleVersions.length === 0) {
@@ -264,9 +281,14 @@ export function DocumentHistoryModal({
   }, [open, previewCollabVersion, selectedVersionId, viewId, clearPreviewDocs]);
 
   useEffect(() => {
+    activeViewIdRef.current = viewId;
+    setVersions([]);
+    setSelectedVersionId('');
+    setError(null);
+    setLoading(open);
     setActiveDoc(null);
     clearPreviewDocs();
-  }, [viewId, clearPreviewDocs]);
+  }, [viewId, open, clearPreviewDocs]);
 
   useEffect(() => {
     return () => {

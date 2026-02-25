@@ -143,6 +143,7 @@ export const useSync = (
   const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
+  const latestIncomingVersionRef = useRef<Map<string, string>>(new Map());
   const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
 
   // Extract specific values to use as primitive dependencies
@@ -464,11 +465,15 @@ export const useSync = (
       }
     ) => {
       const objectId = message.objectId!;
+      const incomingVersion = message.update?.version || message.syncRequest?.version || null;
+
+      if (incomingVersion && uuidValidate(incomingVersion)) {
+        latestIncomingVersionRef.current.set(objectId, incomingVersion);
+      }
+
       let context = registeredContexts.current.get(objectId);
 
       if (context) {
-        const incomingVersion = message.update?.version || message.syncRequest?.version || null;
-
         // Migrate legacy docs with unknown local version to the incoming server version
         // without clearing local cached state.
         if (incomingVersion && uuidValidate(incomingVersion)) {
@@ -486,6 +491,27 @@ export const useSync = (
 
           const newVersion = message.update?.version || message.syncRequest?.version || undefined;
           const previousDoc = context.doc as YDoc & SyncDocMeta;
+          const shouldAbortReset = () => {
+            if (!options?.isCancelled?.()) {
+              return false;
+            }
+
+            const latestVersion = latestIncomingVersionRef.current.get(objectId);
+
+            if (
+              newVersion &&
+              latestVersion &&
+              uuidValidate(newVersion) &&
+              uuidValidate(latestVersion) &&
+              latestVersion !== newVersion
+            ) {
+              return true;
+            }
+
+            const activeContext = registeredContexts.current.get(objectId);
+
+            return !!activeContext && activeContext.doc !== previousDoc;
+          };
 
           Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
           previousDoc.emit('reset', [context, newVersion]);
@@ -495,10 +521,20 @@ export const useSync = (
 
           await deleteDocDatabaseWithTimeout(previousDoc.guid);
 
+          if (shouldAbortReset()) {
+            return;
+          }
+
           const nextDoc = (await openCollabDB(previousDoc.guid, {
             expectedVersion: newVersion,
             currentUser: options?.user?.uid,
           })) as YDoc & SyncDocMeta;
+
+          if (shouldAbortReset()) {
+            nextDoc.destroy();
+            return;
+          }
+
           const nextAwareness =
             context.collabType === Types.Document ? new awarenessProtocol.Awareness(nextDoc) : undefined;
 
