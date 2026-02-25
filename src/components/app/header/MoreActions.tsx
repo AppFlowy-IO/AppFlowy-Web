@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Role, ViewLayout } from '@/application/types';
@@ -8,7 +8,6 @@ import { findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { useAppOutline, useAppView, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
-import { DocumentHistoryModal } from '@/components/document/history/DocumentHistoryModal';
 import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
@@ -23,6 +22,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 import MoreActionsContent from './MoreActionsContent';
 
+const DocumentHistoryModal = lazy(() => import('@/components/document/history/DocumentHistoryModal'));
+
 function MoreActions({
   viewId,
   onDeleted,
@@ -30,8 +31,8 @@ function MoreActions({
 }: {
   viewId: string;
   onDeleted?: () => void;
-  menuContentProps?: React.ComponentProps<typeof DropdownMenuContent>;
-} & React.ComponentProps<typeof DropdownMenu>) {
+  menuContentProps?: ComponentProps<typeof DropdownMenuContent>;
+} & ComponentProps<typeof DropdownMenu>) {
   const workspaceId = useCurrentWorkspaceId();
   const service = useService();
   const { selectionMode, onOpenSelectionMode } = useAIChatContext();
@@ -148,8 +149,10 @@ function MoreActions({
           <DocumentInfo viewId={viewId} />
         </DropdownMenuContent>
       </DropdownMenu>
-      {showHistory && (
-        <DocumentHistoryModal open={historyOpen} onOpenChange={setHistoryOpen} viewId={viewId} view={view} />
+      {showHistory && historyOpen && (
+        <Suspense fallback={null}>
+          <DocumentHistoryModal open={historyOpen} onOpenChange={setHistoryOpen} viewId={viewId} view={view} />
+        </Suspense>
       )}
     </>
   );

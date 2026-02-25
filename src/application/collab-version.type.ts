@@ -11,6 +11,10 @@ export interface CollabVersionRecord {
   parentId: string | null;
   name: string | null;
   createdAt: Date;
+  /**
+   * Tombstoned versions are kept in history responses but should not be restorable/previewable.
+   */
+  isDeleted?: boolean;
   editors: number[]
 }
 

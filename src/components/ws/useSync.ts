@@ -2,6 +2,7 @@ import EventEmitter from 'events';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { validate as uuidValidate } from 'uuid';
+import { IndexeddbPersistence } from 'y-indexeddb';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
@@ -100,6 +101,27 @@ const versionChanged = (context: SyncContext, message: collab.ICollabMessage): b
   }
 
   return incomingVersion !== localVersion;
+};
+
+const persistLearnedVersion = async (objectId: string, version: string): Promise<void> => {
+  const provider = new IndexeddbPersistence(
+    objectId,
+    new Y.Doc({
+      guid: objectId,
+    })
+  );
+
+  try {
+    await provider.set(objectId + '/version', version);
+  } catch (error) {
+    Log.warn('[useSync] Failed to persist learned collab version', { objectId, version, error });
+  } finally {
+    try {
+      await provider.destroy();
+    } catch (error) {
+      Log.warn('[useSync] Failed to cleanup version persistence provider', { objectId, error });
+    }
+  }
 };
 
 export const useSync = (
@@ -456,6 +478,9 @@ export const useSync = (
 
           if (!localVersion || !uuidValidate(localVersion)) {
             context.doc.version = incomingVersion;
+            // Persist learned version so legacy caches don't revert to "unknown version"
+            // after reload and accidentally skip version-reset safeguards.
+            void persistLearnedVersion(context.doc.guid, incomingVersion);
           }
         }
 
@@ -506,6 +531,7 @@ export const useSync = (
           nextDoc.object_id = previousDoc.object_id;
           nextDoc._collabType = previousDoc._collabType;
           nextDoc._syncBound = true;
+          const hadPendingDeferredCleanup = pendingCleanups.current.has(previousDoc.guid);
 
           // Keep the current doc active until the replacement doc is ready.
           previousDoc.emit('reset', [context, newVersion]);
@@ -518,6 +544,10 @@ export const useSync = (
             awareness: nextAwareness,
             collabType: context.collabType,
           });
+
+          if (hadPendingDeferredCleanup) {
+            scheduleDeferredCleanup(previousDoc.guid);
+          }
 
           eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
             objectId: previousDoc.guid,
@@ -537,7 +567,7 @@ export const useSync = (
 
       setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
     },
-    [eventEmitter, registerSyncContext]
+    [eventEmitter, registerSyncContext, scheduleDeferredCleanup]
   );
 
   /**

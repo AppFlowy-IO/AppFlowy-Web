@@ -16,13 +16,25 @@ import { Log } from '@/utils/log';
 
 import { VersionList } from './DocumentHistoryVersionList';
 
+type PreviewEditorProps = Pick<
+  EditorContextState,
+  | 'loadViewMeta'
+  | 'loadView'
+  | 'createRow'
+  | 'bindViewSync'
+  | 'eventEmitter'
+  | 'getMentionUser'
+  | 'getViewIdFromDatabaseId'
+  | 'loadDatabaseRelations'
+>;
+
 type VersionPreviewBodyProps = {
   loading: boolean;
   error: string | null;
   activeDoc: Y.Doc | null;
   workspaceId?: string;
   viewId: string;
-} & Partial<Omit<EditorContextState, 'workspaceId' | 'viewId' | 'readOnly'>>;
+} & PreviewEditorProps;
 
 const VersionPreviewBody = memo(function VersionPreviewBody({
   loading,
@@ -78,7 +90,14 @@ export function DocumentHistoryModal({
     getCollabHistory,
     previewCollabVersion,
     revertCollabVersion,
-    ...props
+    loadViewMeta,
+    loadView,
+    createRow,
+    bindViewSync,
+    eventEmitter,
+    getMentionUser,
+    getViewIdFromDatabaseId,
+    loadDatabaseRelations,
   } = useAppHandlers();
   const workspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
@@ -95,6 +114,27 @@ export function DocumentHistoryModal({
   const [isRestoring, setIsRestoring] = useState(false);
   const selectedVersionIdRef = useRef(selectedVersionId);
   const activeViewIdRef = useRef(viewId);
+  const previewEditorProps = useMemo<PreviewEditorProps>(() => {
+    return {
+      loadViewMeta,
+      loadView,
+      createRow,
+      bindViewSync,
+      eventEmitter,
+      getMentionUser,
+      getViewIdFromDatabaseId,
+      loadDatabaseRelations,
+    };
+  }, [
+    loadViewMeta,
+    loadView,
+    createRow,
+    bindViewSync,
+    eventEmitter,
+    getMentionUser,
+    getViewIdFromDatabaseId,
+    loadDatabaseRelations,
+  ]);
 
   const visibleVersions = useMemo(() => {
     let filtered = [...versions];
@@ -143,8 +183,10 @@ export function DocumentHistoryModal({
         return [];
       }
 
-      setVersions(data);
-      return data;
+      const activeVersions = data.filter((version) => !version.isDeleted);
+
+      setVersions(activeVersions);
+      return activeVersions;
     } catch (error) {
       if (activeViewIdRef.current !== requestViewId) {
         return [];
@@ -211,7 +253,9 @@ export function DocumentHistoryModal({
     void refreshVersions();
   }, [open, refreshVersions]);
 
-  selectedVersionIdRef.current = selectedVersionId;
+  useEffect(() => {
+    selectedVersionIdRef.current = selectedVersionId;
+  }, [selectedVersionId]);
 
   useEffect(() => {
     activeViewIdRef.current = viewId;
@@ -317,7 +361,7 @@ export function DocumentHistoryModal({
               activeDoc={activeDoc}
               workspaceId={workspaceId}
               viewId={viewId}
-              {...(props as Partial<Omit<EditorContextState, 'workspaceId' | 'viewId' | 'readOnly'>>)}
+              {...previewEditorProps}
             />
           </div>
         </div>
