@@ -86,6 +86,13 @@ describe('HTML copy utils', () => {
     expect(output).toBe(`Case discussion: John\nKey point one\nKey point two\nKey point three`);
   });
 
+  it('should preserve non-reference caret content like x^2 and word^5', () => {
+    const input = `Math formula: x^2 + y^3\nToken: word^5\nReference: cited ^8`;
+    const output = stripTranscriptReferences(input);
+
+    expect(output).toBe(`Math formula: x^2 + y^3\nToken: word^5\nReference: cited`);
+  });
+
   it('should strip split-line references like "^" then "2"', () => {
     const input = `DISCUSSION SUMMARY\nKey point: Text line\n^\n2\nNext line ^\n10`;
     const output = stripTranscriptReferences(input);

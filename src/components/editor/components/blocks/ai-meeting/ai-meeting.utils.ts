@@ -72,8 +72,9 @@ export const stripTranscriptReferences = (text: string) => {
     }
 
     const cleaned = current
-      .replace(/\s*\^\d+\b/g, '')
-      .replace(/\s*\^(?=\s|$)/g, '')
+      // Remove citation-like markers (e.g. " ^5" or "(^5)") but keep math/text like "x^2" / "word^5".
+      .replace(/(^|[^A-Za-z0-9])\^\d+\b/g, '$1')
+      .replace(/(^|[^A-Za-z0-9])\^(?=\s|$)/g, '$1')
       .trimEnd();
 
     sanitizedLines.push(cleaned);
