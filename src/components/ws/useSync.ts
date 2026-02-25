@@ -20,6 +20,17 @@ import { Log } from '@/utils/log';
 
 import ICollabMessage = collab.ICollabMessage;
 
+type SyncDocMeta = {
+  object_id?: string;
+  _collabType?: Types;
+  _syncBound?: boolean;
+};
+
+type CollabDocResetPayload = {
+  objectId: string;
+  doc: YDoc;
+};
+
 export interface RegisterSyncContext {
   /**
    * The Y.Doc instance to be used for collaboration.
@@ -83,12 +94,19 @@ const versionChanged = (context: SyncContext, message: collab.ICollabMessage): b
   }
 }
 
-export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eventEmitter?: EventEmitter): SyncContextType => {
+export const useSync = (
+  ws: AppflowyWebSocketType,
+  bc: BroadcastChannelType,
+  eventEmitter?: EventEmitter,
+  workspaceId?: string
+): SyncContextType => {
   const { sendMessage, lastMessage } = ws;
   const { postMessage, lastBroadcastMessage } = bc;
   const registeredContexts = useRef<Map<string, SyncContext>>(new Map());
   const contextRefCounts = useRef<Map<string, number>>(new Map());
   const destroyListeners = useRef<Map<string, { doc: Y.Doc; handler: () => void }>>(new Map());
+  // Docs in this set should unregister without flushing queued local updates.
+  const skipFlushOnDestroy = useRef<Set<string>>(new Set());
   const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
@@ -269,13 +287,16 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
     return nextRefCount;
   }, []);
 
-  const unregisterSyncContext = useCallback((objectId: string) => {
+  const unregisterSyncContext = useCallback((objectId: string, options?: { flushPending?: boolean }) => {
     const ctx = registeredContexts.current.get(objectId);
 
     if (!ctx) return;
 
-    // Flush pending local updates before removing observers
-    if (ctx.flush) {
+    if (options?.flushPending === false) {
+      // Version reset/revert path: drop stale updates instead of replaying them.
+      ctx.discardPendingUpdates?.();
+    } else if (ctx.flush) {
+      // Standard path: flush pending local updates before removing observers.
       ctx.flush();
     }
 
@@ -362,9 +383,12 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
       registeredContexts.current.set(syncContext.doc.guid, syncContext);
       const handleDocDestroy = () => {
-        // Reuse normal teardown so pending debounced updates are flushed first.
-        cancelDeferredCleanup(syncContext.doc.guid);
-        unregisterSyncContext(syncContext.doc.guid);
+        const objectId = syncContext.doc.guid;
+        const flushPending = !skipFlushOnDestroy.current.has(objectId);
+
+        cancelDeferredCleanup(objectId);
+        skipFlushOnDestroy.current.delete(objectId);
+        unregisterSyncContext(objectId, { flushPending });
       };
 
       syncContext.doc.on('destroy', handleDocDestroy);
@@ -412,29 +436,44 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
       if (context) {
         if (options?.allowVersionReset && versionChanged(context, message)) {
           const newVersion = message.update?.version || message.syncRequest?.version || undefined;
+          const previousDoc = context.doc as YDoc & SyncDocMeta;
 
           Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
-          context.doc.emit('reset', [context, newVersion]);
-          context.doc.destroy();
+          previousDoc.emit('reset', [context, newVersion]);
+          context.discardPendingUpdates?.();
+          skipFlushOnDestroy.current.add(previousDoc.guid);
+          previousDoc.destroy();
 
           if (options?.isCancelled?.()) {
             return;
           }
 
-          await deleteDB(context.doc.guid);
+          await deleteDB(previousDoc.guid);
 
           if (options?.isCancelled?.()) {
             return;
           }
 
-          const doc = await openCollabDB(context.doc.guid, { expectedVersion: newVersion, currentUser: options?.user?.uid });
-          const awareness = new awarenessProtocol.Awareness(doc);
+          const nextDoc = (await openCollabDB(previousDoc.guid, {
+            expectedVersion: newVersion,
+            currentUser: options?.user?.uid,
+          })) as YDoc & SyncDocMeta;
+          const awareness = new awarenessProtocol.Awareness(nextDoc);
+
+          nextDoc.object_id = previousDoc.object_id;
+          nextDoc._collabType = previousDoc._collabType;
+          nextDoc._syncBound = true;
 
           context = registerSyncContext({
-            doc: awareness.doc,
+            doc: nextDoc,
             awareness,
             collabType: context.collabType,
           });
+
+          eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
+            objectId: previousDoc.guid,
+            doc: context.doc,
+          } satisfies CollabDocResetPayload);
         }
 
         handleMessage(context, message);
@@ -447,7 +486,7 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
       setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
     },
-    [registerSyncContext]
+    [eventEmitter, registerSyncContext]
   );
 
   /**
@@ -567,19 +606,35 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
 
   const revertCollabVersion = useCallback(async (viewId: string, version: string) => {
     const context = registeredContexts.current.get(viewId);
+    const activeWorkspaceId = workspaceId || currentUser?.latestWorkspaceId;
 
-    if (currentUser && context) {
-      const { docState } = await http.revertCollabVersion(currentUser.latestWorkspaceId, viewId, context.collabType, version);
+    if (currentUser && context && activeWorkspaceId) {
+      const previousDoc = context.doc as YDoc & SyncDocMeta;
+      const { docState, version: serverVersion } = await http.revertCollabVersion(
+        activeWorkspaceId,
+        viewId,
+        context.collabType,
+        version
+      );
+      const nextVersion = serverVersion || version;
 
-      Log.debug('Collab version changed:', viewId, context.doc.version, version);
-      context.doc.emit('reset', [context, version]);
-      context.doc.destroy();
+      Log.debug('Collab version changed:', viewId, context.doc.version, nextVersion);
+      previousDoc.emit('reset', [context, nextVersion]);
+      context.discardPendingUpdates?.();
+      skipFlushOnDestroy.current.add(previousDoc.guid);
+      previousDoc.destroy();
 
-      await deleteDB(viewId);
+      await deleteDB(previousDoc.guid);
 
-      const doc = await openCollabDB(context.doc.guid, { expectedVersion: version, currentUser: currentUser.uid });
+      const doc = (await openCollabDB(previousDoc.guid, {
+        expectedVersion: nextVersion,
+        currentUser: currentUser.uid,
+      })) as YDoc & SyncDocMeta;
 
       Y.applyUpdate(doc, docState);
+      doc.object_id = previousDoc.object_id;
+      doc._collabType = previousDoc._collabType;
+      doc._syncBound = true;
       const awareness = new awarenessProtocol.Awareness(doc);
 
       registerSyncContext({
@@ -587,10 +642,15 @@ export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eve
         awareness,
         collabType: context.collabType,
       });
+
+      eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
+        objectId: previousDoc.guid,
+        doc,
+      } satisfies CollabDocResetPayload);
     } else {
       await deleteDB(viewId);
     }
-  }, [currentUser, registerSyncContext]);
+  }, [workspaceId, currentUser, eventEmitter, registerSyncContext]);
 
   return { registerSyncContext, lastUpdatedCollab, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
 };

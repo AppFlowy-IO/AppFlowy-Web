@@ -95,6 +95,7 @@ export function DocumentHistoryModal({
   const previewYDocRef = useRef<Map<string, Y.Doc>>(new Map());
   const [activeDoc, setActiveDoc] = useState<Y.Doc | null>(null);
   const [isRestoring, setIsRestoring] = useState(false);
+  const selectedVersionIdRef = useRef(selectedVersionId);
 
   const visibleVersions = useMemo(() => {
     let filtered = [...versions];
@@ -127,15 +128,6 @@ export function DocumentHistoryModal({
     return filtered;
   }, [versions, onlyShowMine, currentUser, dateFilter]);
 
-  const authorMap = useMemo(() => {
-    const map = new Map<string, MentionablePerson>();
-
-    mentionables.forEach((user) => {
-      map.set(user.person_id, user);
-    });
-    return map;
-  }, [mentionables]);
-
   const refreshVersions = useCallback(async () => {
     if (!viewId || !getCollabHistory) {
       return [];
@@ -161,7 +153,7 @@ export function DocumentHistoryModal({
   }, []);
 
   const refreshAuthors = useCallback(async () => {
-    if (!open || !loadMentionableUsers) {
+    if (!loadMentionableUsers) {
       return;
     }
 
@@ -172,7 +164,7 @@ export function DocumentHistoryModal({
     } catch (error) {
       console.error('Failed to load mentionable users', error);
     }
-  }, [loadMentionableUsers, open]);
+  }, [loadMentionableUsers]);
 
   const handleRestore = useCallback(async () => {
     if (!viewId || !selectedVersionId || !revertCollabVersion) {
@@ -203,6 +195,8 @@ export function DocumentHistoryModal({
     }
   }, [viewId, selectedVersionId, revertCollabVersion, refreshVersions]);
 
+  const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -219,11 +213,13 @@ export function DocumentHistoryModal({
     void refreshAuthors();
   }, [open, refreshAuthors]);
 
+  selectedVersionIdRef.current = selectedVersionId;
+
   useEffect(() => {
-    if (visibleVersions.length > 0 && !visibleVersions.some((v) => v.versionId === selectedVersionId)) {
+    if (visibleVersions.length > 0 && !visibleVersions.some((v) => v.versionId === selectedVersionIdRef.current)) {
       setSelectedVersionId(visibleVersions[0].versionId);
     }
-  }, [visibleVersions, selectedVersionId]);
+  }, [visibleVersions]);
 
   useEffect(() => {
     if (!open) {
@@ -298,14 +294,13 @@ export function DocumentHistoryModal({
             versions={visibleVersions}
             selectedVersionId={selectedVersionId}
             onSelect={setSelectedVersionId}
-            authorMap={authorMap}
             dateFilter={dateFilter}
             onlyShowMine={onlyShowMine}
             onDateFilterChange={handleSetDateFilter}
             onOnlyShowMineChange={setOnlyShowMine}
             onRestoreClicked={handleRestore}
             isRestoring={isRestoring}
-            onClose={() => onOpenChange(false)}
+            onClose={handleClose}
             isPro={isPro}
           />
         </div>

@@ -19,7 +19,7 @@ type DexieTables = ViewMetasTable & UserTable & rowTable & WorkspaceMemberProfil
 export type Dexie<T = DexieTables> = BaseDexie & T;
 
 export const db = new BaseDexie(`${databasePrefix}_cache`) as Dexie;
-const schema = Object.assign({}, { ...viewMetasSchema, ...userSchema, ...rowSchema, ...versionSchema });
+const _schema = Object.assign({}, { ...viewMetasSchema, ...userSchema, ...rowSchema, ...versionSchema });
 
 // Version 1: Initial schema with view_metas, users, and rows
 db.version(1).stores({
@@ -127,24 +127,12 @@ export interface OpenCollabOptions {
   currentUser?: string;
 }
 
-export interface OpenCollabOptions {
-  /**
-   * Define what version collab should have when loaded from IndexedDB.
-   * If the persisted version is different, it will be removed as outdated.
-   */
-  expectedVersion?: string;
-  /**
-   * Define current user UID. If provided that value will be written into
-   * the document data itself and used in the future for associating Yjs document
-   * changes with specific users.
-   */
-  currentUser?: string;
-}
-
 /**
  * Open the collaboration database, and return a function to close it
  */
 export async function openCollabDB(name: string, options: OpenCollabOptions = {}): Promise<YDoc> {
+  // `name` is the canonical collab object id for this local IndexedDB-backed doc.
+  // Set Y.Doc guid to the same value so reopen/close/sync paths address the same document identity.
   const doc = new Y.Doc({
     guid: name,
   }) as YDoc;
@@ -187,11 +175,10 @@ export async function openCollabDBWithProvider(
     alreadyOpened: openedSet.has(name),
   });
 
+  // Keep guid equal to `name` because provider persistence and sync registration use this object id.
   const doc = new Y.Doc({
     guid: name,
   }) as YDoc;
-
-  doc.version = options?.expectedVersion;
 
   await ensureYjsStores(name);
 
@@ -201,20 +188,22 @@ export async function openCollabDBWithProvider(
   });
 
   let provider = new IndexeddbPersistence(name, doc);
+  let version = await provider.get(name + '/version');
 
-  doc.version = options?.expectedVersion;
-
-  let resolve: (value: unknown) => void;
-  const promise = new Promise((resolveFn) => {
-    resolve = resolveFn;
+  let resolveSync: (() => void) | null = null;
+  const syncPromise = new Promise<void>((resolveFn) => {
+    resolveSync = resolveFn;
   });
 
-  if (options?.expectedVersion && doc.version !== options.expectedVersion) {
+  if (options?.expectedVersion && version !== options.expectedVersion) {
     // version was provided and it differs from the one we persisted
     await provider.clearData();
     provider = new IndexeddbPersistence(name, doc);
     await provider.set(name + '/version', options.expectedVersion);
+    version = options.expectedVersion;
   }
+
+  doc.version = version;
 
   provider.on('synced', () => {
     Log.debug('[DB] openCollabDBWithProvider synced', {
@@ -226,10 +215,19 @@ export async function openCollabDBWithProvider(
     if (!openedSet.has(name)) {
       openedSet.add(name);
     }
+
+    if (resolveSync) {
+      resolveSync();
+      resolveSync = null;
+    }
   });
 
   if (options?.awaitSync !== false) {
-    await promise;
+    // In most paths this is resolved by the provider 'synced' callback.
+    // Keep a fallback for cases where sync already completed before listener work.
+    if (!(provider as unknown as { synced?: boolean }).synced) {
+      await syncPromise;
+    }
   }
 
   Log.debug('[DB] openCollabDBWithProvider ready', {
@@ -247,6 +245,7 @@ export async function closeCollabDB(name: string) {
     openedSet.delete(name);
   }
 
+  // Recreate a doc with the same guid/name to destroy the exact persisted provider instance for that object.
   const doc = new Y.Doc({
     guid: name,
   });

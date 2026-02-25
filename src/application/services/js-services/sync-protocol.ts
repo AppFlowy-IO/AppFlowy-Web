@@ -28,6 +28,11 @@ export interface SyncContext {
    */
   flush?: () => void;
   /**
+   * Drop queued local updates without sending them.
+   * Used by version reset flows where pending updates are stale and must be discarded.
+   */
+  discardPendingUpdates?: () => void;
+  /**
    * Cleanup function to remove update/awareness observers and cancel debounced sends.
    * Set by initSync, called during deferred sync context cleanup.
    */
@@ -163,6 +168,11 @@ export const initSync = (ctx: SyncContext) => {
     debounced.flush();
   };
 
+  ctx.discardPendingUpdates = () => {
+    debounced.cancel();
+    updates.length = 0;
+  };
+
   const onUpdate = (update: Uint8Array, origin: string) => {
     if (origin === 'remote') {
       return; // Ignore remote updates
@@ -175,8 +185,8 @@ export const initSync = (ctx: SyncContext) => {
   const onDestroy = () => {
     // when switching versions, we destroy previous instance of the document
     // at this point all stashed updates are no longer valid
-    updates.length = 0;
-  }
+    ctx.discardPendingUpdates?.();
+  };
 
   doc.on('update', onUpdate);
   doc.on('destroy', onDestroy);
@@ -228,13 +238,15 @@ export const initSync = (ctx: SyncContext) => {
 
   // Build a single cleanup function that tears down all observers
   const cleanup = () => {
-    debounced.cancel();
+    ctx.discardPendingUpdates?.();
     doc.off('update', onUpdate);
+    doc.off('destroy', onDestroy);
     if (awareness && onAwarenessChange) {
       awareness.off('change', onAwarenessChange);
     }
 
     ctx.flush = undefined;
+    ctx.discardPendingUpdates = undefined;
   };
 
   ctx._cleanup = cleanup;

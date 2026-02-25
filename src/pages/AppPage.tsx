@@ -318,6 +318,37 @@ function AppPage() {
     }
   }, [doc, viewId, syncBound, bindViewSync]);
 
+  useEffect(() => {
+    if (!eventEmitter) return;
+
+    const handleCollabDocReset = ({ objectId, doc: nextDoc }: { objectId: string; doc: YDoc }) => {
+      setDoc((currentDoc) => {
+        if (!currentDoc || currentDoc.guid !== objectId) {
+          return currentDoc;
+        }
+
+        const currentDocWithMeta = currentDoc as YDocWithMeta;
+        const nextDocWithMeta = nextDoc as YDocWithMeta;
+
+        if (!nextDocWithMeta.object_id) {
+          nextDocWithMeta.object_id = currentDocWithMeta.object_id;
+        }
+
+        if (nextDocWithMeta._collabType === undefined) {
+          nextDocWithMeta._collabType = currentDocWithMeta._collabType;
+        }
+
+        nextDocWithMeta._syncBound = true;
+        return nextDoc;
+      });
+    };
+
+    eventEmitter.on(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    return () => {
+      eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    };
+  }, [eventEmitter]);
+
   const viewMeta: ViewMetaProps | null = useMemo(() => {
     if (view) {
       return {

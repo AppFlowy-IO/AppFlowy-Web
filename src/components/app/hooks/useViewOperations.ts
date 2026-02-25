@@ -60,6 +60,8 @@ export function useViewOperations() {
     async (workspaceId: string, databaseStorageId: string) => {
       const doc = await openCollabDB(databaseStorageId);
 
+      // Workspace-database sync is keyed by `databaseStorageId` (not workspaceId).
+      // Keep guid aligned with the collab object id used by providers and sync routing.
       doc.guid = databaseStorageId;
       const { doc: workspaceDatabaseDoc } = registerSyncContext({ doc, collabType: Types.WorkspaceDatabase });
 
@@ -317,7 +319,9 @@ export function useViewOperations() {
             throw new Error('Database not found');
           }
 
-          doc.guid = id;
+          // Database views (grid/board/calendar, etc.) share one underlying database collab object.
+          // Use databaseId as guid so all layouts attach to the same sync channel and cache entry.
+          doc.guid = databaseId;
         }
 
         // Store metadata on doc for deferred sync binding
@@ -428,6 +432,8 @@ export function useViewOperations() {
           throw new Error('Failed to create row doc');
         }
 
+        // Row collaboration is scoped to the row object itself.
+        // Use rowId as guid; databaseId remains contextual metadata in rowKey.
         doc.guid = rowId;
 
         Log.debug('[Database] row sync bind start', {

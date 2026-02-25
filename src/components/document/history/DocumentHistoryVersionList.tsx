@@ -3,7 +3,6 @@ import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { CollabVersionRecord } from '@/application/collab-version.type';
-import { MentionablePerson } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as FilterIcon } from '@/assets/icons/filter.svg';
@@ -41,7 +40,6 @@ export function VersionList({
   selectedVersionId: string;
   onSelect: (versionId: string) => void;
   isPro: boolean;
-  authorMap: Map<string, MentionablePerson>;
   dateFilter: 'all' | 'last7Days' | 'last30Days' | 'last60Days';
   onlyShowMine: boolean;
   onDateFilterChange: (filter: 'all' | 'last7Days' | 'last30Days' | 'last60Days') => void;
