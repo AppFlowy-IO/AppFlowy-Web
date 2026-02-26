@@ -129,9 +129,6 @@ export const useSync = (
   // in-flight reset tasks. This is intentionally not authoritative/persisted state:
   // source of truth is `context.doc.version` plus IndexedDB `<objectId>/version`.
   const latestIncomingVersionRef = useRef<Map<string, string>>(new Map());
-  // Serialize incoming collab handling per objectId:
-  // keep strict in-order application for one doc while avoiding
-  // cross-document head-of-line blocking during slow reset/open paths.
   const incomingMessageQueuesRef = useRef<Map<string, ICollabMessage[]>>(new Map());
   const processingObjectIdsRef = useRef<Set<string>>(new Set());
   const latestUserRef = useRef<User | undefined>(undefined);
@@ -151,6 +148,8 @@ export const useSync = (
   }, [currentUser]);
 
   useEffect(() => {
+    isDisposedRef.current = false;
+
     return () => {
       isDisposedRef.current = true;
       incomingMessageQueuesRef.current.clear();
