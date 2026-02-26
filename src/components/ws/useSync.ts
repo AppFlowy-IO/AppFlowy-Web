@@ -2,7 +2,6 @@ import EventEmitter from 'events';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { validate as uuidValidate } from 'uuid';
-import { IndexeddbPersistence } from 'y-indexeddb';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
@@ -95,38 +94,16 @@ const versionChanged = (context: SyncContext, message: collab.ICollabMessage): b
   const incomingVersion = message.update?.version || message.syncRequest?.version || null;
   const localVersion = context.doc.version;
 
-  // Legacy local docs may not have a persisted version yet.
-  // Only trigger destructive reset when both versions are known and different.
+  // treat "incoming version known + local version unknown" as mismatch and reset.
   if (!isCollabVersionId(incomingVersion)) {
     return false;
   }
 
   if (!isCollabVersionId(localVersion)) {
-    return false;
+    return true;
   }
 
   return incomingVersion !== localVersion;
-};
-
-const persistLearnedVersion = async (objectId: string, version: string): Promise<void> => {
-  const provider = new IndexeddbPersistence(
-    objectId,
-    new Y.Doc({
-      guid: objectId,
-    })
-  );
-
-  try {
-    await provider.set(objectId + '/version', version);
-  } catch (error) {
-    Log.warn('[useSync] Failed to persist learned collab version', { objectId, version, error });
-  } finally {
-    try {
-      await provider.destroy();
-    } catch (error) {
-      Log.warn('[useSync] Failed to cleanup version persistence provider', { objectId, error });
-    }
-  }
 };
 
 export const useSync = (
@@ -528,19 +505,6 @@ export const useSync = (
           handleMessage(activeContext, message);
           return true;
         };
-
-        // Migrate legacy docs with unknown local version to the incoming server version
-        // without clearing local cached state.
-        if (isCollabVersionId(incomingVersion)) {
-          const localVersion = context.doc.version;
-
-          if (!isCollabVersionId(localVersion)) {
-            context.doc.version = incomingVersion;
-            // Persist learned version so legacy caches don't revert to "unknown version"
-            // after reload and accidentally skip version-reset safeguards.
-            void persistLearnedVersion(context.doc.guid, incomingVersion);
-          }
-        }
 
         if (options?.allowVersionReset && versionChanged(context, message)) {
           if (options?.isCancelled?.()) {

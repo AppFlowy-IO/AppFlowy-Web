@@ -229,6 +229,92 @@ describe('useSync version-gated message handling', () => {
     doc.destroy();
   });
 
+  it('resets unknown local version on sync request with known remote version', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '55555555-5555-4555-8555-555555555555';
+    const incomingVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b011';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
+    nextDoc.version = incomingVersion;
+    mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    const message = {
+      objectId,
+      collabType: Types.Document,
+      syncRequest: {
+        version: incomingVersion,
+      },
+    };
+
+    act(() => {
+      ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(mockedOpenCollabDB).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedOpenCollabDB).toHaveBeenCalledWith(objectId, {
+      expectedVersion: incomingVersion,
+      currentUser: undefined,
+    });
+    expect(doc.version).toBeUndefined();
+
+    unmount();
+    doc.destroy();
+    nextDoc.destroy();
+  });
+
+  it('resets unknown local version on update with known remote version', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '55555555-5555-4555-8555-555555555556';
+    const incomingVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b012';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
+    nextDoc.version = incomingVersion;
+    mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    const message = {
+      objectId,
+      collabType: Types.Document,
+      update: {
+        version: incomingVersion,
+      },
+    };
+
+    act(() => {
+      ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(mockedOpenCollabDB).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedOpenCollabDB).toHaveBeenCalledWith(objectId, {
+      expectedVersion: incomingVersion,
+      currentUser: undefined,
+    });
+    expect(doc.version).toBeUndefined();
+
+    unmount();
+    doc.destroy();
+    nextDoc.destroy();
+  });
+
   it('applies only the latest version update during concurrent reset handling', async () => {
     const ws = createWs();
     const bc = createBroadcastChannel();
