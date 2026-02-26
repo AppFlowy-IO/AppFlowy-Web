@@ -234,14 +234,11 @@ describe('Document Version History', () => {
       VersionHistorySelectors.restoreButton().should('be.visible').and('not.be.disabled').click();
 
       testLog.step(7, 'Wait for restore to complete');
-      // After a successful restore the modal stays open but refreshes the version list.
-      // The restore button should become enabled again once the operation finishes.
-      VersionHistorySelectors.restoreButton({ timeout: 30000 }).should('not.be.disabled');
+      // After a successful restore the modal closes.
+      VersionHistorySelectors.modal({ timeout: 30000 }).should('not.exist');
       waitForReactUpdate(2000);
 
-      testLog.step(8, 'Close version history and verify document is still accessible');
-      VersionHistorySelectors.closeButton().click();
-      VersionHistorySelectors.modal().should('not.exist');
+      testLog.step(8, 'Verify document is still accessible');
 
       // Verify the editor is still visible and functional
       EditorSelectors.slateEditor().should('be.visible');
