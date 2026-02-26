@@ -22,6 +22,7 @@ import ICollabMessage = collab.ICollabMessage;
 
 type SyncDocMeta = {
   object_id?: string;
+  view_id?: string;
   _collabType?: Types;
   _syncBound?: boolean;
 };
@@ -637,6 +638,7 @@ export const useSync = (
                 context.collabType === Types.Document ? new awarenessProtocol.Awareness(nextDoc) : undefined;
 
               nextDoc.object_id = previousDoc.object_id;
+              nextDoc.view_id = previousDoc.view_id;
               nextDoc._collabType = previousDoc._collabType;
               nextDoc._syncBound = true;
 
@@ -652,7 +654,7 @@ export const useSync = (
 
               eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
                 objectId: previousDoc.guid,
-                viewId: previousDoc.object_id,
+                viewId: previousDoc.view_id ?? previousDoc.object_id,
                 doc: context.doc,
                 awareness: nextAwareness,
               } satisfies CollabDocResetPayload);
@@ -860,6 +862,7 @@ export const useSync = (
         skipFlushOnDestroy.current.add(previousDoc.guid);
         previousDoc.destroy();
         doc.object_id = previousDoc.object_id;
+        doc.view_id = previousDoc.view_id;
         doc._collabType = previousDoc._collabType;
         doc._syncBound = true;
         const nextAwareness = context.collabType === Types.Document ? new awarenessProtocol.Awareness(doc) : undefined;
@@ -872,7 +875,7 @@ export const useSync = (
 
         eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
           objectId: previousDoc.guid,
-          viewId: previousDoc.object_id,
+          viewId: previousDoc.view_id ?? previousDoc.object_id,
           doc,
           awareness: nextAwareness,
         } satisfies CollabDocResetPayload);

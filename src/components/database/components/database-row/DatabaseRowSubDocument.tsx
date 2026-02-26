@@ -343,6 +343,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         const docWithMeta = doc as YDocWithMeta;
 
         docWithMeta.object_id = documentId;
+        docWithMeta.view_id = documentId;
         docWithMeta._collabType = Types.Document;
         docWithMeta._syncBound = false;
 
@@ -386,6 +387,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         const docWithMeta = doc as YDocWithMeta;
 
         docWithMeta.object_id = documentId;
+        docWithMeta.view_id = documentId;
         docWithMeta._collabType = Types.Document;
         docWithMeta._syncBound = false;
 
@@ -768,12 +770,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     }
 
     const docWithMeta = doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
 
-    if (docWithMeta.object_id && docWithMeta.object_id !== documentId) {
+    if (docViewId && docViewId !== documentId) {
       Log.debug('[DatabaseRowSubDocument] bindViewSync doc id mismatch', {
         rowId,
         documentId,
         objectId: docWithMeta.object_id,
+        viewId: docViewId,
       });
       return;
     }

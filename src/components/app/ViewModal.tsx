@@ -140,14 +140,14 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
   // Load document
   const loadPageDoc = useCallback(
-    async (id: string) => {
+    async (targetViewId: string) => {
       setNotFound(false);
       setDoc(undefined);
       setSyncBound(false);
       try {
-        const loadedDoc = await loadView(id, false, true);
+        const loadedDoc = await loadView(targetViewId, false, true);
 
-        setDoc({ doc: loadedDoc, id });
+        setDoc({ doc: loadedDoc, id: targetViewId });
       } catch (e) {
         setNotFound(true);
         console.error('[ViewModal] Failed to load document:', e);
@@ -208,8 +208,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     if (!doc || !bindViewSync || syncBound) return;
 
     const docWithMeta = doc.doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
 
-    if (docWithMeta.object_id !== doc.id) {
+    if (docViewId !== doc.id) {
       return;
     }
 

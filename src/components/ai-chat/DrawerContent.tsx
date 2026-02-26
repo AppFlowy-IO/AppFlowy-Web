@@ -53,19 +53,18 @@ function DrawerContent({
     setEditor(editor);
   }, []);
 
-  const loadPageDoc = useCallback(async(id: string) => {
+  const loadPageDoc = useCallback(async (targetViewId: string) => {
     setNotFound(false);
     setDoc(undefined);
     setSyncBound(false);
     try {
-      const doc = await loadView(id);
+      const doc = await loadView(targetViewId);
 
-      setDoc({ doc, id });
-    } catch(e) {
+      setDoc({ doc, id: targetViewId });
+    } catch (e) {
       setNotFound(true);
       console.error(e);
     }
-
   }, [loadView]);
 
   const view = useAppView(openViewId);
@@ -83,8 +82,9 @@ function DrawerContent({
     if (!doc || !bindViewSync || syncBound) return;
 
     const docWithMeta = doc.doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
 
-    if (docWithMeta.object_id !== doc.id) {
+    if (docViewId !== doc.id) {
       return;
     }
 

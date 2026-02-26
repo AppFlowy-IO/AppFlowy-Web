@@ -419,24 +419,30 @@ export enum YjsDatabaseKey {
  * YDoc extends Y.Doc with AppFlowy-specific properties.
  *
  * Document Identification:
- * - `object_id`: The view ID that this document belongs to. Set when loading a document
- *                via loadView(). Used to verify the document matches the current view
- *                and prevent race conditions when navigating between pages.
+ * - `object_id`: Collab object ID used by sync/persistence routing.
+ *                - Document collab: `object_id = viewId`
+ *                - Database collab: `object_id = databaseId`
+ * - `view_id`: Host view ID that currently renders this doc.
+ *              For database collab, this distinguishes grid/board/calendar layouts that
+ *              share the same underlying `object_id`.
  * - `guid`: The Y.Doc globally unique identifier. In AppFlowy, this is typically
- *           set to the viewId when creating the document via openCollabDB(viewId).
+ *           set to the same collab object ID as `object_id`.
  *           The guid is used for sync context registration and WebSocket communication.
  *
- * Note: Both `object_id` and `guid` typically contain the same viewId value, but they serve
- * different purposes:
- * - `object_id` is for React state tracking to ensure rendered content matches current route
- * - `guid` is for Yjs sync protocol and collab document identity
+ * Note:
+ * - `guid` and `object_id` should align on collab object identity.
+ * - `view_id` is the UI routing identity.
  */
 export interface YDoc extends Y.Doc {
   /**
-   * The view ID this document belongs to.
-   * Set when loading a document via loadView() to track which view the doc is for.
+   * Collab object ID used by sync/persistence routing.
    */
   object_id?: string;
+
+  /**
+   * Host view ID used by route-level/render-level guards.
+   */
+  view_id?: string;
 
   /**
    * Collab version for this document.

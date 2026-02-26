@@ -35,12 +35,12 @@ export function useDocumentLoader({
   const [syncBound, setSyncBound] = useState(false);
 
   const loadWithRetry = useCallback(
-    async (id: string, retries = 3): Promise<YDoc | null> => {
+    async (viewIdToLoad: string, retries = 3): Promise<YDoc | null> => {
       if (!loadView) return null;
 
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
-          const result = await loadView(id);
+          const result = await loadView(viewIdToLoad);
 
           if (result) return result;
         } catch (error) {
@@ -82,8 +82,9 @@ export function useDocumentLoader({
     if (!doc || !bindViewSync || syncBound) return;
 
     const docWithMeta = doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
 
-    if (docWithMeta.object_id !== viewId) return;
+    if (docViewId !== viewId) return;
 
     if (docWithMeta._syncBound) {
       setSyncBound(true);

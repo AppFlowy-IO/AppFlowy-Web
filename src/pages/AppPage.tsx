@@ -126,6 +126,11 @@ function AppPage() {
   const prevDocRef = useRef<{ doc: YDoc; guid: string; syncBound: boolean } | null>(null);
   // Track current route to guard async callbacks against stale navigation.
   const currentViewIdRef = useRef<string | undefined>(viewId);
+  const getDocViewId = useCallback((doc?: YDoc) => {
+    const docWithMeta = doc as YDocWithMeta | undefined;
+
+    return docWithMeta?.view_id ?? docWithMeta?.object_id;
+  }, []);
 
   useEffect(() => {
     docRef.current = doc;
@@ -159,8 +164,8 @@ function AppPage() {
   }, [doc, syncBound, scheduleDeferredCleanup]);
 
   const loadPageDoc = useCallback(
-    async (id: string) => {
-      loadAttemptRef.current = { viewId: id, timestamp: Date.now() };
+    async (targetViewId: string) => {
+      loadAttemptRef.current = { viewId: targetViewId, timestamp: Date.now() };
       setError(null);
 
       try {
@@ -168,10 +173,11 @@ function AppPage() {
         // 1. Opens from IndexedDB cache if available (instant)
         // 2. Fetches from server only if not cached
         // 3. Does NOT bind sync - that happens after render
-        const loadedDoc = await loadView(id, false, true);
+        const loadedDoc = await loadView(targetViewId, false, true);
 
         Log.debug('[AppPage] loadPageDoc complete, setting doc state', {
-          viewId: id,
+          viewId: targetViewId,
+          docViewId: loadedDoc.view_id,
           docObjectId: loadedDoc.object_id,
         });
 
@@ -180,7 +186,7 @@ function AppPage() {
         setDoc(loadedDoc);
 
         // Clear the attempt after successful load
-        if (loadAttemptRef.current?.viewId === id) {
+        if (loadAttemptRef.current?.viewId === targetViewId) {
           loadAttemptRef.current = null;
         }
       } catch (e) {
@@ -189,7 +195,7 @@ function AppPage() {
         setError(appError);
         console.error('[AppPage] Error loading view:', formatErrorForLogging(e));
         // Clear the attempt on error
-        if (loadAttemptRef.current?.viewId === id) {
+        if (loadAttemptRef.current?.viewId === targetViewId) {
           loadAttemptRef.current = null;
         }
       }
@@ -223,12 +229,12 @@ function AppPage() {
 
     // Skip if we already have the doc for this viewId or if a load is already in progress
     // This prevents double-loading when `view` dependency changes (e.g., outline updates)
-    if (docRef.current?.object_id === viewId || loadAttemptRef.current?.viewId === viewId) {
+    if (getDocViewId(docRef.current) === viewId || loadAttemptRef.current?.viewId === viewId) {
       return;
     }
 
     void loadPageDoc(viewId);
-  }, [loadPageDoc, viewId, layout, toView, view]);
+  }, [loadPageDoc, viewId, layout, toView, view, getDocViewId]);
 
   // Recovery: Re-trigger load if doc doesn't match viewId after timeout.
   // Acts as safety net for edge cases where initial load didn't complete.
@@ -237,7 +243,7 @@ function AppPage() {
     if (isDatabaseContainer(view)) return;
 
     // Check if doc matches current viewId
-    const docMatchesViewId = doc?.object_id === viewId;
+    const docMatchesViewId = getDocViewId(doc) === viewId;
 
     if (docMatchesViewId) return;
 
@@ -252,7 +258,7 @@ function AppPage() {
     // Use 5s delay to give slow networks sufficient time before retrying.
     const recoveryTimer = setTimeout(() => {
       // Check if doc now matches (load completed while timer was pending)
-      if (docRef.current?.object_id === viewId) {
+      if (getDocViewId(docRef.current) === viewId) {
         return;
       }
 
@@ -272,7 +278,7 @@ function AppPage() {
     }, 5000);
 
     return () => clearTimeout(recoveryTimer);
-  }, [viewId, layout, view, doc?.object_id, loadPageDoc]);
+  }, [viewId, layout, view, doc, loadPageDoc, getDocViewId]);
 
   useEffect(() => {
     if (layout === ViewLayout.AIChat) {
@@ -289,9 +295,12 @@ function AppPage() {
 
     const docWithMeta = doc as YDocWithMeta;
 
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
+
     // Verify doc matches current viewId
-    if (docWithMeta.object_id !== viewId) {
+    if (docViewId !== viewId) {
       Log.debug('[AppPage] bindViewSync skipped - doc viewId mismatch', {
+        docViewId,
         docObjectId: docWithMeta.object_id,
         viewId,
       });
@@ -305,6 +314,7 @@ function AppPage() {
 
     Log.debug('[AppPage] bindViewSync starting', {
       viewId,
+      docViewId,
       docObjectId: docWithMeta.object_id,
     });
 
@@ -329,7 +339,9 @@ function AppPage() {
         const currentDocWithMeta = currentDoc as YDocWithMeta;
 
         // Guard against cross-view replacements for shared-guid docs (e.g. database layouts).
-        if (resetViewId && currentDocWithMeta.object_id && currentDocWithMeta.object_id !== resetViewId) {
+        const currentDocViewId = currentDocWithMeta.view_id ?? currentDocWithMeta.object_id;
+
+        if (resetViewId && currentDocViewId && currentDocViewId !== resetViewId) {
           return currentDoc;
         }
 
@@ -341,6 +353,10 @@ function AppPage() {
 
         if (!nextDocWithMeta.object_id) {
           nextDocWithMeta.object_id = currentDocWithMeta.object_id;
+        }
+
+        if (!nextDocWithMeta.view_id) {
+          nextDocWithMeta.view_id = currentDocWithMeta.view_id ?? currentDocWithMeta.object_id;
         }
 
         if (nextDocWithMeta._collabType === undefined) {
@@ -396,7 +412,7 @@ function AppPage() {
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
-    const docForCurrentView = doc && doc.object_id === viewId ? doc : undefined;
+    const docForCurrentView = doc && getDocViewId(doc) === viewId ? doc : undefined;
 
     if (!docForCurrentView && layout === ViewLayout.AIChat && viewId) {
       return (
@@ -493,6 +509,7 @@ function AppPage() {
     setWordCount,
     handleUploadFile,
     scheduleDeferredCleanup,
+    getDocViewId,
   ]);
 
   useEffect(() => {

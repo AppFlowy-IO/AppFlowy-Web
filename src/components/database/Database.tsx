@@ -157,7 +157,7 @@ function Database(props: Database2Props) {
   }, [rowMap]);
 
   // Get the actual database ID from the Yjs doc, falling back to doc.guid
-  // This is critical because doc.guid might be the view ID instead of the database ID
+  // for legacy/incomplete metadata cases.
   const getDatabaseId = useCallback(() => {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section);
     const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;

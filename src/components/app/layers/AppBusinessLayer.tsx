@@ -404,8 +404,8 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
 
   // Enhanced loadView with outline context
   const enhancedLoadView = useCallback(
-    async (id: string, isSubDocument = false, loadAwareness = false) => {
-      return loadView(id, isSubDocument, loadAwareness, stableOutlineRef.current);
+    async (viewId: string, isSubDocument = false, loadAwareness = false) => {
+      return loadView(viewId, isSubDocument, loadAwareness, stableOutlineRef.current);
     },
     [loadView, stableOutlineRef]
   );
