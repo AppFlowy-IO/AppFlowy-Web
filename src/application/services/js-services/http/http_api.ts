@@ -1037,7 +1037,14 @@ export async function createCollabVersion(
 export async function deleteCollabVersion(workspaceId: string, objectId: string, version: string) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
 
-  return executeAPIVoidRequest(() => axiosInstance?.delete<APIResponse>(url, { data: version }));
+  return executeAPIVoidRequest(() =>
+    axiosInstance?.delete<APIResponse>(url, {
+      data: JSON.stringify(version),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+  );
 }
 
 export async function revertCollabVersion(workspaceId: string, objectId: string, collabType: Types, version: string) {

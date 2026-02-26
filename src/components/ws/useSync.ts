@@ -139,6 +139,7 @@ export const useSync = (
   const registeredContexts = useRef<Map<string, SyncContext>>(new Map());
   const contextRefCounts = useRef<Map<string, number>>(new Map());
   const destroyListeners = useRef<Map<string, { doc: Y.Doc; handler: () => void }>>(new Map());
+  const mappingListeners = useRef<Map<string, { doc: Y.Doc; handler: (tx: Y.Transaction, doc: Y.Doc) => void }>>(new Map());
   // Docs in this set should unregister without flushing queued local updates.
   const skipFlushOnDestroy = useRef<Set<string>>(new Set());
   const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
@@ -349,6 +350,13 @@ export const useSync = (
       destroyListeners.current.delete(objectId);
     }
 
+    const mappingListener = mappingListeners.current.get(objectId);
+
+    if (mappingListener) {
+      mappingListener.doc.off('beforeObserverCalls', mappingListener.handler);
+      mappingListeners.current.delete(objectId);
+    }
+
     registeredContexts.current.delete(objectId);
     contextRefCounts.current.delete(objectId);
     Log.debug(`Unregistered sync context for objectId ${objectId}`);
@@ -433,8 +441,7 @@ export const useSync = (
 
       if (context.collabType === Types.Document && currentUser) {
         const uid = currentUser.uid;
-
-        context.doc.on('beforeObserverCalls', (tx: Y.Transaction, doc: Y.Doc) => {
+        const onBeforeObserverCalls = (tx: Y.Transaction, doc: Y.Doc) => {
           if (!syncContext.userMappings && tx.local && tx.changed.size > 0) {
             // user mappings were not initialized and the currently committed transaction had some changes
             // made locally
@@ -444,6 +451,12 @@ export const useSync = (
             userMappings.setUserMapping(doc, doc.clientID, uid);
             syncContext.userMappings = userMappings;
           }
+        };
+
+        context.doc.on('beforeObserverCalls', onBeforeObserverCalls);
+        mappingListeners.current.set(syncContext.doc.guid, {
+          doc: context.doc,
+          handler: onBeforeObserverCalls,
         });
       }
 
@@ -614,7 +627,9 @@ export const useSync = (
                 nextDoc = new Y.Doc({
                   guid: previousDoc.guid,
                 }) as YDoc & SyncDocMeta;
-                nextDoc.version = previousDoc.version;
+                // Keep the fallback doc on the target version so the reset-triggering
+                // message can still be applied on the new active context.
+                nextDoc.version = newVersion || previousDoc.version;
                 Y.applyUpdate(nextDoc, previousDocSnapshot);
               }
 
