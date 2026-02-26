@@ -1,11 +1,31 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
+import { openCollabDB } from '@/application/db';
+import { handleMessage } from '@/application/services/js-services/sync-protocol';
 import { Types } from '@/application/types';
 
 import { BroadcastChannelType } from '../useBroadcastChannel';
 import { AppflowyWebSocketType } from '../useAppflowyWebSocket';
 import { useSync } from '../useSync';
+
+jest.mock('@/application/db', () => {
+  const actual = jest.requireActual('@/application/db');
+
+  return {
+    ...actual,
+    openCollabDB: jest.fn(actual.openCollabDB),
+  };
+});
+
+jest.mock('@/application/services/js-services/sync-protocol', () => {
+  const actual = jest.requireActual('@/application/services/js-services/sync-protocol');
+
+  return {
+    ...actual,
+    handleMessage: jest.fn(),
+  };
+});
 
 const createWs = (): AppflowyWebSocketType =>
   ({
@@ -25,6 +45,26 @@ const createDoc = (guid: string): Y.Doc => {
   doc.guid = guid;
   return doc;
 };
+
+type Deferred<T> = {
+  promise: Promise<T>;
+  resolve: (value: T) => void;
+  reject: (reason?: unknown) => void;
+};
+
+const createDeferred = <T>(): Deferred<T> => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return { promise, resolve, reject };
+};
+
+const mockedOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollabDB>;
+const mockedHandleMessage = handleMessage as jest.MockedFunction<typeof handleMessage>;
 
 describe('useSync deferred cleanup', () => {
   beforeEach(() => {
@@ -142,5 +182,122 @@ describe('useSync deferred cleanup', () => {
     expect(sendMessage).toHaveBeenCalledTimes(1);
 
     unmount();
+  });
+});
+
+describe('useSync version-gated message handling', () => {
+  beforeEach(() => {
+    jest.useRealTimers();
+    jest.clearAllMocks();
+  });
+
+  it('applies update when incoming version matches local version', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '44444444-4444-4444-8444-444444444444';
+    const version = '55555555-5555-4555-8555-555555555555';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    doc.version = version;
+
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    const message = {
+      objectId,
+      collabType: Types.Document,
+      update: {
+        version,
+      },
+    };
+
+    act(() => {
+      ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedHandleMessage.mock.calls[0]?.[1]).toBe(message);
+    expect(mockedOpenCollabDB).not.toHaveBeenCalled();
+
+    unmount();
+    doc.destroy();
+  });
+
+  it('applies only the latest version update during concurrent reset handling', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '66666666-6666-4666-8666-666666666666';
+    const oldVersion = '77777777-7777-4777-8777-777777777777';
+    const supersededVersion = '88888888-8888-4888-8888-888888888888';
+    const latestVersion = '99999999-9999-4999-8999-999999999999';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    doc.version = oldVersion;
+    const nextDocForSuperseded = createDoc(objectId) as Y.Doc & { version?: string };
+    nextDocForSuperseded.version = supersededVersion;
+    const nextDocForLatest = createDoc(objectId) as Y.Doc & { version?: string };
+    nextDocForLatest.version = latestVersion;
+    const firstResetOpen = createDeferred<Y.Doc>();
+    const secondResetOpen = createDeferred<Y.Doc>();
+
+    mockedOpenCollabDB
+      .mockImplementationOnce(() => firstResetOpen.promise as Promise<Y.Doc>)
+      .mockImplementationOnce(() => secondResetOpen.promise as Promise<Y.Doc>);
+
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    const supersededMessage = {
+      objectId,
+      collabType: Types.Document,
+      update: {
+        version: supersededVersion,
+      },
+    };
+    const latestMessage = {
+      objectId,
+      collabType: Types.Document,
+      update: {
+        version: latestVersion,
+      },
+    };
+
+    act(() => {
+      ws.lastMessage = { collabMessage: supersededMessage } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+    act(() => {
+      ws.lastMessage = { collabMessage: latestMessage } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await act(async () => {
+      firstResetOpen.resolve(nextDocForSuperseded);
+      await Promise.resolve();
+    });
+    await act(async () => {
+      secondResetOpen.resolve(nextDocForLatest);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedHandleMessage.mock.calls[0]?.[1]).toBe(latestMessage);
+    expect(mockedHandleMessage.mock.calls.some(([, message]) => message === supersededMessage)).toBe(false);
+
+    unmount();
+    doc.destroy();
+    nextDocForSuperseded.destroy();
+    nextDocForLatest.destroy();
   });
 });
