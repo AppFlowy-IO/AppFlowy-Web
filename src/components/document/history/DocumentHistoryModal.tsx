@@ -110,23 +110,9 @@ export function DocumentHistoryModal({
   const [isRestoring, setIsRestoring] = useState(false);
   const selectedVersionIdRef = useRef(selectedVersionId);
   const activeViewIdRef = useRef(viewId);
-  const previewEditorProps = useMemo<PreviewEditorProps>(() => {
-    return {
-      loadViewMeta,
-      createRow,
-      eventEmitter,
-      getMentionUser,
-      getViewIdFromDatabaseId,
-      loadDatabaseRelations,
-    };
-  }, [
-    loadViewMeta,
-    createRow,
-    eventEmitter,
-    getMentionUser,
-    getViewIdFromDatabaseId,
-    loadDatabaseRelations,
-  ]);
+
+  selectedVersionIdRef.current = selectedVersionId;
+  activeViewIdRef.current = viewId;
 
   const visibleVersions = useMemo(() => {
     let filtered = [...versions];
@@ -246,14 +232,6 @@ export function DocumentHistoryModal({
   }, [open, refreshVersions]);
 
   useEffect(() => {
-    selectedVersionIdRef.current = selectedVersionId;
-  }, [selectedVersionId]);
-
-  useEffect(() => {
-    activeViewIdRef.current = viewId;
-  }, [viewId]);
-
-  useEffect(() => {
     if (visibleVersions.length === 0) {
       if (selectedVersionIdRef.current) {
         setSelectedVersionId('');
@@ -317,7 +295,6 @@ export function DocumentHistoryModal({
   }, [open, previewCollabVersion, selectedVersionId, viewId, clearPreviewDocs]);
 
   useEffect(() => {
-    activeViewIdRef.current = viewId;
     setVersions([]);
     setSelectedVersionId('');
     setError(null);
@@ -353,7 +330,12 @@ export function DocumentHistoryModal({
               activeDoc={activeDoc}
               workspaceId={workspaceId}
               viewId={viewId}
-              {...previewEditorProps}
+              loadViewMeta={loadViewMeta}
+              createRow={createRow}
+              eventEmitter={eventEmitter}
+              getMentionUser={getMentionUser}
+              getViewIdFromDatabaseId={getViewIdFromDatabaseId}
+              loadDatabaseRelations={loadDatabaseRelations}
             />
           </div>
         </div>
