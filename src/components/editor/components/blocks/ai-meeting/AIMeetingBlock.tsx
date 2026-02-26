@@ -289,6 +289,8 @@ export const AIMeetingBlock = memo(
       );
 
       const selectedIndex = useMemo(() => {
+        if (readOnly) return 0;
+
         const raw = data.selected_tab_index;
 
         if (typeof raw === 'number' && !Number.isNaN(raw)) return raw;
@@ -300,7 +302,7 @@ export const AIMeetingBlock = memo(
         }
 
         return 0;
-      }, [data.selected_tab_index]);
+      }, [readOnly, data.selected_tab_index]);
 
       const [activeIndex, setActiveIndex] = useState(0);
 
@@ -964,18 +966,18 @@ export const AIMeetingBlock = memo(
                     })}
                   </div>
                   <div className="flex items-center gap-2">
-                    {showSummaryRegenerate && (
+                    {showSummaryRegenerate && !readOnly && (
                       <>
-                        <div className={cn('inline-flex items-stretch', readOnly || isRegeneratingSummary ? 'opacity-60' : '')}>
+                        <div className={cn('inline-flex items-stretch', isRegeneratingSummary ? 'opacity-60' : '')}>
                           <button
                             type="button"
-                            disabled={readOnly || isRegeneratingSummary}
+                            disabled={isRegeneratingSummary}
                             onClick={() => {
                               void handleRegenerateSummary();
                             }}
                             className={cn(
                               'inline-flex h-8 items-center gap-2 rounded-l-md border border-r-0 border-border-primary py-1.5 pl-4 pr-[10px] text-sm text-text-primary',
-                              readOnly || isRegeneratingSummary
+                              isRegeneratingSummary
                                 ? 'cursor-not-allowed'
                                 : 'hover:bg-fill-list-hover'
                             )}
@@ -993,11 +995,11 @@ export const AIMeetingBlock = memo(
                           </button>
                           <button
                             type="button"
-                            disabled={readOnly || isRegeneratingSummary}
+                            disabled={isRegeneratingSummary}
                             onClick={(event) => setRegenerateMenuAnchor(event.currentTarget)}
                             className={cn(
                               'inline-flex h-8 items-center rounded-r-md border border-border-primary px-3 text-text-secondary',
-                              readOnly || isRegeneratingSummary
+                              isRegeneratingSummary
                                 ? 'cursor-not-allowed'
                                 : 'hover:bg-fill-list-hover'
                             )}
