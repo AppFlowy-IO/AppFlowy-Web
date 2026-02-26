@@ -138,6 +138,8 @@ export const useSync = (
   // Docs in this set should unregister without flushing queued local updates.
   const skipFlushOnDestroy = useRef<Set<string>>(new Set());
   const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const resettingObjectIds = useRef<Set<string>>(new Set());
+  const queuedMessagesDuringReset = useRef<Map<string, ICollabMessage[]>>(new Map());
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
   const latestIncomingVersionRef = useRef<Map<string, string>>(new Map());
@@ -470,6 +472,13 @@ export const useSync = (
 
       let context = registeredContexts.current.get(objectId);
 
+      if (!context && resettingObjectIds.current.has(objectId)) {
+        const queued = queuedMessagesDuringReset.current.get(objectId) ?? [];
+
+        queued.push(message);
+        queuedMessagesDuringReset.current.set(objectId, queued);
+      }
+
       if (context) {
         let messageHandled = false;
         const handleOnActiveContext = () => {
@@ -554,28 +563,63 @@ export const useSync = (
           if (shouldAbortReset()) {
             messageHandled = handleOnActiveContext();
           } else {
-            const nextDoc = (await openCollabDB(previousDoc.guid, {
-              expectedVersion: newVersion,
-              currentUser: options?.user?.uid,
-            })) as YDoc & SyncDocMeta;
+            const hadPendingDeferredCleanup = pendingCleanups.current.has(previousDoc.guid);
+            const previousDocSnapshot = Y.encodeStateAsUpdate(previousDoc);
+            const replayQueuedMessages = async () => {
+              let queued = queuedMessagesDuringReset.current.get(objectId);
 
-            if (shouldAbortReset()) {
-              nextDoc.destroy();
-              messageHandled = handleOnActiveContext();
-            } else {
+              while (queued && queued.length > 0) {
+                queuedMessagesDuringReset.current.delete(objectId);
+                for (const queuedMessage of queued) {
+                  await applyCollabMessage(queuedMessage, {
+                    allowVersionReset: true,
+                    user: options?.user,
+                  });
+                }
+
+                queued = queuedMessagesDuringReset.current.get(objectId);
+              }
+
+              queuedMessagesDuringReset.current.delete(objectId);
+            };
+
+            // Tear down the currently active doc first to stop stale edits from being
+            // persisted while expectedVersion cache replacement is in progress.
+            previousDoc.emit('reset', [context, newVersion]);
+            context.discardPendingUpdates?.();
+            skipFlushOnDestroy.current.add(previousDoc.guid);
+            resettingObjectIds.current.add(objectId);
+            previousDoc.destroy();
+
+            try {
+              let nextDoc: YDoc & SyncDocMeta;
+
+              try {
+                nextDoc = (await openCollabDB(previousDoc.guid, {
+                  expectedVersion: newVersion,
+                  currentUser: options?.user?.uid,
+                })) as YDoc & SyncDocMeta;
+              } catch (error) {
+                // Keep the page usable if cache replacement/open fails after teardown.
+                // Rehydrate a best-effort in-memory doc from the previous snapshot so
+                // sync context remains available until the next successful reset/resync.
+                Log.warn('Failed to open replacement collab doc; recovering from previous snapshot', {
+                  objectId,
+                  error,
+                });
+                nextDoc = new Y.Doc({
+                  guid: previousDoc.guid,
+                }) as YDoc & SyncDocMeta;
+                nextDoc.version = previousDoc.version;
+                Y.applyUpdate(nextDoc, previousDocSnapshot);
+              }
+
               const nextAwareness =
                 context.collabType === Types.Document ? new awarenessProtocol.Awareness(nextDoc) : undefined;
 
               nextDoc.object_id = previousDoc.object_id;
               nextDoc._collabType = previousDoc._collabType;
               nextDoc._syncBound = true;
-              const hadPendingDeferredCleanup = pendingCleanups.current.has(previousDoc.guid);
-
-              // Keep the current doc active until the replacement doc is ready.
-              previousDoc.emit('reset', [context, newVersion]);
-              context.discardPendingUpdates?.();
-              skipFlushOnDestroy.current.add(previousDoc.guid);
-              previousDoc.destroy();
 
               context = registerSyncContext({
                 doc: nextDoc,
@@ -593,6 +637,9 @@ export const useSync = (
                 doc: context.doc,
                 awareness: nextAwareness,
               } satisfies CollabDocResetPayload);
+            } finally {
+              resettingObjectIds.current.delete(objectId);
+              await replayQueuedMessages();
             }
           }
         }
