@@ -93,13 +93,16 @@ const isCollabVersionId = (value: string | null | undefined): value is string =>
 const versionChanged = (context: SyncContext, message: collab.ICollabMessage): boolean => {
   const incomingVersion = message.update?.version || message.syncRequest?.version || null;
   const localVersion = context.doc.version;
+  const incomingKnown = isCollabVersionId(incomingVersion);
+  const localKnown = isCollabVersionId(localVersion);
 
-  // treat "incoming version known + local version unknown" as mismatch and reset.
-  if (!isCollabVersionId(incomingVersion)) {
+  // If both sides don't have a valid version, keep normal sync behavior.
+  if (!incomingKnown && !localKnown) {
     return false;
   }
 
-  if (!isCollabVersionId(localVersion)) {
+  // If only one side has a known version, treat as mismatch and reset.
+  if (!incomingKnown || !localKnown) {
     return true;
   }
 
@@ -505,14 +508,10 @@ export const useSync = (
           }
 
           const activeVersion = activeContext.doc.version;
+          const activeVersionKnown = isCollabVersionId(activeVersion);
+          const incomingVersionKnown = isCollabVersionId(incomingVersion);
 
-          if (
-            incomingVersion &&
-            activeVersion &&
-            isCollabVersionId(incomingVersion) &&
-            isCollabVersionId(activeVersion) &&
-            incomingVersion !== activeVersion
-          ) {
+          if (activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)) {
             Log.debug('Skipped collab message with mismatched version on active context', {
               objectId,
               incomingVersion,
@@ -598,10 +597,29 @@ export const useSync = (
               let nextDoc: YDoc & SyncDocMeta;
 
               try {
-                nextDoc = (await openCollabDB(previousDoc.guid, {
-                  expectedVersion: newVersion,
+                const shouldForceResetCache = !isCollabVersionId(newVersion) && isCollabVersionId(previousDoc.version);
+                const openOptions: {
+                  expectedVersion?: string;
+                  currentUser?: string;
+                  forceReset?: boolean;
+                } = {
                   currentUser: options?.user?.uid,
+                };
+
+                if (isCollabVersionId(newVersion)) {
+                  openOptions.expectedVersion = newVersion;
+                } else if (shouldForceResetCache) {
+                  openOptions.forceReset = true;
+                }
+
+                nextDoc = (await openCollabDB(previousDoc.guid, {
+                  ...openOptions,
                 })) as YDoc & SyncDocMeta;
+                if (!isCollabVersionId(newVersion)) {
+                  // Align with desktop Option<version> semantics after mismatch reset:
+                  // local doc should become version-unknown until a new authoritative version is learned.
+                  nextDoc.version = undefined;
+                }
               } catch (error) {
                 // Keep the page usable if cache replacement/open fails after teardown.
                 // Rehydrate a best-effort in-memory doc from the previous snapshot so

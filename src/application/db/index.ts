@@ -139,6 +139,12 @@ export interface OpenCollabOptions {
    */
   expectedVersion?: string;
   /**
+   * Force clearing persisted Yjs updates before reopening.
+   * Useful when the local cache must be discarded even without an expectedVersion,
+   * for example when local/remote version-known state mismatches.
+   */
+  forceReset?: boolean;
+  /**
    * Define current user UID. If provided that value will be written into
    * the document data itself and used in the future for associating Yjs document
    * changes with specific users.
@@ -161,15 +167,20 @@ export async function openCollabDB(name: string, options: OpenCollabOptions = {}
   let provider = new IndexeddbPersistence(name, doc);
   let version = await provider.get(name + '/version');
 
-  if (options.expectedVersion && version !== options.expectedVersion) {
+  if (options.forceReset || (options.expectedVersion && version !== options.expectedVersion)) {
     // version was provided and it differs from the one we persisted
     await provider.clearData();
     doc = new Y.Doc({
       guid: name,
     }) as YDoc;
     provider = new IndexeddbPersistence(name, doc);
-    await provider.set(name + '/version', options.expectedVersion);
-    version = options.expectedVersion;
+
+    if (options.expectedVersion) {
+      await provider.set(name + '/version', options.expectedVersion);
+      version = options.expectedVersion;
+    } else {
+      version = undefined;
+    }
   }
 
   doc.version = version;
@@ -187,7 +198,7 @@ export async function openCollabDB(name: string, options: OpenCollabOptions = {}
 
 export async function openCollabDBWithProvider(
   name: string,
-  options?: { awaitSync?: boolean, expectedVersion?: string }
+  options?: { awaitSync?: boolean, expectedVersion?: string, forceReset?: boolean }
 ): Promise<{ doc: YDoc; provider: IndexeddbPersistence }> {
   const startedAt = Date.now();
 
@@ -217,15 +228,20 @@ export async function openCollabDBWithProvider(
     resolveSync = resolveFn;
   });
 
-  if (options?.expectedVersion && version !== options.expectedVersion) {
+  if (options?.forceReset || (options?.expectedVersion && version !== options.expectedVersion)) {
     // version was provided and it differs from the one we persisted
     await provider.clearData();
     doc = new Y.Doc({
       guid: name,
     }) as YDoc;
     provider = new IndexeddbPersistence(name, doc);
-    await provider.set(name + '/version', options.expectedVersion);
-    version = options.expectedVersion;
+
+    if (options?.expectedVersion) {
+      await provider.set(name + '/version', options.expectedVersion);
+      version = options.expectedVersion;
+    } else {
+      version = undefined;
+    }
   }
 
   doc.version = version;
