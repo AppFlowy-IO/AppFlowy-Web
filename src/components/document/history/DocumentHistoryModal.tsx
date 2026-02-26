@@ -110,9 +110,11 @@ export function DocumentHistoryModal({
   const [isRestoring, setIsRestoring] = useState(false);
   const selectedVersionIdRef = useRef(selectedVersionId);
   const activeViewIdRef = useRef(viewId);
+  const versionsRef = useRef(versions);
 
   selectedVersionIdRef.current = selectedVersionId;
   activeViewIdRef.current = viewId;
+  versionsRef.current = versions;
 
   const visibleVersions = useMemo(() => {
     let filtered = [...versions];
@@ -200,17 +202,20 @@ export function DocumentHistoryModal({
     setIsRestoring(true);
     setError(null);
     try {
+      const versionRecord = versionsRef.current.find((v) => v.versionId === versionId);
+
+      Log.debug('[Version] Reverting document to version', { viewId, versionId, createdAt: versionRecord?.createdAt });
       await revertCollabVersion(viewId, versionId);
-      setActiveDoc(null);
-      clearPreviewDocs();
+      Log.debug('[Version] Document reverted to version', { viewId, versionId, createdAt: versionRecord?.createdAt });
 
-      const updatedVersions = await refreshVersions();
+      // Wait for the server to broadcast the reverted state over WebSocket before
+      // closing the dialog. Without this, replayQueuedMessages() inside
+      // revertCollabVersion may have re-applied in-flight messages that overwrite
+      // the revert; the network round-trip here gives the sync layer time to
+      // re-deliver the correct state so the editor shows reverted content on close.
+      await refreshVersions();
 
-      if (updatedVersions.length > 0) {
-        setSelectedVersionId(updatedVersions[0].versionId);
-      } else {
-        setSelectedVersionId('');
-      }
+      onOpenChange(false);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
 
@@ -219,7 +224,7 @@ export function DocumentHistoryModal({
     } finally {
       setIsRestoring(false);
     }
-  }, [viewId, revertCollabVersion, refreshVersions, clearPreviewDocs]);
+  }, [viewId, revertCollabVersion, refreshVersions, onOpenChange]);
 
   const handleClose = useCallback(() => onOpenChange(false), [onOpenChange]);
 
