@@ -19,9 +19,7 @@ import { VersionList } from './DocumentHistoryVersionList';
 type PreviewEditorProps = Pick<
   EditorContextState,
   | 'loadViewMeta'
-  | 'loadView'
   | 'createRow'
-  | 'bindViewSync'
   | 'eventEmitter'
   | 'getMentionUser'
   | 'getViewIdFromDatabaseId'
@@ -91,9 +89,7 @@ export function DocumentHistoryModal({
     previewCollabVersion,
     revertCollabVersion,
     loadViewMeta,
-    loadView,
     createRow,
-    bindViewSync,
     eventEmitter,
     getMentionUser,
     getViewIdFromDatabaseId,
@@ -117,9 +113,7 @@ export function DocumentHistoryModal({
   const previewEditorProps = useMemo<PreviewEditorProps>(() => {
     return {
       loadViewMeta,
-      loadView,
       createRow,
-      bindViewSync,
       eventEmitter,
       getMentionUser,
       getViewIdFromDatabaseId,
@@ -127,9 +121,7 @@ export function DocumentHistoryModal({
     };
   }, [
     loadViewMeta,
-    loadView,
     createRow,
-    bindViewSync,
     eventEmitter,
     getMentionUser,
     getViewIdFromDatabaseId,

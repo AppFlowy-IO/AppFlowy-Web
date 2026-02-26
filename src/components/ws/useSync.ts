@@ -492,8 +492,11 @@ export const useSync = (
           const newVersion = message.update?.version || message.syncRequest?.version || undefined;
           const previousDoc = context.doc as YDoc & SyncDocMeta;
           const shouldAbortReset = () => {
-            if (!options?.isCancelled?.()) {
-              return false;
+            const activeContext = registeredContexts.current.get(objectId);
+
+            // Another handler already replaced the active doc for this object.
+            if (activeContext && activeContext.doc !== previousDoc) {
+              return true;
             }
 
             const latestVersion = latestIncomingVersionRef.current.get(objectId);
@@ -508,12 +511,18 @@ export const useSync = (
               return true;
             }
 
-            const activeContext = registeredContexts.current.get(objectId);
+            if (!options?.isCancelled?.()) {
+              return false;
+            }
 
-            return !!activeContext && activeContext.doc !== previousDoc;
+            return !activeContext;
           };
 
           Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
+
+          if (shouldAbortReset()) {
+            return;
+          }
 
           const nextDoc = (await openCollabDB(previousDoc.guid, {
             expectedVersion: newVersion,
