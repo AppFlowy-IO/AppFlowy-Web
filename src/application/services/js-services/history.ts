@@ -5,7 +5,7 @@ export interface CollabVersion {
   parentId: string | null,
   name: string | null,
   createdAt: Date,
-  isDeleted: boolean,
+  deletedAt: Date | null,
   uids?: string[]
 }
 

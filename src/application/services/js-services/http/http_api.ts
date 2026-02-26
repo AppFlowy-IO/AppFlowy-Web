@@ -971,7 +971,9 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
     name: string | null;
     created_at: string;
     created_by: number | null;
-    is_deleted: boolean;
+    deleted_at?: string | null;
+    // Backward compatibility for older server payloads.
+    is_deleted?: boolean;
     editors: number[];
   }>>(() =>
     axiosInstance?.get<APIResponse<Array<{
@@ -980,7 +982,9 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       name: string | null;
       created_at: string;
       created_by: number | null;
-      is_deleted: boolean;
+      deleted_at?: string | null;
+      // Backward compatibility for older server payloads.
+      is_deleted?: boolean;
       editors: number[];
     }>>>(url, {
       params: {
@@ -995,7 +999,7 @@ export async function getCollabVersions(workspaceId: string, objectId: string, s
       parentId: data.parent,
       name: data.name,
       createdAt: new Date(data.created_at),
-      isDeleted: data.is_deleted,
+      deletedAt: data.deleted_at ? new Date(data.deleted_at) : (data.is_deleted ? new Date(0) : null),
       editors: data.editors,
     };
   });

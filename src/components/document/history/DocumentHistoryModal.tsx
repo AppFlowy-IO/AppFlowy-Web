@@ -163,7 +163,7 @@ export function DocumentHistoryModal({
         return [];
       }
 
-      const activeVersions = data.filter((version) => !version.isDeleted);
+      const activeVersions = data.filter((version) => !version.deletedAt);
 
       setVersions(activeVersions);
       return activeVersions;

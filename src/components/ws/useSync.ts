@@ -125,6 +125,9 @@ export const useSync = (
   const queuedMessagesDuringReset = useRef<Map<string, ICollabMessage[]>>(new Map());
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
+  // Transient per-tab "latest seen" incoming version used only to cancel stale
+  // in-flight reset tasks. This is intentionally not authoritative/persisted state:
+  // source of truth is `context.doc.version` plus IndexedDB `<objectId>/version`.
   const latestIncomingVersionRef = useRef<Map<string, string>>(new Map());
   const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
 

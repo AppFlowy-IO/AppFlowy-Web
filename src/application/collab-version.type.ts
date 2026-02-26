@@ -12,9 +12,10 @@ export interface CollabVersionRecord {
   name: string | null;
   createdAt: Date;
   /**
-   * Tombstoned versions are kept in history responses but should not be restorable/previewable.
+   * Tombstone timestamp from history API. Non-null means this version is deleted
+   * and should not be previewed/restored in UI.
    */
-  isDeleted?: boolean;
+  deletedAt: Date | null;
   editors: number[]
 }
 
