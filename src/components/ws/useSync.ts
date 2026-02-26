@@ -86,17 +86,21 @@ export type SyncContextType = {
   revertCollabVersion: (viewId: string, versionId: string) => Promise<void>;
 };
 
+const isCollabVersionId = (value: string | null | undefined): value is string => {
+  return typeof value === 'string' && uuidValidate(value);
+};
+
 const versionChanged = (context: SyncContext, message: collab.ICollabMessage): boolean => {
   const incomingVersion = message.update?.version || message.syncRequest?.version || null;
   const localVersion = context.doc.version;
 
   // Legacy local docs may not have a persisted version yet.
   // Only trigger destructive reset when both versions are known and different.
-  if (!incomingVersion || !uuidValidate(incomingVersion)) {
+  if (!isCollabVersionId(incomingVersion)) {
     return false;
   }
 
-  if (!localVersion || !uuidValidate(localVersion)) {
+  if (!isCollabVersionId(localVersion)) {
     return false;
   }
 
@@ -466,7 +470,7 @@ export const useSync = (
       const objectId = message.objectId!;
       const incomingVersion = message.update?.version || message.syncRequest?.version || null;
 
-      if (incomingVersion && uuidValidate(incomingVersion)) {
+      if (isCollabVersionId(incomingVersion)) {
         latestIncomingVersionRef.current.set(objectId, incomingVersion);
       }
 
@@ -493,8 +497,8 @@ export const useSync = (
           if (
             incomingVersion &&
             activeVersion &&
-            uuidValidate(incomingVersion) &&
-            uuidValidate(activeVersion) &&
+            isCollabVersionId(incomingVersion) &&
+            isCollabVersionId(activeVersion) &&
             incomingVersion !== activeVersion
           ) {
             Log.debug('Skipped collab message with mismatched version on active context', {
@@ -513,10 +517,10 @@ export const useSync = (
 
         // Migrate legacy docs with unknown local version to the incoming server version
         // without clearing local cached state.
-        if (incomingVersion && uuidValidate(incomingVersion)) {
+        if (isCollabVersionId(incomingVersion)) {
           const localVersion = context.doc.version;
 
-          if (!localVersion || !uuidValidate(localVersion)) {
+          if (!isCollabVersionId(localVersion)) {
             context.doc.version = incomingVersion;
             // Persist learned version so legacy caches don't revert to "unknown version"
             // after reload and accidentally skip version-reset safeguards.
@@ -544,8 +548,8 @@ export const useSync = (
             if (
               newVersion &&
               latestVersion &&
-              uuidValidate(newVersion) &&
-              uuidValidate(latestVersion) &&
+              isCollabVersionId(newVersion) &&
+              isCollabVersionId(latestVersion) &&
               latestVersion !== newVersion
             ) {
               return true;
