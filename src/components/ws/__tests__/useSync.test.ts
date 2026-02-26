@@ -315,7 +315,7 @@ describe('useSync version-gated message handling', () => {
     nextDoc.destroy();
   });
 
-  it('applies only the latest version update during concurrent reset handling', async () => {
+  it('processes versioned updates sequentially during reset handling', async () => {
     const ws = createWs();
     const bc = createBroadcastChannel();
     const objectId = '66666666-6666-4666-8666-666666666666';
@@ -375,15 +375,87 @@ describe('useSync version-gated message handling', () => {
     });
 
     await waitFor(() => {
-      expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+      expect(mockedHandleMessage).toHaveBeenCalledTimes(2);
     });
 
-    expect(mockedHandleMessage.mock.calls[0]?.[1]).toBe(latestMessage);
-    expect(mockedHandleMessage.mock.calls.some(([, message]) => message === supersededMessage)).toBe(false);
+    expect(mockedHandleMessage.mock.calls[0]?.[1]).toBe(supersededMessage);
+    expect(mockedHandleMessage.mock.calls[1]?.[1]).toBe(latestMessage);
 
     unmount();
     doc.destroy();
     nextDocForSuperseded.destroy();
     nextDocForLatest.destroy();
+  });
+
+  it('does not block other object updates when one object reset is pending', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectIdA = '77777777-7777-4777-8777-777777777777';
+    const objectIdB = '88888888-8888-4888-8888-888888888888';
+    const oldVersionA = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b101';
+    const nextVersionA = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b102';
+    const versionB = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b103';
+    const docA = createDoc(objectIdA) as Y.Doc & { version?: string };
+    const docB = createDoc(objectIdB) as Y.Doc & { version?: string };
+    const nextDocA = createDoc(objectIdA) as Y.Doc & { version?: string };
+    const deferredOpen = createDeferred<Y.Doc>();
+    docA.version = oldVersionA;
+    docB.version = versionB;
+    nextDocA.version = nextVersionA;
+
+    mockedOpenCollabDB.mockImplementationOnce(() => deferredOpen.promise as Promise<Y.Doc>);
+
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+
+    act(() => {
+      result.current.registerSyncContext({ doc: docA, collabType: Types.Document });
+      result.current.registerSyncContext({ doc: docB, collabType: Types.Document });
+    });
+
+    const resetMessageForA = {
+      objectId: objectIdA,
+      collabType: Types.Document,
+      update: {
+        version: nextVersionA,
+      },
+    };
+    const messageForB = {
+      objectId: objectIdB,
+      collabType: Types.Document,
+      update: {
+        version: versionB,
+      },
+    };
+
+    act(() => {
+      ws.lastMessage = { collabMessage: resetMessageForA } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+    act(() => {
+      ws.lastMessage = { collabMessage: messageForB } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedHandleMessage.mock.calls[0]?.[1]).toBe(messageForB);
+
+    await act(async () => {
+      deferredOpen.resolve(nextDocA);
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(mockedHandleMessage).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mockedHandleMessage.mock.calls[1]?.[1]).toBe(resetMessageForA);
+
+    unmount();
+    docA.destroy();
+    docB.destroy();
+    nextDocA.destroy();
   });
 });

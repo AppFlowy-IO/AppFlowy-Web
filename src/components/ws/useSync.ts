@@ -129,6 +129,13 @@ export const useSync = (
   // in-flight reset tasks. This is intentionally not authoritative/persisted state:
   // source of truth is `context.doc.version` plus IndexedDB `<objectId>/version`.
   const latestIncomingVersionRef = useRef<Map<string, string>>(new Map());
+  // Serialize incoming collab handling per objectId:
+  // keep strict in-order application for one doc while avoiding
+  // cross-document head-of-line blocking during slow reset/open paths.
+  const incomingMessageQueuesRef = useRef<Map<string, ICollabMessage[]>>(new Map());
+  const processingObjectIdsRef = useRef<Set<string>>(new Set());
+  const latestUserRef = useRef<User | undefined>(undefined);
+  const isDisposedRef = useRef(false);
   const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
 
   // Extract specific values to use as primitive dependencies
@@ -138,6 +145,18 @@ export const useSync = (
   const wsNotification = lastMessage?.notification;
   const bcNotification = lastBroadcastMessage?.notification;
   const currentUser = useCurrentUserOptional();
+
+  useEffect(() => {
+    latestUserRef.current = currentUser;
+  }, [currentUser]);
+
+  useEffect(() => {
+    return () => {
+      isDisposedRef.current = true;
+      incomingMessageQueuesRef.current.clear();
+      processingObjectIdsRef.current.clear();
+    };
+  }, []);
 
   // Handle workspace notifications from WebSocket
   // This handles notifications received directly from the server via WebSocket connection.
@@ -642,7 +661,9 @@ export const useSync = (
 
       Log.debug('Received collab message:', message.collabType, publishedAt, message);
 
-      setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
+      if (!isDisposedRef.current) {
+        setLastUpdatedCollab({ objectId, publishedAt, collabType: message.collabType as Types });
+      }
     },
     [eventEmitter, registerSyncContext, scheduleDeferredCleanup]
   );
@@ -726,6 +747,77 @@ export const useSync = (
     };
   }, []);
 
+  const processIncomingMessageQueueForObject = useCallback(async (objectId: string) => {
+    if (isDisposedRef.current || processingObjectIdsRef.current.has(objectId)) {
+      return;
+    }
+
+    processingObjectIdsRef.current.add(objectId);
+
+    try {
+      while (!isDisposedRef.current) {
+        const queue = incomingMessageQueuesRef.current.get(objectId);
+
+        if (!queue || queue.length === 0) {
+          break;
+        }
+
+        const nextMessage = queue.shift();
+
+        if (!nextMessage) {
+          continue;
+        }
+
+        try {
+          await applyCollabMessage(nextMessage, {
+            allowVersionReset: true,
+            user: latestUserRef.current,
+          });
+        } catch (error) {
+          Log.error('Failed to apply queued collab message', error);
+        }
+      }
+    } finally {
+      processingObjectIdsRef.current.delete(objectId);
+      const queue = incomingMessageQueuesRef.current.get(objectId);
+
+      if (queue && queue.length === 0) {
+        incomingMessageQueuesRef.current.delete(objectId);
+      }
+
+      // If new messages for this object were enqueued during the final await, keep draining.
+      if (queue && queue.length > 0 && !isDisposedRef.current) {
+        void processIncomingMessageQueueForObject(objectId);
+      }
+    }
+  }, [applyCollabMessage]);
+
+  const enqueueIncomingCollabMessage = useCallback(
+    (message: ICollabMessage) => {
+      if (isDisposedRef.current) {
+        return;
+      }
+
+      const objectId = message.objectId;
+
+      if (!objectId) {
+        Log.warn('Received collab message without objectId; skipped queueing', message);
+        return;
+      }
+
+      const queue = incomingMessageQueuesRef.current.get(objectId);
+
+      if (queue) {
+        queue.push(message);
+      } else {
+        incomingMessageQueuesRef.current.set(objectId, [message]);
+      }
+
+      void processIncomingMessageQueueForObject(objectId);
+    },
+    [processIncomingMessageQueueForObject]
+  );
+
   useEffect(() => {
     const message = wsCollabMessage;
 
@@ -734,20 +826,8 @@ export const useSync = (
     }
 
     lastHandledWsMessageRef.current = message;
-    let stop = false;
-
-    applyCollabMessage(message, {
-      allowVersionReset: true,
-      user: currentUser,
-      isCancelled: () => stop,
-    }).catch((error) => {
-      Log.error('Failed to apply collab message', error);
-    });
-
-    return () => {
-      stop = true;
-    };
-  }, [wsCollabMessage, currentUser, applyCollabMessage]);
+    enqueueIncomingCollabMessage(message);
+  }, [wsCollabMessage, enqueueIncomingCollabMessage]);
 
   useEffect(() => {
     const message = bcCollabMessage;
@@ -757,20 +837,8 @@ export const useSync = (
     }
 
     lastHandledBcMessageRef.current = message;
-    let stop = false;
-
-    applyCollabMessage(message, {
-      allowVersionReset: true,
-      user: currentUser,
-      isCancelled: () => stop,
-    }).catch((error) => {
-      Log.error('Failed to apply broadcasted collab message', error);
-    });
-
-    return () => {
-      stop = true;
-    };
-  }, [bcCollabMessage, currentUser, applyCollabMessage]);
+    enqueueIncomingCollabMessage(message);
+  }, [bcCollabMessage, enqueueIncomingCollabMessage]);
 
   const revertCollabVersion = useCallback(async (viewId: string, version: string) => {
     const context = registeredContexts.current.get(viewId);
