@@ -471,6 +471,37 @@ export const useSync = (
       let context = registeredContexts.current.get(objectId);
 
       if (context) {
+        let messageHandled = false;
+        const handleOnActiveContext = () => {
+          const activeContext = registeredContexts.current.get(objectId);
+
+          if (!activeContext) {
+            return false;
+          }
+
+          const activeVersion = activeContext.doc.version;
+
+          if (
+            incomingVersion &&
+            activeVersion &&
+            uuidValidate(incomingVersion) &&
+            uuidValidate(activeVersion) &&
+            incomingVersion !== activeVersion
+          ) {
+            Log.debug('Skipped collab message with mismatched version on active context', {
+              objectId,
+              incomingVersion,
+              activeVersion,
+            });
+            // Consider it finalized to avoid falling through and applying stale-version updates.
+            return true;
+          }
+
+          context = activeContext;
+          handleMessage(activeContext, message);
+          return true;
+        };
+
         // Migrate legacy docs with unknown local version to the incoming server version
         // without clearing local cached state.
         if (incomingVersion && uuidValidate(incomingVersion)) {
@@ -521,52 +552,54 @@ export const useSync = (
           Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
 
           if (shouldAbortReset()) {
-            return;
+            messageHandled = handleOnActiveContext();
+          } else {
+            const nextDoc = (await openCollabDB(previousDoc.guid, {
+              expectedVersion: newVersion,
+              currentUser: options?.user?.uid,
+            })) as YDoc & SyncDocMeta;
+
+            if (shouldAbortReset()) {
+              nextDoc.destroy();
+              messageHandled = handleOnActiveContext();
+            } else {
+              const nextAwareness =
+                context.collabType === Types.Document ? new awarenessProtocol.Awareness(nextDoc) : undefined;
+
+              nextDoc.object_id = previousDoc.object_id;
+              nextDoc._collabType = previousDoc._collabType;
+              nextDoc._syncBound = true;
+              const hadPendingDeferredCleanup = pendingCleanups.current.has(previousDoc.guid);
+
+              // Keep the current doc active until the replacement doc is ready.
+              previousDoc.emit('reset', [context, newVersion]);
+              context.discardPendingUpdates?.();
+              skipFlushOnDestroy.current.add(previousDoc.guid);
+              previousDoc.destroy();
+
+              context = registerSyncContext({
+                doc: nextDoc,
+                awareness: nextAwareness,
+                collabType: context.collabType,
+              });
+
+              if (hadPendingDeferredCleanup) {
+                scheduleDeferredCleanup(previousDoc.guid);
+              }
+
+              eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
+                objectId: previousDoc.guid,
+                viewId: previousDoc.object_id,
+                doc: context.doc,
+                awareness: nextAwareness,
+              } satisfies CollabDocResetPayload);
+            }
           }
-
-          const nextDoc = (await openCollabDB(previousDoc.guid, {
-            expectedVersion: newVersion,
-            currentUser: options?.user?.uid,
-          })) as YDoc & SyncDocMeta;
-
-          if (shouldAbortReset()) {
-            nextDoc.destroy();
-            return;
-          }
-
-          const nextAwareness =
-            context.collabType === Types.Document ? new awarenessProtocol.Awareness(nextDoc) : undefined;
-
-          nextDoc.object_id = previousDoc.object_id;
-          nextDoc._collabType = previousDoc._collabType;
-          nextDoc._syncBound = true;
-          const hadPendingDeferredCleanup = pendingCleanups.current.has(previousDoc.guid);
-
-          // Keep the current doc active until the replacement doc is ready.
-          previousDoc.emit('reset', [context, newVersion]);
-          context.discardPendingUpdates?.();
-          skipFlushOnDestroy.current.add(previousDoc.guid);
-          previousDoc.destroy();
-
-          context = registerSyncContext({
-            doc: nextDoc,
-            awareness: nextAwareness,
-            collabType: context.collabType,
-          });
-
-          if (hadPendingDeferredCleanup) {
-            scheduleDeferredCleanup(previousDoc.guid);
-          }
-
-          eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
-            objectId: previousDoc.guid,
-            viewId: previousDoc.object_id,
-            doc: context.doc,
-            awareness: nextAwareness,
-          } satisfies CollabDocResetPayload);
         }
 
-        handleMessage(context, message);
+        if (!messageHandled) {
+          messageHandled = handleOnActiveContext();
+        }
       }
 
       const updateTimestamp = message.update?.messageId?.timestamp;

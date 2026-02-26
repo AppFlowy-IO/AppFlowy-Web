@@ -28,10 +28,12 @@ function MoreActions({
   viewId,
   onDeleted,
   menuContentProps,
+  enableVersionHistory = true,
 }: {
   viewId: string;
   onDeleted?: () => void;
   menuContentProps?: ComponentProps<typeof DropdownMenuContent>;
+  enableVersionHistory?: boolean;
 } & ComponentProps<typeof DropdownMenu>) {
   const workspaceId = useCurrentWorkspaceId();
   const service = useService();
@@ -105,7 +107,7 @@ function MoreActions({
     setHistoryOpen(false);
   }, [viewId]);
 
-  const showHistory = view?.layout === ViewLayout.Document;
+  const showHistory = enableVersionHistory && view?.layout === ViewLayout.Document;
 
   useEffect(() => {
     if (!showHistory && historyOpen) {
