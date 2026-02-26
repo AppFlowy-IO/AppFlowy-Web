@@ -965,29 +965,31 @@ export async function databaseBlobDiff(
 export async function getCollabVersions(workspaceId: string, objectId: string, since?: Date) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
   const from = since?.getTime() || null;
-  const response = await axiosInstance?.get<{
-    code: number;
-    data: {
-      version: string,
-      parent: string | null,
-      name: string | null,
-      created_at: string,
-      created_by: number | null,
-      is_deleted: boolean,
-      editors: number[],
-    }[];
-    message: string;
-  }>(url, {
-    params: {
-      since: from
-    }
-  });
+  const data = await executeAPIRequest<Array<{
+    version: string;
+    parent: string | null;
+    name: string | null;
+    created_at: string;
+    created_by: number | null;
+    is_deleted: boolean;
+    editors: number[];
+  }>>(() =>
+    axiosInstance?.get<APIResponse<Array<{
+      version: string;
+      parent: string | null;
+      name: string | null;
+      created_at: string;
+      created_by: number | null;
+      is_deleted: boolean;
+      editors: number[];
+    }>>>(url, {
+      params: {
+        since: from,
+      },
+    })
+  );
 
-  if (!response) {
-    return Promise.reject('No response');
-  }
-
-  return response.data.data.map((data) => {
+  return data.map((data) => {
     return {
       versionId: data.version,
       parentId: data.parent,
@@ -1022,59 +1024,46 @@ export async function createCollabVersion(
 ) {
   const snapshot = toBase64(ySnapshot);
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
-  const response = await axiosInstance?.post<{
-    code: number;
-    message: string;
-    data: string;
-  }>(url, {
-    snapshot,
-    name,
-    collab_type: collabType,
-  });
 
-  if (!response) {
-    return Promise.reject('No response');
-  }
-
-  return response.data.data;
+  return executeAPIRequest<string>(() =>
+    axiosInstance?.post<APIResponse<string>>(url, {
+      snapshot,
+      name,
+      collab_type: collabType,
+    })
+  );
 }
 
 export async function deleteCollabVersion(workspaceId: string, objectId: string, version: string) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
-  const response = await axiosInstance?.delete(url, { data: version });
 
-  if (!response) {
-    return Promise.reject('No response');
-  } else {
-    return;
-  }
+  return executeAPIVoidRequest(() => axiosInstance?.delete<APIResponse>(url, { data: version }));
 }
 
 export async function revertCollabVersion(workspaceId: string, objectId: string, collabType: Types, version: string) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/revert`;
-  const response = await axiosInstance?.post<{
-    data: {
-      state_vector: number[],
-      doc_state: number[],
-      collab_version: string | null,
-      version: number, // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
-    }
-  }>(url, {
-    version,
-    collab_type: collabType,
-  });
+  const data = await executeAPIRequest<{
+    state_vector: number[];
+    doc_state: number[];
+    collab_version: string | null;
+    version: number; // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
+  }>(() =>
+    axiosInstance?.post<APIResponse<{
+      state_vector: number[];
+      doc_state: number[];
+      collab_version: string | null;
+      version: number;
+    }>>(url, {
+      version,
+      collab_type: collabType,
+    })
+  );
 
-  if (!response) {
-    return Promise.reject('No response');
-  } else {
-    const data = response.data.data;
-
-    return {
-      stateVector: new Uint8Array(data.state_vector),
-      docState: new Uint8Array(data.doc_state),
-      version: data.collab_version,
-    };
-  }
+  return {
+    stateVector: new Uint8Array(data.state_vector),
+    docState: new Uint8Array(data.doc_state),
+    version: data.collab_version,
+  };
 }
 
 export async function getPublishView(publishNamespace: string, publishName: string) {

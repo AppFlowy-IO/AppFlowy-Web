@@ -794,53 +794,89 @@ export const useSync = (
 
     if (currentUser && context && activeWorkspaceId) {
       const previousDoc = context.doc as YDoc & SyncDocMeta;
-      const { docState, version: serverVersion } = await http.revertCollabVersion(
-        activeWorkspaceId,
-        viewId,
-        context.collabType,
-        version
-      );
-      const nextVersion = serverVersion || version;
+      const objectId = previousDoc.guid;
+      const replayQueuedMessages = async () => {
+        let queued = queuedMessagesDuringReset.current.get(objectId);
 
-      let doc: (YDoc & SyncDocMeta) | null = null;
+        while (queued && queued.length > 0) {
+          queuedMessagesDuringReset.current.delete(objectId);
+          for (const queuedMessage of queued) {
+            await applyCollabMessage(queuedMessage, {
+              allowVersionReset: true,
+              user: currentUser,
+            });
+          }
+
+          queued = queuedMessagesDuringReset.current.get(objectId);
+        }
+
+        queuedMessagesDuringReset.current.delete(objectId);
+      };
+
+      // Drop stale pending edits and pause active sync before restore/open.
+      context.discardPendingUpdates?.();
+      unregisterSyncContext(objectId, { flushPending: false });
+      resettingObjectIds.current.add(objectId);
 
       try {
-        doc = (await openCollabDB(previousDoc.guid, {
-          expectedVersion: nextVersion,
-          currentUser: currentUser.uid,
-        })) as YDoc & SyncDocMeta;
-        Y.applyUpdate(doc, docState);
+        const { docState, version: serverVersion } = await http.revertCollabVersion(
+          activeWorkspaceId,
+          viewId,
+          context.collabType,
+          version
+        );
+        const nextVersion = serverVersion || version;
+
+        let doc: (YDoc & SyncDocMeta) | null = null;
+
+        try {
+          doc = (await openCollabDB(previousDoc.guid, {
+            expectedVersion: nextVersion,
+            currentUser: currentUser.uid,
+          })) as YDoc & SyncDocMeta;
+          Y.applyUpdate(doc, docState);
+        } catch (error) {
+          doc?.destroy();
+          throw error;
+        }
+
+        Log.debug('Collab version changed:', viewId, previousDoc.version, nextVersion);
+        previousDoc.emit('reset', [context, nextVersion]);
+        skipFlushOnDestroy.current.add(previousDoc.guid);
+        previousDoc.destroy();
+        doc.object_id = previousDoc.object_id;
+        doc._collabType = previousDoc._collabType;
+        doc._syncBound = true;
+        const nextAwareness = context.collabType === Types.Document ? new awarenessProtocol.Awareness(doc) : undefined;
+
+        registerSyncContext({
+          doc,
+          awareness: nextAwareness,
+          collabType: context.collabType,
+        });
+
+        eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
+          objectId: previousDoc.guid,
+          viewId: previousDoc.object_id,
+          doc,
+          awareness: nextAwareness,
+        } satisfies CollabDocResetPayload);
       } catch (error) {
-        doc?.destroy();
+        // Restore previous context if version restore fails.
+        registerSyncContext({
+          doc: previousDoc,
+          awareness: context.awareness,
+          collabType: context.collabType,
+        });
         throw error;
+      } finally {
+        resettingObjectIds.current.delete(objectId);
+        await replayQueuedMessages();
       }
-
-      Log.debug('Collab version changed:', viewId, context.doc.version, nextVersion);
-      previousDoc.emit('reset', [context, nextVersion]);
-      context.discardPendingUpdates?.();
-      skipFlushOnDestroy.current.add(previousDoc.guid);
-      previousDoc.destroy();
-      doc.object_id = previousDoc.object_id;
-      doc._collabType = previousDoc._collabType;
-      doc._syncBound = true;
-      const nextAwareness = context.collabType === Types.Document ? new awarenessProtocol.Awareness(doc) : undefined;
-
-      registerSyncContext({
-        doc,
-        awareness: nextAwareness,
-        collabType: context.collabType,
-      });
-
-      eventEmitter?.emit(APP_EVENTS.COLLAB_DOC_RESET, {
-        objectId: previousDoc.guid,
-        viewId: previousDoc.object_id,
-        doc,
-        awareness: nextAwareness,
-      } satisfies CollabDocResetPayload);
     } else {
       throw new Error('Unable to restore version: sync context is unavailable. Please reopen the document and retry.');
     }
-  }, [workspaceId, currentUser, eventEmitter, registerSyncContext]);
+  }, [workspaceId, currentUser, eventEmitter, registerSyncContext, unregisterSyncContext, applyCollabMessage]);
 
   return { registerSyncContext, lastUpdatedCollab, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
 };
