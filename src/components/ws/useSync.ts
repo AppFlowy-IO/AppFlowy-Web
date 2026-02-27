@@ -98,13 +98,16 @@ const versionChanged = (context: SyncContext, message: collab.ICollabMessage): b
   const incomingKnown = isCollabVersionId(incomingVersion);
   const localKnown = isCollabVersionId(localVersion);
 
-  // If both sides don't have a valid version, keep normal sync behavior.
-  if (!incomingKnown && !localKnown) {
+  // If the incoming version is unknown (null or empty), the server has no version
+  // info for this update (e.g. legacy docs, memory cache miss, or sync-response
+  // for a doc whose collab_version hasn't been written yet). This is NOT a version
+  // conflict — apply the update normally without resetting local state.
+  if (!incomingKnown) {
     return false;
   }
 
-  // If only one side has a known version, treat as mismatch and reset.
-  if (!incomingKnown || !localKnown) {
+  // Server has a known version but local doesn't → reset to adopt the server's version.
+  if (!localKnown) {
     return true;
   }
 
@@ -485,6 +488,7 @@ export const useSync = (
       }
     ) => {
       const objectId = message.objectId!;
+      Log.debug(`[Version] update version ${message.update?.version}, sync request version: ${message.syncRequest?.version}`)
       const incomingVersion = message.update?.version || message.syncRequest?.version || null;
 
       if (isCollabVersionId(incomingVersion)) {
@@ -562,9 +566,10 @@ export const useSync = (
             return !activeContext;
           };
 
-          Log.debug('Collab version changed:', objectId, context.doc.version, newVersion);
+          Log.debug('[Version] Collab version changed: objectId=%s, localVersion=%s, incomingVersion=%s', objectId, context.doc.version, newVersion);
 
           if (shouldAbortReset()) {
+            Log.debug('[Version] abort reset: objectId=%s, localVersion=%s, incomingVersion=%s', objectId, context.doc.version, newVersion);
             messageHandled = handleOnActiveContext();
           } else {
             const hadPendingDeferredCleanup = pendingCleanups.current.has(previousDoc.guid);
@@ -614,13 +619,16 @@ export const useSync = (
                   openOptions.forceReset = true;
                 }
 
+                Log.debug('[Version] opening new doc: objectId=%s, expectedVersion=%s, forceReset=%s, previousDocVersion=%s, incomingVersion=%s', objectId, openOptions.expectedVersion, openOptions.forceReset, previousDoc.version, newVersion);
                 nextDoc = (await openCollabDB(previousDoc.guid, {
                   ...openOptions,
                 })) as YDoc & SyncDocMeta;
+                Log.debug('[Version] opened new doc: objectId=%s, nextDocVersion=%s', objectId, nextDoc.version);
                 if (!isCollabVersionId(newVersion)) {
                   // Align with desktop Option<version> semantics after mismatch reset:
                   // local doc should become version-unknown until a new authoritative version is learned.
                   nextDoc.version = undefined;
+                  Log.debug('[Version] newVersion is unknown, set nextDoc.version=undefined for objectId=%s', objectId);
                 }
               } catch (error) {
                 // Keep the page usable if cache replacement/open fails after teardown.
@@ -912,7 +920,7 @@ export const useSync = (
           throw error;
         }
 
-        Log.debug('Collab version changed:', viewId, previousDoc.version, nextVersion);
+        Log.debug('[Version] Collab version changed:', viewId, previousDoc.version, nextVersion);
         previousDoc.emit('reset', [context, nextVersion]);
         skipFlushOnDestroy.current.add(previousDoc.guid);
         previousDoc.destroy();

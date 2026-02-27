@@ -57,6 +57,12 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
   const update = Y.encodeStateAsUpdate(doc, stateVector);
 
+  Log.debug('[sync] responding to sync request from server', {
+    objectId: doc.guid,
+    collabType: ctx.collabType,
+    version: doc.version,
+    bytes: update.byteLength,
+  });
   // send the update containing new data back to the server
   emit({
     collabMessage: {
@@ -88,6 +94,8 @@ const handleAwarenessUpdate = (ctx: SyncContext, message: collab.IAwarenessUpdat
 
 const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
   const { doc, emit } = ctx;
+
+  Log.debug('[Version] handleUpdate: localDocVersion=%s, incomingMsgVersion=%s, docId=%s', doc.version, message.version, doc.guid);
 
   switch (message.flags) {
     case UpdateFlags.Lib0v1:
@@ -150,6 +158,12 @@ export const initSync = (ctx: SyncContext) => {
     const mergedUpdates = Y.mergeUpdates(updates);
 
     updates.length = 0; // Clear the updates array without GC overhead
+    Log.debug('[sync] sending local update to server', {
+      objectId: doc.guid,
+      collabType,
+      version: doc.version,
+      bytes: mergedUpdates.byteLength,
+    });
     emit({
       collabMessage: {
         objectId: doc.guid,
@@ -192,6 +206,7 @@ export const initSync = (ctx: SyncContext) => {
   doc.on('destroy', onDestroy);
 
   // emit initial sync request to the server
+  Log.debug('[Version] initSync sending initial syncRequest: objectId=%s, version=%s', ctx.doc.guid, ctx.doc.version);
   emit({
     collabMessage: {
       objectId: ctx.doc.guid,
@@ -253,6 +268,14 @@ export const initSync = (ctx: SyncContext) => {
 
   return { cleanup };
 };
+
+/**
+ * Returns the version carried by a collab message, regardless of which field holds it.
+ * Mirrors a Rust trait default method — callers get a single, uniform way to read
+ * the version without knowing whether the message is an update, sync-request, etc.
+ */
+export const getCollabMessageVersion = (message: collab.ICollabMessage): string | null | undefined =>
+  message.update?.version ?? message.syncRequest?.version;
 
 /**
  * Handles incoming collab messages by dispatching them to the appropriate handler.
