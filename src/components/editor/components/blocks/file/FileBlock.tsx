@@ -190,7 +190,7 @@ export const FileBlock = memo(
             />
           )}
         </div>
-        <div ref={ref} className={`absolute h-full w-full caret-transparent`}>
+        <div ref={ref} className={`absolute h-full w-full caret-transparent text-transparent`}>
           {children}
         </div>
       </div>
