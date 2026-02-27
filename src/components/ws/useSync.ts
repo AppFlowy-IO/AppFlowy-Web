@@ -202,7 +202,7 @@ export const useSync = (
   // Manages ref-counting so multiple components sharing the same Y.Doc don't
   // tear it down prematurely.
   const { registerSyncContext, unregisterSyncContext, scheduleDeferredCleanup } =
-    useSyncContextLifecycle(refs, currentUser, sendMessage, postMessage);
+    useSyncContextLifecycle(refs, sendMessage, postMessage);
 
   // ── Incoming collab messages ─────────────────────────────────────────
   // Watches wsCollabMessage / bcCollabMessage and routes them through a per-objectId
@@ -226,16 +226,15 @@ export const useSync = (
   // Tears down the current doc, calls the server revert API, rebuilds a fresh doc
   // from the returned snapshot, and re-registers it.  Falls back to the previous
   // context if the rebuild fails.
-  const { revertCollabVersion } = useCollabVersionRevert(
+  const { revertCollabVersion } = useCollabVersionRevert({
     refs,
     workspaceId,
-    currentUser,
     eventEmitter,
     registerSyncContext,
     unregisterSyncContext,
     scheduleDeferredCleanup,
-    applyCollabMessage
-  );
+    applyCollabMessage,
+  });
 
   return { registerSyncContext, lastUpdatedCollab, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
 };

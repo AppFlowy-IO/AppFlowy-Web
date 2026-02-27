@@ -10,6 +10,7 @@ import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
 import { rebuildCollabDoc } from './rebuildCollabDoc';
+import { replayQueuedMessages } from './replayQueuedMessages';
 import { SyncRefs } from './syncRefs';
 import { isCollabVersionId, RegisterSyncContext, SyncDocMeta, UpdateCollabInfo, versionChanged } from './types';
 
@@ -39,6 +40,7 @@ export function useCollabMessageHandler(
       const objectId = message.objectId!;
 
       const incomingVersion = message.update?.version || message.syncRequest?.version || null;
+
       Log.debug(`[Version] applyCollabMessage: objectId=${objectId}, incomingVersion=${JSON.stringify(incomingVersion)}, isCollabVersionId=${isCollabVersionId(incomingVersion)}`);
 
       if (isCollabVersionId(incomingVersion)) {
@@ -88,6 +90,7 @@ export function useCollabMessageHandler(
         };
 
         const _versionChanged = versionChanged(context, message);
+
         Log.debug(`[Version] versionChanged=${_versionChanged}, allowVersionReset=${options?.allowVersionReset}, objectId=${objectId}`);
 
         if (options?.allowVersionReset && _versionChanged) {
@@ -132,23 +135,6 @@ export function useCollabMessageHandler(
           } else {
             const hadPendingDeferredCleanup = refs.pendingCleanups.current.has(previousDoc.guid);
             const previousDocSnapshot = Y.encodeStateAsUpdate(previousDoc);
-            const replayQueuedMessages = async () => {
-              let queued = refs.queuedMessagesDuringReset.current.get(objectId);
-
-              while (queued && queued.length > 0) {
-                refs.queuedMessagesDuringReset.current.delete(objectId);
-                for (const queuedMessage of queued) {
-                  await applyCollabMessage(queuedMessage, {
-                    allowVersionReset: true,
-                    user: options?.user,
-                  });
-                }
-
-                queued = refs.queuedMessagesDuringReset.current.get(objectId);
-              }
-
-              refs.queuedMessagesDuringReset.current.delete(objectId);
-            };
 
             // Tear down the currently active doc first to stop stale edits from being
             // persisted while expectedVersion cache replacement is in progress.
@@ -221,7 +207,7 @@ export function useCollabMessageHandler(
               });
             } finally {
               refs.resettingObjectIds.current.delete(objectId);
-              await replayQueuedMessages();
+              await replayQueuedMessages(objectId, refs.queuedMessagesDuringReset.current, applyCollabMessage, options?.user);
             }
           }
         }

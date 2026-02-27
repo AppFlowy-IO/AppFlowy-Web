@@ -3,7 +3,7 @@ import { validate as uuidValidate } from 'uuid';
 import * as Y from 'yjs';
 
 import { initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types, User } from '@/application/types';
+import { Types } from '@/application/types';
 import { messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -15,8 +15,8 @@ import { RegisterSyncContext } from './types';
  * deferred cleanup, and teardown.
  *
  * @param refs - Shared mutable state container (see {@link SyncRefs}).
- * @param currentUser - The currently logged-in user, used to set up
- *   `PermanentUserData` mappings for per-user change attribution in Documents.
+ *   Also provides `latestUserRef` so callbacks always read the freshest user
+ *   without depending on a potentially-unstable `currentUser` object reference.
  * @param sendMessage - Sends a protobuf-encoded `messages.IMessage` to the
  *   **server** over the WebSocket connection. Originates from
  *   `useAppflowyWebSocket`. Called whenever the sync protocol needs to push
@@ -38,7 +38,6 @@ import { RegisterSyncContext } from './types';
  */
 export function useSyncContextLifecycle(
   refs: SyncRefs,
-  currentUser: User | undefined,
   sendMessage: (message: messages.IMessage) => void,
   postMessage: (message: messages.IMessage) => void
 ) {
@@ -187,6 +186,8 @@ export function useSyncContextLifecycle(
       syncContext.doc.on('destroy', handleDocDestroy);
       refs.destroyListeners.current.set(syncContext.doc.guid, { doc: syncContext.doc, handler: handleDocDestroy });
 
+      const currentUser = refs.latestUserRef.current;
+
       if (context.collabType === Types.Document && currentUser) {
         const uid = currentUser.uid;
         const onBeforeObserverCalls = (tx: Y.Transaction, doc: Y.Doc) => {
@@ -216,7 +217,7 @@ export function useSyncContextLifecycle(
 
       return syncContext;
     },
-    [refs, currentUser, sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
+    [refs, sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
   );
 
   return {

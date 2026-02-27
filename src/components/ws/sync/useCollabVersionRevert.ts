@@ -11,20 +11,19 @@ import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
 import { rebuildCollabDoc } from './rebuildCollabDoc';
+import { replayQueuedMessages } from './replayQueuedMessages';
 import { SyncRefs } from './syncRefs';
 import { RegisterSyncContext, SyncDocMeta } from './types';
 
-
 import ICollabMessage = collab.ICollabMessage;
 
-export function useCollabVersionRevert(
-  refs: SyncRefs,
-  workspaceId: string,
-  currentUser: User | undefined,
-  eventEmitter: EventEmitter,
-  registerSyncContext: (context: RegisterSyncContext) => SyncContext,
-  unregisterSyncContext: (objectId: string, options?: { flushPending?: boolean }) => void,
-  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void,
+export type CollabVersionRevertDeps = {
+  refs: SyncRefs;
+  workspaceId: string;
+  eventEmitter: EventEmitter;
+  registerSyncContext: (context: RegisterSyncContext) => SyncContext;
+  unregisterSyncContext: (objectId: string, options?: { flushPending?: boolean }) => void;
+  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void;
   applyCollabMessage: (
     message: ICollabMessage,
     options?: {
@@ -32,31 +31,27 @@ export function useCollabVersionRevert(
       user?: User;
       isCancelled?: () => boolean;
     }
-  ) => Promise<void>
-) {
+  ) => Promise<void>;
+};
+
+export function useCollabVersionRevert(deps: CollabVersionRevertDeps) {
+  const {
+    refs,
+    workspaceId,
+    eventEmitter,
+    registerSyncContext,
+    unregisterSyncContext,
+    scheduleDeferredCleanup,
+    applyCollabMessage,
+  } = deps;
+
   const revertCollabVersion = useCallback(async (viewId: string, version: string) => {
     const context = refs.registeredContexts.current.get(viewId);
+    const currentUser = refs.latestUserRef.current;
 
     if (currentUser && context) {
       const previousDoc = context.doc as YDoc & SyncDocMeta;
       const objectId = previousDoc.guid;
-      const replayQueuedMessages = async () => {
-        let queued = refs.queuedMessagesDuringReset.current.get(objectId);
-
-        while (queued && queued.length > 0) {
-          refs.queuedMessagesDuringReset.current.delete(objectId);
-          for (const queuedMessage of queued) {
-            await applyCollabMessage(queuedMessage, {
-              allowVersionReset: true,
-              user: currentUser,
-            });
-          }
-
-          queued = refs.queuedMessagesDuringReset.current.get(objectId);
-        }
-
-        refs.queuedMessagesDuringReset.current.delete(objectId);
-      };
 
       // Drop stale pending edits and pause active sync before restore/open.
       context.discardPendingUpdates?.();
@@ -113,12 +108,12 @@ export function useCollabVersionRevert(
         }
       } finally {
         refs.resettingObjectIds.current.delete(objectId);
-        await replayQueuedMessages();
+        await replayQueuedMessages(objectId, refs.queuedMessagesDuringReset.current, applyCollabMessage, currentUser);
       }
     } else {
       throw new Error('Unable to restore version: sync context is unavailable. Please reopen the document and retry.');
     }
-  }, [refs, workspaceId, currentUser, eventEmitter, registerSyncContext, unregisterSyncContext, scheduleDeferredCleanup, applyCollabMessage]);
+  }, [refs, workspaceId, eventEmitter, registerSyncContext, unregisterSyncContext, scheduleDeferredCleanup, applyCollabMessage]);
 
   return { revertCollabVersion };
 }

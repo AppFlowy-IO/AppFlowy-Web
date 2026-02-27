@@ -1,4 +1,4 @@
-import React, { lazy, memo, startTransition, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -122,9 +122,6 @@ function AppPage() {
   const [pendingExternalReverts, setPendingExternalReverts] = useState<ReadonlySet<string>>(() => new Set());
   // Derived: show dialog when current view was reverted externally (Vercel rule: derive during render, not in effect)
   const showRevertedDialog = !!viewId && pendingExternalReverts.has(viewId);
-  if (pendingExternalReverts.size > 0) {
-    console.log('[Version] AppPage render: showRevertedDialog=%s, viewId=%s, pendingExternalReverts=%o', showRevertedDialog, viewId, [...pendingExternalReverts]);
-  }
 
   // Track in-progress loads to prevent duplicate requests and enable recovery.
   const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
@@ -339,26 +336,22 @@ function AppPage() {
     if (!eventEmitter) return;
 
     const handleCollabDocReset = ({ objectId, viewId: resetViewId, doc: nextDoc, isExternalRevert }: { objectId: string; viewId?: string; doc: YDoc; isExternalRevert?: boolean }) => {
-      console.log('[Version] AppPage handleCollabDocReset received:', {
+      Log.debug('[Version] AppPage handleCollabDocReset received:', {
         objectId,
         resetViewId,
         isExternalRevert,
         currentViewId: currentViewIdRef.current,
       });
       // Track external reverts so we can show the dialog when user opens the affected view.
-      // Wrapped in startTransition: showing the dialog is non-urgent and must not block
-      // urgent updates like the doc reset that follows immediately after.
       if (isExternalRevert) {
         const targetViewId = resetViewId ?? objectId;
 
-        console.log('[Version] AppPage adding to pendingExternalReverts:', { targetViewId });
-        startTransition(() => {
-          setPendingExternalReverts((prev) => {
-            const next = new Set(prev);
+        Log.debug('[Version] AppPage adding to pendingExternalReverts:', { targetViewId });
+        setPendingExternalReverts((prev) => {
+          const next = new Set(prev);
 
-            next.add(targetViewId);
-            return next;
-          });
+          next.add(targetViewId);
+          return next;
         });
       }
 

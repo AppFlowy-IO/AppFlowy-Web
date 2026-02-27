@@ -5,6 +5,7 @@ import * as awarenessProtocol from 'y-protocols/awareness';
 import { APP_EVENTS } from '@/application/constants';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, YDoc } from '@/application/types';
+import { Log } from '@/utils/log';
 
 import { CollabDocResetPayload, RegisterSyncContext, SyncDocMeta } from './types';
 
@@ -75,7 +76,7 @@ export async function rebuildCollabDoc(params: RebuildCollabDocParams): Promise<
     isExternalRevert,
   };
 
-  console.log('[Version] rebuildCollabDoc emitting COLLAB_DOC_RESET:', {
+  Log.debug('[Version] rebuildCollabDoc emitting COLLAB_DOC_RESET:', {
     objectId: resetPayload.objectId,
     viewId: resetPayload.viewId,
     isExternalRevert: resetPayload.isExternalRevert,

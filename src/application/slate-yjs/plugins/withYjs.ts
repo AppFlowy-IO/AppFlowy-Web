@@ -183,7 +183,7 @@ export function withYjs<T extends Editor>(
   //      crash triggered by flushSync in react-use-websocket).
   const handleDocReset = () => {
     if (!YjsEditor.connected(e)) return;
-    console.log('[Version] withYjs: doc reset received, disconnecting editor for docId=%s', doc.guid);
+    console.debug('[Version] withYjs: doc reset received, disconnecting editor for docId=%s', doc.guid);
     try {
       e.deselect();
     } catch {
