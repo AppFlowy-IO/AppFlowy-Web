@@ -319,7 +319,7 @@ describe('Document Version History', () => {
 
             testLog.step(6, 'Assert dialog title is "Page Restored"');
             RevertedDialogSelectors.dialog().within(() => {
-              cy.get('[role="heading"]').should('have.text', 'Page Restored');
+              cy.get('[data-slot="dialog-title"]').should('have.text', 'Page Restored');
             });
 
             testLog.step(7, 'Assert dialog description explains the external revert');
