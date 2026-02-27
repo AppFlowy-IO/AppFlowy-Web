@@ -12,6 +12,7 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { BusinessInternalContext, BusinessInternalContextType } from '../contexts/BusinessInternalContext';
 import { useDatabaseOperations } from '../hooks/useDatabaseOperations';
 import { usePageOperations } from '../hooks/usePageOperations';
+import { useRowOperations } from '../hooks/useRowOperations';
 import { useViewOperations } from '../hooks/useViewOperations';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
 
@@ -109,7 +110,10 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
-  const { loadView, createRow, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory, previewCollabVersion } = useViewOperations();
+  const { loadView, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory, previewCollabVersion } = useViewOperations();
+
+  // Initialize row operations
+  const { createRow } = useRowOperations();
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

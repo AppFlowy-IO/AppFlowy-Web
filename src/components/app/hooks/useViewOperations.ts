@@ -93,7 +93,7 @@ export function useViewOperations() {
       eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
     };
   }, [eventEmitter]);
-  const createdRowKeys = useRef<string[]>([]);
+
   const { resolveCollabObjectId, getViewIdFromDatabaseId } = useDatabaseIdentity({
     currentWorkspaceId,
     databaseStorageId,
@@ -251,49 +251,6 @@ export function useViewOperations() {
       return syncContext;
     },
     [registerSyncContext]
-  );
-
-  // Create row document
-  const createRow = useCallback(
-    async (rowKey: string): Promise<YDoc> => {
-      if (!currentWorkspaceId || !service) {
-        throw new Error('Failed to create row doc');
-      }
-
-      try {
-        const doc = await service?.createRow(rowKey);
-
-        if (!doc) {
-          throw new Error('Failed to create row doc');
-        }
-
-        const [databaseId, rowId] = rowKey.split('_rows_');
-
-        if (!rowId) {
-          throw new Error('Failed to create row doc');
-        }
-
-        // Row collaboration is scoped to the row object itself.
-        // Use rowId as guid; databaseId remains contextual metadata in rowKey.
-        doc.guid = rowId;
-
-        Log.debug('[Database] row sync bind start', {
-          rowKey,
-          rowId,
-          databaseId,
-        });
-        const syncContext = registerSyncContext({
-          doc,
-          collabType: Types.DatabaseRow
-        });
-
-        createdRowKeys.current.push(rowKey);
-        return syncContext.doc;
-      } catch (e) {
-        return Promise.reject(e);
-      }
-    },
-    [currentWorkspaceId, service, registerSyncContext]
   );
 
   // Navigate to view
@@ -457,27 +414,9 @@ export function useViewOperations() {
     [currentWorkspaceId, service]
   );
 
-  // Clean up created row documents when view changes
-  useEffect(() => {
-    const rowKeys = createdRowKeys.current;
-
-    createdRowKeys.current = [];
-
-    if (!rowKeys.length) return;
-
-    rowKeys.forEach((rowKey) => {
-      try {
-        service?.deleteRow(rowKey);
-      } catch (e) {
-        console.error(e);
-      }
-    });
-  }, [service, currentWorkspaceId]); // Changed from viewId to currentWorkspaceId
-
   return {
     loadView,
     bindViewSync,
-    createRow,
     toView,
     awarenessMap,
     getViewIdFromDatabaseId,
