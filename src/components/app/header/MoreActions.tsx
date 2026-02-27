@@ -6,7 +6,7 @@ import { ReactComponent as AddToPageIcon } from '@/assets/icons/add_to_page.svg'
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
-import { useAppOutline, useAppView, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useAppOutline, useAppView, useCurrentWorkspaceId, usePageHistoryEnabled, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
 import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
@@ -107,7 +107,8 @@ function MoreActions({
     setHistoryOpen(false);
   }, [viewId]);
 
-  const showHistory = enableVersionHistory && view?.layout === ViewLayout.Document;
+  const pageHistoryEnabled = usePageHistoryEnabled();
+  const showHistory = enableVersionHistory && pageHistoryEnabled && view?.layout === ViewLayout.Document;
 
   useEffect(() => {
     if (!showHistory && historyOpen) {

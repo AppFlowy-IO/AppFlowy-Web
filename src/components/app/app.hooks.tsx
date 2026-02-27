@@ -436,6 +436,13 @@ export function useAppRecent() {
   };
 }
 
+export function usePageHistoryEnabled(): boolean {
+  const context = useContext(AuthInternalContext);
+
+  // Fail open: if context isn't available (e.g. publish pages), default to true
+  return context?.enablePageHistory ?? true;
+}
+
 export function useAppTrash() {
   const context = useContext(AppContext);
 

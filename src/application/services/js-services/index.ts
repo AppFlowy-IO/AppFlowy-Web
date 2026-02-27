@@ -421,6 +421,10 @@ export class AFClientService implements AFService {
     return APIService.signInSaml(AUTH_CALLBACK_URL, domain);
   }
 
+  async getServerInfo() {
+    return APIService.getServerInfo();
+  }
+
   async getAuthProviders() {
     return APIService.getAuthProviders();
   }

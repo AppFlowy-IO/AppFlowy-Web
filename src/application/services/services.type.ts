@@ -69,6 +69,7 @@ export type AFService = PublishService &
     getClientId: () => number;
     getDeviceId: () => string;
     getAxiosInstance: () => AxiosInstance | null;
+    getServerInfo: () => Promise<{ enable_page_history: boolean }>;
   };
 
 export interface AppOutlineResponse {

@@ -44,6 +44,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const params = useParams();
 
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
+  const [enablePageHistory, setEnablePageHistory] = useState<boolean | undefined>(undefined);
 
   // Calculate current workspace ID from URL params or user info
   const currentWorkspaceId = useMemo(
@@ -170,7 +171,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     };
   }, [isAuthenticated, location.pathname, logout, context]);
 
-  // Load user workspace info on mount
+  // Load user workspace info and server info on mount
   useEffect(() => {
     if (!isAuthenticated) {
       return;
@@ -179,7 +180,16 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
     void loadUserWorkspaceInfo().catch((e) => {
       console.error('[AppAuthLayer] Failed to load workspace info:', e);
     });
-  }, [loadUserWorkspaceInfo, isAuthenticated]);
+
+    if (service) {
+      void service.getServerInfo().then((info) => {
+        setEnablePageHistory(info.enable_page_history);
+      }).catch((e) => {
+        console.error('[AppAuthLayer] Failed to load server info:', e);
+        setEnablePageHistory(true);
+      });
+    }
+  }, [loadUserWorkspaceInfo, isAuthenticated, service]);
 
   // Context value for authentication layer
   const authContextValue: AuthInternalContextType = useMemo(
@@ -188,9 +198,10 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       userWorkspaceInfo,
       currentWorkspaceId,
       isAuthenticated: !!isAuthenticated,
+      enablePageHistory,
       onChangeWorkspace,
     }),
-    [service, userWorkspaceInfo, currentWorkspaceId, isAuthenticated, onChangeWorkspace]
+    [service, userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, onChangeWorkspace]
   );
 
   return <AuthInternalContext.Provider value={authContextValue}>{children}</AuthInternalContext.Provider>;
