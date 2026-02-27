@@ -67,13 +67,21 @@ export async function rebuildCollabDoc(params: RebuildCollabDocParams): Promise<
     scheduleDeferredCleanup(previousDoc.guid);
   }
 
-  eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, {
+  const resetPayload: CollabDocResetPayload = {
     objectId: previousDoc.guid,
     viewId: previousDoc.view_id ?? previousDoc.object_id,
     doc: newContext.doc,
     awareness: nextAwareness,
     isExternalRevert,
-  } satisfies CollabDocResetPayload);
+  };
+
+  console.log('[Version] rebuildCollabDoc emitting COLLAB_DOC_RESET:', {
+    objectId: resetPayload.objectId,
+    viewId: resetPayload.viewId,
+    isExternalRevert: resetPayload.isExternalRevert,
+    docVersion: newContext.doc.version,
+  });
+  eventEmitter.emit(APP_EVENTS.COLLAB_DOC_RESET, resetPayload);
 
   return newContext;
 }
