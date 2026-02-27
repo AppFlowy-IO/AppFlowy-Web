@@ -5,6 +5,7 @@ import * as Y from 'yjs';
 import { databasePrefix } from '@/application/constants';
 import { rowSchema, rowTable } from '@/application/db/tables/rows';
 import { userSchema, UserTable } from '@/application/db/tables/users';
+import { versionSchema, VersionsTable } from '@/application/db/tables/versions';
 import { viewMetasSchema, ViewMetasTable } from '@/application/db/tables/view_metas';
 import {
   workspaceMemberProfileSchema,
@@ -13,11 +14,12 @@ import {
 import { YDoc } from '@/application/types';
 import { Log } from '@/utils/log';
 
-type DexieTables = ViewMetasTable & UserTable & rowTable & WorkspaceMemberProfileTable;
+type DexieTables = ViewMetasTable & UserTable & rowTable & WorkspaceMemberProfileTable & VersionsTable;
 
 export type Dexie<T = DexieTables> = BaseDexie & T;
 
 export const db = new BaseDexie(`${databasePrefix}_cache`) as Dexie;
+const _schema = Object.assign({}, { ...viewMetasSchema, ...userSchema, ...rowSchema, ...versionSchema });
 
 // Version 1: Initial schema with view_metas, users, and rows
 db.version(1).stores({
@@ -40,6 +42,25 @@ db.version(2)
       await transaction.table('workspace_member_profiles').count();
     } catch (error) {
       console.error('Failed to initialize workspace_member_profiles store during upgrade:', error);
+      throw error;
+    }
+  });
+
+// Version 3: Add collab_versions table
+db.version(3)
+  .stores({
+    ...viewMetasSchema,
+    ...userSchema,
+    ...rowSchema,
+    ...workspaceMemberProfileSchema,
+    ...versionSchema,
+  })
+  .upgrade(async (transaction) => {
+    try {
+      // Touch the new store so Dexie creates it for users upgrading from version 2.
+      await transaction.table('collab_versions').count();
+    } catch (error) {
+      console.error('Failed to initialize collab_versions store during upgrade:', error);
       throw error;
     }
   });
@@ -111,39 +132,73 @@ async function ensureYjsStores(name: string) {
   ensuredStores.delete(name);
 }
 
+export interface OpenCollabOptions {
+  /**
+   * Define what version collab should have when loaded from IndexedDB.
+   * If the persisted version is different, it will be removed as outdated.
+   */
+  expectedVersion?: string;
+  /**
+   * Force clearing persisted Yjs updates before reopening.
+   * Useful when the local cache must be discarded even without an expectedVersion,
+   * for example when local/remote version-known state mismatches.
+   */
+  forceReset?: boolean;
+  /**
+   * Define current user UID. If provided that value will be written into
+   * the document data itself and used in the future for associating Yjs document
+   * changes with specific users.
+   */
+  currentUser?: string;
+}
+
 /**
  * Open the collaboration database, and return a function to close it
  */
-export async function openCollabDB(name: string): Promise<YDoc> {
-  const doc = new Y.Doc({
+export async function openCollabDB(name: string, options: OpenCollabOptions = {}): Promise<YDoc> {
+  // `name` is the canonical collab object id for this local IndexedDB-backed doc.
+  // Set Y.Doc guid to the same value so reopen/close/sync paths address the same document identity.
+  let doc = new Y.Doc({
     guid: name,
-  });
+  }) as YDoc;
 
   await ensureYjsStores(name);
 
-  const provider = new IndexeddbPersistence(name, doc);
+  let provider = new IndexeddbPersistence(name, doc);
+  let version = await provider.get(name + '/version');
 
-  let resolve: (value: unknown) => void;
-  const promise = new Promise((resolveFn) => {
-    resolve = resolveFn;
-  });
+  if (options.forceReset || (options.expectedVersion && version !== options.expectedVersion)) {
+    // version was provided and it differs from the one we persisted
+    await provider.clearData();
+    doc = new Y.Doc({
+      guid: name,
+    }) as YDoc;
+    provider = new IndexeddbPersistence(name, doc);
+
+    if (options.expectedVersion) {
+      await provider.set(name + '/version', options.expectedVersion);
+      version = options.expectedVersion;
+    } else {
+      version = undefined;
+    }
+  }
+
+  doc.version = version;
 
   provider.on('synced', () => {
     if (!openedSet.has(name)) {
       openedSet.add(name);
     }
-
-    resolve(true);
   });
 
-  await promise;
+  await provider.whenSynced;
 
-  return doc as YDoc;
+  return doc;
 }
 
 export async function openCollabDBWithProvider(
   name: string,
-  options?: { awaitSync?: boolean }
+  options?: { awaitSync?: boolean, expectedVersion?: string, forceReset?: boolean }
 ): Promise<{ doc: YDoc; provider: IndexeddbPersistence }> {
   const startedAt = Date.now();
 
@@ -153,9 +208,10 @@ export async function openCollabDBWithProvider(
     alreadyOpened: openedSet.has(name),
   });
 
-  const doc = new Y.Doc({
+  // Keep guid equal to `name` because provider persistence and sync registration use this object id.
+  let doc = new Y.Doc({
     guid: name,
-  });
+  }) as YDoc;
 
   await ensureYjsStores(name);
 
@@ -164,12 +220,31 @@ export async function openCollabDBWithProvider(
     ensureDurationMs: Date.now() - startedAt,
   });
 
-  const provider = new IndexeddbPersistence(name, doc);
+  let provider = new IndexeddbPersistence(name, doc);
+  let version = await provider.get(name + '/version');
 
-  let resolve: (value: unknown) => void;
-  const promise = new Promise((resolveFn) => {
-    resolve = resolveFn;
+  let resolveSync: (() => void) | null = null;
+  const syncPromise = new Promise<void>((resolveFn) => {
+    resolveSync = resolveFn;
   });
+
+  if (options?.forceReset || (options?.expectedVersion && version !== options.expectedVersion)) {
+    // version was provided and it differs from the one we persisted
+    await provider.clearData();
+    doc = new Y.Doc({
+      guid: name,
+    }) as YDoc;
+    provider = new IndexeddbPersistence(name, doc);
+
+    if (options?.expectedVersion) {
+      await provider.set(name + '/version', options.expectedVersion);
+      version = options.expectedVersion;
+    } else {
+      version = undefined;
+    }
+  }
+
+  doc.version = version;
 
   provider.on('synced', () => {
     Log.debug('[DB] openCollabDBWithProvider synced', {
@@ -182,20 +257,28 @@ export async function openCollabDBWithProvider(
       openedSet.add(name);
     }
 
-    resolve(true);
+    if (resolveSync) {
+      resolveSync();
+      resolveSync = null;
+    }
   });
 
   if (options?.awaitSync !== false) {
-    await promise;
+    // In most paths this is resolved by the provider 'synced' callback.
+    // Keep a fallback for cases where sync already completed before listener work.
+    if (!(provider as unknown as { synced?: boolean }).synced) {
+      await syncPromise;
+    }
   }
 
   Log.debug('[DB] openCollabDBWithProvider ready', {
     name,
+    doc,
     totalDurationMs: Date.now() - startedAt,
     awaitedSync: options?.awaitSync !== false,
   });
 
-  return { doc: doc as YDoc, provider };
+  return { doc, provider };
 }
 
 export async function closeCollabDB(name: string) {
@@ -203,6 +286,7 @@ export async function closeCollabDB(name: string) {
     openedSet.delete(name);
   }
 
+  // Recreate a doc with the same guid/name to destroy the exact persisted provider instance for that object.
   const doc = new Y.Doc({
     guid: name,
   });

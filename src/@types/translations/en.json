@@ -3665,5 +3665,22 @@
     "desktopOnly": "Coming soon to web. Available on desktop & mobile.",
     "editNotSupported": "Editing not supported. Available on desktop & mobile.",
     "comingSoonToWeb": "Coming soon to the web 👋. You can use this feature right now on our desktop or mobile app."
+  },
+  "versionHistory": {
+    "versionHistory": "Version History",
+    "all": "All",
+    "last7Days": "Last 7 days",
+    "last30Days": "Last 30 days",
+    "last60Days": "Last 60 days",
+    "onlyYours": "Only yours",
+    "restore": "Restore",
+    "currentVersion": "Current version",
+    "restoredFrom": "Restored from {}",
+    "more": "More...",
+    "upgrade": "Upgrade",
+    "forLongerVersionHistory": "for longer version history",
+    "revertedDialogTitle": "Page Restored",
+    "revertedDialogDescription": "This page was restored to a previous version from another device.",
+    "revertedDismiss": "Got it"
   }
 }

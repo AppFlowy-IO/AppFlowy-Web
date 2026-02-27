@@ -23,7 +23,7 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 // Hook for managing database-related operations
 export function useDatabaseOperations(
-  loadView?: (id: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc | null>,
+  loadView?: (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc | null>,
   createRow?: (rowKey: string) => Promise<YDoc>
 ) {
   const { service, currentWorkspaceId } = useAuthInternal();
@@ -295,11 +295,13 @@ export function useDatabaseOperations(
         // Set metadata for sync binding
         const docWithMeta = doc as YDoc & {
           object_id?: string;
+          view_id?: string;
           _collabType?: Types;
           _syncBound?: boolean;
         };
 
         docWithMeta.object_id = documentId;
+        docWithMeta.view_id = documentId;
         docWithMeta._collabType = Types.Document;
         if (docWithMeta._syncBound === undefined) {
           docWithMeta._syncBound = false;

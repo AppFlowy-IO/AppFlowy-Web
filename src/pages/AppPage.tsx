@@ -2,7 +2,7 @@ import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMem
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
@@ -16,8 +16,8 @@ import {
   useCurrentWorkspaceId,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
-import { useViewOperations } from '@/components/app/hooks/useViewOperations';
-import type { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
+import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
+import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
@@ -49,7 +49,6 @@ function AppPage() {
     ...handlers
   } = useAppHandlers();
   const { eventEmitter } = handlers;
-  const { getViewReadOnlyStatus } = useViewOperations();
 
   const currentUser = useCurrentUser();
   const service = useService();
@@ -118,6 +117,10 @@ function AppPage() {
   const [error, setError] = React.useState<AppError | null>(null);
   // Track whether sync has been bound for the current doc
   const [syncBound, setSyncBound] = useState(false);
+  // Track viewIds that were externally reverted (by another device); show dialog when user opens them
+  const [pendingExternalReverts, setPendingExternalReverts] = useState<ReadonlySet<string>>(() => new Set());
+  // Derived: show dialog when current view was reverted externally (Vercel rule: derive during render, not in effect)
+  const showRevertedDialog = !!viewId && pendingExternalReverts.has(viewId);
 
   // Track in-progress loads to prevent duplicate requests and enable recovery.
   const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
@@ -127,6 +130,11 @@ function AppPage() {
   const prevDocRef = useRef<{ doc: YDoc; guid: string; syncBound: boolean } | null>(null);
   // Track current route to guard async callbacks against stale navigation.
   const currentViewIdRef = useRef<string | undefined>(viewId);
+  const getDocViewId = useCallback((doc?: YDoc) => {
+    const docWithMeta = doc as YDocWithMeta | undefined;
+
+    return docWithMeta?.view_id ?? docWithMeta?.object_id;
+  }, []);
 
   useEffect(() => {
     docRef.current = doc;
@@ -160,8 +168,8 @@ function AppPage() {
   }, [doc, syncBound, scheduleDeferredCleanup]);
 
   const loadPageDoc = useCallback(
-    async (id: string) => {
-      loadAttemptRef.current = { viewId: id, timestamp: Date.now() };
+    async (targetViewId: string) => {
+      loadAttemptRef.current = { viewId: targetViewId, timestamp: Date.now() };
       setError(null);
 
       try {
@@ -169,10 +177,11 @@ function AppPage() {
         // 1. Opens from IndexedDB cache if available (instant)
         // 2. Fetches from server only if not cached
         // 3. Does NOT bind sync - that happens after render
-        const loadedDoc = await loadView(id, false, true);
+        const loadedDoc = await loadView(targetViewId, false, true);
 
         Log.debug('[AppPage] loadPageDoc complete, setting doc state', {
-          viewId: id,
+          viewId: targetViewId,
+          docViewId: loadedDoc.view_id,
           docObjectId: loadedDoc.object_id,
         });
 
@@ -181,7 +190,7 @@ function AppPage() {
         setDoc(loadedDoc);
 
         // Clear the attempt after successful load
-        if (loadAttemptRef.current?.viewId === id) {
+        if (loadAttemptRef.current?.viewId === targetViewId) {
           loadAttemptRef.current = null;
         }
       } catch (e) {
@@ -190,7 +199,7 @@ function AppPage() {
         setError(appError);
         console.error('[AppPage] Error loading view:', formatErrorForLogging(e));
         // Clear the attempt on error
-        if (loadAttemptRef.current?.viewId === id) {
+        if (loadAttemptRef.current?.viewId === targetViewId) {
           loadAttemptRef.current = null;
         }
       }
@@ -224,12 +233,12 @@ function AppPage() {
 
     // Skip if we already have the doc for this viewId or if a load is already in progress
     // This prevents double-loading when `view` dependency changes (e.g., outline updates)
-    if (docRef.current?.object_id === viewId || loadAttemptRef.current?.viewId === viewId) {
+    if (getDocViewId(docRef.current) === viewId || loadAttemptRef.current?.viewId === viewId) {
       return;
     }
 
     void loadPageDoc(viewId);
-  }, [loadPageDoc, viewId, layout, toView, view]);
+  }, [loadPageDoc, viewId, layout, toView, view, getDocViewId]);
 
   // Recovery: Re-trigger load if doc doesn't match viewId after timeout.
   // Acts as safety net for edge cases where initial load didn't complete.
@@ -238,7 +247,7 @@ function AppPage() {
     if (isDatabaseContainer(view)) return;
 
     // Check if doc matches current viewId
-    const docMatchesViewId = doc?.object_id === viewId;
+    const docMatchesViewId = getDocViewId(doc) === viewId;
 
     if (docMatchesViewId) return;
 
@@ -253,7 +262,7 @@ function AppPage() {
     // Use 5s delay to give slow networks sufficient time before retrying.
     const recoveryTimer = setTimeout(() => {
       // Check if doc now matches (load completed while timer was pending)
-      if (docRef.current?.object_id === viewId) {
+      if (getDocViewId(docRef.current) === viewId) {
         return;
       }
 
@@ -273,7 +282,7 @@ function AppPage() {
     }, 5000);
 
     return () => clearTimeout(recoveryTimer);
-  }, [viewId, layout, view, doc?.object_id, loadPageDoc]);
+  }, [viewId, layout, view, doc, loadPageDoc, getDocViewId]);
 
   useEffect(() => {
     if (layout === ViewLayout.AIChat) {
@@ -290,9 +299,12 @@ function AppPage() {
 
     const docWithMeta = doc as YDocWithMeta;
 
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
+
     // Verify doc matches current viewId
-    if (docWithMeta.object_id !== viewId) {
+    if (docViewId !== viewId) {
       Log.debug('[AppPage] bindViewSync skipped - doc viewId mismatch', {
+        docViewId,
         docObjectId: docWithMeta.object_id,
         viewId,
       });
@@ -306,6 +318,7 @@ function AppPage() {
 
     Log.debug('[AppPage] bindViewSync starting', {
       viewId,
+      docViewId,
       docObjectId: docWithMeta.object_id,
     });
 
@@ -317,6 +330,72 @@ function AppPage() {
       Log.debug('[AppPage] bindViewSync complete', { viewId });
     }
   }, [doc, viewId, syncBound, bindViewSync]);
+
+  useEffect(() => {
+    if (!eventEmitter) return;
+
+    const handleCollabDocReset = ({ objectId, viewId: resetViewId, doc: nextDoc, isExternalRevert }: { objectId: string; viewId?: string; doc: YDoc; isExternalRevert?: boolean }) => {
+      Log.debug('[Version] AppPage handleCollabDocReset received:', {
+        objectId,
+        resetViewId,
+        isExternalRevert,
+        currentViewId: currentViewIdRef.current,
+      });
+      // Track external reverts so we can show the dialog when user opens the affected view.
+      if (isExternalRevert) {
+        const targetViewId = resetViewId ?? objectId;
+
+        Log.debug('[Version] AppPage adding to pendingExternalReverts:', { targetViewId });
+        setPendingExternalReverts((prev) => {
+          const next = new Set(prev);
+
+          next.add(targetViewId);
+          return next;
+        });
+      }
+
+      setDoc((currentDoc) => {
+        if (!currentDoc || currentDoc.guid !== objectId) {
+          return currentDoc;
+        }
+
+        const currentDocWithMeta = currentDoc as YDocWithMeta;
+
+        // Guard against cross-view replacements for shared-guid docs (e.g. database layouts).
+        const currentDocViewId = currentDocWithMeta.view_id ?? currentDocWithMeta.object_id;
+
+        if (resetViewId && currentDocViewId && currentDocViewId !== resetViewId) {
+          return currentDoc;
+        }
+
+        if (resetViewId && currentViewIdRef.current && currentViewIdRef.current !== resetViewId) {
+          return currentDoc;
+        }
+
+        const nextDocWithMeta = nextDoc as YDocWithMeta;
+
+        if (!nextDocWithMeta.object_id) {
+          nextDocWithMeta.object_id = currentDocWithMeta.object_id;
+        }
+
+        if (!nextDocWithMeta.view_id) {
+          nextDocWithMeta.view_id = currentDocWithMeta.view_id ?? currentDocWithMeta.object_id;
+        }
+
+        if (nextDocWithMeta._collabType === undefined) {
+          nextDocWithMeta._collabType = currentDocWithMeta._collabType;
+        }
+
+        nextDocWithMeta._syncBound = true;
+        return nextDoc;
+      });
+    };
+
+    eventEmitter.on(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    return () => {
+      eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    };
+  }, [eventEmitter]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
     if (view) {
@@ -352,11 +431,11 @@ function AppPage() {
   const isReadOnly = useMemo(() => {
     if (!viewId) return false;
     return getViewReadOnlyStatus(viewId, outline);
-  }, [getViewReadOnlyStatus, viewId, outline]);
+  }, [viewId, outline]);
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
-    const docForCurrentView = doc && doc.object_id === viewId ? doc : undefined;
+    const docForCurrentView = doc && getDocViewId(doc) === viewId ? doc : undefined;
 
     if (!docForCurrentView && layout === ViewLayout.AIChat && viewId) {
       return (
@@ -371,9 +450,12 @@ function AppPage() {
     }
 
     if (layout === ViewLayout.Document) {
+
+      const key = `${viewId}:${docForCurrentView.version}`;
+
       return (
         <Document
-          key={viewId}
+          key={key}
           requestInstance={requestInstance}
           workspaceId={workspaceId}
           doc={docForCurrentView}
@@ -450,6 +532,7 @@ function AppPage() {
     setWordCount,
     handleUploadFile,
     scheduleDeferredCleanup,
+    getDocViewId,
   ]);
 
   useEffect(() => {
@@ -505,6 +588,20 @@ function AppPage() {
     await loadPageDoc(retryViewId);
   }, [viewId, outlineView, workspaceId, service, loadPageDoc]);
 
+  // Use currentViewIdRef (advanced-use-latest pattern) so this callback is stable
+  // across navigations — no viewId dependency needed.
+  const handleDismissRevertedDialog = useCallback(() => {
+    const currentViewId = currentViewIdRef.current;
+
+    if (!currentViewId) return;
+    setPendingExternalReverts((prev) => {
+      const next = new Set(prev);
+
+      next.delete(currentViewId);
+      return next;
+    });
+  }, []);
+
   if (!viewId) return null;
   return (
     <div ref={ref} className={'relative h-full w-full'}>
@@ -512,6 +609,7 @@ function AppPage() {
 
       {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : <div className={'h-full w-full'}>{viewDom}</div>}
       {view && <Help />}
+      <RevertedDialog open={showRevertedDialog} onDismiss={handleDismissRevertedDialog} />
     </div>
   );
 }

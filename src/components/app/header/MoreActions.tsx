@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState, type ComponentProps } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Role, ViewLayout } from '@/application/types';
@@ -22,20 +22,25 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 
 import MoreActionsContent from './MoreActionsContent';
 
+const DocumentHistoryModal = lazy(() => import('@/components/document/history/DocumentHistoryModal'));
+
 function MoreActions({
   viewId,
   onDeleted,
   menuContentProps,
+  enableVersionHistory = true,
 }: {
   viewId: string;
   onDeleted?: () => void;
-  menuContentProps?: React.ComponentProps<typeof DropdownMenuContent>;
-} & React.ComponentProps<typeof DropdownMenu>) {
+  menuContentProps?: ComponentProps<typeof DropdownMenuContent>;
+  enableVersionHistory?: boolean;
+} & ComponentProps<typeof DropdownMenu>) {
   const workspaceId = useCurrentWorkspaceId();
   const service = useService();
   const { selectionMode, onOpenSelectionMode } = useAIChatContext();
   const [hasMessages, setHasMessages] = useState(false);
   const [open, setOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const outline = useAppOutline();
 
   const view = useAppView(viewId);
@@ -93,6 +98,23 @@ function MoreActions({
     ) : null;
   }, [view?.layout, hasMessages, t, onOpenSelectionMode, handleClose]);
 
+  const handleOpenHistory = useCallback(() => {
+    handleClose();
+    setHistoryOpen(true);
+  }, [handleClose]);
+
+  useEffect(() => {
+    setHistoryOpen(false);
+  }, [viewId]);
+
+  const showHistory = enableVersionHistory && view?.layout === ViewLayout.Document;
+
+  useEffect(() => {
+    if (!showHistory && historyOpen) {
+      setHistoryOpen(false);
+    }
+  }, [showHistory, historyOpen]);
+
   const shareWithMeView = useMemo(() => {
     return findViewInShareWithMe(outline || [], viewId);
   }, [outline, viewId]);
@@ -102,31 +124,39 @@ function MoreActions({
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen}>
-      <DropdownMenuTrigger asChild>
-        <Button data-testid='page-more-actions' size={'icon'} variant={'ghost'} className={'text-icon-secondary'}>
-          <MoreIcon />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent {...menuContentProps}>
-        <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
+    <>
+      <DropdownMenu open={open} onOpenChange={setOpen}>
+        <DropdownMenuTrigger asChild>
+          <Button data-testid='page-more-actions' size={'icon'} variant={'ghost'} className={'text-icon-secondary'}>
+            <MoreIcon />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent {...menuContentProps}>
+          <DropdownMenuGroup>{ChatOptions}</DropdownMenuGroup>
 
-        {role === Role.Guest || shareWithMeView ? null : (
-          <>
-            <MoreActionsContent
-              itemClicked={() => {
-                handleClose();
-              }}
-              onDeleted={onDeleted}
-              viewId={viewId}
-            />
-            <DropdownMenuSeparator />
-          </>
-        )}
+          {role === Role.Guest || shareWithMeView ? null : (
+            <>
+              <MoreActionsContent
+                itemClicked={() => {
+                  handleClose();
+                }}
+                onDeleted={onDeleted}
+                viewId={viewId}
+                onOpenHistory={showHistory ? handleOpenHistory : undefined}
+              />
+              <DropdownMenuSeparator />
+            </>
+          )}
 
-        <DocumentInfo viewId={viewId} />
-      </DropdownMenuContent>
-    </DropdownMenu>
+          <DocumentInfo viewId={viewId} />
+        </DropdownMenuContent>
+      </DropdownMenu>
+      {showHistory && historyOpen && (
+        <Suspense fallback={null}>
+          <DocumentHistoryModal open={historyOpen} onOpenChange={setHistoryOpen} viewId={viewId} view={view} />
+        </Suspense>
+      )}
+    </>
   );
 }
 

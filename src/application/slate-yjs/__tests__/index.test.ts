@@ -36,10 +36,10 @@ describe('slate-yjs adapter', () => {
     expect(() => editor.connect()).not.toThrowError();
   });
 
-  it('should ensure the editor is connected before disconnecting', () => {
+  it('should no-op when disconnecting an already-disconnected editor', () => {
     const doc = withTestingYDoc('1');
     const editor = withTestingYjsEditor(createEditor(), doc);
-    expect(() => editor.disconnect()).toThrowError();
+    expect(() => editor.disconnect()).not.toThrowError();
   });
 
   it('should have been called', () => {

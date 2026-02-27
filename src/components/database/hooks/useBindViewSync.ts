@@ -1,18 +1,9 @@
 import { useCallback } from 'react';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types, YDoc } from '@/application/types';
+import { YDoc, YDocWithMeta } from '@/application/types';
 import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
 import { Log } from '@/utils/log';
-
-/**
- * Extended YDoc with metadata for deferred sync binding.
- */
-export interface YDocWithMeta extends YDoc {
-  object_id?: string;
-  _collabType?: Types;
-  _syncBound?: boolean;
-}
 
 /**
  * Hook to bind a Y.js document to WebSocket sync.
@@ -34,18 +25,21 @@ export function useBindViewSync() {
       // Skip if already bound
       if (docWithMeta._syncBound) {
         Log.debug('[useBindViewSync] skipped - already bound', {
-          viewId: docWithMeta.object_id,
+          viewId: docWithMeta.view_id,
+          objectId: docWithMeta.object_id,
         });
         return null;
       }
 
       const collabType = docWithMeta._collabType;
-      const viewId = docWithMeta.object_id;
+      const objectId = docWithMeta.object_id;
+      const viewId = docWithMeta.view_id ?? objectId;
 
       // Use explicit undefined check for collabType since Types.Document = 0 is falsy
-      if (collabType === undefined || !viewId) {
+      if (collabType === undefined || !objectId || !viewId) {
         Log.warn('[useBindViewSync] failed - missing metadata', {
           hasCollabType: collabType !== undefined,
+          hasObjectId: !!objectId,
           hasViewId: !!viewId,
         });
         return null;
@@ -53,6 +47,7 @@ export function useBindViewSync() {
 
       Log.debug('[useBindViewSync] starting', {
         viewId,
+        objectId,
         collabType,
       });
 

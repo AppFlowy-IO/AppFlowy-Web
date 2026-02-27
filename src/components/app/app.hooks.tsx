@@ -4,6 +4,7 @@ import React, { createContext, useContext, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Awareness } from 'y-protocols/awareness';
 
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
@@ -22,6 +23,7 @@ import {
   Subscription,
   TestDatabasePromptConfig,
   TextCount,
+  Types,
   UIVariant,
   UpdatePagePayload,
   UpdateSpacePayload,
@@ -30,7 +32,6 @@ import {
   ViewIconType,
   YDoc,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import {
@@ -38,6 +39,7 @@ import {
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
+import { CollabVersionRecord } from '@/application/collab-version.type';
 import { AuthInternalContext } from './contexts/AuthInternalContext';
 import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';
@@ -118,6 +120,9 @@ export interface AppContextType {
    * the cleanup is cancelled and the existing context is reused.
    */
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
+  getCollabHistory?: (viewId: string) => Promise<CollabVersionRecord[]>;
+  previewCollabVersion?: (viewId: string, versionId: string, collabType: Types) => Promise<YDoc | undefined>;
+  revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 
 // Main AppContext - same as original
@@ -397,6 +402,9 @@ export function useAppHandlers() {
     updatePageIcon: context.updatePageIcon,
     updatePageName: context.updatePageName,
     getViewIdFromDatabaseId: context.getViewIdFromDatabaseId,
+    getCollabHistory: context.getCollabHistory,
+    previewCollabVersion: context.previewCollabVersion,
+    revertCollabVersion: context.revertCollabVersion,
     loadMentionableUsers: context.loadMentionableUsers,
     scheduleDeferredCleanup: context.scheduleDeferredCleanup,
   };

@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
@@ -15,7 +15,7 @@ import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import { useAppHandlers, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
-import { useViewOperations, YDocWithMeta } from '@/components/app/hooks/useViewOperations';
+import { useViewOperations } from '@/components/app/hooks/useViewOperations';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -140,14 +140,14 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
   // Load document
   const loadPageDoc = useCallback(
-    async (id: string) => {
+    async (targetViewId: string) => {
       setNotFound(false);
       setDoc(undefined);
       setSyncBound(false);
       try {
-        const loadedDoc = await loadView(id, false, true);
+        const loadedDoc = await loadView(targetViewId, false, true);
 
-        setDoc({ doc: loadedDoc, id });
+        setDoc({ doc: loadedDoc, id: targetViewId });
       } catch (e) {
         setNotFound(true);
         console.error('[ViewModal] Failed to load document:', e);
@@ -208,8 +208,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     if (!doc || !bindViewSync || syncBound) return;
 
     const docWithMeta = doc.doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
 
-    if (docWithMeta.object_id !== doc.id) {
+    if (docViewId !== doc.id) {
       return;
     }
 
@@ -299,6 +300,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
               }}
               onDeleted={handleClose}
               viewId={effectiveViewId}
+              enableVersionHistory={false}
             />
           )}
 

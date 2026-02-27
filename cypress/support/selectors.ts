@@ -1012,6 +1012,40 @@ export const RowDetailSelectors = {
   deleteRowConfirmButton: () => cy.get('[data-testid="delete-row-confirm-button"]'),
 };
 
+/**
+ * Reverted Dialog selectors (shown when another device reverts the current document)
+ */
+export const RevertedDialogSelectors = {
+  dialog: (options?: CypressGetOptions) => cy.get(byTestId('reverted-dialog'), options),
+  confirmButton: (options?: CypressGetOptions) => cy.get(byTestId('reverted-dialog-confirm'), options),
+};
+
+/**
+ * Version History selectors
+ */
+export const VersionHistorySelectors = {
+  // Menu item in the "More actions" dropdown that opens version history
+  menuItem: (options?: CypressGetOptions) => cy.get(byTestId('more-page-version-history'), options),
+
+  // The version history modal container
+  modal: (options?: CypressGetOptions) => cy.get(byTestId('version-history-modal'), options),
+
+  // The scrollable list of version entries
+  list: (options?: CypressGetOptions) => cy.get(byTestId('version-history-list'), options),
+
+  // All version items in the list
+  items: (options?: CypressGetOptions) => cy.get('[data-testid^="version-history-item-"]', options),
+
+  // A specific version item by version ID
+  itemById: (versionId: string, options?: CypressGetOptions) => cy.get(byTestId(`version-history-item-${versionId}`), options),
+
+  // The restore button at the bottom of the version list
+  restoreButton: (options?: CypressGetOptions) => cy.get(byTestId('version-history-restore-button'), options),
+
+  // The close button in the version history panel
+  closeButton: (options?: CypressGetOptions) => cy.get(byTestId('version-history-close-button'), options),
+};
+
 export function waitForReactUpdate(ms: number = 500) {
   return cy.wait(ms);
 }

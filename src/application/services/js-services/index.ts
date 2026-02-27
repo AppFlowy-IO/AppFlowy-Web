@@ -1,6 +1,7 @@
 import * as random from 'lib0/random';
 import * as Y from 'yjs';
 
+import { CollabVersionRecord } from '@/application/collab-version.type';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { openCollabDB } from '@/application/db';
 import {
@@ -59,7 +60,7 @@ import {
   UploadPublishNamespacePayload,
   ViewIconType,
   WorkspaceMember,
-  YjsEditorKey
+  YjsEditorKey,
 } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { RepeatedChatMessage } from '@/components/chat';
@@ -593,7 +594,7 @@ export class AFClientService implements AFService {
 
     const isLoaded = this.viewLoaded.has(name);
 
-    const { doc } = await getPageDoc(
+    const doc = await getPageDoc(
       async () => {
         try {
           return await fetchPageCollab(workspaceId, viewId);
@@ -682,10 +683,7 @@ export class AFClientService implements AFService {
     return APIService.uploadDatabaseCsvImportFile(presignedUrl, file, onProgress);
   }
 
-  async getDatabaseCsvImportStatus(
-    workspaceId: string,
-    taskId: string
-  ): Promise<DatabaseCsvImportStatusResponse> {
+  async getDatabaseCsvImportStatus(workspaceId: string, taskId: string): Promise<DatabaseCsvImportStatusResponse> {
     return APIService.getDatabaseCsvImportStatus(workspaceId, taskId);
   }
 
@@ -705,7 +703,11 @@ export class AFClientService implements AFService {
     return APIService.addAppPage(workspaceId, parentViewId, payload);
   }
 
-  async createDatabaseView(workspaceId: string, viewId: string, payload: CreateDatabaseViewPayload): Promise<CreateDatabaseViewResponse> {
+  async createDatabaseView(
+    workspaceId: string,
+    viewId: string,
+    payload: CreateDatabaseViewPayload
+  ): Promise<CreateDatabaseViewResponse> {
     return APIService.createDatabaseView(workspaceId, viewId, payload);
   }
 
@@ -831,16 +833,20 @@ export class AFClientService implements AFService {
     return APIService.getMentionableUsers(workspaceId);
   }
 
-  async updatePageMention(workspaceId: string, viewId: string, data: {
-    person_id: string;
-    block_id?: string | null;
-    row_id?: string | null;
-    require_notification: boolean;
-    view_name: string;
-    ancestors?: string[] | null;
-    view_layout?: number | null;
-    is_row_document?: boolean;
-  }) {
+  async updatePageMention(
+    workspaceId: string,
+    viewId: string,
+    data: {
+      person_id: string;
+      block_id?: string | null;
+      row_id?: string | null;
+      require_notification: boolean;
+      view_name: string;
+      ancestors?: string[] | null;
+      view_layout?: number | null;
+      is_row_document?: boolean;
+    }
+  ) {
     return APIService.updatePageMention(workspaceId, viewId, data);
   }
 
@@ -878,5 +884,31 @@ export class AFClientService implements AFService {
 
   async getShareWithMe(workspaceId: string) {
     return APIService.getShareWithMe(workspaceId);
+  }
+
+  async getCollabHistory(workspaceId: string, viewId: string, since?: Date): Promise<CollabVersionRecord[]> {
+    return APIService.getCollabVersions(workspaceId, viewId, since);
+  }
+
+  async previewCollabVersion(workspaceId: string, viewId: string, versionId: string, collabType: Types) {
+    return APIService.previewCollabVersion(workspaceId, viewId, versionId, collabType);
+  }
+
+  async createCollabVersion(
+    workspaceId: string,
+    viewId: string,
+    collabType: Types,
+    name: string,
+    snapshot: Uint8Array
+  ) {
+    return APIService.createCollabVersion(workspaceId, viewId, collabType, name, snapshot);
+  }
+
+  async deleteCollabVersion(workspaceId: string, viewId: string, versionId: string) {
+    return APIService.deleteCollabVersion(workspaceId, viewId, versionId);
+  }
+
+  async revertCollabVersion(workspaceId: string, viewId: string, collabType: Types, versionId: string) {
+    return APIService.revertCollabVersion(workspaceId, viewId, collabType, versionId);
   }
 }

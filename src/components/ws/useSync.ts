@@ -1,480 +1,240 @@
 import EventEmitter from 'events';
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { validate as uuidValidate } from 'uuid';
-import * as awarenessProtocol from 'y-protocols/awareness';
-import * as Y from 'yjs';
+import { useEffect } from 'react';
 
-import { APP_EVENTS } from '@/application/constants';
-import { handleMessage, initSync, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
-import { Types } from '@/application/types';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
-import { messages } from '@/proto/messages';
-import { Log } from '@/utils/log';
 
-export interface RegisterSyncContext {
-  /**
-   * The Y.Doc instance to be used for collaboration.
-   * It must have a valid guid (UUID v4).
-   */
-  doc: Y.Doc;
-  awareness?: awarenessProtocol.Awareness;
-  collabType: Types;
-  emit?: (reply: messages.IMessage) => void;
-}
+import { useSyncRefs } from './sync/syncRefs';
+import { useBatchSync } from './sync/useBatchSync';
+import { useCollabMessageHandler } from './sync/useCollabMessageHandler';
+import { useCollabVersionRevert } from './sync/useCollabVersionRevert';
+import { useSyncContextLifecycle } from './sync/useSyncContextLifecycle';
+import { useWorkspaceNotifications } from './sync/useWorkspaceNotifications';
+import { SyncContextType } from './sync/types';
 
-export type UpdateCollabInfo = {
-  /**
-   * The objectId of the Y.Doc instance.
-   * It must be a valid UUID v4.
-   */
-  objectId: string;
-  collabType: Types;
-  /**
-   * The timestamp when the corresponding update has been known to the server.
-   */
-  publishedAt?: Date;
-};
+// Re-export types so existing consumer import paths continue to work
+export type { RegisterSyncContext, UpdateCollabInfo, SyncContextType } from './sync/types';
 
-export type SyncContextType = {
-  registerSyncContext: (context: RegisterSyncContext) => SyncContext;
-  lastUpdatedCollab: UpdateCollabInfo | null;
-  /**
-   * Flush all pending updates for all registered sync contexts.
-   * This ensures all local changes are sent to the server via WebSocket.
-   */
-  flushAllSync: () => void;
-  /**
-   * Sync all registered collab documents to the server via HTTP API.
-   * This is similar to desktop's collab_full_sync_batch - it sends the full doc state
-   * to ensure the server has the latest data before operations like duplicate.
-   *
-   * @param workspaceId - The workspace ID
-   * @returns Promise that resolves when all syncs are complete
-   */
-  syncAllToServer: (workspaceId: string) => Promise<void>;
-  /**
-   * Schedule deferred cleanup of a sync context after a delay.
-   * If the same objectId is re-registered before the timer fires,
-   * the cleanup is cancelled and the existing context is reused.
-   *
-   * @param objectId - The Y.Doc guid to schedule cleanup for
-   * @param delayMs - Delay in milliseconds (default: 10_000)
-   */
-  scheduleDeferredCleanup: (objectId: string, delayMs?: number) => void;
-};
-
-export const useSync = (ws: AppflowyWebSocketType, bc: BroadcastChannelType, eventEmitter?: EventEmitter): SyncContextType => {
+/**
+ * Central orchestrator hook for real-time collaborative editing.
+ *
+ * Instantiated once by `AppSyncLayer` at the root of the authenticated app tree.
+ * The returned value is placed into `SyncInternalContext` so that child components
+ * can register/unregister Y.js documents for synchronisation without direct access
+ * to the WebSocket or BroadcastChannel transport.
+ *
+ * ## Architecture
+ *
+ * ```
+ *  AppSyncLayer
+ *    └─ useSync  (this hook — composes the sub-hooks below)
+ *         ├─ useSyncRefs              shared mutable state across all sub-hooks
+ *         ├─ useWorkspaceNotifications  dispatches server notifications to app events
+ *         ├─ useSyncContextLifecycle    register / unregister / ref-count / cleanup
+ *         ├─ useCollabMessageHandler    incoming WS/BC collab messages → Y.Doc
+ *         ├─ useBatchSync               flushAllSync, syncAllToServer
+ *         └─ useCollabVersionRevert     user-initiated "Restore version"
+ * ```
+ *
+ * Dependency flow is strictly one-way (orchestrator → sub-hooks → types/utils) to
+ * prevent circular imports.
+ *
+ * ## Returned callbacks
+ *
+ * ### `registerSyncContext(context): SyncContext`
+ *
+ * Binds a Y.Doc to the sync engine so that:
+ *   - Local edits are forwarded to the server via WebSocket **and** broadcast to
+ *     sibling tabs via BroadcastChannel.
+ *   - Incoming remote updates are applied to the doc.
+ *   - An `initSync` handshake is kicked off immediately.
+ *
+ * Ref-counted: if the same doc instance is registered N times, the context stays
+ * alive until N corresponding `scheduleDeferredCleanup` calls have fired.
+ * Registering a *different* doc instance with the same guid replaces the stale context.
+ *
+ * **Called by:**
+ *   - `useViewOperations.bindViewSync()` — after a document/database view loads
+ *   - `useViewOperations.createRow()` — immediately after creating a new database row
+ *   - `useDatabaseIdentity.registerWorkspaceDatabaseDoc()` — lazily on first database view
+ *   - `useBindViewSync` — simplified binding used by the Database component
+ *   - `rebuildCollabDoc()` — internally during version-reset or revert to re-register
+ *     the rebuilt doc
+ *
+ * ### `scheduleDeferredCleanup(objectId, delayMs?): void`
+ *
+ * Decrements the ref-count for a doc and, if it reaches zero, schedules teardown
+ * after `delayMs` (default 10 s). If the doc is re-registered before the timer
+ * fires the cleanup is cancelled and the existing context is reused.
+ *
+ * This grace period prevents unnecessary teardown→rebuild cycles during fast
+ * navigation (e.g. user clicks between pages quickly).
+ *
+ * **Called by:**
+ *   - `AppPage` effect — when the user navigates away from a view
+ *   - `Database` unmount effect — cleans up all row syncs opened during the session
+ *   - `rebuildCollabDoc()` — carries forward a pending cleanup timer from the
+ *     previous doc to the rebuilt doc
+ *
+ * ### `revertCollabVersion(viewId, versionId): Promise<void>`
+ *
+ * User-initiated "Restore to version" flow:
+ *   1. Discards pending local edits and unregisters the current sync context.
+ *   2. Calls the server HTTP API (`revertCollabVersion`) to persist the revert.
+ *   3. Opens a fresh Y.Doc from IndexedDB with the reverted state, applies the
+ *      server-returned doc snapshot, and re-registers it.
+ *   4. Emits `COLLAB_DOC_RESET` so the UI re-binds to the new doc.
+ *
+ * If the rebuild fails, the *previous* context is restored as a fallback to keep
+ * the page functional.
+ *
+ * **Called by:**
+ *   - `DocumentHistoryModal.handleRestore()` — when the user clicks "Restore" in
+ *     the version history dialog
+ *
+ * ### `flushAllSync(): void`
+ *
+ * Iterates every registered sync context and calls `context.flush()`, sending any
+ * buffered local Y.js updates over WebSocket immediately.
+ *
+ * **Called by:**
+ *   - `syncAllToServer()` — as its first step, before the HTTP batch request.
+ *     Not called directly by any UI component.
+ *
+ * ### `syncAllToServer(workspaceId): Promise<void>`
+ *
+ * Collects the full state of every registered Y.Doc and sends them all to the
+ * server in a single HTTP batch request (`collab_full_sync_batch`). This mirrors
+ * the desktop client's pre-duplicate sync and guarantees the server has the latest
+ * content before a destructive operation.
+ *
+ * **Called by:**
+ *   - `MoreActionsContent.handleDuplicateClick()` — before duplicating a page, a
+ *     blocking loader is shown while this runs
+ *
+ * ### `lastUpdatedCollab: UpdateCollabInfo | null`
+ *
+ * Reactive state that updates every time a collab message is applied — whether the
+ * message arrived via WebSocket or BroadcastChannel. Contains `{ objectId,
+ * collabType, publishedAt }`. Exposed through `SyncInternalContext` for consumers
+ * that need to react when *any* collab document changes.
+ *
+ * ## Message flow (incoming)
+ *
+ * ```
+ * Server ──WS──▸ lastMessage.collabMessage ──▸ useCollabMessageHandler
+ *                                                 ├─ enqueue per objectId
+ *                                                 ├─ version check / reset
+ *                                                 └─ handleMessage(context, msg)
+ *
+ * Sibling tab ──BC──▸ lastBroadcastMessage.collabMessage ──▸ (same path)
+ * ```
+ *
+ * Each objectId has its own sequential queue so a slow reset for one document
+ * never blocks updates to other documents.
+ *
+ * ## Version-reset flow (server-initiated)
+ *
+ * When an incoming message carries a version that differs from the local doc's
+ * version, `applyCollabMessage` triggers a reset:
+ *   1. Emits `'reset'` on the old doc so UI listeners can detach.
+ *   2. Destroys the old doc (skipping the flush-on-destroy path).
+ *   3. Opens a fresh doc from IndexedDB with `expectedVersion`.
+ *   4. Re-registers via `rebuildCollabDoc()` and emits `COLLAB_DOC_RESET`.
+ *   5. Replays any messages queued during the async reset window.
+ *
+ * @param ws  - WebSocket transport (sendMessage + lastMessage)
+ * @param bc  - BroadcastChannel transport (postMessage + lastBroadcastMessage)
+ * @param eventEmitter - App-wide event bus for workspace notifications and doc reset events
+ * @param workspaceId  - Current workspace ID, used by `revertCollabVersion`
+ */
+export const useSync = (
+  ws: AppflowyWebSocketType,
+  bc: BroadcastChannelType,
+  eventEmitter: EventEmitter,
+  workspaceId: string
+): SyncContextType => {
   const { sendMessage, lastMessage } = ws;
   const { postMessage, lastBroadcastMessage } = bc;
-  const registeredContexts = useRef<Map<string, SyncContext>>(new Map());
-  const contextRefCounts = useRef<Map<string, number>>(new Map());
-  const destroyListeners = useRef<Map<string, { doc: Y.Doc; handler: () => void }>>(new Map());
-  const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
-  const [lastUpdatedCollab, setLastUpdatedCollab] = useState<UpdateCollabInfo | null>(null);
+  const currentUser = useCurrentUserOptional();
 
-  // Extract specific values to use as primitive dependencies
-  // This prevents effect re-runs when unrelated fields of the parent object change
+  // Extract specific values to use as primitive dependencies.
+  // This prevents effect re-runs when unrelated fields of the parent object change.
   const wsCollabMessage = lastMessage?.collabMessage;
   const bcCollabMessage = lastBroadcastMessage?.collabMessage;
   const wsNotification = lastMessage?.notification;
   const bcNotification = lastBroadcastMessage?.notification;
 
+  // Shared mutable refs container — stable across renders (wrapped in useMemo).
+  // Passed to every sub-hook so they share the same Maps/Sets without prop-drilling
+  // 13 individual refs.
+  const refs = useSyncRefs();
+
+  // Keep the latest user reference accessible to async callbacks that outlive
+  // the render in which they were created (e.g. message queue processing).
   useEffect(() => {
-    if (!wsCollabMessage) return;
+    refs.latestUserRef.current = currentUser;
+  }, [refs, currentUser]);
 
-    const objectId = wsCollabMessage.objectId!;
-    const context = registeredContexts.current.get(objectId);
-
-    if (context) {
-      handleMessage(context, wsCollabMessage);
-    }
-
-    const updateTimestamp = wsCollabMessage.update?.messageId?.timestamp;
-    const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-    Log.debug('Received collab message:', wsCollabMessage.collabType, publishedAt, wsCollabMessage);
-
-    setLastUpdatedCollab({ objectId, publishedAt, collabType: wsCollabMessage.collabType as Types });
-  }, [wsCollabMessage]);
-
+  // Mark the hook as "alive" on mount and "disposed" on unmount.
+  // Disposed state is checked by async message handlers to bail out early when the
+  // component tree has already torn down.
   useEffect(() => {
-    if (!bcCollabMessage) return;
-
-    const objectId = bcCollabMessage.objectId!;
-    const context = registeredContexts.current.get(objectId);
-
-    if (context) {
-      handleMessage(context, bcCollabMessage);
-    }
-
-    const updateTimestamp = bcCollabMessage.update?.messageId?.timestamp;
-    const publishedAt = updateTimestamp ? new Date(updateTimestamp) : undefined;
-
-    Log.debug('Received broadcasted collab message:', bcCollabMessage.collabType, publishedAt, bcCollabMessage);
-
-    setLastUpdatedCollab({ objectId, publishedAt, collabType: bcCollabMessage.collabType as Types });
-  }, [bcCollabMessage]);
-
-  // Handle workspace notifications from WebSocket
-  // This handles notifications received directly from the server via WebSocket connection.
-  // Only the "active" tab per workspace maintains a WebSocket connection to prevent
-  // duplicate notifications and reduce server load.
-  //
-  // Notification Triggers and Recipients:
-  // 
-  // - profileChange: When current user updates their name/email via account settings
-  //   Recipients: The triggering user (SingleUser) OR all other sessions of the user (ExcludeUserAndDevice)
-  //   Note: If device_id present, excludes triggering device to avoid duplicate updates
-  // 
-  // - permissionChanged: When object access permissions change (delete, permission denied)
-  //   Recipients: ALL users in the workspace
-  // 
-  // - sectionChanged: When workspace sections update (recent views added/removed)
-  //   Recipients: DEPENDS on action:
-  //     * AddRecentViews: ALL users EXCEPT the trigger user (ExcludeSingleUser/ExcludeUserAndDevice)
-  //     * RemoveRecentViews: ONLY the trigger user (SingleUser/SingleUserAndDevice)
-  //   Reason: Recent views are personal to each user, so add notifications inform others while
-  //           remove notifications only update the user who removed them
-  // 
-  // - shareViewsChanged: When view sharing settings change (guests added/removed from a view)
-  //   Triggered by: share_view_with_guests() or revoke_access_to_view() in guest.rs
-  //   Contains: view_id and list of affected email addresses
-  //   Recipients: ALL users in the workspace
-  // 
-  // - mentionablePersonListChanged: When workspace members change (add/remove/role/mention)
-  //   Recipients: ALL users in the workspace
-  // 
-  // - serverLimit: When billing or feature limits are updated
-  //   Recipients: ALL users across ALL workspaces
-  // 
-  // - workspaceMemberProfileChanged: When ANY workspace member updates their profile
-  //   (name, avatar_url, cover_image_url, custom_image_url, description) via PUT /{workspace_id}/update-member-profile
-  //   Recipients: ALL users in the workspace (including the trigger user)
-  useEffect(() => {
-    if (!wsNotification || !eventEmitter) return;
-
-    Log.debug('Received workspace notification:', wsNotification);
-
-    // Emit specific notification events for each notification type
-    // These events are consumed by AppProvider to update local state/database
-    if (wsNotification.profileChange) {
-      eventEmitter.emit(APP_EVENTS.USER_PROFILE_CHANGED, wsNotification.profileChange);
-    }
-
-    if (wsNotification.permissionChanged) {
-      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, wsNotification.permissionChanged);
-    }
-
-    if (wsNotification.sectionChanged) {
-      eventEmitter.emit(APP_EVENTS.SECTION_CHANGED, wsNotification.sectionChanged);
-    }
-
-    if (wsNotification.shareViewsChanged) {
-      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, wsNotification.shareViewsChanged);
-    }
-
-    if (wsNotification.mentionablePersonListChanged) {
-      eventEmitter.emit(APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED, wsNotification.mentionablePersonListChanged);
-    }
-
-    if (wsNotification.serverLimit) {
-      eventEmitter.emit(APP_EVENTS.SERVER_LIMIT_CHANGED, wsNotification.serverLimit);
-    }
-
-    if (wsNotification.workspaceMemberProfileChanged) {
-      eventEmitter.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, wsNotification.workspaceMemberProfileChanged);
-    }
-
-    if (wsNotification.folderChanged) {
-      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, wsNotification.folderChanged);
-    }
-
-    if (wsNotification.folderViewChanged) {
-      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, wsNotification.folderViewChanged);
-    }
-  }, [wsNotification, eventEmitter]);
-
-  // Handle workspace notifications from BroadcastChannel
-  // This handles cross-tab synchronization for multi-tab scenarios. When a user has multiple
-  // tabs open in the same workspace, only one tab maintains the WebSocket connection.
-  // That "active" tab broadcasts notifications to other tabs via BroadcastChannel.
-  // 
-  // Example flow:
-  // 1. User has 2 tabs open:  Document A, Document B
-  // 2. Server sends notification → Document A(active WebSocket tab)
-  // 3. Document A processes notification + broadcasts via BroadcastChannel
-  // 4. Document B receive broadcast → process same notification
-  // 5. Result: All tabs show consistent updated data simultaneously
-  //
-  // Without this: Only the active tab would update, other tabs would show stale data
-  useEffect(() => {
-    if (!bcNotification || !eventEmitter) return;
-
-    Log.debug('Received broadcasted workspace notification:', bcNotification);
-
-    // Process notifications identically to WebSocket notifications to ensure
-    // consistent behavior across all tabs. Same event emissions = same UI updates.
-    if (bcNotification.profileChange) {
-      eventEmitter.emit(APP_EVENTS.USER_PROFILE_CHANGED, bcNotification.profileChange);
-    }
-
-    if (bcNotification.permissionChanged) {
-      eventEmitter.emit(APP_EVENTS.PERMISSION_CHANGED, bcNotification.permissionChanged);
-    }
-
-    if (bcNotification.sectionChanged) {
-      eventEmitter.emit(APP_EVENTS.SECTION_CHANGED, bcNotification.sectionChanged);
-    }
-
-    if (bcNotification.shareViewsChanged) {
-      eventEmitter.emit(APP_EVENTS.SHARE_VIEWS_CHANGED, bcNotification.shareViewsChanged);
-    }
-
-    if (bcNotification.mentionablePersonListChanged) {
-      eventEmitter.emit(APP_EVENTS.MENTIONABLE_PERSON_LIST_CHANGED, bcNotification.mentionablePersonListChanged);
-    }
-
-    if (bcNotification.serverLimit) {
-      eventEmitter.emit(APP_EVENTS.SERVER_LIMIT_CHANGED, bcNotification.serverLimit);
-    }
-
-    if (bcNotification.workspaceMemberProfileChanged) {
-      eventEmitter.emit(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, bcNotification.workspaceMemberProfileChanged);
-    }
-
-    if (bcNotification.folderChanged) {
-      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, bcNotification.folderChanged);
-    }
-
-    if (bcNotification.folderViewChanged) {
-      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, bcNotification.folderViewChanged);
-    }
-  }, [bcNotification, eventEmitter]);
-
-  const cancelDeferredCleanup = useCallback((objectId: string) => {
-    const timer = pendingCleanups.current.get(objectId);
-
-    if (timer !== undefined) {
-      clearTimeout(timer);
-      pendingCleanups.current.delete(objectId);
-      Log.debug(`Cancelled deferred cleanup for objectId ${objectId}`);
-    }
-  }, []);
-
-  const incrementContextRefCount = useCallback((objectId: string): number => {
-    const nextRefCount = (contextRefCounts.current.get(objectId) ?? 0) + 1;
-
-    contextRefCounts.current.set(objectId, nextRefCount);
-    return nextRefCount;
-  }, []);
-
-  const decrementContextRefCount = useCallback((objectId: string): number => {
-    const currentRefCount = contextRefCounts.current.get(objectId) ?? 0;
-
-    if (currentRefCount <= 1) {
-      contextRefCounts.current.delete(objectId);
-      return 0;
-    }
-
-    const nextRefCount = currentRefCount - 1;
-
-    contextRefCounts.current.set(objectId, nextRefCount);
-    return nextRefCount;
-  }, []);
-
-  const unregisterSyncContext = useCallback((objectId: string) => {
-    const ctx = registeredContexts.current.get(objectId);
-
-    if (!ctx) return;
-
-    // Flush pending local updates before removing observers
-    if (ctx.flush) {
-      ctx.flush();
-    }
-
-    // Remove update/awareness observers
-    if (ctx._cleanup) {
-      ctx._cleanup();
-    }
-
-    const destroyListener = destroyListeners.current.get(objectId);
-
-    if (destroyListener) {
-      destroyListener.doc.off('destroy', destroyListener.handler);
-      destroyListeners.current.delete(objectId);
-    }
-
-    registeredContexts.current.delete(objectId);
-    contextRefCounts.current.delete(objectId);
-    Log.debug(`Unregistered sync context for objectId ${objectId}`);
-  }, []);
-
-  const scheduleDeferredCleanup = useCallback((objectId: string, delayMs = 10_000) => {
-    // Cancel any existing timer for this objectId
-    cancelDeferredCleanup(objectId);
-
-    const remainingRefCount = decrementContextRefCount(objectId);
-
-    // Context is still actively used elsewhere; don't schedule teardown yet.
-    if (remainingRefCount > 0) {
-      Log.debug(`Skipped deferred cleanup for objectId ${objectId}; ${remainingRefCount} active owner(s) remain`);
-      return;
-    }
-
-    const timer = setTimeout(() => {
-      pendingCleanups.current.delete(objectId);
-
-      const activeRefCount = contextRefCounts.current.get(objectId) ?? 0;
-
-      if (activeRefCount > 0) {
-        Log.debug(`Skipped deferred cleanup for objectId ${objectId}; ref count restored to ${activeRefCount}`);
-        return;
-      }
-
-      unregisterSyncContext(objectId);
-    }, delayMs);
-
-    pendingCleanups.current.set(objectId, timer);
-    Log.debug(`Scheduled deferred cleanup for objectId ${objectId} in ${delayMs}ms`);
-  }, [cancelDeferredCleanup, decrementContextRefCount, unregisterSyncContext]);
-
-  const registerSyncContext = useCallback(
-    (context: RegisterSyncContext): SyncContext => {
-      if (!uuidValidate(context.doc.guid)) {
-        throw new Error(`Invalid Y.Doc guid: ${context.doc.guid}. It must be a valid UUID v4.`);
-      }
-
-      // Cancel any pending deferred cleanup for this doc
-      cancelDeferredCleanup(context.doc.guid);
-
-      const existingContext = registeredContexts.current.get(context.doc.guid);
-
-      // If the context is already registered, check if it's the same doc instance
-      if (existingContext !== undefined) {
-        // If same doc instance, reuse the existing context
-        if (existingContext.doc === context.doc) {
-          const refCount = incrementContextRefCount(context.doc.guid);
-
-          Log.debug(`Reusing existing sync context for objectId ${context.doc.guid}; owner count=${refCount}`);
-          return existingContext;
-        }
-
-        // Different doc instance - clean up old context and register new one
-        Log.debug(`Replacing stale sync context for objectId ${context.doc.guid} (different doc instance)`);
-        unregisterSyncContext(context.doc.guid);
-      }
-
-      Log.debug(`Registering sync context for objectId ${context.doc.guid} with collabType ${context.collabType}`);
-      context.emit = (message) => {
-        sendMessage(message);
-        postMessage(message);
-      };
-
-      // SyncContext extends RegisterSyncContext by attaching the emit function and destroy handler
-      const syncContext = context as SyncContext;
-
-      registeredContexts.current.set(syncContext.doc.guid, syncContext);
-      const handleDocDestroy = () => {
-        // Reuse normal teardown so pending debounced updates are flushed first.
-        cancelDeferredCleanup(syncContext.doc.guid);
-        unregisterSyncContext(syncContext.doc.guid);
-      };
-
-      syncContext.doc.on('destroy', handleDocDestroy);
-      destroyListeners.current.set(syncContext.doc.guid, { doc: syncContext.doc, handler: handleDocDestroy });
-
-      // Initialize the sync process for the new context
-      initSync(syncContext);
-      const refCount = incrementContextRefCount(syncContext.doc.guid);
-
-      Log.debug(`Registered sync context for objectId ${syncContext.doc.guid}; owner count=${refCount}`);
-
-      return syncContext;
-    },
-    [sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
-  );
-
-  /**
-   * Flush all pending updates for all registered sync contexts.
-   * This ensures all local changes are sent to the server via WebSocket.
-   */
-  const flushAllSync = useCallback(() => {
-    Log.debug('Flushing all sync contexts');
-    registeredContexts.current.forEach((context) => {
-      if (context.flush) {
-        context.flush();
-      }
-    });
-  }, []);
-
-  /**
-   * Sync all registered collab documents to the server via HTTP API.
-   * This uses the same collab_full_sync_batch API that desktop uses to send
-   * all collab states in a single batch request before operations like duplicate.
-   */
-  const syncAllToServer = useCallback(async (workspaceId: string) => {
-    // First flush any pending WebSocket updates
-    flushAllSync();
-
-    // Collect all registered contexts into a batch
-    const items: Array<{
-      objectId: string;
-      collabType: Types;
-      stateVector: Uint8Array;
-      docState: Uint8Array;
-    }> = [];
-
-    registeredContexts.current.forEach((context) => {
-      const { doc, collabType } = context;
-
-      if (!doc || collabType === undefined) return;
-
-      // Encode the document state and state vector
-      const docState = Y.encodeStateAsUpdate(doc);
-      const stateVector = Y.encodeStateVector(doc);
-
-      Log.debug('Adding collab to batch sync', {
-        objectId: doc.guid,
-        collabType,
-        docStateSize: docState.length,
-      });
-
-      items.push({
-        objectId: doc.guid,
-        collabType,
-        stateVector,
-        docState,
-      });
-    });
-
-    if (items.length === 0) {
-      Log.debug('No collabs to sync');
-      return;
-    }
-
-    // Send all collabs in a single batch request (same as desktop's collab_full_sync_batch)
-    try {
-      Log.debug('Sending batch sync request', { itemCount: items.length });
-      await collabFullSyncBatch(workspaceId, items);
-      Log.debug('Batch sync completed successfully');
-    } catch (error) {
-      Log.warn('Failed to batch sync collabs to server', { error });
-      // Don't throw - we still want to attempt the duplicate
-    }
-  }, [flushAllSync]);
-
-  // Cancel all pending deferred cleanup timers on unmount
-  useEffect(() => {
-    const timers = pendingCleanups.current;
+    refs.isDisposedRef.current = false;
 
     return () => {
-      timers.forEach((timer) => clearTimeout(timer));
-      timers.clear();
+      refs.isDisposedRef.current = true;
+      refs.incomingMessageQueuesRef.current.clear();
+      refs.processingObjectIdsRef.current.clear();
     };
-  }, []);
+  }, [refs]);
 
-  return { registerSyncContext, lastUpdatedCollab, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
+  // ── Workspace notifications ──────────────────────────────────────────
+  // Dispatches server-pushed workspace events (permission changes, section updates,
+  // profile changes, etc.) to the app-wide EventEmitter.  Handles both direct
+  // WebSocket notifications and cross-tab BroadcastChannel relays.
+  useWorkspaceNotifications(wsNotification, bcNotification, eventEmitter);
+
+  // ── Sync context lifecycle ───────────────────────────────────────────
+  // Provides registerSyncContext / unregisterSyncContext / scheduleDeferredCleanup.
+  // Manages ref-counting so multiple components sharing the same Y.Doc don't
+  // tear it down prematurely.
+  const { registerSyncContext, unregisterSyncContext, scheduleDeferredCleanup } =
+    useSyncContextLifecycle(refs, sendMessage, postMessage);
+
+  // ── Incoming collab messages ─────────────────────────────────────────
+  // Watches wsCollabMessage / bcCollabMessage and routes them through a per-objectId
+  // sequential queue.  Handles version mismatch detection and triggers doc rebuild
+  // (version-reset) when the server signals a new collab version.
+  const { lastUpdatedCollab, applyCollabMessage } = useCollabMessageHandler(
+    refs,
+    wsCollabMessage,
+    bcCollabMessage,
+    eventEmitter,
+    registerSyncContext,
+    scheduleDeferredCleanup
+  );
+
+  // ── Batch sync utilities ─────────────────────────────────────────────
+  // flushAllSync: drain buffered local updates to WebSocket for every registered doc.
+  // syncAllToServer: full HTTP batch sync (used before operations like "Duplicate").
+  const { flushAllSync, syncAllToServer } = useBatchSync(refs);
+
+  // ── User-initiated version revert ────────────────────────────────────
+  // Tears down the current doc, calls the server revert API, rebuilds a fresh doc
+  // from the returned snapshot, and re-registers it.  Falls back to the previous
+  // context if the rebuild fails.
+  const { revertCollabVersion } = useCollabVersionRevert({
+    refs,
+    workspaceId,
+    eventEmitter,
+    registerSyncContext,
+    unregisterSyncContext,
+    scheduleDeferredCleanup,
+    applyCollabMessage,
+  });
+
+  return { registerSyncContext, lastUpdatedCollab, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
 };

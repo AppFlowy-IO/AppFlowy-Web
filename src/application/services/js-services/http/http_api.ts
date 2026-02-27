@@ -1,5 +1,6 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import dayjs from 'dayjs';
+import { toBase64 } from 'lib0/buffer';
 import { omit } from 'lodash-es';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
@@ -961,6 +962,121 @@ export async function databaseBlobDiff(
   return database_blob.DatabaseBlobDiffResponse.decode(bytes);
 }
 
+export async function getCollabVersions(workspaceId: string, objectId: string, since?: Date) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
+  const from = since?.getTime() || null;
+  const data = await executeAPIRequest<Array<{
+    version: string;
+    parent: string | null;
+    name: string | null;
+    created_at: string;
+    created_by: number | null;
+    deleted_at?: string | null;
+    // Backward compatibility for older server payloads.
+    is_deleted?: boolean;
+    editors: number[];
+  }>>(() =>
+    axiosInstance?.get<APIResponse<Array<{
+      version: string;
+      parent: string | null;
+      name: string | null;
+      created_at: string;
+      created_by: number | null;
+      deleted_at?: string | null;
+      // Backward compatibility for older server payloads.
+      is_deleted?: boolean;
+      editors: number[];
+    }>>>(url, {
+      params: {
+        since: from,
+      },
+    })
+  );
+
+  return data.map((data) => {
+    return {
+      versionId: data.version,
+      parentId: data.parent,
+      name: data.name,
+      createdAt: new Date(data.created_at),
+      deletedAt: data.deleted_at ? new Date(data.deleted_at) : (data.is_deleted ? new Date(0) : null),
+      editors: data.editors,
+    };
+  });
+}
+
+export async function previewCollabVersion(workspaceId: string, objectId: string, version: string, collabType: Types) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/history/${version}?collab_type=${collabType}`;
+
+  const response = await axiosInstance?.get(url, {
+    responseType: 'arraybuffer'
+  });
+
+  if (!response) {
+    throw new Error('No response');
+  }
+
+  return new Uint8Array(response.data);
+}
+
+export async function createCollabVersion(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types,
+  name: string,
+  ySnapshot: Uint8Array
+) {
+  const snapshot = toBase64(ySnapshot);
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
+
+  return executeAPIRequest<string>(() =>
+    axiosInstance?.post<APIResponse<string>>(url, {
+      snapshot,
+      name,
+      collab_type: collabType,
+    })
+  );
+}
+
+export async function deleteCollabVersion(workspaceId: string, objectId: string, version: string) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
+
+  return executeAPIVoidRequest(() =>
+    axiosInstance?.delete<APIResponse>(url, {
+      data: JSON.stringify(version),
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
+  );
+}
+
+export async function revertCollabVersion(workspaceId: string, objectId: string, collabType: Types, version: string) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/revert`;
+  const data = await executeAPIRequest<{
+    state_vector: number[];
+    doc_state: number[];
+    collab_version: string | null;
+    version: number; // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
+  }>(() =>
+    axiosInstance?.post<APIResponse<{
+      state_vector: number[];
+      doc_state: number[];
+      collab_version: string | null;
+      version: number;
+    }>>(url, {
+      version,
+      collab_type: collabType,
+    })
+  );
+
+  return {
+    stateVector: new Uint8Array(data.state_vector),
+    docState: new Uint8Array(data.doc_state),
+    version: data.collab_version,
+  };
+}
+
 export async function getPublishView(publishNamespace: string, publishName: string) {
   const meta = await getPublishViewMeta(publishNamespace, publishName);
   const blob = await getPublishViewBlob(publishNamespace, publishName);
@@ -1873,7 +1989,7 @@ export async function uploadFile(
     });
 
     if (response?.data.code === 0) {
-    Log.debug('[UploadFile] completed', { url });
+      Log.debug('[UploadFile] completed', { url });
       return getAppFlowyFileUrl(workspaceId, viewId, response?.data.data.file_id);
     }
 

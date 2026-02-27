@@ -30,6 +30,7 @@ jest.mock('@/components/app/app.hooks', () => {
 });
 
 jest.mock('@/components/app/hooks/useViewOperations', () => ({
+  getViewReadOnlyStatus: () => false,
   useViewOperations: () => ({
     getViewReadOnlyStatus: () => false,
   }),
@@ -85,7 +86,7 @@ describe('AppPage database container', () => {
       handlers: {
         toView,
         loadViewMeta: jest.fn(),
-        createRowDoc: jest.fn(),
+        createRow: jest.fn(),
         loadView,
         appendBreadcrumb: jest.fn(),
         onRendered: jest.fn(),
@@ -149,7 +150,7 @@ describe('AppPage database container', () => {
       handlers: {
         toView,
         loadViewMeta: jest.fn(),
-        createRowDoc: jest.fn(),
+        createRow: jest.fn(),
         loadView,
         appendBreadcrumb: jest.fn(),
         onRendered: jest.fn(),

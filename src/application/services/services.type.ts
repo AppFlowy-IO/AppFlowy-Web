@@ -1,5 +1,6 @@
 import { AxiosInstance } from 'axios';
 
+import { CollabVersionRecord, EncodedCollab } from '@/application/collab-version.type';
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { ViewMeta } from '@/application/db/tables/view_metas';
 import {
@@ -42,6 +43,7 @@ import {
   SubscriptionInterval,
   SubscriptionPlan,
   Subscriptions,
+  Types,
   UpdatePagePayload,
   UpdatePublishConfigPayload,
   UpdateSpacePayload,
@@ -62,7 +64,8 @@ export type AFService = PublishService &
   WorkspaceService &
   TemplateService &
   QuickNoteService &
-  AIChatService & {
+  AIChatService &
+  CollabHistoryService & {
     getClientId: () => number;
     getDeviceId: () => string;
     getAxiosInstance: () => AxiosInstance | null;
@@ -287,4 +290,12 @@ export interface PublishService {
 
 export interface AIChatService {
   getChatMessages: (workspaceId: string, chatId: string, limit?: number | undefined) => Promise<RepeatedChatMessage>;
+}
+
+export interface CollabHistoryService {
+  getCollabHistory: (workspaceId: string, viewId: string, since?: Date) => Promise<CollabVersionRecord[]>;
+  previewCollabVersion: (workspaceId: string, viewId: string, versionId: string, collabType: Types) => Promise<Uint8Array | undefined>;
+  createCollabVersion: (workspaceId: string, viewId: string, collabType: Types, name: string, snapshot: Uint8Array) => Promise<string>;
+  deleteCollabVersion: (workspaceId: string, viewId: string, versionId: string) => Promise<void>;
+  revertCollabVersion: (workspaceId: string, viewId: string, collabType: Types, versionId: string) => Promise<EncodedCollab>;
 }
