@@ -1,19 +1,9 @@
 import { useCallback } from 'react';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
-import { Types, YDoc } from '@/application/types';
+import { YDoc, YDocWithMeta } from '@/application/types';
 import { useSyncInternalOptional } from '@/components/app/contexts/SyncInternalContext';
 import { Log } from '@/utils/log';
-
-/**
- * Extended YDoc with metadata for deferred sync binding.
- */
-export interface YDocWithMeta extends YDoc {
-  object_id?: string;
-  view_id?: string;
-  _collabType?: Types;
-  _syncBound?: boolean;
-}
 
 /**
  * Hook to bind a Y.js document to WebSocket sync.

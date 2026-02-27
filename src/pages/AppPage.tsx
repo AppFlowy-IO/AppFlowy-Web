@@ -2,7 +2,7 @@ import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMem
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
@@ -17,7 +17,6 @@ import {
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
-import type { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';

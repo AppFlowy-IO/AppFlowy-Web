@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 
-import { YDoc } from '@/application/types';
+import { YDoc, YDocWithMeta } from '@/application/types';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
-import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { Log } from '@/utils/log';
 
 interface UseDocumentLoaderProps {

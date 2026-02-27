@@ -453,6 +453,17 @@ export interface YDoc extends Y.Doc {
   getMap(key: YjsEditorKey.data_section): YSharedRoot | any;
 }
 
+/**
+ * Extended YDoc with metadata for deferred sync binding.
+ * These properties are set during loadView and used by bindViewSync.
+ */
+export interface YDocWithMeta extends YDoc {
+  /** The collab type for sync binding */
+  _collabType?: Types;
+  /** Whether sync has been bound for this doc */
+  _syncBound?: boolean;
+}
+
 export interface YDatabaseRow extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.id): RowId;
 

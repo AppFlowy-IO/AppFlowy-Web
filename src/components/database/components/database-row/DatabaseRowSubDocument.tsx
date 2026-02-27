@@ -24,12 +24,12 @@ import {
   YDatabaseField,
   YDatabaseRow,
   YDoc,
+  YDocWithMeta,
   YjsDatabaseKey,
   YjsEditorKey
 } from '@/application/types';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
-import { YDocWithMeta } from '@/components/database/hooks';
 import { Editor } from '@/components/editor';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';

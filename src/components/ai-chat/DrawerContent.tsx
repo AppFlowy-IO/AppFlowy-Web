@@ -3,11 +3,10 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 import { YjsEditor } from '@/application/slate-yjs';
-import { UIVariant, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { insertDataToDoc } from '@/components/ai-chat/utils';
 import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useService } from '@/components/main/app.hooks';

@@ -10,6 +10,7 @@ import {
   View,
   ViewLayout,
   YDoc,
+  YDocWithMeta,
 } from '@/application/types';
 import { openView } from '@/application/view-loader';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
@@ -22,21 +23,6 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 import { useDatabaseIdentity } from './useDatabaseIdentity';
-
-/**
- * Extended YDoc with metadata for deferred sync binding.
- * These properties are set during loadView and used by bindViewSync.
- */
-export interface YDocWithMeta extends YDoc {
-  /** Collab object ID used by sync/persistence routing */
-  object_id?: string;
-  /** Host view ID used by route/render guards */
-  view_id?: string;
-  /** The collab type for sync binding */
-  _collabType?: Types;
-  /** Whether sync has been bound for this doc */
-  _syncBound?: boolean;
-}
 
 export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
   const isMobile = getPlatform().isMobile;
