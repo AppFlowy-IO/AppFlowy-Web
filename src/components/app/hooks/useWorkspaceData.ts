@@ -642,9 +642,29 @@ export function useWorkspaceData() {
           if (!Array.isArray(nextOutline)) return;
           patchedOutline = nextOutline as View[];
         } catch (error) {
-          Log.warn('[Outline] [FolderOutlineChanged] Failed to apply outline diff, reloading outline', error);
-          void loadOutline(currentWorkspaceId, false);
-          return;
+          // Strict validation fails when server patches target lazy-loaded children
+          // arrays (empty locally, populated on server). Retry without validation —
+          // Array.splice() clamps out-of-bounds indices, appending the new view.
+          // The follow-up loadOutline (from addPage) corrects any positional inaccuracy.
+          Log.debug('[Outline] [FolderOutlineChanged] Strict patch failed, retrying without validation', error);
+          try {
+            const relaxed = applyPatch(baseDocument, patch, false, false);
+            const nextDoc = relaxed?.newDocument ?? baseDocument;
+            const nextOutline = (nextDoc as { outline?: unknown }).outline;
+
+            if (Array.isArray(nextOutline)) {
+              patchedOutline = nextOutline as View[];
+            }
+          } catch (retryError) {
+            Log.warn('[Outline] [FolderOutlineChanged] Relaxed patch also failed, reloading outline', retryError);
+            void loadOutline(currentWorkspaceId, false);
+            return;
+          }
+
+          if (!patchedOutline) {
+            void loadOutline(currentWorkspaceId, false);
+            return;
+          }
         }
       }
 
