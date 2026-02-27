@@ -3678,6 +3678,9 @@
     "restoredFrom": "Restored from {}",
     "more": "More...",
     "upgrade": "Upgrade",
-    "forLongerVersionHistory": "for longer version history"
+    "forLongerVersionHistory": "for longer version history",
+    "revertedDialogTitle": "Page Restored",
+    "revertedDialogDescription": "This page was restored to a previous version from another device.",
+    "revertedDismiss": "Got it"
   }
 }

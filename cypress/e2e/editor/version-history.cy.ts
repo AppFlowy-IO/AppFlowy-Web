@@ -3,6 +3,7 @@ import { toBase64 } from 'lib0/buffer';
 import { AuthTestUtils } from '../../support/auth-utils';
 import {
   HeaderSelectors,
+  RevertedDialogSelectors,
   VersionHistorySelectors,
   EditorSelectors,
   waitForReactUpdate,
@@ -70,6 +71,48 @@ function snapshotCurrentDoc(): Cypress.Chainable<string> {
     const encoded: Uint8Array = YMod.encodeSnapshot(snapshot);
 
     return toBase64(encoded);
+  });
+}
+
+/**
+ * Extract the first version ID from the currently open version history modal.
+ * Version items have data-testid="version-history-item-{versionId}".
+ */
+function getVersionIdFromModal(): Cypress.Chainable<string> {
+  return VersionHistorySelectors.items()
+    .first()
+    .invoke('attr', 'data-testid')
+    .then((testId) => {
+      if (!testId) throw new Error('No version item found in version history modal');
+      // Strip the "version-history-item-" prefix to get the bare versionId
+      return testId.replace('version-history-item-', '');
+    });
+}
+
+/**
+ * Revert a document to a specific version via API, bypassing the UI.
+ * This simulates what another device (desktop/mobile) would do.
+ *
+ * Endpoint: POST /api/workspace/{workspaceId}/collab/{objectId}/revert
+ * Body:     { version: versionId, collab_type: 0 (Document) }
+ */
+function revertToVersion(
+  workspaceId: string,
+  viewId: string,
+  accessToken: string,
+  versionId: string,
+): void {
+  cy.request({
+    method: 'POST',
+    url: `${APPFLOWY_BASE_URL}/api/workspace/${workspaceId}/collab/${viewId}/revert`,
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: {
+      version: versionId,
+      collab_type: 0,
+    },
   });
 }
 
@@ -241,6 +284,111 @@ describe('Document Version History', () => {
       testLog.step(8, 'Verify document is still accessible');
 
       // Verify the editor is still visible and functional
+      EditorSelectors.slateEditor().should('be.visible');
+    });
+  });
+
+  /**
+   * Revert Dialog Tests
+   *
+   * These tests verify the popup dialog that appears when another device (desktop/mobile)
+   * reverts the current document to a previous version. The dialog is triggered by a
+   * server-pushed WebSocket event (isExternalRevert: true), not by user-initiated restores.
+   */
+  describe('Revert Dialog', () => {
+    it('should show dialog with correct content when document is reverted externally', () => {
+      createVersionsOnCurrentPage(2);
+
+      testLog.step(3, 'Open version history to find a version ID');
+      openVersionHistory();
+      VersionHistorySelectors.items().should('have.length.at.least', 1);
+
+      testLog.step(4, 'Revert to the first version via API (simulates another device)');
+      getAccessToken().then((accessToken) => {
+        parseAppUrl().then(({ workspaceId, viewId }) => {
+          getVersionIdFromModal().then((versionId) => {
+            // Close the modal first so the dialog has a clean backdrop
+            VersionHistorySelectors.closeButton().click();
+            VersionHistorySelectors.modal({ timeout: 5000 }).should('not.exist');
+
+            // Trigger the revert via API (bypasses in-app UI → sets isExternalRevert: true)
+            revertToVersion(workspaceId, viewId, accessToken, versionId);
+
+            testLog.step(5, 'Assert the revert dialog appears automatically');
+            RevertedDialogSelectors.dialog({ timeout: 15000 }).should('be.visible');
+
+            testLog.step(6, 'Assert dialog title is "Page Restored"');
+            RevertedDialogSelectors.dialog().within(() => {
+              cy.get('[role="heading"]').should('have.text', 'Page Restored');
+            });
+
+            testLog.step(7, 'Assert dialog description explains the external revert');
+            RevertedDialogSelectors.dialog().should(
+              'contain.text',
+              'This page was restored to a previous version from another device.'
+            );
+
+            testLog.step(8, 'Assert "Got it" dismiss button is visible and labeled correctly');
+            RevertedDialogSelectors.confirmButton()
+              .should('be.visible')
+              .and('not.be.disabled')
+              .and('contain.text', 'Got it');
+          });
+        });
+      });
+    });
+
+    it('should dismiss dialog and restore editor when Got it is clicked', () => {
+      createVersionsOnCurrentPage(2);
+
+      openVersionHistory();
+      VersionHistorySelectors.items().should('have.length.at.least', 1);
+
+      getAccessToken().then((accessToken) => {
+        parseAppUrl().then(({ workspaceId, viewId }) => {
+          getVersionIdFromModal().then((versionId) => {
+            VersionHistorySelectors.closeButton().click();
+            VersionHistorySelectors.modal({ timeout: 5000 }).should('not.exist');
+
+            revertToVersion(workspaceId, viewId, accessToken, versionId);
+
+            // Wait for dialog to appear
+            RevertedDialogSelectors.dialog({ timeout: 15000 }).should('be.visible');
+
+            testLog.step(5, 'Click Got it to dismiss the dialog');
+            RevertedDialogSelectors.confirmButton().click();
+
+            testLog.step(6, 'Assert the dialog is gone after dismissal');
+            RevertedDialogSelectors.dialog().should('not.exist');
+
+            testLog.step(7, 'Assert the editor is still visible and functional after dismissal');
+            EditorSelectors.slateEditor().should('be.visible');
+          });
+        });
+      });
+    });
+
+    it('should NOT show dialog when user restores via the version history UI', () => {
+      createVersionsOnCurrentPage(2);
+
+      testLog.step(3, 'Open version history modal');
+      openVersionHistory();
+      VersionHistorySelectors.items().should('have.length.at.least', 2);
+
+      testLog.step(4, 'Select the second version and click the in-app Restore button');
+      VersionHistorySelectors.items().eq(1).click();
+      waitForReactUpdate(2000);
+      VersionHistorySelectors.restoreButton().should('be.visible').and('not.be.disabled').click();
+
+      testLog.step(5, 'Wait for the version history modal to close (restore complete)');
+      VersionHistorySelectors.modal({ timeout: 30000 }).should('not.exist');
+      waitForReactUpdate(2000);
+
+      testLog.step(6, 'Assert the revert dialog does NOT appear for user-initiated restore');
+      // User initiated the restore through the UI — dialog must NOT show
+      RevertedDialogSelectors.dialog().should('not.exist');
+
+      testLog.step(7, 'Assert the editor remains functional');
       EditorSelectors.slateEditor().should('be.visible');
     });
   });

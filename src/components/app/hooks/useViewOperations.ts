@@ -42,6 +42,7 @@ type CollabDocResetPayload = {
   viewId?: string;
   doc: YDoc;
   awareness?: Awareness;
+  isExternalRevert?: boolean;
 };
 
 export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {

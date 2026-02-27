@@ -1,4 +1,4 @@
-import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, memo, startTransition, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -18,6 +18,7 @@ import {
 import DatabaseView from '@/components/app/DatabaseView';
 import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
 import type { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
+import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { useCurrentUser, useService } from '@/components/main/app.hooks';
@@ -117,6 +118,10 @@ function AppPage() {
   const [error, setError] = React.useState<AppError | null>(null);
   // Track whether sync has been bound for the current doc
   const [syncBound, setSyncBound] = useState(false);
+  // Track viewIds that were externally reverted (by another device); show dialog when user opens them
+  const [pendingExternalReverts, setPendingExternalReverts] = useState<ReadonlySet<string>>(() => new Set());
+  // Derived: show dialog when current view was reverted externally (Vercel rule: derive during render, not in effect)
+  const showRevertedDialog = !!viewId && pendingExternalReverts.has(viewId);
 
   // Track in-progress loads to prevent duplicate requests and enable recovery.
   const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
@@ -330,7 +335,23 @@ function AppPage() {
   useEffect(() => {
     if (!eventEmitter) return;
 
-    const handleCollabDocReset = ({ objectId, viewId: resetViewId, doc: nextDoc }: { objectId: string; viewId?: string; doc: YDoc }) => {
+    const handleCollabDocReset = ({ objectId, viewId: resetViewId, doc: nextDoc, isExternalRevert }: { objectId: string; viewId?: string; doc: YDoc; isExternalRevert?: boolean }) => {
+      // Track external reverts so we can show the dialog when user opens the affected view.
+      // Wrapped in startTransition: showing the dialog is non-urgent and must not block
+      // urgent updates like the doc reset that follows immediately after.
+      if (isExternalRevert) {
+        const targetViewId = resetViewId ?? objectId;
+
+        startTransition(() => {
+          setPendingExternalReverts((prev) => {
+            const next = new Set(prev);
+
+            next.add(targetViewId);
+            return next;
+          });
+        });
+      }
+
       setDoc((currentDoc) => {
         if (!currentDoc || currentDoc.guid !== objectId) {
           return currentDoc;
@@ -565,6 +586,20 @@ function AppPage() {
     await loadPageDoc(retryViewId);
   }, [viewId, outlineView, workspaceId, service, loadPageDoc]);
 
+  // Use currentViewIdRef (advanced-use-latest pattern) so this callback is stable
+  // across navigations — no viewId dependency needed.
+  const handleDismissRevertedDialog = useCallback(() => {
+    const currentViewId = currentViewIdRef.current;
+
+    if (!currentViewId) return;
+    setPendingExternalReverts((prev) => {
+      const next = new Set(prev);
+
+      next.delete(currentViewId);
+      return next;
+    });
+  }, []);
+
   if (!viewId) return null;
   return (
     <div ref={ref} className={'relative h-full w-full'}>
@@ -572,6 +607,7 @@ function AppPage() {
 
       {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : <div className={'h-full w-full'}>{viewDom}</div>}
       {view && <Help />}
+      <RevertedDialog open={showRevertedDialog} onDismiss={handleDismissRevertedDialog} />
     </div>
   );
 }

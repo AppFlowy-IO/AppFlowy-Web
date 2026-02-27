@@ -31,6 +31,8 @@ type CollabDocResetPayload = {
   viewId?: string;
   doc: YDoc;
   awareness?: awarenessProtocol.Awareness;
+  /** True when the reset was pushed by the server (another device reverted). */
+  isExternalRevert?: boolean;
 };
 
 export interface RegisterSyncContext {
@@ -660,6 +662,7 @@ export const useSync = (
                 viewId: previousDoc.view_id ?? previousDoc.object_id,
                 doc: context.doc,
                 awareness: nextAwareness,
+                isExternalRevert: true,
               } satisfies CollabDocResetPayload);
             } finally {
               resettingObjectIds.current.delete(objectId);

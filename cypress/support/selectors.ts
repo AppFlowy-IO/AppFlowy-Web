@@ -1013,6 +1013,14 @@ export const RowDetailSelectors = {
 };
 
 /**
+ * Reverted Dialog selectors (shown when another device reverts the current document)
+ */
+export const RevertedDialogSelectors = {
+  dialog: (options?: CypressGetOptions) => cy.get(byTestId('reverted-dialog'), options),
+  confirmButton: (options?: CypressGetOptions) => cy.get(byTestId('reverted-dialog-confirm'), options),
+};
+
+/**
  * Version History selectors
  */
 export const VersionHistorySelectors = {
