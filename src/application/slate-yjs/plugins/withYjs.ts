@@ -174,6 +174,27 @@ export function withYjs<T extends Editor>(
     YjsEditor.applyRemoteEvents(e, events, transaction);
   };
 
+  // When the sync layer is about to destroy this doc (version-reset or revert),
+  // it emits 'reset' before calling doc.destroy(). We must disconnect the editor
+  // immediately so that:
+  //   1. observeDeep events from the dying doc don't mutate editor.children
+  //   2. Slate's <Editable> layout effect doesn't try to sync a stale selection
+  //      against DOM nodes that no longer exist (the "Cannot resolve a DOM point"
+  //      crash triggered by flushSync in react-use-websocket).
+  const handleDocReset = () => {
+    if (!YjsEditor.connected(e)) return;
+    console.log('[Version] withYjs: doc reset received, disconnecting editor for docId=%s', doc.guid);
+    try {
+      e.deselect();
+    } catch {
+      // Selection may already be null — safe to ignore.
+    }
+
+    e.disconnect();
+  };
+
+  doc.on('reset', handleDocReset);
+
   e.connect = () => {
     if (YjsEditor.connected(e)) {
       throw new Error('Already connected');
@@ -186,9 +207,10 @@ export function withYjs<T extends Editor>(
 
   e.disconnect = () => {
     if (!YjsEditor.connected(e)) {
-      throw new Error('Not connected');
+      return;
     }
 
+    doc.off('reset', handleDocReset);
     e.sharedRoot.unobserveDeep(handleYEvents);
     connectSet.delete(e);
   };

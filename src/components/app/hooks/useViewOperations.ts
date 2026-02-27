@@ -14,6 +14,7 @@ import {
 import { openView } from '@/application/view-loader';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
 import { getPlatform } from '@/utils/platform';
 
@@ -36,14 +37,6 @@ export interface YDocWithMeta extends YDoc {
   /** Whether sync has been bound for this doc */
   _syncBound?: boolean;
 }
-
-type CollabDocResetPayload = {
-  objectId: string;
-  viewId?: string;
-  doc: YDoc;
-  awareness?: Awareness;
-  isExternalRevert?: boolean;
-};
 
 export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
   const isMobile = getPlatform().isMobile;

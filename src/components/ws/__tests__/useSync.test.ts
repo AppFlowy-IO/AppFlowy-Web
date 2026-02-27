@@ -101,6 +101,9 @@ const createUser = (workspaceId = 'workspace-from-user'): User => ({
   latestWorkspaceId: workspaceId,
 });
 
+const defaultEventEmitter = new EventEmitter();
+const defaultWorkspaceId = 'test-workspace';
+
 const resetCommonMocks = () => {
   mockedUseCurrentUserOptional.mockReturnValue(undefined);
   mockedOpenCollabDB.mockReset();
@@ -124,7 +127,7 @@ describe('useSync deferred cleanup', () => {
     const ws = createWs();
     const bc = createBroadcastChannel();
     const doc = createDoc('11111111-1111-4111-8111-111111111111');
-    const { result, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     let firstRegistration;
     let secondRegistration;
@@ -157,7 +160,7 @@ describe('useSync deferred cleanup', () => {
     const ws = createWs();
     const bc = createBroadcastChannel();
     const doc = createDoc('22222222-2222-4222-8222-222222222222');
-    const { result, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     let firstRegistration;
     let afterCleanupRegistration;
@@ -193,7 +196,7 @@ describe('useSync deferred cleanup', () => {
     const ws = createWs();
     const bc = createBroadcastChannel();
     const doc = createDoc('33333333-3333-4333-8333-333333333333');
-    const { result, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
     const sendMessage = ws.sendMessage as jest.Mock;
 
     act(() => {
@@ -243,7 +246,7 @@ describe('useSync version-gated message handling', () => {
     const doc = createDoc(objectId) as Y.Doc & { version?: string };
     doc.version = version;
 
-    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -283,7 +286,7 @@ describe('useSync version-gated message handling', () => {
     doc.version = version;
     mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
 
-    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -326,7 +329,7 @@ describe('useSync version-gated message handling', () => {
     const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
     nextDoc.version = incomingVersion;
     mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
-    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -369,7 +372,7 @@ describe('useSync version-gated message handling', () => {
     const nextDoc = createDoc(objectId) as Y.Doc & { version?: string };
     nextDoc.version = incomingVersion;
     mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
-    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -423,7 +426,7 @@ describe('useSync version-gated message handling', () => {
       .mockImplementationOnce(() => firstResetOpen.promise as Promise<Y.Doc>)
       .mockImplementationOnce(() => secondResetOpen.promise as Promise<Y.Doc>);
 
-    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -493,7 +496,7 @@ describe('useSync version-gated message handling', () => {
 
     mockedOpenCollabDB.mockImplementationOnce(() => deferredOpen.promise as Promise<Y.Doc>);
 
-    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc));
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc: docA, collabType: Types.Document });
@@ -574,7 +577,7 @@ describe('useSync notifications', () => {
       folderChanged: { id: 'folder' },
       folderViewChanged: { id: 'view' },
     };
-    const { rerender } = renderHook(() => useSync(ws, bc, eventEmitter));
+    const { rerender } = renderHook(() => useSync(ws, bc, eventEmitter, defaultWorkspaceId));
 
     act(() => {
       ws.lastMessage = { notification } as AppflowyWebSocketType['lastMessage'];
@@ -608,7 +611,7 @@ describe('useSync notifications', () => {
       folderChanged: { id: 'folder' },
       folderViewChanged: { id: 'view' },
     };
-    const { rerender } = renderHook(() => useSync(ws, bc, eventEmitter));
+    const { rerender } = renderHook(() => useSync(ws, bc, eventEmitter, defaultWorkspaceId));
 
     act(() => {
       bc.lastBroadcastMessage = { notification } as BroadcastChannelType['lastBroadcastMessage'];
@@ -635,7 +638,7 @@ describe('useSync public API', () => {
     const ws = createWs();
     const bc = createBroadcastChannel();
     const doc = createDoc('not-a-uuid');
-    const { result } = renderHook(() => useSync(ws, bc));
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     expect(() => {
       act(() => {
@@ -652,7 +655,7 @@ describe('useSync public API', () => {
     const docB = createDoc(guid) as Y.Doc & { version?: string };
     docA.version = undefined;
     docB.version = undefined;
-    const { result, rerender } = renderHook(() => useSync(ws, bc));
+    const { result, rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc: docA, collabType: Types.Document });
@@ -685,7 +688,7 @@ describe('useSync public API', () => {
     const docA = createDoc('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa');
     const docB = createDoc('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
     const sendMessage = ws.sendMessage as jest.Mock;
-    const { result } = renderHook(() => useSync(ws, bc));
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc: docA, collabType: Types.Document });
@@ -715,7 +718,7 @@ describe('useSync public API', () => {
     const bc = createBroadcastChannel();
     const docA = createDoc('cccccccc-cccc-4ccc-8ccc-cccccccccccc');
     const docB = createDoc('dddddddd-dddd-4ddd-8ddd-dddddddddddd');
-    const { result } = renderHook(() => useSync(ws, bc));
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc: docA, collabType: Types.Document });
@@ -741,7 +744,7 @@ describe('useSync public API', () => {
     const ws = createWs();
     const bc = createBroadcastChannel();
     const doc = createDoc('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee');
-    const { result } = renderHook(() => useSync(ws, bc));
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -773,7 +776,7 @@ describe('useSync queue guards and dedupe', () => {
       collabType: Types.Document,
       update: { version },
     };
-    const { result, rerender } = renderHook(() => useSync(ws, bc));
+    const { result, rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -801,7 +804,7 @@ describe('useSync queue guards and dedupe', () => {
       collabType: Types.Document,
       update: { version },
     };
-    const { result, rerender } = renderHook(() => useSync(ws, bc));
+    const { result, rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -822,7 +825,7 @@ describe('useSync queue guards and dedupe', () => {
     const warnSpy = jest.spyOn(Log, 'warn').mockImplementation(() => undefined);
     const ws = createWs();
     const bc = createBroadcastChannel();
-    const { rerender } = renderHook(() => useSync(ws, bc));
+    const { rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       ws.lastMessage = {
@@ -857,7 +860,7 @@ describe('useSync queue guards and dedupe', () => {
         throw new Error('first apply failed');
       })
       .mockImplementation(() => undefined);
-    const { result, rerender } = renderHook(() => useSync(ws, bc));
+    const { result, rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -898,7 +901,7 @@ describe('useSync queue guards and dedupe', () => {
     const version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b304';
     const timestamp = Date.now();
     doc.version = version;
-    const { result, rerender } = renderHook(() => useSync(ws, bc));
+    const { result, rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -944,7 +947,7 @@ describe('useSync revertCollabVersion', () => {
   it('throws when sync context or active workspace is unavailable', async () => {
     const ws = createWs();
     const bc = createBroadcastChannel();
-    const { result } = renderHook(() => useSync(ws, bc));
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
 
     await expect(result.current.revertCollabVersion('missing', '018f2f9e-3f04-7c8d-8a2e-8df6dff4b401')).rejects.toThrow(
       'Unable to restore version: sync context is unavailable'
@@ -1018,7 +1021,7 @@ describe('useSync revertCollabVersion', () => {
     );
   });
 
-  it('uses currentUser.latestWorkspaceId and requested version when server version is missing', async () => {
+  it('uses requested version as expectedVersion when server version is missing', async () => {
     const user = createUser('workspace-from-user');
     mockedUseCurrentUserOptional.mockReturnValue(user);
     const ws = createWs();
@@ -1026,6 +1029,7 @@ describe('useSync revertCollabVersion', () => {
     const doc = createDoc('f6666666-6666-4666-8666-666666666666') as Y.Doc & { version?: string };
     const nextDoc = createDoc(doc.guid) as Y.Doc & { version?: string };
     const targetVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b404';
+    const workspaceId = 'workspace-from-user';
 
     doc.version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b405';
     mockedRevertCollabVersion.mockResolvedValueOnce({
@@ -1034,7 +1038,7 @@ describe('useSync revertCollabVersion', () => {
       version: null,
     });
     mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
-    const { result } = renderHook(() => useSync(ws, bc));
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, workspaceId));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });
@@ -1045,7 +1049,7 @@ describe('useSync revertCollabVersion', () => {
     });
 
     expect(mockedRevertCollabVersion).toHaveBeenCalledWith(
-      user.latestWorkspaceId,
+      workspaceId,
       doc.guid,
       Types.Document,
       targetVersion
@@ -1065,7 +1069,7 @@ describe('useSync revertCollabVersion', () => {
     const version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b406';
     const targetVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b407';
     const openError = new Error('open failed');
-    const { result, rerender } = renderHook(() => useSync(ws, bc, undefined, 'workspace-from-prop'));
+    const { result, rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, 'workspace-from-prop'));
 
     doc.version = version;
     mockedRevertCollabVersion.mockResolvedValueOnce({
@@ -1121,7 +1125,7 @@ describe('useSync revertCollabVersion', () => {
     mockedRevertCollabVersion.mockImplementationOnce(() => revertDeferred.promise);
     mockedOpenCollabDB.mockResolvedValueOnce(nextDoc as Y.Doc);
 
-    const { result, rerender } = renderHook(() => useSync(ws, bc, undefined, 'workspace-from-prop'));
+    const { result, rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, 'workspace-from-prop'));
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.Document });

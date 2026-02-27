@@ -53,7 +53,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
     webSocket,
     broadcastChannel,
     eventEmitterRef.current,
-    currentWorkspaceId
+    currentWorkspaceId!
   );
 
   // Handle WebSocket reconnection
