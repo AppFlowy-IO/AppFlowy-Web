@@ -4,6 +4,7 @@ import React, { createContext, useContext, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { Awareness } from 'y-protocols/awareness';
 
+import { CollabVersionRecord } from '@/application/collab-version.type';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   AppendBreadcrumb,
@@ -39,7 +40,10 @@ import {
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
-import { CollabVersionRecord } from '@/application/collab-version.type';
+import { AppNavigationContext } from './contexts/AppNavigationContext';
+import { AppOperationsContext } from './contexts/AppOperationsContext';
+import { AppOutlineContext } from './contexts/AppOutlineContext';
+import { AppSyncContext } from './contexts/AppSyncContext';
 import { AuthInternalContext } from './contexts/AuthInternalContext';
 import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';
@@ -58,7 +62,7 @@ export interface AppContextType {
   loadViewChildrenBatch?: (viewIds: string[]) => Promise<View[]>;
   markViewChildrenStale?: (viewId: string) => void;
   viewId?: string;
-  wordCount?: Record<string, TextCount>;
+  getWordCount?: (viewId: string) => TextCount | undefined;
   setWordCount?: (viewId: string, count: TextCount) => void;
   currentWorkspaceId?: string;
   onChangeWorkspace?: (workspaceId: string) => Promise<void>;
@@ -125,7 +129,7 @@ export interface AppContextType {
   revertCollabVersion?: (viewId: string, versionId: string) => Promise<void>;
 }
 
-// Main AppContext - same as original
+// Legacy AppContext - kept for useAppHandlers (91 usages) and useAppContextOptional (2 usages)
 export const AppContext = createContext<AppContextType | null>(null);
 
 // Internal component to conditionally render sync and business layers only when workspace ID exists
@@ -159,10 +163,55 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-// All hooks remain identical to maintain backward compatibility
+// ─── Auth-only hooks (bypass business layer entirely) ────────────────────────
+
+export function useCurrentWorkspaceId() {
+  const context = useContext(AuthInternalContext);
+
+  if (!context) {
+    throw new Error('useCurrentWorkspaceId must be used within an AppProvider');
+  }
+
+  return context.currentWorkspaceId;
+}
+
+export function useCurrentWorkspaceIdOptional(): string | undefined {
+  const context = useContext(AuthInternalContext);
+
+  return context?.currentWorkspaceId;
+}
+
+export function useUserWorkspaceInfo() {
+  const context = useContext(AuthInternalContext);
+
+  if (!context) {
+    throw new Error('useUserWorkspaceInfo must be used within an AppProvider');
+  }
+
+  return context.userWorkspaceInfo;
+}
+
+export function usePageHistoryEnabled(): boolean {
+  const context = useContext(AuthInternalContext);
+
+  // Fail open: if context isn't available (e.g. publish pages), default to true
+  return context?.enablePageHistory ?? true;
+}
+
+// ─── Navigation-only hooks → AppNavigationContext ────────────────────────────
+
+export function useAppViewId() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useAppViewId must be used within an AppProvider');
+  }
+
+  return context.viewId;
+}
 
 export function useViewErrorStatus() {
-  const context = useContext(AppContext);
+  const context = useContext(AppNavigationContext);
 
   if (!context) {
     throw new Error('useViewErrorStatus must be used within an AppProvider');
@@ -175,23 +224,25 @@ export function useViewErrorStatus() {
 }
 
 export function useBreadcrumb() {
-  const context = useContext(AppContext);
+  const context = useContext(AppNavigationContext);
 
   return context?.breadcrumbs;
 }
 
-export function useUserWorkspaceInfo() {
-  const context = useContext(AppContext);
+export function useOpenModalViewId() {
+  const context = useContext(AppNavigationContext);
 
   if (!context) {
-    throw new Error('useUserWorkspaceInfo must be used within an AppProvider');
+    throw new Error('useOpenModalViewId must be used within an AppProvider');
   }
 
-  return context.userWorkspaceInfo;
+  return context.openPageModalViewId;
 }
 
+// ─── Outline-only hooks → AppOutlineContext ──────────────────────────────────
+
 export function useAppOutline() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useAppOutline must be used within an AppProvider');
@@ -200,8 +251,21 @@ export function useAppOutline() {
   return context.outline;
 }
 
+export function useAppView(viewId?: string) {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useAppView must be used within an AppProvider');
+  }
+
+  return useMemo(() => {
+    if (!viewId) return;
+    return findView(context.outline || [], viewId);
+  }, [context.outline, viewId]);
+}
+
 export function useLoadedViewIds() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useLoadedViewIds must be used within an AppProvider');
@@ -211,7 +275,7 @@ export function useLoadedViewIds() {
 }
 
 export function useLoadViewChildren() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useLoadViewChildren must be used within an AppProvider');
@@ -221,7 +285,7 @@ export function useLoadViewChildren() {
 }
 
 export function useLoadViewChildrenBatch() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useLoadViewChildrenBatch must be used within an AppProvider');
@@ -231,7 +295,7 @@ export function useLoadViewChildrenBatch() {
 }
 
 export function useMarkViewChildrenStale() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useMarkViewChildrenStale must be used within an AppProvider');
@@ -240,8 +304,63 @@ export function useMarkViewChildrenStale() {
   return context.markViewChildrenStale;
 }
 
+export function useAppFavorites() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useAppFavorites must be used within an AppProvider');
+  }
+
+  return {
+    loadFavoriteViews: context.loadFavoriteViews,
+    favoriteViews: context.favoriteViews,
+  };
+}
+
+export function useAppRecent() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useAppRecent must be used within an AppProvider');
+  }
+
+  return {
+    loadRecentViews: context.loadRecentViews,
+    recentViews: context.recentViews,
+  };
+}
+
+export function useAppTrash() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useAppTrash must be used within an AppProvider');
+  }
+
+  return {
+    loadTrash: context.loadTrash,
+    trashList: context.trashList,
+  };
+}
+
+// ─── Operations-only hooks → AppOperationsContext ────────────────────────────
+
+export function useAppWordCount(viewId?: string | null) {
+  const context = useContext(AppOperationsContext);
+
+  if (!context) {
+    throw new Error('useAppWordCount must be used within an AppProvider');
+  }
+
+  if (!viewId) {
+    return;
+  }
+
+  return context.getWordCount?.(viewId);
+}
+
 export function useAppAwareness(viewId?: string) {
-  const context = useContext(AppContext);
+  const context = useContext(AppSyncContext);
 
   if (!viewId) {
     return;
@@ -250,15 +369,7 @@ export function useAppAwareness(viewId?: string) {
   return context?.awarenessMap?.[viewId];
 }
 
-export function useAppViewId() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppViewId must be used within an AppProvider');
-  }
-
-  return context.viewId;
-}
+// ─── Multi-context / composite hooks ─────────────────────────────────────────
 
 /**
  * Returns the view id that should be treated as "selected" in the sidebar.
@@ -285,64 +396,7 @@ export function useSidebarSelectedViewId() {
   );
 }
 
-export function useAppWordCount(viewId?: string | null) {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppWordCount must be used within an AppProvider');
-  }
-
-  if (!viewId) {
-    return;
-  }
-
-  return context.wordCount?.[viewId];
-}
-
-export function useOpenModalViewId() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useOpenModalViewId must be used within an AppProvider');
-  }
-
-  return context.openPageModalViewId;
-}
-
-export function useAppView(viewId?: string) {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppView must be used within an AppProvider');
-  }
-
-  if (!viewId) {
-    return;
-  }
-
-  return findView(context.outline || [], viewId);
-}
-
-export function useCurrentWorkspaceId() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useCurrentWorkspaceId must be used within an AppProvider');
-  }
-
-  return context.currentWorkspaceId;
-}
-
-/**
- * Optional variant of useCurrentWorkspaceId that returns undefined
- * instead of throwing when used outside AppProvider.
- * Use this in components that may render in publish views or modals.
- */
-export function useCurrentWorkspaceIdOptional(): string | undefined {
-  const context = useContext(AppContext);
-
-  return context?.currentWorkspaceId;
-}
+// ─── Legacy hooks (stay on AppContext) ───────────────────────────────────────
 
 /**
  * Optional variant that returns the full AppContext or undefined.
@@ -407,51 +461,5 @@ export function useAppHandlers() {
     revertCollabVersion: context.revertCollabVersion,
     loadMentionableUsers: context.loadMentionableUsers,
     scheduleDeferredCleanup: context.scheduleDeferredCleanup,
-  };
-}
-
-export function useAppFavorites() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppFavorites must be used within an AppProvider');
-  }
-
-  return {
-    loadFavoriteViews: context.loadFavoriteViews,
-    favoriteViews: context.favoriteViews,
-  };
-}
-
-export function useAppRecent() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppRecent must be used within an AppProvider');
-  }
-
-  return {
-    loadRecentViews: context.loadRecentViews,
-    recentViews: context.recentViews,
-  };
-}
-
-export function usePageHistoryEnabled(): boolean {
-  const context = useContext(AuthInternalContext);
-
-  // Fail open: if context isn't available (e.g. publish pages), default to true
-  return context?.enablePageHistory ?? true;
-}
-
-export function useAppTrash() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppTrash must be used within an AppProvider');
-  }
-
-  return {
-    loadTrash: context.loadTrash,
-    trashList: context.trashList,
   };
 }
