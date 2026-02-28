@@ -6,11 +6,12 @@ import { toast } from 'sonner';
 import { ERROR_CODE } from '@/application/constants';
 import { Invitation } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
+import { AccessService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
@@ -19,7 +20,6 @@ function AcceptInvitationPage() {
   const currentUser = useCurrentUser();
   const [searchParams] = useSearchParams();
   const invitationId = searchParams.get('invited_id');
-  const service = useService();
   const [invitation, setInvitation] = useState<Invitation>();
   const { t } = useTranslation();
   const [hasJoined, setHasJoined] = useState(false);
@@ -30,14 +30,13 @@ function AcceptInvitationPage() {
   const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const loadInvitation = useCallback(async () => {
-    if (!service) return;
     if (!invitationId) {
       setIsError(true);
       return;
     }
 
     try {
-      const res = await service.getInvitation(invitationId);
+      const res = await AccessService.getInvitation(invitationId);
 
       if (res.status === 'Accepted') {
         setHasJoined(true);
@@ -59,7 +58,7 @@ function AcceptInvitationPage() {
 
       setIsError(true);
     }
-  }, [invitationId, service]);
+  }, [invitationId]);
 
   useEffect(() => {
     void loadInvitation();
@@ -93,7 +92,7 @@ function AcceptInvitationPage() {
 
     try {
       setLoading(true);
-      await service?.acceptInvitation(invitationId);
+      await AccessService.acceptInvitation(invitationId);
       toast.success(t('invitation.successMessage'));
       window.open(`/app/${invitation?.workspace_id}`, '_self');
       setHasJoined(true);
@@ -114,7 +113,7 @@ function AcceptInvitationPage() {
     } finally {
       setLoading(false);
     }
-  }, [invitationId, invitation, service, t]);
+  }, [invitationId, invitation, t]);
 
   const AvatarLogo = useCallback(
     (props: HTMLAttributes<HTMLDivElement>) => {

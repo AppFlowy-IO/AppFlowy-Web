@@ -5,14 +5,13 @@ import { useTranslation } from 'react-i18next';
 import { SubscriptionPlan } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
+import { BillingService } from '@/application/services/domains';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 
 function CancelSubscribe({ open, onClose, onCanceled }: { open: boolean; onClose: () => void; onCanceled: () => void }) {
   const { t } = useTranslation();
   const [page, setPage] = React.useState<number>(0);
   const [loading, setLoading] = React.useState<boolean>(false);
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [answers, setAnswers] = React.useState<
     {
@@ -125,12 +124,12 @@ function CancelSubscribe({ open, onClose, onCanceled }: { open: boolean; onClose
   const question = questions[page];
 
   const handleCancel = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     setLoading(true);
     const plan = SubscriptionPlan.Pro;
 
     try {
-      await service.cancelSubscription(
+      await BillingService.cancelSubscription(
         currentWorkspaceId,
         plan,
         JSON.stringify(
@@ -153,7 +152,7 @@ function CancelSubscribe({ open, onClose, onCanceled }: { open: boolean; onClose
     }
 
     setLoading(false);
-  }, [answers, currentWorkspaceId, onClose, onCanceled, questions, service, t]);
+  }, [answers, currentWorkspaceId, onClose, onCanceled, questions, t]);
 
   const handlePrevious = () => {
     if (page === 0) {

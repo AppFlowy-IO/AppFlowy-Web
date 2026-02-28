@@ -4,13 +4,13 @@ import { useTranslation } from 'react-i18next';
 
 import { GlobalComment } from '@/application/comment.type';
 import { PublishContext } from '@/application/publish';
+import { PublishService } from '@/application/services/domains';
 import { ReactComponent as TrashIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
-import { AFConfigContext } from '@/components/main/app.hooks';
 
 interface Item {
   Icon: React.FC<React.SVGProps<SVGSVGElement>>;
@@ -37,13 +37,12 @@ function MoreActions({ comment }: { comment: GlobalComment }) {
   };
 
   const { t } = useTranslation();
-  const service = useContext(AFConfigContext)?.service;
   const viewId = useContext(PublishContext)?.viewMeta?.view_id;
 
   const handleDeleteAction = useCallback(async () => {
-    if (!viewId || !service) return;
+    if (!viewId) return;
     try {
-      await service?.deleteCommentOnPublishView(viewId, comment.commentId);
+      await PublishService.deleteComment(viewId, comment.commentId);
       await reload();
     } catch (e) {
       console.error(e);
@@ -51,7 +50,7 @@ function MoreActions({ comment }: { comment: GlobalComment }) {
     } finally {
       setDeleteModalOpen(false);
     }
-  }, [comment.commentId, reload, service, viewId]);
+  }, [comment.commentId, reload, viewId]);
 
   const actions = useMemo(() => {
     return [

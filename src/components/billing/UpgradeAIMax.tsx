@@ -6,13 +6,12 @@ import { useSearchParams } from 'react-router-dom';
 import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
+import { BillingService } from '@/application/services/domains';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 
 function UpgradeAIMax({ open, onClose, onOpen }: { open: boolean; onClose: () => void; onOpen: () => void }) {
   const { t } = useTranslation();
   const [isActive, setIsActive] = React.useState(false);
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [cancelLoading, setCancelLoading] = React.useState(false);
   const [cancelOpen, setCancelOpen] = React.useState(false);
@@ -61,26 +60,26 @@ function UpgradeAIMax({ open, onClose, onOpen }: { open: boolean; onClose: () =>
   }, [onClose, setSearch]);
 
   const handleUpgrade = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     const plan = SubscriptionPlan.AIMax;
 
     try {
-      const link = await service.getSubscriptionLink(currentWorkspaceId, plan, SubscriptionInterval.Year);
+      const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, SubscriptionInterval.Year);
 
       window.open(link, '_current');
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
     }
-  }, [currentWorkspaceId, service]);
+  }, [currentWorkspaceId]);
 
   const handleCancel = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     setCancelLoading(true);
     const plan = SubscriptionPlan.AIMax;
 
     try {
-      await service.cancelSubscription(currentWorkspaceId, plan, '');
+      await BillingService.cancelSubscription(currentWorkspaceId, plan, '');
       notify.success(t('subscribe.cancelPlan.success'));
       setCancelOpen(false);
       handleClose();
@@ -90,7 +89,7 @@ function UpgradeAIMax({ open, onClose, onOpen }: { open: boolean; onClose: () =>
     } finally {
       setCancelLoading(false);
     }
-  }, [currentWorkspaceId, service, t, handleClose]);
+  }, [currentWorkspaceId, t, handleClose]);
 
   useEffect(() => {
     if (open) {

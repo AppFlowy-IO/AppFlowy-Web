@@ -6,13 +6,13 @@ import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useCurrentUserWorkspaceAvatar } from '@/components/app/useWorkspaceMemberProfile';
 import { Chat, ChatRequest } from '@/components/chat';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 import { getPlatform } from '@/utils/platform';
 import { downloadPage } from '@/utils/url';
 
 
 export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: () => void }) {
-  const service = useService();
   const workspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const workspaceAvatar = useCurrentUserWorkspaceAvatar();
@@ -42,8 +42,8 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
   } = useAIChatContext();
 
   const requestInstance = useMemo(() => {
-    if (!service || !workspaceId) return;
-    const axiosInstance = service.getAxiosInstance();
+    if (!workspaceId) return;
+    const axiosInstance = getAxiosInstance();
 
     if (!axiosInstance) return;
 
@@ -81,7 +81,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
     };
 
     return request;
-  }, [onOpenView, service, workspaceId, chatId, updatePage]);
+  }, [onOpenView, workspaceId, chatId, updatePage]);
 
   useEffect(() => {
     if (onRendered) {

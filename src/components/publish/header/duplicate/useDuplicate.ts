@@ -1,6 +1,7 @@
 import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { WorkspaceService } from '@/application/services/domains';
 import { SpaceView, Workspace } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { AFConfigContext } from '@/components/main/app.hooks';
@@ -61,13 +62,11 @@ export function useLoadWorkspaces () {
 
   const [spaceList, setSpaceList] = useState<SpaceView[]>([]);
 
-  const service = useContext(AFConfigContext)?.service;
-
   const loadWorkspaces = useCallback(async () => {
     if (!isAuthenticated) return;
     setWorkspaceLoading(true);
     try {
-      const workspaces = await service?.getWorkspaces();
+      const workspaces = await WorkspaceService.getAll();
 
       if (workspaces) {
         setWorkspaceList(workspaces);
@@ -84,14 +83,14 @@ export function useLoadWorkspaces () {
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [service, isAuthenticated]);
+  }, [isAuthenticated]);
 
   const loadSpaces = useCallback(
     async (selectedWorkspaceId: string) => {
       if (!isAuthenticated) return;
       setSpaceLoading(true);
       try {
-        const folder = await service?.getWorkspaceFolder(selectedWorkspaceId);
+        const folder = await WorkspaceService.getFolder(selectedWorkspaceId);
 
         if (folder) {
           const spaces = [];
@@ -118,7 +117,7 @@ export function useLoadWorkspaces () {
         setSpaceLoading(false);
       }
     },
-    [service, isAuthenticated],
+    [isAuthenticated],
   );
 
   return {

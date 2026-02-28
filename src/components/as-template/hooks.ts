@@ -2,18 +2,17 @@ import { useCallback, useMemo, useState } from 'react';
 
 import { Template, TemplateCategory, TemplateCreator, TemplateSummary } from '@/application/template.type';
 import { notify } from '@/components/_shared/notify';
-import { useService } from '@/components/main/app.hooks';
+import { TemplateService } from '@/application/services/domains';
 
 export function useLoadCategoryTemplates () {
   const [loading, setLoading] = useState(false);
 
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
-  const service = useService();
 
   const loadCategoryTemplates = useCallback(async (categoryId: string, nameContains?: string) => {
     try {
       setLoading(true);
-      const data = await service?.getTemplates({ categoryId, nameContains });
+      const data = await TemplateService.getAll({ categoryId, nameContains });
 
       if (!data) throw new Error('Failed to fetch templates');
       setTemplates(data);
@@ -23,7 +22,7 @@ export function useLoadCategoryTemplates () {
     } finally {
       setLoading(false);
     }
-  }, [service]);
+  }, []);
 
   return {
     templates,
@@ -36,11 +35,10 @@ export function useLoadCategoryTemplates () {
 export function useLoadTemplate (id: string) {
   const [loading, setLoading] = useState(false);
   const [template, setTemplate] = useState<Template | null>(null);
-  const service = useService();
   const loadTemplate = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await service?.getTemplateById(id);
+      const data = await TemplateService.getById(id);
 
       if (!data) return;
       setTemplate(data);
@@ -49,7 +47,7 @@ export function useLoadTemplate (id: string) {
     } finally {
       setLoading(false);
     }
-  }, [service, id]);
+  }, [id]);
 
   return {
     template,
@@ -64,11 +62,10 @@ export function useLoadCategories (props?: {
   const searchText = props?.searchText || '';
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<TemplateCategory[]>([]);
-  const service = useService();
   const loadCategories = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await service?.getTemplateCategories();
+      const data = await TemplateService.getCategories();
 
       if (!data) throw new Error('Failed to fetch categories');
       setCategories(data);
@@ -78,7 +75,7 @@ export function useLoadCategories (props?: {
     } finally {
       setLoading(false);
     }
-  }, [service]);
+  }, []);
 
   const filteredCategories = useMemo(() => categories.filter((category) => {
     return searchText ? category.name.toLowerCase().includes(searchText.toLowerCase()) : true;
@@ -98,11 +95,10 @@ export function useLoadCreators ({
 }) {
   const [loading, setLoading] = useState(false);
   const [creators, setCreators] = useState<TemplateCreator[]>([]);
-  const service = useService();
   const loadCreators = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await service?.getTemplateCreators();
+      const data = await TemplateService.getCreators();
 
       if (!data) throw new Error('Failed to fetch creators');
       setCreators(data);
@@ -111,7 +107,7 @@ export function useLoadCreators ({
     } finally {
       setLoading(false);
     }
-  }, [service]);
+  }, []);
 
   const filteredCreators = useMemo(() => creators.filter((creator) => {
     return creator.name.toLowerCase().includes(searchText.toLowerCase());

@@ -1,9 +1,9 @@
-import { useContext, useState } from 'react';
+import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
+import { AuthService } from '@/application/services/domains';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { LOGIN_ACTION } from '@/components/login/const';
-import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -17,8 +17,6 @@ function CheckEmailResetPassword({ email, redirectTo }: { email: string; redirec
   const [error, setError] = useState<string>('');
   const [isEnter, setEnter] = useState<boolean>(false);
   const [code, setCode] = useState<string>('');
-  const service = useContext(AFConfigContext)?.service;
-
   const handleSubmit = async () => {
     if (loading) return;
     if (!code) {
@@ -29,7 +27,7 @@ function CheckEmailResetPassword({ email, redirectTo }: { email: string; redirec
     setLoading(true);
 
     try {
-      await service?.signInOTP({
+      await AuthService.signInOTP({
         email,
         code,
         type: 'recovery',

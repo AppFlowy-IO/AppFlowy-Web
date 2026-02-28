@@ -2,8 +2,9 @@ import React, { useCallback, useContext, useEffect, useMemo, useState } from 're
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 import { invalidToken, isTokenValid } from '@/application/session/token';
+import { AuthService, UserService, WorkspaceService } from '@/application/services/domains';
 import { UserWorkspaceInfo } from '@/application/types';
-import { AFConfigContext, useService } from '@/components/main/app.hooks';
+import { AFConfigContext } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
 import { AuthInternalContext, AuthInternalContextType } from '../contexts/AuthInternalContext';
@@ -39,7 +40,6 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const context = useContext(AFConfigContext);
   const isAuthenticated = context?.isAuthenticated;
   const location = useLocation();
-  const service = useService();
   const navigate = useNavigate();
   const params = useParams();
 
@@ -60,27 +60,25 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
   // Load user workspace information
   const loadUserWorkspaceInfo = useCallback(async () => {
-    if (!service) return;
     try {
-      const res = await service?.getUserWorkspaceInfo();
+      const res = await UserService.getWorkspaceInfo();
 
       setUserWorkspaceInfo(res);
       return res;
     } catch (e) {
       console.error(e);
     }
-  }, [service]);
+  }, []);
 
   // Handle workspace change
   const onChangeWorkspace = useCallback(
     async (workspaceId: string) => {
-      if (!service) return;
       if (userWorkspaceInfo && !userWorkspaceInfo.workspaces.some((w) => w.id === workspaceId)) {
         window.location.href = `/app/${workspaceId}`;
         return;
       }
 
-      await service?.openWorkspace(workspaceId);
+      await WorkspaceService.open(workspaceId);
 
       await loadUserWorkspaceInfo();
 
@@ -90,7 +88,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
       navigate(`/app/${workspaceId}`);
     },
-    [loadUserWorkspaceInfo, navigate, service, userWorkspaceInfo]
+    [loadUserWorkspaceInfo, navigate, userWorkspaceInfo]
   );
 
   // If the user is not authenticated, log out the user
@@ -181,27 +179,24 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       console.error('[AppAuthLayer] Failed to load workspace info:', e);
     });
 
-    if (service) {
-      void service.getServerInfo().then((info) => {
-        setEnablePageHistory(info.enable_page_history);
-      }).catch((e) => {
-        console.error('[AppAuthLayer] Failed to load server info:', e);
-        setEnablePageHistory(true);
-      });
-    }
-  }, [loadUserWorkspaceInfo, isAuthenticated, service]);
+    void AuthService.getServerInfo().then((info) => {
+      setEnablePageHistory(info.enable_page_history);
+    }).catch((e) => {
+      console.error('[AppAuthLayer] Failed to load server info:', e);
+      setEnablePageHistory(true);
+    });
+  }, [loadUserWorkspaceInfo, isAuthenticated]);
 
   // Context value for authentication layer
   const authContextValue: AuthInternalContextType = useMemo(
     () => ({
-      service,
       userWorkspaceInfo,
       currentWorkspaceId,
       isAuthenticated: !!isAuthenticated,
       enablePageHistory,
       onChangeWorkspace,
     }),
-    [service, userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, onChangeWorkspace]
+    [userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, onChangeWorkspace]
   );
 
   return <AuthInternalContext.Provider value={authContextValue}>{children}</AuthInternalContext.Provider>;

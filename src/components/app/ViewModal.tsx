@@ -19,7 +19,9 @@ import { useViewOperations } from '@/components/app/hooks/useViewOperations';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { ViewService } from '@/application/services/domains';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 
 import ShareButton from 'src/components/app/share/ShareButton';
 
@@ -64,8 +66,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   } = useAppHandlers();
 
   const outline = useAppOutline();
-  const service = useService();
-  const requestInstance = service?.getAxiosInstance();
+  const requestInstance = getAxiosInstance();
   const { getViewReadOnlyStatus } = useViewOperations();
 
   // Document state
@@ -107,7 +108,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // Fetch fallback metadata when view not in outline
   useEffect(() => {
     // Skip if modal closed, view already in outline, or missing dependencies
-    if (!open || effectiveOutlineView || !effectiveViewId || !workspaceId || !service) {
+    if (!open || effectiveOutlineView || !effectiveViewId || !workspaceId) {
       // Clear fallback when no longer needed
       if (fallbackMeta && (effectiveOutlineView || !open)) {
         setFallbackMeta(null);
@@ -118,8 +119,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
     let cancelled = false;
 
-    service
-      .getAppView(workspaceId, effectiveViewId)
+    ViewService.get(workspaceId, effectiveViewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
           setFallbackMeta({
@@ -136,7 +136,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     return () => {
       cancelled = true;
     };
-  }, [open, effectiveOutlineView, effectiveViewId, workspaceId, service, fallbackMeta]);
+  }, [open, effectiveOutlineView, effectiveViewId, workspaceId, fallbackMeta]);
 
   // Load document
   const loadPageDoc = useCallback(

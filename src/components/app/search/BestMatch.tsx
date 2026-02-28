@@ -3,11 +3,11 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View } from '@/application/types';
+import { SearchService } from '@/application/services/domains';
 import { notify } from '@/components/_shared/notify';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import ViewList from '@/components/app/search/ViewList';
-import { useService } from '@/components/main/app.hooks';
 
 function BestMatch ({
   onClose,
@@ -19,13 +19,12 @@ function BestMatch ({
   const [views, setViews] = React.useState<View[] | undefined>(undefined);
   const { t } = useTranslation();
   const outline = useAppOutline();
-  const service = useService();
   const [loading, setLoading] = React.useState<boolean>(false);
 
   const currentWorkspaceId = useCurrentWorkspaceId();
   const handleSearch = useCallback(async (searchTerm: string) => {
     if (!outline) return;
-    if (!currentWorkspaceId || !service) return;
+    if (!currentWorkspaceId) return;
     if (!searchTerm) {
       setViews([]);
       return;
@@ -34,7 +33,7 @@ function BestMatch ({
     setLoading(true);
 
     try {
-      const res = await service.searchWorkspace(currentWorkspaceId, searchTerm);
+      const res = await SearchService.searchWorkspace(currentWorkspaceId, searchTerm);
       const views = uniq(res).map(id => {
         return findView(outline, id);
       });
@@ -50,7 +49,7 @@ function BestMatch ({
 
     setLoading(false);
 
-  }, [currentWorkspaceId, outline, service]);
+  }, [currentWorkspaceId, outline]);
 
   const debounceSearch = useMemo(() => {
     return debounce(handleSearch, 300);

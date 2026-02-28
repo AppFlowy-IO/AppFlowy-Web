@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { APP_EVENTS } from '@/application/constants';
+import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
 import {
@@ -157,7 +158,7 @@ function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
 
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
-  const { service, currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
+  const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const { eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
 
@@ -216,12 +217,11 @@ export function useWorkspaceData() {
 
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
-      if (!service) return;
       try {
         // Parallelize API calls - both are independent and can run concurrently
         const [res, shareWithMeResult] = await Promise.all([
-          service.getAppOutline(workspaceId),
-          service.getShareWithMe(workspaceId).catch((error) => {
+          ViewService.getOutline(workspaceId),
+          AccessService.getShareWithMe(workspaceId).catch((error) => {
             Log.error('[Outline] Failed to load shareWithMe data', error);
             return null;
           }),
@@ -287,9 +287,9 @@ export function useWorkspaceData() {
               if (lastViewKey) {
                 localStorage.removeItem(lastViewKey);
               }
-            } else if (service) {
+            } else {
               try {
-                await service.getAppView(workspaceId, lastViewId);
+                await ViewService.get(workspaceId, lastViewId);
                 navigate(`/app/${workspaceId}/${lastViewId}${search}`);
                 return;
               } catch {
@@ -322,7 +322,7 @@ export function useWorkspaceData() {
 
           if (spaces.length > 0) {
             try {
-              const spaceViews = await service.getAppViews(
+              const spaceViews = await ViewService.getMultiple(
                 workspaceId,
                 spaces.map((space) => space.view_id),
                 1
@@ -369,13 +369,13 @@ export function useWorkspaceData() {
         }
       }
     },
-    [navigate, service, eventEmitter, updateLastFolderRid, userWorkspaceInfo?.userId, replaceOutlinePreservingChildren]
+    [navigate, eventEmitter, updateLastFolderRid, userWorkspaceInfo?.userId, replaceOutlinePreservingChildren]
   );
 
   // Load children for a single view (lazy expand)
   const loadViewChildren = useCallback(
     async (viewId: string): Promise<View[]> => {
-      if (!service || !currentWorkspaceId) return [];
+      if (!currentWorkspaceId) return [];
 
       // Dedup concurrent fetches
       if (loadingViewIdsRef.current.has(viewId)) {
@@ -395,7 +395,7 @@ export function useWorkspaceData() {
           depth: 1,
         });
 
-        const viewData = await service.getAppView(currentWorkspaceId, viewId);
+        const viewData = await ViewService.get(currentWorkspaceId, viewId);
 
         updateLastFolderRid(parseFolderRid(viewData?.folder_rid));
 
@@ -430,12 +430,12 @@ export function useWorkspaceData() {
         loadingViewIdsRef.current.delete(viewId);
       }
     },
-    [service, currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
+    [currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
   );
 
   const loadViewChildrenBatch = useCallback(
     async (viewIds: string[]): Promise<View[]> => {
-      if (!service || !currentWorkspaceId || viewIds.length === 0) return [];
+      if (!currentWorkspaceId || viewIds.length === 0) return [];
 
       const uniqueIds = Array.from(new Set(viewIds)).filter(
         (viewId) => !loadingViewIdsRef.current.has(viewId)
@@ -461,7 +461,7 @@ export function useWorkspaceData() {
           requestViewMeta,
         });
 
-        const views = await service.getAppViews(currentWorkspaceId, uniqueIds, 1);
+        const views = await ViewService.getMultiple(currentWorkspaceId, uniqueIds, 1);
 
         views.forEach((view) => {
           updateLastFolderRid(parseFolderRid(view?.folder_rid));
@@ -512,7 +512,7 @@ export function useWorkspaceData() {
         uniqueIds.forEach((viewId) => loadingViewIdsRef.current.delete(viewId));
       }
     },
-    [service, currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
+    [currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
   );
 
   const markViewChildrenStale = useCallback((viewId: string) => {
@@ -548,13 +548,13 @@ export function useWorkspaceData() {
     // Also invalidate the HTTP cache for the root view so the next
     // loadViewChildren call makes a fresh API request instead of
     // returning stale cached data.
-    if (service && currentWorkspaceId) {
-      service.invalidateViewCache?.(currentWorkspaceId, viewId);
+    if (currentWorkspaceId) {
+      ViewService.invalidateCache(currentWorkspaceId, viewId);
     }
 
     Log.debug('[Outline] [cache] Marked view subtree stale', { viewId, clearedIds: subtreeIds.length });
     setLoadedViewIdsRevision((r) => r + 1);
-  }, [stableOutlineRef, service, currentWorkspaceId]);
+  }, [stableOutlineRef, currentWorkspaceId]);
 
   useEffect(() => {
     const handleShareViewsChanged = () => {
@@ -819,9 +819,9 @@ export function useWorkspaceData() {
 
   // Load favorite views
   const loadFavoriteViews = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     try {
-      const res = await service?.getAppFavorites(currentWorkspaceId);
+      const res = await ViewService.getFavorites(currentWorkspaceId);
 
       if (!res) {
         throw new Error('Favorite views not found');
@@ -832,13 +832,13 @@ export function useWorkspaceData() {
     } catch (e) {
       console.error('Favorite views not found');
     }
-  }, [currentWorkspaceId, service]);
+  }, [currentWorkspaceId]);
 
   // Load recent views
   const loadRecentViews = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     try {
-      const res = await service?.getAppRecent(currentWorkspaceId);
+      const res = await ViewService.getRecent(currentWorkspaceId);
 
       if (!res) {
         throw new Error('Recent views not found');
@@ -854,14 +854,13 @@ export function useWorkspaceData() {
     } catch (e) {
       console.error('Recent views not found');
     }
-  }, [currentWorkspaceId, service]);
+  }, [currentWorkspaceId]);
 
   // Load trash list
   const loadTrash = useCallback(
     async (currentWorkspaceId: string) => {
-      if (!service) return;
       try {
-        const res = await service?.getAppTrash(currentWorkspaceId);
+        const res = await ViewService.getTrash(currentWorkspaceId);
 
         if (!res) {
           throw new Error('App trash not found');
@@ -872,7 +871,7 @@ export function useWorkspaceData() {
         return Promise.reject('App trash not found');
       }
     },
-    [service]
+    []
   );
 
   // Get cached database relations (synchronous, returns immediately)
@@ -882,7 +881,7 @@ export function useWorkspaceData() {
 
   // Internal helper to fetch and update database relations
   const fetchAndUpdateDatabaseRelations = useCallback(async (silent = false) => {
-    if (!currentWorkspaceId || !service) {
+    if (!currentWorkspaceId) {
       return;
     }
 
@@ -891,7 +890,7 @@ export function useWorkspaceData() {
     if (!selectedWorkspace) return;
 
     try {
-      const res = await service.getAppDatabaseViewRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
+      const res = await ViewService.getDatabaseRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
 
       if (res) {
         workspaceDatabasesRef.current = res;
@@ -904,7 +903,7 @@ export function useWorkspaceData() {
         console.error(e);
       }
     }
-  }, [currentWorkspaceId, service, userWorkspaceInfo?.selectedWorkspace]);
+  }, [currentWorkspaceId, userWorkspaceInfo?.selectedWorkspace]);
 
   // Load database relations (returns cached if available, fetches otherwise)
   const loadDatabaseRelations = useCallback(async () => {
@@ -956,12 +955,12 @@ export function useWorkspaceData() {
 
   // Load mentionable users
   const _loadMentionableUsers = useCallback(async () => {
-    if (!currentWorkspaceId || !service) {
-      throw new Error('No workspace or service found');
+    if (!currentWorkspaceId) {
+      throw new Error('No workspace found');
     }
 
     try {
-      const res = await service?.getMentionableUsers(currentWorkspaceId);
+      const res = await WorkspaceService.getMentionableUsers(currentWorkspaceId);
 
       if (res) {
         mentionableUsersRef.current = res;
@@ -971,7 +970,7 @@ export function useWorkspaceData() {
     } catch (e) {
       return Promise.reject(e);
     }
-  }, [currentWorkspaceId, service]);
+  }, [currentWorkspaceId]);
 
   const loadMentionableUsers = useMemo(() => {
     return createDeduplicatedNoArgsRequest(_loadMentionableUsers);

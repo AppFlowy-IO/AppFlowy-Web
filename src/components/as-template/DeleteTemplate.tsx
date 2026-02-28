@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { useService } from '@/components/main/app.hooks';
+import { TemplateService } from '@/application/services/domains';
 
 function DeleteTemplate ({ onDeleted, id, onClose, open }: {
   id: string;
@@ -12,17 +12,16 @@ function DeleteTemplate ({ onDeleted, id, onClose, open }: {
   onDeleted?: () => void;
 }) {
   const { t } = useTranslation();
-  const service = useService();
   const onSubmit = useCallback(async () => {
     try {
-      await service?.deleteTemplate(id);
+      await TemplateService.remove(id);
       onClose();
       onDeleted?.();
       notify.success(t('template.deleteSuccess'));
     } catch (error) {
       notify.error('Failed to delete template');
     }
-  }, [t, onClose, service, id, onDeleted]);
+  }, [t, onClose, id, onDeleted]);
 
   return (
     <NormalModal

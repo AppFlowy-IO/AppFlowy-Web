@@ -4,6 +4,7 @@ import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
+import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
   Types,
@@ -45,7 +46,7 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
 
 // Hook for managing view-related operations
 export function useViewOperations() {
-  const { service, currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
+  const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const { registerSyncContext, eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
   const databaseStorageId = userWorkspaceInfo?.selectedWorkspace?.databaseStorageId;
@@ -104,8 +105,8 @@ export function useViewOperations() {
   const loadView = useCallback(
     async (viewId: string, isSubDocument = false, loadAwareness = false, outline?: View[]) => {
       try {
-        if (!service || !currentWorkspaceId) {
-          throw new Error('Service or workspace not found');
+        if (!currentWorkspaceId) {
+          throw new Error('Workspace not found');
         }
 
         const view = findView(outline || [], viewId);
@@ -119,7 +120,7 @@ export function useViewOperations() {
           // Add recent pages when view is loaded (fire and forget)
           void (async () => {
             try {
-              await service.addRecentPages(currentWorkspaceId, [viewId]);
+              await WorkspaceService.addRecentPages(currentWorkspaceId, [viewId]);
             } catch (e) {
               console.error(e);
             }
@@ -174,7 +175,7 @@ export function useViewOperations() {
         return Promise.reject(e);
       }
     },
-    [service, currentWorkspaceId, resolveCollabObjectId]
+    [currentWorkspaceId, resolveCollabObjectId]
   );
 
   /**
@@ -259,9 +260,9 @@ export function useViewOperations() {
 
       // If meta is unavailable (e.g. outline not loaded yet), fall back to a direct server fetch so we can
       // still resolve database containers and block routing.
-      if (!view && currentWorkspaceId && service) {
+      if (!view && currentWorkspaceId) {
         try {
-          view = await service.getAppView(currentWorkspaceId, viewId);
+          view = await ViewService.get(currentWorkspaceId, viewId);
         } catch (e) {
           Log.warn('[toView] Failed to fetch view from server', {
             viewId,
@@ -279,9 +280,9 @@ export function useViewOperations() {
         let firstChild = getFirstChildView(view);
 
         // Fallback: fetch the container subtree from server to resolve first child.
-        if (!firstChild && currentWorkspaceId && service) {
+        if (!firstChild && currentWorkspaceId) {
           try {
-            const remote = await service.getAppView(currentWorkspaceId, viewId);
+            const remote = await ViewService.get(currentWorkspaceId, viewId);
 
             // Update local variable so blockId routing below uses the correct layout.
             view = remote;
@@ -341,34 +342,34 @@ export function useViewOperations() {
 
       navigate(url);
     },
-    [currentWorkspaceId, navigate, service]
+    [currentWorkspaceId, navigate]
   );
 
   const getCollabHistory = useCallback(
     async (viewId: string, since?: Date) => {
-      if (!currentWorkspaceId || !service) {
-        throw new Error('Service not found');
+      if (!currentWorkspaceId) {
+        throw new Error('Workspace not found');
       }
 
       try {
-        const versions = await service.getCollabHistory(currentWorkspaceId, viewId, since);
+        const versions = await CollabService.getVersions(currentWorkspaceId, viewId, since);
 
         return versions;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   const previewCollabVersion = useCallback(
     async (viewId: string, versionId: string, collabType: Types) => {
-      if (!currentWorkspaceId || !service) {
-        throw new Error('Service not found');
+      if (!currentWorkspaceId) {
+        throw new Error('Workspace not found');
       }
 
       try {
-        const docState = await service.previewCollabVersion(currentWorkspaceId, viewId, versionId, collabType);
+        const docState = await CollabService.previewVersion(currentWorkspaceId, viewId, versionId, collabType);
 
         if (!docState) {
           return Promise.reject(new Error('No document state returned'));
@@ -397,7 +398,7 @@ export function useViewOperations() {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   return {

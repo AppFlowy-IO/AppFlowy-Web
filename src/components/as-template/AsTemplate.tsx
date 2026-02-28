@@ -15,7 +15,7 @@ import { useLoadTemplate } from '@/components/as-template/hooks';
 
 import './template.scss';
 import { slugify } from '@/components/as-template/utils';
-import { useService } from '@/components/main/app.hooks';
+import { TemplateService } from '@/application/services/domains';
 
 function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: string; viewId: string }) {
   const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([]);
@@ -24,12 +24,11 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
   const [isNewTemplate, setIsNewTemplate] = React.useState(false);
   const [isFeatured, setIsFeatured] = React.useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
-  const service = useService();
   const { template, loadTemplate, loading } = useLoadTemplate(viewId);
 
   const handleSubmit = useCallback(
     async (data: AsTemplateFormValue) => {
-      if (!service || !selectedCreatorId || selectedCategoryIds.length === 0) return;
+      if (!selectedCreatorId || selectedCategoryIds.length === 0) return;
       const formData: UploadTemplatePayload = {
         ...data,
         view_id: viewId,
@@ -42,9 +41,9 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
 
       try {
         if (template) {
-          await service?.updateTemplate(template.view_id, formData);
+          await TemplateService.update(template.view_id, formData);
         } else {
-          await service?.createTemplate(formData);
+          await TemplateService.create(formData);
         }
 
         await loadTemplate();
@@ -56,7 +55,7 @@ function AsTemplate({ viewName, viewUrl, viewId }: { viewName: string; viewUrl: 
         notify.error(error.toString());
       }
     },
-    [service, selectedCreatorId, selectedCategoryIds, isNewTemplate, isFeatured, viewId, viewUrl, template, loadTemplate]
+    [selectedCreatorId, selectedCategoryIds, isNewTemplate, isFeatured, viewId, viewUrl, template, loadTemplate]
   );
   const submitRef = React.useRef<HTMLInputElement>(null);
 

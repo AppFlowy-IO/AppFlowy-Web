@@ -7,15 +7,14 @@ import { Subscription, SubscriptionInterval, SubscriptionPlan } from '@/applicat
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
+import { BillingService } from '@/application/services/domains';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import CancelSubscribe from '@/components/billing/CancelSubscribe';
-import { useService } from '@/components/main/app.hooks';
 import { isAppFlowyHosted } from '@/utils/subscription';
 
 function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => void; onOpen: () => void }) {
   const { t } = useTranslation();
   const [activeSubscription, setActiveSubscription] = React.useState<Subscription | null>(null);
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [cancelOpen, setCancelOpen] = React.useState(false);
   const { getSubscriptions } = useAppHandlers();
@@ -84,7 +83,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   const [interval, setInterval] = React.useState<SubscriptionInterval>(SubscriptionInterval.Year);
 
   const handleUpgrade = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
 
     if (!isAppFlowyHosted()) {
       // Self-hosted instances have Pro features enabled by default
@@ -94,14 +93,14 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
     const plan = SubscriptionPlan.Pro;
 
     try {
-      const link = await service.getSubscriptionLink(currentWorkspaceId, plan, interval);
+      const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, interval);
 
       window.open(link, '_current');
       // eslint-disable-next-line
     } catch (e: any) {
       notify.error(e.message);
     }
-  }, [currentWorkspaceId, service, interval]);
+  }, [currentWorkspaceId, interval]);
 
   useEffect(() => {
     if (open) {

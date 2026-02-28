@@ -5,6 +5,7 @@ import { Awareness } from 'y-protocols/awareness';
 
 import { APP_EVENTS } from '@/application/constants';
 import { db } from '@/application/db';
+import { CollabService, UserService } from '@/application/services/domains';
 import { getTokenParsed } from '@/application/session/token';
 import { useAppflowyWebSocket, useBroadcastChannel, useSync } from '@/components/ws';
 import { notification } from '@/proto/messages';
@@ -20,7 +21,7 @@ interface AppSyncLayerProps {
 // Handles WebSocket connection, broadcast channel, sync context, and event management
 // Depends on workspace ID and service from auth layer
 export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
-  const { service, currentWorkspaceId, isAuthenticated } = useAuthInternal();
+  const { currentWorkspaceId, isAuthenticated } = useAuthInternal();
   const [awarenessMap] = useState<Record<string, Awareness>>({});
   const eventEmitterRef = useRef<EventEmitter>(new EventEmitter());
 
@@ -41,8 +42,8 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
   // Initialize WebSocket connection - currentWorkspaceId and service are guaranteed to exist when this component renders
   const webSocket = useAppflowyWebSocket({
     workspaceId: currentWorkspaceId!,
-    clientId: service!.getClientId(),
-    deviceId: service!.getDeviceId(),
+    clientId: CollabService.getClientId(),
+    deviceId: CollabService.getDeviceId(),
   });
 
   // Initialize broadcast channel for multi-tab communication
@@ -174,7 +175,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
         // If profile doesn't exist locally and this is the current user's profile,
         // try fetching it from the API first (only works for current user)
         // This can happen if the notification arrives before initial hydration
-        if (!existingProfile && service) {
+        if (!existingProfile) {
           // Check if this notification is for the current user
           const token = getTokenParsed();
           const currentUser = await db.users.get(token?.user?.id || '');
@@ -182,7 +183,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
 
           if (isCurrentUser) {
             try {
-              const fetchedProfile = await service.getWorkspaceMemberProfile(currentWorkspaceId);
+              const fetchedProfile = await UserService.getWorkspaceMemberProfile(currentWorkspaceId);
 
               if (fetchedProfile) {
                 // Use fetched profile as base, then apply notification updates
@@ -288,7 +289,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
       currentEventEmitter.off(APP_EVENTS.USER_PROFILE_CHANGED, handleUserProfileChange);
       currentEventEmitter.off(APP_EVENTS.WORKSPACE_MEMBER_PROFILE_CHANGED, handleWorkspaceMemberProfileChange);
     };
-  }, [isAuthenticated, currentWorkspaceId, service]);
+  }, [isAuthenticated, currentWorkspaceId]);
 
   // Context value for synchronization layer
   const syncContextValue: SyncInternalContextType = useMemo(

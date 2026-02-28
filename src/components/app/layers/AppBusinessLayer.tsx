@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
+import { ViewService } from '@/application/services/domains';
 import { TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM, resolveSidebarSelectedViewId } from '@/components/app/hooks/resolveSidebarSelectedViewId';
@@ -57,7 +58,7 @@ function isRouteNotFoundError(error: unknown): boolean {
 // Handles all business operations like outline management, page operations, database operations
 // Depends on workspace ID and sync context from previous layers
 export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) => {
-  const { currentWorkspaceId, service } = useAuthInternal();
+  const { currentWorkspaceId } = useAuthInternal();
   const { revertCollabVersion } = useSyncInternal();
   const params = useParams();
   const [searchParams] = useSearchParams();
@@ -175,7 +176,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       return;
     }
 
-    if (!service || !currentWorkspaceId) {
+    if (!currentWorkspaceId) {
       setRouteViewExists(null);
       return;
     }
@@ -213,8 +214,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     let inFlight = routeViewExistsInFlightRef.current.get(cacheKey);
 
     if (!inFlight) {
-      inFlight = service
-        .getAppView(currentWorkspaceId, viewId)
+      inFlight = ViewService.get(currentWorkspaceId, viewId)
         .then(() => {
           setRouteViewExistsCache(cacheKey, true);
           return true;
@@ -249,7 +249,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     return () => {
       cancelled = true;
     };
-  }, [viewId, viewHasBeenDeleted, outline, service, currentWorkspaceId, setRouteViewExistsCache]);
+  }, [viewId, viewHasBeenDeleted, outline, currentWorkspaceId, setRouteViewExistsCache]);
 
   const viewNotFound = Boolean(viewId && !viewHasBeenDeleted && routeViewExists === false);
 
@@ -271,7 +271,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       return;
     }
 
-    if (!service || !currentWorkspaceId) {
+    if (!currentWorkspaceId) {
       setFallbackCrumbs([]);
       return;
     }
@@ -290,7 +290,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
 
         if (!currentView) {
           try {
-            currentView = await service.getAppView(currentWorkspaceId, cursorId);
+            currentView = await ViewService.get(currentWorkspaceId, cursorId);
           } catch {
             break;
           }
@@ -309,7 +309,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     return () => {
       cancelled = true;
     };
-  }, [breadcrumbViewId, originalCrumbs, service, currentWorkspaceId, stableOutlineRef]);
+  }, [breadcrumbViewId, originalCrumbs, currentWorkspaceId, stableOutlineRef]);
 
   const sourceCrumbs = originalCrumbs.length > 0 ? originalCrumbs : fallbackCrumbs;
 
@@ -351,9 +351,9 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
       let view = findView(stableOutlineRef.current || [], viewId);
 
       // Server fallback: view not in shallow outline tree
-      if (!view && service && currentWorkspaceId) {
+      if (!view && currentWorkspaceId) {
         try {
-          view = await service.getAppView(currentWorkspaceId, viewId);
+          view = await ViewService.get(currentWorkspaceId, viewId);
         } catch {
           // fall through to rejection
         }
@@ -375,7 +375,7 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
         database_relations: workspaceDatabases,
       };
     },
-    [stableOutlineRef, trashList, workspaceDatabases, service, currentWorkspaceId]
+    [stableOutlineRef, trashList, workspaceDatabases, currentWorkspaceId]
   );
 
   // Word count management

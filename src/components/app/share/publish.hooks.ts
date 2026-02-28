@@ -3,11 +3,11 @@ import React, { useCallback, useEffect, useMemo } from 'react';
 import { UpdatePublishConfigPayload, View } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { useAppView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { ViewService, PublishService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
 
 export function useLoadPublishInfo(viewId: string) {
   const outlineView = useAppView(viewId);
-  const service = useService();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
 
@@ -15,7 +15,7 @@ export function useLoadPublishInfo(viewId: string) {
   const [fallbackView, setFallbackView] = React.useState<View | null>(null);
 
   useEffect(() => {
-    if (outlineView || !viewId || !workspaceId || !service) {
+    if (outlineView || !viewId || !workspaceId) {
       if (outlineView) {
         setFallbackView((prev) => (prev?.view_id === viewId ? null : prev));
       }
@@ -25,8 +25,7 @@ export function useLoadPublishInfo(viewId: string) {
 
     let cancelled = false;
 
-    service
-      .getAppView(workspaceId, viewId)
+    ViewService.get(workspaceId, viewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
           setFallbackView(fetchedView);
@@ -39,7 +38,7 @@ export function useLoadPublishInfo(viewId: string) {
     return () => {
       cancelled = true;
     };
-  }, [outlineView, viewId, workspaceId, service]);
+  }, [outlineView, viewId, workspaceId]);
 
   const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null) ?? undefined;
 
@@ -60,15 +59,13 @@ export function useLoadPublishInfo(viewId: string) {
   const isPublisher = currentViewPublishInfo?.publisherEmail === currentUser?.email;
 
   const loadPublishInfo = useCallback(async() => {
-    if(!service) return;
-
     const requestSeq = publishInfoRequestSeqRef.current + 1;
 
     publishInfoRequestSeqRef.current = requestSeq;
 
     setLoading(true);
     try {
-      const res = await service.getPublishInfo(viewId);
+      const res = await PublishService.getViewInfo(viewId);
 
       if (publishInfoRequestSeqRef.current !== requestSeq) return;
       setPublishInfo(res);
@@ -85,16 +82,16 @@ export function useLoadPublishInfo(viewId: string) {
         setLoading(false);
       }
     }
-  }, [viewId, service]);
+  }, [viewId]);
 
   useEffect(() => {
     void loadPublishInfo();
   }, [loadPublishInfo]);
 
   const updatePublishConfig = useCallback(async(payload: UpdatePublishConfigPayload) => {
-    if(!service || !workspaceId) return;
+    if(!workspaceId) return;
     try {
-      await service.updatePublishConfig(workspaceId, payload);
+      await PublishService.updateConfig(workspaceId, payload);
       setPublishInfo(prev => {
         if(!prev) return prev;
         return {
@@ -110,7 +107,7 @@ export function useLoadPublishInfo(viewId: string) {
       notify.error(e.message);
     }
 
-  }, [service, workspaceId]);
+  }, [workspaceId]);
 
   const url = useMemo(() => {
     return `${window.origin}/${currentViewPublishInfo?.namespace}/${currentViewPublishInfo?.publishName}`;

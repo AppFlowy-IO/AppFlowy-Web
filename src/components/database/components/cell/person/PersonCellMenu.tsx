@@ -4,10 +4,10 @@ import { useTranslation } from 'react-i18next';
 import { useCellSelector, useDatabaseViewId, useFieldSelector, usePrimaryFieldId } from '@/application/database-yjs';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
+import { WorkspaceService } from '@/application/services/domains';
 import { ReactComponent as NotificationIcon } from '@/assets/icons/mention_send_notification.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
@@ -28,7 +28,6 @@ interface PersonCellMenuProps {
 function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }: PersonCellMenuProps) {
   const { field } = useFieldSelector(fieldId);
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
-  const service = useService();
   const workspaceId = useCurrentWorkspaceId();
   const viewId = useDatabaseViewId();
   const primaryFieldId = usePrimaryFieldId();
@@ -73,9 +72,9 @@ function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }:
         onUpdateCell(JSON.stringify(newSelectedIds));
 
         // Send notification if notifyAssignee is true
-        if (notifyAssignee && service && workspaceId && viewId) {
+        if (notifyAssignee && workspaceId && viewId) {
           try {
-            await service.updatePageMention(workspaceId, viewId, {
+            await WorkspaceService.updatePageMention(workspaceId, viewId, {
               person_id: personId,
               row_id: rowId,
               require_notification: true,
@@ -88,7 +87,7 @@ function PersonCellMenu({ open, onOpenChange, fieldId, rowId, selectedUserIds }:
         }
       }
     },
-    [isSingleSelect, onUpdateCell, selectedUserIds, notifyAssignee, service, workspaceId, viewId, rowId, rowTitle]
+    [isSingleSelect, onUpdateCell, selectedUserIds, notifyAssignee, workspaceId, viewId, rowId, rowTitle]
   );
 
   const isEmpty = !mentionableUsers || mentionableUsers.length === 0;

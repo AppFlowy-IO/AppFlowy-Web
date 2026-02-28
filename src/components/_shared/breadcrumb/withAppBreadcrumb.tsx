@@ -5,10 +5,11 @@ import { UIVariant } from '@/application/types';
 import { ReactComponent as PrivateSpaceIcon } from '@/assets/icons/private-space.svg';
 import { ReactComponent as ShareIcon } from '@/assets/icons/share-to.svg';
 import { ReactComponent as TeamIcon } from '@/assets/icons/team.svg';
+import { AccessService } from '@/application/services/domains';
 import { BreadcrumbProps } from '@/components/_shared/breadcrumb/Breadcrumb';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
 import { useAppHandlers, useBreadcrumb, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Progress } from '@/components/ui/progress';
 
 export function withAppBreadcrumb (Component: React.ComponentType<BreadcrumbProps>) {
@@ -16,7 +17,6 @@ export function withAppBreadcrumb (Component: React.ComponentType<BreadcrumbProp
     const isTrash = window.location.pathname === '/app/trash';
     const crumbs = useBreadcrumb();
     const toView = useAppHandlers().toView;
-    const service = useService();
     const currentWorkspaceId = useCurrentWorkspaceId();
     const currentUser = useCurrentUser();
     const { t } = useTranslation();
@@ -26,14 +26,14 @@ export function withAppBreadcrumb (Component: React.ComponentType<BreadcrumbProp
     const isPrivate = crumbs?.some((crumb) => crumb.is_private);
 
     useEffect(() => {
-      if (!service || !currentWorkspaceId || !currentUser || !crumbs || isTrash) return;
+      if (!currentWorkspaceId || !currentUser || !crumbs || isTrash) return;
       const loadShareDetail = async () => {
         const viewId = crumbs[crumbs.length - 1].view_id;
         const ancestorViewIds = crumbs.map((crumb) => crumb.view_id);
 
         try {
           setLoading(true);
-          const res = await service.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds);
+          const res = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds);
           const shared = res.shared_with.some((item) => item.email !== currentUser.email);
 
           setIsShared(shared);
@@ -45,7 +45,7 @@ export function withAppBreadcrumb (Component: React.ComponentType<BreadcrumbProp
       };
 
       void loadShareDetail();
-    }, [service, currentWorkspaceId, currentUser, crumbs, isTrash]);
+    }, [currentWorkspaceId, currentUser, crumbs, isTrash]);
 
     return (
       <div className={'h-full flex-1 overflow-hidden'}>

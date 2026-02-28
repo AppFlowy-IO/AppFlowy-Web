@@ -6,9 +6,9 @@ import { ReactComponent as AddToPageIcon } from '@/assets/icons/add_to_page.svg'
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
+import { AIService } from '@/application/services/domains';
 import { useAppOutline, useAppView, useCurrentWorkspaceId, usePageHistoryEnabled, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
-import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -36,7 +36,6 @@ function MoreActions({
   enableVersionHistory?: boolean;
 } & ComponentProps<typeof DropdownMenu>) {
   const workspaceId = useCurrentWorkspaceId();
-  const service = useService();
   const { selectionMode, onOpenSelectionMode } = useAIChatContext();
   const [hasMessages, setHasMessages] = useState(false);
   const [open, setOpen] = useState(false);
@@ -52,18 +51,18 @@ function MoreActions({
 
   const handleFetchChatMessages = useCallback(async () => {
     // Only fetch chat messages for AI Chat views
-    if (!workspaceId || !service || view?.layout !== ViewLayout.AIChat) {
+    if (!workspaceId || view?.layout !== ViewLayout.AIChat) {
       return;
     }
 
     try {
-      const messages = await service.getChatMessages(workspaceId, viewId);
+      const messages = await AIService.getChatMessages(workspaceId, viewId);
 
       setHasMessages(messages.messages.length > 0);
     } catch {
       // do nothing
     }
-  }, [workspaceId, service, viewId, view?.layout]);
+  }, [workspaceId, viewId, view?.layout]);
 
   useEffect(() => {
     void handleFetchChatMessages();

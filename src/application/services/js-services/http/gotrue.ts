@@ -5,7 +5,7 @@ import { afterAuth } from '@/application/session/sign_in';
 import { getTokenParsed, saveGoTrueAuth } from '@/application/session/token';
 
 import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
-import { verifyToken } from './http_api';
+import { verifyToken } from './auth-api';
 import { Log } from '@/utils/log';
 
 export * from './gotrue-error';

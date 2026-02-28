@@ -3,6 +3,7 @@ import { useCallback, useRef } from 'react';
 import { FieldType } from '@/application/database-yjs';
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { AIService, ViewService } from '@/application/services/domains';
 import {
   DatabasePrompt,
   DatabasePromptField,
@@ -26,44 +27,44 @@ export function useDatabaseOperations(
   loadView?: (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc | null>,
   createRow?: (rowKey: string) => Promise<YDoc>
 ) {
-  const { service, currentWorkspaceId } = useAuthInternal();
+  const { currentWorkspaceId } = useAuthInternal();
 
   const rowDocsRef = useRef<Map<string, DatabasePromptRow>>(new Map());
 
   // Generate AI summary for row
   const generateAISummaryForRow = useCallback(
     async (payload: GenerateAISummaryRowPayload) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        const res = await service?.generateAISummaryForRow(currentWorkspaceId, payload);
+        const res = await AIService.generateSummaryForRow(currentWorkspaceId, payload);
 
         return res;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   // Generate AI translation for row
   const generateAITranslateForRow = useCallback(
     async (payload: GenerateAITranslateRowPayload) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        const res = await service?.generateAITranslateForRow(currentWorkspaceId, payload);
+        const res = await AIService.generateTranslateForRow(currentWorkspaceId, payload);
 
         return res;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   // Get rows from database view
@@ -272,13 +273,13 @@ export function useDatabaseOperations(
   // Check if row document exists
   const checkIfRowDocumentExists = useCallback(
     async (documentId: string) => {
-      if (!service || !currentWorkspaceId) {
+      if (!currentWorkspaceId) {
         throw new Error('No service found');
       }
 
-      return service?.checkIfCollabExists(currentWorkspaceId, documentId) || Promise.resolve(false);
+      return ViewService.checkCollabExists(currentWorkspaceId, documentId) || Promise.resolve(false);
     },
-    [service, currentWorkspaceId]
+    [currentWorkspaceId]
   );
 
   // Load a row sub-document (document content inside a database row)
@@ -320,14 +321,14 @@ export function useDatabaseOperations(
   // Create a row document on the server (orphaned view)
   const createRowDocument = useCallback(
     async (documentId: string): Promise<Uint8Array | null> => {
-      if (!service || !currentWorkspaceId) {
+      if (!currentWorkspaceId) {
         Log.warn('[createRowDocument] service or workspaceId not available');
         return null;
       }
 
       try {
         Log.debug('[createRowDocument] creating', { documentId });
-        const docState = await service.createOrphanedView(currentWorkspaceId, { document_id: documentId });
+        const docState = await ViewService.createOrphaned(currentWorkspaceId, { document_id: documentId });
 
         return docState;
       } catch (e) {
@@ -335,7 +336,7 @@ export function useDatabaseOperations(
         return null;
       }
     },
-    [service, currentWorkspaceId]
+    [currentWorkspaceId]
   );
 
   return {

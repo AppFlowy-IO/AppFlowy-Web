@@ -4,8 +4,9 @@ import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { Editor } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
+import { CollabService } from '@/application/services/domains';
 import { getUserIconUrl } from '@/application/user-metadata';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
 
 import { AwarenessMetadata, AwarenessState } from './types';
@@ -143,7 +144,6 @@ export function useDispatchCursorAwareness(awareness?: Awareness) {
  * Removes user from awareness when leaving or disconnecting
  */
 export function useDispatchClearAwareness(awareness?: Awareness) {
-  const service = useService();
   const currentUser = useCurrentUser();
   const clearAwareness = useCallback(() => {
     if (!awareness) return;
@@ -154,13 +154,13 @@ export function useDispatchClearAwareness(awareness?: Awareness) {
       timestamp: dayjs().unix(),
       user: {
         uid: Number(currentUser?.uid),
-        device_id: service?.getDeviceId() || '',
+        device_id: CollabService.getDeviceId(),
       },
     });
 
     // Log awareness clear
     Log.debug('🚫 Awareness cleared for current user');
-  }, [awareness, service, currentUser]);
+  }, [awareness, currentUser]);
 
   const clearCursor = useCallback((workspaceAvatar?: string | null) => {
     if (!awareness) return;
@@ -171,7 +171,7 @@ export function useDispatchClearAwareness(awareness?: Awareness) {
       timestamp: dayjs().unix(),
       user: {
         uid: Number(currentUser?.uid),
-        device_id: service?.getDeviceId() || '',
+        device_id: CollabService.getDeviceId(),
       },
       metadata: JSON.stringify({
         user_name: currentUser?.name || '',
@@ -183,7 +183,7 @@ export function useDispatchClearAwareness(awareness?: Awareness) {
     });
 
     Log.debug('🚫 Cursor awareness cleared for current user');
-  }, [awareness, service, currentUser]);
+  }, [awareness, currentUser]);
 
   return { clearAwareness, clearCursor };
 }

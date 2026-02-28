@@ -5,8 +5,9 @@ import { toast } from 'sonner';
 import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as InfoIcon } from '@/assets/icons/vector.svg';
+import { BillingService } from '@/application/services/domains';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { isAppFlowyHosted } from '@/utils/subscription';
 
@@ -22,8 +23,6 @@ export function UpgradeBanner({ activeSubscriptionPlan }: { activeSubscriptionPl
   const storageKey = CLOSE_UPGRADE_LOCAL_STORAGE_KEY + currentWorkspaceId;
   const [isClosed, setClosed] = useState(() => localStorage.getItem(storageKey) === 'true');
 
-  const service = useService();
-
   const needUpgrade = useMemo(() => {
     return activeSubscriptionPlan === SubscriptionPlan.Free;
   }, [activeSubscriptionPlan]);
@@ -33,15 +32,12 @@ export function UpgradeBanner({ activeSubscriptionPlan }: { activeSubscriptionPl
   }, []);
 
   const handleUpgrade = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
-    const workspaceId = currentWorkspaceId;
-
-    if (!workspaceId) return;
+    if (!currentWorkspaceId) return;
 
     const plan = SubscriptionPlan.Pro;
 
     try {
-      const link = await service.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
+      const link = await BillingService.getSubscriptionLink(currentWorkspaceId, plan, SubscriptionInterval.Month);
 
       window.open(link, '_blank');
 
@@ -49,7 +45,7 @@ export function UpgradeBanner({ activeSubscriptionPlan }: { activeSubscriptionPl
     } catch (e: any) {
       toast.error(e.message);
     }
-  }, [currentWorkspaceId, service]);
+  }, [currentWorkspaceId]);
 
   if (isClosed || !isOwner || !needUpgrade || !isOfficial) {
     return null;

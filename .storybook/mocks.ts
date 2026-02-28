@@ -9,12 +9,9 @@ import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 
 /**
  * Mock AFConfig context value
- * Used by components that need authentication and service configuration
+ * Used by components that need authentication context
  */
 export const mockAFConfigValue = {
-  service: {
-    getSubscriptionLink: async () => 'https://example.com/subscribe',
-  },
   isAuthenticated: true,
   currentUser: {
     email: 'storybook@example.com',
@@ -33,11 +30,9 @@ export const mockAFConfigValue = {
 };
 
 /**
- * Minimal mock AFConfig without service
- * Use this for components that don't need service functionality
+ * Minimal mock AFConfig
  */
 export const mockAFConfigValueMinimal = {
-  service: undefined,
   isAuthenticated: true,
   currentUser: {
     email: 'storybook@example.com',

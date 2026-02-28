@@ -5,7 +5,8 @@ import { toast } from 'sonner';
 
 import { invalidToken } from '@/application/session/token';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
-import { AFConfigContext, useService } from '@/components/main/app.hooks';
+import { AuthService } from '@/application/services/domains';
+import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
@@ -17,7 +18,6 @@ import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 export function ChangePassword({ email, redirectTo }: { email: string; redirectTo: string }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const service = useService();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -72,7 +72,6 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
 
   const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    if (!service) return;
 
     const errors = getValidationErrors(newPassword);
 
@@ -91,7 +90,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
     setPasswordErrors([]);
 
     try {
-      await service.changePassword({ password: newPassword });
+      await AuthService.changePassword({ password: newPassword });
       toast.success(t('changePassword.success'));
 
       invalidToken();
