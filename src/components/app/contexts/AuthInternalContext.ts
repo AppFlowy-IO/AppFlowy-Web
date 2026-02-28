@@ -10,6 +10,7 @@ export interface AuthInternalContextType {
   userWorkspaceInfo?: UserWorkspaceInfo;
   currentWorkspaceId?: string;
   isAuthenticated: boolean;
+  enablePageHistory?: boolean;
   onChangeWorkspace: (workspaceId: string) => Promise<void>;
 }
 

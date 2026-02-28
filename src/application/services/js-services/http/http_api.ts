@@ -502,6 +502,23 @@ export async function verifyToken(accessToken: string) {
   );
 }
 
+export interface ServerInfo {
+  enable_page_history: boolean;
+}
+
+export async function getServerInfo(): Promise<ServerInfo> {
+  const url = '/api/server-info';
+
+  try {
+    return await executeAPIRequest<ServerInfo>(() =>
+      axiosInstance?.get<APIResponse<ServerInfo>>(url)
+    );
+  } catch (error) {
+    console.warn('Server info API returned error:', (error as APIError)?.message);
+    return { enable_page_history: true };
+  }
+}
+
 export async function getAuthProviders(): Promise<AuthProvider[]> {
   const url = '/api/server-info/auth-providers';
 

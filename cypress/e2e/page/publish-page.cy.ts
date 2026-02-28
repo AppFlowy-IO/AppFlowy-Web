@@ -892,6 +892,12 @@ describe('Publish Page Test', () => {
                         .first()
                         .as('editor');
 
+                    // Intercept the orphaned-view creation API call BEFORE typing.
+                    // Typing triggers ensureRowDocumentExists() which calls POST /orphaned-view
+                    // to create the row document on the server. We need to wait for this to
+                    // complete before the WebSocket sync timer starts counting down.
+                    cy.intercept('POST', '**/orphaned-view').as('createRowDoc');
+
                     cy.get('@editor').click({ force: true });
                     waitForReactUpdate(1000);
 
@@ -902,12 +908,18 @@ describe('Publish Page Test', () => {
                     // API call -> WebSocket sync of content -> server persists to storage.
                     cy.focused().type(rowDocContent, { delay: 50 });
 
+                    // Wait for the orphaned-view API call to complete.
+                    // This ensures the row document exists on the server before we
+                    // start counting on WebSocket to sync the content.
+                    cy.wait('@createRowDoc', { timeout: 30000 }).then((interception) => {
+                        testLog.info(`Row document created on server (status: ${interception.response?.statusCode})`);
+                    });
+
                     // Keep the modal open for an extended period to ensure:
-                    // 1. The row document is created on the server (API call)
-                    // 2. WebSocket sync sends the content to the server
-                    // 3. Server persists the content to its storage layer
-                    // This is the most critical wait - the component must stay mounted
-                    // for the WebSocket connection to remain active during sync.
+                    // 1. WebSocket sync sends the content to the server
+                    // 2. Server persists the content to its storage layer
+                    // The orphaned-view creation is already confirmed above,
+                    // so this full window is dedicated to content sync.
                     waitForReactUpdate(20000);
 
                     cy.get('[role="dialog"]').should('contain.text', rowDocContent);
@@ -957,13 +969,36 @@ describe('Publish Page Test', () => {
                                 const rowPageUrl = `${publishedUrl}?r=${rowId}`;
                                 testLog.info(`Navigating directly to row page: ${rowPageUrl}`);
 
-                                cy.visit(rowPageUrl, { failOnStatusCode: false });
-
-                                // Step 8: Verify row document content is visible.
+                                // Step 8: Visit published row page and verify content.
                                 // The row document content is baked into the publish blob.
+                                // Use a retry-with-reload strategy: if the publish blob was
+                                // generated before the server fully persisted the row document
+                                // content, the first visit may not show it. A reload fetches
+                                // a fresh blob which may now include the content.
                                 testLog.info('Verifying row document content in published view');
-                                cy.contains(rowDocContent, { timeout: 30000 }).should('be.visible');
-                                testLog.info('✓ Test passed: Row document content displays correctly in published view');
+
+                                const verifyRowDocContent = (attempt: number) => {
+                                    testLog.info(`Visiting published row page (attempt ${attempt})`);
+                                    cy.visit(rowPageUrl, { failOnStatusCode: false });
+                                    cy.wait(5000);
+
+                                    cy.get('body', { timeout: 30000 }).then(($body) => {
+                                        if ($body.text().includes(rowDocContent)) {
+                                            cy.contains(rowDocContent).should('be.visible');
+                                            testLog.info('✓ Test passed: Row document content displays correctly in published view');
+                                        } else if (attempt < 3) {
+                                            testLog.info(`Content not found on attempt ${attempt}, retrying after wait...`);
+                                            cy.wait(10000);
+                                            verifyRowDocContent(attempt + 1);
+                                        } else {
+                                            // Final attempt - use standard assertion to produce a clear error
+                                            cy.contains(rowDocContent, { timeout: 30000 }).should('be.visible');
+                                            testLog.info('✓ Test passed: Row document content displays correctly in published view');
+                                        }
+                                    });
+                                };
+
+                                verifyRowDocContent(1);
                             });
                         });
                     });

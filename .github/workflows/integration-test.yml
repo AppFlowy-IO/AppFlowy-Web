@@ -115,6 +115,10 @@ jobs:
           sed -i 's|AI_OPENAI_API_KEY=.*|AI_OPENAI_API_KEY=${{ secrets.CI_OPENAI_API_KEY }}|' .env
           sed -i 's|APPFLOWY_SPAM_DETECT_ENABLED=.*|APPFLOWY_SPAM_DETECT_ENABLED=false|' .env
           
+          echo '' >> .env
+          echo 'APPFLOWY_PAGE_HISTORY_ENABLE=true' >> .env
+                                                                                                                                                          
+          
 
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
