@@ -9,6 +9,7 @@ import ImageResizer from '@/components/editor/components/blocks/image/ImageResiz
 import { MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
 import VideoToolbar from '@/components/editor/components/blocks/video/VideoToolbar';
 import { VideoBlockNode } from '@/components/editor/editor.type';
+import { getVideoErrorMessage } from '@/utils/video-url';
 
 function VideoRender({
   node,
@@ -36,6 +37,7 @@ function VideoRender({
       url,
       width: '100%',
       height: '100%',
+      controls: true,
     };
   }, [url]);
   const onDragStart = useCallback(() => {
@@ -73,7 +75,11 @@ function VideoRender({
           className={'w-full absolute left-0 top-0 h-full'}
         >
           <ReactPlayer {...playerProps} onError={() => {
-            if(onError) onError('The video embed couldn\'t be loaded');
+            if(onError) {
+              const message = getVideoErrorMessage(url || '');
+
+              onError(message);
+            }
           }}
           />
         </div>
