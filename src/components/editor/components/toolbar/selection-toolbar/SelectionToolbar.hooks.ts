@@ -1,6 +1,6 @@
 import { debounce } from 'lodash-es';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Range } from 'slate';
+import { Editor, Element, Range } from 'slate';
 import { ReactEditor, useFocused, useReadOnly, useSlate, useSlateStatic } from 'slate-react';
 
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -27,6 +27,22 @@ export function useVisible() {
     return CustomEditor.getTextNodes(editor).length;
   }, [editor, selection]);
   const [visible, setVisible] = useState<boolean>(false);
+  const isSelectionInReadOnly = useMemo(() => {
+    if (!selection) return false;
+
+    const elementMatch = Editor.above(editor, {
+      at: selection,
+      match: (n) => !Editor.isEditor(n) && Element.isElement(n),
+    });
+
+    if (!elementMatch) return false;
+
+    try {
+      return editor.isElementReadOnly(elementMatch[0]);
+    } catch {
+      return false;
+    }
+  }, [editor, selection]);
 
   const {
     assistantType,
@@ -45,6 +61,7 @@ export function useVisible() {
         if(!focus) return false;
 
         if(document.getSelection()?.isCollapsed || assistantTypeRef.current !== undefined) return false;
+        if(isSelectionInReadOnly) return false;
 
         return Boolean(selectedText && isExpanded && !isDragging);
       });
@@ -56,7 +73,7 @@ export function useVisible() {
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [focus, forceShow, isDragging, isExpanded, selectedText]);
+  }, [focus, forceShow, isDragging, isExpanded, isSelectionInReadOnly, selectedText]);
 
   useEffect(() => {
     if(!visible) {

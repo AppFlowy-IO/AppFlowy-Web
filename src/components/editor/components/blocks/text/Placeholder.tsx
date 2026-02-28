@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Editor, Element, Range } from 'slate';
 import { ReactEditor, useFocused, useSelected, useSlate } from 'slate-react';
 
+
 import { BlockType, ToggleListBlockData } from '@/application/types';
 import { HeadingNode, ToggleListNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -44,9 +45,24 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
   const unSelectedPlaceholder = useMemo(() => {
     switch(block?.type) {
       case BlockType.Paragraph: {
+        try {
+          const path = ReactEditor.findPath(editor, node);
+          const inNotes = Editor.above(editor, {
+            at: path,
+            match: (n) =>
+              !Editor.isEditor(n) &&
+              Element.isElement(n) &&
+              n.type === BlockType.AIMeetingNotesBlock,
+          });
+
+          if (inNotes) return t('document.aiMeeting.notesPlaceholder');
+        } catch {
+          // ignore
+        }
+
         // Show placeholder when the document is empty (single empty paragraph)
         // This matches the desktop "Enter a / to insert a block, or start typing" behavior
-        if (editor.children.length <= 1) {
+        if(editor.children.length <= 1) {
           return t('cardDetails.notesPlaceholder');
         }
 
@@ -108,7 +124,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block, editor.children.length, t]);
+  }, [block, editor, node, t]);
 
   const selectedPlaceholder = useMemo(() => {
 

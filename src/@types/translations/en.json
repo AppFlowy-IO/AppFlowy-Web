@@ -1959,6 +1959,73 @@
       "note": "Note"
     },
     "menuName": "Document",
+    "aiMeeting": {
+      "titleDefault": "Meeting",
+      "tab": {
+        "summary": "Summary",
+        "notes": "Notes",
+        "transcript": "Transcript"
+      },
+      "readOnlyHint": "This content is read-only on web. Please edit it on the desktop app.",
+      "notesPlaceholder": "Add your notes… AI will turn them into a clean, share-ready summary.",
+      "speakerUnknown": "Unknown speaker",
+      "speakerFallback": "Speaker {{id}}",
+      "reference": {
+        "sourcesTooltip": "View sources",
+        "deletedTooltip": "Source deleted",
+        "deleted": "Source was deleted"
+      },
+      "copy": {
+        "summary": "Copy summary",
+        "notes": "Copy notes",
+        "transcript": "Copy transcript",
+        "summarySuccess": "Summary copied to clipboard",
+        "notesSuccess": "Notes copied to clipboard",
+        "transcriptSuccess": "Transcript copied to clipboard",
+        "noContent": "No content to copy"
+      },
+      "regenerate": {
+        "regenerate": "Regenerate",
+        "generating": "Generating",
+        "summaryTemplate": "Summary template",
+        "summaryDetail": "Summary detail",
+        "summaryLanguage": "Summary language",
+        "noSource": "No transcript or notes available to regenerate summary",
+        "success": "Summary regenerated",
+        "failed": "Failed to regenerate summary",
+        "template": {
+          "auto": "Auto",
+          "meetingMinutes": "Meeting minutes",
+          "actionFocused": "Action focused",
+          "executive": "Executive"
+        },
+        "detail": {
+          "concise": "Concise",
+          "balanced": "Balanced",
+          "detailed": "Detailed"
+        },
+        "language": {
+          "english": "English",
+          "chineseSimplified": "Chinese (Simplified)",
+          "chineseTraditional": "Chinese (Traditional)",
+          "spanish": "Spanish",
+          "french": "French",
+          "german": "German",
+          "japanese": "Japanese",
+          "korean": "Korean",
+          "portuguese": "Portuguese",
+          "russian": "Russian",
+          "thai": "Thai",
+          "vietnamese": "Vietnamese",
+          "danish": "Danish",
+          "finnish": "Finnish",
+          "norwegian": "Norwegian",
+          "dutch": "Dutch",
+          "italian": "Italian",
+          "swedish": "Swedish"
+        }
+      }
+    },
     "date": {
       "timeHintTextInTwelveHour": "01:00 PM",
       "timeHintTextInTwentyFourHour": "13:00"

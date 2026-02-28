@@ -136,7 +136,49 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
       if (shouldSkipParentTypes.some((type) => blockElement.closest(`[data-block-type="${type}"]`))) {
         close();
         return;
-      } else {
+      }
+
+      const aiMeetingRoot = blockElement.closest(`[data-block-type="${BlockType.AIMeetingBlock}"]`);
+
+      if (aiMeetingRoot) {
+        // The outer AI meeting block itself should show controls (drag/add)
+        if (node.type !== BlockType.AIMeetingBlock) {
+          // Hide for inner section container blocks
+          const innerSectionTypes = [
+            BlockType.AIMeetingNotesBlock,
+            BlockType.AIMeetingSummaryBlock,
+            BlockType.AIMeetingTranscriptionBlock,
+            BlockType.AIMeetingSpeakerBlock,
+          ];
+
+          if (innerSectionTypes.includes(node.type as BlockType)) {
+            close();
+            return;
+          }
+
+          // Hide for all blocks inside transcript/speaker sections
+          const inTranscript = blockElement.closest(
+            `[data-block-type="${BlockType.AIMeetingTranscriptionBlock}"], [data-block-type="${BlockType.AIMeetingSpeakerBlock}"]`
+          );
+
+          if (inTranscript) {
+            close();
+            return;
+          }
+
+          // Allow for child blocks inside notes/summary sections only
+          const inNotesSummary = blockElement.closest(
+            `[data-block-type="${BlockType.AIMeetingNotesBlock}"], [data-block-type="${BlockType.AIMeetingSummaryBlock}"]`
+          );
+
+          if (!inNotesSummary) {
+            close();
+            return;
+          }
+        }
+      }
+
+      {
         recalculatePosition(blockElement);
         el.style.opacity = '1';
         el.style.pointerEvents = 'auto';

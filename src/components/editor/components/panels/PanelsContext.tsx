@@ -1,8 +1,9 @@
 import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
-import { BaseRange, Point } from 'slate';
+import { BaseRange, Editor, Element, Point } from 'slate';
 import { TextInsertTextOptions } from 'slate/dist/interfaces/transforms/text';
 import { ReactEditor } from 'slate-react';
 
+import { BlockType } from '@/application/types';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
 export enum PanelType {
@@ -117,6 +118,19 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
         const panelType = { '/': PanelType.Slash, '+': PanelType.PageReference, '@': PanelType.Mention }[text];
 
         if (!panelType) return;
+
+        if (panelType === PanelType.Slash && selection) {
+          const inTranscript = Editor.above(editor, {
+            at: selection,
+            match: (n) =>
+              !Editor.isEditor(n) &&
+              Element.isElement(n) &&
+              (n.type === BlockType.AIMeetingTranscriptionBlock ||
+                n.type === BlockType.AIMeetingSpeakerBlock),
+          });
+
+          if (inTranscript) return;
+        }
 
         openPanel(panelType, { top: position.top, left: position.left });
 
