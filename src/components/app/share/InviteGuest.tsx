@@ -16,8 +16,8 @@ import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.s
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
+import { AccessService, BillingService } from '@/application/services/domains';
 import { useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -70,7 +70,6 @@ export function InviteGuest({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const hoveredIndexRef = useRef<number>(-1);
   const searchValueRef = useRef<string>('');
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [inviteLoading, setInviteLoading] = useState(false);
   const [selectedAccessLevel, setSelectedAccessLevel] = useState<AccessLevel>(AccessLevel.ReadOnly);
@@ -385,7 +384,7 @@ export function InviteGuest({
   }, [emailTags.length, accessLevelPopoverOpen, getAccessLevelText, selectedAccessLevel, t, handleAccessLevelSelect]);
 
   const handleUpgrade = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     const workspaceId = currentWorkspaceId;
 
     if (!workspaceId) return;
@@ -403,7 +402,7 @@ export function InviteGuest({
 
     try {
       setUpgradeLoading(true);
-      const link = await service.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
+      const link = await BillingService.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
 
       window.open(link, '_blank');
       setUpgradeModalOpen(false);
@@ -414,15 +413,15 @@ export function InviteGuest({
     } finally {
       setUpgradeLoading(false);
     }
-  }, [currentWorkspaceId, service, isOwner]);
+  }, [currentWorkspaceId, isOwner]);
 
   const handleSendInvites = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     if (emailTags.length === 0) return;
 
     try {
       setInviteLoading(true);
-      await service.sharePageTo(
+      await AccessService.sharePageTo(
         currentWorkspaceId,
         viewId,
         emailTags.map((tag) => tag.email),
@@ -447,7 +446,7 @@ export function InviteGuest({
 
     // Notify parent component to refresh the people list
     await onInviteSuccess();
-  }, [service, currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, selectedAccessLevel]);
+  }, [currentWorkspaceId, emailTags, onInviteSuccess, viewId, t, selectedAccessLevel]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

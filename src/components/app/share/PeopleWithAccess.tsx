@@ -5,7 +5,8 @@ import { useNavigate } from 'react-router-dom';
 import { APP_EVENTS } from '@/application/constants';
 import { AccessLevel, IPeopleWithAccessType, Role } from '@/application/types';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { AccessService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
 
@@ -22,24 +23,23 @@ export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading }: 
   const { t } = useTranslation();
   const currentUser = useCurrentUser();
 
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const navigate = useNavigate();
   const { eventEmitter } = useAppHandlers();
   const handleAccessLevelChange = useCallback(
     async (personEmail: string, newAccessLevel: AccessLevel) => {
-      if (!service || !currentWorkspaceId) return;
-      await service.sharePageTo(currentWorkspaceId, viewId, [personEmail], newAccessLevel);
+      if (!currentWorkspaceId) return;
+      await AccessService.sharePageTo(currentWorkspaceId, viewId, [personEmail], newAccessLevel);
 
       // Refresh the people list after change
       await onPeopleChange();
     },
-    [onPeopleChange, currentWorkspaceId, service, viewId]
+    [onPeopleChange, currentWorkspaceId, viewId]
   );
 
   const handleRemoveAccess = useCallback(
     async (personEmail: string) => {
-      if (!service || !currentWorkspaceId) return;
+      if (!currentWorkspaceId) return;
 
       // Only navigate if the current user is removing their own access
       const shouldNavigate = personEmail === currentUser?.email;
@@ -65,7 +65,7 @@ export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading }: 
         });
       }
 
-      await service.revokeAccess(currentWorkspaceId, viewId, [personEmail]);
+      await AccessService.revokeAccess(currentWorkspaceId, viewId, [personEmail]);
 
       // Refresh the people list after removal
       await onPeopleChange();
@@ -77,18 +77,18 @@ export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading }: 
         navigate('/app');
       }
     },
-    [onPeopleChange, currentWorkspaceId, service, viewId, navigate, currentUser?.email, eventEmitter]
+    [onPeopleChange, currentWorkspaceId, viewId, navigate, currentUser?.email, eventEmitter]
   );
 
   const handleTurnIntoMember = useCallback(
     async (personEmail: string) => {
-      if (!service || !currentWorkspaceId) return;
-      await service.turnIntoMember(currentWorkspaceId, personEmail);
+      if (!currentWorkspaceId) return;
+      await AccessService.turnIntoMember(currentWorkspaceId, personEmail);
 
       // Refresh the people list after change
       await onPeopleChange();
     },
-    [onPeopleChange, currentWorkspaceId, service]
+    [onPeopleChange, currentWorkspaceId]
   );
 
   // Check if current user has full access (can modify others)

@@ -14,7 +14,8 @@ import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayCon
 import { useAppHandlers, useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import ViewItem from '@/components/app/outline/ViewItem';
 import { RemoveAccessConfirmDialog } from '@/components/app/share/RemoveAccessConfirmDialog';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { AccessService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -48,7 +49,6 @@ export function ShareViewItem({
   const viewId = useAppViewId();
   const navigate = useNavigate();
 
-  const service = useService();
   const currentUser = useCurrentUser();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const { updatePage, uploadFile } = useAppHandlers();
@@ -98,9 +98,9 @@ export function ShareViewItem({
   const handleRemoveAccess = useCallback(async () => {
     setIsRemoving(true);
     try {
-      if (!service || !currentWorkspaceId || !currentUser?.email) return;
+      if (!currentWorkspaceId || !currentUser?.email) return;
 
-      await service.revokeAccess(currentWorkspaceId, view.view_id, [currentUser.email]);
+      await AccessService.revokeAccess(currentWorkspaceId, view.view_id, [currentUser.email]);
       notify.success(t('shareAction.removeAccessSuccess', { email: currentUser.email }));
       setPopoverOpen(false);
       setShowRemoveDialog(false);
@@ -114,7 +114,7 @@ export function ShareViewItem({
     } finally {
       setIsRemoving(false);
     }
-  }, [service, currentWorkspaceId, currentUser, view, onDataRefresh, t, viewId, navigate]);
+  }, [currentWorkspaceId, currentUser, view, onDataRefresh, t, viewId, navigate]);
 
   const handleRename = useCallback(() => {
     setPopoverOpen(false);

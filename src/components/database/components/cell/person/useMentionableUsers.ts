@@ -1,9 +1,9 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 
 import { db } from '@/application/db';
+import { WorkspaceService } from '@/application/services/domains';
 import { MentionablePerson } from '@/application/types';
 import { AppContext } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 
 interface CacheEntry {
   users: MentionablePerson[];
@@ -75,7 +75,6 @@ async function saveToDisk(workspaceId: string, users: MentionablePerson[]): Prom
 }
 
 export function useMentionableUsers() {
-  const service = useService();
   // Use AppContext directly to avoid throwing when outside AppProvider (e.g., in publish view)
   const appContext = useContext(AppContext);
   const workspaceId = appContext?.currentWorkspaceId;
@@ -94,7 +93,7 @@ export function useMentionableUsers() {
   }, [workspaceId]);
 
   const fetchUsers = useCallback(async () => {
-    if (!service || !workspaceId) return;
+    if (!workspaceId) return;
 
     // 1. Check in-memory cache first (fastest)
     const memoryCached = cache.get(workspaceId);
@@ -121,7 +120,7 @@ export function useMentionableUsers() {
     // 3. Fetch from API (disk cache expired or empty)
     setLoading(true);
     try {
-      const fetchedUsers = await service.getMentionableUsers(workspaceId);
+      const fetchedUsers = await WorkspaceService.getMentionableUsers(workspaceId);
 
       // Only update state if workspaceId hasn't changed during fetch
       if (workspaceIdRef.current === workspaceId) {
@@ -143,7 +142,7 @@ export function useMentionableUsers() {
         setLoading(false);
       }
     }
-  }, [service, workspaceId]);
+  }, [workspaceId]);
 
   // Invalidate cache for this workspace
   const invalidateCache = useCallback(() => {

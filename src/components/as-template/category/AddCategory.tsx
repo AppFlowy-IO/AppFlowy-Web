@@ -7,12 +7,11 @@ import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import CategoryForm from '@/components/as-template/category/CategoryForm';
-import { useService } from '@/components/main/app.hooks';
+import { TemplateService } from '@/application/services/domains';
 
 function AddCategory({ searchText, onCreated }: { searchText: string; onCreated: () => void }) {
   const { t } = useTranslation();
   const submitRef = React.useRef<HTMLInputElement>(null);
-  const service = useService();
   const defaultValues = useMemo(
     () => ({
       name: searchText,
@@ -28,14 +27,14 @@ function AddCategory({ searchText, onCreated }: { searchText: string; onCreated:
   const onSubmit = useCallback(
     async (data: TemplateCategoryFormValues) => {
       try {
-        await service?.addTemplateCategory(data);
+        await TemplateService.addCategory(data);
         onCreated();
         setOpenModal(false);
       } catch (error) {
         notify.error('Failed to add category');
       }
     },
-    [onCreated, service]
+    [onCreated]
   );
 
   return (

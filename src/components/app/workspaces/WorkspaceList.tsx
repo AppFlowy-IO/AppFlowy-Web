@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 
+import { WorkspaceService } from '@/application/services/domains';
 import { Workspace } from '@/application/types';
 import { WorkspaceItem } from '@/components/app/workspaces/WorkspaceItem';
-import { useService } from '@/components/main/app.hooks';
 
 function WorkspaceList({
   defaultWorkspaces,
@@ -26,18 +26,16 @@ function WorkspaceList({
   onLeave?: (workspace: Workspace) => void;
   useDropdownItem?: boolean;
 }) {
-  const service = useService();
   const [workspaces, setWorkspaces] = useState<Workspace[]>(defaultWorkspaces || []);
   const fetchWorkspaces = useCallback(async () => {
-    if (!service) return;
     try {
-      const workspaces = await service.getWorkspaces();
+      const workspaces = await WorkspaceService.getAll();
 
       setWorkspaces(workspaces);
     } catch (e) {
       console.error(e);
     }
-  }, [service]);
+  }, []);
 
   useEffect(() => {
     void fetchWorkspaces();

@@ -2,6 +2,7 @@ import { useLiveQuery } from 'dexie-react-hooks';
 import { useContext, useEffect, useMemo } from 'react';
 
 import { db } from '@/application/db';
+import { getWorkspaceMemberProfile } from '@/application/services/js-services/http/user-api';
 import { AppContext } from '@/components/app/app.hooks';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
@@ -23,10 +24,9 @@ export function useCurrentUserWorkspaceAvatar() {
 
   const currentWorkspaceId = appContext?.currentWorkspaceId;
   const currentUser = configContext?.currentUser;
-  const service = configContext?.service;
 
   useEffect(() => {
-    if (!currentWorkspaceId || !currentUser?.uuid || !service) {
+    if (!currentWorkspaceId || !currentUser?.uuid) {
       return;
     }
 
@@ -52,7 +52,7 @@ export function useCurrentUserWorkspaceAvatar() {
         pendingHydrations.add(cacheKey);
         addedToPending = true;
 
-        const profile = await service.getWorkspaceMemberProfile(currentWorkspaceId);
+        const profile = await getWorkspaceMemberProfile(currentWorkspaceId);
 
         if (!profile || canceled) {
           return;
@@ -78,7 +78,7 @@ export function useCurrentUserWorkspaceAvatar() {
     return () => {
       canceled = true;
     };
-  }, [currentWorkspaceId, currentUser?.uuid, service]);
+  }, [currentWorkspaceId, currentUser?.uuid]);
 
   // Use useLiveQuery to reactively watch the database for changes
   const profile = useLiveQuery(

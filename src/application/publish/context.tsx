@@ -7,7 +7,7 @@ import { ViewMeta } from '@/application/db/tables/view_metas';
 import { AppendBreadcrumb, CreateRow, LoadView, LoadViewMeta, View, ViewInfo, ViewLayout } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
-import { useService } from '@/components/main/app.hooks';
+import { PublishService, RowService } from '@/application/services/domains';
 
 export interface PublishContextType {
   namespace: string;
@@ -168,8 +168,6 @@ export const PublishProvider = ({
 
   const prevViewMeta = useRef(viewMeta);
 
-  const service = useService();
-
   useEffect(() => {
     const rowKeys = createdRowKeys.current;
 
@@ -178,17 +176,17 @@ export const PublishProvider = ({
     if (!rowKeys.length) return;
     rowKeys.forEach((rowKey) => {
       try {
-        service?.deleteRow(rowKey);
+        RowService.remove(rowKey);
       } catch (e) {
         console.error(e);
       }
     });
-  }, [service, publishName]);
+  }, [publishName]);
 
   const loadPublishInfo = useCallback(async () => {
-    if (!service || !viewId) return;
+    if (!viewId) return;
     try {
-      const res = await service.getPublishInfo(viewId);
+      const res = await PublishService.getViewInfo(viewId);
 
       setPublishInfo(res);
 
@@ -196,7 +194,7 @@ export const PublishProvider = ({
     } catch (e: any) {
       // do nothing
     }
-  }, [viewId, service]);
+  }, [viewId]);
 
   useEffect(() => {
     void loadPublishInfo();
@@ -207,7 +205,7 @@ export const PublishProvider = ({
   const loadViewMeta = useCallback(
     async (viewId: string, callback?: (meta: View) => void) => {
       try {
-        const info = await service?.getPublishInfo(viewId);
+        const info = await PublishService.getViewInfo(viewId);
 
         if (!info) {
           throw new Error('View has not been published yet');
@@ -217,7 +215,7 @@ export const PublishProvider = ({
 
         const name = `${namespace}_${publishName}`;
 
-        const meta = await service?.getPublishViewMeta(namespace, publishName);
+        const meta = await PublishService.getViewMeta(namespace, publishName);
 
         if (!meta) {
           return Promise.reject(new Error('View meta has not been published yet'));
@@ -256,7 +254,7 @@ export const PublishProvider = ({
         return Promise.reject(e);
       }
     },
-    [service]
+    []
   );
 
   const toView = useCallback(
@@ -264,7 +262,7 @@ export const PublishProvider = ({
       try {
         const view = await loadViewMeta(viewId);
 
-        const res = await service?.getPublishInfo(viewId);
+        const res = await PublishService.getViewInfo(viewId);
 
         if (!res) {
           throw new Error('View has not been published yet');
@@ -308,13 +306,13 @@ export const PublishProvider = ({
         return Promise.reject(e);
       }
     },
-    [loadViewMeta, service, isTemplate, navigate]
+    [loadViewMeta, isTemplate, navigate]
   );
 
   const loadOutline = useCallback(async () => {
-    if (!service || !namespace) return;
+    if (!namespace) return;
     try {
-      const res = await service?.getPublishOutline(namespace);
+      const res = await PublishService.getOutline(namespace);
 
       if (!res) {
         throw new Error('Publish outline not found');
@@ -324,12 +322,12 @@ export const PublishProvider = ({
     } catch (e) {
       notify.error('Publish outline not found');
     }
-  }, [namespace, service]);
+  }, [namespace]);
 
   const createRow = useCallback(
     async (rowKey: string) => {
       try {
-        const doc = await service?.createRow(rowKey);
+        const doc = await RowService.create(rowKey);
 
         if (!doc) {
           throw new Error('Failed to create row');
@@ -341,13 +339,13 @@ export const PublishProvider = ({
         return Promise.reject(e);
       }
     },
-    [service]
+    []
   );
 
   const loadView = useCallback(
     async (viewId: string, isSubDocument?: boolean) => {
       if (isSubDocument) {
-        const data = await service?.getPublishRowDocument(viewId);
+        const data = await PublishService.getRowDocument(viewId);
 
         if (!data) {
           return Promise.reject(new Error('View has not been published yet'));
@@ -357,7 +355,7 @@ export const PublishProvider = ({
       }
 
       try {
-        const res = await service?.getPublishInfo(viewId);
+        const res = await PublishService.getViewInfo(viewId);
 
         if (!res) {
           throw new Error('View has not been published yet');
@@ -365,7 +363,7 @@ export const PublishProvider = ({
 
         const { namespace, publishName } = res;
 
-        const data = service?.getPublishView(namespace, publishName);
+        const data = PublishService.getView(namespace, publishName);
 
         if (!data) {
           throw new Error('View has not been published yet');
@@ -376,7 +374,7 @@ export const PublishProvider = ({
         return Promise.reject(e);
       }
     },
-    [service]
+    []
   );
 
   const onRendered = useCallback(() => {

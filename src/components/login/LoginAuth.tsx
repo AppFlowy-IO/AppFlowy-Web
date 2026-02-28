@@ -2,6 +2,7 @@ import { useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
+import { AuthService } from '@/application/services/domains';
 import { getRedirectTo } from '@/application/session/sign_in';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import LoadingDots from '@/components/_shared/LoadingDots';
@@ -9,7 +10,6 @@ import { NormalModal } from '@/components/_shared/modal';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 function LoginAuth () {
-  const service = useContext(AFConfigContext)?.service;
   const [loading, setLoading] = useState<boolean>(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -21,7 +21,7 @@ function LoginAuth () {
       setLoading(true);
       setError(null);
       try {
-        await service?.loginAuth(window.location.href);
+        await AuthService.login(window.location.href);
         // eslint-disable-next-line
       } catch (e: any) {
         setError(e.message);
@@ -30,7 +30,7 @@ function LoginAuth () {
         setLoading(false);
       }
     })();
-  }, [service]);
+  }, []);
   const navigate = useNavigate();
 
   return (

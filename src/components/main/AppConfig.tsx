@@ -3,8 +3,8 @@ import { useSnackbar } from 'notistack';
 import React, { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 
 import { clearData, db } from '@/application/db';
-import { getService } from '@/application/services';
-import { AFServiceConfig } from '@/application/services/services.type';
+import { UserService } from '@/application/services/domains';
+import { initAPIService } from '@/application/services/js-services/http/core';
 import { EventType, on } from '@/application/session';
 import { getTokenParsed, isTokenValid } from '@/application/session/token';
 import { User } from '@/application/types';
@@ -19,8 +19,10 @@ import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Log } from '@/utils/log';
 
 function AppConfig({ children }: { children: React.ReactNode }) {
-  const [appConfig] = useState<AFServiceConfig>(defaultConfig);
-  const service = useMemo(() => getService(appConfig), [appConfig]);
+  // Initialize API service once on mount
+  useState(() => {
+    initAPIService(defaultConfig);
+  });
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean>(isTokenValid());
 
   const userId = useMemo(() => {
@@ -37,7 +39,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
 
   const updateCurrentUser = useCallback(
     async (user: User) => {
-      if (!service || !userId) return;
+      if (!userId) return;
 
       try {
         await db.users.put(user, user.uuid);
@@ -45,7 +47,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
         Log.error(e);
       }
     },
-    [service, userId]
+    [userId]
   );
 
   const openLoginModal = useCallback((redirectTo?: string) => {
@@ -65,14 +67,13 @@ function AppConfig({ children }: { children: React.ReactNode }) {
     }
 
     void (async () => {
-      if (!service) return;
       try {
-        await service.getCurrentUser();
+        await UserService.getCurrent();
       } catch (e) {
         Log.error(e);
       }
     })();
-  }, [isAuthenticated, service]);
+  }, [isAuthenticated]);
 
   // Authentication state synchronization effects
   // Note: These are intentionally separate effects with different lifecycles:
@@ -150,11 +151,11 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   // Handle initial timezone setup - only when timezone is not set
   const handleTimezoneSetup = useCallback(
     async (detectedTimezone: string) => {
-      if (!isAuthenticated || !service || hasCheckedTimezone) return;
+      if (!isAuthenticated || hasCheckedTimezone) return;
 
       try {
         // Get current user profile to check if timezone is already set
-        const user = await service.getCurrentUser();
+        const user = await UserService.getCurrent();
         const currentMetadata = user.metadata || {};
 
         // Check if user has timezone metadata
@@ -169,7 +170,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
             [MetadataKey.Timezone]: timezoneData,
           };
 
-          await service.updateUserProfile(metadata);
+          await UserService.updateProfile(metadata);
           Log.debug('Initial timezone set in user profile:', timezoneData);
         } else {
           Log.debug('User timezone already set, skipping update:', existingTimezone);
@@ -181,7 +182,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
         // Still mark as checked to avoid repeated attempts
         setHasCheckedTimezone(true);
       }
-    }, [isAuthenticated, service, hasCheckedTimezone]);
+    }, [isAuthenticated, hasCheckedTimezone]);
 
   // Detect timezone once on mount
   useUserTimezone({
@@ -240,7 +241,6 @@ function AppConfig({ children }: { children: React.ReactNode }) {
   return (
     <AFConfigContext.Provider
       value={{
-        service,
         isAuthenticated,
         currentUser,
         updateCurrentUser,

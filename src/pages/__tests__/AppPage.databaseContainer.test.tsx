@@ -13,7 +13,7 @@ declare global {
     workspaceId?: string;
     outline?: View[];
     handlers?: Record<string, unknown>;
-    service?: { getAxiosInstance?: () => unknown; getAppView?: (workspaceId: string, viewId: string) => Promise<View> };
+    getAppViewCached?: (workspaceId: string, viewId: string) => Promise<View>;
   } | undefined;
 }
 
@@ -38,7 +38,14 @@ jest.mock('@/components/app/hooks/useViewOperations', () => ({
 
 jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUser: () => ({ email: 'test@appflowy.io' }),
-  useService: () => global.__appPageTestState?.service ?? { getAxiosInstance: () => null },
+}));
+
+jest.mock('@/application/services/js-services/cached-api', () => ({
+  getAppViewCached: (...args: unknown[]) => global.__appPageTestState?.getAppViewCached?.(...(args as [string, string])),
+}));
+
+jest.mock('@/application/services/js-services/http', () => ({
+  getAxiosInstance: () => null,
 }));
 
 jest.mock('@/components/app/DatabaseView', () => () => null);
@@ -146,7 +153,7 @@ describe('AppPage database container', () => {
       viewId: containerView.view_id,
       workspaceId: 'workspace-id',
       outline: undefined,
-      service: { getAxiosInstance: () => null, getAppView },
+      getAppViewCached: getAppView,
       handlers: {
         toView,
         loadViewMeta: jest.fn(),

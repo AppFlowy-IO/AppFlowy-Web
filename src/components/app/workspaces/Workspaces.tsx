@@ -26,7 +26,8 @@ import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
 import UpgradeAIMax from '@/components/billing/UpgradeAIMax';
 import UpgradePlan from '@/components/billing/UpgradePlan';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { WorkspaceService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -99,23 +100,21 @@ export function Workspaces() {
     });
   }, [setSearchParams]);
 
-  const service = useService();
   const handleCreateWorkspace = useCallback(
     async (name: string) => {
-      if (!service) return;
-      const workspaceId = await service.createWorkspace({
+      const workspaceId = await WorkspaceService.create({
         workspace_name: name,
       });
 
       await handleSelectedWorkspace?.(workspaceId);
     },
-    [handleSelectedWorkspace, service]
+    [handleSelectedWorkspace]
   );
 
   const handleUpdateWorkspace = useCallback(
     async (name: string) => {
-      if (!service || !openRenameWorkspace) return;
-      await service.updateWorkspace(openRenameWorkspace.id, {
+      if (!openRenameWorkspace) return;
+      await WorkspaceService.update(openRenameWorkspace.id, {
         workspace_name: name,
       });
       if (openRenameWorkspace.id === currentWorkspaceId) {
@@ -127,7 +126,7 @@ export function Workspaces() {
 
       setOpenRenameWorkspace(null);
     },
-    [service, openRenameWorkspace, currentWorkspaceId]
+    [openRenameWorkspace, currentWorkspaceId]
   );
 
   return (

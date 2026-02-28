@@ -1,8 +1,8 @@
 import React, { useContext } from 'react';
 
 import { QuickNote } from '@/application/types';
+import { QuickNoteService } from '@/application/services/domains';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 
 export const ToastContext = React.createContext<{
   onOpen: (message: string) => void;
@@ -31,12 +31,12 @@ export function useAddNode({
 
   const [loading, setLoading] = React.useState(false);
   const currentWorkspaceId = useCurrentWorkspaceId();
-  const service = useService();
+
   const handleAdd = async () => {
-    if (!service || !currentWorkspaceId || loading) return;
+    if (!currentWorkspaceId || loading) return;
     setLoading(true);
     try {
-      const note = await service.createQuickNote(currentWorkspaceId, [{
+      const note = await QuickNoteService.create(currentWorkspaceId, [{
         type: 'paragraph',
         delta: [{ insert: '' }],
         children: [],

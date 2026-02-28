@@ -2,10 +2,10 @@ import React, { useCallback, useContext, useEffect } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { PublishContext } from '@/application/publish';
+import { PublishService } from '@/application/services/domains';
 import { Types, ViewLayout } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { AFConfigContext } from '@/components/main/app.hooks';
 import SelectWorkspace from '@/components/publish/header/duplicate/SelectWorkspace';
 import SpaceList from '@/components/publish/header/duplicate/SpaceList';
 import { useLoadWorkspaces } from '@/components/publish/header/duplicate/useDuplicate';
@@ -26,7 +26,6 @@ function getCollabTypeFromViewLayout(layout: ViewLayout) {
 
 function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
-  const service = useContext(AFConfigContext)?.service;
   const viewMeta = useContext(PublishContext)?.viewMeta;
   const viewId = viewMeta?.view_id;
   const layout = viewMeta?.layout as ViewLayout;
@@ -67,7 +66,7 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
 
     setLoading(true);
     try {
-      const response = await service?.duplicatePublishView({
+      const response = await PublishService.duplicate({
         workspaceId: selectedWorkspaceId,
         spaceViewId: selectedSpaceId,
         viewId,
@@ -85,7 +84,7 @@ function DuplicateModal({ open, onClose }: { open: boolean; onClose: () => void 
     } finally {
       setLoading(false);
     }
-  }, [viewId, layout, service, selectedWorkspaceId, selectedSpaceId, onClose, t]);
+  }, [viewId, layout, selectedWorkspaceId, selectedSpaceId, onClose, t]);
 
   return (
     <>

@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
 import { toast } from 'sonner';
 
+import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import {
   CreateDatabaseViewPayload,
   CreatePagePayload,
@@ -23,13 +24,13 @@ export function usePageOperations({
   outline?: View[];
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
 }) {
-  const { service, currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
+  const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
 
   // Add a new page
   const addPage = useCallback(
     async (parentViewId: string, payload: CreatePagePayload) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
@@ -41,7 +42,7 @@ export function usePageOperations({
       }
 
       try {
-        const response = await service?.addAppPage(currentWorkspaceId, parentViewId, payload);
+        const response = await PageService.add(currentWorkspaceId, parentViewId, payload);
 
         // Keep a resilient fallback when realtime delivery is unavailable.
         // This guarantees sidebar eventual consistency after creation.
@@ -51,13 +52,13 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, outline, role, loadOutline]
+    [currentWorkspaceId, outline, role, loadOutline]
   );
 
   // Delete a page (move to trash)
   const deletePage = useCallback(
     async (id: string, loadTrash?: (workspaceId: string) => Promise<void>) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
@@ -68,7 +69,7 @@ export function usePageOperations({
       }
 
       try {
-        await service?.moveToTrash(currentWorkspaceId, id);
+        await PageService.moveToTrash(currentWorkspaceId, id);
         void loadTrash?.(currentWorkspaceId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
@@ -76,66 +77,66 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, outline, role, loadOutline]
+    [currentWorkspaceId, outline, role, loadOutline]
   );
 
   // Update page (rename) - uses WebSocket notification for sidebar refresh
   const updatePage = useCallback(
     async (viewId: string, payload: UpdatePagePayload) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        await service?.updateAppPage(currentWorkspaceId, viewId, payload);
+        await PageService.update(currentWorkspaceId, viewId, payload);
         // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   // Update page icon
   const updatePageIcon = useCallback(
     async (viewId: string, icon: { ty: ViewIconType; value: string }) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        await service?.updateAppPageIcon(currentWorkspaceId, viewId, icon);
+        await PageService.updateIcon(currentWorkspaceId, viewId, icon);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   // Update page name (rename) - uses WebSocket notification for sidebar refresh
   const updatePageName = useCallback(
     async (viewId: string, name: string) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        await service?.updateAppPageName(currentWorkspaceId, viewId, name);
+        await PageService.updateName(currentWorkspaceId, viewId, name);
         // Sidebar refresh is handled by WebSocket notification (FOLDER_OUTLINE_CHANGED)
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   // Move page
   const movePage = useCallback(
     async (viewId: string, parentId: string, prevViewId?: string) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
@@ -147,61 +148,61 @@ export function usePageOperations({
         const lastChild = findView(outline || [], parentId)?.children?.slice(-1)[0];
         const prevId = prevViewId || lastChild?.view_id;
 
-        await service?.movePage(currentWorkspaceId, viewId, parentId, prevId);
+        await PageService.moveTo(currentWorkspaceId, viewId, parentId, prevId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, outline, loadOutline, role]
+    [currentWorkspaceId, outline, loadOutline, role]
   );
 
   // Delete from trash permanently
   const deleteTrash = useCallback(
     async (viewId?: string) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        await service?.deleteTrash(currentWorkspaceId, viewId);
+        await PageService.deleteTrash(currentWorkspaceId, viewId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, loadOutline]
+    [currentWorkspaceId, loadOutline]
   );
 
   // Restore page from trash
   const restorePage = useCallback(
     async (viewId?: string) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        await service?.restoreFromTrash(currentWorkspaceId, viewId);
+        await PageService.restore(currentWorkspaceId, viewId);
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, loadOutline]
+    [currentWorkspaceId, loadOutline]
   );
 
   // Create space
   const createSpace = useCallback(
     async (payload: CreateSpacePayload) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        const res = await service?.createSpace(currentWorkspaceId, payload);
+        const res = await PageService.createSpace(currentWorkspaceId, payload);
 
         void loadOutline?.(currentWorkspaceId, false);
         return res;
@@ -209,18 +210,18 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, loadOutline]
+    [currentWorkspaceId, loadOutline]
   );
 
   // Update space
   const updateSpace = useCallback(
     async (payload: UpdateSpacePayload) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        const res = await service?.updateSpace(currentWorkspaceId, payload);
+        const res = await PageService.updateSpace(currentWorkspaceId, payload);
 
         void loadOutline?.(currentWorkspaceId, false);
         return res;
@@ -228,18 +229,18 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, loadOutline]
+    [currentWorkspaceId, loadOutline]
   );
 
   // Create database view (linked view using new endpoint)
   const createDatabaseView = useCallback(
     async (viewId: string, payload: CreateDatabaseViewPayload) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        const res = await service?.createDatabaseView(currentWorkspaceId, viewId, payload);
+        const res = await PageService.createDatabaseView(currentWorkspaceId, viewId, payload);
 
         await loadOutline?.(currentWorkspaceId, false);
         return res;
@@ -247,83 +248,83 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, loadOutline]
+    [currentWorkspaceId, loadOutline]
   );
 
   // Upload file
   const uploadFile = useCallback(
     async (viewId: string, file: File, onProgress?: (n: number) => void) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        const res = await service?.uploadFile(currentWorkspaceId, viewId, file, onProgress);
+        const res = await FileService.upload(currentWorkspaceId, viewId, file, onProgress);
 
         return res;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   // Get subscriptions
   const getSubscriptions = useCallback(async () => {
-    if (!service || !currentWorkspaceId) {
+    if (!currentWorkspaceId) {
       throw new Error('No service found');
     }
 
     try {
-      const res = await service?.getWorkspaceSubscriptions(currentWorkspaceId);
+      const res = await BillingService.getWorkspaceSubscriptions(currentWorkspaceId);
 
       return res;
     } catch (e) {
       return Promise.reject(e);
     }
-  }, [currentWorkspaceId, service]);
+  }, [currentWorkspaceId]);
 
   // Publish view
   const publish = useCallback(
     async (view: View, publishName?: string, visibleViewIds?: string[]) => {
-      if (!service || !currentWorkspaceId) return;
+      if (!currentWorkspaceId) return;
       const viewId = view.view_id;
 
-      await service?.publishView(currentWorkspaceId, viewId, {
+      await PublishService.publish(currentWorkspaceId, viewId, {
         publish_name: publishName,
         visible_database_view_ids: visibleViewIds,
       });
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline, service]
+    [currentWorkspaceId, loadOutline]
   );
 
   // Unpublish view
   const unpublish = useCallback(
     async (viewId: string) => {
-      if (!service || !currentWorkspaceId) return;
-      await service?.unpublishView(currentWorkspaceId, viewId);
+      if (!currentWorkspaceId) return;
+      await PublishService.unpublish(currentWorkspaceId, viewId);
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline, service]
+    [currentWorkspaceId, loadOutline]
   );
 
   // Create orphaned view
-  const createOrphanedView = useCallback(
+  const createOrphanedViewOp = useCallback(
     async (payload: { document_id: string }) => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
 
       try {
-        const res = await service?.createOrphanedView(currentWorkspaceId, payload);
+        const res = await ViewService.createOrphaned(currentWorkspaceId, payload);
 
         return res;
       } catch (e) {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service]
+    [currentWorkspaceId]
   );
 
   return {
@@ -342,6 +343,6 @@ export function usePageOperations({
     getSubscriptions,
     publish,
     unpublish,
-    createOrphanedView,
+    createOrphanedView: createOrphanedViewOp,
   };
 }

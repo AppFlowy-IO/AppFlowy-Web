@@ -20,7 +20,9 @@ import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations'
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { ViewService } from '@/application/services/domains';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 import { Log } from '@/utils/log';
 
 const ViewHelmet = lazy(() => import('@/components/_shared/helmet/ViewHelmet'));
@@ -51,7 +53,6 @@ function AppPage() {
   const { eventEmitter } = handlers;
 
   const currentUser = useCurrentUser();
-  const service = useService();
 
   // View from outline (may be undefined if outline hasn't updated yet)
   const outlineView = useMemo(() => {
@@ -64,7 +65,7 @@ function AppPage() {
 
   // Fetch view metadata when not found in outline (handles race condition after creating new view)
   useEffect(() => {
-    if (outlineView || !viewId || !workspaceId || !service) {
+    if (outlineView || !viewId || !workspaceId) {
       // Clear fallback when outline has the view
       if (outlineView && fallbackView?.view_id === viewId) {
         setFallbackView(null);
@@ -81,8 +82,7 @@ function AppPage() {
     // View not in outline - fetch from server directly
     let cancelled = false;
 
-    service
-      .getAppView(workspaceId, viewId)
+    ViewService.get(workspaceId, viewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
           setFallbackView(fetchedView);
@@ -98,7 +98,7 @@ function AppPage() {
     return () => {
       cancelled = true;
     };
-  }, [outlineView, viewId, workspaceId, service, fallbackView?.view_id]);
+  }, [outlineView, viewId, workspaceId, fallbackView?.view_id]);
 
   // Use outline view if available, otherwise use fallback for the active route only.
   const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null);
@@ -425,7 +425,7 @@ function AppPage() {
     [uploadFile, viewId]
   );
 
-  const requestInstance = service?.getAxiosInstance();
+  const requestInstance = getAxiosInstance();
 
   // Check if view is in shareWithMe and determine readonly status
   const isReadOnly = useMemo(() => {
@@ -569,9 +569,9 @@ function AppPage() {
     const retryViewId = viewId;
 
     // If the view is still missing from outline, retry metadata fetch first so viewMeta/layout can recover.
-    if (!outlineView && workspaceId && service) {
+    if (!outlineView && workspaceId) {
       try {
-        const fetchedView = await service.getAppView(workspaceId, retryViewId);
+        const fetchedView = await ViewService.get(workspaceId, retryViewId);
 
         if (fetchedView && fetchedView.view_id === retryViewId && currentViewIdRef.current === retryViewId) {
           setFallbackView(fetchedView);
@@ -586,7 +586,7 @@ function AppPage() {
     }
 
     await loadPageDoc(retryViewId);
-  }, [viewId, outlineView, workspaceId, service, loadPageDoc]);
+  }, [viewId, outlineView, workspaceId, loadPageDoc]);
 
   // Use currentViewIdRef (advanced-use-latest pattern) so this callback is stable
   // across navigations — no viewId dependency needed.

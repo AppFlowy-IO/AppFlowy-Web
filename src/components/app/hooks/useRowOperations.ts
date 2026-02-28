@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
 
+import { RowService } from '@/application/services/domains';
 import { Types, YDoc } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -8,7 +9,7 @@ import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 // Hook for managing database row operations (create + cleanup)
 export function useRowOperations() {
-  const { service, currentWorkspaceId } = useAuthInternal();
+  const { currentWorkspaceId } = useAuthInternal();
   const { registerSyncContext } = useSyncInternal();
 
   const createdRowKeys = useRef<string[]>([]);
@@ -16,12 +17,12 @@ export function useRowOperations() {
   // Create row document
   const createRow = useCallback(
     async (rowKey: string): Promise<YDoc> => {
-      if (!currentWorkspaceId || !service) {
+      if (!currentWorkspaceId) {
         throw new Error('Failed to create row doc');
       }
 
       try {
-        const doc = await service?.createRow(rowKey);
+        const doc = await RowService.create(rowKey);
 
         if (!doc) {
           throw new Error('Failed to create row doc');
@@ -53,7 +54,7 @@ export function useRowOperations() {
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, service, registerSyncContext]
+    [currentWorkspaceId, registerSyncContext]
   );
 
   // Clean up created row documents when view changes
@@ -66,12 +67,12 @@ export function useRowOperations() {
 
     rowKeys.forEach((rowKey) => {
       try {
-        service?.deleteRow(rowKey);
+        RowService.remove(rowKey);
       } catch (e) {
         console.error(e);
       }
     });
-  }, [service, currentWorkspaceId]);
+  }, [currentWorkspaceId]);
 
   return { createRow };
 }

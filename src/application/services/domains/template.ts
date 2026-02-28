@@ -1,0 +1,16 @@
+export {
+  createTemplate as create,
+  updateTemplate as update,
+  getTemplates as getAll,
+  getTemplateById as getById,
+  deleteTemplate as remove,
+  getTemplateCategories as getCategories,
+  addTemplateCategory as addCategory,
+  updateTemplateCategory as updateCategory,
+  deleteTemplateCategory as deleteCategory,
+  getTemplateCreators as getCreators,
+  createTemplateCreator as createCreator,
+  updateTemplateCreator as updateCreator,
+  deleteTemplateCreator as deleteCreator,
+  uploadTemplateAvatar as uploadAvatar,
+} from '../js-services/http/template-api';

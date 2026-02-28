@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
-import { useService } from '@/components/main/app.hooks';
+import { AuthService } from '@/application/services/domains';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -16,7 +16,6 @@ import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const service = useService();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -75,7 +74,6 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
 
   const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    if (!service) return;
 
     // Validate email
     if (!email) {
@@ -107,7 +105,7 @@ export function SignUpPassword({ redirectTo }: { redirectTo: string }) {
     setPasswordErrors([]);
 
     try {
-      await service.signUpWithPassword({ email, password, redirectTo });
+      await AuthService.signUpWithPassword({ email, password, redirectTo });
       toast.success(t('signUp.signUpSuccess'));
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {

@@ -7,9 +7,9 @@ import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
+import { PageService } from '@/application/services/domains';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
 import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
@@ -26,7 +26,6 @@ function MoreSpaceActions({
     openDeleteSpaceModal,
     openManageSpaceModal,
   } = useAppOverlayContext();
-  const service = useService();
   const workspaceId = useCurrentWorkspaceId();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
   const {
@@ -34,10 +33,10 @@ function MoreSpaceActions({
   } = useAppHandlers();
 
   const handleDuplicateClick = useCallback(async () => {
-    if (!workspaceId || !service) return;
+    if (!workspaceId) return;
     setDuplicateLoading(true);
     try {
-      await service.duplicateAppPage(workspaceId, view.view_id);
+      await PageService.duplicate(workspaceId, view.view_id);
 
       void refreshOutline?.();
       onClose();
@@ -47,7 +46,7 @@ function MoreSpaceActions({
     } finally {
       setDuplicateLoading(false);
     }
-  }, [onClose, refreshOutline, service, view.view_id, workspaceId]);
+  }, [onClose, refreshOutline, view.view_id, workspaceId]);
 
   const handleManageClick = useCallback(() => {
     onClose();

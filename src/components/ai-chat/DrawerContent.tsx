@@ -9,7 +9,7 @@ import { insertDataToDoc } from '@/components/ai-chat/utils';
 import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
-import { useService } from '@/components/main/app.hooks';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 
 function DrawerContent({
   openViewId,
@@ -40,8 +40,7 @@ function DrawerContent({
     id: string;
     doc: YDoc;
   } | undefined>(undefined);
-  const service = useService();
-  const requestInstance = service?.getAxiosInstance();
+  const requestInstance = getAxiosInstance();
   const initialScrolling = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [notFound, setNotFound] = React.useState(false);

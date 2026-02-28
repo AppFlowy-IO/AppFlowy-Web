@@ -1,12 +1,12 @@
-import { useState, useEffect, useContext } from 'react';
+import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { AuthService } from '@/application/services/domains';
 import { AuthProvider } from '@/application/types';
 import { ReactComponent as ArrowRight } from '@/assets/icons/arrow_right.svg';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import EmailLogin from '@/components/login/EmailLogin';
 import LoginProvider from '@/components/login/LoginProvider';
-import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { getPlatform } from '@/utils/platform';
@@ -14,13 +14,12 @@ import { getPlatform } from '@/utils/platform';
 export function Login({ redirectTo }: { redirectTo: string }) {
   const { t } = useTranslation();
   const [availableProviders, setAvailableProviders] = useState<AuthProvider[]>([]);
-  const service = useContext(AFConfigContext)?.service;
 
   // Fetch available auth providers on mount
   useEffect(() => {
     const fetchProviders = async () => {
       try {
-        const providers = await service?.getAuthProviders();
+        const providers = await AuthService.getAuthProviders();
 
         setAvailableProviders(providers || []);
 
@@ -32,7 +31,7 @@ export function Login({ redirectTo }: { redirectTo: string }) {
     };
 
     void fetchProviders();
-  }, [service]);
+  }, []);
 
   // Filter to check if there are any OAuth providers (not EMAIL or PASSWORD)
   const hasOAuthProviders = availableProviders.some(

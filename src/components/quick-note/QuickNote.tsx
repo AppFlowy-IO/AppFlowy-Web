@@ -6,9 +6,9 @@ import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { QuickNote as QuickNoteType, QuickNoteEditorData } from '@/application/types';
+import { QuickNoteService } from '@/application/services/domains';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 import Note from '@/components/quick-note/Note';
 import NoteHeader from '@/components/quick-note/NoteHeader';
 import NoteList from '@/components/quick-note/NoteList';
@@ -56,7 +56,6 @@ export function QuickNote() {
     searchTerm: '',
   });
 
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
 
   const handleOpenToast = useCallback((msg: string) => {
@@ -70,9 +69,9 @@ export function QuickNote() {
   }, []);
 
   const handleAdd = useCallback(async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     try {
-      const note = await service.createQuickNote(currentWorkspaceId, [
+      const note = await QuickNoteService.create(currentWorkspaceId, [
         {
           type: 'paragraph',
           delta: [{ insert: '' }],
@@ -88,13 +87,13 @@ export function QuickNote() {
       console.error(e);
       handleOpenToast(e.message);
     }
-  }, [service, currentWorkspaceId, handleEnterNote, handleOpenToast]);
+  }, [currentWorkspaceId, handleEnterNote, handleOpenToast]);
 
   const loadNoteList = useCallback(
     async (newParams: { offset: number; limit: number; searchTerm: string }) => {
-      if (!service || !currentWorkspaceId) return;
+      if (!currentWorkspaceId) return;
       try {
-        const notes = await service.getQuickNoteList(currentWorkspaceId, newParams);
+        const notes = await QuickNoteService.getList(currentWorkspaceId, newParams);
 
         return notes;
         // eslint-disable-next-line
@@ -103,7 +102,7 @@ export function QuickNote() {
         handleOpenToast(e.message);
       }
     },
-    [service, currentWorkspaceId, handleOpenToast]
+    [currentWorkspaceId, handleOpenToast]
   );
 
   const initNoteList = useCallback(async () => {
@@ -355,11 +354,11 @@ export function QuickNote() {
 
   const handleDeleteNotes = useCallback(
     (notes: QuickNoteType[]) => {
-      if (!service || !currentWorkspaceId) return;
+      if (!currentWorkspaceId) return;
       notes.forEach((note) => {
         void (async () => {
           try {
-            await service.deleteQuickNote?.(currentWorkspaceId, note.id);
+            await QuickNoteService.remove(currentWorkspaceId, note.id);
             setNoteList((prev) => prev.filter((n) => n.id !== note.id));
             // eslint-disable-next-line
           } catch (e: any) {
@@ -369,7 +368,7 @@ export function QuickNote() {
         })();
       });
     },
-    [currentWorkspaceId, handleOpenToast, service]
+    [currentWorkspaceId, handleOpenToast]
   );
 
   const clearEmptyNotes = useCallback(() => {

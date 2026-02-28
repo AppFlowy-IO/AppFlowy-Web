@@ -1,12 +1,10 @@
 import { createContext, useContext } from 'react';
 
-import { AFService } from '@/application/services/services.type';
 import { UserWorkspaceInfo } from '@/application/types';
 
 // Internal context for authentication layer
 // This context is only used within the app provider layers
 export interface AuthInternalContextType {
-  service: AFService | undefined; // Service instance from useService
   userWorkspaceInfo?: UserWorkspaceInfo;
   currentWorkspaceId?: string;
   isAuthenticated: boolean;

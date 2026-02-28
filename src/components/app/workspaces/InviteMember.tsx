@@ -5,8 +5,9 @@ import { toast } from 'sonner';
 
 import { SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
 import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
+import { WorkspaceService } from '@/application/services/domains';
 import { useAppHandlers } from '@/components/app/app.hooks';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -27,7 +28,6 @@ function InviteMember({
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const [loading, setLoading] = useState(false);
-  const service = useService();
   const currentWorkspaceId = workspace.id;
   const [, setSearch] = useSearchParams();
 
@@ -38,13 +38,13 @@ function InviteMember({
 
   const loadMembers = useCallback(async () => {
     try {
-      if (!service || !currentWorkspaceId) return;
-      memberListRef.current = await service.getWorkspaceMembers(currentWorkspaceId);
+      if (!currentWorkspaceId) return;
+      memberListRef.current = await WorkspaceService.getMembers(currentWorkspaceId);
       setMemberCount(memberListRef.current.length);
     } catch (e) {
       console.error(e);
     }
-  }, [currentWorkspaceId, service]);
+  }, [currentWorkspaceId]);
 
   const [activeSubscriptionPlan, setActiveSubscriptionPaln] = React.useState<SubscriptionPlan | null>(null);
 
@@ -84,7 +84,7 @@ function InviteMember({
   }, [activeSubscriptionPlan, memberCount]);
 
   const handleOk = async () => {
-    if (!service || !currentWorkspaceId) return;
+    if (!currentWorkspaceId) return;
     try {
       setLoading(true);
       const emails = value.split(',').map((e) => e.trim());
@@ -96,7 +96,7 @@ function InviteMember({
         return;
       }
 
-      await service.inviteMembers(currentWorkspaceId, emails);
+      await WorkspaceService.inviteMembers(currentWorkspaceId, emails);
 
       openOnChange?.(false);
       toast.success(t('inviteMember.inviteSuccess'));

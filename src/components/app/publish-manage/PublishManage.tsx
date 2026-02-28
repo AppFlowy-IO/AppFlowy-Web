@@ -12,7 +12,8 @@ import HomePageSetting from '@/components/app/publish-manage/HomePageSetting';
 import PublishedPages from '@/components/app/publish-manage/PublishedPages';
 import PublishPagesSkeleton from '@/components/app/publish-manage/PublishPagesSkeleton';
 import UpdateNamespace from '@/components/app/publish-manage/UpdateNamespace';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { PublishService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
 
@@ -22,7 +23,6 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
   const currentUser = useCurrentUser();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
   const [loading, setLoading] = React.useState<boolean>(false);
-  const service = useService();
   const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
   const [namespace, setNamespace] = React.useState<string>('');
   const [homePageId, setHomePageId] = React.useState<string>('');
@@ -32,22 +32,22 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     return publishViews.find((view) => view.view_id === homePageId);
   }, [homePageId, publishViews]);
   const loadPublishNamespace = useCallback(async () => {
-    if (!service || !workspaceId) return;
+    if (!workspaceId) return;
     try {
-      const namespace = await service.getPublishNamespace(workspaceId);
+      const ns = await PublishService.getNamespace(workspaceId);
 
-      setNamespace(namespace);
+      setNamespace(ns);
 
       // eslint-disable-next-line
     } catch (e: any) {
       console.error(e);
     }
-  }, [service, workspaceId]);
+  }, [workspaceId]);
 
   const loadHomePageId = useCallback(async () => {
-    if (!service || !workspaceId) return;
+    if (!workspaceId) return;
     try {
-      const { view_id } = await service.getPublishHomepage(workspaceId);
+      const { view_id } = await PublishService.getHomepage(workspaceId);
 
       setHomePageId(view_id);
 
@@ -55,13 +55,13 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     } catch (e: any) {
       console.error(e);
     }
-  }, [service, workspaceId]);
+  }, [workspaceId]);
 
   const loadPublishPages = useCallback(async () => {
-    if (!service || !namespace) return;
+    if (!namespace) return;
     setLoading(true);
     try {
-      const outline = await service.getPublishOutline(namespace);
+      const outline = await PublishService.getOutline(namespace);
 
       setPublishViews(
         flattenViews(outline)
@@ -80,13 +80,13 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     }
 
     setLoading(false);
-  }, [namespace, service]);
+  }, [namespace]);
 
   const handleUpdateNamespace = useCallback(
     async (newNamespace: string) => {
-      if (!service || !workspaceId) return;
+      if (!workspaceId) return;
       try {
-        await service.updatePublishNamespace(workspaceId, {
+        await PublishService.updateNamespace(workspaceId, {
           old_namespace: namespace,
           new_namespace: newNamespace,
         });
@@ -99,18 +99,18 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
         throw e;
       }
     },
-    [namespace, service, t, workspaceId]
+    [namespace, t, workspaceId]
   );
 
   const handleUpdateHomePage = useCallback(
     async (newHomePageId: string) => {
-      if (!service || !workspaceId) return;
+      if (!workspaceId) return;
       if (!isOwner) {
         return;
       }
 
       try {
-        await service.updatePublishHomepage(workspaceId, newHomePageId);
+        await PublishService.updateHomepage(workspaceId, newHomePageId);
 
         setHomePageId(newHomePageId);
         notify.success(t('settings.sites.success.setHomepageSuccess'));
@@ -120,18 +120,18 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
         throw e;
       }
     },
-    [isOwner, service, t, workspaceId]
+    [isOwner, t, workspaceId]
   );
 
   const handleRemoveHomePage = useCallback(async () => {
-    if (!service || !workspaceId) return;
+    if (!workspaceId) return;
     if (!isOwner) {
       notify.error(t('settings.sites.error.onlyWorkspaceOwnerCanRemoveHomepage'));
       return;
     }
 
     try {
-      await service.removePublishHomepage(workspaceId);
+      await PublishService.removeHomepage(workspaceId);
 
       setHomePageId('');
       notify.success(t('settings.sites.success.removeHomePageSuccess'));
@@ -140,7 +140,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
       notify.error(e.message);
       throw e;
     }
-  }, [isOwner, service, t, workspaceId]);
+  }, [isOwner, t, workspaceId]);
 
   const { publish, unpublish } = useAppHandlers();
   const handlePublish = useCallback(

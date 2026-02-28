@@ -103,8 +103,8 @@ export const withAFConfig = (Story: React.ComponentType) => (
 );
 
 /**
- * Decorator that provides AFConfigContext with minimal mock values (no service)
- * Use this for components that need auth but not service functionality
+ * Decorator that provides AFConfigContext with minimal mock values
+ * Use this for components that need auth context
  */
 export const withAFConfigMinimal = (Story: React.ComponentType) => (
   <AFConfigContext.Provider value={mockAFConfigValueMinimal}>
@@ -136,7 +136,6 @@ export const withContexts = (Story: React.ComponentType) => (
 
 /**
  * Decorator that provides both AFConfig (minimal) and AppContext
- * Use this for components that need both contexts but not service
  */
 export const withContextsMinimal = (Story: React.ComponentType) => (
   <AFConfigContext.Provider value={mockAFConfigValueMinimal}>
@@ -169,7 +168,7 @@ export const withHostnameMocking = () => {
  *
  * @param options.padding - Add padding around the story (default: '20px')
  * @param options.maxWidth - Maximum width of the story container
- * @param options.minimalAFConfig - Use minimal AFConfig (no service)
+ * @param options.minimalAFConfig - Use minimal AFConfig
  */
 export const withHostnameAndContexts = (options?: {
   padding?: string;

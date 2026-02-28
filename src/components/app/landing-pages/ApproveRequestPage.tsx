@@ -12,11 +12,11 @@ import {
 } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { ReactComponent as WarningIcon } from '@/assets/icons/warning.svg';
+import { AccessService, BillingService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
 import { NormalModal } from '@/components/_shared/modal';
-import { useService } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { hasProAccessFromPlans, isAppFlowyHosted } from '@/utils/subscription';
@@ -31,7 +31,6 @@ function ApproveRequestPage() {
   const [currentPlans, setCurrentPlans] = useState<SubscriptionPlan[]>([]);
   const isPro = useMemo(() => hasProAccessFromPlans(currentPlans), [currentPlans]);
   const requestId = searchParams.get('request_id');
-  const service = useService();
   const { t } = useTranslation();
   const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
   const [alreadyProModalOpen, setAlreadyProModalOpen] = useState(false);
@@ -40,9 +39,9 @@ function ApproveRequestPage() {
   const [notInvitee, setNotInvitee] = useState(false);
 
   const loadRequestInfo = useCallback(async () => {
-    if (!service || !requestId) return;
+    if (!requestId) return;
     try {
-      const requestInfo = await service.getRequestAccessInfo(requestId);
+      const requestInfo = await AccessService.getRequestAccessInfo(requestId);
 
       setRequestInfo(requestInfo);
 
@@ -51,7 +50,7 @@ function ApproveRequestPage() {
         return;
       }
 
-      const plans = await service.getActiveSubscription(requestInfo.workspace.id);
+      const plans = await BillingService.getActiveSubscription(requestInfo.workspace.id);
 
       setCurrentPlans(plans);
       if (plans.length === 0 && isAppFlowyHosted()) {
@@ -71,12 +70,12 @@ function ApproveRequestPage() {
 
       setIsError(true);
     }
-  }, [requestId, service]);
+  }, [requestId]);
 
   const handleApprove = useCallback(async () => {
-    if (!service || !requestId) return;
+    if (!requestId) return;
     try {
-      await service.approveRequestAccess(requestId);
+      await AccessService.approveRequestAccess(requestId);
       toast.success(t('approveAccess.approveSuccess'));
 
       void loadRequestInfo();
@@ -98,10 +97,10 @@ function ApproveRequestPage() {
 
       setIsError(true);
     }
-  }, [requestId, service, t, loadRequestInfo]);
+  }, [requestId, t, loadRequestInfo]);
 
   const handleUpgrade = useCallback(async () => {
-    if (!service || !requestInfo) return;
+    if (!requestInfo) return;
     const workspaceId = requestInfo.workspace.id;
 
     if (!workspaceId) return;
@@ -120,14 +119,14 @@ function ApproveRequestPage() {
     const plan = SubscriptionPlan.Pro;
 
     try {
-      const link = await service.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
+      const link = await BillingService.getSubscriptionLink(workspaceId, plan, SubscriptionInterval.Month);
 
       window.open(link, '_blank');
       // eslint-disable-next-line
     } catch (e: any) {
       toast.error(e.message);
     }
-  }, [requestInfo, service, isPro]);
+  }, [requestInfo, isPro]);
 
   useEffect(() => {
     void loadRequestInfo();
