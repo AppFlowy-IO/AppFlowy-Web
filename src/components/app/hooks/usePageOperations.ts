@@ -1,4 +1,4 @@
-import { useCallback } from 'react';
+import { MutableRefObject, useCallback } from 'react';
 import { toast } from 'sonner';
 
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
@@ -18,10 +18,10 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 // Hook for managing page and space operations
 export function usePageOperations({
-  outline,
+  outlineRef,
   loadOutline,
 }: {
-  outline?: View[];
+  outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
@@ -34,7 +34,7 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const shareWithMeView = findViewInShareWithMe(outline || [], parentViewId);
+      const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], parentViewId);
 
       if (role === Role.Guest || shareWithMeView) {
         toast.error('No permission to create pages');
@@ -52,7 +52,7 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outline, role, loadOutline]
+    [currentWorkspaceId, outlineRef, role, loadOutline]
   );
 
   // Delete a page (move to trash)
@@ -62,7 +62,7 @@ export function usePageOperations({
         throw new Error('No workspace or service found');
       }
 
-      const shareWithMeView = findViewInShareWithMe(outline || [], id);
+      const shareWithMeView = findViewInShareWithMe(outlineRef.current || [], id);
 
       if (role === Role.Guest || shareWithMeView) {
         throw new Error('Guest cannot delete pages');
@@ -77,7 +77,7 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outline, role, loadOutline]
+    [currentWorkspaceId, outlineRef, role, loadOutline]
   );
 
   // Update page (rename) - uses WebSocket notification for sidebar refresh
@@ -145,7 +145,7 @@ export function usePageOperations({
       }
 
       try {
-        const lastChild = findView(outline || [], parentId)?.children?.slice(-1)[0];
+        const lastChild = findView(outlineRef.current || [], parentId)?.children?.slice(-1)[0];
         const prevId = prevViewId || lastChild?.view_id;
 
         await PageService.moveTo(currentWorkspaceId, viewId, parentId, prevId);
@@ -155,7 +155,7 @@ export function usePageOperations({
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId, outline, loadOutline, role]
+    [currentWorkspaceId, outlineRef, loadOutline, role]
   );
 
   // Delete from trash permanently
