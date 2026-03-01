@@ -356,6 +356,10 @@
       "label": "Search",
       "noSpacesFound": "No spaces found"
     },
+    "webSearch": {
+      "label": "Web Search",
+      "active": "Web Search On"
+    },
     "view": {
       "placeholder": "Untitled"
     },

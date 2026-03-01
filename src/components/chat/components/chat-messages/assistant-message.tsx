@@ -1,5 +1,5 @@
 import { EditorProvider } from '@appflowyinc/editor';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as Error } from '@/assets/icons/error.svg';
@@ -16,11 +16,9 @@ import { MessageActions } from '../chat-messages/message-actions';
 import MessageSources from '../chat-messages/message-sources';
 import { MessageSuggestions } from '../chat-messages/message-suggestions';
 
-
-
-
-
 import MessageCheckbox from './message-checkbox';
+
+const MAX_PROGRESS_STEPS = 5;
 
 export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boolean }) {
   const isInitialLoad = useRef(true);
@@ -39,8 +37,16 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
   const [error, setError] = useState<boolean>(false);
   const [content, setContent] = useState<string>('');
   const [done, setDone] = useState<boolean>(false);
+  const [progressSteps, setProgressSteps] = useState<string[]>([]);
 
   const { t } = useTranslation();
+
+  const handleProgress = useCallback((step: string) => {
+    setProgressSteps((prev) => {
+      const next = [...prev, step];
+      return next.length > MAX_PROGRESS_STEPS ? next.slice(-MAX_PROGRESS_STEPS) : next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!questionId || !isInitialLoad.current || loading) return;
@@ -64,7 +70,8 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
 
             setDone(done || false);
             setContent(text);
-          }
+          },
+          handleProgress
         );
         // eslint-disable-next-line
       } catch (e: any) {
@@ -73,7 +80,7 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
         setLoading(false);
       }
     })();
-  }, [fetchAnswerStream, questionId, responseFormat, responseMode, loading]);
+  }, [fetchAnswerStream, questionId, responseFormat, responseMode, loading, handleProgress]);
 
   const suggestions = useMemo(() => {
     if (!questionId) return null;
@@ -96,9 +103,22 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
           </div>
         </div>
       ) : loading ? (
-        <div className={`flex items-center gap-2 overflow-hidden pl-0.5`}>
-          <span className={'text-sm text-foreground opacity-60'}>{t('chat.generating')}</span>
-          <LoadingDots />
+        <div className={'flex flex-col gap-1 overflow-hidden pl-0.5'}>
+          {progressSteps.length > 0 ? (
+            <>
+              {progressSteps.map((step, i) => (
+                <div key={step} className={`flex items-center gap-2 ${i === progressSteps.length - 1 ? 'opacity-100' : 'opacity-50'}`}>
+                  <span className={'text-sm text-foreground'}>{step}</span>
+                </div>
+              ))}
+              <LoadingDots />
+            </>
+          ) : (
+            <div className={'flex items-center gap-2'}>
+              <span className={'text-sm text-foreground opacity-60'}>{t('chat.generating')}</span>
+              <LoadingDots />
+            </div>
+          )}
         </div>
       ) : (
         content && (

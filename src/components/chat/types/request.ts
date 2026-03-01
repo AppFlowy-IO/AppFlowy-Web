@@ -98,8 +98,10 @@ export enum ChatInputMode {
 }
 
 export interface ChatSettings {
-  // from view id
+  name: string;
   rag_ids: string[];
+  metadata: Record<string, unknown>;
+  web_search_enabled: boolean;
 }
 
 export enum SpacePermission {
@@ -168,4 +170,6 @@ export enum StreamType {
   IMAGE = '2',
   KEEP_ALIVE_KEY = '3',
   COMMENT = '4',
+  PROGRESS = '5',
+  REASONING = '6',
 }

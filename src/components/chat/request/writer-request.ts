@@ -140,7 +140,7 @@ export class WriterRequest {
               const data = JSON.parse(jsonStr);
 
               Object.entries(data).forEach(([key, value]) => {
-                if(key === StreamType.META_DATA || key === StreamType.KEEP_ALIVE_KEY) {
+                if(key === StreamType.META_DATA || key === StreamType.KEEP_ALIVE_KEY || key === StreamType.PROGRESS || key === StreamType.REASONING) {
                   return;
                 }
 

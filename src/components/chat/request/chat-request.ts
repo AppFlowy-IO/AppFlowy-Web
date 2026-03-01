@@ -11,6 +11,7 @@ import { convertToPageData } from '@/components/chat/lib/utils';
 import { findView } from '@/components/chat/lib/views';
 import {
   ChatMessage,
+  ChatSettings,
   GetChatMessagesPayload,
   RepeatedChatMessage,
   ResponseFormat,
@@ -21,17 +22,7 @@ import {
 } from '@/components/chat/types';
 import { ModelList } from '@/components/chat/types/ai-model';
 
-export interface ChatSettings {
-  name: string;
-  rag_ids: string[];
-  metadata: Record<string, unknown>;
-}
-
-export interface UpdateChatSettingsParams {
-  name?: string;
-  metadata?: Record<string, unknown>;
-  rag_ids?: string[];
-}
+export type UpdateChatSettingsParams = Partial<ChatSettings>;
 
 /**
  * ChatRequest class for handling chat-related API requests
@@ -241,7 +232,7 @@ export class ChatRequest {
     question_id: number;
     format: ResponseFormat;
     model_name?: string;
-  }, onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void) {
+  }, onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void, onProgress?: (step: string) => void) {
     const baseUrl = this.axiosInstance.defaults.baseURL;
     const url = `${baseUrl}/api/chat/${this.workspaceId}/${this.chatId}/answer/stream`;
 
@@ -331,6 +322,16 @@ export class ChatRequest {
                     metadata.push(...value);
                   }
 
+                  return;
+                }
+
+                if (key === StreamType.PROGRESS) {
+                  onProgress?.(value as string);
+                  return;
+                }
+
+                // Skip non-text stream events so they don't leak into the answer
+                if (key === StreamType.KEEP_ALIVE_KEY || key === StreamType.REASONING) {
                   return;
                 }
 

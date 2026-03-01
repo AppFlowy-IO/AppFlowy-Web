@@ -33,13 +33,27 @@ export function useChatSettingsLoader() {
   }, [requestInstance]);
 
   const updateChatSettings = useCallback(async(payload: Partial<ChatSettings>) => {
+    // Optimistic update
+    setChatSettings(current => {
+      if (!current) return current;
+      const updated = { ...current, ...payload };
+
+      if (payload.metadata && current.metadata) {
+        updated.metadata = { ...current.metadata, ...payload.metadata };
+      }
+
+      return updated;
+    });
+
     try {
       await requestInstance.updateChatSettings(payload);
       // eslint-disable-next-line
     } catch(e: any) {
+      // Rollback by re-fetching server state
+      void fetchChatSettings();
       toast.error(e.message);
     }
-  }, [requestInstance]);
+  }, [requestInstance, fetchChatSettings]);
 
   return {
     loading,

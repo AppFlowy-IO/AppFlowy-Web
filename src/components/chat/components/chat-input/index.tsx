@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ReactComponent as StopIcon } from '@/assets/icons/ai_stop_answering.svg';
+import { ReactComponent as EarthIcon } from '@/assets/icons/earth.svg';
 import { ReactComponent as SendIcon } from '@/assets/icons/filled_round_arrow_up.svg';
 import { ReactComponent as AutoTextIcon } from '@/assets/icons/text.svg';
 import { ReactComponent as ImageTextIcon } from '@/assets/icons/text_image.svg';
@@ -35,11 +36,16 @@ export function ChatInput() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const { submitQuestion, cancelAnswerStream, answerApplying, questionSending } = useMessagesHandlerContext();
+  const { submitQuestion, cancelAnswerStream, answerApplying, questionSending, chatSettings, updateChatSettings } = useMessagesHandlerContext();
   const { responseFormat, responseMode, setResponseFormat, setResponseMode } = useResponseFormatContext();
   const { openModal, currentPromptId, updateCurrentPromptId, reloadDatabasePrompts } = usePromptModal();
-
   const { chatId } = useChatContext();
+
+  const webSearchEnabled = chatSettings?.web_search_enabled ?? false;
+
+  const handleToggleWebSearch = useCallback(() => {
+    void updateChatSettings({ web_search_enabled: !webSearchEnabled });
+  }, [webSearchEnabled, updateChatSettings]);
 
   const disabled = questionSending;
 
@@ -218,6 +224,25 @@ export function ChatInput() {
             </Tooltip>
 
             <ModelSelector className={'h-7'} disabled={questionSending || answerApplying} />
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                  }}
+                  variant={'ghost'}
+                  size={'icon'}
+                  data-testid='chat-input-web-search-toggle'
+                  onClick={handleToggleWebSearch}
+                >
+                  <EarthIcon className={`h-5 w-5 ${webSearchEnabled ? 'text-primary' : 'text-icon-secondary'}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {webSearchEnabled ? t('chat.webSearch.active') : t('chat.webSearch.label')}
+              </TooltipContent>
+            </Tooltip>
 
             <Tooltip>
             <TooltipTrigger asChild>

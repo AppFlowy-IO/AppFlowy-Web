@@ -2,10 +2,12 @@ import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, u
 import { toast } from 'sonner';
 
 import { useChatContext } from '@/components/chat/chat/context';
+import { useChatSettingsLoader } from '@/components/chat/hooks/use-chat-settings-loader';
 import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
 import {
   AuthorType,
   ChatMessageMetadata,
+  ChatSettings,
   GetChatMessagesPayload,
   MessageType,
   OutputContent,
@@ -28,13 +30,16 @@ interface MessagesHandlerContextTypes {
   fetchAnswerStream: (
     questionId: number,
     format?: ResponseFormat,
-    onMessage?: (text: string, done?: boolean) => void
+    onMessage?: (text: string, done?: boolean) => void,
+    onProgress?: (step: string) => void
   ) => Promise<void>;
   cancelAnswerStream: () => void;
   questionSending: boolean;
   answerApplying: boolean;
   selectedModelName?: string;
   setSelectedModelName?: (modelName: string) => void;
+  chatSettings: ChatSettings | null;
+  updateChatSettings: (payload: Partial<ChatSettings>) => Promise<void>;
 }
 
 export const MessagesHandlerContext = createContext<MessagesHandlerContextTypes | undefined>(undefined);
@@ -42,28 +47,25 @@ export const MessagesHandlerContext = createContext<MessagesHandlerContextTypes 
 function useMessagesHandler() {
   const { chatId, requestInstance, currentUser } = useChatContext();
 
+  const { chatSettings, fetchChatSettings, updateChatSettings } = useChatSettingsLoader();
+
   // Get the current model from chat settings
   const [selectedModelName, setSelectedModelName] = useState<string>();
-  
-  // Load initial model from settings
-  useEffect(() => {
-    const loadModel = async () => {
-      try {
-        const settings = await requestInstance.getChatSettings();
-        const model = settings.metadata?.ai_model as string | undefined;
 
-        if (model) {
-          setSelectedModelName(model);
-        }
-      } catch (error) {
-        console.error('Failed to load chat model settings:', error);
+  useEffect(() => {
+    void fetchChatSettings();
+  }, [fetchChatSettings]);
+
+  // Extract model from shared settings
+  useEffect(() => {
+    if (chatSettings) {
+      const model = chatSettings.metadata?.ai_model as string | undefined;
+
+      if (model) {
+        setSelectedModelName(model);
       }
-    };
-    
-    if (chatId) {
-      void loadModel();
     }
-  }, [chatId, requestInstance]);
+  }, [chatSettings]);
 
   const { messageIds, addMessages, insertMessage, removeMessages, saveMessageContent, getMessage } =
     useChatMessagesContext();
@@ -253,7 +255,7 @@ function useMessagesHandler() {
   );
 
   const fetchAnswerStream = useCallback(
-    async (questionId: number, format?: ResponseFormat, onMessage?: (text: string, done?: boolean) => void) => {
+    async (questionId: number, format?: ResponseFormat, onMessage?: (text: string, done?: boolean) => void, onProgress?: (step: string) => void) => {
       const question = getMessage(questionId);
       let answerId = question?.reply_message_id;
 
@@ -300,7 +302,8 @@ function useMessagesHandler() {
             },
             model_name: selectedModelName,
           },
-          handleMessageProgress
+          handleMessageProgress,
+          onProgress
         );
 
         cancelStreamRef.current = cancel;
@@ -345,16 +348,12 @@ function useMessagesHandler() {
   // Update local state and persist to chat settings
   const updateSelectedModel = useCallback(async (modelName: string) => {
     setSelectedModelName(modelName);
-    try {
-      await requestInstance.updateChatSettings({
-        metadata: {
-          ai_model: modelName
-        }
-      });
-    } catch (error) {
-      console.error('Failed to update chat model settings:', error);
-    }
-  }, [requestInstance]);
+    await updateChatSettings({
+      metadata: {
+        ai_model: modelName,
+      },
+    });
+  }, [updateChatSettings]);
 
   return {
     fetchMessages,
@@ -366,6 +365,8 @@ function useMessagesHandler() {
     answerApplying,
     selectedModelName,
     setSelectedModelName: updateSelectedModel,
+    chatSettings,
+    updateChatSettings,
   };
 }
 
