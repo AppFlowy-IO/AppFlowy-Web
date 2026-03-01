@@ -535,6 +535,30 @@ function AppPage() {
     getDocViewId,
   ]);
 
+  // Keep previous view content visible during transitions to prevent
+  // the old Document from unmounting (which triggers clearAwareness/disconnect).
+  const viewDomRef = useRef<React.ReactNode>(null);
+
+  // Cache the latest non-null viewDom in an effect (not during render)
+  // to keep the render function pure per React concurrent mode rules.
+  useEffect(() => {
+    if (viewDom !== null) {
+      viewDomRef.current = viewDom;
+    }
+  }, [viewDom]);
+
+  // Clear stale content when an error occurs so the error UI shows immediately
+  useEffect(() => {
+    if (error) {
+      viewDomRef.current = null;
+    }
+  }, [error]);
+
+  // Show current content, or keep previous content visible during transition.
+  // The ref was set by a prior committed effect, so reading it here is safe.
+  const displayDom = viewDom ?? viewDomRef.current;
+  const isTransitioning = viewDom === null && displayDom !== null;
+
   useEffect(() => {
     if (!viewId || !workspaceId || !currentUser?.uuid) return;
     // Use workspace and user specific key to avoid cross-user/workspace conflicts
@@ -607,7 +631,11 @@ function AppPage() {
     <div ref={ref} className={'relative h-full w-full'}>
       {helmet}
 
-      {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : <div className={'h-full w-full'}>{viewDom}</div>}
+      {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : (
+        <div className={`h-full w-full ${isTransitioning ? 'pointer-events-none opacity-80' : ''}`}>
+          {displayDom}
+        </div>
+      )}
       {view && <Help />}
       <RevertedDialog open={showRevertedDialog} onDismiss={handleDismissRevertedDialog} />
     </div>

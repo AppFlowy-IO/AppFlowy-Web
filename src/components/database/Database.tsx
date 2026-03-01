@@ -14,6 +14,8 @@ import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
   CreateRow,
+  GenerateAISummaryRowPayload,
+  GenerateAITranslateRowPayload,
   LoadView,
   LoadViewMeta,
   RowId,
@@ -110,6 +112,8 @@ export interface Database2Props {
    * Upload a file to storage and return the URL.
    */
   uploadFile?: (file: File) => Promise<string>;
+  generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
+  generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
   /**
    * Schedule deferred cleanup of a sync context after a delay.
    */
@@ -141,6 +145,8 @@ function Database(props: Database2Props) {
     embeddedHeight,
     onViewIdsChanged,
     workspaceId,
+    generateAISummaryForRow,
+    generateAITranslateForRow,
   } = props;
 
   const [rowMap, setRowMap] = useState<Record<RowId, YDoc>>({});
@@ -563,6 +569,8 @@ function Database(props: Database2Props) {
       calendarViewTypeMap,
       setCalendarViewType,
       uploadFile: props.uploadFile,
+      generateAISummaryForRow,
+      generateAITranslateForRow,
     }),
     [
       readOnly,
@@ -593,6 +601,8 @@ function Database(props: Database2Props) {
       props.variant,
       calendarViewTypeMap,
       setCalendarViewType,
+      generateAISummaryForRow,
+      generateAITranslateForRow,
       props.uploadFile,
     ]
   );
