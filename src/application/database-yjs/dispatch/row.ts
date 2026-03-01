@@ -38,7 +38,6 @@ import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
   DatabaseViewLayout,
   FieldId,
-  RowId,
   YDatabaseCell,
   YDatabaseRow,
   YDatabaseView,
@@ -88,38 +87,12 @@ function cloneCell(fieldType: FieldType, referenceCell?: YDatabaseCell) {
 
     if (typeof value === 'bigint') {
       newValue = value.toString();
-    } else if (value && value instanceof Y.Array) {
-      return;
+    } else if (value instanceof Y.Array) {
+      newValue = value.clone();
     }
 
     cell.set(key, newValue);
   });
-
-  let data = referenceCell?.get(YjsDatabaseKey.data);
-
-  if (fieldType === FieldType.Relation && data) {
-    const newData = new Y.Array<RowId>();
-    const referenceData = data as Y.Array<RowId>;
-
-    referenceData.toArray().forEach((rowId) => {
-      newData.push([rowId]);
-    });
-    data = newData;
-  }
-
-  if (fieldType === FieldType.FileMedia) {
-    const newData = new Y.Array<string>();
-    const referenceData = data as Y.Array<string>;
-
-    referenceData.toArray().forEach((file) => {
-      newData.push([file]);
-    });
-    data = newData;
-  }
-
-  if (referenceCell) {
-    cell.set(YjsDatabaseKey.data, data);
-  }
 
   cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
   cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
@@ -504,9 +477,10 @@ export function useDuplicateRowDispatch() {
 
       const icon = referenceMeta.icon;
       const cover = referenceMeta.cover;
+      const hasDocument = referenceMeta.isEmptyDocument === false;
 
       const newMeta = generateRowMeta(rowId, {
-        [RowMetaKey.IsDocumentEmpty]: true,
+        [RowMetaKey.IsDocumentEmpty]: !hasDocument,
         [RowMetaKey.IconId]: icon,
         [RowMetaKey.CoverId]: cover ? JSON.stringify(cover) : null,
       });
@@ -532,6 +506,7 @@ export function useDuplicateRowDispatch() {
         });
 
         const cells = row.get(YjsDatabaseKey.cells);
+        const fields = database.get(YjsDatabaseKey.fields);
 
         Object.keys(referenceCells.toJSON()).forEach((fieldId) => {
           try {
@@ -541,7 +516,6 @@ export function useDuplicateRowDispatch() {
               throw new Error(`Cell not found`);
             }
 
-            const fields = database.get(YjsDatabaseKey.fields);
             const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
 
             const cell = cloneCell(fieldType, referenceCell);
