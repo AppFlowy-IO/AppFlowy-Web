@@ -21,13 +21,14 @@ export function ShareButton({ viewId }: { viewId: string }) {
 
   return (
     <>
-      <Popover open={opened} onOpenChange={setOpened}>
+      <Popover modal open={opened} onOpenChange={setOpened}>
         <PopoverTrigger asChild>
           <Button className={'mx-2'} data-testid={'share-button'} size={'sm'} variant={'default'}>
             {t('shareAction.buttonText')}
           </Button>
         </PopoverTrigger>
         <PopoverContent
+          onCloseAutoFocus={(e) => e.preventDefault()}
           side='bottom'
           align='end'
           alignOffset={-20}
