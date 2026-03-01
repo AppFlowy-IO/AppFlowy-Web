@@ -1475,6 +1475,7 @@ export function useDuplicateRowDispatch() {
   const createRow = useCreateRow();
   const guid = useDocGuid();
   const rowMap = useRowMap();
+
   return useCallback(
     async (referenceRowId: string) => {
       const referenceRowDoc = rowMap?.[referenceRowId];
