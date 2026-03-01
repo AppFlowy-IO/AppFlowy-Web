@@ -317,8 +317,8 @@ export class ChatRequest {
               const data = JSON.parse(jsonStr);
 
               Object.entries(data).forEach(([key, value]) => {
-                if(key === StreamType.META_DATA) {
-                  if(Array.isArray(value)) {
+                if (key === StreamType.META_DATA) {
+                  if (Array.isArray(value)) {
                     metadata.push(...value);
                   }
 
@@ -330,12 +330,10 @@ export class ChatRequest {
                   return;
                 }
 
-                // Skip non-text stream events so they don't leak into the answer
-                if (key === StreamType.KEEP_ALIVE_KEY || key === StreamType.REASONING) {
-                  return;
+                // Only append known content types to the answer text
+                if (key === StreamType.TEXT || key === StreamType.IMAGE) {
+                  text += value;
                 }
-
-                text += value;
               });
 
               onMessage(text, [], false);

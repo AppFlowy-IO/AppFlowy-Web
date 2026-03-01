@@ -233,6 +233,7 @@ export function ChatInput() {
                   }}
                   variant={'ghost'}
                   size={'icon'}
+                  aria-pressed={webSearchEnabled}
                   data-testid='chat-input-web-search-toggle'
                   onClick={handleToggleWebSearch}
                 >

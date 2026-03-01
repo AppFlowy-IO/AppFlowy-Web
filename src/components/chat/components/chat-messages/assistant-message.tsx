@@ -37,13 +37,17 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
   const [error, setError] = useState<boolean>(false);
   const [content, setContent] = useState<string>('');
   const [done, setDone] = useState<boolean>(false);
-  const [progressSteps, setProgressSteps] = useState<string[]>([]);
+  const [progressSteps, setProgressSteps] = useState<{ id: number; text: string }[]>([]);
+  const stepIdRef = useRef(0);
 
   const { t } = useTranslation();
 
   const handleProgress = useCallback((step: string) => {
+    const id = ++stepIdRef.current;
+
     setProgressSteps((prev) => {
-      const next = [...prev, step];
+      const next = [...prev, { id, text: step }];
+
       return next.length > MAX_PROGRESS_STEPS ? next.slice(-MAX_PROGRESS_STEPS) : next;
     });
   }, []);
@@ -107,8 +111,8 @@ export function AssistantMessage({ id, isHovered }: { id: number; isHovered: boo
           {progressSteps.length > 0 ? (
             <>
               {progressSteps.map((step, i) => (
-                <div key={step} className={`flex items-center gap-2 ${i === progressSteps.length - 1 ? 'opacity-100' : 'opacity-50'}`}>
-                  <span className={'text-sm text-foreground'}>{step}</span>
+                <div key={step.id} className={`flex items-center gap-2 ${i === progressSteps.length - 1 ? 'opacity-100' : 'opacity-50'}`}>
+                  <span className={'text-sm text-foreground'}>{step.text}</span>
                 </div>
               ))}
               <LoadingDots />

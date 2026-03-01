@@ -346,9 +346,9 @@ function useMessagesHandler() {
   }, []);
 
   // Update local state and persist to chat settings
-  const updateSelectedModel = useCallback(async (modelName: string) => {
+  const updateSelectedModel = useCallback((modelName: string) => {
     setSelectedModelName(modelName);
-    await updateChatSettings({
+    void updateChatSettings({
       metadata: {
         ai_model: modelName,
       },
