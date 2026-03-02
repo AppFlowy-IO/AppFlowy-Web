@@ -15,6 +15,7 @@ import AppFlowyPower from '../appflowy-power/AppFlowyPower';
 export function OutlineDrawer({
   onScroll,
   header,
+  rightActions,
   variant,
   open,
   width,
@@ -28,6 +29,7 @@ export function OutlineDrawer({
   children: React.ReactNode;
   onResizeWidth: (width: number) => void;
   header?: React.ReactNode;
+  rightActions?: React.ReactNode;
   variant?: UIVariant;
   onScroll?: (scrollTop: number) => void;
 }) {
@@ -92,25 +94,32 @@ export function OutlineDrawer({
               <AppFlowyLogo className='h-full w-full' />
             </div>
           )}
-          <Tooltip
-            title={
-              <div className={'flex flex-col'}>
-                <span>{t('sideBar.closeSidebar')}</span>
-                <span className={'text-xs text-text-secondary'}>{createHotKeyLabel(HOT_KEY_NAME.TOGGLE_SIDEBAR)}</span>
-              </div>
-            }
-          >
-            <IconButton
+          <div className={'flex shrink-0 items-center pr-3'}>
+            {rightActions}
+            <div
+              className={'overflow-hidden transition-all duration-200 ease-in-out'}
               style={{
+                width: hovered ? 32 : 0,
                 opacity: hovered ? 1 : 0,
               }}
-              onClick={onClose}
-              className={'m-4'}
-              size={'small'}
             >
-              <DoubleArrowLeft className={'text-text-secondary'} />
-            </IconButton>
-          </Tooltip>
+              <Tooltip
+                title={
+                  <div className={'flex flex-col'}>
+                    <span>{t('sideBar.closeSidebar')}</span>
+                    <span className={'text-xs text-text-secondary'}>{createHotKeyLabel(HOT_KEY_NAME.TOGGLE_SIDEBAR)}</span>
+                  </div>
+                }
+              >
+                <IconButton
+                  onClick={onClose}
+                  size={'small'}
+                >
+                  <DoubleArrowLeft className={'text-text-secondary'} />
+                </IconButton>
+              </Tooltip>
+            </div>
+          </div>
         </div>
         <div className={'flex h-fit flex-1 flex-col'}>{children}</div>
         {variant === 'publish' && <AppFlowyPower width={width} />}

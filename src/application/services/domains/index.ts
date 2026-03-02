@@ -13,3 +13,4 @@ export * as SearchService from './search';
 export * as AIService from './ai';
 export * as QuickNoteService from './quick-note';
 export * as RowService from './row';
+export * as NotificationService from './notification';

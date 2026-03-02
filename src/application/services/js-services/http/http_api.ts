@@ -193,5 +193,15 @@ export {
   deleteQuickNote,
 } from './misc-api';
 
+// Notification
+export {
+  listNotifications,
+  getUnreadCount,
+  markNotificationsRead,
+  markAllNotificationsRead,
+  archiveNotifications,
+  archiveAllNotifications,
+} from './notification-api';
+
 // Workspace types re-exports
 export type { WorkspaceFolder, PageMentionUpdate } from './workspace-api';

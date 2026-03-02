@@ -242,6 +242,7 @@ export interface Mention {
   date?: string;
   reminder_id?: string;
   reminder_option?: string;
+  include_time?: boolean;
 
   // external link
   url?: string;
