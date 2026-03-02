@@ -25,39 +25,45 @@ interface NotificationPanelProps {
 function NotificationPanel({ hook, onClose }: NotificationPanelProps) {
   const { t } = useTranslation();
 
+  const {
+    markAllRead, archiveAll, markRead, archive, loadMore,
+    inboxNotifications, unreadNotifications, archivedNotifications,
+    isLoadingMore, hasMoreInbox, hasMoreArchive,
+  } = hook;
+
   const handleMarkAllRead = useCallback(async () => {
-    await hook.markAllRead();
+    await markAllRead();
     notify.success(t('settings.notifications.markAsReadNotifications.allSuccess'));
-  }, [hook, t]);
+  }, [markAllRead, t]);
 
   const handleArchiveAll = useCallback(async () => {
-    await hook.archiveAll();
+    await archiveAll();
     notify.success(t('settings.notifications.archiveNotifications.allSuccess'));
-  }, [hook, t]);
+  }, [archiveAll, t]);
 
   const handleMarkRead = useCallback(
     async (ids: string[]) => {
-      await hook.markRead(ids);
+      await markRead(ids);
       notify.success(t('settings.notifications.markAsReadNotifications.success'));
     },
-    [hook, t]
+    [markRead, t]
   );
 
   const handleArchive = useCallback(
     async (ids: string[]) => {
-      await hook.archive(ids);
+      await archive(ids);
       notify.success(t('settings.notifications.archiveNotifications.success'));
     },
-    [hook, t]
+    [archive, t]
   );
 
   const handleLoadMoreInbox = useCallback(() => {
-    void hook.loadMore(false);
-  }, [hook]);
+    void loadMore(false);
+  }, [loadMore]);
 
   const handleLoadMoreArchive = useCallback(() => {
-    void hook.loadMore(true);
-  }, [hook]);
+    void loadMore(true);
+  }, [loadMore]);
 
   return (
     <div className={'flex w-[380px] flex-col py-3.5'}>
@@ -103,10 +109,10 @@ function NotificationPanel({ hook, onClose }: NotificationPanelProps) {
         <div className={'mt-3.5'}>
           <TabsContent value={NotificationTabType.Inbox}>
             <NotificationTab
-              items={hook.inboxNotifications}
+              items={inboxNotifications}
               tab={NotificationTabType.Inbox}
-              isLoadingMore={hook.isLoadingMore}
-              hasMore={hook.hasMoreInbox}
+              isLoadingMore={isLoadingMore}
+              hasMore={hasMoreInbox}
               onLoadMore={handleLoadMoreInbox}
               onMarkRead={handleMarkRead}
               onArchive={handleArchive}
@@ -116,7 +122,7 @@ function NotificationPanel({ hook, onClose }: NotificationPanelProps) {
 
           <TabsContent value={NotificationTabType.Unread}>
             <NotificationTab
-              items={hook.unreadNotifications}
+              items={unreadNotifications}
               tab={NotificationTabType.Unread}
               isLoadingMore={false}
               hasMore={false}
@@ -129,10 +135,10 @@ function NotificationPanel({ hook, onClose }: NotificationPanelProps) {
 
           <TabsContent value={NotificationTabType.Archived}>
             <NotificationTab
-              items={hook.archivedNotifications}
+              items={archivedNotifications}
               tab={NotificationTabType.Archived}
-              isLoadingMore={hook.isLoadingMore}
-              hasMore={hook.hasMoreArchive}
+              isLoadingMore={isLoadingMore}
+              hasMore={hasMoreArchive}
               onLoadMore={handleLoadMoreArchive}
               onMarkRead={handleMarkRead}
               onArchive={handleArchive}

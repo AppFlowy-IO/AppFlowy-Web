@@ -262,9 +262,17 @@ function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }:
 
   return (
     <div
+      role={'button'}
+      tabIndex={0}
       onClick={handleClick}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          void handleClick();
+        }
+      }}
       className={
-        'group relative mx-2 flex cursor-pointer items-start gap-3 rounded-[8px] py-3.5 pl-4 pr-3.5 hover:bg-fill-content-hover'
+        'group relative mx-2 flex cursor-pointer items-start gap-3 rounded-[8px] py-3.5 pl-4 pr-3.5 hover:bg-fill-content-hover focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-fill-theme-thick'
       }
     >
       {/* Type icon (42x36) */}

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as BellIcon } from '@/assets/icons/mention_send_notification.svg';
@@ -14,6 +14,7 @@ function NotificationBell() {
   const workspaceId = useCurrentWorkspaceId();
   const hook = useNotifications(workspaceId);
   const [open, setOpen] = useState(false);
+  const handleClose = useCallback(() => setOpen(false), []);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -47,7 +48,7 @@ function NotificationBell() {
         sideOffset={8}
         className={'p-0'}
       >
-        <NotificationPanel hook={hook} onClose={() => setOpen(false)} />
+        <NotificationPanel hook={hook} onClose={handleClose} />
       </PopoverContent>
     </Popover>
   );

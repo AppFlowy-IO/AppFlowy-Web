@@ -117,7 +117,11 @@ export function useNotifications(workspaceId: string | undefined): UseNotificati
       setNotifications((prev) =>
         prev.map((n) => (ids.includes(n.id) ? { ...n, isRead: true } : n))
       );
-      setUnreadCount((prev) => Math.max(0, prev - ids.length));
+      setUnreadCount((prev) => {
+        const actuallyUnread = notificationsRef.current.filter((n) => ids.includes(n.id) && !n.isRead).length;
+
+        return Math.max(0, prev - actuallyUnread);
+      });
 
       try {
         await NotificationService.markRead(workspaceId, ids);

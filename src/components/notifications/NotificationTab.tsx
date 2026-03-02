@@ -45,6 +45,10 @@ function NotificationTab({
     }
   }, [hasMore, isLoadingMore, onLoadMore]);
 
+  // Group by Today / Older — must be before early return to satisfy Rules of Hooks
+  const todayItems = useMemo(() => items.filter((n) => isToday(n.createdAt)), [items]);
+  const olderItems = useMemo(() => items.filter((n) => !isToday(n.createdAt)), [items]);
+
   if (items.length === 0) {
     return (
       <div className={'flex h-[420px] items-center justify-center'}>
@@ -52,10 +56,6 @@ function NotificationTab({
       </div>
     );
   }
-
-  // Group by Today / Older
-  const todayItems = useMemo(() => items.filter((n) => isToday(n.createdAt)), [items]);
-  const olderItems = useMemo(() => items.filter((n) => !isToday(n.createdAt)), [items]);
 
   return (
     <div
