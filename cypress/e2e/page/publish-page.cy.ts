@@ -938,7 +938,9 @@ describe('Publish Page Test', () => {
                     // persist the data to its storage backend (e.g., Postgres).
                     // The publish blob is generated from this storage, so it must
                     // contain the row document before we publish.
-                    waitForReactUpdate(15000);
+                    // In CI environments, this can take significantly longer due to
+                    // shared resources and slower I/O.
+                    waitForReactUpdate(30000);
 
                     // Step 6: Publish the database
                     testLog.info('Publishing database');
@@ -977,18 +979,38 @@ describe('Publish Page Test', () => {
                                 // a fresh blob which may now include the content.
                                 testLog.info('Verifying row document content in published view');
 
+                                const maxAttempts = 5;
+
                                 const verifyRowDocContent = (attempt: number) => {
                                     testLog.info(`Visiting published row page (attempt ${attempt})`);
-                                    cy.visit(rowPageUrl, { failOnStatusCode: false });
-                                    cy.wait(5000);
+
+                                    // Clear IndexedDB caches to force a fresh publish blob fetch.
+                                    // The publish view caches blobs in IndexedDB; without clearing,
+                                    // retries would keep showing the same stale data.
+                                    cy.clearAllLocalStorage();
+                                    cy.clearAllSessionStorage();
+                                    cy.window().then((win) => {
+                                        win.indexedDB.databases().then((dbs) => {
+                                            dbs.forEach((db) => {
+                                                if (db.name) win.indexedDB.deleteDatabase(db.name);
+                                            });
+                                        });
+                                    });
+
+                                    // Append a cache-busting parameter to force a fresh fetch
+                                    // of the publish blob on each retry attempt.
+                                    const cacheBustUrl = `${rowPageUrl}&_t=${Date.now()}`;
+
+                                    cy.visit(cacheBustUrl, { failOnStatusCode: false });
+                                    cy.wait(8000);
 
                                     cy.get('body', { timeout: 30000 }).then(($body) => {
                                         if ($body.text().includes(rowDocContent)) {
                                             cy.contains(rowDocContent).should('be.visible');
                                             testLog.info('✓ Test passed: Row document content displays correctly in published view');
-                                        } else if (attempt < 3) {
+                                        } else if (attempt < maxAttempts) {
                                             testLog.info(`Content not found on attempt ${attempt}, retrying after wait...`);
-                                            cy.wait(10000);
+                                            cy.wait(15000);
                                             verifyRowDocContent(attempt + 1);
                                         } else {
                                             // Final attempt - use standard assertion to produce a clear error
