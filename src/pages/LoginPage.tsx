@@ -13,7 +13,7 @@ import { isSafeRedirectUrl } from '@/application/session/sign_in';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 function LoginPage() {
-  const [search] = useSearchParams();
+  const [search, setSearch] = useSearchParams();
   const action = search.get('action') || '';
   const email = search.get('email') || '';
   const force = search.get('force') === 'true';
@@ -22,6 +22,20 @@ function LoginPage() {
   const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
 
 
+  // Strip unsafe redirectTo from URL immediately, preserving all other params
+  useEffect(() => {
+    if (!redirectTo) return;
+
+    const decodedRedirect = decodeURIComponent(redirectTo);
+
+    if (!isSafeRedirectUrl(decodedRedirect)) {
+      setSearch((prev) => {
+        prev.delete('redirectTo');
+        return prev;
+      });
+    }
+  }, [redirectTo, setSearch]);
+
   useEffect(() => {
     if (action === LOGIN_ACTION.CHANGE_PASSWORD || force) {
       return;
@@ -29,10 +43,6 @@ function LoginPage() {
 
     if (isAuthenticated && redirectTo) {
       const decodedRedirect = decodeURIComponent(redirectTo);
-
-      if (!isSafeRedirectUrl(decodedRedirect)) {
-        return;
-      }
 
       if (decodedRedirect !== window.location.href) {
         window.location.href = decodedRedirect;
