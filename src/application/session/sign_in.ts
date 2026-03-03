@@ -40,13 +40,43 @@ export function withSignIn() {
   };
 }
 
+/**
+ * Returns true only if the URL is safe to redirect to after authentication.
+ * Safe means: a relative path (starts with "/" but NOT "//") OR
+ * an absolute URL whose origin matches window.location.origin.
+ */
+export function isSafeRedirectUrl(url: string): boolean {
+  if (!url) return false;
+
+  // Relative path — safe (but "//evil.com" is protocol-relative, not safe)
+  if (url.startsWith('/') && !url.startsWith('//')) {
+    return true;
+  }
+
+  // Absolute URL — only safe if same origin
+  try {
+    const parsed = new URL(url);
+
+    return parsed.origin === window.location.origin;
+  } catch {
+    return false;
+  }
+}
+
 export function afterAuth() {
   const redirectTo = getRedirectTo();
 
   clearRedirectTo();
 
   if (redirectTo) {
-    const url = new URL(decodeURIComponent(redirectTo));
+    const decoded = decodeURIComponent(redirectTo);
+
+    if (!isSafeRedirectUrl(decoded)) {
+      window.location.href = '/app';
+      return;
+    }
+
+    const url = new URL(decoded, window.location.origin);
     const pathname = url.pathname;
 
     // Check if URL contains workspace/view UUIDs (user-specific paths)
@@ -57,10 +87,9 @@ export function afterAuth() {
       // Don't redirect to user-specific pages from previous sessions
       window.location.href = '/app';
     } else if (pathname === '/' || !pathname) {
-      url.pathname = '/app';
-      window.location.href = url.toString();
+      window.location.href = '/app';
     } else {
-      window.location.href = url.toString();
+      window.location.href = decoded;
     }
   } else {
     window.location.href = '/app';

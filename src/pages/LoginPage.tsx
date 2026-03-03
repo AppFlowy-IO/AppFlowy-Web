@@ -9,6 +9,7 @@ import { LOGIN_ACTION } from '@/components/login/const';
 import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
 import { SignUpPassword } from '@/components/login/SignUpPassword';
+import { isSafeRedirectUrl } from '@/application/session/sign_in';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 function LoginPage() {
@@ -28,6 +29,10 @@ function LoginPage() {
 
     if (isAuthenticated && redirectTo) {
       const decodedRedirect = decodeURIComponent(redirectTo);
+
+      if (!isSafeRedirectUrl(decodedRedirect)) {
+        return;
+      }
 
       if (decodedRedirect !== window.location.href) {
         window.location.href = decodedRedirect;
