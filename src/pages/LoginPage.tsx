@@ -9,7 +9,7 @@ import { LOGIN_ACTION } from '@/components/login/const';
 import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
 import { SignUpPassword } from '@/components/login/SignUpPassword';
-import { isSafeRedirectUrl } from '@/application/session/sign_in';
+import { isSafeRedirectUrl, safeDecodeRedirectParam } from '@/application/session/sign_in';
 import { AFConfigContext } from '@/components/main/app.hooks';
 
 function LoginPage() {
@@ -26,12 +26,14 @@ function LoginPage() {
   useEffect(() => {
     if (!redirectTo) return;
 
-    const decodedRedirect = decodeURIComponent(redirectTo);
+    const decodedRedirect = safeDecodeRedirectParam(redirectTo);
 
-    if (!isSafeRedirectUrl(decodedRedirect)) {
+    if (!decodedRedirect || !isSafeRedirectUrl(decodedRedirect)) {
       setSearch((prev) => {
-        prev.delete('redirectTo');
-        return prev;
+        const next = new URLSearchParams(prev);
+
+        next.delete('redirectTo');
+        return next;
       });
     }
   }, [redirectTo, setSearch]);
@@ -42,9 +44,9 @@ function LoginPage() {
     }
 
     if (isAuthenticated && redirectTo) {
-      const decodedRedirect = decodeURIComponent(redirectTo);
+      const decodedRedirect = safeDecodeRedirectParam(redirectTo);
 
-      if (decodedRedirect !== window.location.href) {
+      if (decodedRedirect && decodedRedirect !== window.location.href) {
         window.location.href = decodedRedirect;
       }
     }

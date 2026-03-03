@@ -1,4 +1,4 @@
-import { afterAuth, isSafeRedirectUrl } from '../sign_in';
+import { afterAuth, isSafeRedirectUrl, safeDecodeRedirectParam } from '../sign_in';
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -122,8 +122,14 @@ describe('afterAuth', () => {
     expect(window.location.href).toBe('/app');
   });
 
-  it('redirects to /app for root path', () => {
-    localStorage.setItem('redirectTo', encodeURIComponent('http://localhost/'));
+  it('redirects to /app path while preserving query params for root path', () => {
+    localStorage.setItem('redirectTo', encodeURIComponent('http://localhost/?foo=bar'));
+    afterAuth();
+    expect(window.location.href).toBe('http://localhost/app?foo=bar');
+  });
+
+  it('redirects to /app when stored redirectTo has malformed encoding', () => {
+    localStorage.setItem('redirectTo', '%zz');
     afterAuth();
     expect(window.location.href).toBe('/app');
   });
@@ -150,5 +156,23 @@ describe('afterAuth', () => {
     localStorage.setItem('redirectTo', encodeURIComponent('/settings'));
     afterAuth();
     expect(localStorage.getItem('redirectTo')).toBeNull();
+  });
+});
+
+describe('safeDecodeRedirectParam', () => {
+  it('decodes a valid percent-encoded string', () => {
+    expect(safeDecodeRedirectParam('https%3A%2F%2Fevil.com')).toBe('https://evil.com');
+  });
+
+  it('returns the string unchanged when nothing is encoded', () => {
+    expect(safeDecodeRedirectParam('/settings')).toBe('/settings');
+  });
+
+  it('returns null for a malformed percent-encoded sequence', () => {
+    expect(safeDecodeRedirectParam('%zz')).toBeNull();
+  });
+
+  it('returns null for a lone percent sign', () => {
+    expect(safeDecodeRedirectParam('%')).toBeNull();
   });
 });

@@ -41,6 +41,18 @@ export function withSignIn() {
 }
 
 /**
+ * Decodes a percent-encoded redirect parameter, returning null on malformed input
+ * so that bad values are always treated as unsafe rather than crashing.
+ */
+export function safeDecodeRedirectParam(value: string): string | null {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Returns true only if the URL is safe to redirect to after authentication.
  * Safe means: a relative path (starts with "/" but NOT "//") OR
  * an absolute URL whose origin matches window.location.origin.
@@ -69,9 +81,9 @@ export function afterAuth() {
   clearRedirectTo();
 
   if (redirectTo) {
-    const decoded = decodeURIComponent(redirectTo);
+    const decoded = safeDecodeRedirectParam(redirectTo);
 
-    if (!isSafeRedirectUrl(decoded)) {
+    if (!decoded || !isSafeRedirectUrl(decoded)) {
       window.location.href = '/app';
       return;
     }
@@ -87,7 +99,9 @@ export function afterAuth() {
       // Don't redirect to user-specific pages from previous sessions
       window.location.href = '/app';
     } else if (pathname === '/' || !pathname) {
-      window.location.href = '/app';
+      // Preserve query params and hash but redirect to /app path
+      url.pathname = '/app';
+      window.location.href = url.toString();
     } else {
       window.location.href = decoded;
     }
