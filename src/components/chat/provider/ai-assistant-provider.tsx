@@ -24,6 +24,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { usePromptModal } from './prompt-modal-provider';
 import { ViewLoaderProvider } from './view-loader-provider';
 
+const WRITER_MODEL_STORAGE_KEY = 'writer_selected_model';
+
 export const AIAssistantProvider = ({
   isGlobalDocument,
   viewId,
@@ -67,7 +69,9 @@ export const AIAssistantProvider = ({
   const isApplying = applyingState === ApplyingState.applying;
   const cancelRef = useRef<(() => void) | undefined>();
   const initialScrollTopRef = useRef<number | null>(null);
-  const [selectedModelName, setSelectedModelName] = useState<string>('Auto');
+  const [selectedModelName, setSelectedModelName] = useState<string>(
+    () => localStorage.getItem(WRITER_MODEL_STORAGE_KEY) || 'Auto'
+  );
 
   const { currentPromptId, updateCurrentPromptId, prompts } = usePromptModal();
 
@@ -377,12 +381,10 @@ export const AIAssistantProvider = ({
         requestInstance: {
           getModelList: () => request.getModelList(),
           getCurrentModel: async () => {
-            // For writer context, get from localStorage
-            return localStorage.getItem('writer_selected_model') || '';
+            return localStorage.getItem(WRITER_MODEL_STORAGE_KEY) || 'Auto';
           },
           setCurrentModel: async (modelName: string) => {
-            // For writer context, save to localStorage
-            localStorage.setItem('writer_selected_model', modelName);
+            localStorage.setItem(WRITER_MODEL_STORAGE_KEY, modelName);
           },
         },
       }}

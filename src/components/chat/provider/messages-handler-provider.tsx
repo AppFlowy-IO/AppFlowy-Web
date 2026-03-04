@@ -37,7 +37,7 @@ interface MessagesHandlerContextTypes {
   questionSending: boolean;
   answerApplying: boolean;
   selectedModelName?: string;
-  setSelectedModelName?: (modelName: string) => void;
+  setSelectedModelName?: (modelName: string, explicit?: boolean) => void;
   chatSettings: ChatSettings | null;
   updateChatSettings: (payload: Partial<ChatSettings>) => Promise<void>;
 }
@@ -51,14 +51,22 @@ function useMessagesHandler() {
 
   // Get the current model from chat settings
   const [selectedModelName, setSelectedModelName] = useState<string>();
+  // Track whether the user has explicitly selected a model in this session.
+  // Prevents async initialization (fetchChatSettings) from overwriting the user's choice.
+  const userExplicitlySelectedModel = useRef(false);
 
   useEffect(() => {
     void fetchChatSettings();
   }, [fetchChatSettings]);
 
-  // Extract model from shared settings
+  // Reset the explicit selection flag when chatId changes (new chat opened)
   useEffect(() => {
-    if (chatSettings) {
+    userExplicitlySelectedModel.current = false;
+  }, [chatId]);
+
+  // Extract model from shared settings (only if user hasn't explicitly selected one)
+  useEffect(() => {
+    if (chatSettings && !userExplicitlySelectedModel.current) {
       const model = chatSettings.metadata?.ai_model as string | undefined;
 
       if (model) {
@@ -345,8 +353,14 @@ function useMessagesHandler() {
     }
   }, []);
 
-  // Update local state and persist to chat settings
-  const updateSelectedModel = useCallback((modelName: string) => {
+  // Update local state and persist to chat settings.
+  // Called from both initialization (ModelSelector loadCurrentModel) and explicit user selection.
+  // The `explicit` parameter distinguishes the two to prevent async init from overwriting user choices.
+  const updateSelectedModel = useCallback((modelName: string, explicit = true) => {
+    if (explicit) {
+      userExplicitlySelectedModel.current = true;
+    }
+
     setSelectedModelName(modelName);
     void updateChatSettings({
       metadata: {
