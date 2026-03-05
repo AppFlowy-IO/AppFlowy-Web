@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import ToolbarActions from '@/components/editor/components/toolbar/selection-toolbar/ToolbarActions';
 
@@ -41,8 +41,13 @@ export function SelectionToolbar() {
     showToolbar(el);
   }, [showToolbar]);
 
+  const contextValue = useMemo(
+    () => ({ visible, forceShow, rePosition, getDecorateState }),
+    [visible, forceShow, rePosition, getDecorateState]
+  );
+
   return (
-    <SelectionToolbarContext.Provider value={{ visible, forceShow, rePosition, getDecorateState }}>
+    <SelectionToolbarContext.Provider value={contextValue}>
       <div
         ref={ref}
         data-testid="selection-toolbar"

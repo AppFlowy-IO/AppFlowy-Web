@@ -38,21 +38,34 @@ export function GlobalCommentProvider() {
     }
   }, [highLightCommentId, debounceClearHighLightCommentId]);
 
+  const contextValue = useMemo(
+    () => ({
+      reactions,
+      replyCommentId,
+      reload,
+      getComment,
+      loading,
+      comments,
+      replyComment,
+      toggleReaction,
+      highLightCommentId,
+      setHighLightCommentId,
+    }),
+    [
+      reactions,
+      replyCommentId,
+      reload,
+      getComment,
+      loading,
+      comments,
+      replyComment,
+      toggleReaction,
+      highLightCommentId,
+    ]
+  );
+
   return (
-    <GlobalCommentContext.Provider
-      value={{
-        reactions,
-        replyCommentId,
-        reload,
-        getComment,
-        loading,
-        comments,
-        replyComment,
-        toggleReaction,
-        highLightCommentId,
-        setHighLightCommentId,
-      }}
-    >
+    <GlobalCommentContext.Provider value={contextValue}>
       <GlobalComment />
     </GlobalCommentContext.Provider>
   );

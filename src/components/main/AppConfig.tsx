@@ -236,7 +236,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
     return () => {
       window.removeEventListener('keydown', handleClearData);
     };
-  });
+  }, []);
 
   return (
     <AFConfigContext.Provider

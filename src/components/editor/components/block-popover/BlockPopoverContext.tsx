@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback, useContext } from 'react';
+import React, { createContext, useState, useCallback, useContext, useMemo } from 'react';
 import { ReactEditor } from 'slate-react';
 
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
@@ -61,11 +61,15 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
     return popover === type;
   }, [type]);
 
+  const contextValue = useMemo(
+    () => ({ blockId, type, anchorEl, open, close, openPopover, isOpen }),
+    [blockId, type, anchorEl, open, close, openPopover, isOpen]
+  );
+
   return (
-    <BlockPopoverContext.Provider value={{ blockId, type, anchorEl, open, close, openPopover, isOpen }}>
+    <BlockPopoverContext.Provider value={contextValue}>
       {children}
     </BlockPopoverContext.Provider>
   );
 
 };
-

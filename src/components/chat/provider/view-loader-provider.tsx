@@ -43,11 +43,12 @@ export const ViewLoaderProvider = ({
           children: filter ? filter(view.children) : filterDocumentViews(view.children),
         };
 
-        setViewsLoading(false);
         return result;
         // eslint-disable-next-line
       } catch (e: any) {
         // do not show toast for no views
+      } finally {
+        setViewsLoading(false);
       }
     },
     [fetchViews]
