@@ -40,6 +40,12 @@ export function AppOverlayProvider ({
 
     return findView(outline, renameViewId);
   }, [outline, renameViewId]);
+  const closeRenameModal = useCallback(() => setRenameViewId(null), []);
+  const closeDeleteModal = useCallback(() => setDeleteViewId(null), []);
+  const closeManageSpaceModal = useCallback(() => setManageSpaceId(null), []);
+  const closeCreateSpaceModal = useCallback(() => setCreateSpaceModalOpen(false), []);
+  const closeDeleteSpaceModal = useCallback(() => setDeleteSpaceId(null), []);
+
   const contextValue = useMemo(
     () => ({
       openRenameModal: setRenameViewId,
@@ -63,40 +69,28 @@ export function AppOverlayProvider ({
         updatePage={updatePage}
         view={renameView}
         open={Boolean(renameViewId)}
-        onClose={() => {
-          setRenameViewId(null);
-        }}
+        onClose={closeRenameModal}
         viewId={renameViewId}
       />}
       {deleteViewId && <DeletePageConfirm
         open={Boolean(deleteViewId)}
-        onClose={() => {
-          setDeleteViewId(null);
-        }}
+        onClose={closeDeleteModal}
         viewId={deleteViewId}
       />}
       {manageSpaceId && <ManageSpace
         open={Boolean(manageSpaceId)}
-        onClose={() => {
-          setManageSpaceId(null);
-        }}
+        onClose={closeManageSpaceModal}
         viewId={manageSpaceId}
       />}
       {createSpaceModalOpen && <CreateSpaceModal
-        onCreated={() => {
-          setCreateSpaceModalOpen(false);
-        }}
+        onCreated={closeCreateSpaceModal}
         open={createSpaceModalOpen}
-        onClose={() => setCreateSpaceModalOpen(false)}
+        onClose={closeCreateSpaceModal}
       />}
       {deleteSpaceId && <DeleteSpaceConfirm
         viewId={deleteSpaceId}
         open={Boolean(deleteSpaceId)}
-        onClose={
-          () => {
-            setDeleteSpaceId(null);
-          }
-        }
+        onClose={closeDeleteSpaceModal}
       />}
       {/* Blocking loader overlay - prevents user interaction during operations like duplicate */}
       {blockingLoaderMessage && (

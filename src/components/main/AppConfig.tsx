@@ -237,6 +237,8 @@ function AppConfig({ children }: { children: React.ReactNode }) {
       window.removeEventListener('keydown', handleClearData);
     };
   }, []);
+  const closeLoginModal = useCallback(() => setLoginOpen(false), []);
+
   const configContextValue = useMemo(
     () => ({
       isAuthenticated,
@@ -255,9 +257,7 @@ function AppConfig({ children }: { children: React.ReactNode }) {
           <LoginModal
             redirectTo={loginCompletedRedirectTo}
             open={loginOpen}
-            onClose={() => {
-              setLoginOpen(false);
-            }}
+            onClose={closeLoginModal}
           />
         </Suspense>
       )}

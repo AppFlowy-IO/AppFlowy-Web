@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -19,6 +20,21 @@ import {
 } from '@/components/chat/types/prompt';
 
 const STORAGE_KEY = 'appflowy_prompt_db_config';
+
+function getBuiltInPrompts(): AiPrompt[] {
+  try {
+    if (Array.isArray(promptsData.prompts)) {
+      return parsePromptData(promptsData.prompts);
+    }
+
+    throw new Error(
+      'Invalid JSON structure: "prompts" array not found in imported data.',
+    );
+  } catch (err) {
+    console.error('Failed to load prompts:', err);
+    return [];
+  }
+}
 
 export interface PromptDatabaseConfiguration {
   databaseViewId: string;
@@ -81,40 +97,60 @@ export const PromptModalProvider = ({
   const { t } = useTranslation();
 
   const [isOpen, setIsOpen] = useState(false);
+  const [currentPromptId, setCurrentPromptId] = useState<string | null>(null);
+  const [prompts, setPrompts] = useState<AiPrompt[]>(getBuiltInPrompts);
   const [currentDatabaseConfig, setCurrentDatabaseConfig] =
     useState<PromptDatabaseConfiguration | null>(null);
   const [fields, setFields] = useState<PromptDatabaseField[]>([]);
+  const promptLoadRequestIdRef = useRef(0);
 
-  const prompts = useRef<AiPrompt[]>([]);
-  const currentPromptIdRef = useRef<string | null>(null);
-
-  const updateCurrentPromptId = (id: string | null) => {
-    currentPromptIdRef.current = id;
-  };
-
-  const fetchBuiltInPrompts = useCallback(() => {
-    try {
-      if (Array.isArray(promptsData.prompts)) {
-        const parsedPrompts = parsePromptData(promptsData.prompts);
-
-        prompts.current = parsedPrompts;
-      } else {
-        throw new Error(
-          'Invalid JSON structure: "prompts" array not found in imported data.',
-        );
-      }
-    } catch (err) {
-      console.error('Failed to load prompts:', err);
-    }
-  }, []);
+  const applyPromptState = useCallback(
+    (
+      nextPrompts: AiPrompt[],
+      nextDatabaseConfig: PromptDatabaseConfiguration | null,
+      nextFields: PromptDatabaseField[],
+    ) => {
+      setPrompts(nextPrompts);
+      setCurrentDatabaseConfig(nextDatabaseConfig);
+      setFields(nextFields);
+      setCurrentPromptId((prevPromptId) => {
+        return nextPrompts.some((prompt) => prompt.id === prevPromptId)
+          ? prevPromptId
+          : null;
+      });
+    },
+    [],
+  );
 
   const fetchCustomPrompts = useCallback(async () => {
-    if (!loadDatabasePrompts) return;
+    const requestId = promptLoadRequestIdRef.current + 1;
+
+    promptLoadRequestIdRef.current = requestId;
+
+    const applyPromptStateIfCurrent = (
+      nextPrompts: AiPrompt[],
+      nextDatabaseConfig: PromptDatabaseConfiguration | null,
+      nextFields: PromptDatabaseField[],
+    ) => {
+      if (promptLoadRequestIdRef.current !== requestId) {
+        return;
+      }
+
+      applyPromptState(nextPrompts, nextDatabaseConfig, nextFields);
+    };
+
+    if (!loadDatabasePrompts) {
+      applyPromptStateIfCurrent(getBuiltInPrompts(), null, []);
+      return;
+    }
 
     const storageKey = `${STORAGE_KEY}_${workspaceId}`;
     const savedConfig = localStorage.getItem(storageKey);
 
-    if (!savedConfig) return;
+    if (!savedConfig) {
+      applyPromptStateIfCurrent(getBuiltInPrompts(), null, []);
+      return;
+    }
 
     const config = JSON.parse(savedConfig) as PromptDatabaseConfiguration;
 
@@ -130,10 +166,8 @@ export const PromptModalProvider = ({
       );
 
       const databasePrompts = parsePromptData(rawDatabasePrompts, categories);
-
-      const builtInPrompts = prompts.current.filter((p) => !p.isCustom);
-
-      prompts.current = [
+      const builtInPrompts = getBuiltInPrompts();
+      const nextPrompts = [
         ...builtInPrompts,
         ...databasePrompts.map((p) => ({
           ...p,
@@ -142,17 +176,15 @@ export const PromptModalProvider = ({
         })),
       ];
 
-      setCurrentDatabaseConfig(config);
-      setFields(loadedFields);
+      applyPromptStateIfCurrent(nextPrompts, config, loadedFields);
     } catch (err) {
       console.error(
         'Failed to load custom prompts using database config:',
         err,
       );
-      setCurrentDatabaseConfig(null);
-      setFields([]);
+      applyPromptStateIfCurrent(getBuiltInPrompts(), null, []);
     }
-  }, [loadDatabasePrompts, t, workspaceId]);
+  }, [applyPromptState, loadDatabasePrompts, t, workspaceId]);
 
   const saveDatabaseConfig = useCallback(
     (config: PromptDatabaseConfiguration) => {
@@ -169,26 +201,53 @@ export const PromptModalProvider = ({
   );
 
   useEffect(() => {
-    fetchBuiltInPrompts();
     void fetchCustomPrompts();
-  }, [fetchBuiltInPrompts, fetchCustomPrompts]);
+  }, [fetchCustomPrompts]);
+
+  useEffect(() => {
+    return () => {
+      promptLoadRequestIdRef.current += 1;
+    };
+  }, []);
+
+  const openModal = useCallback(() => {
+    setIsOpen(true);
+  }, []);
+
+  const closeModal = useCallback(() => {
+    setIsOpen(false);
+  }, []);
+
+  const contextValue = useMemo(
+    () => ({
+      isOpen,
+      currentPromptId,
+      updateCurrentPromptId: setCurrentPromptId,
+      prompts,
+      openModal,
+      closeModal,
+      databaseConfig: currentDatabaseConfig,
+      fields,
+      testDatabasePromptConfig,
+      saveDatabaseConfig,
+      reloadDatabasePrompts: fetchCustomPrompts,
+    }),
+    [
+      isOpen,
+      currentPromptId,
+      prompts,
+      openModal,
+      closeModal,
+      currentDatabaseConfig,
+      fields,
+      testDatabasePromptConfig,
+      saveDatabaseConfig,
+      fetchCustomPrompts,
+    ],
+  );
 
   return (
-    <PromptModalContext.Provider
-      value={{
-        isOpen,
-        currentPromptId: currentPromptIdRef.current,
-        updateCurrentPromptId,
-        prompts: prompts.current,
-        openModal: () => setIsOpen(true),
-        closeModal: () => setIsOpen(false),
-        databaseConfig: currentDatabaseConfig,
-        fields,
-        testDatabasePromptConfig,
-        saveDatabaseConfig,
-        reloadDatabasePrompts: fetchCustomPrompts,
-      }}
-    >
+    <PromptModalContext.Provider value={contextValue}>
       {children}
     </PromptModalContext.Provider>
   );

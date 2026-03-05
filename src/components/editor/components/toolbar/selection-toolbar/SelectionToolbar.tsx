@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef } from 'react';
 
 import ToolbarActions from '@/components/editor/components/toolbar/selection-toolbar/ToolbarActions';
 
@@ -41,6 +41,12 @@ export function SelectionToolbar() {
     showToolbar(el);
   }, [showToolbar]);
 
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // prevent toolbar from taking focus away from editor
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
   const contextValue = useMemo(
     () => ({ visible, forceShow, rePosition, getDecorateState }),
     [visible, forceShow, rePosition, getDecorateState]
@@ -54,11 +60,7 @@ export function SelectionToolbar() {
         className={
           'selection-toolbar pointer-events-none transform transition-opacity duration-200 absolute z-[100] flex min-h-[32px] w-fit flex-grow items-center rounded-lg bg-[var(--fill-toolbar)] px-2 opacity-0 shadow-lg'
         }
-        onMouseDown={(e) => {
-          // prevent toolbar from taking focus away from editor
-          e.preventDefault();
-          e.stopPropagation();
-        }}
+        onMouseDown={handleMouseDown}
       >
         <ToolbarActions/>
       </div>

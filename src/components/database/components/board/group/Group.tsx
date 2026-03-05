@@ -1,5 +1,5 @@
 import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PADDING_END, useDatabaseContext, useReadOnly, useRowOrdersSelector, useRowsByGroup } from '@/application/database-yjs';
@@ -187,6 +187,8 @@ export const Group = ({ groupId }: GroupProps) => {
 
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
   const [isHover, setIsHover] = useState(false);
+  const handleMouseEnter = useCallback(() => setIsHover(true), []);
+  const handleMouseLeave = useCallback(() => setIsHover(false), []);
   const [verticalScrollContainer, setVerticalScrollContainer] = useState<HTMLElement | null>(null);
   const getVerticalScrollContainer = useCallback((el: HTMLDivElement) => {
     return (el.closest('.appflowy-scroll-container') || getScrollParent(el)) as HTMLElement;
@@ -194,6 +196,60 @@ export const Group = ({ groupId }: GroupProps) => {
   const [totalSize, setTotalSize] = useState<number>(0);
   const innerRef = useRef<HTMLDivElement | null>(null);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
+
+  const handleRefCallback = useCallback((el: HTMLDivElement | null) => {
+    ref.current = el;
+    containerRef.current = el;
+    if (observedContainerRef.current && observerRef.current) {
+      observerRef.current.unobserve(observedContainerRef.current);
+    }
+
+    observedContainerRef.current = el;
+    if (el && observerRef.current) {
+      observerRef.current.observe(el);
+    }
+
+    if (!el) return;
+    const container = getVerticalScrollContainer(el);
+
+    if (!container) return;
+    setVerticalScrollContainer(container);
+    setElement(el);
+  }, [getVerticalScrollContainer]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollLeft = e.currentTarget.scrollLeft;
+
+    const bottomScrollbar = bottomScrollbarRef.current;
+
+    setTotalSize(e.currentTarget.scrollWidth);
+    stickyHeaderRef.current?.scroll({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+
+    if (!bottomScrollbar) return;
+
+    bottomScrollbar.scroll({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+  }, []);
+
+  const handleScrollLeft = useCallback((scrollLeft: number) => {
+    ref.current?.scrollTo({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+  }, [ref]);
+
+  const handleCloseDeleteConfirm = useCallback(() => {
+    setDeleteConfirm(false);
+  }, []);
+
+  const handleDeleted = useCallback(() => {
+    setSelectedCardIds([]);
+  }, [setSelectedCardIds]);
 
   // Auto-scroll for card dragging (registered once at Group level)
   useEffect(() => {
@@ -255,54 +311,17 @@ export const Group = ({ groupId }: GroupProps) => {
   return (
     <BoardDragContext.Provider value={contextValue}>
       <div
-        onMouseEnter={() => {
-          setIsHover(true);
-        }}
+        onMouseEnter={handleMouseEnter}
         tabIndex={0}
-        onMouseLeave={() => setIsHover(false)}
-        ref={(el) => {
-          ref.current = el;
-          containerRef.current = el;
-          if (observedContainerRef.current && observerRef.current) {
-            observerRef.current.unobserve(observedContainerRef.current);
-          }
-
-          observedContainerRef.current = el;
-          if (el && observerRef.current) {
-            observerRef.current.observe(el);
-          }
-
-          if (!el) return;
-          const container = getVerticalScrollContainer(el);
-
-          if (!container) return;
-          setVerticalScrollContainer(container);
-          setElement(el);
-        }}
+        onMouseLeave={handleMouseLeave}
+        ref={handleRefCallback}
         className={'appflowy-custom-scroller h-full overflow-x-auto px-24 focus:outline-none max-sm:!px-6'}
         style={{
           paddingLeft: paddingStart,
           paddingRight: paddingEnd,
           scrollBehavior: 'auto',
         }}
-        onScroll={(e) => {
-          const scrollLeft = e.currentTarget.scrollLeft;
-
-          const bottomScrollbar = bottomScrollbarRef.current;
-
-          setTotalSize(e.currentTarget.scrollWidth);
-          stickyHeaderRef.current?.scroll({
-            left: scrollLeft,
-            behavior: 'auto',
-          });
-
-          if (!bottomScrollbar) return;
-
-          bottomScrollbar.scroll({
-            left: scrollLeft,
-            behavior: 'auto',
-          });
-        }}
+        onScroll={handleScroll}
       >
         <div className='flex h-full w-fit min-w-full flex-col'>
           <Columns
@@ -322,22 +341,12 @@ export const Group = ({ groupId }: GroupProps) => {
             groupResult={groupResult}
             columns={columns}
             fieldId={fieldId}
-            onScrollLeft={(scrollLeft) => {
-              ref.current?.scrollTo({
-                left: scrollLeft,
-                behavior: 'auto',
-              });
-            }}
+            onScrollLeft={handleScrollLeft}
           />
         </DatabaseStickyTopOverlay>
         <DatabaseStickyBottomOverlay scrollElement={verticalScrollContainer}>
           <DatabaseStickyHorizontalScrollbar
-            onScrollLeft={(scrollLeft) => {
-              ref.current?.scrollTo({
-                left: scrollLeft,
-                behavior: 'auto',
-              });
-            }}
+            onScrollLeft={handleScrollLeft}
             ref={bottomScrollbarRef}
             totalSize={totalSize}
             visible={isHover}
@@ -347,13 +356,9 @@ export const Group = ({ groupId }: GroupProps) => {
       {deleteConfirm && (
         <DeleteRowConfirm
           open={deleteConfirm}
-          onClose={() => {
-            setDeleteConfirm(false);
-          }}
+          onClose={handleCloseDeleteConfirm}
           rowIds={deleteRowIdsRef.current || []}
-          onDeleted={() => {
-            setSelectedCardIds([]);
-          }}
+          onDeleted={handleDeleted}
         />
       )}
     </BoardDragContext.Provider>

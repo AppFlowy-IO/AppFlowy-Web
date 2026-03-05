@@ -1,9 +1,10 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 
 import { getScrollParent } from '@/components/global-comment/utils';
 
 export const useScrollDetection = (containerRef: React.RefObject<HTMLDivElement>, buttonRef: React.RefObject<HTMLButtonElement>) => {
-  
+  const showTimeoutRef = useRef<number | null>(null);
+
   const getScrollElement = useCallback(() => {
     if (!containerRef.current) return null;
     return containerRef.current.closest('.appflowy-scroll-container') || getScrollParent(containerRef.current);
@@ -18,20 +19,29 @@ export const useScrollDetection = (containerRef: React.RefObject<HTMLDivElement>
         buttonRef.current?.style.setProperty('opacity', '0');
         buttonRef.current?.style.setProperty('pointer-events', 'none');
 
-        setTimeout(() => {
+        if (showTimeoutRef.current !== null) {
+          window.clearTimeout(showTimeoutRef.current);
+        }
+
+        showTimeoutRef.current = window.setTimeout(() => {
           buttonRef.current?.style.setProperty('opacity', '1');
           buttonRef.current?.style.setProperty('pointer-events', 'auto');
+          showTimeoutRef.current = null;
         }, 1000);
       };
 
-      scrollElement.addEventListener('scroll', handleScroll);
+      const scrollListenerOptions: AddEventListenerOptions = { passive: true };
+
+      scrollElement.addEventListener('scroll', handleScroll, scrollListenerOptions);
 
       return () => {
-        scrollElement.removeEventListener('scroll', handleScroll);
+        if (showTimeoutRef.current !== null) {
+          window.clearTimeout(showTimeoutRef.current);
+          showTimeoutRef.current = null;
+        }
+
+        scrollElement.removeEventListener('scroll', handleScroll, scrollListenerOptions);
       };
     }
   }, [getScrollElement, buttonRef]);
-  
-
-  
 };
