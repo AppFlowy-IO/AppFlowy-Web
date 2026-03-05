@@ -62,6 +62,18 @@ export function QuickNote() {
     setOpenToast(true);
     setToastMessage(msg);
   }, []);
+  const handleCloseToast = useCallback(() => {
+    setToastMessage('');
+    setOpenToast(false);
+  }, []);
+  const toastContextValue = useMemo(
+    () => ({
+      onOpen: handleOpenToast,
+      onClose: handleCloseToast,
+      open: openToast,
+    }),
+    [handleOpenToast, handleCloseToast, openToast]
+  );
 
   const handleEnterNote = useCallback((note: QuickNoteType) => {
     setCurrentNote(note);
@@ -513,14 +525,7 @@ export function QuickNote() {
         keepMounted={true}
       >
         <ToastContext.Provider
-          value={{
-            onOpen: handleOpenToast,
-            onClose: () => {
-              setToastMessage('');
-              setOpenToast(false);
-            },
-            open: openToast,
-          }}
+          value={toastContextValue}
         >
           <div
             onMouseDown={handleMouseDown}

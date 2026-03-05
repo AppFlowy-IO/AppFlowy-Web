@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { toast } from 'sonner';
 
 import { filterDocumentViews } from '@/components/chat/lib/views';
@@ -65,9 +65,13 @@ export const ViewLoaderProvider = ({
     },
     [getView]
   );
+  const contextValue = useMemo(
+    () => ({ viewsLoading, getView: getViewImpl, fetchViews: fetchViewsImpl }),
+    [viewsLoading, getViewImpl, fetchViewsImpl]
+  );
 
   return (
-    <ViewLoaderContext.Provider value={{ viewsLoading, getView: getViewImpl, fetchViews: fetchViewsImpl }}>
+    <ViewLoaderContext.Provider value={contextValue}>
       {children}
     </ViewLoaderContext.Provider>
   );

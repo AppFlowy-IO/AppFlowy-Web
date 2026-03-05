@@ -1,6 +1,6 @@
 import { createContext, useContext } from 'react';
 
-export const AppOverlayContext = createContext<{
+type AppOverlayContextType = {
   openRenameModal: (viewId: string) => void;
   openDeleteModal: (viewId: string) => void;
   openManageSpaceModal: (viewId: string) => void;
@@ -15,29 +15,9 @@ export const AppOverlayContext = createContext<{
    * Hide the blocking loading overlay.
    */
   hideBlockingLoader: () => void;
-}>({
-  openRenameModal: () => {
-    //
-  },
-  openDeleteModal: () => {
-    //
-  },
-  openManageSpaceModal: () => {
-    //
-  },
-  openCreateSpaceModal: () => {
-    //
-  },
-  openDeleteSpaceModal: () => {
-    //
-  },
-  showBlockingLoader: () => {
-    //
-  },
-  hideBlockingLoader: () => {
-    //
-  },
-});
+};
+
+export const AppOverlayContext = createContext<AppOverlayContextType | undefined>(undefined);
 
 export function useAppOverlayContext () {
   const context = useContext(AppOverlayContext);

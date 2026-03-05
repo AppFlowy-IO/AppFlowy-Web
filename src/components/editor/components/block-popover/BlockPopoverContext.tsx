@@ -14,19 +14,16 @@ export interface BlockPopoverContextType {
   isOpen: (type: BlockType) => boolean;
 }
 
-export const BlockPopoverContext = createContext<BlockPopoverContextType>({
-  open: false,
-  close: () => {
-    //
-  },
-  openPopover: () => {
-    //
-  },
-  isOpen: () => false,
-});
+export const BlockPopoverContext = createContext<BlockPopoverContextType | undefined>(undefined);
 
 export function usePopoverContext() {
-  return useContext(BlockPopoverContext);
+  const context = useContext(BlockPopoverContext);
+
+  if (!context) {
+    throw new Error('usePopoverContext must be used within a BlockPopoverProvider');
+  }
+
+  return context;
 }
 
 export const BlockPopoverProvider = ({ children, editor }: { children: React.ReactNode; editor: ReactEditor }) => {

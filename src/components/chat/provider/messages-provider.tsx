@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useChatContext } from '@/components/chat/chat/context';
 import { ChatMessage, ChatMessageMetadata } from '@/components/chat/types';
@@ -79,18 +79,20 @@ export const ChatMessagesProvider = ({ children }: { children: ReactNode }) => {
     },
     []
   );
+  const contextValue = useMemo(
+    () => ({
+      messageIds,
+      getMessage,
+      addMessages,
+      removeMessages,
+      insertMessage,
+      saveMessageContent,
+    }),
+    [messageIds, getMessage, addMessages, removeMessages, insertMessage, saveMessageContent]
+  );
 
   return (
-    <ChatMessagesContext.Provider
-      value={{
-        messageIds,
-        getMessage,
-        addMessages,
-        removeMessages,
-        insertMessage,
-        saveMessageContent,
-      }}
-    >
+    <ChatMessagesContext.Provider value={contextValue}>
       {children}
     </ChatMessagesContext.Provider>
   );

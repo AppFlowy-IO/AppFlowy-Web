@@ -237,16 +237,18 @@ function AppConfig({ children }: { children: React.ReactNode }) {
       window.removeEventListener('keydown', handleClearData);
     };
   }, []);
+  const configContextValue = useMemo(
+    () => ({
+      isAuthenticated,
+      currentUser,
+      updateCurrentUser,
+      openLoginModal,
+    }),
+    [isAuthenticated, currentUser, updateCurrentUser, openLoginModal]
+  );
 
   return (
-    <AFConfigContext.Provider
-      value={{
-        isAuthenticated,
-        currentUser,
-        updateCurrentUser,
-        openLoginModal,
-      }}
-    >
+    <AFConfigContext.Provider value={configContextValue}>
       {children}
       {loginOpen && (
         <Suspense>

@@ -9,11 +9,13 @@ export const LeafContext = createContext<{
 } | undefined>(undefined);
 
 export function useLeafContext() {
-  return useContext(LeafContext) || {
-    openLinkPopover: () => undefined,
-    closeLinkPopover: () => undefined,
-    linkOpen: undefined,
-  };
+  const context = useContext(LeafContext);
+
+  if (!context) {
+    throw new Error('useLeafContext must be used within a LeafContext.Provider');
+  }
+
+  return context;
 }
 
 export function useLeafSelected(text: Text) {

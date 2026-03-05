@@ -30,6 +30,9 @@ export function AppOverlayProvider ({
   const hideBlockingLoader = useCallback(() => {
     setBlockingLoaderMessage(null);
   }, []);
+  const openCreateSpaceModal = useCallback(() => {
+    setCreateSpaceModalOpen(true);
+  }, []);
   const outline = useAppOutline();
   const renameView = useMemo(() => {
     if (!renameViewId) return null;
@@ -37,21 +40,24 @@ export function AppOverlayProvider ({
 
     return findView(outline, renameViewId);
   }, [outline, renameViewId]);
+  const contextValue = useMemo(
+    () => ({
+      openRenameModal: setRenameViewId,
+      openDeleteModal: setDeleteViewId,
+      openManageSpaceModal: setManageSpaceId,
+      openCreateSpaceModal,
+      openDeleteSpaceModal: setDeleteSpaceId,
+      showBlockingLoader,
+      hideBlockingLoader,
+    }),
+    // setState setters (setRenameViewId, setDeleteViewId, setManageSpaceId, setDeleteSpaceId) are
+    // guaranteed stable by React and safely omitted from the dependency array.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [openCreateSpaceModal, showBlockingLoader, hideBlockingLoader]
+  );
 
   return (
-    <AppOverlayContext.Provider
-      value={{
-        openRenameModal: setRenameViewId,
-        openDeleteModal: setDeleteViewId,
-        openManageSpaceModal: setManageSpaceId,
-        openCreateSpaceModal: () => {
-          setCreateSpaceModalOpen(true);
-        },
-        openDeleteSpaceModal: setDeleteSpaceId,
-        showBlockingLoader,
-        hideBlockingLoader,
-      }}
-    >
+    <AppOverlayContext.Provider value={contextValue}>
       {children}
       {renameViewId && updatePage && renameView && <RenameModal
         updatePage={updatePage}

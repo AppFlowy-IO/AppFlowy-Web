@@ -9,7 +9,7 @@ import { usePopoverContext } from '@/components/editor/components/block-popover/
 import FileBlockPopoverContent from '@/components/editor/components/block-popover/FileBlockPopoverContent';
 import ImageBlockPopoverContent from '@/components/editor/components/block-popover/ImageBlockPopoverContent';
 import PDFBlockPopoverContent from '@/components/editor/components/block-popover/PDFBlockPopoverContent';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
 
 import MathEquationPopoverContent from './MathEquationPopoverContent';
 import VideoBlockPopoverContent from './VideoBlockPopoverContent';
@@ -27,7 +27,7 @@ const defaultOrigins: Origins = {
 
 function BlockPopover() {
   const { open, anchorEl, close, type, blockId } = usePopoverContext();
-  const { setSelectedBlockIds } = useEditorContext();
+  const { setSelectedBlockIds } = useEditorLocalState();
   const editor = useSlateStatic() as YjsEditor;
   const [origins, setOrigins] = React.useState<Origins>(defaultOrigins);
 

@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 import { useBoardLayoutSettings, useGroupsSelector } from '@/application/database-yjs';
 import { useMoveCardDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
@@ -25,17 +25,7 @@ type BoardContextType = {
   }) => void;
 };
 
-const BoardContext = createContext<BoardContextType>({
-  groupId: '',
-  selectedCardIds: [],
-  setSelectedCardIds: () => undefined,
-  editingCardId: null,
-  setEditingCardId: () => undefined,
-  creatingColumnId: null,
-  setCreatingColumnId: () => undefined,
-  createCard: () => Promise.resolve(null),
-  moveCard: () => undefined,
-});
+const BoardContext = createContext<BoardContextType | undefined>(undefined);
 
 export function useBoardContext() {
   const context = useContext(BoardContext);
@@ -95,21 +85,23 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
     },
     [fieldId, onMoveCard]
   );
+  const contextValue = useMemo(
+    () => ({
+      groupId,
+      selectedCardIds,
+      setSelectedCardIds,
+      editingCardId,
+      setEditingCardId,
+      creatingColumnId,
+      setCreatingColumnId,
+      createCard,
+      moveCard,
+    }),
+    [groupId, selectedCardIds, editingCardId, creatingColumnId, createCard, moveCard]
+  );
 
   return (
-    <BoardContext.Provider
-      value={{
-        groupId,
-        selectedCardIds,
-        setSelectedCardIds,
-        editingCardId,
-        setEditingCardId,
-        creatingColumnId,
-        setCreatingColumnId,
-        createCard,
-        moveCard,
-      }}
-    >
+    <BoardContext.Provider value={contextValue}>
       {children}
     </BoardContext.Provider>
   );

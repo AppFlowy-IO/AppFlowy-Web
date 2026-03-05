@@ -412,28 +412,49 @@ export const PublishProvider = ({
   useEffect(() => {
     void loadOutline();
   }, [loadOutline]);
+  const commentEnabled = publishInfo?.commentEnabled;
+  const duplicateEnabled = publishInfo?.duplicateEnabled;
+  const contextValue = useMemo(
+    () => ({
+      loadView,
+      viewMeta,
+      createRow,
+      loadViewMeta,
+      toView,
+      namespace,
+      publishName,
+      isTemplateThumb,
+      outline,
+      breadcrumbs,
+      appendBreadcrumb,
+      onRendered,
+      rendered,
+      commentEnabled,
+      duplicateEnabled,
+      getViewIdFromDatabaseId,
+    }),
+    [
+      loadView,
+      viewMeta,
+      createRow,
+      loadViewMeta,
+      toView,
+      namespace,
+      publishName,
+      isTemplateThumb,
+      outline,
+      breadcrumbs,
+      appendBreadcrumb,
+      onRendered,
+      rendered,
+      commentEnabled,
+      duplicateEnabled,
+      getViewIdFromDatabaseId,
+    ]
+  );
 
   return (
-    <PublishContext.Provider
-      value={{
-        loadView,
-        viewMeta,
-        createRow,
-        loadViewMeta,
-        toView,
-        namespace,
-        publishName,
-        isTemplateThumb,
-        outline,
-        breadcrumbs,
-        appendBreadcrumb,
-        onRendered,
-        rendered,
-        commentEnabled: publishInfo?.commentEnabled,
-        duplicateEnabled: publishInfo?.duplicateEnabled,
-        getViewIdFromDatabaseId,
-      }}
-    >
+    <PublishContext.Provider value={contextValue}>
       {children}
     </PublishContext.Provider>
   );

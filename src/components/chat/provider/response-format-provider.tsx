@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
 import { useChatContext } from '@/components/chat/chat/context';
 import { ChatInputMode, OutputContent, OutputLayout, ResponseFormat } from '@/components/chat/types';
@@ -53,18 +53,25 @@ export const ResponseFormatProvider = ({ children }: { children: ReactNode }) =>
       setResponseMode(ChatInputMode.FormatResponse);
     };
   }, [chatId]);
+  const contextValue = useMemo(
+    () => ({
+      responseMode,
+      responseFormat,
+      setResponseFormat,
+      setResponseMode,
+      getMessageResponseFormat,
+      setResponseFormatWithId,
+    }),
+    [
+      responseMode,
+      responseFormat,
+      getMessageResponseFormat,
+      setResponseFormatWithId,
+    ]
+  );
 
   return (
-    <ResponseFormatContext.Provider
-      value={{
-        responseMode,
-        responseFormat,
-        setResponseFormat,
-        setResponseMode,
-        getMessageResponseFormat,
-        setResponseFormatWithId,
-      }}
-    >
+    <ResponseFormatContext.Provider value={contextValue}>
       {children}
     </ResponseFormatContext.Provider>
   );

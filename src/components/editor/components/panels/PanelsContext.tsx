@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
+import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BaseRange, Point } from 'slate';
 import { TextInsertTextOptions } from 'slate/dist/interfaces/transforms/text';
 import { ReactEditor } from 'slate-react';
@@ -22,21 +22,7 @@ export interface PanelContextType {
   removeContent: () => void;
 }
 
-export const PanelContext = createContext({
-  setActivePanel: () => {
-    return;
-  },
-  closePanel: () => {
-    return;
-  },
-  openPanel: () => {
-    return;
-  },
-  removeContent: () => {
-    return;
-  },
-  isPanelOpen: () => false,
-} as PanelContextType);
+export const PanelContext = createContext<PanelContextType | undefined>(undefined);
 
 const panelTypeChars = ['/', '@', '+'];
 
@@ -250,19 +236,30 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
     };
   }, [closePanel, editor]);
 
+  const contextValue = useMemo(
+    () => ({
+      activePanel,
+      setActivePanel,
+      closePanel,
+      openPanel,
+      isPanelOpen,
+      panelPosition,
+      searchText,
+      removeContent,
+    }),
+    [
+      activePanel,
+      closePanel,
+      openPanel,
+      isPanelOpen,
+      panelPosition,
+      searchText,
+      removeContent,
+    ]
+  );
+
   return (
-    <PanelContext.Provider
-      value={{
-        activePanel,
-        setActivePanel,
-        closePanel,
-        openPanel,
-        isPanelOpen,
-        panelPosition,
-        searchText,
-        removeContent,
-      }}
-    >
+    <PanelContext.Provider value={contextValue}>
       {children}
     </PanelContext.Provider>
   );
