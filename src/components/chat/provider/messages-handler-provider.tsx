@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useChatContext } from '@/components/chat/chat/context';
@@ -78,6 +78,15 @@ function useMessagesHandler() {
   const { messageIds, addMessages, insertMessage, removeMessages, saveMessageContent, getMessage } =
     useChatMessagesContext();
 
+  // Use refs for values that change frequently but are only read inside callbacks,
+  // to avoid recreating the entire callback chain on each change.
+  const selectedModelNameRef = useRef(selectedModelName);
+
+  selectedModelNameRef.current = selectedModelName;
+  const messageIdsRef = useRef(messageIds);
+
+  messageIdsRef.current = messageIds;
+
   const { setResponseFormatWithId } = useResponseFormatContext();
 
   const { currentPromptId } = usePromptModal();
@@ -154,6 +163,10 @@ function useMessagesHandler() {
       try {
         setQuestionSending(true);
 
+        // Capture whether this is the first message BEFORE we insert anything,
+        // so the rename-from-first-prompt logic works correctly.
+        const isFirstMessage = !messageIdsRef.current || messageIdsRef.current.length === 0;
+
         // insert fake message to show user message
         const fakeMessageId = Date.now();
         const author = {
@@ -177,7 +190,7 @@ function useMessagesHandler() {
           content: message,
           message_type: MessageType.User,
           prompt_id: promptId,
-          model_name: selectedModelName,
+          model_name: selectedModelNameRef.current,
         });
 
         const answerId = question.reply_message_id || question.message_id + 1;
@@ -205,7 +218,7 @@ function useMessagesHandler() {
           try {
             const view = await requestInstance.getCurrentView();
 
-            if ((!messageIds || messageIds.length === 0) && view) {
+            if (isFirstMessage && view) {
               await requestInstance.updateViewName(view, message);
             }
             // eslint-disable-next-line
@@ -232,8 +245,6 @@ function useMessagesHandler() {
       removeMessages,
       registerFetchSuggestions,
       createAssistantMessage,
-      messageIds,
-      selectedModelName,
     ]
   );
 
@@ -283,7 +294,7 @@ function useMessagesHandler() {
             void (async () => {
               await saveAnswer(questionId, message, metadata);
               setAnswerApplying(false);
-              if (answerId && messageIds.indexOf(answerId) === 0) {
+              if (answerId && messageIdsRef.current.indexOf(answerId) === 0) {
                 await startFetchSuggestions(questionId);
               }
             })();
@@ -308,7 +319,7 @@ function useMessagesHandler() {
               output_layout: OutputLayout.Paragraph,
               output_content: OutputContent.TEXT,
             },
-            model_name: selectedModelName,
+            model_name: selectedModelNameRef.current,
           },
           handleMessageProgress,
           onProgress
@@ -339,11 +350,9 @@ function useMessagesHandler() {
       getMessage,
       setResponseFormatWithId,
       saveAnswer,
-      messageIds,
       startFetchSuggestions,
       removeAssistantMessage,
       requestInstance,
-      selectedModelName,
     ]
   );
 
@@ -369,7 +378,7 @@ function useMessagesHandler() {
     });
   }, [updateChatSettings]);
 
-  return {
+  return useMemo(() => ({
     fetchMessages,
     submitQuestion,
     regenerateAnswer,
@@ -381,7 +390,19 @@ function useMessagesHandler() {
     setSelectedModelName: updateSelectedModel,
     chatSettings,
     updateChatSettings,
-  };
+  }), [
+    fetchMessages,
+    submitQuestion,
+    regenerateAnswer,
+    fetchAnswerStream,
+    cancelAnswerStream,
+    questionSending,
+    answerApplying,
+    selectedModelName,
+    updateSelectedModel,
+    chatSettings,
+    updateChatSettings,
+  ]);
 }
 
 export function MessagesHandlerProvider({ children }: { children: ReactNode }) {

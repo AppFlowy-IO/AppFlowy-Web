@@ -215,7 +215,7 @@ export const Group = ({ groupId }: GroupProps) => {
     if (!container) return;
     setVerticalScrollContainer(container);
     setElement(el);
-  }, [getVerticalScrollContainer]);
+  }, [getVerticalScrollContainer, ref]);
 
   const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
     const scrollLeft = e.currentTarget.scrollLeft;
@@ -292,7 +292,7 @@ export const Group = ({ groupId }: GroupProps) => {
 
     verticalScrollContainer.addEventListener('scroll', onScroll, scrollListenerOptions);
     return () => {
-      verticalScrollContainer.removeEventListener('scroll', onScroll);
+      verticalScrollContainer.removeEventListener('scroll', onScroll, scrollListenerOptions);
     };
   }, [ref, verticalScrollContainer]);
 

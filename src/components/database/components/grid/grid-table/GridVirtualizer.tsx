@@ -119,7 +119,8 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
 
     scrollElement.addEventListener('scroll', onScroll, scrollListenerOptions);
     return () => {
-      scrollElement.removeEventListener('scroll', onScroll);
+      clearTimeout(timeout);
+      scrollElement.removeEventListener('scroll', onScroll, scrollListenerOptions);
     };
   }, [parentRef, scrollMarginTop, virtualizer.scrollElement, setShowStickyHeader]);
 
