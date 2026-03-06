@@ -1,4 +1,4 @@
-import { memo, useState } from 'react';
+import { memo, useCallback, useState } from 'react';
 
 import { View } from '@/application/types';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
@@ -26,23 +26,33 @@ export const DatabaseTreeItem: React.FC<DatabaseTreeItemProps> = memo(function D
   isSearching,
 }) {
   const [expanded, setExpanded] = useState(view.extra?.is_space || false);
+
+  const toggleExpand = useCallback(() => {
+    if (!isSearching) setExpanded((prev) => !prev);
+  }, [isSearching]);
+
+  const handleRowClick = useCallback(() => {
+    if (!hasChildren) {
+      if (isDatabase) onSelect(view);
+      return;
+    }
+    if (isDatabase) onSelect(view);
+    toggleExpand();
+  }, [hasChildren, isDatabase, onSelect, view, toggleExpand]);
+
+  const handleSelectClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    onSelect(view);
+  }, [onSelect, view]);
   const effectiveExpanded = isSearching ? true : expanded;
   const isDatabase = allowedIds.has(view.view_id);
-  const hasChildren = view.children?.length > 0;
+  const hasChildren = (view.children?.length ?? 0) > 0;
   const name = view.name || fallbackTitle;
 
   return (
     <div className={'flex flex-col'}>
       <div
-        onClick={() => {
-          if (!hasChildren) {
-            if (isDatabase) onSelect(view);
-            return;
-          }
-
-          if (isDatabase) onSelect(view);
-          if (!isSearching) setExpanded((prev) => !prev);
-        }}
+        onClick={handleRowClick}
         className={
           'flex h-[28px] w-full cursor-pointer select-none items-center justify-between gap-2 rounded-[8px] px-1.5 text-sm hover:bg-muted'
         }
@@ -52,10 +62,7 @@ export const DatabaseTreeItem: React.FC<DatabaseTreeItemProps> = memo(function D
             <OutlineButton
               variant={'ghost'}
               className={'!h-4 !min-h-4 !w-4 !min-w-4 !p-0 hover:bg-muted-foreground/10'}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!isSearching) setExpanded((prev) => !prev);
-              }}
+              onClick={(e) => { e.stopPropagation(); toggleExpand(); }}
             >
               <ChevronRight
                 className={`transform transition-transform ${effectiveExpanded ? 'rotate-90' : 'rotate-0'}`}
@@ -69,7 +76,7 @@ export const DatabaseTreeItem: React.FC<DatabaseTreeItemProps> = memo(function D
         </div>
 
         {isDatabase && (
-          <div onClick={(e) => { e.stopPropagation(); onSelect(view); }}>
+          <div onClick={handleSelectClick}>
             <OutlineButton variant={'ghost'} className={'!h-5 !w-5 rounded-md !p-0 hover:bg-muted-foreground/10'}>
               <AddPageIcon className={'h-5 w-5'} />
             </OutlineButton>

@@ -1,5 +1,5 @@
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
-import { memo } from 'react';
+import { memo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View } from '@/application/types';
@@ -42,6 +42,10 @@ export const LinkedDatabasePicker = memo(function LinkedDatabasePicker({
 }: LinkedDatabasePickerProps) {
   const { t } = useTranslation();
 
+  const handleSelect = useCallback((selectedView: { view_id: string }) => {
+    void onSelect(selectedView.view_id);
+  }, [onSelect]);
+
   return (
     <Popover
       adjustOrigins={false}
@@ -82,9 +86,7 @@ export const LinkedDatabasePicker = memo(function LinkedDatabasePicker({
                 key={view.view_id}
                 view={view}
                 allowedIds={allowedDatabaseIds}
-                onSelect={(selectedView) => {
-                  void onSelect(selectedView.view_id);
-                }}
+                onSelect={handleSelect}
                 fallbackTitle={t('document.view.placeholder', { defaultValue: 'Untitled' })}
                 isSearching={!!databaseSearch}
               />

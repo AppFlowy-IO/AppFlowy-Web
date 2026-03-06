@@ -55,6 +55,43 @@ import { getCharacters } from '@/utils/word';
 
 import { collectSelectableDatabaseViews, DatabaseOption, filterViewsByDatabases, SlashMenuOption } from './slash-panel.utils';
 
+/**
+ * Static icon elements extracted as module-level constants.
+ * React best practice: JSX creates new element objects. Keeping icons outside
+ * useMemo ensures the same reference is reused across renders, preventing
+ * unnecessary downstream updates.
+ */
+const ICONS = {
+  askAI: <AskAIIcon />,
+  continueWriting: <ContinueWritingIcon />,
+  text: <TextIcon />,
+  heading1: <Heading1Icon />,
+  heading2: <Heading2Icon />,
+  heading3: <Heading3Icon />,
+  image: <ImageIcon />,
+  video: <VideoIcon />,
+  bulletedList: <BulletedListIcon />,
+  numberedList: <NumberedListIcon />,
+  todoList: <TodoListIcon />,
+  divider: <DividerIcon />,
+  quote: <QuoteIcon />,
+  linkedDoc: <RefDocumentIcon />,
+  document: <DocumentIcon />,
+  grid: <GridIcon />,
+  board: <BoardIcon />,
+  calendar: <CalendarIcon />,
+  callout: <CalloutIcon />,
+  outline: <OutlineIcon />,
+  math: <FormulaIcon />,
+  code: <CodeIcon />,
+  toggleList: <ToggleListIcon />,
+  toggleHeading1: <ToggleHeading1Icon />,
+  toggleHeading2: <ToggleHeading2Icon />,
+  toggleHeading3: <ToggleHeading3Icon />,
+  emoji: <EmojiIcon />,
+  file: <FileIcon />,
+};
+
 interface LinkedPickerState {
   position: { top: number; left: number };
   layout: ViewLayout;
@@ -291,37 +328,37 @@ export function useSlashPanelState(
 
   const options: SlashMenuOption[] = useMemo(() => {
     return [
-      { label: t('document.slashMenu.name.askAIAnything'), key: 'askAIAnything', icon: <AskAIIcon />, keywords: ['ai', 'writer', 'ask', 'anything', 'askAIAnything', 'askai'], onClick: () => { askAIAnything(getBeforeContent()); } },
-      { label: t('document.slashMenu.name.continueWriting'), key: 'continueWriting', disabled: chars < 2, icon: <ContinueWritingIcon />, keywords: ['ai', 'writing', 'continue'], onClick: () => { void continueWriting(getBeforeContent()); } },
-      { label: t('document.slashMenu.name.text'), key: 'text', icon: <TextIcon />, keywords: ['text', 'paragraph'], onClick: () => { turnInto(BlockType.Paragraph, {}); } },
-      { label: t('document.slashMenu.name.heading1'), key: 'heading1', icon: <Heading1Icon />, keywords: ['heading1', 'h1', 'heading'], onClick: () => { turnInto(BlockType.HeadingBlock, { level: 1 } as HeadingBlockData); } },
-      { label: t('document.slashMenu.name.heading2'), key: 'heading2', icon: <Heading2Icon />, keywords: ['heading2', 'h2', 'subheading', 'heading'], onClick: () => { turnInto(BlockType.HeadingBlock, { level: 2 } as HeadingBlockData); } },
-      { label: t('document.slashMenu.name.heading3'), key: 'heading3', icon: <Heading3Icon />, keywords: ['heading3', 'h3', 'subheading', 'heading'], onClick: () => { turnInto(BlockType.HeadingBlock, { level: 3 } as HeadingBlockData); } },
-      { label: t('document.slashMenu.name.image'), key: 'image', icon: <ImageIcon />, keywords: ['image', 'img'], onClick: () => { turnInto(BlockType.ImageBlock, { url: '', align: AlignType.Center } as ImageBlockData); } },
-      { label: t('embedVideo'), key: 'video', icon: <VideoIcon />, keywords: ['video', 'youtube', 'embed'], onClick: () => { turnInto(BlockType.VideoBlock, { url: '', align: AlignType.Center } as VideoBlockData); } },
-      { label: t('document.slashMenu.name.bulletedList'), key: 'bulletedList', icon: <BulletedListIcon />, keywords: ['bulleted', 'list'], onClick: () => { turnInto(BlockType.BulletedListBlock, {}); } },
-      { label: t('document.slashMenu.name.numberedList'), key: 'numberedList', icon: <NumberedListIcon />, keywords: ['numbered', 'list'], onClick: () => { turnInto(BlockType.NumberedListBlock, {}); } },
-      { label: t('document.slashMenu.name.todoList'), key: 'todoList', icon: <TodoListIcon />, keywords: ['todo', 'list'], onClick: () => { turnInto(BlockType.TodoListBlock, {}); } },
-      { label: t('document.slashMenu.name.divider'), key: 'divider', icon: <DividerIcon />, keywords: ['divider', 'line'], onClick: () => { turnInto(BlockType.DividerBlock, {}); } },
-      { label: t('document.slashMenu.name.quote'), key: 'quote', icon: <QuoteIcon />, keywords: ['quote'], onClick: () => { turnInto(BlockType.QuoteBlock, {}); } },
-      { label: t('document.slashMenu.name.linkedDoc'), key: 'linkedDoc', icon: <RefDocumentIcon />, keywords: ['linked', 'doc', 'page', 'document'], onClick: () => { const rect = getRangeRect(); if (!rect) return; openPanel(PanelType.PageReference, { top: rect.top, left: rect.left }); } },
-      { label: t('document.menuName'), key: 'document', icon: <DocumentIcon />, keywords: ['document', 'doc', 'page', 'create', 'add'], onClick: async () => { if (!documentId || !addPage || !openPageModal) return; try { const response = await addPage(documentId, { layout: ViewLayout.Document }); turnInto(BlockType.SubpageBlock, { view_id: response.view_id } as SubpageNodeData); openPageModal(response.view_id); } catch (e: any) { notify.error(e.message); } } },
-      { label: t('document.slashMenu.name.grid'), key: 'grid', icon: <GridIcon />, keywords: ['grid', 'table', 'database'], onClick: async () => { if (!documentId || !addPage || !openPageModal) return; let scrollContainer: HTMLElement | null = null; try { const domNode = ReactEditor.toDOMNode(editor, editor); scrollContainer = domNode.closest('.appflowy-scroll-container'); } catch (e) { /* ignore */ } if (!scrollContainer) scrollContainer = document.querySelector('.appflowy-scroll-container'); const savedScrollTop = scrollContainer?.scrollTop; try { const response = await addPage(documentId, { layout: ViewLayout.Grid, name: t('document.plugins.database.newDatabase') }); turnInto(BlockType.GridBlock, createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId: response.database_id })); openPageModal(response.view_id); if (savedScrollTop !== undefined) { const restore = () => { let c: HTMLElement | null = scrollContainer?.isConnected ? scrollContainer : document.querySelector('.appflowy-scroll-container'); if (!c || Math.abs(c.scrollTop - savedScrollTop) <= 5) return; c.scrollTop = savedScrollTop; }; requestAnimationFrame(restore); [50, 250, 600, 1200, 1800].forEach(d => setTimeout(restore, d)); } } catch (e: any) { notify.error(e.message); } } },
-      { label: t('document.slashMenu.name.linkedGrid'), key: 'linkedGrid', icon: <GridIcon />, keywords: ['linked', 'grid', 'table', 'database'], onClick: () => { void handleOpenLinkedDatabasePicker(ViewLayout.Grid, 'linkedGrid'); } },
-      { label: t('document.slashMenu.name.kanban'), key: 'board', icon: <BoardIcon />, keywords: ['board', 'kanban', 'database'], onClick: async () => { if (!documentId || !addPage || !openPageModal) return; let scrollContainer: HTMLElement | null = null; try { const domNode = ReactEditor.toDOMNode(editor, editor); scrollContainer = domNode.closest('.appflowy-scroll-container'); } catch { /* ignore */ } if (!scrollContainer) scrollContainer = document.querySelector('.appflowy-scroll-container'); const savedScrollTop = scrollContainer?.scrollTop; try { const response = await addPage(documentId, { layout: ViewLayout.Board, name: t('document.plugins.database.newDatabase') }); turnInto(BlockType.BoardBlock, createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId: response.database_id })); openPageModal(response.view_id); if (savedScrollTop !== undefined) { const restore = () => { let c: HTMLElement | null = scrollContainer?.isConnected ? scrollContainer : document.querySelector('.appflowy-scroll-container'); if (!c || Math.abs(c.scrollTop - savedScrollTop) <= 5) return; c.scrollTop = savedScrollTop; }; requestAnimationFrame(restore); [50, 250, 600, 1200, 1800].forEach(d => setTimeout(restore, d)); } } catch (e: any) { notify.error(e.message); } } },
-      { label: t('document.slashMenu.name.linkedKanban'), key: 'linkedBoard', icon: <BoardIcon />, keywords: ['linked', 'board', 'kanban', 'database'], onClick: () => { void handleOpenLinkedDatabasePicker(ViewLayout.Board, 'linkedBoard'); } },
-      { label: t('document.slashMenu.name.calendar'), key: 'calendar', icon: <CalendarIcon />, keywords: ['calendar', 'date'], onClick: async () => { if (!documentId || !addPage || !openPageModal) return; try { const response = await addPage(documentId, { layout: ViewLayout.Calendar, name: t('document.plugins.database.newDatabase') }); turnInto(BlockType.CalendarBlock, createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId: response.database_id })); openPageModal(response.view_id); } catch (e: any) { notify.error(e.message); } } },
-      { label: t('document.slashMenu.name.linkedCalendar'), key: 'linkedCalendar', icon: <CalendarIcon />, keywords: ['linked', 'calendar', 'date'], onClick: () => { void handleOpenLinkedDatabasePicker(ViewLayout.Calendar, 'linkedCalendar'); } },
-      { label: t('document.slashMenu.name.callout'), key: 'callout', icon: <CalloutIcon />, keywords: ['callout'], onClick: () => { turnInto(BlockType.CalloutBlock, { icon: '📌' } as CalloutBlockData); } },
-      { label: t('document.slashMenu.name.outline'), key: 'outline', icon: <OutlineIcon />, keywords: ['outline', 'table', 'contents'], onClick: () => { turnInto(BlockType.OutlineBlock, {}); } },
-      { label: t('document.slashMenu.name.mathEquation'), key: 'math', icon: <FormulaIcon />, keywords: ['math', 'equation', 'formula'], onClick: () => { turnInto(BlockType.EquationBlock, {}); } },
-      { label: t('document.slashMenu.name.code'), key: 'code', icon: <CodeIcon />, keywords: ['code', 'block'], onClick: () => { turnInto(BlockType.CodeBlock, {}); } },
-      { label: t('document.slashMenu.name.toggleList'), key: 'toggleList', icon: <ToggleListIcon />, keywords: ['toggle', 'list'], onClick: () => { turnInto(BlockType.ToggleListBlock, { collapsed: false } as ToggleListBlockData); } },
-      { label: t('document.slashMenu.name.toggleHeading1'), key: 'toggleHeading1', icon: <ToggleHeading1Icon />, keywords: ['toggle', 'heading1', 'h1', 'heading'], onClick: () => { turnInto(BlockType.ToggleListBlock, { collapsed: false, level: 1 } as ToggleListBlockData); } },
-      { label: t('document.slashMenu.name.toggleHeading2'), key: 'toggleHeading2', icon: <ToggleHeading2Icon />, keywords: ['toggle', 'heading2', 'h2', 'subheading', 'heading'], onClick: () => { turnInto(BlockType.ToggleListBlock, { collapsed: false, level: 2 } as ToggleListBlockData); } },
-      { label: t('document.slashMenu.name.toggleHeading3'), key: 'toggleHeading3', icon: <ToggleHeading3Icon />, keywords: ['toggle', 'heading3', 'h3', 'subheading', 'heading'], onClick: () => { turnInto(BlockType.ToggleListBlock, { collapsed: false, level: 3 } as ToggleListBlockData); } },
-      { label: t('document.slashMenu.name.emoji'), key: 'emoji', icon: <EmojiIcon />, keywords: ['emoji'], onClick: () => { setTimeout(() => { const rect = getRangeRect(); if (!rect) return; setEmojiPosition({ top: rect.top, left: rect.left }); }, 50); } },
-      { label: t('document.slashMenu.name.file'), key: 'file', icon: <FileIcon />, keywords: ['file', 'upload'], onClick: () => { turnInto(BlockType.FileBlock, {}); } },
+      { label: t('document.slashMenu.name.askAIAnything'), key: 'askAIAnything', icon: ICONS.askAI, keywords: ['ai', 'writer', 'ask', 'anything', 'askAIAnything', 'askai'], onClick: () => { askAIAnything(getBeforeContent()); } },
+      { label: t('document.slashMenu.name.continueWriting'), key: 'continueWriting', disabled: chars < 2, icon: ICONS.continueWriting, keywords: ['ai', 'writing', 'continue'], onClick: () => { void continueWriting(getBeforeContent()); } },
+      { label: t('document.slashMenu.name.text'), key: 'text', icon: ICONS.text, keywords: ['text', 'paragraph'], onClick: () => { turnInto(BlockType.Paragraph, {}); } },
+      { label: t('document.slashMenu.name.heading1'), key: 'heading1', icon: ICONS.heading1, keywords: ['heading1', 'h1', 'heading'], onClick: () => { turnInto(BlockType.HeadingBlock, { level: 1 } as HeadingBlockData); } },
+      { label: t('document.slashMenu.name.heading2'), key: 'heading2', icon: ICONS.heading2, keywords: ['heading2', 'h2', 'subheading', 'heading'], onClick: () => { turnInto(BlockType.HeadingBlock, { level: 2 } as HeadingBlockData); } },
+      { label: t('document.slashMenu.name.heading3'), key: 'heading3', icon: ICONS.heading3, keywords: ['heading3', 'h3', 'subheading', 'heading'], onClick: () => { turnInto(BlockType.HeadingBlock, { level: 3 } as HeadingBlockData); } },
+      { label: t('document.slashMenu.name.image'), key: 'image', icon: ICONS.image, keywords: ['image', 'img'], onClick: () => { turnInto(BlockType.ImageBlock, { url: '', align: AlignType.Center } as ImageBlockData); } },
+      { label: t('embedVideo'), key: 'video', icon: ICONS.video, keywords: ['video', 'youtube', 'embed'], onClick: () => { turnInto(BlockType.VideoBlock, { url: '', align: AlignType.Center } as VideoBlockData); } },
+      { label: t('document.slashMenu.name.bulletedList'), key: 'bulletedList', icon: ICONS.bulletedList, keywords: ['bulleted', 'list'], onClick: () => { turnInto(BlockType.BulletedListBlock, {}); } },
+      { label: t('document.slashMenu.name.numberedList'), key: 'numberedList', icon: ICONS.numberedList, keywords: ['numbered', 'list'], onClick: () => { turnInto(BlockType.NumberedListBlock, {}); } },
+      { label: t('document.slashMenu.name.todoList'), key: 'todoList', icon: ICONS.todoList, keywords: ['todo', 'list'], onClick: () => { turnInto(BlockType.TodoListBlock, {}); } },
+      { label: t('document.slashMenu.name.divider'), key: 'divider', icon: ICONS.divider, keywords: ['divider', 'line'], onClick: () => { turnInto(BlockType.DividerBlock, {}); } },
+      { label: t('document.slashMenu.name.quote'), key: 'quote', icon: ICONS.quote, keywords: ['quote'], onClick: () => { turnInto(BlockType.QuoteBlock, {}); } },
+      { label: t('document.slashMenu.name.linkedDoc'), key: 'linkedDoc', icon: ICONS.linkedDoc, keywords: ['linked', 'doc', 'page', 'document'], onClick: () => { const rect = getRangeRect(); if (!rect) return; openPanel(PanelType.PageReference, { top: rect.top, left: rect.left }); } },
+      { label: t('document.menuName'), key: 'document', icon: ICONS.document, keywords: ['document', 'doc', 'page', 'create', 'add'], onClick: async () => { if (!documentId || !addPage || !openPageModal) return; try { const response = await addPage(documentId, { layout: ViewLayout.Document }); turnInto(BlockType.SubpageBlock, { view_id: response.view_id } as SubpageNodeData); openPageModal(response.view_id); } catch (e: any) { notify.error(e.message); } } },
+      { label: t('document.slashMenu.name.grid'), key: 'grid', icon: ICONS.grid, keywords: ['grid', 'table', 'database'], onClick: async () => { if (!documentId || !addPage || !openPageModal) return; let scrollContainer: HTMLElement | null = null; try { const domNode = ReactEditor.toDOMNode(editor, editor); scrollContainer = domNode.closest('.appflowy-scroll-container'); } catch (e) { /* ignore */ } if (!scrollContainer) scrollContainer = document.querySelector('.appflowy-scroll-container'); const savedScrollTop = scrollContainer?.scrollTop; try { const response = await addPage(documentId, { layout: ViewLayout.Grid, name: t('document.plugins.database.newDatabase') }); turnInto(BlockType.GridBlock, createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId: response.database_id })); openPageModal(response.view_id); if (savedScrollTop !== undefined) { const restore = () => { let c: HTMLElement | null = scrollContainer?.isConnected ? scrollContainer : document.querySelector('.appflowy-scroll-container'); if (!c || Math.abs(c.scrollTop - savedScrollTop) <= 5) return; c.scrollTop = savedScrollTop; }; requestAnimationFrame(restore); [50, 250, 600, 1200, 1800].forEach(d => setTimeout(restore, d)); } } catch (e: any) { notify.error(e.message); } } },
+      { label: t('document.slashMenu.name.linkedGrid'), key: 'linkedGrid', icon: ICONS.grid, keywords: ['linked', 'grid', 'table', 'database'], onClick: () => { void handleOpenLinkedDatabasePicker(ViewLayout.Grid, 'linkedGrid'); } },
+      { label: t('document.slashMenu.name.kanban'), key: 'board', icon: ICONS.board, keywords: ['board', 'kanban', 'database'], onClick: async () => { if (!documentId || !addPage || !openPageModal) return; let scrollContainer: HTMLElement | null = null; try { const domNode = ReactEditor.toDOMNode(editor, editor); scrollContainer = domNode.closest('.appflowy-scroll-container'); } catch { /* ignore */ } if (!scrollContainer) scrollContainer = document.querySelector('.appflowy-scroll-container'); const savedScrollTop = scrollContainer?.scrollTop; try { const response = await addPage(documentId, { layout: ViewLayout.Board, name: t('document.plugins.database.newDatabase') }); turnInto(BlockType.BoardBlock, createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId: response.database_id })); openPageModal(response.view_id); if (savedScrollTop !== undefined) { const restore = () => { let c: HTMLElement | null = scrollContainer?.isConnected ? scrollContainer : document.querySelector('.appflowy-scroll-container'); if (!c || Math.abs(c.scrollTop - savedScrollTop) <= 5) return; c.scrollTop = savedScrollTop; }; requestAnimationFrame(restore); [50, 250, 600, 1200, 1800].forEach(d => setTimeout(restore, d)); } } catch (e: any) { notify.error(e.message); } } },
+      { label: t('document.slashMenu.name.linkedKanban'), key: 'linkedBoard', icon: ICONS.board, keywords: ['linked', 'board', 'kanban', 'database'], onClick: () => { void handleOpenLinkedDatabasePicker(ViewLayout.Board, 'linkedBoard'); } },
+      { label: t('document.slashMenu.name.calendar'), key: 'calendar', icon: ICONS.calendar, keywords: ['calendar', 'date'], onClick: async () => { if (!documentId || !addPage || !openPageModal) return; try { const response = await addPage(documentId, { layout: ViewLayout.Calendar, name: t('document.plugins.database.newDatabase') }); turnInto(BlockType.CalendarBlock, createDatabaseNodeData({ parentId: documentId, viewIds: [response.view_id], databaseId: response.database_id })); openPageModal(response.view_id); } catch (e: any) { notify.error(e.message); } } },
+      { label: t('document.slashMenu.name.linkedCalendar'), key: 'linkedCalendar', icon: ICONS.calendar, keywords: ['linked', 'calendar', 'date'], onClick: () => { void handleOpenLinkedDatabasePicker(ViewLayout.Calendar, 'linkedCalendar'); } },
+      { label: t('document.slashMenu.name.callout'), key: 'callout', icon: ICONS.callout, keywords: ['callout'], onClick: () => { turnInto(BlockType.CalloutBlock, { icon: '📌' } as CalloutBlockData); } },
+      { label: t('document.slashMenu.name.outline'), key: 'outline', icon: ICONS.outline, keywords: ['outline', 'table', 'contents'], onClick: () => { turnInto(BlockType.OutlineBlock, {}); } },
+      { label: t('document.slashMenu.name.mathEquation'), key: 'math', icon: ICONS.math, keywords: ['math', 'equation', 'formula'], onClick: () => { turnInto(BlockType.EquationBlock, {}); } },
+      { label: t('document.slashMenu.name.code'), key: 'code', icon: ICONS.code, keywords: ['code', 'block'], onClick: () => { turnInto(BlockType.CodeBlock, {}); } },
+      { label: t('document.slashMenu.name.toggleList'), key: 'toggleList', icon: ICONS.toggleList, keywords: ['toggle', 'list'], onClick: () => { turnInto(BlockType.ToggleListBlock, { collapsed: false } as ToggleListBlockData); } },
+      { label: t('document.slashMenu.name.toggleHeading1'), key: 'toggleHeading1', icon: ICONS.toggleHeading1, keywords: ['toggle', 'heading1', 'h1', 'heading'], onClick: () => { turnInto(BlockType.ToggleListBlock, { collapsed: false, level: 1 } as ToggleListBlockData); } },
+      { label: t('document.slashMenu.name.toggleHeading2'), key: 'toggleHeading2', icon: ICONS.toggleHeading2, keywords: ['toggle', 'heading2', 'h2', 'subheading', 'heading'], onClick: () => { turnInto(BlockType.ToggleListBlock, { collapsed: false, level: 2 } as ToggleListBlockData); } },
+      { label: t('document.slashMenu.name.toggleHeading3'), key: 'toggleHeading3', icon: ICONS.toggleHeading3, keywords: ['toggle', 'heading3', 'h3', 'subheading', 'heading'], onClick: () => { turnInto(BlockType.ToggleListBlock, { collapsed: false, level: 3 } as ToggleListBlockData); } },
+      { label: t('document.slashMenu.name.emoji'), key: 'emoji', icon: ICONS.emoji, keywords: ['emoji'], onClick: () => { setTimeout(() => { const rect = getRangeRect(); if (!rect) return; setEmojiPosition({ top: rect.top, left: rect.left }); }, 50); } },
+      { label: t('document.slashMenu.name.file'), key: 'file', icon: ICONS.file, keywords: ['file', 'upload'], onClick: () => { turnInto(BlockType.FileBlock, {}); } },
     ].filter((option) => {
       if (option.disabled) return false;
       if (!searchText) return true;
