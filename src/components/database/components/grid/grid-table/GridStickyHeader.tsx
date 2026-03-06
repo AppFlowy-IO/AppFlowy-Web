@@ -1,5 +1,5 @@
 import { VirtualItem } from '@tanstack/react-virtual';
-import React, { forwardRef } from 'react';
+import React, { forwardRef, memo } from 'react';
 
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
@@ -56,4 +56,4 @@ const GridStickyHeader = forwardRef<HTMLDivElement, {
   );
 });
 
-export default GridStickyHeader;
+export default memo(GridStickyHeader);

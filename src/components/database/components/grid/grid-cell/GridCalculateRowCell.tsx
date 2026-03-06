@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useDatabaseView, useFieldCellsSelector, useReadOnly } from '@/application/database-yjs';
@@ -14,7 +14,7 @@ export interface GridCalculateRowCellProps {
   fieldId: string;
 }
 
-export function GridCalculateRowCell ({ fieldId }: GridCalculateRowCellProps) {
+export const GridCalculateRowCell = memo(function GridCalculateRowCell ({ fieldId }: GridCalculateRowCellProps) {
   const databaseView = useDatabaseView();
   const [calculation, setCalculation] = useState<ICalculationCell>();
   const readOnly = useReadOnly();
@@ -103,5 +103,7 @@ export function GridCalculateRowCell ({ fieldId }: GridCalculateRowCellProps) {
 
   </>;
 }
+
+});
 
 export default GridCalculateRowCell;

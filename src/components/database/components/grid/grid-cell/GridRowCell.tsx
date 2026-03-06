@@ -18,7 +18,7 @@ export interface GridCellProps {
   rowIndex: number;
 }
 
-export function GridRowCell({ rowId, fieldId }: GridCellProps) {
+export const GridRowCell = React.memo(function GridRowCell({ rowId, fieldId }: GridCellProps) {
   const ref = useRef<HTMLDivElement>(null);
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type));
@@ -137,5 +137,7 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
     </div>
   );
 }
+
+});
 
 export default GridRowCell;

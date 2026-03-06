@@ -1,10 +1,12 @@
 
+import { memo, useMemo } from 'react';
+
 import { Row, useReadOnly } from '@/application/database-yjs';
 import ColumnHeaderPrimitive from '@/components/database/components/board/column/ColumnHeaderPrimitive';
 import { useColumnHeaderDrag, StateType } from '@/components/database/components/board/column/useColumnHeaderDrag';
 import { DropColumnIndicator } from '@/components/database/components/board/drag-and-drop/DropColumnIndicator';
 
-function ColumnHeader ({
+const ColumnHeader = memo(function ColumnHeader ({
   id,
   fieldId,
   rowCount,
@@ -27,14 +29,21 @@ function ColumnHeader ({
   } = useColumnHeaderDrag(id);
   const readOnly = useReadOnly();
 
+  // Memoize style objects to prevent new object references on every render
+  const columnStyle = useMemo(() => ({
+    opacity: isDragging ? 0.4 : 1,
+    pointerEvents: isDragging ? 'none' as const : undefined,
+  }), [isDragging]);
+
+  const headerStyle = useMemo(() => ({
+    cursor: readOnly ? 'default' : isDragging ? 'grabbing' : 'grab',
+  }), [readOnly, isDragging]);
+
   return (
     <div
       ref={columnRef}
       key={id}
-      style={{
-        opacity: isDragging ? 0.4 : 1,
-        pointerEvents: isDragging ? 'none' : undefined,
-      }}
+      style={columnStyle}
       className="flex relative items-center flex-col rounded-[8px] pb-0 min-w-[256px] w-[256px] pt-2 h-full"
     >
       <ColumnHeaderPrimitive
@@ -43,9 +52,7 @@ function ColumnHeader ({
         id={id}
         fieldId={fieldId}
         rowCount={rowCount}
-        style={{
-          cursor: readOnly ? 'default' : isDragging ? 'grabbing' : 'grab',
-        }}
+        style={headerStyle}
         getCards={getCards}
         groupId={groupId}
       />
@@ -54,6 +61,6 @@ function ColumnHeader ({
       )}
     </div>
   );
-}
+});
 
 export default ColumnHeader;
