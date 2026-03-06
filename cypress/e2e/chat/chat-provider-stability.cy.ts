@@ -107,10 +107,14 @@ describe('Chat Provider Stability', () => {
     cy.get('textarea').first().should('exist').and('be.visible');
 
     // Format controls should still work
-    ChatSelectors.formatToggle({ timeout: 10000 }).should('be.visible').click();
-    ChatSelectors.formatGroup().should('exist');
-    ChatSelectors.formatToggle().click();
+    // Default responseMode is FormatResponse, so FormatGroup starts visible
+    ChatSelectors.formatGroup({ timeout: 10000 }).should('exist');
+    // Clicking toggle switches to Auto mode, hiding FormatGroup
+    ChatSelectors.formatToggle().should('be.visible').click();
     ChatSelectors.formatGroup().should('not.exist');
+    // Clicking again switches back to FormatResponse, showing FormatGroup
+    ChatSelectors.formatToggle().click();
+    ChatSelectors.formatGroup().should('exist');
   });
 
   it('should handle rapid chat navigation without unmount errors', () => {
