@@ -10,7 +10,7 @@ import { ReactComponent as BadgeAtIcon } from '@/assets/icons/notification_icon_
 import { ReactComponent as BadgeBellIcon } from '@/assets/icons/notification_bell.svg';
 import { ReactComponent as BadgeReminderIcon } from '@/assets/icons/notification_reminder_badge.svg';
 import { ReactComponent as ReminderClockIcon } from '@/assets/icons/reminder_clock.svg';
-import { useAppHandlers } from '@/components/app/app.hooks';
+import { useToView } from '@/components/app/app.hooks';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
@@ -194,7 +194,7 @@ function GenericContent({ notification }: { notification: Notification }) {
 // ---------------------------------------------------------------------------
 function NotificationItem({ notification, tab, onMarkRead, onArchive, onClose }: NotificationItemProps) {
   const { t } = useTranslation();
-  const { toView } = useAppHandlers();
+  const toView = useToView();
   const actionInFlightRef = useRef(false);
 
   const blockId = notification.metadata.block_id as string | undefined;

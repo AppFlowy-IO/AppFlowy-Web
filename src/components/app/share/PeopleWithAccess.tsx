@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { APP_EVENTS } from '@/application/constants';
 import { AccessLevel, IPeopleWithAccessType, Role } from '@/application/types';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useEventEmitter, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { AccessService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Label } from '@/components/ui/label';
@@ -25,7 +25,7 @@ export function PeopleWithAccess({ viewId, people, onPeopleChange, isLoading }: 
 
   const currentWorkspaceId = useCurrentWorkspaceId();
   const navigate = useNavigate();
-  const { eventEmitter } = useAppHandlers();
+  const eventEmitter = useEventEmitter();
   const handleAccessLevelChange = useCallback(
     async (personEmail: string, newAccessLevel: AccessLevel) => {
       if (!currentWorkspaceId) return;

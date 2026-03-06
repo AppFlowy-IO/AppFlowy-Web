@@ -2,7 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import { memo, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 import { PADDING_END } from '@/application/database-yjs';
-import { useBoardContext } from '@/components/database/board/BoardProvider';
+import { useBoardActions, useBoardSelection } from '@/components/database/board/BoardProvider';
 import { Card } from '@/components/database/components/board/card';
 import { cn } from '@/lib/utils';
 
@@ -29,7 +29,8 @@ function CardList({
 }) {
   const parentRef = useRef<HTMLDivElement>(null);
   const parentOffsetRef = useRef(0);
-  const { creatingColumnId, setCreatingColumnId } = useBoardContext();
+  const { creatingColumnId } = useBoardSelection();
+  const { setCreatingColumnId } = useBoardActions();
 
   const isCreating = useMemo(() => {
     return creatingColumnId === columnId;

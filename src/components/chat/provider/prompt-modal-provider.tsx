@@ -21,10 +21,15 @@ import {
 
 const STORAGE_KEY = 'appflowy_prompt_db_config';
 
+let cachedBuiltInPrompts: AiPrompt[] | null = null;
+
 function getBuiltInPrompts(): AiPrompt[] {
+  if (cachedBuiltInPrompts) return cachedBuiltInPrompts;
+
   try {
     if (Array.isArray(promptsData.prompts)) {
-      return parsePromptData(promptsData.prompts);
+      cachedBuiltInPrompts = parsePromptData(promptsData.prompts);
+      return cachedBuiltInPrompts;
     }
 
     throw new Error(

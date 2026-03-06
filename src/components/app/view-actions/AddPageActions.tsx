@@ -4,13 +4,15 @@ import { toast } from 'sonner';
 
 import { View, ViewLayout } from '@/application/types';
 import { ViewIcon } from '@/components/_shared/view-icon';
-import { useAppHandlers } from '@/components/app/app.hooks';
+import { useAppOperations, useOpenPageModal, useToView } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 function AddPageActions({ view }: { view: View }) {
   const { t } = useTranslation();
-  const { addPage, openPageModal, toView } = useAppHandlers();
+  const { addPage } = useAppOperations();
+  const openPageModal = useOpenPageModal();
+  const toView = useToView();
 
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {

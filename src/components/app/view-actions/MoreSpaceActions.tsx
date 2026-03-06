@@ -9,7 +9,7 @@ import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { PageService } from '@/application/services/domains';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useRefreshOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
 import { Progress } from '@/components/ui/progress';
 
@@ -28,9 +28,7 @@ function MoreSpaceActions({
   } = useAppOverlayContext();
   const workspaceId = useCurrentWorkspaceId();
   const [duplicateLoading, setDuplicateLoading] = useState(false);
-  const {
-    refreshOutline,
-  } = useAppHandlers();
+  const refreshOutline = useRefreshOutline();
 
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId) return;

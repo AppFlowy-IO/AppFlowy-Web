@@ -12,7 +12,17 @@ import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/full_screen.svg';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
-import { useAppHandlers, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import {
+  useAppOperations,
+  useAppOutline,
+  useCurrentWorkspaceId,
+  useEventEmitter,
+  useGetMentionUser,
+  useLoadDatabaseRelations,
+  useLoadViews,
+  useOpenPageModal,
+  useScheduleDeferredCleanup,
+} from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
 import { useViewOperations } from '@/components/app/hooks/useViewOperations';
@@ -48,6 +58,7 @@ interface FallbackViewMeta {
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
   const workspaceId = useCurrentWorkspaceId();
   const { t } = useTranslation();
+  const operations = useAppOperations();
   const {
     toView,
     loadViewMeta,
@@ -57,13 +68,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
-    eventEmitter,
-    ...handlers
-  } = useAppHandlers();
+  } = operations;
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
+  const eventEmitter = useEventEmitter();
+  const getMentionUser = useGetMentionUser();
+  const loadDatabaseRelations = useLoadDatabaseRelations();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
 
   const outline = useAppOutline();
   const requestInstance = getAxiosInstance();
@@ -354,7 +367,22 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         onWordCountChange={setWordCount}
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
-        {...handlers}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
+        getSubscriptions={operations.getSubscriptions}
+        getMentionUser={getMentionUser}
+        eventEmitter={eventEmitter}
+        getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
+        loadDatabaseRelations={loadDatabaseRelations}
+        createDatabaseView={operations.createDatabaseView}
+        loadDatabasePrompts={operations.loadDatabasePrompts}
+        testDatabasePromptConfig={operations.testDatabasePromptConfig}
+        checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
+        loadRowDocument={operations.loadRowDocument}
+        createRowDocument={operations.createRowDocument}
+        updatePageIcon={operations.updatePageIcon}
+        updatePageName={operations.updatePageName}
+        generateAISummaryForRow={operations.generateAISummaryForRow}
+        generateAITranslateForRow={operations.generateAITranslateForRow}
       />
     );
   }, [
@@ -376,7 +404,11 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     loadViews,
     setWordCount,
     handleUploadFile,
-    handlers,
+    scheduleDeferredCleanup,
+    operations,
+    getMentionUser,
+    eventEmitter,
+    loadDatabaseRelations,
   ]);
 
   const currentUser = useCurrentUser();

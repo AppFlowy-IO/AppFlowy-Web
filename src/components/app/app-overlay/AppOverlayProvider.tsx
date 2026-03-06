@@ -3,7 +3,7 @@ import React, { useCallback, useMemo, useState } from 'react';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import { AppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
+import { useAppOperations, useAppOutline } from '@/components/app/app.hooks';
 import CreateSpaceModal from '@/components/app/view-actions/CreateSpaceModal';
 import DeletePageConfirm from '@/components/app/view-actions/DeletePageConfirm';
 import DeleteSpaceConfirm from '@/components/app/view-actions/DeleteSpaceConfirm';
@@ -21,7 +21,7 @@ export function AppOverlayProvider ({
   const [createSpaceModalOpen, setCreateSpaceModalOpen] = useState(false);
   const [deleteSpaceId, setDeleteSpaceId] = useState<string | null>(null);
   const [blockingLoaderMessage, setBlockingLoaderMessage] = useState<string | null>(null);
-  const { updatePage } = useAppHandlers();
+  const { updatePage } = useAppOperations();
 
   const showBlockingLoader = useCallback((message?: string) => {
     setBlockingLoaderMessage(message || 'Loading...');

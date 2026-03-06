@@ -8,7 +8,7 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { findAncestors } from '@/components/_shared/outline/utils';
 import { RichTooltip } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
+import { useAppOutline, useToView } from '@/components/app/app.hooks';
 
 function ListItem({
   selectedView,
@@ -24,7 +24,7 @@ function ListItem({
   const { t } = useTranslation();
   const outline = useAppOutline();
   const [open, setOpen] = useState<boolean>(false);
-  const toView = useAppHandlers().toView;
+  const toView = useToView();
 
   const ancestors = useMemo(() => {
     if (!outline) return [];

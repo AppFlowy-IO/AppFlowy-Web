@@ -1,16 +1,16 @@
 import { Tooltip } from '@mui/material';
-import React, { memo, useContext, useMemo } from 'react';
+import React, { memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Reaction as ReactionType } from '@/application/comment.type';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useCurrentUserOptional, useIsAuthenticatedOptional, useOpenLoginModalOptional } from '@/components/main/app.hooks';
 import { isFlagEmoji } from '@/utils/emoji';
 import { getPlatform } from '@/utils/platform';
 
 function Reaction({ reaction, onClick }: { reaction: ReactionType; onClick: (reaction: ReactionType) => void }) {
   const { t } = useTranslation();
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated;
-  const openLoginModal = useContext(AFConfigContext)?.openLoginModal;
+  const isAuthenticated = useIsAuthenticatedOptional();
+  const openLoginModal = useOpenLoginModalOptional();
   const url = window.location.href + '#comment-' + reaction.commentId;
   const reactCount = useMemo(() => {
     return reaction.reactUsers.length;
@@ -31,7 +31,7 @@ function Reaction({ reaction, onClick }: { reaction: ReactionType; onClick: (rea
         .join(', ') + suffix
     );
   }, [reaction.reactUsers, t, reactCount]);
-  const currentUser = useContext(AFConfigContext)?.currentUser;
+  const currentUser = useCurrentUserOptional();
   const currentUid = currentUser?.uuid;
 
   const isCurrentUserReacted = useMemo(() => {

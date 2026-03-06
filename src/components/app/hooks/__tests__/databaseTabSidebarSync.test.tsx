@@ -32,7 +32,7 @@ jest.mock('@/components/app/app.hooks', () => {
         tabViewId: global.__tabViewId,
         outline: global.__outline,
       }),
-    useAppHandlers: () => ({
+    useAppOperations: () => ({
       updatePage: jest.fn(),
       uploadFile: jest.fn(),
     }),

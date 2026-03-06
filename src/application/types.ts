@@ -1,3 +1,5 @@
+import EventEmitter from 'events';
+
 import { AxiosInstance } from 'axios';
 import * as Y from 'yjs';
 
@@ -1320,6 +1322,10 @@ export interface ViewComponentProps {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
+  getSubscriptions?: () => Promise<Subscription[]>;
+  eventEmitter?: EventEmitter;
+  getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
+  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
 }
 
 export interface CreatePagePayload {

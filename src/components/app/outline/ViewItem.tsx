@@ -12,7 +12,7 @@ import {
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppHandlers, useSidebarSelectedViewId } from '@/components/app/app.hooks';
+import { useAppOperations, useSidebarSelectedViewId } from '@/components/app/app.hooks';
 
 function ViewItem({
   view,
@@ -43,7 +43,7 @@ function ViewItem({
   const selected =
     selectedViewId === viewId ||
     (isDatabaseContainer(view) && Boolean(view.children?.some((child) => child.view_id === selectedViewId)));
-  const { updatePage, uploadFile } = useAppHandlers();
+  const { updatePage, uploadFile } = useAppOperations();
 
   const isExpanded = expandIds.includes(viewId);
   const [hovered, setHovered] = React.useState<boolean>(false);

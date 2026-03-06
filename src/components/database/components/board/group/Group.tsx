@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { PADDING_END, useDatabaseContext, useReadOnly, useRowOrdersSelector, useRowsByGroup } from '@/application/database-yjs';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch';
-import { useBoardContext } from '@/components/database/board/BoardProvider';
+import { useBoardActions } from '@/components/database/board/BoardProvider';
 import { BoardDragContext } from '@/components/database/components/board/drag-and-drop/board-context';
 import { useColumnsDrag } from '@/components/database/components/board/drag-and-drop/useColumnsDrag';
 import Columns from '@/components/database/components/board/group/Columns';
@@ -140,7 +140,7 @@ export const Group = ({ groupId }: GroupProps) => {
     [groupResult]
   );
   const onNewCard = useNewRowDispatch();
-  const { setEditingCardId, setSelectedCardIds } = useBoardContext();
+  const { setEditingCardId, setSelectedCardIds } = useBoardActions();
   const [element, setElement] = useState<HTMLElement | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const deleteRowIdsRef = useRef<string[]>([]);

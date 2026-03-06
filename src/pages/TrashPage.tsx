@@ -14,7 +14,7 @@ import { ReactComponent as RestoreIcon } from '@/assets/icons/restore.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import TableSkeleton from '@/components/_shared/skeleton/TableSkeleton';
-import { useAppHandlers, useAppTrash, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useAppTrash, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 
 function TrashPage() {
   const { t } = useTranslation();
@@ -25,7 +25,7 @@ function TrashPage() {
   const deleteView = useMemo(() => {
     return trashList?.find((view) => view.view_id === deleteViewId);
   }, [deleteViewId, trashList]);
-  const { deleteTrash, restorePage } = useAppHandlers();
+  const { deleteTrash, restorePage } = useAppOperations();
 
   const handleRestore = useCallback(
     async (viewId?: string) => {

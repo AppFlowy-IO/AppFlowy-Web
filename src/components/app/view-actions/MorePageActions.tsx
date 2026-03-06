@@ -8,7 +8,7 @@ import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as OpenIcon } from '@/assets/icons/open.svg';
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import MoreActionsContent from '@/components/app/header/MoreActionsContent';
 import {
   DropdownMenuGroup,
@@ -31,7 +31,7 @@ function MorePageActions({ view, onClose }: {
   const {
     updatePage,
     uploadFile,
-  } = useAppHandlers();
+  } = useAppOperations();
   const { t } = useTranslation();
 
   const viewId = view.view_id;

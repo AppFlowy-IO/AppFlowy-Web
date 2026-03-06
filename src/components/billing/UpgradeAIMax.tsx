@@ -7,7 +7,7 @@ import { SubscriptionInterval, SubscriptionPlan } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { BillingService } from '@/application/services/domains';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useGetSubscriptions, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 
 function UpgradeAIMax({ open, onClose, onOpen }: { open: boolean; onClose: () => void; onOpen: () => void }) {
   const { t } = useTranslation();
@@ -15,7 +15,7 @@ function UpgradeAIMax({ open, onClose, onOpen }: { open: boolean; onClose: () =>
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [cancelLoading, setCancelLoading] = React.useState(false);
   const [cancelOpen, setCancelOpen] = React.useState(false);
-  const { getSubscriptions } = useAppHandlers();
+  const getSubscriptions = useGetSubscriptions();
 
   const [search, setSearch] = useSearchParams();
   const action = search.get('action');

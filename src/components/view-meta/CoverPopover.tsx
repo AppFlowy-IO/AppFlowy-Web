@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { CoverType, ViewMetaCover } from '@/application/types';
 import { EmbedLink, TAB_KEY, TabOption, Unsplash, UploadImage, UploadPopover } from '@/components/_shared/image-upload';
-import { useAppHandlers, useAppViewId, useOpenModalViewId } from '@/components/app/app.hooks';
+import { useAppOperations, useAppViewId, useOpenModalViewId } from '@/components/app/app.hooks';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { GradientEnum } from '@/utils/color';
 
@@ -23,7 +23,7 @@ function CoverPopover({
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
-  const { uploadFile, getSubscriptions } = useAppHandlers();
+  const { uploadFile, getSubscriptions } = useAppOperations();
   const appViewId = useAppViewId();
   const modalViewId = useOpenModalViewId();
   const viewId = modalViewId || appViewId;

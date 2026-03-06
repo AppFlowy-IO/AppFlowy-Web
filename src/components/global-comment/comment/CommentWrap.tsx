@@ -1,10 +1,10 @@
-import React, { useCallback, useContext, useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 import CommentActions from '@/components/global-comment/actions/CommentActions';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 import ReplyComment from '@/components/global-comment/ReplyComment';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 import Comment from './Comment';
 
@@ -19,7 +19,7 @@ export function CommentWrap({ commentId, isHighLight, isHovered, onHovered }: Co
   const { getComment, setHighLightCommentId } = useGlobalCommentContext();
   const comment = useMemo(() => getComment(commentId), [commentId, getComment]);
   const ref = React.useRef<HTMLDivElement>(null);
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated;
+  const isAuthenticated = useIsAuthenticatedOptional();
 
   useEffect(() => {
     const hashHasComment = window.location.hash.includes(`#comment-${commentId}`);

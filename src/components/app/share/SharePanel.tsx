@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AccessLevel, IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { findAncestors } from '@/components/_shared/outline/utils';
-import { useAppHandlers, useAppOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useLoadMentionableUsers, useGetSubscriptions, useAppOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { CopyLink } from '@/components/app/share/CopyLink';
 import { GeneralAccess } from '@/components/app/share/GeneralAccess';
 import { InviteGuest } from '@/components/app/share/InviteGuest';
@@ -19,7 +19,7 @@ function SharePanel({ viewId }: { viewId: string }) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
   const role = selectedWorkspace?.role;
-  const { loadMentionableUsers } = useAppHandlers();
+  const loadMentionableUsers = useLoadMentionableUsers();
   const [people, setPeople] = useState<IPeopleWithAccessType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [mentionable, setMentionable] = useState<MentionablePerson[]>([]);
@@ -99,7 +99,7 @@ function SharePanel({ viewId }: { viewId: string }) {
     }
   }, [loadPeople, loadMentionableData]);
 
-  const { getSubscriptions } = useAppHandlers();
+  const getSubscriptions = useGetSubscriptions();
 
   const [activeSubscriptionPlan, setActiveSubscriptionPaln] = useState<SubscriptionPlan | null>(null);
 

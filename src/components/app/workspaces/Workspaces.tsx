@@ -16,7 +16,7 @@ import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import Import from '@/components/_shared/more-actions/importer/Import';
 import { notify } from '@/components/_shared/notify';
-import { useAppHandlers, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
@@ -61,7 +61,7 @@ export function Workspaces() {
     navigate('/login?force=true');
   }, [navigate]);
 
-  const { onChangeWorkspace: handleSelectedWorkspace } = useAppHandlers();
+  const { onChangeWorkspace: handleSelectedWorkspace } = useAppOperations();
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | undefined>(undefined);
   const [openInviteMember, setOpenInviteMember] = useState(false);
   const [openCreateWorkspace, setOpenCreateWorkspace] = useState(false);

@@ -12,7 +12,7 @@ import { ReactComponent as SettingIcon } from '@/assets/icons/settings.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppHandlers, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useToView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { PublishNameSetting } from '@/components/app/publish-manage/PublishNameSetting';
 import { PublishService } from '@/application/services/domains';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -30,7 +30,7 @@ function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
   const [openSetting, setOpenSetting] = React.useState<boolean>(false);
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [publishName, setPublishName] = React.useState<string>(view.publish_name || '');
-  const toView = useAppHandlers().toView;
+  const toView = useToView();
   const [unPublishLoading, setUnPublishLoading] = React.useState<boolean>(false);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();

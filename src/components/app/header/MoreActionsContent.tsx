@@ -11,7 +11,7 @@ import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
 import { ViewService, PageService } from '@/application/services/domains';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId, useLoadViewChildren } from '@/components/app/app.hooks';
+import { useRefreshOutline, useAppOutline, useAppView, useCurrentWorkspaceId, useLoadViewChildren } from '@/components/app/app.hooks';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
@@ -44,9 +44,7 @@ function MoreActionsContent({
     return findView(outline, parentViewId) ?? null;
   }, [outline, parentViewId]);
 
-  const {
-    refreshOutline,
-  } = useAppHandlers();
+  const refreshOutline = useRefreshOutline();
   const loadViewChildren = useLoadViewChildren();
   const { syncAllToServer } = useSyncInternal();
   const handleDuplicateClick = useCallback(async () => {
