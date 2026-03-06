@@ -1,9 +1,11 @@
 import * as awarenessProtocol from 'y-protocols/awareness';
-import { validate as uuidValidate } from 'uuid';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
+
+const UUID_REGEX =
+  /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
 
 export type SyncDocMeta = {
   object_id?: string;
@@ -75,10 +77,14 @@ export type SyncContextType = {
 };
 
 export const isCollabVersionId = (value: string | null | undefined): value is string => {
-  return typeof value === 'string' && uuidValidate(value);
+  return typeof value === 'string' && UUID_REGEX.test(value);
 };
 
 export const versionChanged = (context: SyncContext, message: collab.ICollabMessage): boolean => {
+  if (!message.update && !message.syncRequest) {
+    return false; // we only detect version changes for these two message types
+  }
+
   const incomingVersion = message.update?.version || message.syncRequest?.version || null;
   const localVersion = context.doc.version;
   const incomingKnown = isCollabVersionId(incomingVersion);
