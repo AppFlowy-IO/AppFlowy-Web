@@ -13,7 +13,6 @@
 import { test, expect } from '@playwright/test';
 import {
   AddPageSelectors,
-  DropdownSelectors,
   EditorSelectors,
   ModalSelectors,
   PageSelectors,
@@ -127,13 +126,9 @@ test.describe('Move Page Restrictions', () => {
     await page.waitForTimeout(500);
 
     // 6) Verify Move to is disabled
-    await expect(DropdownSelectors.content(page)).toBeVisible();
-    const moveToItem = DropdownSelectors.content(page)
-      .getByText('Move to')
-      .first()
-      .locator('xpath=ancestor::*[@role="menuitem"]')
-      .first();
-
+    await expect(ViewActionSelectors.popover(page)).toBeVisible();
+    const moveToItem = ViewActionSelectors.moveToButton(page);
+    await expect(moveToItem).toBeVisible();
     await expect(moveToItem).toHaveAttribute('data-disabled', /.*/);
   });
 
@@ -157,14 +152,10 @@ test.describe('Move Page Restrictions', () => {
     await page.waitForTimeout(500);
 
     // Verify Move to is NOT disabled for regular pages
-    await expect(DropdownSelectors.content(page)).toBeVisible();
-    const moveToItem = DropdownSelectors.content(page)
-      .getByText('Move to')
-      .first()
-      .locator('xpath=ancestor::*[@role="menuitem"]')
-      .first();
-
-    const hasDisabled = await moveToItem.getAttribute('data-disabled');
+    await expect(ViewActionSelectors.popover(page)).toBeVisible();
+    const moveToItem2 = ViewActionSelectors.moveToButton(page);
+    await expect(moveToItem2).toBeVisible();
+    const hasDisabled = await moveToItem2.getAttribute('data-disabled');
     expect(hasDisabled).toBeNull();
   });
 
@@ -216,14 +207,10 @@ test.describe('Move Page Restrictions', () => {
     await page.waitForTimeout(500);
 
     // 5) Verify Move to is NOT disabled for database containers
-    await expect(DropdownSelectors.content(page)).toBeVisible();
-    const moveToItem = DropdownSelectors.content(page)
-      .getByText('Move to')
-      .first()
-      .locator('xpath=ancestor::*[@role="menuitem"]')
-      .first();
-
-    const hasDisabled = await moveToItem.getAttribute('data-disabled');
+    await expect(ViewActionSelectors.popover(page)).toBeVisible();
+    const moveToItem3 = ViewActionSelectors.moveToButton(page);
+    await expect(moveToItem3).toBeVisible();
+    const hasDisabled = await moveToItem3.getAttribute('data-disabled');
     expect(hasDisabled).toBeNull();
   });
 });

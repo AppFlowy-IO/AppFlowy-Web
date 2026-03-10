@@ -151,7 +151,7 @@ test.describe('Editor - Drag and Drop Blocks', () => {
     // Create Callout Block
     await page.keyboard.type('/callout');
     await page.waitForTimeout(1000);
-    await page.getByText('Callout').first().click();
+    await page.getByTestId('slash-menu-callout').click();
     await page.waitForTimeout(1000);
 
     await page.keyboard.type('Callout Content');

@@ -135,15 +135,16 @@ export async function closeEventPopover(page: Page): Promise<void> {
  * Delete event from popover
  */
 export async function deleteEventFromPopover(page: Page): Promise<void> {
-  const popover = page.locator('[data-radix-popper-content-wrapper]').last();
-  const deleteButton = popover.locator('button').filter({ hasText: /delete/i }).first();
+  // The delete button is icon-only (no text), use data-testid
+  const deleteButton = page.getByTestId('calendar-event-delete');
+  await expect(deleteButton).toBeVisible({ timeout: 5000 });
   await deleteButton.click({ force: true });
   await page.waitForTimeout(500);
 
-  // Handle confirmation if present
-  const confirmButton = page.locator('button').filter({ hasText: 'Delete' });
+  // Handle delete confirmation dialog
+  const confirmButton = page.getByTestId('delete-row-confirm-button');
   const confirmCount = await confirmButton.count();
-  if (confirmCount > 0) {
+  if (confirmCount > 0 && await confirmButton.isVisible()) {
     await confirmButton.click({ force: true });
     await page.waitForTimeout(500);
   }

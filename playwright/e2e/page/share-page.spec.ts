@@ -21,7 +21,7 @@ async function ensureShareTab(page: Page) {
   const popover = ShareSelectors.sharePopover(page);
   const hasInviteInput = await popover.locator('[data-slot="email-tag-input"]').count();
   if (hasInviteInput === 0) {
-    await page.getByText('Share').click({ force: true });
+    await popover.getByText('Share', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
   }
 }
@@ -107,9 +107,10 @@ test.describe('Share Page Test', () => {
     // 2. Open share popover
     await openSharePopover(page);
 
-    // Verify that the Share and Publish tabs are visible
-    await expect(page.getByText('Share')).toBeVisible();
-    await expect(page.getByText('Publish')).toBeVisible();
+    // Verify that the Share and Publish tabs are visible inside the popover
+    const sharePopover = ShareSelectors.sharePopover(page);
+    await expect(sharePopover.getByText('Share', { exact: true })).toBeVisible();
+    await expect(sharePopover.getByText('Publish', { exact: true })).toBeVisible();
 
     // 3. Ensure we're on the Share tab
     await ensureShareTab(page);

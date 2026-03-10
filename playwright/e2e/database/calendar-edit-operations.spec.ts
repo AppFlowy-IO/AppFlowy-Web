@@ -31,40 +31,21 @@ async function waitForCalendarReady(page: import('@playwright/test').Page) {
  * Helper: Create an event by clicking a day cell
  */
 async function createEventOnCell(page: import('@playwright/test').Page, cellIndex: number, eventName: string) {
-  await CalendarSelectors.dayCell(page).nth(cellIndex).click({ force: true });
+  // Double-click the day cell to create an event (single click just selects)
+  await CalendarSelectors.dayCell(page).nth(cellIndex).dblclick({ force: true });
   await page.waitForTimeout(1500);
 
-  // Try typing into a visible input (event creation inline)
-  const visibleInputs = page.locator('input:visible');
-  const inputCount = await visibleInputs.count();
+  // The event popover opens with a contenteditable title field
+  const popover = page.locator('[data-radix-popper-content-wrapper]').last();
+  const titleInput = popover.locator('input, textarea, [contenteditable="true"]').first();
+  const titleCount = await titleInput.count();
 
-  if (inputCount > 0) {
-    await visibleInputs.last().fill(eventName);
-    await page.keyboard.press('Enter');
-  } else {
-    // Fallback: try hover + add button or double-click
-    await CalendarSelectors.dayCell(page).nth(cellIndex).hover();
-    await page.waitForTimeout(300);
-
-    const addButton = page.locator('[data-add-button]');
-    const addButtonCount = await addButton.count();
-
-    if (addButtonCount > 0) {
-      await addButton.first().click();
-      await page.waitForTimeout(500);
-      await page.locator('input:visible').last().fill(eventName);
-      await page.keyboard.press('Enter');
-    } else {
-      await CalendarSelectors.dayCell(page).nth(cellIndex).dblclick({ force: true });
-      await page.waitForTimeout(500);
-      const inputsAfter = page.locator('input:visible');
-      const inputCountAfter = await inputsAfter.count();
-
-      if (inputCountAfter > 0) {
-        await inputsAfter.last().fill(eventName);
-        await page.keyboard.press('Enter');
-      }
-    }
+  if (titleCount > 0 && await titleInput.isVisible()) {
+    await titleInput.fill('');
+    await titleInput.pressSequentially(eventName, { delay: 30 });
+    await page.waitForTimeout(500);
+    // Close the popover
+    await page.keyboard.press('Escape');
   }
 
   await page.waitForTimeout(2000);

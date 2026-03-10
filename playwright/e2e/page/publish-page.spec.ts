@@ -45,16 +45,17 @@ test.describe('Publish Page Test', () => {
     // 2. Open share popover
     await openSharePopover(page);
 
-    // Verify that the Share and Publish tabs are visible
-    await expect(page.getByText('Share')).toBeVisible();
-    await expect(page.getByText('Publish')).toBeVisible();
+    // Verify that the Share and Publish tabs are visible inside the popover
+    const popover = ShareSelectors.sharePopover(page);
+    await expect(popover.getByText('Share', { exact: true })).toBeVisible();
+    await expect(popover.getByText('Publish', { exact: true })).toBeVisible();
 
     // 3. Switch to Publish tab
-    await page.getByText('Publish').click({ force: true });
+    await popover.getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     // Verify Publish to Web section is visible
-    await expect(page.getByText('Publish to Web')).toBeVisible();
+    await expect(popover.getByText('Publish to Web')).toBeVisible();
 
     // 4. Wait for the publish button to be visible and enabled
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -115,7 +116,7 @@ test.describe('Publish Page Test', () => {
     await openSharePopover(page);
 
     // Make sure we are on the Publish tab
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     // Wait for unpublish button to be visible
@@ -194,7 +195,7 @@ test.describe('Publish Page Test', () => {
 
     // Open share popover and publish
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -244,7 +245,7 @@ test.describe('Publish Page Test', () => {
 
     // Publish the page
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -302,7 +303,7 @@ test.describe('Publish Page Test', () => {
 
     // First publish
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -340,7 +341,7 @@ test.describe('Publish Page Test', () => {
 
     // Republish to sync the updated content
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     // Unpublish first, then republish
@@ -382,7 +383,7 @@ test.describe('Publish Page Test', () => {
 
     // Publish first
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -430,7 +431,7 @@ test.describe('Publish Page Test', () => {
 
     // Publish the page
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -488,7 +489,7 @@ test.describe('Publish Page Test', () => {
 
     // First publish
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -508,7 +509,7 @@ test.describe('Publish Page Test', () => {
 
     // Reopen and verify URL is the same
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
@@ -544,7 +545,7 @@ test.describe('Publish Page Test', () => {
 
     // Publish the page
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -601,7 +602,7 @@ test.describe('Publish Page Test', () => {
 
     // Publish the database
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
@@ -730,7 +731,7 @@ test.describe('Publish Page Test', () => {
     // Publish the database
     await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 10000 });
     await openSharePopover(page);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });

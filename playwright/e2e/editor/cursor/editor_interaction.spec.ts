@@ -145,24 +145,27 @@ test.describe('Editor Navigation & Interaction', () => {
       await page.keyboard.type('List Block');
       await page.waitForTimeout(500);
 
-      // Test Navigation: List -> Paragraph
-      await page.getByText('Paragraph Block').click({ force: true });
+      // Test Navigation: Click on Paragraph block to focus it
+      const paragraphBlock = BlockSelectors.blockByType(page, 'paragraph');
+      await paragraphBlock.click({ force: true });
       await page.waitForTimeout(500);
 
-      // Type to verify focus
+      // Type to verify focus is in the paragraph block
+      await page.keyboard.press('End');
       await page.keyboard.type(' UpTest');
       // Verify 'UpTest' appears in Paragraph block and NOT in List Block
-      await expect(BlockSelectors.blockByType(page, 'paragraph')).toContainText('UpTest');
+      await expect(paragraphBlock).toContainText('UpTest');
       await expect(BlockSelectors.blockByType(page, 'bulleted_list')).not.toContainText('UpTest');
 
-      // Test Navigation: Heading -> Paragraph
-      await page.getByText('Heading Block').click({ force: true });
+      // Test Navigation: Click on Heading, then click Paragraph again
+      await BlockSelectors.blockByType(page, 'heading').click({ force: true });
       await page.waitForTimeout(200);
-      await page.getByText('Paragraph Block').click({ force: true });
+      await paragraphBlock.click({ force: true });
       await page.waitForTimeout(500);
 
+      await page.keyboard.press('End');
       await page.keyboard.type(' DownTest');
-      await expect(BlockSelectors.blockByType(page, 'paragraph')).toContainText('DownTest');
+      await expect(paragraphBlock).toContainText('DownTest');
       await expect(BlockSelectors.blockByType(page, 'heading')).not.toContainText('DownTest');
     });
   });

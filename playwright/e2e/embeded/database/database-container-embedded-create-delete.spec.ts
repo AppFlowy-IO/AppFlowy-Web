@@ -104,8 +104,10 @@ test.describe('Database Container - Embedded Create/Delete', () => {
     await dragHandle.click();
     await page.waitForTimeout(500);
 
-    // Click "Delete" from the context menu
-    const deleteOption = page.getByRole('menuitem').filter({ hasText: /delete/i });
+    // Click "Delete" from the controls menu (uses MUI Button, not role="menuitem")
+    const controlsMenu = page.getByTestId('controls-menu');
+    await expect(controlsMenu).toBeVisible({ timeout: 5000 });
+    const deleteOption = controlsMenu.getByTestId('delete');
     await expect(deleteOption).toBeVisible({ timeout: 5000 });
     await deleteOption.click({ force: true });
 
