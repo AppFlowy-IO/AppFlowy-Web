@@ -34,10 +34,13 @@ test.describe('Toolbar Interaction', () => {
   }
 
   /**
-   * Helper: select all text to trigger the selection toolbar.
+   * Helper: select text within the current block to trigger the selection toolbar.
+   * Uses Home+Shift+End instead of Ctrl+A to avoid cross-block selection
+   * (which hides list/quote buttons in the toolbar).
    */
   async function showToolbar(page: import('@playwright/test').Page) {
-    await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Shift+End');
     await page.waitForTimeout(500);
     await expect(EditorSelectors.selectionToolbar(page)).toBeVisible();
   }
@@ -51,8 +54,8 @@ test.describe('Toolbar Interaction', () => {
     await EditorSelectors.selectionToolbar(page).locator('[data-testid="link-button"]').click({ force: true });
 
     await page.waitForTimeout(200);
-    await expect(page.locator('.MuiPopover-root')).toBeVisible();
-    await expect(page.locator('.MuiPopover-root input')).toBeAttached();
+    await expect(page.locator('.MuiPopover-root').last()).toBeVisible();
+    await expect(page.locator('.MuiPopover-root').last().locator('input')).toBeAttached();
   });
 
   test('should open Text Color picker via toolbar', async ({ page, request }) => {
@@ -92,7 +95,7 @@ test.describe('Toolbar Interaction', () => {
     await EditorSelectors.selectionToolbar(page).locator('[data-testid="heading-button"]').click({ force: true });
 
     await page.waitForTimeout(200);
-    await expect(page.locator('.MuiPopover-root')).toBeVisible();
+    await expect(page.locator('.MuiPopover-root').last()).toBeVisible();
     await expect(EditorSelectors.heading1Button(page)).toBeAttached();
   });
 

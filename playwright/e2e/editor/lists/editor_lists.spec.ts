@@ -84,8 +84,8 @@ test.describe('Editor Lists Manipulation', () => {
 
       await page.keyboard.type('/');
       await page.waitForTimeout(1000);
-      await expect(page.getByText('Bulleted list')).toBeVisible();
-      await expect(page.getByText('Numbered list')).toBeVisible();
+      await expect(page.getByTestId('slash-menu-bulletedList')).toBeVisible();
+      await expect(page.getByTestId('slash-menu-numberedList')).toBeVisible();
       await page.keyboard.press('Escape');
     });
 
@@ -94,7 +94,7 @@ test.describe('Editor Lists Manipulation', () => {
 
       await page.keyboard.type('/');
       await page.waitForTimeout(1000);
-      await page.getByText('Bulleted list').click();
+      await page.getByTestId('slash-menu-bulletedList').click();
       await page.waitForTimeout(1000);
       await page.keyboard.type('Test bullet item');
       await page.waitForTimeout(500);

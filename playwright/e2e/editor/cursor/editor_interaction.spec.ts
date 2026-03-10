@@ -42,17 +42,15 @@ test.describe('Editor Navigation & Interaction', () => {
       await page.keyboard.type('Start Middle End');
       await page.waitForTimeout(500);
 
-      // Select all then move to start
-      await page.keyboard.press(selectAll);
-      await page.keyboard.press('ArrowLeft');
+      // Move to start of line
+      await page.keyboard.press('Home');
       await page.waitForTimeout(200);
       await page.keyboard.type('X');
       await page.waitForTimeout(200);
       await expect(EditorSelectors.slateEditor(page)).toContainText('XStart Middle End');
 
-      // Select all then move to end
-      await page.keyboard.press(selectAll);
-      await page.keyboard.press('ArrowRight');
+      // Move to end of line
+      await page.keyboard.press('End');
       await page.waitForTimeout(200);
       await page.keyboard.type('Y');
       await expect(EditorSelectors.slateEditor(page)).toContainText('XStart Middle EndY');
@@ -64,9 +62,8 @@ test.describe('Editor Navigation & Interaction', () => {
       await page.keyboard.type('Word');
       await page.waitForTimeout(500);
 
-      // Go to start
-      await page.keyboard.press(selectAll);
-      await page.keyboard.press('ArrowLeft');
+      // Go to start of line
+      await page.keyboard.press('Home');
       await page.waitForTimeout(200);
 
       // Move right one character
@@ -84,9 +81,9 @@ test.describe('Editor Navigation & Interaction', () => {
       await page.keyboard.type('SelectMe');
       await page.waitForTimeout(500);
 
-      // Use select all to simulate full word selection
-      // since SelectMe is the only content in this block
-      await page.keyboard.press(selectAll);
+      // Select the entire line within this block
+      await page.keyboard.press('Home');
+      await page.keyboard.press('Shift+End');
       await page.waitForTimeout(200);
 
       // Verify selection by typing to replace
@@ -135,15 +132,16 @@ test.describe('Editor Navigation & Interaction', () => {
 
       // Setup: Heading, Paragraph, Bullet List
       await page.keyboard.type('/heading');
-      await page.keyboard.press('Enter');
-      await page.getByText('Heading 1').click();
+      await page.waitForTimeout(500);
+      await page.getByTestId('slash-menu-heading1').click();
+      await page.waitForTimeout(300);
       await page.keyboard.type('Heading Block');
       await page.keyboard.press('Enter');
       await page.keyboard.type('Paragraph Block');
       await page.keyboard.press('Enter');
       await page.keyboard.type('/bullet');
-      await page.keyboard.press('Enter');
-      await page.getByText('Bulleted list').click();
+      await page.waitForTimeout(500);
+      await page.getByTestId('slash-menu-bulletedList').click();
       await page.keyboard.type('List Block');
       await page.waitForTimeout(500);
 

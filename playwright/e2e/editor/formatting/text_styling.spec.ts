@@ -40,7 +40,9 @@ test.describe('Editor Text Styling & Formatting', () => {
   async function showToolbar(page: import('@playwright/test').Page, text = 'SelectMe') {
     await page.keyboard.type(text);
     await page.waitForTimeout(200);
-    await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
+    // Select within current block only (Home+Shift+End) to avoid cross-block selection
+    await page.keyboard.press('Home');
+    await page.keyboard.press('Shift+End');
     await page.waitForTimeout(500);
     await expect(EditorSelectors.selectionToolbar(page)).toBeVisible();
   }
@@ -93,7 +95,8 @@ test.describe('Editor Text Styling & Formatting', () => {
 
       await page.keyboard.type('Normal Code');
       await page.waitForTimeout(200);
-      await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
+      await page.keyboard.press('Home');
+      await page.keyboard.press('Shift+End');
       await page.waitForTimeout(500);
 
       // Use platform-specific shortcut for inline code

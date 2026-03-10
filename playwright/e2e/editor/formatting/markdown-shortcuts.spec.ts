@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { EditorSelectors } from '../../../support/selectors';
+import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { createDocumentPageAndNavigate } from '../../../support/page-utils';
@@ -37,8 +37,8 @@ test.describe('Editor Markdown Shortcuts', () => {
 
     await page.keyboard.type('# Heading 1');
     await page.waitForTimeout(500);
-    // The markdown shortcut should convert it to a heading element
-    await expect(page.locator('h1, div').filter({ hasText: 'Heading 1' })).toBeAttached();
+    // The markdown shortcut should convert it to a heading block
+    await expect(BlockSelectors.blockByType(page, 'heading')).toContainText('Heading 1');
   });
 
   test('should convert "## " to Heading 2', async ({ page, request }) => {
@@ -46,7 +46,7 @@ test.describe('Editor Markdown Shortcuts', () => {
 
     await page.keyboard.type('## Heading 2');
     await page.waitForTimeout(500);
-    await expect(page.locator('h2, div').filter({ hasText: 'Heading 2' })).toBeAttached();
+    await expect(BlockSelectors.blockByType(page, 'heading')).toContainText('Heading 2');
   });
 
   test('should convert "### " to Heading 3', async ({ page, request }) => {
@@ -54,7 +54,7 @@ test.describe('Editor Markdown Shortcuts', () => {
 
     await page.keyboard.type('### Heading 3');
     await page.waitForTimeout(500);
-    await expect(page.locator('h3, div').filter({ hasText: 'Heading 3' })).toBeAttached();
+    await expect(BlockSelectors.blockByType(page, 'heading')).toContainText('Heading 3');
   });
 
   test('should convert "- " to Bullet List', async ({ page, request }) => {
@@ -101,7 +101,7 @@ test.describe('Editor Markdown Shortcuts', () => {
 
     await page.keyboard.type('Normal `Inline Code` Normal');
     await page.waitForTimeout(500);
-    await expect(page.locator('code, span').filter({ hasText: 'Inline Code' })).toBeAttached();
+    await expect(page.locator('span.bg-border-primary').filter({ hasText: 'Inline Code' })).toBeAttached();
     await expect(page.getByText('`Inline Code`')).not.toBeVisible();
   });
 });

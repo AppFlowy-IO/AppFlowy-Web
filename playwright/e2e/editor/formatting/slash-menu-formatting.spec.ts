@@ -40,10 +40,10 @@ test.describe('Slash Menu - Text Formatting', () => {
     await page.waitForTimeout(1000);
 
     // Verify text formatting options are visible
-    await expect(page.getByText('Text')).toBeVisible();
-    await expect(page.getByText('Heading 1')).toBeVisible();
-    await expect(page.getByText('Heading 2')).toBeVisible();
-    await expect(page.getByText('Heading 3')).toBeVisible();
+    await expect(page.getByTestId('slash-menu-text')).toBeVisible();
+    await expect(page.getByTestId('slash-menu-heading1')).toBeVisible();
+    await expect(page.getByTestId('slash-menu-heading2')).toBeVisible();
+    await expect(page.getByTestId('slash-menu-heading3')).toBeVisible();
 
     // Close menu
     await page.keyboard.press('Escape');
@@ -58,7 +58,7 @@ test.describe('Slash Menu - Text Formatting', () => {
     await page.waitForTimeout(1000);
 
     // Click Heading 1
-    await page.getByText('Heading 1').click();
+    await page.getByTestId('slash-menu-heading1').click();
     await page.waitForTimeout(1000);
 
     // Type some text
