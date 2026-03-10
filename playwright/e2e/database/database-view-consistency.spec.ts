@@ -82,20 +82,19 @@ test.describe('Database View Consistency', () => {
 
   async function createEventInCalendar(page: import('@playwright/test').Page, eventName: string, cellIndex: number = 15) {
     const calCell = page.locator('.fc-daygrid-day').nth(cellIndex);
-    await calCell.click({ force: true });
+    // Double-click to create an event (single click just selects the day)
+    await calCell.dblclick({ force: true });
     await page.waitForTimeout(1500);
 
-    const visibleInputCount = await page.locator('input:visible').count();
-    if (visibleInputCount > 0) {
-      await page.locator('input:visible').last().clear();
-      await page.locator('input:visible').last().fill(eventName);
-      await page.keyboard.press('Enter');
-    } else {
-      await calCell.dblclick({ force: true });
+    // The event popover uses contenteditable for the title, not input elements
+    const popover = page.locator('[data-radix-popper-content-wrapper]').last();
+    const titleInput = popover.locator('input, textarea, [contenteditable="true"]').first();
+
+    if (await titleInput.isVisible().catch(() => false)) {
+      await titleInput.fill('');
+      await titleInput.pressSequentially(eventName, { delay: 30 });
       await page.waitForTimeout(500);
-      await page.locator('input:visible').last().clear();
-      await page.locator('input:visible').last().fill(eventName);
-      await page.keyboard.press('Enter');
+      await page.keyboard.press('Escape');
     }
     await page.waitForTimeout(2000);
   }

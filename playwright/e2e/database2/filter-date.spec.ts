@@ -467,9 +467,9 @@ test.describe('Database Date Filter Tests (Desktop Parity)', () => {
     await assertRowCount(page, 1);
 
     await clickFilterChip(page);
-    await page.waitForTimeout(300);
-    await deleteFilter(page);
     await page.waitForTimeout(500);
+    await deleteFilter(page);
+    await page.waitForTimeout(2000);
 
     await assertRowCount(page, 3);
   });

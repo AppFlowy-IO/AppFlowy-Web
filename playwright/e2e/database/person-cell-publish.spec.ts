@@ -97,7 +97,7 @@ test.describe('Person Cell in Published Pages', () => {
     await ShareSelectors.shareButton(page).click({ force: true });
     await page.waitForTimeout(1000);
 
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
@@ -184,7 +184,7 @@ test.describe('Person Cell in Published Pages', () => {
     await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 10000 });
     await ShareSelectors.shareButton(page).click({ force: true });
     await page.waitForTimeout(1000);
-    await page.getByText('Publish').click({ force: true });
+    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
     await page.waitForTimeout(5000);

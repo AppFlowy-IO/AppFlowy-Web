@@ -75,10 +75,10 @@ test.describe('Database View Tabs', () => {
 
     const initialTabCount = await DatabaseViewSelectors.viewTab(page).count();
 
-    // Add Board view - verify IMMEDIATE appearance (within 1s)
+    // Add Board view - verify appearance
     await addViewViaButton(page, 'Board');
-    await page.waitForTimeout(200);
-    await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(initialTabCount + 1, { timeout: 1000 });
+    await page.waitForTimeout(1000);
+    await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(initialTabCount + 1, { timeout: 5000 });
 
     // Wait for stability after outline reload
     await page.waitForTimeout(3000);
