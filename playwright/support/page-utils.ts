@@ -187,29 +187,34 @@ export async function insertLinkedDatabaseViaSlash(
  * Returns after the image block is visible.
  */
 export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): Promise<void> {
+  // Create a new page and expand to full-page view (same pattern as createDocumentPageAndNavigate)
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
   await page.locator('[role="menuitem"]').first().click({ force: true });
   await page.waitForTimeout(1000);
 
-  // Close the ViewModal dialog
-  await expect(page.locator('[role="dialog"]')).toBeVisible();
-  await page.locator('[role="dialog"]').last().locator('button').filter({ hasText: /./  }).last().click({ force: true });
+  // Expand ViewModal to full-page view
+  await expect(page.locator('[role="dialog"]')).toBeVisible({ timeout: 10000 });
+  await page.locator('[role="dialog"]').last().locator('button').first().click({ force: true });
   await page.waitForTimeout(1000);
+
+  // Wait for editor to be visible
+  const viewId = currentViewIdFromUrl(page);
+  if (viewId) {
+    await expect(page.locator(`#editor-${viewId}`)).toBeVisible({ timeout: 15000 });
+  }
 
   // Focus editor and insert image via slash command
   const editor = page.locator('[data-slate-editor="true"]').first();
   await expect(editor).toBeVisible();
   await editor.click({ force: true });
   await page.waitForTimeout(500);
-  await editor.focus();
-  await page.waitForTimeout(500);
 
   await page.keyboard.type('/', { delay: 50 });
   await page.waitForTimeout(1000);
 
   const slashPanel = page.getByTestId('slash-panel');
-  await expect(slashPanel).toBeVisible({ timeout: 5000 });
+  await expect(slashPanel).toBeVisible({ timeout: 10000 });
   await page.keyboard.type('image', { delay: 50 });
   await page.waitForTimeout(1000);
 

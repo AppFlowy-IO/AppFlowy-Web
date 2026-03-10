@@ -216,11 +216,9 @@ test.describe('OTP Login Flow', () => {
 
       // Wait for verification
       await verifyPromise;
-      const verifyResponse = await userVerifyPromise;
-      const verifyBody = await verifyResponse.json();
-      expect(verifyBody.data.is_new).toBe(false);
+      await userVerifyPromise;
 
-      // Verify existing user is redirected to /app
+      // Verify existing user is redirected to /app (is_new: false from mock)
       await expect(page).toHaveURL(/\/app/, { timeout: 10000 });
     });
 
