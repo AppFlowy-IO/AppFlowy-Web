@@ -202,20 +202,23 @@ export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): P
   await expect(editor).toBeVisible();
   await editor.click({ force: true });
   await page.waitForTimeout(500);
+  await editor.focus();
+  await page.waitForTimeout(500);
 
-  await page.keyboard.type('/image', { delay: 100 });
+  await page.keyboard.type('/', { delay: 50 });
   await page.waitForTimeout(1000);
 
   const slashPanel = page.getByTestId('slash-panel');
-  if (await slashPanel.isVisible()) {
-    await page.locator('[data-testid^="slash-menu-"]').filter({ hasText: /^Image$/ }).click({ force: true });
-  } else {
-    await page.keyboard.press('Escape');
-  }
+  await expect(slashPanel).toBeVisible({ timeout: 5000 });
+  await page.keyboard.type('image', { delay: 50 });
+  await page.waitForTimeout(1000);
+
+  await page.locator('[data-testid^="slash-menu-"]').filter({ hasText: /^Image$/ }).click({ force: true });
   await page.waitForTimeout(1000);
 
   // Upload image
   const fileInput = page.locator('input[type="file"]');
+  await expect(fileInput).toBeAttached({ timeout: 10000 });
   await fileInput.setInputFiles({
     name: 'test-image.png',
     mimeType: 'image/png',

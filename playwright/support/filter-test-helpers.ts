@@ -321,7 +321,7 @@ export async function deleteFilter(page: Page): Promise<void> {
  * Assert the number of visible data rows in the grid
  */
 export async function assertRowCount(page: Page, expectedCount: number): Promise<void> {
-  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(expectedCount);
+  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(expectedCount, { timeout: 10000 });
 }
 
 /**

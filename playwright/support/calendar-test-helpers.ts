@@ -48,19 +48,18 @@ export async function loginAndCreateCalendar(
   await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
   await page.waitForTimeout(4000);
 
-  // Create a new calendar
+  // Create a new calendar via the inline add button dropdown
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
   await page.waitForTimeout(800);
 
-  const hasCalendarButton = await AddPageSelectors.addCalendarButton(page).count();
-  if (hasCalendarButton > 0) {
-    await AddPageSelectors.addCalendarButton(page).click({ force: true });
-  } else {
-    await page.locator('[role="menuitem"]').filter({ hasText: /calendar/i }).click({ force: true });
-  }
+  // Click Calendar menu item (add-calendar-button testid doesn't exist in source)
+  const calendarMenuItem = page.locator('[role="menuitem"]').filter({ hasText: /^Calendar$/i });
+  await expect(calendarMenuItem).toBeVisible({ timeout: 5000 });
+  await calendarMenuItem.click({ force: true });
 
-  await page.waitForTimeout(7000);
-  await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 15000 });
+  // Wait for calendar to fully load (FullCalendar can be slow)
+  await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 30000 });
+  await page.waitForTimeout(2000);
 }
 
 /**

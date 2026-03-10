@@ -50,7 +50,7 @@ test.describe('Database View Deletion', () => {
     await DatabaseViewSelectors.addViewButton(page).click({ force: true });
     await page.waitForTimeout(300);
 
-    const menuItem = page.locator('[role="menu"], [role="menuitem"]').filter({ hasText: viewType });
+    const menuItem = page.getByRole('menuitem', { name: viewType });
     await expect(menuItem).toBeVisible({ timeout: 5000 });
     await menuItem.click({ force: true });
   }

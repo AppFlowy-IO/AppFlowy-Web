@@ -130,7 +130,7 @@ test.describe('Calendar Row Loading', () => {
     await createEventOnCell(page, 10, eventName);
 
     // Then: the event should appear in the calendar
-    await expect(CalendarSelectors.calendarContainer(page).getByText(eventName)).toBeVisible({ timeout: 10000 });
+    await expect(CalendarSelectors.calendarContainer(page).first().getByText(eventName)).toBeVisible({ timeout: 10000 });
 
     // When: adding a Grid view via the database tabbar "+" button
     await DatabaseViewSelectors.addViewButton(page).click({ force: true });

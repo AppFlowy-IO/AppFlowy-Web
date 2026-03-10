@@ -127,11 +127,11 @@ test.describe('Database View Consistency', () => {
 
     // Step 3: Add Calendar view and create an event
     await addViewToDatabase(page, 'Calendar');
-    await expect(page.locator('.database-calendar')).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.database-calendar').first()).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(2000);
 
     await createEventInCalendar(page, calendarEvent);
-    await expect(page.locator('.database-calendar')).toContainText(calendarEvent, { timeout: 10000 });
+    await expect(page.locator('.database-calendar').first()).toContainText(calendarEvent, { timeout: 10000 });
 
     // Step 4: Switch to Grid view and verify all items exist
     await switchToView(page, 'Grid');
@@ -151,7 +151,7 @@ test.describe('Database View Consistency', () => {
 
     // Step 6: Switch back to Calendar view to verify it still works
     await switchToView(page, 'Calendar');
-    await expect(page.locator('.database-calendar')).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('.database-calendar')).toContainText(calendarEvent, { timeout: 10000 });
+    await expect(page.locator('.database-calendar').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.database-calendar').first()).toContainText(calendarEvent, { timeout: 10000 });
   });
 });

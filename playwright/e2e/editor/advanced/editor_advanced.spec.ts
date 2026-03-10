@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 
 /**
  * Advanced Editor Features Tests
@@ -11,35 +12,23 @@ test.describe('Advanced Editor Features', () => {
   const testEmail = generateRandomEmail();
 
   test.beforeEach(async ({ page }) => {
-    page.on('pageerror', (err) => {
-      if (
-        err.message.includes('Minified React error') ||
-        err.message.includes('View not found') ||
-        err.message.includes('No workspace or service found') ||
-        err.message.includes("Cannot set properties of undefined (setting 'class-name')")
-      ) {
-        return;
-      }
+    page.on('pageerror', () => {
+      // Suppress all uncaught exceptions
     });
 
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
   /**
-   * Helper: sign in, navigate to Getting started, clear editor.
+   * Helper: sign in and create a fresh empty document page.
    */
   async function setupEditor(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext) {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-    await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click();
     await page.waitForTimeout(2000);
 
-    // Ensure any open menus are closed
-    await page.keyboard.press('Escape');
-
-    await EditorSelectors.slateEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Backspace');
+    await createDocumentPageAndNavigate(page);
+    await EditorSelectors.firstEditor(page).click({ force: true });
     await page.waitForTimeout(500);
   }
 
@@ -105,12 +94,6 @@ test.describe('Advanced Editor Features', () => {
     test('should trigger slash menu when typing / and display menu options', async ({ page, request }) => {
       await setupEditor(page, request);
 
-      // Ensure focus and clean state
-      await EditorSelectors.slateEditor(page).click({ position: { x: 5, y: 5 }, force: true });
-      await page.keyboard.press('Control+A');
-      await page.keyboard.press('Backspace');
-      await page.waitForTimeout(200);
-
       // Type slash to open menu
       await page.keyboard.type('/', { delay: 100 });
       await page.waitForTimeout(1000);
@@ -128,11 +111,6 @@ test.describe('Advanced Editor Features', () => {
     test('should show media options in slash menu', async ({ page, request }) => {
       await setupEditor(page, request);
 
-      await EditorSelectors.slateEditor(page).click({ position: { x: 5, y: 5 }, force: true });
-      await page.keyboard.press('Control+A');
-      await page.keyboard.press('Backspace');
-      await page.waitForTimeout(200);
-
       await page.keyboard.type('/', { delay: 100 });
       await page.waitForTimeout(1000);
 
@@ -144,11 +122,6 @@ test.describe('Advanced Editor Features', () => {
 
     test('should allow selecting Image from slash menu', async ({ page, request }) => {
       await setupEditor(page, request);
-
-      await EditorSelectors.slateEditor(page).click({ position: { x: 5, y: 5 }, force: true });
-      await page.keyboard.press('Control+A');
-      await page.keyboard.press('Backspace');
-      await page.waitForTimeout(200);
 
       await page.keyboard.type('/', { delay: 100 });
       await page.waitForTimeout(1000);

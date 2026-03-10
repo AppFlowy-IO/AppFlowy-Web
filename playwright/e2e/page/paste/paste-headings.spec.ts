@@ -1,8 +1,8 @@
 import { test, expect, Page } from '@playwright/test';
-import { EditorSelectors, DropdownSelectors, PageSelectors, SpaceSelectors } from '../../../support/selectors';
+import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
-import { closeModalsIfOpen } from '../../../support/test-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 
 /**
  * Paste Heading Tests
@@ -91,41 +91,19 @@ async function pasteContent(page: Page, html: string, plainText: string) {
   await page.waitForTimeout(1500);
 }
 
+const testEmail = generateRandomEmail();
+
 /**
- * Create a new test page.
+ * Create a new test page using the shared helper.
  */
 async function createTestPage(page: Page, request: import('@playwright/test').APIRequestContext) {
-  const testEmail = generateRandomEmail();
-
   await signInAndWaitForApp(page, request, testEmail);
-
-  await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
+  await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
   await page.waitForTimeout(2000);
 
-  await SpaceSelectors.itemByName(page, 'General').first().click();
+  await createDocumentPageAndNavigate(page);
+  await EditorSelectors.firstEditor(page).click({ force: true });
   await page.waitForTimeout(500);
-
-  const generalSpace = SpaceSelectors.itemByName(page, 'General').first();
-  const inlineAdd = generalSpace.getByTestId('inline-add-page').first();
-  await expect(inlineAdd).toBeVisible();
-  await inlineAdd.click();
-  await page.waitForTimeout(1000);
-
-  await DropdownSelectors.menuItem(page).first().click();
-  await page.waitForTimeout(1000);
-
-  const newPageModal = page.getByTestId('new-page-modal');
-  if ((await newPageModal.count()) > 0) {
-    await page.getByTestId('space-item').first().click();
-    await page.waitForTimeout(500);
-    await page.getByRole('button', { name: 'Add' }).click();
-    await page.waitForTimeout(3000);
-  }
-
-  await closeModalsIfOpen(page);
-
-  await PageSelectors.itemByName(page, 'Untitled').click();
-  await page.waitForTimeout(1000);
 }
 
 test.describe('Paste Heading Tests', () => {

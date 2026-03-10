@@ -217,7 +217,7 @@ test.describe('Paste Code Block Tests', () => {
 
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('This is a quoted text');
+      ).toContainText(['This is a quoted text']);
     }
 
     // HTML Nested Blockquotes
@@ -235,10 +235,10 @@ test.describe('Paste Code Block Tests', () => {
 
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('First level quote');
+      ).toContainText(['First level quote']);
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('Second level quote');
+      ).toContainText(['Second level quote']);
     }
 
     // Markdown Code Block with Language
@@ -312,7 +312,7 @@ echo "Hello World"
 
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('This is a quoted text');
+      ).toContainText(['This is a quoted text']);
     }
 
     // Markdown Nested Blockquotes
@@ -326,13 +326,13 @@ echo "Hello World"
 
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('First level quote');
+      ).toContainText(['First level quote']);
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('Second level quote');
+      ).toContainText(['Second level quote']);
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('Third level quote');
+      ).toContainText(['Third level quote']);
     }
 
     // Markdown Blockquote with Formatting

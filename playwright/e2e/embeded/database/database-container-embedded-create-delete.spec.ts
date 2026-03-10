@@ -89,34 +89,25 @@ test.describe('Database Container - Embedded Create/Delete', () => {
     await page.getByTestId(`page-${docViewId}`).first().click({ force: true });
     await page.waitForTimeout(800);
 
-    // Delete via Slate editor API
-    await page.evaluate((viewId) => {
-      const win = window as any;
-      const testEditor = win.__TEST_EDITORS__?.[viewId];
-      const customEditor = win.__TEST_CUSTOM_EDITOR__;
+    // Delete the grid block via hover controls drag handle context menu
+    const gridBlock = editor.locator(BlockSelectors.blockSelector('grid')).first();
+    await expect(gridBlock).toBeVisible();
 
-      if (!testEditor || !customEditor) {
-        throw new Error('Test editors not available');
-      }
+    // Hover over the grid block to show hover controls
+    await gridBlock.hover();
+    await page.waitForTimeout(500);
 
-      // Import Slate from the window (it should be available in test builds)
-      const { Editor, Element: SlateElement } = win.__SLATE__ || require('slate');
+    // Click the drag handle to open the block action menu
+    const hoverControls = BlockSelectors.hoverControls(page);
+    await expect(hoverControls).toBeVisible({ timeout: 5000 });
+    const dragHandle = BlockSelectors.dragHandle(page);
+    await dragHandle.click();
+    await page.waitForTimeout(500);
 
-      const gridEntries = Array.from(
-        Editor.nodes(testEditor, {
-          at: [],
-          match: (node: any) => SlateElement.isElement(node) && node.type === 'grid',
-        })
-      );
-
-      if (gridEntries.length === 0) {
-        throw new Error('No grid block found in editor');
-      }
-
-      const [gridNode] = gridEntries[0] as [any, any];
-      const blockId = gridNode.blockId;
-      customEditor.deleteBlock(testEditor, blockId);
-    }, docViewId);
+    // Click "Delete" from the context menu
+    const deleteOption = page.getByRole('menuitem').filter({ hasText: /delete/i });
+    await expect(deleteOption).toBeVisible({ timeout: 5000 });
+    await deleteOption.click({ force: true });
 
     await page.waitForTimeout(2000);
 

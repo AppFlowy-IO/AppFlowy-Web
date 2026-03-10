@@ -51,9 +51,9 @@ test.describe('Delete Page, Verify in Trash, and Restore Tests', () => {
       // Handle the new page modal
       const modal = ModalSelectors.newPageModal(page);
       await expect(modal).toBeVisible();
-      await ModalSelectors.spaceItemInModal(page).first().click();
+      await modal.getByTestId('space-item').first().click();
       await page.waitForTimeout(500);
-      await ModalSelectors.addButton(page).click();
+      await modal.getByRole('button', { name: 'Add' }).click();
       await page.waitForTimeout(3000);
 
       // Close any modals

@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 
 /**
  * Toolbar Interaction Tests
@@ -9,6 +10,7 @@ import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
  */
 test.describe('Toolbar Interaction', () => {
   const testEmail = generateRandomEmail();
+  const isMac = process.platform === 'darwin';
 
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', () => {
@@ -19,17 +21,15 @@ test.describe('Toolbar Interaction', () => {
   });
 
   /**
-   * Helper: sign in, navigate to Getting started, clear editor.
+   * Helper: sign in and create a fresh empty document page.
    */
   async function setupEditor(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext) {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-    await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click();
     await page.waitForTimeout(2000);
 
+    await createDocumentPageAndNavigate(page);
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
   }
 
@@ -37,7 +37,7 @@ test.describe('Toolbar Interaction', () => {
    * Helper: select all text to trigger the selection toolbar.
    */
   async function showToolbar(page: import('@playwright/test').Page) {
-    await page.keyboard.press('Control+A');
+    await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
     await page.waitForTimeout(500);
     await expect(EditorSelectors.selectionToolbar(page)).toBeVisible();
   }
@@ -102,9 +102,7 @@ test.describe('Toolbar Interaction', () => {
     await page.keyboard.type('List Item');
     await showToolbar(page);
 
-    await EditorSelectors.selectionToolbar(page)
-      .locator('button[aria-label*="Bulleted list"], button[title*="Bulleted list"]')
-      .click({ force: true });
+    await page.getByTestId('toolbar-bulleted-list-button').click({ force: true });
 
     await page.waitForTimeout(200);
     await expect(EditorSelectors.slateEditor(page)).toContainText('List Item');
@@ -117,9 +115,7 @@ test.describe('Toolbar Interaction', () => {
     await page.keyboard.type('Numbered Item');
     await showToolbar(page);
 
-    await EditorSelectors.selectionToolbar(page)
-      .locator('button[aria-label*="Numbered list"], button[title*="Numbered list"]')
-      .click({ force: true });
+    await page.getByTestId('toolbar-numbered-list-button').click({ force: true });
 
     await page.waitForTimeout(200);
     await expect(BlockSelectors.blockByType(page, 'numbered_list')).toBeVisible();
@@ -131,9 +127,7 @@ test.describe('Toolbar Interaction', () => {
     await page.keyboard.type('Quote Text');
     await showToolbar(page);
 
-    await EditorSelectors.selectionToolbar(page)
-      .locator('button[aria-label*="Quote"], button[title*="Quote"]')
-      .click({ force: true });
+    await page.getByTestId('toolbar-quote-button').click({ force: true });
 
     await page.waitForTimeout(200);
     await expect(BlockSelectors.blockByType(page, 'quote')).toBeVisible();

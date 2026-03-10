@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { EditorSelectors, AddPageSelectors, BlockSelectors } from '../../../support/selectors';
+import { EditorSelectors, BlockSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 
 /**
  * Editor Panel Stability E2E Tests
@@ -18,14 +19,8 @@ test.describe('Editor Panel Stability', () => {
   const testEmail = generateRandomEmail();
 
   test.beforeEach(async ({ page }) => {
-    page.on('pageerror', (err) => {
-      if (
-        err.message.includes('No workspace or service found') ||
-        err.message.includes('ResizeObserver loop') ||
-        err.message.includes('Minified React error')
-      ) {
-        return;
-      }
+    page.on('pageerror', () => {
+      // Suppress all uncaught exceptions
     });
 
     await page.setViewportSize({ width: 1280, height: 720 });
@@ -35,20 +30,8 @@ test.describe('Editor Panel Stability', () => {
    * Helper: Create a page and focus the editor.
    */
   async function createPageAndFocusEditor(page: import('@playwright/test').Page) {
-    await AddPageSelectors.inlineAddButton(page).first().click();
-    await page.waitForTimeout(500);
-    await page.locator('[role="menuitem"]').first().click(); // Create Doc
-    await page.waitForTimeout(1000);
-
-    // Close the modal
-    const dialog = page.locator('[role="dialog"]');
-    await expect(dialog).toBeVisible();
-    await dialog.locator('button').filter({ hasNotText: '' }).last().click({ force: true });
-    await page.waitForTimeout(1000);
-
+    await createDocumentPageAndNavigate(page);
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.waitForTimeout(1000);
-    await EditorSelectors.firstEditor(page).focus();
     await page.waitForTimeout(500);
   }
 

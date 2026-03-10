@@ -49,7 +49,7 @@ test.describe('Editor Commands', () => {
     }
     await page.waitForTimeout(500);
 
-    await expect(page.locator('[contenteditable]')).not.toContainText('Undo Me');
+    await expect(EditorSelectors.slateEditor(page)).not.toContainText('Undo Me');
   });
 
   test('should Redo typing', async ({ page, request }) => {

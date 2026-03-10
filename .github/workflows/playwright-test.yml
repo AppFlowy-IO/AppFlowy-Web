@@ -31,7 +31,7 @@ jobs:
             spec: "playwright/e2e/editor"
             description: "Document editing and formatting"
           - name: "database"
-            spec: "playwright/e2e/database"
+            spec: "playwright/e2e/database/"
             description: "Database and grid operations"
           - name: "database2"
             spec: "playwright/e2e/database2"

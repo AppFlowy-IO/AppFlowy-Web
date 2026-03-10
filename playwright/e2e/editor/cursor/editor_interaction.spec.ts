@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 
 /**
  * Editor Navigation & Interaction Tests
@@ -11,6 +12,7 @@ test.describe('Editor Navigation & Interaction', () => {
   const testEmail = generateRandomEmail();
   const isMac = process.platform === 'darwin';
   const cmdModifier = isMac ? 'Meta' : 'Control';
+  const selectAll = isMac ? 'Meta+A' : 'Control+A';
 
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', () => {
@@ -21,17 +23,15 @@ test.describe('Editor Navigation & Interaction', () => {
   });
 
   /**
-   * Helper: sign in, navigate to Getting started, clear editor.
+   * Helper: sign in and create a fresh empty document page.
    */
   async function setupEditor(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext) {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-    await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click();
     await page.waitForTimeout(2000);
 
+    await createDocumentPageAndNavigate(page);
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
   }
 
@@ -43,7 +43,7 @@ test.describe('Editor Navigation & Interaction', () => {
       await page.waitForTimeout(500);
 
       // Select all then move to start
-      await page.keyboard.press('Control+A');
+      await page.keyboard.press(selectAll);
       await page.keyboard.press('ArrowLeft');
       await page.waitForTimeout(200);
       await page.keyboard.type('X');
@@ -51,7 +51,7 @@ test.describe('Editor Navigation & Interaction', () => {
       await expect(EditorSelectors.slateEditor(page)).toContainText('XStart Middle End');
 
       // Select all then move to end
-      await page.keyboard.press('Control+A');
+      await page.keyboard.press(selectAll);
       await page.keyboard.press('ArrowRight');
       await page.waitForTimeout(200);
       await page.keyboard.type('Y');
@@ -65,7 +65,7 @@ test.describe('Editor Navigation & Interaction', () => {
       await page.waitForTimeout(500);
 
       // Go to start
-      await page.keyboard.press('Control+A');
+      await page.keyboard.press(selectAll);
       await page.keyboard.press('ArrowLeft');
       await page.waitForTimeout(200);
 
@@ -86,7 +86,7 @@ test.describe('Editor Navigation & Interaction', () => {
 
       // Use select all to simulate full word selection
       // since SelectMe is the only content in this block
-      await page.keyboard.press('Control+A');
+      await page.keyboard.press(selectAll);
       await page.waitForTimeout(200);
 
       // Verify selection by typing to replace
@@ -227,7 +227,7 @@ test.describe('Editor Navigation & Interaction', () => {
     test('should reset style when creating a new paragraph', async ({ page, request }) => {
       await setupEditor(page, request);
 
-      await EditorSelectors.slateEditor(page).click();
+      await EditorSelectors.firstEditor(page).click();
       await page.keyboard.press(`${cmdModifier}+b`);
       await page.waitForTimeout(200);
       await page.keyboard.type('Heading Bold');

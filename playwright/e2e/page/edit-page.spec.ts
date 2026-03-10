@@ -88,7 +88,7 @@ test.describe('Page Edit Tests', () => {
 
       // Step 4: Verify the content was added
       for (const line of testContent) {
-        await expect(page.getByText(line)).toBeVisible();
+        await expect(page.getByText(line, { exact: true }).first()).toBeVisible();
       }
     });
   });

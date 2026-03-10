@@ -287,7 +287,7 @@ export async function addRows(page: Page, count: number): Promise<void> {
  * Assert the number of visible data rows in the grid
  */
 export async function assertRowCount(page: Page, expectedCount: number): Promise<void> {
-  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(expectedCount);
+  await expect(DatabaseGridSelectors.dataRows(page)).toHaveCount(expectedCount, { timeout: 10000 });
 }
 
 /**

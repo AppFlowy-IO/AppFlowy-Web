@@ -203,7 +203,7 @@ test.describe('Paste Complex Content Tests', () => {
       await expect(slateEditor.locator('pre code')).toContainText('console.log');
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('Remember to test');
+      ).toContainText(['Remember to test']);
       await expect(
         slateEditor.locator('span.cursor-pointer.underline')
       ).toContainText('our website');
@@ -271,7 +271,7 @@ const x = 10;
       await expect(slateEditor.locator('pre code')).toContainText('const x = 10');
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText('A quote');
+      ).toContainText(['A quote']);
     }
 
     // DevTools Verification

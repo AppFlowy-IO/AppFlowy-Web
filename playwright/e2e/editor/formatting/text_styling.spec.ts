@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 
 /**
  * Editor Text Styling & Formatting Tests
@@ -21,17 +22,15 @@ test.describe('Editor Text Styling & Formatting', () => {
   });
 
   /**
-   * Helper: sign in, navigate to Getting started, clear editor.
+   * Helper: sign in and create a fresh empty document page.
    */
   async function setupEditor(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext) {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-    await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click();
     await page.waitForTimeout(2000);
 
+    await createDocumentPageAndNavigate(page);
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
   }
 
@@ -41,7 +40,7 @@ test.describe('Editor Text Styling & Formatting', () => {
   async function showToolbar(page: import('@playwright/test').Page, text = 'SelectMe') {
     await page.keyboard.type(text);
     await page.waitForTimeout(200);
-    await page.keyboard.press('Control+A');
+    await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
     await page.waitForTimeout(500);
     await expect(EditorSelectors.selectionToolbar(page)).toBeVisible();
   }
@@ -94,7 +93,7 @@ test.describe('Editor Text Styling & Formatting', () => {
 
       await page.keyboard.type('Normal Code');
       await page.waitForTimeout(200);
-      await page.keyboard.press('Control+A');
+      await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
       await page.waitForTimeout(500);
 
       // Use platform-specific shortcut for inline code
