@@ -21,7 +21,7 @@ import { v4 as uuidv4 } from 'uuid';
  * which matches both the FC widget and its parent wrapper.
  */
 async function waitForCalendarReady(page: import('@playwright/test').Page) {
-  await expect(CalendarSelectors.calendarContainer(page)).toBeVisible({ timeout: 15000 });
+  await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 15000 });
   // Ensure at least 28 day cells are rendered (a full month)
   const dayCellCount = await CalendarSelectors.dayCell(page).count();
   expect(dayCellCount).toBeGreaterThanOrEqual(28);
@@ -149,7 +149,7 @@ test.describe('Calendar Row Loading', () => {
     await page.waitForTimeout(2000);
 
     // Then: the calendar should still show the event
-    await expect(CalendarSelectors.calendarContainer(page)).toBeVisible({ timeout: 15000 });
-    await expect(CalendarSelectors.calendarContainer(page).getByText(eventName)).toBeVisible({ timeout: 10000 });
+    await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 15000 });
+    await expect(CalendarSelectors.calendarContainer(page).first().getByText(eventName)).toBeVisible({ timeout: 10000 });
   });
 });

@@ -46,8 +46,8 @@ test.describe('Calendar Basic Tests (Desktop Parity)', () => {
     await page.waitForTimeout(7000);
 
     // Verify calendar is loaded
-    await expect(CalendarSelectors.calendarContainer(page)).toBeVisible();
-    await expect(CalendarSelectors.toolbar(page)).toBeVisible();
+    await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible();
+    await expect(CalendarSelectors.toolbar(page).first()).toBeVisible();
   });
 
   test('update calendar layout to board and grid', async ({ page, request }) => {

@@ -115,8 +115,11 @@ test.describe('OTP Login Flow', () => {
       await AuthSelectors.otpCodeInput(page).fill(testOtpCode);
       await page.waitForTimeout(500);
 
-      // Step 9: Submit OTP code
+      // Step 9: Submit OTP code — set up response promises before clicking
       const otpPromise = page.waitForResponse(`${gotrueUrl}/verify`);
+      const userVerifyPromise = page.waitForResponse((resp) =>
+        resp.url().includes('/api/user/verify/') && resp.status() === 200
+      );
       await AuthSelectors.otpSubmitButton(page).click();
 
       // Step 10: Wait for OTP verification
@@ -124,7 +127,7 @@ test.describe('OTP Login Flow', () => {
       expect(otpResponse.status()).toBe(200);
 
       // Step 11: Wait for user verification
-      await page.waitForResponse(`${apiUrl}/api/user/verify/*`);
+      await userVerifyPromise;
 
       // Step 12: Verify redirect to /app
       await expect(page).toHaveURL(`${baseUrl}/app`, { timeout: 10000 });
@@ -191,8 +194,9 @@ test.describe('OTP Login Flow', () => {
 
       // Enter email and request magic link
       await AuthSelectors.emailInput(page).fill(testEmail);
+      const magiclinkPromise = page.waitForResponse(`${gotrueUrl}/magiclink`);
       await AuthSelectors.magicLinkButton(page).click();
-      await page.waitForResponse(`${gotrueUrl}/magiclink`);
+      await magiclinkPromise;
       await page.waitForTimeout(1000);
 
       // Click "Enter code manually"
@@ -203,12 +207,16 @@ test.describe('OTP Login Flow', () => {
       await AuthSelectors.otpCodeInput(page).fill(testOtpCode);
       await page.waitForTimeout(500);
 
-      // Submit OTP code
+      // Submit OTP code — set up response promises before clicking
+      const verifyPromise = page.waitForResponse(`${gotrueUrl}/verify`);
+      const userVerifyPromise = page.waitForResponse((resp) =>
+        resp.url().includes('/api/user/verify/') && resp.status() === 200
+      );
       await AuthSelectors.otpSubmitButton(page).click();
 
       // Wait for verification
-      await page.waitForResponse(`${gotrueUrl}/verify`);
-      const verifyResponse = await page.waitForResponse(`${apiUrl}/api/user/verify/*`);
+      await verifyPromise;
+      const verifyResponse = await userVerifyPromise;
       const verifyBody = await verifyResponse.json();
       expect(verifyBody.data.is_new).toBe(false);
 
@@ -240,8 +248,9 @@ test.describe('OTP Login Flow', () => {
 
       // Enter email and request magic link
       await AuthSelectors.emailInput(page).fill(testEmail);
+      const magiclinkPromise = page.waitForResponse(`${gotrueUrl}/magiclink`);
       await AuthSelectors.magicLinkButton(page).click();
-      await page.waitForResponse(`${gotrueUrl}/magiclink`);
+      await magiclinkPromise;
       await page.waitForTimeout(1000);
 
       // Click "Enter code manually"
@@ -253,8 +262,9 @@ test.describe('OTP Login Flow', () => {
       await page.waitForTimeout(500);
 
       // Submit OTP code
+      const verifyPromise = page.waitForResponse(`${gotrueUrl}/verify`);
       await AuthSelectors.otpSubmitButton(page).click();
-      await page.waitForResponse(`${gotrueUrl}/verify`);
+      await verifyPromise;
 
       // Verify error message
       await expect(page.getByText('The code is invalid or has expired')).toBeVisible();
@@ -278,8 +288,9 @@ test.describe('OTP Login Flow', () => {
 
       // Enter email and request magic link
       await AuthSelectors.emailInput(page).fill(testEmail);
+      const magiclinkPromise = page.waitForResponse(`${gotrueUrl}/magiclink`);
       await AuthSelectors.magicLinkButton(page).click();
-      await page.waitForResponse(`${gotrueUrl}/magiclink`);
+      await magiclinkPromise;
       await page.waitForTimeout(1000);
 
       // Verify on check email page
@@ -373,8 +384,9 @@ test.describe('OTP Login Flow', () => {
       await page.waitForTimeout(500);
 
       // Click sign in with email (magic link)
+      const magiclinkPromise = page.waitForResponse(`${gotrueUrl}/magiclink`);
       await AuthSelectors.magicLinkButton(page).click();
-      await page.waitForResponse(`${gotrueUrl}/magiclink`);
+      await magiclinkPromise;
       await page.waitForTimeout(1000);
 
       // Verify redirectTo was sanitized
@@ -391,12 +403,16 @@ test.describe('OTP Login Flow', () => {
       await AuthSelectors.otpCodeInput(page).fill(testOtpCode);
       await page.waitForTimeout(500);
 
-      // Submit OTP code
+      // Submit OTP code — set up response promises before clicking
+      const verifyPromise = page.waitForResponse(`${gotrueUrl}/verify`);
+      const userVerifyPromise = page.waitForResponse((resp) =>
+        resp.url().includes('/api/user/verify/') && resp.status() === 200
+      );
       await AuthSelectors.otpSubmitButton(page).click();
 
       // Wait for verification
-      await page.waitForResponse(`${gotrueUrl}/verify`);
-      await page.waitForResponse(`${apiUrl}/api/user/verify/*`);
+      await verifyPromise;
+      await userVerifyPromise;
 
       // Verify User B is redirected to /app (NOT User A workspace)
       await expect(page).toHaveURL(new RegExp(`${baseUrl}/app`), { timeout: 10000 });

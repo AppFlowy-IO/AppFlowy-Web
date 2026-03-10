@@ -60,15 +60,15 @@ export async function loginAndCreateCalendar(
   }
 
   await page.waitForTimeout(7000);
-  await expect(CalendarSelectors.calendarContainer(page)).toBeVisible({ timeout: 15000 });
+  await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 15000 });
 }
 
 /**
  * Wait for calendar to load
  */
 export async function waitForCalendarLoad(page: Page): Promise<void> {
-  await expect(CalendarSelectors.calendarContainer(page)).toBeVisible({ timeout: 15000 });
-  await expect(page.locator('.fc-view-harness')).toBeVisible({ timeout: 10000 });
+  await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('.fc-view-harness').first()).toBeVisible({ timeout: 10000 });
   await page.waitForTimeout(1000);
 }
 

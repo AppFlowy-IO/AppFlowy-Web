@@ -98,7 +98,8 @@ test.describe('Embedded Database - Plus Button View Creation', () => {
     await expect(embeddedDB).toBeVisible({ timeout: 15000 });
 
     // Find and click the + button to create a new view
-    const plusButton = embeddedDB.locator('[data-testid="database-add-view-button"], button').filter({ hasText: '+' }).first();
+    const plusButton = embeddedDB.locator('[data-testid="add-view-button"]');
+    await plusButton.scrollIntoViewIfNeeded();
     await plusButton.click({ force: true });
     await page.waitForTimeout(1000);
 

@@ -435,6 +435,8 @@ export const BlockSelectors = {
   hoverControls: (page: Page) => page.getByTestId('hover-controls'),
   slashMenuGrid: (page: Page) => page.getByTestId('slash-menu-grid'),
   blockByType: (page: Page, type: string) => page.locator(`[data-block-type="${type}"]`),
+  /** Returns a CSS selector string for use with `.locator()` */
+  blockSelector: (type: string) => `[data-block-type="${type}"]`,
   allBlocks: (page: Page) => page.locator('[data-block-type]'),
 };
 
