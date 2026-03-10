@@ -293,6 +293,7 @@ test.describe('Database Select Filter Tests (Desktop Parity)', () => {
 
     await clickSelectCell(page, multiSelectFieldId, 2);
     await selectExistingOption(page, 'Python');
+    await page.waitForTimeout(300);
     await selectExistingOption(page, 'JavaScript');
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);

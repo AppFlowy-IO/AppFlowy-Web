@@ -57,6 +57,7 @@ export function NoDateRow({ rowId, primaryFieldId, isWeekView, onDragStart, isDr
   return (
     <div
       ref={dragRef}
+      data-testid="no-date-row"
       data-row-id={rowId}
       className={cn(
         'hover:scale-1 group flex h-[36px] w-full items-center gap-2 px-2 py-1 hover:bg-transparent hover:shadow-none',

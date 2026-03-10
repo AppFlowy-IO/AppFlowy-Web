@@ -461,15 +461,18 @@ test.describe('Database Date Filter Tests (Desktop Parity)', () => {
     await setFilterDate(page, 10);
     await page.waitForTimeout(500);
 
+    // Close date picker popover and filter popover
     await page.keyboard.press('Escape');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(300);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(1000);
 
     await assertRowCount(page, 1);
 
     await clickFilterChip(page);
     await page.waitForTimeout(500);
     await deleteFilter(page);
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     await assertRowCount(page, 3);
   });

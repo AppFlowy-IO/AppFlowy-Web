@@ -48,9 +48,13 @@ test.describe('Database View Consistency', () => {
   }
 
   async function addViewToDatabase(page: import('@playwright/test').Page, viewType: 'Grid' | 'Board' | 'Calendar') {
-    await page.getByTestId('add-view-button').click({ force: true });
-    await page.waitForTimeout(1000);
-    await page.locator('[role="menuitem"]').filter({ hasText: viewType }).click({ force: true });
+    const addBtn = page.getByTestId('add-view-button');
+    await addBtn.scrollIntoViewIfNeeded();
+    await addBtn.click();
+    await page.waitForTimeout(500);
+    const menu = page.locator('[data-slot="dropdown-menu-content"]');
+    await expect(menu).toBeVisible({ timeout: 5000 });
+    await menu.locator('[role="menuitem"]').filter({ hasText: viewType }).click({ force: true });
     await page.waitForTimeout(3000);
   }
 

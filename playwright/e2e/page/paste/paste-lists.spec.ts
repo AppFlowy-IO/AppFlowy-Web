@@ -155,9 +155,9 @@ test.describe('Paste List Tests', () => {
       expect(
         await BlockSelectors.blockByType(page, 'bulleted_list').count()
       ).toBeGreaterThanOrEqual(3);
-      await expect(page.getByText('First item')).toBeVisible();
-      await expect(page.getByText('Second item')).toBeVisible();
-      await expect(page.getByText('Third item')).toBeVisible();
+      await expect(page.getByText('First item').first()).toBeVisible();
+      await expect(page.getByText('Second item').first()).toBeVisible();
+      await expect(page.getByText('Third item').first()).toBeVisible();
 
       await exitListMode(page);
     }
@@ -202,8 +202,8 @@ test.describe('Paste List Tests', () => {
       expect(
         await BlockSelectors.blockByType(page, 'todo_list').count()
       ).toBeGreaterThanOrEqual(2);
-      await expect(page.getByText('Completed task')).toBeVisible();
-      await expect(page.getByText('Incomplete task')).toBeVisible();
+      await expect(page.getByText('Completed task').first()).toBeVisible();
+      await expect(page.getByText('Incomplete task').first()).toBeVisible();
 
       await exitListMode(page);
     }
@@ -220,7 +220,7 @@ test.describe('Paste List Tests', () => {
       expect(
         await BlockSelectors.blockByType(page, 'bulleted_list').count()
       ).toBeGreaterThanOrEqual(3);
-      await expect(page.getByText('First item')).toBeVisible();
+      await expect(page.getByText('First item').first()).toBeVisible();
 
       await exitListMode(page);
     }
@@ -272,7 +272,7 @@ test.describe('Paste List Tests', () => {
         await BlockSelectors.blockByType(page, 'todo_list').count()
       ).toBeGreaterThanOrEqual(3);
       await expect(page.getByText('Completed task').first()).toBeVisible();
-      await expect(page.getByText('Incomplete task')).toBeVisible();
+      await expect(page.getByText('Incomplete task').first()).toBeVisible();
 
       await exitListMode(page);
     }

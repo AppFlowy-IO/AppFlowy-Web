@@ -233,8 +233,8 @@ test.describe('Paste Complex Content Tests', () => {
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(2000);
 
-      await expect(slateEditor.locator('.heading.level-1')).toContainText('My Project');
-      await expect(slateEditor.locator('pre code')).toContainText('npm install');
+      await expect(slateEditor.locator('.heading.level-1').last()).toContainText('My Project');
+      await expect(slateEditor.locator('pre code').last()).toContainText('npm install');
       expect(
         await slateEditor.locator('[data-block-type="todo_list"]').count()
       ).toBeGreaterThanOrEqual(3);

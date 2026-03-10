@@ -385,15 +385,13 @@ export async function clickSelectCell(
  * Select an existing option from the dropdown
  */
 export async function selectExistingOption(page: Page, optionName: string): Promise<void> {
-  // Use data-testid for exact option matching to avoid substring issues
-  // (e.g., "Active" matching "Inactive"). Falls back to exact text match.
-  const popover = page.locator('[data-radix-popper-content-wrapper]').last();
-  const option = popover.getByTestId(`select-option-${optionName}`);
-  if (await option.isVisible().catch(() => false)) {
-    await option.click({ force: true });
-  } else {
-    await popover.getByText(optionName, { exact: true }).click({ force: true });
-  }
+  // Find the option by its visible text within the select-option-menu popover.
+  // Options are rendered as div[data-testid^="select-option-"] with Tag labels.
+  const menu = page.getByTestId('select-option-menu');
+  await expect(menu).toBeVisible({ timeout: 5000 });
+  const option = menu.locator('[data-testid^="select-option-"]').filter({ hasText: optionName }).first();
+  await expect(option).toBeVisible({ timeout: 5000 });
+  await option.click({ force: true });
   await page.waitForTimeout(500);
 }
 

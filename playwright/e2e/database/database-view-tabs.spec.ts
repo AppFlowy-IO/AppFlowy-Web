@@ -50,11 +50,16 @@ test.describe('Database View Tabs', () => {
   }
 
   async function addViewViaButton(page: import('@playwright/test').Page, viewType: 'Board' | 'Calendar') {
-    await DatabaseViewSelectors.addViewButton(page).scrollIntoViewIfNeeded();
-    await DatabaseViewSelectors.addViewButton(page).click({ force: true });
-    await page.waitForTimeout(300);
+    const addBtn = DatabaseViewSelectors.addViewButton(page);
+    await addBtn.scrollIntoViewIfNeeded();
+    await expect(addBtn).toBeVisible({ timeout: 5000 });
+    await addBtn.click();
+    await page.waitForTimeout(500);
 
-    const menuItem = page.locator('[role="menu"], [role="menuitem"]').filter({ hasText: viewType });
+    // DropdownMenu renders with data-slot="dropdown-menu-content"
+    const menu = page.locator('[data-slot="dropdown-menu-content"]');
+    await expect(menu).toBeVisible({ timeout: 5000 });
+    const menuItem = menu.locator('[role="menuitem"]').filter({ hasText: viewType });
     await expect(menuItem).toBeVisible({ timeout: 5000 });
     await menuItem.click({ force: true });
   }

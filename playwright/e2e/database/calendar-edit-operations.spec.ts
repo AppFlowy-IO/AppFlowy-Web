@@ -31,23 +31,24 @@ async function waitForCalendarReady(page: import('@playwright/test').Page) {
  * Helper: Create an event by clicking a day cell
  */
 async function createEventOnCell(page: import('@playwright/test').Page, cellIndex: number, eventName: string) {
-  // Double-click the day cell to create an event (single click just selects)
-  await CalendarSelectors.dayCell(page).nth(cellIndex).dblclick({ force: true });
-  await page.waitForTimeout(1500);
+  // Click the day cell to trigger FullCalendar's select handler which creates a new event
+  const dayCell = CalendarSelectors.dayCell(page).nth(cellIndex);
+  await dayCell.click({ force: true });
+  await page.waitForTimeout(2000);
 
-  // The event popover opens with a contenteditable title field
+  // The event popover should auto-open for new events (EventWithPopover handles this)
   const popover = page.locator('[data-radix-popper-content-wrapper]').last();
+  await expect(popover).toBeVisible({ timeout: 10000 });
+
+  // Type the event name into the title field
   const titleInput = popover.locator('input, textarea, [contenteditable="true"]').first();
-  const titleCount = await titleInput.count();
+  await expect(titleInput).toBeVisible({ timeout: 5000 });
+  await titleInput.fill('');
+  await titleInput.pressSequentially(eventName, { delay: 30 });
+  await page.waitForTimeout(500);
 
-  if (titleCount > 0 && await titleInput.isVisible()) {
-    await titleInput.fill('');
-    await titleInput.pressSequentially(eventName, { delay: 30 });
-    await page.waitForTimeout(500);
-    // Close the popover
-    await page.keyboard.press('Escape');
-  }
-
+  // Close the popover
+  await page.keyboard.press('Escape');
   await page.waitForTimeout(2000);
 }
 
@@ -114,9 +115,13 @@ test.describe('Calendar Row Loading', () => {
     await expect(CalendarSelectors.calendarContainer(page).first().getByText(eventName)).toBeVisible({ timeout: 10000 });
 
     // When: adding a Grid view via the database tabbar "+" button
-    await DatabaseViewSelectors.addViewButton(page).click({ force: true });
-    await page.waitForTimeout(1000);
-    await page.locator('[role="menuitem"]').filter({ hasText: 'Grid' }).click({ force: true });
+    const addBtn = DatabaseViewSelectors.addViewButton(page);
+    await addBtn.scrollIntoViewIfNeeded();
+    await addBtn.click();
+    await page.waitForTimeout(500);
+    const menu = page.locator('[data-slot="dropdown-menu-content"]');
+    await expect(menu).toBeVisible({ timeout: 5000 });
+    await menu.locator('[role="menuitem"]').filter({ hasText: 'Grid' }).click({ force: true });
     await page.waitForTimeout(3000);
 
     // Then: the Grid view should load

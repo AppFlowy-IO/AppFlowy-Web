@@ -227,3 +227,44 @@ export function getRelativeDate(daysFromToday: number): Date {
   date.setDate(date.getDate() + daysFromToday);
   return date;
 }
+
+/**
+ * Click on a DateTime property cell in the event popover to open the date picker.
+ * The event popover renders RowPropertyPrimitive for each field, including DateTime.
+ * Clicking the DateTime cell sets editing=true, which renders the DateTimeCellPicker.
+ */
+export async function openDatePickerInEventPopover(page: Page): Promise<void> {
+  const popover = page.locator('[data-radix-popper-content-wrapper]').last();
+  // DateTime cells have data-testid starting with "datetime-cell-"
+  const dateTimeCell = popover.locator('[data-testid^="datetime-cell-"]');
+  await expect(dateTimeCell.first()).toBeVisible({ timeout: 5000 });
+  await dateTimeCell.first().click({ force: true });
+  await page.waitForTimeout(500);
+  // Wait for the DateTimeCellPicker popover to appear
+  await expect(page.getByTestId('datetime-picker-popover')).toBeVisible({ timeout: 5000 });
+}
+
+/**
+ * Select a specific day number in the DateTimeCellPicker calendar.
+ * Uses react-day-picker day buttons inside the datetime-picker-popover.
+ */
+export async function selectDayInDatePicker(page: Page, dayNumber: number): Promise<void> {
+  const pickerPopover = page.getByTestId('datetime-picker-popover');
+  // react-day-picker renders day buttons inside table cells with role="gridcell"
+  // Each day button has the day number as text
+  const dayRegex = new RegExp(`^${dayNumber}$`);
+  const dayButton = pickerPopover.locator('button').filter({ hasText: dayRegex }).first();
+  await expect(dayButton).toBeVisible({ timeout: 5000 });
+  await dayButton.click({ force: true });
+  await page.waitForTimeout(500);
+}
+
+/**
+ * Click the "Clear date" button in the DateTimeCellPicker to remove the date.
+ */
+export async function clearDateInPicker(page: Page): Promise<void> {
+  const clearButton = page.getByTestId('clear-date-button');
+  await expect(clearButton).toBeVisible({ timeout: 5000 });
+  await clearButton.click({ force: true });
+  await page.waitForTimeout(500);
+}
