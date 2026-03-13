@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { Login } from '@/components/login';
@@ -9,7 +9,7 @@ import { LOGIN_ACTION } from '@/components/login/const';
 import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
 import { SignUpPassword } from '@/components/login/SignUpPassword';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 function LoginPage() {
   const [search] = useSearchParams();
@@ -18,7 +18,7 @@ function LoginPage() {
   const force = search.get('force') === 'true';
   const redirectTo = search.get('redirectTo') || '';
   const type = search.get('type') || '';
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
+  const isAuthenticated = useIsAuthenticatedOptional();
 
 
   useEffect(() => {

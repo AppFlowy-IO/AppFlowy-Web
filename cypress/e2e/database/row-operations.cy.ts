@@ -254,6 +254,104 @@ describe('Database Row Operations', () => {
         cy.log('[TEST COMPLETE] Row duplication test passed');
       });
     });
+
+    it('should duplicate a row independently (modifying duplicate does not affect original)', () => {
+      const testEmail = generateRandomEmail();
+      const originalContent = `Original ${Date.now()}`;
+      const modifiedContent = `Modified ${Date.now()}`;
+
+      cy.log(`[TEST START] Testing row duplication independence - Test email: ${testEmail}`);
+
+      createGridAndWait(testEmail).then(() => {
+        // Step 1: Add content to first row's first cell
+        addContentToCell(0, originalContent);
+        DatabaseGridSelectors.cells().first().should('contain.text', originalContent);
+
+        // Count columns to calculate cell offsets per row
+        DatabaseGridSelectors.rows().first().then($firstRow => {
+          const firstRowId = $firstRow.attr('data-testid')?.replace('grid-row-', '') || '';
+
+          DatabaseGridSelectors.cells().then($allCells => {
+            // Count how many cells belong to the first row
+            let columnsPerRow = 0;
+            $allCells.each((index, cell) => {
+              const testId = Cypress.$(cell).attr('data-testid') || '';
+              if (testId.includes(firstRowId)) {
+                columnsPerRow++;
+              }
+            });
+            if (columnsPerRow === 0) columnsPerRow = 3; // fallback
+
+            cy.log(`[INFO] Columns per row: ${columnsPerRow}`);
+
+            // Step 2: Duplicate the row via context menu
+            cy.log('[STEP] Duplicating row');
+            openRowContextMenu(0);
+
+            cy.get('[role="menuitem"]').then($items => {
+              let found = false;
+              $items.each((index, item) => {
+                const text = Cypress.$(item).text();
+                if (text.includes('Duplicate') || text.includes('duplicate')) {
+                  cy.wrap(item).click();
+                  found = true;
+                  return false;
+                }
+              });
+
+              if (!found) {
+                RowControlsSelectors.rowMenuDuplicate().then($duplicate => {
+                  if ($duplicate.length > 0) {
+                    cy.wrap($duplicate).click();
+                  } else {
+                    cy.get('[role="menuitem"]').eq(2).click();
+                  }
+                });
+              }
+            });
+
+            cy.wait(2000);
+
+            // Verify duplication happened
+            DatabaseGridSelectors.rows().should('have.length.at.least', 2);
+
+            // Step 3: Verify both rows have the original content
+            DatabaseGridSelectors.cells().then($cells => {
+              let contentCount = 0;
+              $cells.each((index, cell) => {
+                if (Cypress.$(cell).text().includes(originalContent)) {
+                  contentCount++;
+                }
+              });
+              expect(contentCount).to.be.at.least(2);
+            });
+
+            // Step 4: Modify the duplicated row's first cell (second row)
+            // The duplicate row's first cell is at index = columnsPerRow (right after first row's cells)
+            cy.log('[STEP] Modifying duplicated row');
+            DatabaseGridSelectors.cells().eq(columnsPerRow).click();
+            waitForReactUpdate(500);
+
+            cy.focused().type('{selectall}');
+            cy.focused().type(modifiedContent);
+            cy.focused().type('{enter}');
+            waitForReactUpdate(1000);
+
+            // Step 5: Verify the original row's first cell is UNCHANGED
+            cy.log('[STEP] Verifying original row is unchanged');
+            DatabaseGridSelectors.cells().first().should('contain.text', originalContent);
+
+            // Verify the duplicate has the new content
+            DatabaseGridSelectors.cells().eq(columnsPerRow).should('contain.text', modifiedContent);
+
+            // Confirm original does NOT contain modified content
+            DatabaseGridSelectors.cells().first().should('not.contain.text', modifiedContent);
+
+            cy.log('[TEST COMPLETE] Row duplication independence test passed');
+          });
+        });
+      });
+    });
   });
 
   describe('Row Deletion', () => {

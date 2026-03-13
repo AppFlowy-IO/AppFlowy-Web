@@ -11,7 +11,7 @@ import { ReactComponent as HashtagIcon } from '@/assets/icons/hashtag.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { Origins, Popover } from '@/components/_shared/popover';
 import { OutlineNode } from '@/components/editor/editor.type';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
 import { Button } from '@/components/ui/button';
 
 const origins: Origins = {
@@ -97,7 +97,7 @@ export function OutlineDepthControl({ node, onClose }: { node: OutlineNode; onCl
 
 export function OutlineCollapseControl({ node, onToggle }: { node: OutlineNode; onToggle: () => void }) {
   const { t } = useTranslation();
-  const { collapsedMap, toggleCollapsed } = useEditorContext();
+  const { collapsedMap, toggleCollapsed } = useEditorLocalState();
 
   const isCollapsed = collapsedMap?.[node.blockId] ?? false;
 

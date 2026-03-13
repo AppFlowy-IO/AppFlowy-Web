@@ -1,12 +1,13 @@
-import React, { useCallback, useContext, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
+import { WorkspaceService } from '@/application/services/domains';
 import { SpaceView, Workspace } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useCurrentUserOptional, useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 export function useDuplicate () {
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
+  const isAuthenticated = useIsAuthenticatedOptional();
   const [search, setSearch] = useSearchParams();
   const [loginOpen, setLoginOpen] = React.useState(false);
   const [duplicateOpen, setDuplicateOpen] = React.useState(false);
@@ -48,8 +49,8 @@ export function useDuplicate () {
 }
 
 export function useLoadWorkspaces () {
-  const currentUser = useContext(AFConfigContext)?.currentUser;
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated && Boolean(currentUser) || false;
+  const currentUser = useCurrentUserOptional();
+  const isAuthenticated = useIsAuthenticatedOptional() && Boolean(currentUser);
   const [spaceLoading, setSpaceLoading] = useState<boolean>(false);
   const [workspaceLoading, setWorkspaceLoading] = useState<boolean>(false);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>(() => {
@@ -61,13 +62,11 @@ export function useLoadWorkspaces () {
 
   const [spaceList, setSpaceList] = useState<SpaceView[]>([]);
 
-  const service = useContext(AFConfigContext)?.service;
-
   const loadWorkspaces = useCallback(async () => {
     if (!isAuthenticated) return;
     setWorkspaceLoading(true);
     try {
-      const workspaces = await service?.getWorkspaces();
+      const workspaces = await WorkspaceService.getAll();
 
       if (workspaces) {
         setWorkspaceList(workspaces);
@@ -84,14 +83,14 @@ export function useLoadWorkspaces () {
     } finally {
       setWorkspaceLoading(false);
     }
-  }, [service, isAuthenticated]);
+  }, [isAuthenticated]);
 
   const loadSpaces = useCallback(
     async (selectedWorkspaceId: string) => {
       if (!isAuthenticated) return;
       setSpaceLoading(true);
       try {
-        const folder = await service?.getWorkspaceFolder(selectedWorkspaceId);
+        const folder = await WorkspaceService.getFolder(selectedWorkspaceId);
 
         if (folder) {
           const spaces = [];
@@ -118,7 +117,7 @@ export function useLoadWorkspaces () {
         setSpaceLoading(false);
       }
     },
-    [service, isAuthenticated],
+    [isAuthenticated],
   );
 
   return {

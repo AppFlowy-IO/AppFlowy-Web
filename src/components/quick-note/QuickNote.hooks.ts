@@ -1,24 +1,28 @@
 import React, { useContext } from 'react';
 
 import { QuickNote } from '@/application/types';
+import { QuickNoteService } from '@/application/services/domains';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 
-export const ToastContext = React.createContext<{
+type ToastContextType = {
   onOpen: (message: string) => void;
   onClose: () => void;
   open: boolean;
-}>({
-  onOpen: () => {
-    //
-  },
-  onClose: () => {
-    //
-  },
-  open: false,
-});
+};
+
+export const ToastContext = React.createContext<ToastContextType | undefined>(undefined);
 
 export const LISI_LIMIT = 100;
+
+export function useToastContext() {
+  const context = useContext(ToastContext);
+
+  if (!context) {
+    throw new Error('useToastContext must be used within a ToastContext.Provider');
+  }
+
+  return context;
+}
 
 export function useAddNode({
   onEnterNote,
@@ -27,16 +31,16 @@ export function useAddNode({
   onEnterNote: (node: QuickNote) => void;
   onAdd: (note: QuickNote) => void;
 }) {
-  const toast = useContext(ToastContext);
+  const toast = useToastContext();
 
   const [loading, setLoading] = React.useState(false);
   const currentWorkspaceId = useCurrentWorkspaceId();
-  const service = useService();
+
   const handleAdd = async () => {
-    if (!service || !currentWorkspaceId || loading) return;
+    if (!currentWorkspaceId || loading) return;
     setLoading(true);
     try {
-      const note = await service.createQuickNote(currentWorkspaceId, [{
+      const note = await QuickNoteService.create(currentWorkspaceId, [{
         type: 'paragraph',
         delta: [{ insert: '' }],
         children: [],

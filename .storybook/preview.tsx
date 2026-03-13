@@ -19,7 +19,6 @@ if (typeof window !== 'undefined') {
 
 // Mock AFConfigContext value for Storybook
 const mockAFConfigValue = {
-    service: undefined,
     isAuthenticated: true, // Set to true to prevent redirects in Storybook
     currentUser: {
         email: 'storybook@example.com',

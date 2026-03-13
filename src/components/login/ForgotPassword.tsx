@@ -4,8 +4,8 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import { AuthService } from '@/application/services/domains';
 import { LOGIN_ACTION } from '@/components/login/const';
-import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -14,16 +14,14 @@ import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 export function ForgotPassword({ redirectTo, email: initialEmail }: { redirectTo: string; email: string }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const service = useService();
   const [email, setEmail] = useState(initialEmail);
   const [, setSearch] = useSearchParams();
   const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    if (!service) return;
     setLoading(true);
     void (async () => {
       try {
-        await service.forgotPassword({ email });
+        await AuthService.forgotPassword({ email });
         // eslint-disable-next-line
       } catch (e: any) {
         if (e.code === 429 || e.response?.status === 429) {

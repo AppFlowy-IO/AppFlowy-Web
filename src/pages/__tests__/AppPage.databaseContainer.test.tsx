@@ -2,7 +2,6 @@ import { expect } from '@jest/globals';
 import { render, waitFor } from '@testing-library/react';
 
 import { View, ViewLayout } from '@/application/types';
-import { AppContext } from '@/components/app/app.hooks';
 
 import AppPage from '../AppPage';
 
@@ -13,23 +12,30 @@ declare global {
     workspaceId?: string;
     outline?: View[];
     handlers?: Record<string, unknown>;
-    service?: { getAxiosInstance?: () => unknown; getAppView?: (workspaceId: string, viewId: string) => Promise<View> };
+    getAppViewCached?: (workspaceId: string, viewId: string) => Promise<View>;
   } | undefined;
 }
 
 jest.mock('@/components/app/app.hooks', () => {
-  const React = jest.requireActual('react');
-
   return {
-    AppContext: React.createContext({ rendered: false }),
     useAppViewId: () => global.__appPageTestState?.viewId,
     useCurrentWorkspaceId: () => global.__appPageTestState?.workspaceId,
     useAppOutline: () => global.__appPageTestState?.outline,
-    useAppHandlers: () => global.__appPageTestState?.handlers,
+    useAppOperations: () => global.__appPageTestState?.handlers ?? {},
+    useAppRendered: () => false,
+    useAppendBreadcrumb: () => global.__appPageTestState?.handlers?.appendBreadcrumb ?? jest.fn(),
+    useOnRendered: () => global.__appPageTestState?.handlers?.onRendered ?? jest.fn(),
+    useOpenPageModal: () => global.__appPageTestState?.handlers?.openPageModal ?? jest.fn(),
+    useLoadViews: () => global.__appPageTestState?.handlers?.loadViews ?? jest.fn(),
+    useEventEmitter: () => global.__appPageTestState?.handlers?.eventEmitter,
+    useGetMentionUser: () => jest.fn(),
+    useLoadDatabaseRelations: () => jest.fn(),
+    useScheduleDeferredCleanup: () => jest.fn(),
   };
 });
 
 jest.mock('@/components/app/hooks/useViewOperations', () => ({
+  getViewReadOnlyStatus: () => false,
   useViewOperations: () => ({
     getViewReadOnlyStatus: () => false,
   }),
@@ -37,7 +43,14 @@ jest.mock('@/components/app/hooks/useViewOperations', () => ({
 
 jest.mock('@/components/main/app.hooks', () => ({
   useCurrentUser: () => ({ email: 'test@appflowy.io' }),
-  useService: () => global.__appPageTestState?.service ?? { getAxiosInstance: () => null },
+}));
+
+jest.mock('@/application/services/js-services/cached-api', () => ({
+  getAppViewCached: (...args: unknown[]) => global.__appPageTestState?.getAppViewCached?.(...(args as [string, string])),
+}));
+
+jest.mock('@/application/services/js-services/http', () => ({
+  getAxiosInstance: () => null,
 }));
 
 jest.mock('@/components/app/DatabaseView', () => () => null);
@@ -85,7 +98,7 @@ describe('AppPage database container', () => {
       handlers: {
         toView,
         loadViewMeta: jest.fn(),
-        createRowDoc: jest.fn(),
+        createRow: jest.fn(),
         loadView,
         appendBreadcrumb: jest.fn(),
         onRendered: jest.fn(),
@@ -101,9 +114,7 @@ describe('AppPage database container', () => {
     };
 
     render(
-      <AppContext.Provider value={{ rendered: false }}>
-        <AppPage />
-      </AppContext.Provider>
+      <AppPage />
     );
 
     await waitFor(() => {
@@ -145,11 +156,11 @@ describe('AppPage database container', () => {
       viewId: containerView.view_id,
       workspaceId: 'workspace-id',
       outline: undefined,
-      service: { getAxiosInstance: () => null, getAppView },
+      getAppViewCached: getAppView,
       handlers: {
         toView,
         loadViewMeta: jest.fn(),
-        createRowDoc: jest.fn(),
+        createRow: jest.fn(),
         loadView,
         appendBreadcrumb: jest.fn(),
         onRendered: jest.fn(),
@@ -165,9 +176,7 @@ describe('AppPage database container', () => {
     };
 
     render(
-      <AppContext.Provider value={{ rendered: false }}>
-        <AppPage />
-      </AppContext.Provider>
+      <AppPage />
     );
 
     await waitFor(() => {

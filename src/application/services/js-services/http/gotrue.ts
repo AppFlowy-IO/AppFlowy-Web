@@ -4,9 +4,9 @@ import { emit, EventType } from '@/application/session';
 import { afterAuth } from '@/application/session/sign_in';
 import { getTokenParsed, saveGoTrueAuth } from '@/application/session/token';
 
-import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
-import { verifyToken } from './http_api';
 import { Log } from '@/utils/log';
+import { verifyToken } from './auth-api';
+import { GoTrueErrorCode, parseGoTrueError } from './gotrue-error';
 
 export * from './gotrue-error';
 
@@ -26,10 +26,8 @@ export function initGrantService(baseURL: string) {
       'Content-Type': 'application/json',
     };
 
-    // Skip x-platform header for signup to avoid CORS issues with GoTrue
-    if (!config.url?.includes('/signup')) {
-      headers['x-platform'] = 'web-app';
-    }
+    // Skip x-platform header for GoTrue requests to avoid CORS issues
+    // GoTrue doesn't include x-platform in its Access-Control-Allow-Headers
 
     Object.assign(config.headers, headers);
 

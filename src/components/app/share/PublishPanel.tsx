@@ -9,7 +9,7 @@ import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg
 import { notify } from '@/components/_shared/notify';
 import { Switch } from '@/components/_shared/switch';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppHandlers } from '@/components/app/app.hooks';
+import { usePublishing } from '@/components/app/app.hooks';
 import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import PublishLinkPreview from '@/components/app/share/PublishLinkPreview';
 
@@ -25,7 +25,7 @@ function PublishPanel({
   onOpenPublishManage?: () => void;
 }) {
   const { t } = useTranslation();
-  const { publish, unpublish } = useAppHandlers();
+  const { publish, unpublish } = usePublishing();
   const {
     url,
     loadPublishInfo,

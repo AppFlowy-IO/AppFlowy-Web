@@ -5,18 +5,17 @@ import { useSearchParams } from 'react-router-dom';
 import { ERROR_CODE } from '@/application/constants';
 import { Workspace } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
+import { WorkspaceService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
-import { useService } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 export function ApproveConversion() {
   const { t } = useTranslation();
-  const service = useService();
   const [searchParams] = useSearchParams();
   const code = searchParams.get('code');
   const workspaceId = searchParams.get('workspace_id');
@@ -38,7 +37,6 @@ export function ApproveConversion() {
   const [isAlreadyMember, setIsAlreadyMember] = useState(false);
 
   const loadConversion = useCallback(async () => {
-    if (!service) return;
     setLoading(true);
     if (!workspaceId || !code) {
       setIsError(true);
@@ -46,7 +44,7 @@ export function ApproveConversion() {
     }
 
     try {
-      const info = await service.getGuestToMemberConversionInfo(workspaceId, code);
+      const info = await WorkspaceService.getGuestToMemberConversionInfo(workspaceId, code);
 
       setWorkspace({
         id: workspaceId,
@@ -80,7 +78,7 @@ export function ApproveConversion() {
     } finally {
       setLoading(false);
     }
-  }, [service, workspaceId, code]);
+  }, [workspaceId, code]);
 
   const AvatarLogo = useCallback(
     (props: HTMLAttributes<HTMLDivElement>) => {
@@ -95,7 +93,6 @@ export function ApproveConversion() {
   );
 
   const handleApprove = useCallback(async () => {
-    if (!service) return;
     setLoading(true);
     if (!workspaceId || !code) {
       setIsError(true);
@@ -103,7 +100,7 @@ export function ApproveConversion() {
     }
 
     try {
-      await service.approveTurnGuestToMember(workspaceId, code);
+      await WorkspaceService.approveTurnGuestToMember(workspaceId, code);
       setIsAlreadyMember(true);
       // eslint-disable-next-line
     } catch (e: any) {
@@ -116,7 +113,7 @@ export function ApproveConversion() {
     } finally {
       setLoading(false);
     }
-  }, [service, workspaceId, code]);
+  }, [workspaceId, code]);
 
   useEffect(() => {
     void loadConversion();

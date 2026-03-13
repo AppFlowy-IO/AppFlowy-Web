@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { useService } from '@/components/main/app.hooks';
+import { TemplateService } from '@/application/services/domains';
 
 function DeleteCreator ({ id, onClose, onDeleted, open }: {
   id: string;
@@ -12,16 +12,15 @@ function DeleteCreator ({ id, onClose, onDeleted, open }: {
   open: boolean;
 }) {
   const { t } = useTranslation();
-  const service = useService();
   const onSubmit = useCallback(async () => {
     try {
-      await service?.deleteTemplateCreator(id);
+      await TemplateService.deleteCreator(id);
       onDeleted();
       onClose();
     } catch (error) {
       notify.error('Failed to delete creator');
     }
-  }, [onDeleted, onClose, service, id]);
+  }, [onDeleted, onClose, id]);
 
   return (
     <NormalModal

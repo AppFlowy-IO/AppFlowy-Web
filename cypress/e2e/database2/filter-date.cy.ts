@@ -614,8 +614,11 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
             waitForReactUpdate(500);
 
             // Set dates for all rows
+            // NOTE: Avoid using today's day-of-month because when a date filter is first added,
+            // it defaults to today's date. Clicking an already-selected day in the calendar
+            // deselects it (react-day-picker single mode behavior).
             clickDateCell(dateFieldId, 0);
-            selectDateByDay(5);
+            selectDateByDay(10);
             cy.get('body').type('{esc}');
             waitForReactUpdate(300);
 
@@ -640,8 +643,8 @@ describe('Database Date Filter Tests (Desktop Parity)', () => {
             changeDateFilterCondition(DateFilterCondition.DateIs);
             waitForReactUpdate(500);
 
-            // Set filter date to 5th (should show only 1 row)
-            setFilterDate(5);
+            // Set filter date to 10th (should show only 1 row)
+            setFilterDate(10);
             waitForReactUpdate(500);
 
             // Close the filter popover

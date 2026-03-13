@@ -189,11 +189,13 @@ export const useAppflowyWebSocket = (options: Options): AppflowyWebSocketType =>
   const [clientId] = useState(() => options.clientId || random.uint32());
   const [deviceId] = useState(() => options.deviceId || random.uuidv4());
 
-  Log.debug('🔗 Start WebSocket connection', {
-    url: wsUrl,
-    workspaceId: options.workspaceId,
-    deviceId,
-  });
+  useEffect(() => {
+    Log.debug('🔗 Start WebSocket connection', {
+      url: wsUrl,
+      workspaceId: options.workspaceId,
+      deviceId,
+    });
+  }, [wsUrl, options.workspaceId, deviceId]);
 
   // Reconnect nonce: changing this forces react-use-websocket to close the old
   // connection and open a new one, without reloading the page.

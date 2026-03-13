@@ -16,7 +16,7 @@ import { usePanelContext } from '@/components/editor/components/panels/Panels.ho
 import { PanelType } from '@/components/editor/components/panels/PanelsContext';
 import ControlsMenu from '@/components/editor/components/toolbar/block-controls/ControlsMenu';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
 import { isMac } from '@/utils/hotkeys';
 
 type ControlActionsProps = {
@@ -27,7 +27,7 @@ type ControlActionsProps = {
 };
 
 function ControlActions({ setOpenMenu, blockId, parentId, onDraggingChange }: ControlActionsProps) {
-  const { setSelectedBlockIds } = useEditorContext();
+  const { setSelectedBlockIds } = useEditorLocalState();
   const [menuAnchorEl, setMenuAnchorEl] = useState<HTMLElement | null>(null);
   const openMenu = Boolean(menuAnchorEl);
   const dragHandleRef = useRef<HTMLButtonElement | null>(null);

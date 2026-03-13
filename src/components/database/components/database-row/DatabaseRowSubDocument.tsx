@@ -24,12 +24,12 @@ import {
   YDatabaseField,
   YDatabaseRow,
   YDoc,
+  YDocWithMeta,
   YjsDatabaseKey,
   YjsEditorKey
 } from '@/application/types';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
-import { YDocWithMeta } from '@/components/database/hooks';
 import { Editor } from '@/components/editor';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
@@ -343,6 +343,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         const docWithMeta = doc as YDocWithMeta;
 
         docWithMeta.object_id = documentId;
+        docWithMeta.view_id = documentId;
         docWithMeta._collabType = Types.Document;
         docWithMeta._syncBound = false;
 
@@ -386,6 +387,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         const docWithMeta = doc as YDocWithMeta;
 
         docWithMeta.object_id = documentId;
+        docWithMeta.view_id = documentId;
         docWithMeta._collabType = Types.Document;
         docWithMeta._syncBound = false;
 
@@ -768,12 +770,14 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
     }
 
     const docWithMeta = doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
 
-    if (docWithMeta.object_id && docWithMeta.object_id !== documentId) {
+    if (docViewId && docViewId !== documentId) {
       Log.debug('[DatabaseRowSubDocument] bindViewSync doc id mismatch', {
         rowId,
         documentId,
         objectId: docWithMeta.object_id,
+        viewId: docViewId,
       });
       return;
     }

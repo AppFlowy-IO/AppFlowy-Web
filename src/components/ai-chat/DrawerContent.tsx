@@ -3,14 +3,13 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 import { YjsEditor } from '@/application/slate-yjs';
-import { UIVariant, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { insertDataToDoc } from '@/components/ai-chat/utils';
-import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
+import { useAppOperations, useAppView, useCurrentWorkspaceId, useOpenPageModal, useLoadViews } from '@/components/app/app.hooks';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
-import { useService } from '@/components/main/app.hooks';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 
 function DrawerContent({
   openViewId,
@@ -25,12 +24,12 @@ function DrawerContent({
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
     bindViewSync,
-  } = useAppHandlers();
+  } = useAppOperations();
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
   const {
     getInsertData,
     clearInsertData,
@@ -41,8 +40,7 @@ function DrawerContent({
     id: string;
     doc: YDoc;
   } | undefined>(undefined);
-  const service = useService();
-  const requestInstance = service?.getAxiosInstance();
+  const requestInstance = getAxiosInstance();
   const initialScrolling = useRef(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const [notFound, setNotFound] = React.useState(false);
@@ -53,19 +51,18 @@ function DrawerContent({
     setEditor(editor);
   }, []);
 
-  const loadPageDoc = useCallback(async(id: string) => {
+  const loadPageDoc = useCallback(async (targetViewId: string) => {
     setNotFound(false);
     setDoc(undefined);
     setSyncBound(false);
     try {
-      const doc = await loadView(id);
+      const doc = await loadView(targetViewId);
 
-      setDoc({ doc, id });
-    } catch(e) {
+      setDoc({ doc, id: targetViewId });
+    } catch (e) {
       setNotFound(true);
       console.error(e);
     }
-
   }, [loadView]);
 
   const view = useAppView(openViewId);
@@ -83,8 +80,9 @@ function DrawerContent({
     if (!doc || !bindViewSync || syncBound) return;
 
     const docWithMeta = doc.doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
 
-    if (docWithMeta.object_id !== doc.id) {
+    if (docViewId !== doc.id) {
       return;
     }
 

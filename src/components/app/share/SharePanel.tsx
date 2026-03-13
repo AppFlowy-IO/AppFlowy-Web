@@ -3,13 +3,14 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AccessLevel, IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { findAncestors } from '@/components/_shared/outline/utils';
-import { useAppHandlers, useAppOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useLoadMentionableUsers, useGetSubscriptions, useAppOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { CopyLink } from '@/components/app/share/CopyLink';
 import { GeneralAccess } from '@/components/app/share/GeneralAccess';
 import { InviteGuest } from '@/components/app/share/InviteGuest';
 import { PeopleWithAccess } from '@/components/app/share/PeopleWithAccess';
 import { UpgradeBanner } from '@/components/app/share/UpgradeBanner';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { AccessService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
 function SharePanel({ viewId }: { viewId: string }) {
@@ -18,8 +19,7 @@ function SharePanel({ viewId }: { viewId: string }) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
   const role = selectedWorkspace?.role;
-  const service = useService();
-  const { loadMentionableUsers } = useAppHandlers();
+  const loadMentionableUsers = useLoadMentionableUsers();
   const [people, setPeople] = useState<IPeopleWithAccessType[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [mentionable, setMentionable] = useState<MentionablePerson[]>([]);
@@ -39,7 +39,7 @@ function SharePanel({ viewId }: { viewId: string }) {
   }, [role]);
 
   const loadPeople = useCallback(async () => {
-    if (!currentWorkspaceId || !viewId || !service || !currentUser) {
+    if (!currentWorkspaceId || !viewId || !currentUser) {
       return;
     }
 
@@ -47,7 +47,7 @@ function SharePanel({ viewId }: { viewId: string }) {
 
     setIsLoading(true);
     try {
-      const detail = await service.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds);
+      const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds);
 
       setPeople(detail.shared_with);
     } catch (error) {
@@ -56,7 +56,7 @@ function SharePanel({ viewId }: { viewId: string }) {
     } finally {
       setIsLoading(false);
     }
-  }, [currentUser, currentWorkspaceId, viewId, service, outline]);
+  }, [currentUser, currentWorkspaceId, viewId, outline]);
 
   useEffect(() => {
     void loadPeople();
@@ -99,7 +99,7 @@ function SharePanel({ viewId }: { viewId: string }) {
     }
   }, [loadPeople, loadMentionableData]);
 
-  const { getSubscriptions } = useAppHandlers();
+  const getSubscriptions = useGetSubscriptions();
 
   const [activeSubscriptionPlan, setActiveSubscriptionPaln] = useState<SubscriptionPlan | null>(null);
 

@@ -1,15 +1,38 @@
 import { createContext, useContext } from 'react';
 
-import { AFService } from '@/application/services/services.type';
 import { UserWorkspaceInfo } from '@/application/types';
 
-// Internal context for authentication layer
-// This context is only used within the app provider layers
+/**
+ * Authentication layer context.
+ *
+ * **Provider:** `AppAuthLayer` (outermost app layer)
+ *
+ * **Provider hierarchy:**
+ * ```
+ * AFConfigContext (root)            ← login state, currentUser
+ *   └─ AppAuthLayer                ← provides THIS context
+ *       └─ ConditionalWorkspaceLayers
+ *           └─ AppSyncLayer        ← websocket sync
+ *               └─ AppBusinessLayer ← provides Navigation/Outline/Operations/Sync contexts
+ * ```
+ *
+ * Contains workspace-level auth state derived from `AFConfigContext`.
+ * Available as soon as AppProvider mounts; does NOT depend on WebSocket
+ * being connected.
+ *
+ * **Hooks:** `useCurrentWorkspaceId`, `useCurrentWorkspaceIdOptional`,
+ *            `useUserWorkspaceInfo`, `usePageHistoryEnabled`
+ */
 export interface AuthInternalContextType {
-  service: AFService | undefined; // Service instance from useService
+  /** All workspace info for the current user, including workspace list and selected workspace. */
   userWorkspaceInfo?: UserWorkspaceInfo;
+  /** The ID of the currently active workspace. Derived from `userWorkspaceInfo.selectedWorkspace.id`. */
   currentWorkspaceId?: string;
+  /** Whether the user is currently authenticated. */
   isAuthenticated: boolean;
+  /** Whether page history (version snapshots) is enabled for the current workspace plan. */
+  enablePageHistory?: boolean;
+  /** Switch the active workspace. Triggers full data reload. */
   onChangeWorkspace: (workspaceId: string) => Promise<void>;
 }
 

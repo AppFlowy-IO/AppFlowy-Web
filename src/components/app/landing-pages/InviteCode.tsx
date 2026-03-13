@@ -5,17 +5,16 @@ import { useParams } from 'react-router-dom';
 import { ERROR_CODE } from '@/application/constants';
 import { Workspace } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
+import { WorkspaceService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
-import { useService } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 function InviteCode() {
   const { t } = useTranslation();
-  const service = useService();
   const params = useParams();
   const [loading, setLoading] = useState(false);
   const [hasJoined, setHasJoined] = useState(false);
@@ -26,14 +25,13 @@ function InviteCode() {
   const [isError, setIsError] = useState(false);
 
   const loadWorkspaceInfo = useCallback(async () => {
-    if (!service) return;
     if (!params.code) {
       setIsError(true);
       return;
     }
 
     try {
-      const info = await service.getWorkspaceInfoByInvitationCode(params.code);
+      const info = await WorkspaceService.getInfoByInvitationCode(params.code);
 
       setWorkspace({
         name: info.workspace_name,
@@ -59,14 +57,13 @@ function InviteCode() {
     } finally {
       setLoading(false);
     }
-  }, [params.code, service]);
+  }, [params.code]);
 
   useEffect(() => {
     void loadWorkspaceInfo();
   }, [loadWorkspaceInfo]);
 
   const handleJoin = async () => {
-    if (!service) return;
     if (!params.code) {
       setIsError(true);
       return;
@@ -74,7 +71,7 @@ function InviteCode() {
 
     setLoading(true);
     try {
-      await service.joinWorkspaceByInvitationCode(params.code);
+      await WorkspaceService.joinByInvitationCode(params.code);
 
       window.open(`/app/${workspace?.id}`, '_self');
       setHasJoined(true);

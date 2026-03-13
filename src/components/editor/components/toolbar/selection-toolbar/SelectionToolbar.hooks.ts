@@ -7,13 +7,13 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { useAIWriter } from '@/components/chat';
 import { getSelectionPosition } from '@/components/editor/components/toolbar/selection-toolbar/utils';
-import { Decorate, useEditorContext } from '@/components/editor/EditorContext';
+import { Decorate, useEditorLocalState } from '@/components/editor/EditorContext';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 export function useVisible() {
   const editor = useSlate();
   const selection = editor.selection;
-  const { decorateState, addDecorate, removeDecorate } = useEditorContext();
+  const { decorateState, addDecorate, removeDecorate } = useEditorLocalState();
   const [forceShow, setForceShow] = useState<boolean>(false);
   const [isDragging, setDragging] = useState<boolean>(false);
   const readOnly = useReadOnly()
@@ -274,18 +274,21 @@ export function useToolbarPosition() {
   };
 }
 
-export const SelectionToolbarContext = createContext<{
+type SelectionToolbarContextType = {
   visible: boolean;
   forceShow: (forceVisible: boolean) => void;
   rePosition: () => void;
   getDecorateState: () => Decorate | undefined;
-}>({
-  visible: false,
-  forceShow: () => undefined,
-  rePosition: () => undefined,
-  getDecorateState: () => undefined,
-});
+};
+
+export const SelectionToolbarContext = createContext<SelectionToolbarContextType | undefined>(undefined);
 
 export function useSelectionToolbarContext() {
-  return useContext(SelectionToolbarContext);
+  const context = useContext(SelectionToolbarContext);
+
+  if (!context) {
+    throw new Error('useSelectionToolbarContext must be used within SelectionToolbarContext.Provider');
+  }
+
+  return context;
 }

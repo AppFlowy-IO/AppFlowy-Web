@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { useService } from '@/components/main/app.hooks';
+import { TemplateService } from '@/application/services/domains';
 
 function DeleteCategory ({ id, onClose, onDeleted, open }: {
   id: string;
@@ -12,16 +12,15 @@ function DeleteCategory ({ id, onClose, onDeleted, open }: {
   open: boolean;
 }) {
   const { t } = useTranslation();
-  const service = useService();
   const onSubmit = useCallback(async () => {
     try {
-      await service?.deleteTemplateCategory(id);
+      await TemplateService.deleteCategory(id);
       onDeleted();
       onClose();
     } catch (error) {
       notify.error('Failed to delete category');
     }
-  }, [onDeleted, onClose, service, id]);
+  }, [onDeleted, onClose, id]);
 
   return (
     <NormalModal

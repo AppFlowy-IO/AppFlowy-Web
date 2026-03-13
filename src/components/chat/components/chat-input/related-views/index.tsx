@@ -7,10 +7,10 @@ import { ReactComponent as ChevronDown } from '@/assets/icons/triangle_down.svg'
 import { useViewLoader } from '@/components/chat';
 import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
-import { useChatSettingsLoader } from '@/components/chat/hooks/use-chat-settings-loader';
 import { useCheckboxTree } from '@/components/chat/hooks/use-checkbox-tree';
 import { MESSAGE_VARIANTS } from '@/components/chat/lib/animations';
 import { searchViews } from '@/components/chat/lib/views';
+import { useMessagesHandlerContext } from '@/components/chat/provider/messages-handler-provider';
 import { View } from '@/components/chat/types';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -25,19 +25,11 @@ export function RelatedViews() {
   const [searchValue, setSearchValue] = useState('');
   const [open, setOpen] = useState(false);
 
-  const {
-    chatSettings,
-    fetchChatSettings,
-    updateChatSettings,
-  } = useChatSettingsLoader();
+  const { chatSettings, updateChatSettings } = useMessagesHandlerContext();
 
   const viewIds = useMemo(() => {
     return chatSettings?.rag_ids || [];
   }, [chatSettings]);
-
-  useEffect(() => {
-    void fetchChatSettings();
-  }, [fetchChatSettings]);
 
   const {
     fetchViews,

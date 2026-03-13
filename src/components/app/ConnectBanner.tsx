@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Log } from '@/utils/log';
 
-import { useAppHandlers } from './app.hooks';
+import { useEventEmitter } from './app.hooks';
 
 // WebSocket readyState enum
 const READY_STATE = {
@@ -20,7 +20,7 @@ const READY_STATE = {
 export function ConnectBanner() {
   const [readyState, setReadyState] = useState<number>(READY_STATE.CONNECTING);
   const autoReconnectAttemptedRef = useRef(0); // timestamp of last auto-reconnect attempt
-  const { eventEmitter } = useAppHandlers();
+  const eventEmitter = useEventEmitter();
   const { t } = useTranslation();
 
   // Listen to WebSocket status changes

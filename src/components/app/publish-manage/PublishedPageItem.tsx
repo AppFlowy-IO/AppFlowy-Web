@@ -12,9 +12,10 @@ import { ReactComponent as SettingIcon } from '@/assets/icons/settings.svg';
 import { notify } from '@/components/_shared/notify';
 import { Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppHandlers, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useToView, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { PublishNameSetting } from '@/components/app/publish-manage/PublishNameSetting';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { PublishService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { copyTextToClipboard } from '@/utils/copy';
 import { openUrl } from '@/utils/url';
 
@@ -29,14 +30,13 @@ function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
   const [openSetting, setOpenSetting] = React.useState<boolean>(false);
   const [anchorEl, setAnchorEl] = React.useState<null | HTMLElement>(null);
   const [publishName, setPublishName] = React.useState<string>(view.publish_name || '');
-  const toView = useAppHandlers().toView;
+  const toView = useToView();
   const [unPublishLoading, setUnPublishLoading] = React.useState<boolean>(false);
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentUser = useCurrentUser();
   const isOwner = userWorkspaceInfo?.selectedWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
   const workspaceId = userWorkspaceInfo?.selectedWorkspace?.id;
   const isPublisher = view?.publisher_email === currentUser?.email;
-  const service = useService();
 
   useEffect(() => {
     setPublishName(view.publish_name || '');
@@ -103,9 +103,9 @@ function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
   }, [t, isOwner, isPublisher, unPublishLoading, url, onUnPublish, view.view_id]);
 
   const updatePublishName = useCallback(async (newPublishName: string) => {
-    if (!service || !workspaceId || !view) return;
+    if (!workspaceId || !view) return;
     try {
-      await service.updatePublishConfig(workspaceId, {
+      await PublishService.updateConfig(workspaceId, {
         view_id: view.view_id,
         publish_name: newPublishName,
       });
@@ -114,7 +114,7 @@ function PublishedPageItem({ namespace, onClose, view, onUnPublish }: {
       notify.error(e.message);
     }
 
-  }, [service, view, workspaceId]);
+  }, [view, workspaceId]);
 
   return (
     <div

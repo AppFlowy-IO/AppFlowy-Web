@@ -1,5 +1,5 @@
 import { PopoverProps } from '@mui/material/Popover';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element } from 'slate';
 import { useSlateStatic } from 'slate-react';
@@ -12,7 +12,7 @@ import { ReactComponent as AlignCenterSvg } from '@/assets/icons/align_center.sv
 import { ReactComponent as AlignLeftSvg } from '@/assets/icons/align_left.svg';
 import { ReactComponent as AlignRightSvg } from '@/assets/icons/align_right.svg';
 import { Popover } from '@/components/_shared/popover';
-import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
+import { SelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
 
 import ActionButton from './ActionButton';
 
@@ -90,7 +90,7 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
     }
   }, [getAlign]);
 
-  const { rePosition } = useSelectionToolbarContext();
+  const selectionToolbarContext = useContext(SelectionToolbarContext);
 
   const toggleAlign = useCallback(
     (align: AlignType) => {
@@ -105,13 +105,13 @@ export function Align({ blockId, enabled = true }: { blockId?: string; enabled?:
           });
           handleClose();
 
-          rePosition();
+          selectionToolbarContext?.rePosition();
         } catch (e) {
           return;
         }
       };
     },
-    [getNode, editor, handleClose, rePosition]
+    [getNode, editor, handleClose, selectionToolbarContext]
   );
 
   useEffect(() => {

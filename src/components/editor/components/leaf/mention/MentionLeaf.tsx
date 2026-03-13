@@ -12,7 +12,7 @@ import { MentionPerson } from '@/components/editor/components/leaf/mention/Menti
 export function MentionLeaf({ mention, text, children }: { mention: Mention; text: Text; children: React.ReactNode }) {
   const editor = useSlateStatic();
   const readonly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
-  const { type, date, page_id, reminder_id, reminder_option, block_id, url, person_id, person_name } = mention;
+  const { type, date, page_id, reminder_id, reminder_option, block_id, url, person_id, person_name, include_time } = mention;
 
   const reminder = useMemo(() => {
     return reminder_id ? { id: reminder_id ?? '', option: reminder_option ?? '' } : undefined;
@@ -24,7 +24,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     }
 
     if (type === MentionType.Date && date) {
-      return <MentionDate date={date} reminder={reminder} />;
+      return <MentionDate date={date} reminder={reminder} includeTime={include_time} text={text} />;
     }
 
     if (type === MentionType.externalLink && url) {
@@ -34,7 +34,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     if (type === MentionType.Person && person_id) {
       return <MentionPerson type={type} personId={person_id} person_name={person_name} />;
     }
-  }, [type, page_id, date, text, block_id, reminder, url, person_id, person_name]);
+  }, [type, page_id, date, text, block_id, reminder, url, person_id, person_name, include_time]);
 
   // check if the mention is selected
   const { isSelected, select, isCursorBefore } = useLeafSelected(text);
@@ -42,11 +42,11 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
     const classList = ['w-fit mention', 'relative', 'rounded-[2px]', 'py-0.5  px-1'];
 
     if (readonly) classList.push('cursor-default');
-    else if (type !== MentionType.Date) classList.push('cursor-pointer');
+    else classList.push('cursor-pointer');
 
-    if (isSelected && type !== MentionType.Date) classList.push('selected');
+    if (isSelected) classList.push('selected');
     return classList.join(' ');
-  }, [type, readonly, isSelected]);
+  }, [readonly, isSelected]);
 
   const ref = React.useRef<HTMLSpanElement>(null);
 

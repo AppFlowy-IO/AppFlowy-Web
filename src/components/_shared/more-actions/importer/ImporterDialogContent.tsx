@@ -1,16 +1,15 @@
 import LinearProgress from '@mui/material/LinearProgress';
-import React, { useCallback, useContext } from 'react';
+import React, { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as NotionIcon } from '@/assets/icons/notion.svg';
+import { FileService } from '@/application/services/domains';
 import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import { notify } from '@/components/_shared/notify';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
-import { AFConfigContext } from '@/components/main/app.hooks';
 
 function ImporterDialogContent({ source, onSuccess }: { source?: string; onSuccess: () => void }) {
   const { t } = useTranslation();
-  const service = useContext(AFConfigContext)?.service;
   const [value, setValue] = React.useState<string>(source || 'notion');
   const [progress, setProgress] = React.useState<number>(0);
   const [isError, setIsError] = React.useState<boolean>(false);
@@ -18,9 +17,8 @@ function ImporterDialogContent({ source, onSuccess }: { source?: string; onSucce
   const handleUpload = useCallback(
     async (file: File) => {
       setIsError(false);
-      if (!service) return;
       try {
-        await service.importFile(file, setProgress);
+        await FileService.importFile(file, setProgress);
         onSuccess();
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
@@ -28,7 +26,7 @@ function ImporterDialogContent({ source, onSuccess }: { source?: string; onSucce
         setIsError(true);
       }
     },
-    [onSuccess, service]
+    [onSuccess]
   );
 
   return (

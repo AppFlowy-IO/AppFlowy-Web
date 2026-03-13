@@ -5,16 +5,15 @@ import { useSearchParams } from 'react-router-dom';
 import { ERROR_CODE } from '@/application/constants';
 import { Workspace } from '@/application/types';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
+import { WorkspaceService } from '@/application/services/domains';
 import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
-import { useService } from '@/components/main/app.hooks';
 import { Progress } from '@/components/ui/progress';
 
 export function AsGuest() {
   const { t } = useTranslation();
-  const service = useService();
   const [searchParams] = useSearchParams();
   const code = searchParams.get('code');
   const workspaceId = searchParams.get('workspace_id');
@@ -31,7 +30,6 @@ export function AsGuest() {
   const [isError, setIsError] = useState(false);
 
   const loadInvitation = useCallback(async () => {
-    if (!service) return;
     setLoading(true);
     if (!workspaceId || !code) {
       setIsError(true);
@@ -39,7 +37,7 @@ export function AsGuest() {
     }
 
     try {
-      const info = await service.getGuestInvitation(workspaceId, code);
+      const info = await WorkspaceService.getGuestInvitation(workspaceId, code);
 
       setWorkspace({
         id: info.workspace_id,
@@ -59,7 +57,7 @@ export function AsGuest() {
         return;
       }
 
-      await service.acceptGuestInvitation(workspaceId, code);
+      await WorkspaceService.acceptGuestInvitation(workspaceId, code);
 
       // eslint-disable-next-line
     } catch (e: any) {
@@ -76,7 +74,7 @@ export function AsGuest() {
     } finally {
       setLoading(false);
     }
-  }, [code, service, workspaceId]);
+  }, [code, workspaceId]);
 
   useEffect(() => {
     void loadInvitation();

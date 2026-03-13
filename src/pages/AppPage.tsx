@@ -1,26 +1,36 @@
-import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
 import { findView } from '@/components/_shared/outline/utils';
 import { AIChat } from '@/components/ai-chat';
 import {
-  AppContext,
-  useAppHandlers,
+  useAppOperations,
   useAppOutline,
+  useAppRendered,
   useAppViewId,
+  useAppendBreadcrumb,
   useCurrentWorkspaceId,
+  useEventEmitter,
+  useGetMentionUser,
+  useLoadDatabaseRelations,
+  useLoadViews,
+  useOnRendered,
+  useOpenPageModal,
+  useScheduleDeferredCleanup,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
-import { useViewOperations } from '@/components/app/hooks/useViewOperations';
-import type { YDocWithMeta } from '@/components/app/hooks/useViewOperations';
+import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
+import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { ViewService } from '@/application/services/domains';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 import { Log } from '@/utils/log';
 
 const ViewHelmet = lazy(() => import('@/components/_shared/helmet/ViewHelmet'));
@@ -30,29 +40,29 @@ function AppPage() {
   const outline = useAppOutline();
   const ref = React.useRef<HTMLDivElement>(null);
   const workspaceId = useCurrentWorkspaceId();
+  const operations = useAppOperations();
   const {
     toView,
     loadViewMeta,
     createRow,
     loadView,
-    appendBreadcrumb,
-    onRendered,
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
     bindViewSync,
-    scheduleDeferredCleanup,
-    ...handlers
-  } = useAppHandlers();
-  const { eventEmitter } = handlers;
-  const { getViewReadOnlyStatus } = useViewOperations();
+  } = operations;
+  const appendBreadcrumb = useAppendBreadcrumb();
+  const onRendered = useOnRendered();
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
+  const eventEmitter = useEventEmitter();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
+  const getMentionUser = useGetMentionUser();
+  const loadDatabaseRelations = useLoadDatabaseRelations();
 
   const currentUser = useCurrentUser();
-  const service = useService();
 
   // View from outline (may be undefined if outline hasn't updated yet)
   const outlineView = useMemo(() => {
@@ -65,7 +75,7 @@ function AppPage() {
 
   // Fetch view metadata when not found in outline (handles race condition after creating new view)
   useEffect(() => {
-    if (outlineView || !viewId || !workspaceId || !service) {
+    if (outlineView || !viewId || !workspaceId) {
       // Clear fallback when outline has the view
       if (outlineView && fallbackView?.view_id === viewId) {
         setFallbackView(null);
@@ -82,8 +92,7 @@ function AppPage() {
     // View not in outline - fetch from server directly
     let cancelled = false;
 
-    service
-      .getAppView(workspaceId, viewId)
+    ViewService.get(workspaceId, viewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
           setFallbackView(fetchedView);
@@ -99,13 +108,13 @@ function AppPage() {
     return () => {
       cancelled = true;
     };
-  }, [outlineView, viewId, workspaceId, service, fallbackView?.view_id]);
+  }, [outlineView, viewId, workspaceId, fallbackView?.view_id]);
 
   // Use outline view if available, otherwise use fallback for the active route only.
   const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null);
   const layout = view?.layout;
 
-  const rendered = useContext(AppContext)?.rendered;
+  const rendered = useAppRendered();
 
   const helmet = useMemo(() => {
     return view && rendered ? (
@@ -118,6 +127,10 @@ function AppPage() {
   const [error, setError] = React.useState<AppError | null>(null);
   // Track whether sync has been bound for the current doc
   const [syncBound, setSyncBound] = useState(false);
+  // Track viewIds that were externally reverted (by another device); show dialog when user opens them
+  const [pendingExternalReverts, setPendingExternalReverts] = useState<ReadonlySet<string>>(() => new Set());
+  // Derived: show dialog when current view was reverted externally (Vercel rule: derive during render, not in effect)
+  const showRevertedDialog = !!viewId && pendingExternalReverts.has(viewId);
 
   // Track in-progress loads to prevent duplicate requests and enable recovery.
   const loadAttemptRef = useRef<{ viewId: string; timestamp: number } | null>(null);
@@ -127,6 +140,11 @@ function AppPage() {
   const prevDocRef = useRef<{ doc: YDoc; guid: string; syncBound: boolean } | null>(null);
   // Track current route to guard async callbacks against stale navigation.
   const currentViewIdRef = useRef<string | undefined>(viewId);
+  const getDocViewId = useCallback((doc?: YDoc) => {
+    const docWithMeta = doc as YDocWithMeta | undefined;
+
+    return docWithMeta?.view_id ?? docWithMeta?.object_id;
+  }, []);
 
   useEffect(() => {
     docRef.current = doc;
@@ -160,8 +178,8 @@ function AppPage() {
   }, [doc, syncBound, scheduleDeferredCleanup]);
 
   const loadPageDoc = useCallback(
-    async (id: string) => {
-      loadAttemptRef.current = { viewId: id, timestamp: Date.now() };
+    async (targetViewId: string) => {
+      loadAttemptRef.current = { viewId: targetViewId, timestamp: Date.now() };
       setError(null);
 
       try {
@@ -169,10 +187,11 @@ function AppPage() {
         // 1. Opens from IndexedDB cache if available (instant)
         // 2. Fetches from server only if not cached
         // 3. Does NOT bind sync - that happens after render
-        const loadedDoc = await loadView(id, false, true);
+        const loadedDoc = await loadView(targetViewId, false, true);
 
         Log.debug('[AppPage] loadPageDoc complete, setting doc state', {
-          viewId: id,
+          viewId: targetViewId,
+          docViewId: loadedDoc.view_id,
           docObjectId: loadedDoc.object_id,
         });
 
@@ -181,7 +200,7 @@ function AppPage() {
         setDoc(loadedDoc);
 
         // Clear the attempt after successful load
-        if (loadAttemptRef.current?.viewId === id) {
+        if (loadAttemptRef.current?.viewId === targetViewId) {
           loadAttemptRef.current = null;
         }
       } catch (e) {
@@ -190,7 +209,7 @@ function AppPage() {
         setError(appError);
         console.error('[AppPage] Error loading view:', formatErrorForLogging(e));
         // Clear the attempt on error
-        if (loadAttemptRef.current?.viewId === id) {
+        if (loadAttemptRef.current?.viewId === targetViewId) {
           loadAttemptRef.current = null;
         }
       }
@@ -224,12 +243,12 @@ function AppPage() {
 
     // Skip if we already have the doc for this viewId or if a load is already in progress
     // This prevents double-loading when `view` dependency changes (e.g., outline updates)
-    if (docRef.current?.object_id === viewId || loadAttemptRef.current?.viewId === viewId) {
+    if (getDocViewId(docRef.current) === viewId || loadAttemptRef.current?.viewId === viewId) {
       return;
     }
 
     void loadPageDoc(viewId);
-  }, [loadPageDoc, viewId, layout, toView, view]);
+  }, [loadPageDoc, viewId, layout, toView, view, getDocViewId]);
 
   // Recovery: Re-trigger load if doc doesn't match viewId after timeout.
   // Acts as safety net for edge cases where initial load didn't complete.
@@ -238,7 +257,7 @@ function AppPage() {
     if (isDatabaseContainer(view)) return;
 
     // Check if doc matches current viewId
-    const docMatchesViewId = doc?.object_id === viewId;
+    const docMatchesViewId = getDocViewId(doc) === viewId;
 
     if (docMatchesViewId) return;
 
@@ -253,7 +272,7 @@ function AppPage() {
     // Use 5s delay to give slow networks sufficient time before retrying.
     const recoveryTimer = setTimeout(() => {
       // Check if doc now matches (load completed while timer was pending)
-      if (docRef.current?.object_id === viewId) {
+      if (getDocViewId(docRef.current) === viewId) {
         return;
       }
 
@@ -273,7 +292,7 @@ function AppPage() {
     }, 5000);
 
     return () => clearTimeout(recoveryTimer);
-  }, [viewId, layout, view, doc?.object_id, loadPageDoc]);
+  }, [viewId, layout, view, doc, loadPageDoc, getDocViewId]);
 
   useEffect(() => {
     if (layout === ViewLayout.AIChat) {
@@ -290,9 +309,12 @@ function AppPage() {
 
     const docWithMeta = doc as YDocWithMeta;
 
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
+
     // Verify doc matches current viewId
-    if (docWithMeta.object_id !== viewId) {
+    if (docViewId !== viewId) {
       Log.debug('[AppPage] bindViewSync skipped - doc viewId mismatch', {
+        docViewId,
         docObjectId: docWithMeta.object_id,
         viewId,
       });
@@ -306,6 +328,7 @@ function AppPage() {
 
     Log.debug('[AppPage] bindViewSync starting', {
       viewId,
+      docViewId,
       docObjectId: docWithMeta.object_id,
     });
 
@@ -317,6 +340,72 @@ function AppPage() {
       Log.debug('[AppPage] bindViewSync complete', { viewId });
     }
   }, [doc, viewId, syncBound, bindViewSync]);
+
+  useEffect(() => {
+    if (!eventEmitter) return;
+
+    const handleCollabDocReset = ({ objectId, viewId: resetViewId, doc: nextDoc, isExternalRevert }: { objectId: string; viewId?: string; doc: YDoc; isExternalRevert?: boolean }) => {
+      Log.debug('[Version] AppPage handleCollabDocReset received:', {
+        objectId,
+        resetViewId,
+        isExternalRevert,
+        currentViewId: currentViewIdRef.current,
+      });
+      // Track external reverts so we can show the dialog when user opens the affected view.
+      if (isExternalRevert) {
+        const targetViewId = resetViewId ?? objectId;
+
+        Log.debug('[Version] AppPage adding to pendingExternalReverts:', { targetViewId });
+        setPendingExternalReverts((prev) => {
+          const next = new Set(prev);
+
+          next.add(targetViewId);
+          return next;
+        });
+      }
+
+      setDoc((currentDoc) => {
+        if (!currentDoc || currentDoc.guid !== objectId) {
+          return currentDoc;
+        }
+
+        const currentDocWithMeta = currentDoc as YDocWithMeta;
+
+        // Guard against cross-view replacements for shared-guid docs (e.g. database layouts).
+        const currentDocViewId = currentDocWithMeta.view_id ?? currentDocWithMeta.object_id;
+
+        if (resetViewId && currentDocViewId && currentDocViewId !== resetViewId) {
+          return currentDoc;
+        }
+
+        if (resetViewId && currentViewIdRef.current && currentViewIdRef.current !== resetViewId) {
+          return currentDoc;
+        }
+
+        const nextDocWithMeta = nextDoc as YDocWithMeta;
+
+        if (!nextDocWithMeta.object_id) {
+          nextDocWithMeta.object_id = currentDocWithMeta.object_id;
+        }
+
+        if (!nextDocWithMeta.view_id) {
+          nextDocWithMeta.view_id = currentDocWithMeta.view_id ?? currentDocWithMeta.object_id;
+        }
+
+        if (nextDocWithMeta._collabType === undefined) {
+          nextDocWithMeta._collabType = currentDocWithMeta._collabType;
+        }
+
+        nextDocWithMeta._syncBound = true;
+        return nextDoc;
+      });
+    };
+
+    eventEmitter.on(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    return () => {
+      eventEmitter.off(APP_EVENTS.COLLAB_DOC_RESET, handleCollabDocReset);
+    };
+  }, [eventEmitter]);
 
   const viewMeta: ViewMetaProps | null = useMemo(() => {
     if (view) {
@@ -346,17 +435,17 @@ function AppPage() {
     [uploadFile, viewId]
   );
 
-  const requestInstance = service?.getAxiosInstance();
+  const requestInstance = getAxiosInstance();
 
   // Check if view is in shareWithMe and determine readonly status
   const isReadOnly = useMemo(() => {
     if (!viewId) return false;
     return getViewReadOnlyStatus(viewId, outline);
-  }, [getViewReadOnlyStatus, viewId, outline]);
+  }, [viewId, outline]);
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
-    const docForCurrentView = doc && doc.object_id === viewId ? doc : undefined;
+    const docForCurrentView = doc && getDocViewId(doc) === viewId ? doc : undefined;
 
     if (!docForCurrentView && layout === ViewLayout.AIChat && viewId) {
       return (
@@ -371,9 +460,12 @@ function AppPage() {
     }
 
     if (layout === ViewLayout.Document) {
+
+      const key = `${viewId}:${docForCurrentView.version}`;
+
       return (
         <Document
-          key={viewId}
+          key={key}
           requestInstance={requestInstance}
           workspaceId={workspaceId}
           doc={docForCurrentView}
@@ -394,7 +486,21 @@ function AppPage() {
           onWordCountChange={setWordCount}
           uploadFile={handleUploadFile}
           variant={UIVariant.App}
-          {...handlers}
+          getSubscriptions={operations.getSubscriptions}
+          getMentionUser={getMentionUser}
+          eventEmitter={eventEmitter}
+          getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
+          loadDatabaseRelations={loadDatabaseRelations}
+          createDatabaseView={operations.createDatabaseView}
+          loadDatabasePrompts={operations.loadDatabasePrompts}
+          testDatabasePromptConfig={operations.testDatabasePromptConfig}
+          checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
+          loadRowDocument={operations.loadRowDocument}
+          createRowDocument={operations.createRowDocument}
+          updatePageIcon={operations.updatePageIcon}
+          updatePageName={operations.updatePageName}
+          generateAISummaryForRow={operations.generateAISummaryForRow}
+          generateAITranslateForRow={operations.generateAITranslateForRow}
         />
       );
     }
@@ -423,13 +529,26 @@ function AppPage() {
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
         scheduleDeferredCleanup={scheduleDeferredCleanup}
-        {...handlers}
+        getSubscriptions={operations.getSubscriptions}
+        getMentionUser={getMentionUser}
+        eventEmitter={eventEmitter}
+        getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
+        loadDatabaseRelations={loadDatabaseRelations}
+        createDatabaseView={operations.createDatabaseView}
+        loadDatabasePrompts={operations.loadDatabasePrompts}
+        testDatabasePromptConfig={operations.testDatabasePromptConfig}
+        checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
+        loadRowDocument={operations.loadRowDocument}
+        createRowDocument={operations.createRowDocument}
+        updatePageIcon={operations.updatePageIcon}
+        updatePageName={operations.updatePageName}
+        generateAISummaryForRow={operations.generateAISummaryForRow}
+        generateAITranslateForRow={operations.generateAITranslateForRow}
       />
     );
   }, [
     doc,
     layout,
-    handlers,
     viewId,
     viewMeta,
     workspaceId,
@@ -450,7 +569,36 @@ function AppPage() {
     setWordCount,
     handleUploadFile,
     scheduleDeferredCleanup,
+    getDocViewId,
+    operations,
+    getMentionUser,
+    eventEmitter,
+    loadDatabaseRelations,
   ]);
+
+  // Keep previous view content visible during transitions to prevent
+  // the old Document from unmounting (which triggers clearAwareness/disconnect).
+  const viewDomRef = useRef<React.ReactNode>(null);
+
+  // Cache the latest non-null viewDom in an effect (not during render)
+  // to keep the render function pure per React concurrent mode rules.
+  useEffect(() => {
+    if (viewDom !== null) {
+      viewDomRef.current = viewDom;
+    }
+  }, [viewDom]);
+
+  // Clear stale content when an error occurs so the error UI shows immediately
+  useEffect(() => {
+    if (error) {
+      viewDomRef.current = null;
+    }
+  }, [error]);
+
+  // Show current content, or keep previous content visible during transition.
+  // The ref was set by a prior committed effect, so reading it here is safe.
+  const displayDom = viewDom ?? viewDomRef.current;
+  const isTransitioning = viewDom === null && displayDom !== null;
 
   useEffect(() => {
     if (!viewId || !workspaceId || !currentUser?.uuid) return;
@@ -486,9 +634,9 @@ function AppPage() {
     const retryViewId = viewId;
 
     // If the view is still missing from outline, retry metadata fetch first so viewMeta/layout can recover.
-    if (!outlineView && workspaceId && service) {
+    if (!outlineView && workspaceId) {
       try {
-        const fetchedView = await service.getAppView(workspaceId, retryViewId);
+        const fetchedView = await ViewService.get(workspaceId, retryViewId);
 
         if (fetchedView && fetchedView.view_id === retryViewId && currentViewIdRef.current === retryViewId) {
           setFallbackView(fetchedView);
@@ -503,15 +651,34 @@ function AppPage() {
     }
 
     await loadPageDoc(retryViewId);
-  }, [viewId, outlineView, workspaceId, service, loadPageDoc]);
+  }, [viewId, outlineView, workspaceId, loadPageDoc]);
+
+  // Use currentViewIdRef (advanced-use-latest pattern) so this callback is stable
+  // across navigations — no viewId dependency needed.
+  const handleDismissRevertedDialog = useCallback(() => {
+    const currentViewId = currentViewIdRef.current;
+
+    if (!currentViewId) return;
+    setPendingExternalReverts((prev) => {
+      const next = new Set(prev);
+
+      next.delete(currentViewId);
+      return next;
+    });
+  }, []);
 
   if (!viewId) return null;
   return (
     <div ref={ref} className={'relative h-full w-full'}>
       {helmet}
 
-      {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : <div className={'h-full w-full'}>{viewDom}</div>}
+      {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : (
+        <div className={`h-full w-full ${isTransitioning ? 'pointer-events-none opacity-80' : ''}`}>
+          {displayDom}
+        </div>
+      )}
       {view && <Help />}
+      <RevertedDialog open={showRevertedDialog} onDismiss={handleDismissRevertedDialog} />
     </div>
   );
 }

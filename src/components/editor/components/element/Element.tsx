@@ -36,7 +36,7 @@ import { handleBlockDrop } from '@/components/editor/components/drag-drop/handle
 import { useBlockDrop } from '@/components/editor/components/drag-drop/useBlockDrop';
 import { BlockNotFound } from '@/components/editor/components/element/BlockNotFound';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { renderColor } from '@/utils/color';
 
@@ -54,8 +54,8 @@ export const Element = ({
   const {
     jumpBlockId,
     onJumpedBlockId,
-    selectedBlockIds,
   } = useEditorContext();
+  const { selectedBlockIds } = useEditorLocalState();
 
   const { blockId, type } = node;
   const isSelected = useSelected();

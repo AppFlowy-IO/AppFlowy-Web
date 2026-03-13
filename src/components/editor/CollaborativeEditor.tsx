@@ -7,7 +7,7 @@ import * as Y from 'yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
-import { BlockType, CollabOrigin } from '@/application/types';
+import { BlockType, CollabOrigin, YDoc } from '@/application/types';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { withPlugins } from '@/components/editor/plugins';
@@ -30,7 +30,7 @@ function CollaborativeEditor({
   onEditorConnected,
   onSelectionChange,
 }: {
-  doc: Y.Doc;
+  doc: YDoc;
   onEditorConnected?: (editor: YjsEditor) => void;
   onSelectionChange?: (editor: YjsEditor) => void;
 }) {
@@ -291,8 +291,10 @@ function CollaborativeEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editor]);
 
+  const key = `${viewId}:${doc.version}`;
+
   return (
-    <Slate editor={editor} initialValue={defaultInitialValue} onChange={handleSlateChange}>
+    <Slate key={key} editor={editor} initialValue={defaultInitialValue} onChange={handleSlateChange}>
       <EditorEditable />
     </Slate>
   );

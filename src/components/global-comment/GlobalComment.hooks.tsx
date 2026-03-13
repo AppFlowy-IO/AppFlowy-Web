@@ -4,14 +4,15 @@ import { useTranslation } from 'react-i18next';
 
 import { GlobalComment, Reaction } from '@/application/comment.type';
 import { PublishContext } from '@/application/publish';
+import { PublishService } from '@/application/services/domains';
 import { AFWebUser } from '@/application/types';
 import { getUserIconUrl } from '@/application/user-metadata';
 import { useCurrentUserWorkspaceAvatar } from '@/components/app/useWorkspaceMemberProfile';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { stringAvatar } from '@/utils/color';
 import { isFlagEmoji } from '@/utils/emoji';
 
-export const GlobalCommentContext = React.createContext<{
+type GlobalCommentContextType = {
   reload: () => Promise<void>;
   getComment: (commentId: string) => GlobalComment | undefined;
   loading: boolean;
@@ -22,41 +23,37 @@ export const GlobalCommentContext = React.createContext<{
   toggleReaction: (commentId: string, reactionType: string) => void;
   setHighLightCommentId: (commentId: string | null) => void;
   highLightCommentId: string | null;
-}>({
-  reload: () => Promise.resolve(),
-  getComment: () => undefined,
-  loading: false,
-  comments: null,
-  replyComment: () => undefined,
-  replyCommentId: null,
-  reactions: null,
-  toggleReaction: () => undefined,
-  setHighLightCommentId: () => undefined,
-  highLightCommentId: null,
-});
+};
+
+export const GlobalCommentContext = React.createContext<GlobalCommentContextType | undefined>(undefined);
 
 export function useGlobalCommentContext() {
-  return useContext(GlobalCommentContext);
+  const context = useContext(GlobalCommentContext);
+
+  if (!context) {
+    throw new Error('useGlobalCommentContext must be used within a GlobalCommentProvider');
+  }
+
+  return context;
 }
 
 export function useLoadReactions() {
   const viewId = useContext(PublishContext)?.viewMeta?.view_id;
-  const service = useContext(AFConfigContext)?.service;
-  const currentUser = useContext(AFConfigContext)?.currentUser;
+  const currentUser = useCurrentUserOptional();
   const workspaceAvatar = useCurrentUserWorkspaceAvatar();
   const currentUserAvatar = useMemo(() => getUserIconUrl(currentUser, workspaceAvatar), [currentUser, workspaceAvatar]);
   const [reactions, setReactions] = useState<Record<string, Reaction[]> | null>(null);
   const fetchReactions = useCallback(async () => {
-    if (!viewId || !service) return;
+    if (!viewId) return;
 
     try {
-      const reactions = await service.getPublishViewReactions(viewId);
+      const reactions = await PublishService.getReactions(viewId);
 
       setReactions(reactions);
     } catch (e) {
       console.error(e);
     }
-  }, [service, viewId]);
+  }, [viewId]);
 
   useEffect(() => {
     void fetchReactions();
@@ -65,7 +62,7 @@ export function useLoadReactions() {
   const toggleReaction = useCallback(
     async (commentId: string, reactionType: string) => {
       try {
-        if (!service || !viewId) return;
+        if (!viewId) return;
         let isAdded = true;
 
         setReactions((prev) => {
@@ -129,9 +126,9 @@ export function useLoadReactions() {
 
         try {
           if (isAdded) {
-            await service.addPublishViewReaction(viewId, commentId, reactionType);
+            await PublishService.addReaction(viewId, commentId, reactionType);
           } else {
-            await service.removePublishViewReaction(viewId, commentId, reactionType);
+            await PublishService.removeReaction(viewId, commentId, reactionType);
           }
         } catch (e) {
           console.error(e);
@@ -140,7 +137,7 @@ export function useLoadReactions() {
         console.error(e);
       }
     },
-    [currentUser, currentUserAvatar, service, viewId]
+    [currentUser, currentUserAvatar, viewId]
   );
 
   return { reactions, toggleReaction };
@@ -148,17 +145,16 @@ export function useLoadReactions() {
 
 export function useLoadComments() {
   const viewId = useContext(PublishContext)?.viewMeta?.view_id;
-  const service = useContext(AFConfigContext)?.service;
 
   const [comments, setComments] = useState<GlobalComment[] | null>(null);
   const [loading, setLoading] = useState(false);
 
   const fetchComments = useCallback(async () => {
-    if (!viewId || !service) return;
+    if (!viewId) return;
 
     setLoading(true);
     try {
-      const comments = await service.getPublishViewGlobalComments(viewId);
+      const comments = await PublishService.getComments(viewId);
 
       setComments(comments);
     } catch (e) {
@@ -166,7 +162,7 @@ export function useLoadComments() {
     } finally {
       setLoading(false);
     }
-  }, [viewId, service]);
+  }, [viewId]);
 
   useEffect(() => {
     void fetchComments();

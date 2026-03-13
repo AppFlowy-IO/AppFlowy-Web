@@ -1,10 +1,10 @@
-import React, { useCallback, useContext, useEffect } from 'react';
+import React, { useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 export function useImport (force?: boolean) {
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
+  const isAuthenticated = useIsAuthenticatedOptional();
   const [search, setSearch] = useSearchParams();
   const [loginOpen, setLoginOpen] = React.useState(false);
   const [open, setOpen] = React.useState(false);

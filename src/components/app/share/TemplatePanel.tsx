@@ -11,20 +11,18 @@ import { useLoadPublishInfo } from '@/components/app/share/publish.hooks';
 import AsTemplateButton from '@/components/as-template/AsTemplateButton';
 import DeleteTemplate from '@/components/as-template/DeleteTemplate';
 import { slugify } from '@/components/as-template/utils';
-import { useService } from '@/components/main/app.hooks';
-
+import { TemplateService } from '@/application/services/domains';
 
 function TemplatePanel({ viewId }: { viewId: string }) {
   const view = useAppView(viewId);
-  const service = useService();
   const [loading, setLoading] = React.useState(false);
   const [deleteModalOpen, setDeleteModalOpen] = React.useState(false);
   const [template, setTemplateInfo] = React.useState<Template>();
   const loadTemplateInfo = useCallback(async() => {
-    if(!service || !view?.view_id) return;
+    if(!view?.view_id) return;
     setLoading(true);
     try {
-      const res = await service.getTemplateById(view?.view_id);
+      const res = await TemplateService.getById(view?.view_id);
 
       setTemplateInfo(res);
       // eslint-disable-next-line
@@ -33,7 +31,7 @@ function TemplatePanel({ viewId }: { viewId: string }) {
     } finally {
       setLoading(false);
     }
-  }, [service, view?.view_id]);
+  }, [view?.view_id]);
   const { t } = useTranslation();
   const {
     url: publishUrl,

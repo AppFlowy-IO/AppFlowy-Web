@@ -7,10 +7,10 @@ export namespace messages {
     interface IMessage {
 
         /** Message collabMessage */
-        collabMessage?: (collab.ICollabMessage|null);
+        collabMessage?: (collab.ICollabMessage | null);
 
         /** Message notification */
-        notification?: (notification.IWorkspaceNotification|null);
+        notification?: (notification.IWorkspaceNotification | null);
     }
 
     /** All messages send between client/server are wrapped into a `Message`. */
@@ -23,13 +23,13 @@ export namespace messages {
         constructor(properties?: messages.IMessage);
 
         /** Message collabMessage. */
-        public collabMessage?: (collab.ICollabMessage|null);
+        public collabMessage?: (collab.ICollabMessage | null);
 
         /** Message notification. */
-        public notification?: (notification.IWorkspaceNotification|null);
+        public notification?: (notification.IWorkspaceNotification | null);
 
         /** Message payload. */
-        public payload?: ("collabMessage"|"notification");
+        public payload?: ("collabMessage" | "notification");
 
         /**
          * Creates a new Message instance using the specified properties.
@@ -62,7 +62,7 @@ export namespace messages {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): messages.Message;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): messages.Message;
 
         /**
          * Decodes a Message message from the specified reader or buffer, length delimited.
@@ -71,14 +71,14 @@ export namespace messages {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): messages.Message;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): messages.Message;
 
         /**
          * Verifies a Message message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a Message message from a plain object. Also converts values to their respective internal types.
@@ -108,6 +108,109 @@ export namespace messages {
          */
         public static getTypeUrl(typeUrlPrefix?: string): string;
     }
+
+    /** Properties of a HttpRealtimeMessage. */
+    interface IHttpRealtimeMessage {
+
+        /** HttpRealtimeMessage deviceId */
+        deviceId?: (string | null);
+
+        /** HttpRealtimeMessage payload */
+        payload?: (Uint8Array | null);
+    }
+
+    /** Represents a HttpRealtimeMessage. */
+    class HttpRealtimeMessage implements IHttpRealtimeMessage {
+
+        /**
+         * Constructs a new HttpRealtimeMessage.
+         * @param [properties] Properties to set
+         */
+        constructor(properties?: messages.IHttpRealtimeMessage);
+
+        /** HttpRealtimeMessage deviceId. */
+        public deviceId: string;
+
+        /** HttpRealtimeMessage payload. */
+        public payload: Uint8Array;
+
+        /**
+         * Creates a new HttpRealtimeMessage instance using the specified properties.
+         * @param [properties] Properties to set
+         * @returns HttpRealtimeMessage instance
+         */
+        public static create(properties?: messages.IHttpRealtimeMessage): messages.HttpRealtimeMessage;
+
+        /**
+         * Encodes the specified HttpRealtimeMessage message. Does not implicitly {@link messages.HttpRealtimeMessage.verify|verify} messages.
+         * @param message HttpRealtimeMessage message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encode(message: messages.IHttpRealtimeMessage, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Encodes the specified HttpRealtimeMessage message, length delimited. Does not implicitly {@link messages.HttpRealtimeMessage.verify|verify} messages.
+         * @param message HttpRealtimeMessage message or plain object to encode
+         * @param [writer] Writer to encode to
+         * @returns Writer
+         */
+        public static encodeDelimited(message: messages.IHttpRealtimeMessage, writer?: $protobuf.Writer): $protobuf.Writer;
+
+        /**
+         * Decodes a HttpRealtimeMessage message from the specified reader or buffer.
+         * @param reader Reader or buffer to decode from
+         * @param [length] Message length if known beforehand
+         * @returns HttpRealtimeMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): messages.HttpRealtimeMessage;
+
+        /**
+         * Decodes a HttpRealtimeMessage message from the specified reader or buffer, length delimited.
+         * @param reader Reader or buffer to decode from
+         * @returns HttpRealtimeMessage
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): messages.HttpRealtimeMessage;
+
+        /**
+         * Verifies a HttpRealtimeMessage message.
+         * @param message Plain object to verify
+         * @returns `null` if valid, otherwise the reason why it is not
+         */
+        public static verify(message: { [k: string]: any }): (string | null);
+
+        /**
+         * Creates a HttpRealtimeMessage message from a plain object. Also converts values to their respective internal types.
+         * @param object Plain object
+         * @returns HttpRealtimeMessage
+         */
+        public static fromObject(object: { [k: string]: any }): messages.HttpRealtimeMessage;
+
+        /**
+         * Creates a plain object from a HttpRealtimeMessage message. Also converts values to other types if specified.
+         * @param message HttpRealtimeMessage
+         * @param [options] Conversion options
+         * @returns Plain object
+         */
+        public static toObject(message: messages.HttpRealtimeMessage, options?: $protobuf.IConversionOptions): { [k: string]: any };
+
+        /**
+         * Converts this HttpRealtimeMessage to JSON.
+         * @returns JSON object
+         */
+        public toJSON(): { [k: string]: any };
+
+        /**
+         * Gets the default type url for HttpRealtimeMessage
+         * @param [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns The default type url
+         */
+        public static getTypeUrl(typeUrlPrefix?: string): string;
+    }
 }
 
 /** Namespace collab. */
@@ -117,10 +220,10 @@ export namespace collab {
     interface IRid {
 
         /** Rid timestamp */
-        timestamp?: (number|Long|null);
+        timestamp?: (number | Long | null);
 
         /** Rid counter */
-        counter?: (number|null);
+        counter?: (number | null);
     }
 
     /**
@@ -139,7 +242,7 @@ export namespace collab {
         constructor(properties?: collab.IRid);
 
         /** Rid timestamp. */
-        public timestamp: (number|Long);
+        public timestamp: (number | Long);
 
         /** Rid counter. */
         public counter: number;
@@ -175,7 +278,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.Rid;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.Rid;
 
         /**
          * Decodes a Rid message from the specified reader or buffer, length delimited.
@@ -184,14 +287,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.Rid;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.Rid;
 
         /**
          * Verifies a Rid message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a Rid message from a plain object. Also converts values to their respective internal types.
@@ -226,10 +329,13 @@ export namespace collab {
     interface ISyncRequest {
 
         /** SyncRequest lastMessageId */
-        lastMessageId?: (collab.IRid|null);
+        lastMessageId?: (collab.IRid | null);
 
         /** SyncRequest stateVector */
-        stateVector?: (Uint8Array|null);
+        stateVector?: (Uint8Array | null);
+
+        /** SyncRequest version */
+        version?: (string | null);
     }
 
     /**
@@ -248,10 +354,13 @@ export namespace collab {
         constructor(properties?: collab.ISyncRequest);
 
         /** SyncRequest lastMessageId. */
-        public lastMessageId?: (collab.IRid|null);
+        public lastMessageId?: (collab.IRid | null);
 
         /** SyncRequest stateVector. */
         public stateVector: Uint8Array;
+
+        /** SyncRequest version. */
+        public version: string;
 
         /**
          * Creates a new SyncRequest instance using the specified properties.
@@ -284,7 +393,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.SyncRequest;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.SyncRequest;
 
         /**
          * Decodes a SyncRequest message from the specified reader or buffer, length delimited.
@@ -293,14 +402,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.SyncRequest;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.SyncRequest;
 
         /**
          * Verifies a SyncRequest message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a SyncRequest message from a plain object. Also converts values to their respective internal types.
@@ -335,13 +444,16 @@ export namespace collab {
     interface IUpdate {
 
         /** Update messageId */
-        messageId?: (collab.IRid|null);
+        messageId?: (collab.IRid | null);
 
         /** Update flags */
-        flags?: (number|null);
+        flags?: (number | null);
 
         /** Update payload */
-        payload?: (Uint8Array|null);
+        payload?: (Uint8Array | null);
+
+        /** Update version */
+        version?: (string | null);
     }
 
     /**
@@ -358,13 +470,16 @@ export namespace collab {
         constructor(properties?: collab.IUpdate);
 
         /** Update messageId. */
-        public messageId?: (collab.IRid|null);
+        public messageId?: (collab.IRid | null);
 
         /** Update flags. */
         public flags: number;
 
         /** Update payload. */
         public payload: Uint8Array;
+
+        /** Update version. */
+        public version: string;
 
         /**
          * Creates a new Update instance using the specified properties.
@@ -397,7 +512,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.Update;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.Update;
 
         /**
          * Decodes an Update message from the specified reader or buffer, length delimited.
@@ -406,14 +521,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.Update;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.Update;
 
         /**
          * Verifies an Update message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates an Update message from a plain object. Also converts values to their respective internal types.
@@ -448,7 +563,7 @@ export namespace collab {
     interface IAwarenessUpdate {
 
         /** AwarenessUpdate payload */
-        payload?: (Uint8Array|null);
+        payload?: (Uint8Array | null);
     }
 
     /**
@@ -497,7 +612,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.AwarenessUpdate;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.AwarenessUpdate;
 
         /**
          * Decodes an AwarenessUpdate message from the specified reader or buffer, length delimited.
@@ -506,14 +621,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.AwarenessUpdate;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.AwarenessUpdate;
 
         /**
          * Verifies an AwarenessUpdate message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates an AwarenessUpdate message from a plain object. Also converts values to their respective internal types.
@@ -548,13 +663,13 @@ export namespace collab {
     interface IAccessChanged {
 
         /** AccessChanged canRead */
-        canRead?: (boolean|null);
+        canRead?: (boolean | null);
 
         /** AccessChanged canWrite */
-        canWrite?: (boolean|null);
+        canWrite?: (boolean | null);
 
         /** AccessChanged reason */
-        reason?: (number|null);
+        reason?: (number | null);
     }
 
     /**
@@ -609,7 +724,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.AccessChanged;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.AccessChanged;
 
         /**
          * Decodes an AccessChanged message from the specified reader or buffer, length delimited.
@@ -618,14 +733,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.AccessChanged;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.AccessChanged;
 
         /**
          * Verifies an AccessChanged message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates an AccessChanged message from a plain object. Also converts values to their respective internal types.
@@ -660,22 +775,22 @@ export namespace collab {
     interface ICollabMessage {
 
         /** CollabMessage objectId */
-        objectId?: (string|null);
+        objectId?: (string | null);
 
         /** CollabMessage collabType */
-        collabType?: (number|null);
+        collabType?: (number | null);
 
         /** CollabMessage syncRequest */
-        syncRequest?: (collab.ISyncRequest|null);
+        syncRequest?: (collab.ISyncRequest | null);
 
         /** CollabMessage update */
-        update?: (collab.IUpdate|null);
+        update?: (collab.IUpdate | null);
 
         /** CollabMessage awarenessUpdate */
-        awarenessUpdate?: (collab.IAwarenessUpdate|null);
+        awarenessUpdate?: (collab.IAwarenessUpdate | null);
 
         /** CollabMessage accessChanged */
-        accessChanged?: (collab.IAccessChanged|null);
+        accessChanged?: (collab.IAccessChanged | null);
     }
 
     /** Represents a CollabMessage. */
@@ -694,19 +809,19 @@ export namespace collab {
         public collabType: number;
 
         /** CollabMessage syncRequest. */
-        public syncRequest?: (collab.ISyncRequest|null);
+        public syncRequest?: (collab.ISyncRequest | null);
 
         /** CollabMessage update. */
-        public update?: (collab.IUpdate|null);
+        public update?: (collab.IUpdate | null);
 
         /** CollabMessage awarenessUpdate. */
-        public awarenessUpdate?: (collab.IAwarenessUpdate|null);
+        public awarenessUpdate?: (collab.IAwarenessUpdate | null);
 
         /** CollabMessage accessChanged. */
-        public accessChanged?: (collab.IAccessChanged|null);
+        public accessChanged?: (collab.IAccessChanged | null);
 
         /** CollabMessage data. */
-        public data?: ("syncRequest"|"update"|"awarenessUpdate"|"accessChanged");
+        public data?: ("syncRequest" | "update" | "awarenessUpdate" | "accessChanged");
 
         /**
          * Creates a new CollabMessage instance using the specified properties.
@@ -739,7 +854,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabMessage;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.CollabMessage;
 
         /**
          * Decodes a CollabMessage message from the specified reader or buffer, length delimited.
@@ -748,14 +863,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabMessage;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.CollabMessage;
 
         /**
          * Verifies a CollabMessage message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a CollabMessage message from a plain object. Also converts values to their respective internal types.
@@ -797,19 +912,19 @@ export namespace collab {
     interface ICollabDocStateParams {
 
         /** CollabDocStateParams objectId */
-        objectId?: (string|null);
+        objectId?: (string | null);
 
         /** CollabDocStateParams collabType */
-        collabType?: (number|null);
+        collabType?: (number | null);
 
         /** CollabDocStateParams compression */
-        compression?: (collab.PayloadCompressionType|null);
+        compression?: (collab.PayloadCompressionType | null);
 
         /** CollabDocStateParams sv */
-        sv?: (Uint8Array|null);
+        sv?: (Uint8Array | null);
 
         /** CollabDocStateParams docState */
-        docState?: (Uint8Array|null);
+        docState?: (Uint8Array | null);
     }
 
     /** Parameters for a single collab document state in batch sync. */
@@ -867,7 +982,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabDocStateParams;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.CollabDocStateParams;
 
         /**
          * Decodes a CollabDocStateParams message from the specified reader or buffer, length delimited.
@@ -876,14 +991,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabDocStateParams;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.CollabDocStateParams;
 
         /**
          * Verifies a CollabDocStateParams message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a CollabDocStateParams message from a plain object. Also converts values to their respective internal types.
@@ -918,10 +1033,10 @@ export namespace collab {
     interface ICollabBatchSyncRequest {
 
         /** CollabBatchSyncRequest items */
-        items?: (collab.ICollabDocStateParams[]|null);
+        items?: (collab.ICollabDocStateParams[] | null);
 
         /** CollabBatchSyncRequest responseCompression */
-        responseCompression?: (collab.PayloadCompressionType|null);
+        responseCompression?: (collab.PayloadCompressionType | null);
     }
 
     /**
@@ -973,7 +1088,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabBatchSyncRequest;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.CollabBatchSyncRequest;
 
         /**
          * Decodes a CollabBatchSyncRequest message from the specified reader or buffer, length delimited.
@@ -982,14 +1097,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabBatchSyncRequest;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.CollabBatchSyncRequest;
 
         /**
          * Verifies a CollabBatchSyncRequest message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a CollabBatchSyncRequest message from a plain object. Also converts values to their respective internal types.
@@ -1024,22 +1139,22 @@ export namespace collab {
     interface ICollabBatchSyncResult {
 
         /** CollabBatchSyncResult objectId */
-        objectId?: (string|null);
+        objectId?: (string | null);
 
         /** CollabBatchSyncResult collabType */
-        collabType?: (number|null);
+        collabType?: (number | null);
 
         /** CollabBatchSyncResult compression */
-        compression?: (collab.PayloadCompressionType|null);
+        compression?: (collab.PayloadCompressionType | null);
 
         /** CollabBatchSyncResult missingUpdate */
-        missingUpdate?: (Uint8Array|null);
+        missingUpdate?: (Uint8Array | null);
 
         /** CollabBatchSyncResult error */
-        error?: (string|null);
+        error?: (string | null);
 
         /** CollabBatchSyncResult serverStateVector */
-        serverStateVector?: (Uint8Array|null);
+        serverStateVector?: (Uint8Array | null);
     }
 
     /** Result for a single collab in batch sync response. */
@@ -1100,7 +1215,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabBatchSyncResult;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.CollabBatchSyncResult;
 
         /**
          * Decodes a CollabBatchSyncResult message from the specified reader or buffer, length delimited.
@@ -1109,14 +1224,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabBatchSyncResult;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.CollabBatchSyncResult;
 
         /**
          * Verifies a CollabBatchSyncResult message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a CollabBatchSyncResult message from a plain object. Also converts values to their respective internal types.
@@ -1151,10 +1266,10 @@ export namespace collab {
     interface ICollabBatchSyncResponse {
 
         /** CollabBatchSyncResponse results */
-        results?: (collab.ICollabBatchSyncResult[]|null);
+        results?: (collab.ICollabBatchSyncResult[] | null);
 
         /** CollabBatchSyncResponse responseCompression */
-        responseCompression?: (collab.PayloadCompressionType|null);
+        responseCompression?: (collab.PayloadCompressionType | null);
     }
 
     /** Response from batch sync containing results for each collab. */
@@ -1203,7 +1318,7 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): collab.CollabBatchSyncResponse;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): collab.CollabBatchSyncResponse;
 
         /**
          * Decodes a CollabBatchSyncResponse message from the specified reader or buffer, length delimited.
@@ -1212,14 +1327,14 @@ export namespace collab {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): collab.CollabBatchSyncResponse;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): collab.CollabBatchSyncResponse;
 
         /**
          * Verifies a CollabBatchSyncResponse message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a CollabBatchSyncResponse message from a plain object. Also converts values to their respective internal types.
@@ -1258,31 +1373,31 @@ export namespace notification {
     interface IWorkspaceNotification {
 
         /** WorkspaceNotification profileChange */
-        profileChange?: (notification.IUserProfileChange|null);
+        profileChange?: (notification.IUserProfileChange | null);
 
         /** WorkspaceNotification permissionChanged */
-        permissionChanged?: (notification.IPermissionChanged|null);
+        permissionChanged?: (notification.IPermissionChanged | null);
 
         /** WorkspaceNotification sectionChanged */
-        sectionChanged?: (notification.ISectionChanged|null);
+        sectionChanged?: (notification.ISectionChanged | null);
 
         /** WorkspaceNotification shareViewsChanged */
-        shareViewsChanged?: (notification.IShareViewsChanged|null);
+        shareViewsChanged?: (notification.IShareViewsChanged | null);
 
         /** WorkspaceNotification mentionablePersonListChanged */
-        mentionablePersonListChanged?: (notification.IMentionablePersonListChanged|null);
+        mentionablePersonListChanged?: (notification.IMentionablePersonListChanged | null);
 
         /** WorkspaceNotification serverLimit */
-        serverLimit?: (notification.IServerLimit|null);
+        serverLimit?: (notification.IServerLimit | null);
 
         /** WorkspaceNotification workspaceMemberProfileChanged */
-        workspaceMemberProfileChanged?: (notification.IWorkspaceMemberProfileChanged|null);
+        workspaceMemberProfileChanged?: (notification.IWorkspaceMemberProfileChanged | null);
 
         /** WorkspaceNotification folderChanged */
-        folderChanged?: (notification.IFolderChanged|null);
+        folderChanged?: (notification.IFolderChanged | null);
 
         /** WorkspaceNotification folderViewChanged */
-        folderViewChanged?: (notification.IFolderViewChanged|null);
+        folderViewChanged?: (notification.IFolderViewChanged | null);
     }
 
     /** Represents a WorkspaceNotification. */
@@ -1295,34 +1410,34 @@ export namespace notification {
         constructor(properties?: notification.IWorkspaceNotification);
 
         /** WorkspaceNotification profileChange. */
-        public profileChange?: (notification.IUserProfileChange|null);
+        public profileChange?: (notification.IUserProfileChange | null);
 
         /** WorkspaceNotification permissionChanged. */
-        public permissionChanged?: (notification.IPermissionChanged|null);
+        public permissionChanged?: (notification.IPermissionChanged | null);
 
         /** WorkspaceNotification sectionChanged. */
-        public sectionChanged?: (notification.ISectionChanged|null);
+        public sectionChanged?: (notification.ISectionChanged | null);
 
         /** WorkspaceNotification shareViewsChanged. */
-        public shareViewsChanged?: (notification.IShareViewsChanged|null);
+        public shareViewsChanged?: (notification.IShareViewsChanged | null);
 
         /** WorkspaceNotification mentionablePersonListChanged. */
-        public mentionablePersonListChanged?: (notification.IMentionablePersonListChanged|null);
+        public mentionablePersonListChanged?: (notification.IMentionablePersonListChanged | null);
 
         /** WorkspaceNotification serverLimit. */
-        public serverLimit?: (notification.IServerLimit|null);
+        public serverLimit?: (notification.IServerLimit | null);
 
         /** WorkspaceNotification workspaceMemberProfileChanged. */
-        public workspaceMemberProfileChanged?: (notification.IWorkspaceMemberProfileChanged|null);
+        public workspaceMemberProfileChanged?: (notification.IWorkspaceMemberProfileChanged | null);
 
         /** WorkspaceNotification folderChanged. */
-        public folderChanged?: (notification.IFolderChanged|null);
+        public folderChanged?: (notification.IFolderChanged | null);
 
         /** WorkspaceNotification folderViewChanged. */
-        public folderViewChanged?: (notification.IFolderViewChanged|null);
+        public folderViewChanged?: (notification.IFolderViewChanged | null);
 
         /** WorkspaceNotification payload. */
-        public payload?: ("profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged");
+        public payload?: ("profileChange" | "permissionChanged" | "sectionChanged" | "shareViewsChanged" | "mentionablePersonListChanged" | "serverLimit" | "workspaceMemberProfileChanged" | "folderChanged" | "folderViewChanged");
 
         /**
          * Creates a new WorkspaceNotification instance using the specified properties.
@@ -1355,7 +1470,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.WorkspaceNotification;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.WorkspaceNotification;
 
         /**
          * Decodes a WorkspaceNotification message from the specified reader or buffer, length delimited.
@@ -1364,14 +1479,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.WorkspaceNotification;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.WorkspaceNotification;
 
         /**
          * Verifies a WorkspaceNotification message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a WorkspaceNotification message from a plain object. Also converts values to their respective internal types.
@@ -1406,13 +1521,13 @@ export namespace notification {
     interface IUserProfileChange {
 
         /** UserProfileChange uid */
-        uid?: (number|Long|null);
+        uid?: (number | Long | null);
 
         /** UserProfileChange name */
-        name?: (string|null);
+        name?: (string | null);
 
         /** UserProfileChange email */
-        email?: (string|null);
+        email?: (string | null);
     }
 
     /** Represents a UserProfileChange. */
@@ -1425,19 +1540,13 @@ export namespace notification {
         constructor(properties?: notification.IUserProfileChange);
 
         /** UserProfileChange uid. */
-        public uid: (number|Long);
+        public uid: (number | Long);
 
         /** UserProfileChange name. */
-        public name?: (string|null);
+        public name?: (string | null);
 
         /** UserProfileChange email. */
-        public email?: (string|null);
-
-        /** UserProfileChange _name. */
-        public _name?: "name";
-
-        /** UserProfileChange _email. */
-        public _email?: "email";
+        public email?: (string | null);
 
         /**
          * Creates a new UserProfileChange instance using the specified properties.
@@ -1470,7 +1579,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.UserProfileChange;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.UserProfileChange;
 
         /**
          * Decodes a UserProfileChange message from the specified reader or buffer, length delimited.
@@ -1479,14 +1588,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.UserProfileChange;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.UserProfileChange;
 
         /**
          * Verifies a UserProfileChange message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a UserProfileChange message from a plain object. Also converts values to their respective internal types.
@@ -1521,10 +1630,10 @@ export namespace notification {
     interface IPermissionChanged {
 
         /** PermissionChanged objectId */
-        objectId?: (string|null);
+        objectId?: (string | null);
 
         /** PermissionChanged reason */
-        reason?: (number|null);
+        reason?: (number | null);
     }
 
     /** Represents a PermissionChanged. */
@@ -1573,7 +1682,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.PermissionChanged;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.PermissionChanged;
 
         /**
          * Decodes a PermissionChanged message from the specified reader or buffer, length delimited.
@@ -1582,14 +1691,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.PermissionChanged;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.PermissionChanged;
 
         /**
          * Verifies a PermissionChanged message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a PermissionChanged message from a plain object. Also converts values to their respective internal types.
@@ -1624,7 +1733,7 @@ export namespace notification {
     interface ISectionChanged {
 
         /** SectionChanged data */
-        data?: (string|null);
+        data?: (string | null);
     }
 
     /** Represents a SectionChanged. */
@@ -1670,7 +1779,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.SectionChanged;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.SectionChanged;
 
         /**
          * Decodes a SectionChanged message from the specified reader or buffer, length delimited.
@@ -1679,14 +1788,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.SectionChanged;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.SectionChanged;
 
         /**
          * Verifies a SectionChanged message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a SectionChanged message from a plain object. Also converts values to their respective internal types.
@@ -1721,16 +1830,16 @@ export namespace notification {
     interface IMentionablePersonListChanged {
 
         /** MentionablePersonListChanged updateMemberRole */
-        updateMemberRole?: (notification.IUpdateMemberRole|null);
+        updateMemberRole?: (notification.IUpdateMemberRole | null);
 
         /** MentionablePersonListChanged pageMention */
-        pageMention?: (notification.IPageMention|null);
+        pageMention?: (notification.IPageMention | null);
 
         /** MentionablePersonListChanged newMember */
-        newMember?: (notification.INewMember|null);
+        newMember?: (notification.INewMember | null);
 
         /** MentionablePersonListChanged removedMember */
-        removedMember?: (notification.IRemovedMember|null);
+        removedMember?: (notification.IRemovedMember | null);
     }
 
     /** Represents a MentionablePersonListChanged. */
@@ -1743,19 +1852,19 @@ export namespace notification {
         constructor(properties?: notification.IMentionablePersonListChanged);
 
         /** MentionablePersonListChanged updateMemberRole. */
-        public updateMemberRole?: (notification.IUpdateMemberRole|null);
+        public updateMemberRole?: (notification.IUpdateMemberRole | null);
 
         /** MentionablePersonListChanged pageMention. */
-        public pageMention?: (notification.IPageMention|null);
+        public pageMention?: (notification.IPageMention | null);
 
         /** MentionablePersonListChanged newMember. */
-        public newMember?: (notification.INewMember|null);
+        public newMember?: (notification.INewMember | null);
 
         /** MentionablePersonListChanged removedMember. */
-        public removedMember?: (notification.IRemovedMember|null);
+        public removedMember?: (notification.IRemovedMember | null);
 
         /** MentionablePersonListChanged payload. */
-        public payload?: ("updateMemberRole"|"pageMention"|"newMember"|"removedMember");
+        public payload?: ("updateMemberRole" | "pageMention" | "newMember" | "removedMember");
 
         /**
          * Creates a new MentionablePersonListChanged instance using the specified properties.
@@ -1788,7 +1897,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.MentionablePersonListChanged;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.MentionablePersonListChanged;
 
         /**
          * Decodes a MentionablePersonListChanged message from the specified reader or buffer, length delimited.
@@ -1797,14 +1906,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.MentionablePersonListChanged;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.MentionablePersonListChanged;
 
         /**
          * Verifies a MentionablePersonListChanged message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a MentionablePersonListChanged message from a plain object. Also converts values to their respective internal types.
@@ -1839,7 +1948,7 @@ export namespace notification {
     interface INewMember {
 
         /** NewMember userUuid */
-        userUuid?: (string|null);
+        userUuid?: (string | null);
     }
 
     /** Represents a NewMember. */
@@ -1885,7 +1994,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.NewMember;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.NewMember;
 
         /**
          * Decodes a NewMember message from the specified reader or buffer, length delimited.
@@ -1894,14 +2003,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.NewMember;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.NewMember;
 
         /**
          * Verifies a NewMember message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a NewMember message from a plain object. Also converts values to their respective internal types.
@@ -1936,7 +2045,7 @@ export namespace notification {
     interface IRemovedMember {
 
         /** RemovedMember userUuid */
-        userUuid?: (string|null);
+        userUuid?: (string | null);
     }
 
     /** Represents a RemovedMember. */
@@ -1982,7 +2091,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.RemovedMember;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.RemovedMember;
 
         /**
          * Decodes a RemovedMember message from the specified reader or buffer, length delimited.
@@ -1991,14 +2100,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.RemovedMember;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.RemovedMember;
 
         /**
          * Verifies a RemovedMember message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a RemovedMember message from a plain object. Also converts values to their respective internal types.
@@ -2033,13 +2142,13 @@ export namespace notification {
     interface IUpdateMemberRole {
 
         /** UpdateMemberRole userUuid */
-        userUuid?: (string|null);
+        userUuid?: (string | null);
 
         /** UpdateMemberRole email */
-        email?: (string|null);
+        email?: (string | null);
 
         /** UpdateMemberRole role */
-        role?: (number|null);
+        role?: (number | null);
     }
 
     /** Represents an UpdateMemberRole. */
@@ -2091,7 +2200,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.UpdateMemberRole;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.UpdateMemberRole;
 
         /**
          * Decodes an UpdateMemberRole message from the specified reader or buffer, length delimited.
@@ -2100,14 +2209,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.UpdateMemberRole;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.UpdateMemberRole;
 
         /**
          * Verifies an UpdateMemberRole message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates an UpdateMemberRole message from a plain object. Also converts values to their respective internal types.
@@ -2142,13 +2251,13 @@ export namespace notification {
     interface IPageMention {
 
         /** PageMention userUuid */
-        userUuid?: (string|null);
+        userUuid?: (string | null);
 
         /** PageMention viewId */
-        viewId?: (string|null);
+        viewId?: (string | null);
 
         /** PageMention mentionedAt */
-        mentionedAt?: (number|Long|null);
+        mentionedAt?: (number | Long | null);
     }
 
     /** Represents a PageMention. */
@@ -2167,7 +2276,7 @@ export namespace notification {
         public viewId: string;
 
         /** PageMention mentionedAt. */
-        public mentionedAt: (number|Long);
+        public mentionedAt: (number | Long);
 
         /**
          * Creates a new PageMention instance using the specified properties.
@@ -2200,7 +2309,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.PageMention;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.PageMention;
 
         /**
          * Decodes a PageMention message from the specified reader or buffer, length delimited.
@@ -2209,14 +2318,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.PageMention;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.PageMention;
 
         /**
          * Verifies a PageMention message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a PageMention message from a plain object. Also converts values to their respective internal types.
@@ -2251,10 +2360,10 @@ export namespace notification {
     interface IShareViewsChanged {
 
         /** ShareViewsChanged viewId */
-        viewId?: (string|null);
+        viewId?: (string | null);
 
         /** ShareViewsChanged emails */
-        emails?: (string[]|null);
+        emails?: (string[] | null);
     }
 
     /** Represents a ShareViewsChanged. */
@@ -2303,7 +2412,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.ShareViewsChanged;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.ShareViewsChanged;
 
         /**
          * Decodes a ShareViewsChanged message from the specified reader or buffer, length delimited.
@@ -2312,14 +2421,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.ShareViewsChanged;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.ShareViewsChanged;
 
         /**
          * Verifies a ShareViewsChanged message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a ShareViewsChanged message from a plain object. Also converts values to their respective internal types.
@@ -2354,13 +2463,13 @@ export namespace notification {
     interface IServerLimit {
 
         /** ServerLimit features */
-        features?: (number[]|null);
+        features?: (number[] | null);
 
         /** ServerLimit maxUsers */
-        maxUsers?: (number|Long|null);
+        maxUsers?: (number | Long | null);
 
         /** ServerLimit maxGuests */
-        maxGuests?: (number|Long|null);
+        maxGuests?: (number | Long | null);
     }
 
     /** Represents a ServerLimit. */
@@ -2376,10 +2485,10 @@ export namespace notification {
         public features: number[];
 
         /** ServerLimit maxUsers. */
-        public maxUsers: (number|Long);
+        public maxUsers: (number | Long);
 
         /** ServerLimit maxGuests. */
-        public maxGuests: (number|Long);
+        public maxGuests: (number | Long);
 
         /**
          * Creates a new ServerLimit instance using the specified properties.
@@ -2412,7 +2521,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.ServerLimit;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.ServerLimit;
 
         /**
          * Decodes a ServerLimit message from the specified reader or buffer, length delimited.
@@ -2421,14 +2530,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.ServerLimit;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.ServerLimit;
 
         /**
          * Verifies a ServerLimit message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a ServerLimit message from a plain object. Also converts values to their respective internal types.
@@ -2463,22 +2572,22 @@ export namespace notification {
     interface IWorkspaceMemberProfileChanged {
 
         /** WorkspaceMemberProfileChanged userUuid */
-        userUuid?: (string|null);
+        userUuid?: (string | null);
 
         /** WorkspaceMemberProfileChanged name */
-        name?: (string|null);
+        name?: (string | null);
 
         /** WorkspaceMemberProfileChanged avatarUrl */
-        avatarUrl?: (string|null);
+        avatarUrl?: (string | null);
 
         /** WorkspaceMemberProfileChanged coverImageUrl */
-        coverImageUrl?: (string|null);
+        coverImageUrl?: (string | null);
 
         /** WorkspaceMemberProfileChanged customImageUrl */
-        customImageUrl?: (string|null);
+        customImageUrl?: (string | null);
 
         /** WorkspaceMemberProfileChanged description */
-        description?: (string|null);
+        description?: (string | null);
     }
 
     /** Represents a WorkspaceMemberProfileChanged. */
@@ -2497,28 +2606,16 @@ export namespace notification {
         public name: string;
 
         /** WorkspaceMemberProfileChanged avatarUrl. */
-        public avatarUrl?: (string|null);
+        public avatarUrl?: (string | null);
 
         /** WorkspaceMemberProfileChanged coverImageUrl. */
-        public coverImageUrl?: (string|null);
+        public coverImageUrl?: (string | null);
 
         /** WorkspaceMemberProfileChanged customImageUrl. */
-        public customImageUrl?: (string|null);
+        public customImageUrl?: (string | null);
 
         /** WorkspaceMemberProfileChanged description. */
-        public description?: (string|null);
-
-        /** WorkspaceMemberProfileChanged _avatarUrl. */
-        public _avatarUrl?: "avatarUrl";
-
-        /** WorkspaceMemberProfileChanged _coverImageUrl. */
-        public _coverImageUrl?: "coverImageUrl";
-
-        /** WorkspaceMemberProfileChanged _customImageUrl. */
-        public _customImageUrl?: "customImageUrl";
-
-        /** WorkspaceMemberProfileChanged _description. */
-        public _description?: "description";
+        public description?: (string | null);
 
         /**
          * Creates a new WorkspaceMemberProfileChanged instance using the specified properties.
@@ -2551,7 +2648,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.WorkspaceMemberProfileChanged;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.WorkspaceMemberProfileChanged;
 
         /**
          * Decodes a WorkspaceMemberProfileChanged message from the specified reader or buffer, length delimited.
@@ -2560,14 +2657,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.WorkspaceMemberProfileChanged;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.WorkspaceMemberProfileChanged;
 
         /**
          * Verifies a WorkspaceMemberProfileChanged message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a WorkspaceMemberProfileChanged message from a plain object. Also converts values to their respective internal types.
@@ -2602,10 +2699,10 @@ export namespace notification {
     interface IFolderChanged {
 
         /** FolderChanged outlineDiffJson */
-        outlineDiffJson?: (string|null);
+        outlineDiffJson?: (string | null);
 
         /** FolderChanged folderRid */
-        folderRid?: (string|null);
+        folderRid?: (string | null);
     }
 
     /** Represents a FolderChanged. */
@@ -2621,7 +2718,7 @@ export namespace notification {
         public outlineDiffJson: string;
 
         /** FolderChanged folderRid. */
-        public folderRid?: (string|null);
+        public folderRid?: (string | null);
 
         /** FolderChanged _folderRid. */
         public _folderRid?: "folderRid";
@@ -2657,7 +2754,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.FolderChanged;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.FolderChanged;
 
         /**
          * Decodes a FolderChanged message from the specified reader or buffer, length delimited.
@@ -2666,14 +2763,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.FolderChanged;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.FolderChanged;
 
         /**
          * Verifies a FolderChanged message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a FolderChanged message from a plain object. Also converts values to their respective internal types.
@@ -2708,22 +2805,22 @@ export namespace notification {
     interface IFolderViewChanged {
 
         /** FolderViewChanged changeType */
-        changeType?: (number|null);
+        changeType?: (number | null);
 
         /** FolderViewChanged viewId */
-        viewId?: (string|null);
+        viewId?: (string | null);
 
         /** FolderViewChanged viewJson */
-        viewJson?: (string|null);
+        viewJson?: (string | null);
 
         /** FolderViewChanged parentViewId */
-        parentViewId?: (string|null);
+        parentViewId?: (string | null);
 
         /** FolderViewChanged childViewIds */
-        childViewIds?: (string[]|null);
+        childViewIds?: (string[] | null);
 
         /** FolderViewChanged folderRid */
-        folderRid?: (string|null);
+        folderRid?: (string | null);
     }
 
     /** Represents a FolderViewChanged. */
@@ -2742,16 +2839,16 @@ export namespace notification {
         public viewId: string;
 
         /** FolderViewChanged viewJson. */
-        public viewJson?: (string|null);
+        public viewJson?: (string | null);
 
         /** FolderViewChanged parentViewId. */
-        public parentViewId?: (string|null);
+        public parentViewId?: (string | null);
 
         /** FolderViewChanged childViewIds. */
         public childViewIds: string[];
 
         /** FolderViewChanged folderRid. */
-        public folderRid?: (string|null);
+        public folderRid?: (string | null);
 
         /** FolderViewChanged _viewJson. */
         public _viewJson?: "viewJson";
@@ -2793,7 +2890,7 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decode(reader: ($protobuf.Reader|Uint8Array), length?: number): notification.FolderViewChanged;
+        public static decode(reader: ($protobuf.Reader | Uint8Array), length?: number): notification.FolderViewChanged;
 
         /**
          * Decodes a FolderViewChanged message from the specified reader or buffer, length delimited.
@@ -2802,14 +2899,14 @@ export namespace notification {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        public static decodeDelimited(reader: ($protobuf.Reader|Uint8Array)): notification.FolderViewChanged;
+        public static decodeDelimited(reader: ($protobuf.Reader | Uint8Array)): notification.FolderViewChanged;
 
         /**
          * Verifies a FolderViewChanged message.
          * @param message Plain object to verify
          * @returns `null` if valid, otherwise the reason why it is not
          */
-        public static verify(message: { [k: string]: any }): (string|null);
+        public static verify(message: { [k: string]: any }): (string | null);
 
         /**
          * Creates a FolderViewChanged message from a plain object. Also converts values to their respective internal types.

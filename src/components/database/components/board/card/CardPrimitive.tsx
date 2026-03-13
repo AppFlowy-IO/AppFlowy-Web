@@ -10,7 +10,7 @@ import {
 } from '@/application/database-yjs';
 import { RowCoverType } from '@/application/types';
 import ImageRender from '@/components/_shared/image-render/ImageRender';
-import { useBoardContext } from '@/components/database/board/BoardProvider';
+import { useBoardActions, useBoardSelection } from '@/components/database/board/BoardProvider';
 import CardToolbar from '@/components/database/components/board/card/CardToolbar';
 import CardField from '@/components/database/components/field/CardField';
 import { cn } from '@/lib/utils';
@@ -30,7 +30,8 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
   ({ groupFieldId, rowId, className, columnId }, ref) => {
     const fields = useFieldsSelector();
     const meta = useRowMetaSelector(rowId);
-    const { selectedCardIds } = useBoardContext();
+    const { selectedCardIds, editingCardId } = useBoardSelection();
+    const { setEditingCardId, setSelectedCardIds } = useBoardActions();
 
     const selected = useMemo(() => {
       return selectedCardIds.includes(`${columnId}/${rowId}`);
@@ -43,8 +44,6 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
     );
     const readOnly = useReadOnly();
     const [hovered, setHovered] = useState(false);
-
-    const { editingCardId, setEditingCardId, setSelectedCardIds } = useBoardContext();
 
     const dataCardId = `${columnId}/${rowId}`;
     const editing = useMemo(() => {

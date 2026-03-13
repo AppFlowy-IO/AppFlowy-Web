@@ -7,19 +7,24 @@ import { canBeMoved } from '@/application/view-utils';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as MoveToIcon } from '@/assets/icons/move_to.svg';
+import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
+import { ViewService, PageService } from '@/application/services/domains';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useAppHandlers, useAppOutline, useAppView, useCurrentWorkspaceId, useLoadViewChildren } from '@/components/app/app.hooks';
+import { useRefreshOutline, useAppOutline, useAppView, useCurrentWorkspaceId, useLoadViewChildren } from '@/components/app/app.hooks';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
-import { useService } from '@/components/main/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 
-
-function MoreActionsContent({ itemClicked, viewId }: {
+function MoreActionsContent({
+  itemClicked,
+  viewId,
+  onOpenHistory,
+}: {
   itemClicked?: () => void;
   onDeleted?: () => void;
   viewId: string;
+  onOpenHistory?: () => void;
 }) {
   const { t } = useTranslation();
   const {
@@ -27,7 +32,6 @@ function MoreActionsContent({ itemClicked, viewId }: {
     showBlockingLoader,
     hideBlockingLoader,
   } = useAppOverlayContext();
-  const service = useService();
   const workspaceId = useCurrentWorkspaceId();
   const view = useAppView(viewId);
   const layout = view?.layout;
@@ -40,13 +44,11 @@ function MoreActionsContent({ itemClicked, viewId }: {
     return findView(outline, parentViewId) ?? null;
   }, [outline, parentViewId]);
 
-  const {
-    refreshOutline,
-  } = useAppHandlers();
+  const refreshOutline = useRefreshOutline();
   const loadViewChildren = useLoadViewChildren();
   const { syncAllToServer } = useSyncInternal();
   const handleDuplicateClick = useCallback(async () => {
-    if (!workspaceId || !service) return;
+    if (!workspaceId) return;
     itemClicked?.();
     // Show blocking loader to prevent user from interacting with the UI
     // (e.g., clicking on the duplicated page before it's fully created)
@@ -56,12 +58,12 @@ function MoreActionsContent({ itemClicked, viewId }: {
       // This is similar to desktop's collab_full_sync_batch - ensures the server
       // has the latest data before the duplicate operation
       await syncAllToServer(workspaceId);
-      await service.duplicateAppPage(workspaceId, viewId);
+      await PageService.duplicate(workspaceId, viewId);
       void refreshOutline?.();
       // The shallow outline (depth=2) doesn't include children beyond space level.
       // Reload the parent view's children so the new duplicate appears in the sidebar.
       if (parentViewId) {
-        service.invalidateViewCache?.(workspaceId, parentViewId);
+        ViewService.invalidateCache(workspaceId, parentViewId);
         void loadViewChildren?.(parentViewId);
       }
 
@@ -72,12 +74,14 @@ function MoreActionsContent({ itemClicked, viewId }: {
     } finally {
       hideBlockingLoader();
     }
-  }, [workspaceId, service, viewId, refreshOutline, loadViewChildren, parentViewId, itemClicked, t, syncAllToServer, showBlockingLoader, hideBlockingLoader]);
+  }, [workspaceId, viewId, refreshOutline, loadViewChildren, parentViewId, itemClicked, t, syncAllToServer, showBlockingLoader, hideBlockingLoader]);
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const containerRef = useCallback((el: HTMLElement | null) => {
     setContainer(el);
   }, []);
+
+  const isDocument = layout === ViewLayout.Document;
 
   return (
     <DropdownMenuGroup
@@ -123,6 +127,20 @@ function MoreActionsContent({ itemClicked, viewId }: {
         <DeleteIcon />
         {t('button.delete')}
       </DropdownMenuItem>
+
+      {isDocument && onOpenHistory && (
+        <DropdownMenuItem
+          data-testid="more-page-version-history"
+          onSelect={(event) => {
+            event.preventDefault();
+            onOpenHistory();
+            itemClicked?.();
+          }}
+        >
+          <TimeIcon />
+          {t('versionHistory.versionHistory')}
+        </DropdownMenuItem>
+      )}
 
     </DropdownMenuGroup>
   );

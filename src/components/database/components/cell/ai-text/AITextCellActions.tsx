@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -144,8 +144,11 @@ function AITextCellActions({
     }
   }, [getCellData, database, row, updateCell, language, generateAITranslateForRow]);
 
+  const loadingRef = useRef(false);
+
   const handleGenerate = useCallback(async () => {
-    if (loading) return;
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     try {
       if (type === FieldType.AISummaries) {
@@ -157,12 +160,14 @@ function AITextCellActions({
     } catch (e: any) {
       toast.error(e.message);
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
-  }, [loading, setLoading, type, handleGenerateSummary, handleGenerateAITranslate]);
+  }, [setLoading, type, handleGenerateSummary, handleGenerateAITranslate]);
 
   return (
     <div
+      data-testid={`ai-cell-actions-${rowId}-${fieldId}`}
       onClick={(e) => {
         e.stopPropagation();
       }}
@@ -171,6 +176,7 @@ function AITextCellActions({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
+            data-testid={`ai-generate-button-${rowId}-${fieldId}`}
             variant={'outline'}
             size={'icon'}
             onClick={handleGenerate}
@@ -188,6 +194,7 @@ function AITextCellActions({
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
+              data-testid={`ai-copy-button-${rowId}-${fieldId}`}
               onClick={handleCopy}
               variant={'outline'}
               size={'icon'}

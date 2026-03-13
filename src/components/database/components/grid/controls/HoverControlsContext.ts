@@ -1,12 +1,10 @@
 import { createContext, useContext } from 'react';
 
-export const HoverControlsContext = createContext<{
+type HoverControlsContextType = {
   showPreventDialog: (continueCallback: () => void) => void;
-}>({
-  showPreventDialog: (_continue: () => void) => {
-    //
-  },
-});
+};
+
+export const HoverControlsContext = createContext<HoverControlsContextType | undefined>(undefined);
 
 export const HoverControlsProvider = HoverControlsContext.Provider;
 

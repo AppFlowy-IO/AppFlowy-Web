@@ -67,7 +67,7 @@ export const MathEquation = memo(
               )}
             </div>
 
-            <div ref={ref} className={'absolute h-full w-full caret-transparent'}>
+            <div ref={ref} className={'absolute h-full w-full caret-transparent text-transparent'}>
               {children}
             </div>
             {showToolbar && <MathEquationToolbar node={node} />}

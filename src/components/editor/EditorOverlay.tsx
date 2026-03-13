@@ -14,7 +14,7 @@ import { BlockType, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { insertDataAfterBlock } from '@/components/ai-chat/utils';
 import { AIAssistantProvider, ContextPlaceholder, PromptModalProvider, WriterRequest } from '@/components/chat';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { getScrollParent } from '@/components/global-comment/utils';
 
 
@@ -139,7 +139,7 @@ function EditorOverlay({ viewId, workspaceId }: { viewId: string; workspaceId: s
     },
     [editor, startBlock]
   );
-  const { removeDecorate } = useEditorContext();
+  const { removeDecorate } = useEditorLocalState();
 
   const handleExit = useCallback(() => {
     removeDecorate?.('ai-writer');

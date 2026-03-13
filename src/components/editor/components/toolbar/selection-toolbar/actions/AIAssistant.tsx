@@ -10,14 +10,14 @@ import { ReactComponent as TriangleDownIcon } from '@/assets/icons/triangle_down
 import { AIAssistantType, AIWriterMenu, useAIWriter } from '@/components/chat';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
 
 function AIAssistant() {
   const { t } = useTranslation();
   const editor = useSlate() as YjsEditor;
 
   const [open, setOpen] = React.useState(false);
-  const { addDecorate } = useEditorContext();
+  const { addDecorate } = useEditorLocalState();
   const { visible: toolbarVisible } = useSelectionToolbarContext();
   const { improveWriting } = useAIWriter();
   const [content, setContent] = React.useState('');

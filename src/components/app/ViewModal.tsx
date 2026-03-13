@@ -5,21 +5,33 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc } from '@/application/types';
+import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/full_screen.svg';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
-import { useAppHandlers, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import {
+  useAppOperations,
+  useAppOutline,
+  useCurrentWorkspaceId,
+  useEventEmitter,
+  useGetMentionUser,
+  useLoadDatabaseRelations,
+  useLoadViews,
+  useOpenPageModal,
+  useScheduleDeferredCleanup,
+} from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
-import { useViewOperations, YDocWithMeta } from '@/components/app/hooks/useViewOperations';
+import { useViewOperations } from '@/components/app/hooks/useViewOperations';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { useCurrentUser } from '@/components/main/app.hooks';
+import { ViewService } from '@/application/services/domains';
+import { getAxiosInstance } from '@/application/services/js-services/http';
 
 import ShareButton from 'src/components/app/share/ShareButton';
 
@@ -46,6 +58,7 @@ interface FallbackViewMeta {
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
   const workspaceId = useCurrentWorkspaceId();
   const { t } = useTranslation();
+  const operations = useAppOperations();
   const {
     toView,
     loadViewMeta,
@@ -55,17 +68,18 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
-    eventEmitter,
-    ...handlers
-  } = useAppHandlers();
+  } = operations;
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
+  const eventEmitter = useEventEmitter();
+  const getMentionUser = useGetMentionUser();
+  const loadDatabaseRelations = useLoadDatabaseRelations();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
 
   const outline = useAppOutline();
-  const service = useService();
-  const requestInstance = service?.getAxiosInstance();
+  const requestInstance = getAxiosInstance();
   const { getViewReadOnlyStatus } = useViewOperations();
 
   // Document state
@@ -107,7 +121,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // Fetch fallback metadata when view not in outline
   useEffect(() => {
     // Skip if modal closed, view already in outline, or missing dependencies
-    if (!open || effectiveOutlineView || !effectiveViewId || !workspaceId || !service) {
+    if (!open || effectiveOutlineView || !effectiveViewId || !workspaceId) {
       // Clear fallback when no longer needed
       if (fallbackMeta && (effectiveOutlineView || !open)) {
         setFallbackMeta(null);
@@ -118,8 +132,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
     let cancelled = false;
 
-    service
-      .getAppView(workspaceId, effectiveViewId)
+    ViewService.get(workspaceId, effectiveViewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
           setFallbackMeta({
@@ -136,18 +149,18 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     return () => {
       cancelled = true;
     };
-  }, [open, effectiveOutlineView, effectiveViewId, workspaceId, service, fallbackMeta]);
+  }, [open, effectiveOutlineView, effectiveViewId, workspaceId, fallbackMeta]);
 
   // Load document
   const loadPageDoc = useCallback(
-    async (id: string) => {
+    async (targetViewId: string) => {
       setNotFound(false);
       setDoc(undefined);
       setSyncBound(false);
       try {
-        const loadedDoc = await loadView(id, false, true);
+        const loadedDoc = await loadView(targetViewId, false, true);
 
-        setDoc({ doc: loadedDoc, id });
+        setDoc({ doc: loadedDoc, id: targetViewId });
       } catch (e) {
         setNotFound(true);
         console.error('[ViewModal] Failed to load document:', e);
@@ -208,8 +221,9 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     if (!doc || !bindViewSync || syncBound) return;
 
     const docWithMeta = doc.doc as YDocWithMeta;
+    const docViewId = docWithMeta.view_id ?? docWithMeta.object_id;
 
-    if (docWithMeta.object_id !== doc.id) {
+    if (docViewId !== doc.id) {
       return;
     }
 
@@ -299,6 +313,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
               }}
               onDeleted={handleClose}
               viewId={effectiveViewId}
+              enableVersionHistory={false}
             />
           )}
 
@@ -352,7 +367,22 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         onWordCountChange={setWordCount}
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
-        {...handlers}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
+        getSubscriptions={operations.getSubscriptions}
+        getMentionUser={getMentionUser}
+        eventEmitter={eventEmitter}
+        getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
+        loadDatabaseRelations={loadDatabaseRelations}
+        createDatabaseView={operations.createDatabaseView}
+        loadDatabasePrompts={operations.loadDatabasePrompts}
+        testDatabasePromptConfig={operations.testDatabasePromptConfig}
+        checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
+        loadRowDocument={operations.loadRowDocument}
+        createRowDocument={operations.createRowDocument}
+        updatePageIcon={operations.updatePageIcon}
+        updatePageName={operations.updatePageName}
+        generateAISummaryForRow={operations.generateAISummaryForRow}
+        generateAITranslateForRow={operations.generateAITranslateForRow}
       />
     );
   }, [
@@ -374,7 +404,11 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     loadViews,
     setWordCount,
     handleUploadFile,
-    handlers,
+    scheduleDeferredCleanup,
+    operations,
+    getMentionUser,
+    eventEmitter,
+    loadDatabaseRelations,
   ]);
 
   const currentUser = useCurrentUser();

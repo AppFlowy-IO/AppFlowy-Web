@@ -1,10 +1,10 @@
-import { HTMLAttributes, ReactNode, useCallback, useContext, useEffect, useMemo } from 'react';
+import { HTMLAttributes, ReactNode, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Workspace } from '@/application/types';
 import { ReactComponent as AppFlowyLogo } from '@/assets/icons/appflowy.svg';
 import LandingFooter from '@/components/_shared/landing-page/LandingFooter';
-import { AFConfigContext, useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUserOptional, useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { openAppFlowySchema } from '@/utils/url';
@@ -31,11 +31,11 @@ export default function LandingPage({
   } & React.ComponentProps<typeof Button>;
 }) {
   const { t } = useTranslation();
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated;
+  const isAuthenticated = useIsAuthenticatedOptional();
   const url = useMemo(() => {
     return window.location.href;
   }, []);
-  const currentUser = useCurrentUser();
+  const currentUser = useCurrentUserOptional();
 
   useEffect(() => {
     if (!isAuthenticated) {

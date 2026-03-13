@@ -5,7 +5,7 @@ import { TemplateCreator, TemplateCreatorFormValues } from '@/application/templa
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import CreatorForm from '@/components/as-template/creator/CreatorForm';
-import { useService } from '@/components/main/app.hooks';
+import { TemplateService } from '@/application/services/domains';
 
 function EditCreator ({
   creator,
@@ -20,17 +20,16 @@ function EditCreator ({
 }) {
   const { t } = useTranslation();
   const submitRef = React.useRef<HTMLInputElement>(null);
-  const service = useService();
 
   const onSubmit = useCallback(async (data: TemplateCreatorFormValues) => {
     try {
-      await service?.updateTemplateCreator(creator.id, data);
+      await TemplateService.updateCreator(creator.id, data);
       onUpdated();
       onClose();
     } catch (error) {
       notify.error('Failed to update creator');
     }
-  }, [onUpdated, service, onClose, creator.id]);
+  }, [onUpdated, onClose, creator.id]);
 
   return (
     <NormalModal

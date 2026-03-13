@@ -1,10 +1,9 @@
-import { useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import NormalModal from '@/components/_shared/modal/NormalModal';
-import { AFConfigContext, useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUser, useOpenLoginModalOptional } from '@/components/main/app.hooks';
 
 function ChangeAccount({
   setModalOpened,
@@ -17,7 +16,7 @@ function ChangeAccount({
 }) {
   const currentUser = useCurrentUser();
   const navigate = useNavigate();
-  const openLoginModal = useContext(AFConfigContext)?.openLoginModal;
+  const openLoginModal = useOpenLoginModalOptional();
   const { t } = useTranslation();
 
   return (

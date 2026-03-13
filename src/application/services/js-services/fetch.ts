@@ -1,4 +1,9 @@
-import { APIService } from '@/application/services/js-services/http';
+import {
+  getPublishView as getPublishViewAPI,
+  getPageCollab,
+  getPublishInfoWithViewId,
+  getPublishViewMeta as getPublishViewMetaAPI,
+} from '@/application/services/js-services/http';
 
 const pendingRequests = new Map();
 
@@ -31,25 +36,25 @@ function fetchWithDeduplication<Req, Res> (url: string, params: Req, fetchFuncti
 }
 
 export function fetchPublishView (namespace: string, publishName: string) {
-  const fetchFunction = () => APIService.getPublishView(namespace, publishName);
+  const fetchFunction = () => getPublishViewAPI(namespace, publishName);
 
   return fetchWithDeduplication(`fetchPublishView_${namespace}`, { publishName }, fetchFunction);
 }
 
 export function fetchPageCollab (workspaceId: string, viewId: string) {
-  const fetchFunction = () => APIService.getPageCollab(workspaceId, viewId);
+  const fetchFunction = () => getPageCollab(workspaceId, viewId);
 
   return fetchWithDeduplication(`fetchPageCollab_${workspaceId}`, { viewId }, fetchFunction);
 }
 
 export function fetchViewInfo (viewId: string) {
-  const fetchFunction = () => APIService.getPublishInfoWithViewId(viewId);
+  const fetchFunction = () => getPublishInfoWithViewId(viewId);
 
   return fetchWithDeduplication(`fetchViewInfo`, { viewId }, fetchFunction);
 }
 
 export function fetchPublishViewMeta (namespace: string, publishName: string) {
-  const fetchFunction = () => APIService.getPublishViewMeta(namespace, publishName);
+  const fetchFunction = () => getPublishViewMetaAPI(namespace, publishName);
 
   return fetchWithDeduplication(`fetchPublishViewMeta_${namespace}`, { publishName }, fetchFunction);
 }

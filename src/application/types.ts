@@ -1,3 +1,5 @@
+import EventEmitter from 'events';
+
 import { AxiosInstance } from 'axios';
 import * as Y from 'yjs';
 
@@ -267,6 +269,7 @@ export interface Mention {
   date?: string;
   reminder_id?: string;
   reminder_option?: string;
+  include_time?: boolean;
 
   // external link
   url?: string;
@@ -444,27 +447,49 @@ export enum YjsDatabaseKey {
  * YDoc extends Y.Doc with AppFlowy-specific properties.
  *
  * Document Identification:
- * - `object_id`: The view ID that this document belongs to. Set when loading a document
- *                via loadView(). Used to verify the document matches the current view
- *                and prevent race conditions when navigating between pages.
+ * - `object_id`: Collab object ID used by sync/persistence routing.
+ *                - Document collab: `object_id = viewId`
+ *                - Database collab: `object_id = databaseId`
+ * - `view_id`: Host view ID that currently renders this doc.
+ *              For database collab, this distinguishes grid/board/calendar layouts that
+ *              share the same underlying `object_id`.
  * - `guid`: The Y.Doc globally unique identifier. In AppFlowy, this is typically
- *           set to the viewId when creating the document via openCollabDB(viewId).
+ *           set to the same collab object ID as `object_id`.
  *           The guid is used for sync context registration and WebSocket communication.
  *
- * Note: Both `object_id` and `guid` typically contain the same viewId value, but they serve
- * different purposes:
- * - `object_id` is for React state tracking to ensure rendered content matches current route
- * - `guid` is for Yjs sync protocol and collab document identity
+ * Note:
+ * - `guid` and `object_id` should align on collab object identity.
+ * - `view_id` is the UI routing identity.
  */
 export interface YDoc extends Y.Doc {
   /**
-   * The view ID this document belongs to.
-   * Set when loading a document via loadView() to track which view the doc is for.
+   * Collab object ID used by sync/persistence routing.
    */
   object_id?: string;
 
+  /**
+   * Host view ID used by route-level/render-level guards.
+   */
+  view_id?: string;
+
+  /**
+   * Collab version for this document.
+   */
+  version?: string;
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   getMap(key: YjsEditorKey.data_section): YSharedRoot | any;
+}
+
+/**
+ * Extended YDoc with metadata for deferred sync binding.
+ * These properties are set during loadView and used by bindViewSync.
+ */
+export interface YDocWithMeta extends YDoc {
+  /** The collab type for sync binding */
+  _collabType?: Types;
+  /** Whether sync has been bound for this doc */
+  _syncBound?: boolean;
 }
 
 export interface YDatabaseRow extends Y.Map<unknown> {
@@ -1322,6 +1347,10 @@ export interface ViewComponentProps {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
+  getSubscriptions?: () => Promise<Subscription[]>;
+  eventEmitter?: EventEmitter;
+  getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
+  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
 }
 
 export interface CreatePagePayload {

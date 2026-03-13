@@ -6,7 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { UIVariant } from '@/application/types';
 import OutlineItem from '@/components/_shared/outline/OutlineItem';
 import RecentListSkeleton from '@/components/_shared/skeleton/RecentListSkeleton';
-import { useAppHandlers } from '@/components/app/app.hooks';
+import { useToView } from '@/components/app/app.hooks';
 import { useRecent } from '@/components/app/recent/useRecent';
 
 enum RecentGroup {
@@ -18,7 +18,7 @@ enum RecentGroup {
 export function Recent() {
   const { views: recentViews } = useRecent();
 
-  const navigateToView = useAppHandlers().toView;
+  const navigateToView = useToView();
   const { t } = useTranslation();
 
   const groupByViewsWithDay = useMemo(() => {

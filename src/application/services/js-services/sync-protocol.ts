@@ -2,7 +2,7 @@ import { debounce } from 'lodash-es';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
-import { Types } from '@/application/types';
+import { Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -12,10 +12,11 @@ import { Log } from '@/utils/log';
  * and an emit function to send messages back to the server.
  */
 export interface SyncContext {
-  doc: Y.Doc;
+  doc: YDoc;
   awareness?: awarenessProtocol.Awareness;
   collabType: Types;
   lastMessageId?: collab.IRid;
+  userMappings?: Y.PermanentUserData;
   /**
    * Emit function to send messages back to the server.
    */
@@ -26,6 +27,11 @@ export interface SyncContext {
    * are synced to the server.
    */
   flush?: () => void;
+  /**
+   * Drop queued local updates without sending them.
+   * Used by version reset flows where pending updates are stale and must be discarded.
+   */
+  discardPendingUpdates?: () => void;
   /**
    * Cleanup function to remove update/awareness observers and cancel debounced sends.
    * Set by initSync, called during deferred sync context cleanup.
@@ -51,6 +57,12 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
   const update = Y.encodeStateAsUpdate(doc, stateVector);
 
+  Log.debug('[sync] responding to sync request from server', {
+    objectId: doc.guid,
+    collabType: ctx.collabType,
+    version: doc.version,
+    bytes: update.byteLength,
+  });
   // send the update containing new data back to the server
   emit({
     collabMessage: {
@@ -59,6 +71,7 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
       update: {
         flags: UpdateFlags.Lib0v1,
         payload: update,
+        version: doc.version
       },
     },
   });
@@ -81,6 +94,8 @@ const handleAwarenessUpdate = (ctx: SyncContext, message: collab.IAwarenessUpdat
 
 const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
   const { doc, emit } = ctx;
+
+  Log.debug('[Version] handleUpdate: localDocVersion=%s, incomingMsgVersion=%s, docId=%s', doc.version, message.version, doc.guid);
 
   switch (message.flags) {
     case UpdateFlags.Lib0v1:
@@ -106,6 +121,7 @@ const handleUpdate = (ctx: SyncContext, message: collab.IUpdate): void => {
         syncRequest: {
           stateVector: Y.encodeStateVector(doc),
           lastMessageId: ctx.lastMessageId || { timestamp: 0, counter: 0 },
+          version: doc.version,
         },
       },
     });
@@ -142,6 +158,12 @@ export const initSync = (ctx: SyncContext) => {
     const mergedUpdates = Y.mergeUpdates(updates);
 
     updates.length = 0; // Clear the updates array without GC overhead
+    Log.debug('[sync] sending local update to server', {
+      objectId: doc.guid,
+      collabType,
+      version: doc.version,
+      bytes: mergedUpdates.byteLength,
+    });
     emit({
       collabMessage: {
         objectId: doc.guid,
@@ -149,6 +171,7 @@ export const initSync = (ctx: SyncContext) => {
         update: {
           flags: UpdateFlags.Lib0v1,
           payload: mergedUpdates,
+          version: doc.version,
         },
       },
     });
@@ -157,6 +180,11 @@ export const initSync = (ctx: SyncContext) => {
   // Store flush function in context for external access
   ctx.flush = () => {
     debounced.flush();
+  };
+
+  ctx.discardPendingUpdates = () => {
+    debounced.cancel();
+    updates.length = 0;
   };
 
   const onUpdate = (update: Uint8Array, origin: string) => {
@@ -168,9 +196,17 @@ export const initSync = (ctx: SyncContext) => {
     debounced();
   };
 
+  const onDestroy = () => {
+    // when switching versions, we destroy previous instance of the document
+    // at this point all stashed updates are no longer valid
+    ctx.discardPendingUpdates?.();
+  };
+
   doc.on('update', onUpdate);
+  doc.on('destroy', onDestroy);
 
   // emit initial sync request to the server
+  Log.debug('[Version] initSync sending initial syncRequest: objectId=%s, version=%s', ctx.doc.guid, ctx.doc.version);
   emit({
     collabMessage: {
       objectId: ctx.doc.guid,
@@ -178,6 +214,7 @@ export const initSync = (ctx: SyncContext) => {
       syncRequest: {
         stateVector: Y.encodeStateVector(ctx.doc),
         lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
+        version: ctx.doc.version,
       },
     },
   });
@@ -216,19 +253,29 @@ export const initSync = (ctx: SyncContext) => {
 
   // Build a single cleanup function that tears down all observers
   const cleanup = () => {
-    debounced.cancel();
+    ctx.discardPendingUpdates?.();
     doc.off('update', onUpdate);
+    doc.off('destroy', onDestroy);
     if (awareness && onAwarenessChange) {
       awareness.off('change', onAwarenessChange);
     }
 
     ctx.flush = undefined;
+    ctx.discardPendingUpdates = undefined;
   };
 
   ctx._cleanup = cleanup;
 
   return { cleanup };
 };
+
+/**
+ * Returns the version carried by a collab message, regardless of which field holds it.
+ * Mirrors a Rust trait default method — callers get a single, uniform way to read
+ * the version without knowing whether the message is an update, sync-request, etc.
+ */
+export const getCollabMessageVersion = (message: collab.ICollabMessage): string | null | undefined =>
+  message.update?.version ?? message.syncRequest?.version;
 
 /**
  * Handles incoming collab messages by dispatching them to the appropriate handler.

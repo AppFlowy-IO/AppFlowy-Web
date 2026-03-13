@@ -8,10 +8,10 @@ import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { findView, getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
 import DirectoryStructure from '@/components/_shared/skeleton/DirectoryStructure';
 import {
-  useAppHandlers,
   useAppOutline,
   useCurrentWorkspaceId,
   useLoadedViewIds,
+  useToView,
   useLoadViewChildrenBatch,
   useLoadViewChildren,
   useMarkViewChildrenStale,
@@ -369,7 +369,7 @@ export function Outline({ width }: { width: number }) {
     [menuProps, t]
   );
 
-  const { toView } = useAppHandlers();
+  const toView = useToView();
 
   const onClickView = useCallback(
     (viewId: string) => {

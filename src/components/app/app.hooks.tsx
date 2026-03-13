@@ -1,36 +1,5 @@
-import EventEmitter from 'events';
-
-import React, { createContext, useContext, useMemo } from 'react';
+import React, { useContext, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Awareness } from 'y-protocols/awareness';
-
-import {
-  AppendBreadcrumb,
-  CreateDatabaseViewPayload,
-  CreateDatabaseViewResponse,
-  CreatePagePayload,
-  CreatePageResponse,
-  CreateRow,
-  CreateSpacePayload,
-  DatabaseRelations,
-  GenerateAISummaryRowPayload,
-  GenerateAITranslateRowPayload,
-  LoadDatabasePrompts,
-  LoadView,
-  LoadViewMeta,
-  MentionablePerson,
-  Subscription,
-  TestDatabasePromptConfig,
-  TextCount,
-  UIVariant,
-  UpdatePagePayload,
-  UpdateSpacePayload,
-  UserWorkspaceInfo,
-  View,
-  ViewIconType,
-  YDoc,
-} from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import {
@@ -38,90 +7,14 @@ import {
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
+import { AppNavigationContext } from './contexts/AppNavigationContext';
+import { AppOperationsContext } from './contexts/AppOperationsContext';
+import { AppOutlineContext } from './contexts/AppOutlineContext';
+import { AppSyncContext } from './contexts/AppSyncContext';
 import { AuthInternalContext } from './contexts/AuthInternalContext';
 import { AppAuthLayer } from './layers/AppAuthLayer';
 import { AppBusinessLayer } from './layers/AppBusinessLayer';
 import { AppSyncLayer } from './layers/AppSyncLayer';
-
-// Main AppContext interface - kept identical to maintain backward compatibility
-export interface AppContextType {
-  toView: (viewId: string, blockId?: string, keepSearch?: boolean) => Promise<void>;
-  loadViewMeta: LoadViewMeta;
-  createRow?: CreateRow;
-  loadView: LoadView;
-  bindViewSync?: (doc: YDoc) => SyncContext | null;
-  outline?: View[];
-  loadedViewIds?: Set<string>;
-  loadViewChildren?: (viewId: string) => Promise<View[]>;
-  loadViewChildrenBatch?: (viewIds: string[]) => Promise<View[]>;
-  markViewChildrenStale?: (viewId: string) => void;
-  viewId?: string;
-  wordCount?: Record<string, TextCount>;
-  setWordCount?: (viewId: string, count: TextCount) => void;
-  currentWorkspaceId?: string;
-  onChangeWorkspace?: (workspaceId: string) => Promise<void>;
-  userWorkspaceInfo?: UserWorkspaceInfo;
-  breadcrumbs?: View[];
-  appendBreadcrumb?: AppendBreadcrumb;
-  loadFavoriteViews?: () => Promise<View[] | undefined>;
-  loadRecentViews?: () => Promise<View[] | undefined>;
-  loadTrash?: (workspaceId: string) => Promise<void>;
-  favoriteViews?: View[];
-  recentViews?: View[];
-  trashList?: View[];
-  rendered?: boolean;
-  onRendered?: () => void;
-  notFound?: boolean;
-  viewHasBeenDeleted?: boolean;
-  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
-  deletePage?: (viewId: string) => Promise<void>;
-  updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
-  updatePageIcon?: (viewId: string, icon: { ty: ViewIconType; value: string }) => Promise<void>;
-  updatePageName?: (viewId: string, name: string) => Promise<void>;
-  deleteTrash?: (viewId?: string) => Promise<void>;
-  restorePage?: (viewId?: string) => Promise<void>;
-  movePage?: (viewId: string, parentId: string, prevViewId?: string) => Promise<void>;
-  openPageModal?: (viewId: string) => void;
-  openPageModalViewId?: string;
-  loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
-  createSpace?: (payload: CreateSpacePayload) => Promise<string>;
-  updateSpace?: (payload: UpdateSpacePayload) => Promise<void>;
-  uploadFile?: (viewId: string, file: File, onProgress?: (n: number) => void) => Promise<string>;
-  getSubscriptions?: () => Promise<Subscription[]>;
-  publish?: (view: View, publishName?: string, visibleViewIds?: string[]) => Promise<void>;
-  unpublish?: (viewId: string) => Promise<void>;
-  refreshOutline?: () => Promise<void>;
-  createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
-  generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
-  generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
-  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
-  createOrphanedView?: (payload: { document_id: string }) => Promise<Uint8Array>;
-  loadDatabasePrompts?: LoadDatabasePrompts;
-  testDatabasePromptConfig?: TestDatabasePromptConfig;
-  eventEmitter?: EventEmitter;
-  getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
-  awarenessMap?: Record<string, Awareness>;
-  checkIfRowDocumentExists?: (documentId: string) => Promise<boolean>;
-  /**
-   * Load a row sub-document (document content inside a database row).
-   */
-  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
-  /**
-   * Create a row document on the server (orphaned view).
-   */
-  createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
-  getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
-  loadMentionableUsers?: () => Promise<MentionablePerson[]>;
-  /**
-   * Schedule deferred cleanup of a sync context after a delay.
-   * If the same objectId is re-registered before the timer fires,
-   * the cleanup is cancelled and the existing context is reused.
-   */
-  scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
-}
-
-// Main AppContext - same as original
-export const AppContext = createContext<AppContextType | null>(null);
 
 // Internal component to conditionally render sync and business layers only when workspace ID exists
 const ConditionalWorkspaceLayers = ({ children }: { children: React.ReactNode }) => {
@@ -154,29 +47,31 @@ export const AppProvider = ({ children }: { children: React.ReactNode }) => {
   );
 };
 
-// All hooks remain identical to maintain backward compatibility
+// ─── Auth-only hooks (bypass business layer entirely) ────────────────────────
+// These read from AuthInternalContext, provided by AppAuthLayer.
+// Available before the WebSocket or business layers initialize.
 
-export function useViewErrorStatus() {
-  const context = useContext(AppContext);
+/** Returns the current workspace ID. Throws if used outside AppProvider. */
+export function useCurrentWorkspaceId() {
+  const context = useContext(AuthInternalContext);
 
   if (!context) {
-    throw new Error('useViewErrorStatus must be used within an AppProvider');
+    throw new Error('useCurrentWorkspaceId must be used within an AppProvider');
   }
 
-  return {
-    notFound: context.notFound,
-    deleted: context.viewHasBeenDeleted,
-  };
+  return context.currentWorkspaceId;
 }
 
-export function useBreadcrumb() {
-  const context = useContext(AppContext);
+/** Returns the current workspace ID, or undefined if outside AppProvider. Safe for publish pages. */
+export function useCurrentWorkspaceIdOptional(): string | undefined {
+  const context = useContext(AuthInternalContext);
 
-  return context?.breadcrumbs;
+  return context?.currentWorkspaceId;
 }
 
+/** Returns the full workspace info object. Throws if used outside AppProvider. */
 export function useUserWorkspaceInfo() {
-  const context = useContext(AppContext);
+  const context = useContext(AuthInternalContext);
 
   if (!context) {
     throw new Error('useUserWorkspaceInfo must be used within an AppProvider');
@@ -185,8 +80,113 @@ export function useUserWorkspaceInfo() {
   return context.userWorkspaceInfo;
 }
 
+/**
+ * Returns whether page history is enabled for the current workspace plan.
+ * Fails open (returns true) when outside AppProvider — e.g. on publish pages.
+ */
+export function usePageHistoryEnabled(): boolean {
+  const context = useContext(AuthInternalContext);
+
+  // Fail open: if context isn't available (e.g. publish pages), default to true
+  return context?.enablePageHistory ?? true;
+}
+
+// ─── Navigation-only hooks → AppNavigationContext ────────────────────────────
+// Provided by AppBusinessLayer. Available after workspace loads.
+
+/** Whether the current view has finished rendering its main content. */
+export function useAppRendered() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useAppRendered must be used within an AppProvider');
+  }
+
+  return context.rendered;
+}
+
+/** Callback to push a view onto the breadcrumb trail. */
+export function useAppendBreadcrumb() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useAppendBreadcrumb must be used within an AppProvider');
+  }
+
+  return context.appendBreadcrumb;
+}
+
+/** Callback for view components to signal that rendering is complete. */
+export function useOnRendered() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useOnRendered must be used within an AppProvider');
+  }
+
+  return context.onRendered;
+}
+
+/** Open a view in the modal overlay. */
+export function useOpenPageModal() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useOpenPageModal must be used within an AppProvider');
+  }
+
+  return context.openPageModal;
+}
+
+/** The view ID from the current route. */
+export function useAppViewId() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useAppViewId must be used within an AppProvider');
+  }
+
+  return context.viewId;
+}
+
+/** Memoized `{ notFound, deleted }` error flags for the current view. */
+export function useViewErrorStatus() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useViewErrorStatus must be used within an AppProvider');
+  }
+
+  return useMemo(() => ({
+    notFound: context.notFound,
+    deleted: context.viewHasBeenDeleted,
+  }), [context.notFound, context.viewHasBeenDeleted]);
+}
+
+/** The breadcrumb trail, or undefined if outside AppProvider. Does not throw. */
+export function useBreadcrumb() {
+  const context = useContext(AppNavigationContext);
+
+  return context?.breadcrumbs;
+}
+
+/** The view ID currently displayed in the page modal, if any. */
+export function useOpenModalViewId() {
+  const context = useContext(AppNavigationContext);
+
+  if (!context) {
+    throw new Error('useOpenModalViewId must be used within an AppProvider');
+  }
+
+  return context.openPageModalViewId;
+}
+
+// ─── Outline-only hooks → AppOutlineContext ──────────────────────────────────
+// Provided by AppBusinessLayer. Available after workspace loads.
+
+/** The full workspace outline view tree. */
 export function useAppOutline() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useAppOutline must be used within an AppProvider');
@@ -195,8 +195,23 @@ export function useAppOutline() {
   return context.outline;
 }
 
+/** Find a single view by ID in the outline tree. Returns undefined if not found. */
+export function useAppView(viewId?: string) {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useAppView must be used within an AppProvider');
+  }
+
+  return useMemo(() => {
+    if (!viewId) return;
+    return findView(context.outline || [], viewId);
+  }, [context.outline, viewId]);
+}
+
+/** Set of view IDs whose children have been fetched (for lazy-loading). */
 export function useLoadedViewIds() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useLoadedViewIds must be used within an AppProvider');
@@ -205,8 +220,9 @@ export function useLoadedViewIds() {
   return context.loadedViewIds;
 }
 
+/** Fetch the children of a single view. */
 export function useLoadViewChildren() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useLoadViewChildren must be used within an AppProvider');
@@ -215,8 +231,9 @@ export function useLoadViewChildren() {
   return context.loadViewChildren;
 }
 
+/** Fetch children of multiple views in one batch request. */
 export function useLoadViewChildrenBatch() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useLoadViewChildrenBatch must be used within an AppProvider');
@@ -225,8 +242,9 @@ export function useLoadViewChildrenBatch() {
   return context.loadViewChildrenBatch;
 }
 
+/** Invalidate cached children of a view so the next access re-fetches. */
 export function useMarkViewChildrenStale() {
-  const context = useContext(AppContext);
+  const context = useContext(AppOutlineContext);
 
   if (!context) {
     throw new Error('useMarkViewChildrenStale must be used within an AppProvider');
@@ -235,8 +253,191 @@ export function useMarkViewChildrenStale() {
   return context.markViewChildrenStale;
 }
 
+/** Memoized `{ loadFavoriteViews, favoriteViews }`. Only re-renders when favorites change. */
+export function useAppFavorites() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useAppFavorites must be used within an AppProvider');
+  }
+
+  return useMemo(() => ({
+    loadFavoriteViews: context.loadFavoriteViews,
+    favoriteViews: context.favoriteViews,
+  }), [context.loadFavoriteViews, context.favoriteViews]);
+}
+
+/** Memoized `{ loadRecentViews, recentViews }`. Only re-renders when recents change. */
+export function useAppRecent() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useAppRecent must be used within an AppProvider');
+  }
+
+  return useMemo(() => ({
+    loadRecentViews: context.loadRecentViews,
+    recentViews: context.recentViews,
+  }), [context.loadRecentViews, context.recentViews]);
+}
+
+/** Memoized `{ loadTrash, trashList }`. Only re-renders when trash changes. */
+export function useAppTrash() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useAppTrash must be used within an AppProvider');
+  }
+
+  return useMemo(() => ({
+    loadTrash: context.loadTrash,
+    trashList: context.trashList,
+  }), [context.loadTrash, context.trashList]);
+}
+
+/** Force-reload the entire outline tree from the server. */
+export function useRefreshOutline() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useRefreshOutline must be used within an AppProvider');
+  }
+
+  return context.refreshOutline;
+}
+
+/** Load views with an optional UI variant filter. */
+export function useLoadViews() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useLoadViews must be used within an AppProvider');
+  }
+
+  return context.loadViews;
+}
+
+/** Resolve a user UUID to their mentionable-person profile. */
+export function useGetMentionUser() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useGetMentionUser must be used within an AppProvider');
+  }
+
+  return context.getMentionUser;
+}
+
+/** Load all mentionable users in the workspace for @-mention autocomplete. */
+export function useLoadMentionableUsers() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useLoadMentionableUsers must be used within an AppProvider');
+  }
+
+  return context.loadMentionableUsers;
+}
+
+/** Load cross-database relation metadata for the workspace. */
+export function useLoadDatabaseRelations() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useLoadDatabaseRelations must be used within an AppProvider');
+  }
+
+  return context.loadDatabaseRelations;
+}
+
+// ─── Operations-only hooks → AppOperationsContext ────────────────────────────
+// Provided by AppBusinessLayer. Available after workspace loads.
+// Prefer narrower hooks (useToView, useGetSubscriptions, usePublishing,
+// useCollabHistory) when you only need a few fields.
+
+/**
+ * Returns the full AppOperationsContext. Use when you need 3+ operation fields.
+ * For single-purpose consumers, prefer the narrower hooks instead.
+ */
+export function useAppOperations() {
+  const context = useContext(AppOperationsContext);
+
+  if (!context) {
+    throw new Error('useAppOperations must be used within an AppProvider');
+  }
+
+  return context;
+}
+
+/** Navigate to a view by ID. Narrower alternative to `useAppOperations().toView`. */
+export function useToView() {
+  const context = useContext(AppOperationsContext);
+
+  if (!context) {
+    throw new Error('useToView must be used within an AppProvider');
+  }
+
+  return context.toView;
+}
+
+/** Fetch workspace subscriptions. Narrower alternative to `useAppOperations().getSubscriptions`. */
+export function useGetSubscriptions() {
+  const context = useContext(AppOperationsContext);
+
+  if (!context) {
+    throw new Error('useGetSubscriptions must be used within an AppProvider');
+  }
+
+  return context.getSubscriptions;
+}
+
+/** Memoized `{ publish, unpublish }`. Narrower alternative to `useAppOperations()`. */
+export function usePublishing() {
+  const context = useContext(AppOperationsContext);
+
+  if (!context) {
+    throw new Error('usePublishing must be used within an AppProvider');
+  }
+
+  return useMemo(() => ({
+    publish: context.publish,
+    unpublish: context.unpublish,
+  }), [context.publish, context.unpublish]);
+}
+
+/** Memoized `{ getCollabHistory, previewCollabVersion, revertCollabVersion }`. For version history UI. */
+export function useCollabHistory() {
+  const context = useContext(AppOperationsContext);
+
+  if (!context) {
+    throw new Error('useCollabHistory must be used within an AppProvider');
+  }
+
+  return useMemo(() => ({
+    getCollabHistory: context.getCollabHistory,
+    previewCollabVersion: context.previewCollabVersion,
+    revertCollabVersion: context.revertCollabVersion,
+  }), [context.getCollabHistory, context.previewCollabVersion, context.revertCollabVersion]);
+}
+
+/** Get the cached word/character count for a document view. Returns undefined if no viewId. */
+export function useAppWordCount(viewId?: string | null) {
+  const context = useContext(AppOperationsContext);
+
+  if (!context) {
+    throw new Error('useAppWordCount must be used within an AppProvider');
+  }
+
+  if (!viewId) {
+    return;
+  }
+
+  return context.getWordCount?.(viewId);
+}
+
+/** Per-view collaborator awareness (cursors/presence). Returns undefined if no viewId or outside provider. */
 export function useAppAwareness(viewId?: string) {
-  const context = useContext(AppContext);
+  const context = useContext(AppSyncContext);
 
   if (!viewId) {
     return;
@@ -245,15 +446,44 @@ export function useAppAwareness(viewId?: string) {
   return context?.awarenessMap?.[viewId];
 }
 
-export function useAppViewId() {
-  const context = useContext(AppContext);
+// ─── Sync hooks → AppSyncContext ─────────────────────────────────────────────
+// Provided by AppBusinessLayer (reads sync state from AppSyncLayer).
+// Available after workspace loads and WebSocket connects.
+
+/** Returns the full AppSyncContext. */
+export function useAppSyncContext() {
+  const context = useContext(AppSyncContext);
 
   if (!context) {
-    throw new Error('useAppViewId must be used within an AppProvider');
+    throw new Error('useAppSyncContext must be used within an AppProvider');
   }
 
-  return context.viewId;
+  return context;
 }
+
+/** App-wide event bus for cross-component communication. */
+export function useEventEmitter() {
+  const context = useContext(AppSyncContext);
+
+  if (!context) {
+    throw new Error('useEventEmitter must be used within an AppProvider');
+  }
+
+  return context.eventEmitter;
+}
+
+/** Schedule deferred cleanup of a sync object (e.g. Yjs doc) after a delay. */
+export function useScheduleDeferredCleanup() {
+  const context = useContext(AppSyncContext);
+
+  if (!context) {
+    throw new Error('useScheduleDeferredCleanup must be used within an AppProvider');
+  }
+
+  return context.scheduleDeferredCleanup;
+}
+
+// ─── Multi-context / composite hooks ─────────────────────────────────────────
 
 /**
  * Returns the view id that should be treated as "selected" in the sidebar.
@@ -280,163 +510,3 @@ export function useSidebarSelectedViewId() {
   );
 }
 
-export function useAppWordCount(viewId?: string | null) {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppWordCount must be used within an AppProvider');
-  }
-
-  if (!viewId) {
-    return;
-  }
-
-  return context.wordCount?.[viewId];
-}
-
-export function useOpenModalViewId() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useOpenModalViewId must be used within an AppProvider');
-  }
-
-  return context.openPageModalViewId;
-}
-
-export function useAppView(viewId?: string) {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppView must be used within an AppProvider');
-  }
-
-  if (!viewId) {
-    return;
-  }
-
-  return findView(context.outline || [], viewId);
-}
-
-export function useCurrentWorkspaceId() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useCurrentWorkspaceId must be used within an AppProvider');
-  }
-
-  return context.currentWorkspaceId;
-}
-
-/**
- * Optional variant of useCurrentWorkspaceId that returns undefined
- * instead of throwing when used outside AppProvider.
- * Use this in components that may render in publish views or modals.
- */
-export function useCurrentWorkspaceIdOptional(): string | undefined {
-  const context = useContext(AppContext);
-
-  return context?.currentWorkspaceId;
-}
-
-/**
- * Optional variant that returns the full AppContext or undefined.
- * Use for components that need multiple context values and may render
- * outside AppProvider.
- */
-export function useAppContextOptional(): AppContextType | null {
-  return useContext(AppContext);
-}
-
-export function useAppHandlers() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppHandlers must be used within an AppProvider');
-  }
-
-  return {
-    toView: context.toView,
-    loadViewMeta: context.loadViewMeta,
-    createRow: context.createRow,
-    loadView: context.loadView,
-    bindViewSync: context.bindViewSync,
-    appendBreadcrumb: context.appendBreadcrumb,
-    onChangeWorkspace: context.onChangeWorkspace,
-    onRendered: context.onRendered,
-    addPage: context.addPage,
-    openPageModal: context.openPageModal,
-    openPageModalViewId: context.openPageModalViewId,
-    deletePage: context.deletePage,
-    deleteTrash: context.deleteTrash,
-    restorePage: context.restorePage,
-    updatePage: context.updatePage,
-    movePage: context.movePage,
-    loadViews: context.loadViews,
-    setWordCount: context.setWordCount,
-    createSpace: context.createSpace,
-    updateSpace: context.updateSpace,
-    uploadFile: context.uploadFile,
-    getSubscriptions: context.getSubscriptions,
-    publish: context.publish,
-    unpublish: context.unpublish,
-    refreshOutline: context.refreshOutline,
-    createDatabaseView: context.createDatabaseView,
-    generateAISummaryForRow: context.generateAISummaryForRow,
-    generateAITranslateForRow: context.generateAITranslateForRow,
-    loadDatabaseRelations: context.loadDatabaseRelations,
-    createOrphanedView: context.createOrphanedView,
-    loadDatabasePrompts: context.loadDatabasePrompts,
-    testDatabasePromptConfig: context.testDatabasePromptConfig,
-    eventEmitter: context.eventEmitter,
-    getMentionUser: context.getMentionUser,
-    awarenessMap: context.awarenessMap,
-    checkIfRowDocumentExists: context.checkIfRowDocumentExists,
-    loadRowDocument: context.loadRowDocument,
-    createRowDocument: context.createRowDocument,
-    updatePageIcon: context.updatePageIcon,
-    updatePageName: context.updatePageName,
-    getViewIdFromDatabaseId: context.getViewIdFromDatabaseId,
-    loadMentionableUsers: context.loadMentionableUsers,
-    scheduleDeferredCleanup: context.scheduleDeferredCleanup,
-  };
-}
-
-export function useAppFavorites() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppFavorites must be used within an AppProvider');
-  }
-
-  return {
-    loadFavoriteViews: context.loadFavoriteViews,
-    favoriteViews: context.favoriteViews,
-  };
-}
-
-export function useAppRecent() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppRecent must be used within an AppProvider');
-  }
-
-  return {
-    loadRecentViews: context.loadRecentViews,
-    recentViews: context.recentViews,
-  };
-}
-
-export function useAppTrash() {
-  const context = useContext(AppContext);
-
-  if (!context) {
-    throw new Error('useAppTrash must be used within an AppProvider');
-  }
-
-  return {
-    loadTrash: context.loadTrash,
-    trashList: context.trashList,
-  };
-}

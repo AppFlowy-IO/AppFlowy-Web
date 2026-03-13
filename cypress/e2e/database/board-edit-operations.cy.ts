@@ -237,6 +237,92 @@ describe('Board Operations', () => {
       });
     });
 
+    /**
+     * Regression test for issue #145:
+     * Duplicating a card causes select option data to disappear from original cards.
+     *
+     * Root cause was cloneCell() moving Y.Array values (shared reference) instead
+     * of deep-cloning them, so the original cell lost its data.
+     */
+    it('should preserve original card data after duplicating a card (#145)', () => {
+      const testEmail = generateRandomEmail();
+      const cardName = `Card-${uuidv4().substring(0, 6)}`;
+
+      cy.task('log', `[TEST START] Card duplication preserves data (#145) - Email: ${testEmail}`);
+
+      createBoardAndWait(testEmail).then(() => {
+        // Step 1: Add a new card to the "To Do" column
+        cy.task('log', '[STEP 1] Adding card to To Do column');
+        BoardSelectors.boardContainer()
+          .contains('To Do')
+          .closest('[data-column-id]')
+          .within(() => {
+            cy.contains('New').click({ force: true });
+          });
+        waitForReactUpdate(500);
+        cy.focused().type(`${cardName}{enter}`, { force: true });
+        waitForReactUpdate(2000);
+
+        // Verify card exists in the To Do column
+        BoardSelectors.boardContainer()
+          .contains('To Do')
+          .closest('[data-column-id]')
+          .contains(cardName)
+          .should('be.visible');
+
+        // Step 2: Count cards before duplication
+        cy.task('log', '[STEP 2] Counting cards before duplication');
+        BoardSelectors.cards().then($cardsBefore => {
+          const cardCountBefore = $cardsBefore.length;
+          cy.task('log', `Cards before duplication: ${cardCountBefore}`);
+
+          // Step 3: Duplicate the card via toolbar
+          cy.task('log', '[STEP 3] Duplicating the card');
+          BoardSelectors.boardContainer()
+            .contains(cardName)
+            .closest('.board-card')
+            .trigger('mouseenter', { force: true });
+          waitForReactUpdate(500);
+
+          BoardSelectors.boardContainer()
+            .contains(cardName)
+            .closest('.board-card')
+            .find('button')
+            .last()
+            .click({ force: true });
+          waitForReactUpdate(500);
+
+          cy.get('[role="menuitem"]').contains(/duplicate/i).click({ force: true });
+          waitForReactUpdate(3000);
+
+          // Step 4: Verify card count increased (duplicate was created)
+          cy.task('log', '[STEP 4] Verifying duplicate was created');
+          BoardSelectors.cards().should('have.length', cardCountBefore + 1);
+
+          // Step 5: Verify the ORIGINAL card is still in the To Do column
+          // This is the core assertion for issue #145 — if select option data was
+          // lost (Y.Array moved instead of cloned), the card would disappear from
+          // its column or lose its grouping.
+          cy.task('log', '[STEP 5] Verifying original card is still in To Do column');
+          BoardSelectors.boardContainer()
+            .contains('To Do')
+            .closest('[data-column-id]')
+            .contains(cardName)
+            .should('be.visible');
+
+          // Step 6: Verify all pre-existing default cards are still in their columns
+          // The default Board has "To Do", "Doing", "Done" columns with cards.
+          // If duplication corrupted shared Y.Array data, other cards would also be affected.
+          cy.task('log', '[STEP 6] Verifying default columns still have cards');
+          BoardSelectors.boardContainer().contains('To Do').should('be.visible');
+          BoardSelectors.boardContainer().contains('Doing').should('be.visible');
+          BoardSelectors.boardContainer().contains('Done').should('be.visible');
+
+          cy.task('log', '[TEST COMPLETE] Card duplication preserves data test passed');
+        });
+      });
+    });
+
     it('should handle rapid card creation', () => {
       const testEmail = generateRandomEmail();
       const cardPrefix = `Rapid-${uuidv4().substring(0, 4)}`;

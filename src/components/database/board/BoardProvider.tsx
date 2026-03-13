@@ -1,15 +1,14 @@
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 
 import { useBoardLayoutSettings, useGroupsSelector } from '@/application/database-yjs';
 import { useMoveCardDispatch, useNewRowDispatch } from '@/application/database-yjs/dispatch';
 
-type BoardContextType = {
+// --- Actions context (stable — callbacks only) ---
+
+type BoardActionsContextType = {
   groupId: string;
-  selectedCardIds: string[];
   setSelectedCardIds: (ids: string[]) => void;
-  editingCardId: string | null;
   setEditingCardId: (id: string | null) => void;
-  creatingColumnId: string | null;
   setCreatingColumnId: (id: string | null) => void;
   createCard: (columnId: string, beforeCardId?: string) => Promise<string | null>;
   moveCard: ({
@@ -25,27 +24,58 @@ type BoardContextType = {
   }) => void;
 };
 
-const BoardContext = createContext<BoardContextType>({
-  groupId: '',
-  selectedCardIds: [],
-  setSelectedCardIds: () => undefined,
-  editingCardId: null,
-  setEditingCardId: () => undefined,
-  creatingColumnId: null,
-  setCreatingColumnId: () => undefined,
-  createCard: () => Promise.resolve(null),
-  moveCard: () => undefined,
-});
+const BoardActionsContext = createContext<BoardActionsContextType | undefined>(undefined);
 
+// --- Selection context (volatile — state) ---
+
+type BoardSelectionContextType = {
+  selectedCardIds: string[];
+  editingCardId: string | null;
+  creatingColumnId: string | null;
+};
+
+const BoardSelectionContext = createContext<BoardSelectionContextType | undefined>(undefined);
+
+// --- Hooks ---
+
+/**
+ * @deprecated Prefer `useBoardActions()` or `useBoardSelection()` for better rerender performance.
+ * Returns a merged object that changes when either context changes.
+ */
 export function useBoardContext() {
-  const context = useContext(BoardContext);
+  const actions = useContext(BoardActionsContext);
+  const selection = useContext(BoardSelectionContext);
 
-  if (!context) {
+  if (!actions || !selection) {
     throw new Error('useBoardContext must be used within a BoardProvider');
   }
 
-  return context;
+  return useMemo(() => ({ ...actions, ...selection }), [actions, selection]);
 }
+
+/** Stable callbacks only — will NOT rerender on selection / editing state changes. */
+export function useBoardActions() {
+  const actions = useContext(BoardActionsContext);
+
+  if (!actions) {
+    throw new Error('useBoardActions must be used within a BoardProvider');
+  }
+
+  return actions;
+}
+
+/** Volatile selection state only. */
+export function useBoardSelection() {
+  const selection = useContext(BoardSelectionContext);
+
+  if (!selection) {
+    throw new Error('useBoardSelection must be used within a BoardProvider');
+  }
+
+  return selection;
+}
+
+// --- Provider ---
 
 export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
   const groups = useGroupsSelector();
@@ -96,21 +126,32 @@ export const BoardProvider = ({ children }: { children: React.ReactNode }) => {
     [fieldId, onMoveCard]
   );
 
+  const actionsValue = useMemo(
+    () => ({
+      groupId,
+      setSelectedCardIds,
+      setEditingCardId,
+      setCreatingColumnId,
+      createCard,
+      moveCard,
+    }),
+    [groupId, createCard, moveCard]
+  );
+
+  const selectionValue = useMemo(
+    () => ({
+      selectedCardIds,
+      editingCardId,
+      creatingColumnId,
+    }),
+    [selectedCardIds, editingCardId, creatingColumnId]
+  );
+
   return (
-    <BoardContext.Provider
-      value={{
-        groupId,
-        selectedCardIds,
-        setSelectedCardIds,
-        editingCardId,
-        setEditingCardId,
-        creatingColumnId,
-        setCreatingColumnId,
-        createCard,
-        moveCard,
-      }}
-    >
-      {children}
-    </BoardContext.Provider>
+    <BoardActionsContext.Provider value={actionsValue}>
+      <BoardSelectionContext.Provider value={selectionValue}>
+        {children}
+      </BoardSelectionContext.Provider>
+    </BoardActionsContext.Provider>
   );
 };

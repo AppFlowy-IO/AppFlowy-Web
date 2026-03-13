@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback, useContext } from 'react';
+import React, { createContext, useState, useCallback, useContext, useMemo } from 'react';
 import { ReactEditor } from 'slate-react';
 
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
@@ -14,19 +14,16 @@ export interface BlockPopoverContextType {
   isOpen: (type: BlockType) => boolean;
 }
 
-export const BlockPopoverContext = createContext<BlockPopoverContextType>({
-  open: false,
-  close: () => {
-    //
-  },
-  openPopover: () => {
-    //
-  },
-  isOpen: () => false,
-});
+export const BlockPopoverContext = createContext<BlockPopoverContextType | undefined>(undefined);
 
 export function usePopoverContext() {
-  return useContext(BlockPopoverContext);
+  const context = useContext(BlockPopoverContext);
+
+  if (!context) {
+    throw new Error('usePopoverContext must be used within a BlockPopoverProvider');
+  }
+
+  return context;
 }
 
 export const BlockPopoverProvider = ({ children, editor }: { children: React.ReactNode; editor: ReactEditor }) => {
@@ -61,11 +58,15 @@ export const BlockPopoverProvider = ({ children, editor }: { children: React.Rea
     return popover === type;
   }, [type]);
 
+  const contextValue = useMemo(
+    () => ({ blockId, type, anchorEl, open, close, openPopover, isOpen }),
+    [blockId, type, anchorEl, open, close, openPopover, isOpen]
+  );
+
   return (
-    <BlockPopoverContext.Provider value={{ blockId, type, anchorEl, open, close, openPopover, isOpen }}>
+    <BlockPopoverContext.Provider value={contextValue}>
       {children}
     </BlockPopoverContext.Provider>
   );
 
 };
-

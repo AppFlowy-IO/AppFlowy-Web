@@ -7,7 +7,8 @@ import { ReactComponent as NoAccessLogo } from '@/assets/icons/no_access.svg';
 import { ReactComponent as SuccessLogo } from '@/assets/icons/success_logo.svg';
 import { useAppViewId, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { RequestAccessError } from '@/components/app/hooks/useWorkspaceData';
-import { useCurrentUser, useService } from '@/components/main/app.hooks';
+import { AccessService } from '@/application/services/domains';
+import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 
@@ -21,7 +22,6 @@ interface RequestAccessContentProps {
 
 export function RequestAccessContent({ viewId: propViewId, workspaceId: propWorkspaceId, error: _error }: RequestAccessContentProps) {
   const { t } = useTranslation();
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const appViewId = useAppViewId();
   const [searchParams] = useSearchParams();
@@ -37,14 +37,13 @@ export function RequestAccessContent({ viewId: propViewId, workspaceId: propWork
 
   const handleSendRequest = async () => {
     try {
-      if (!service) return;
       if (!workspaceId || !viewId) {
         setIsError(true);
         return;
       }
 
       setLoading(true);
-      await service.sendRequestAccess(workspaceId, viewId);
+      await AccessService.sendRequestAccess(workspaceId, viewId);
 
       toast.success(t('landingPage.noAccess.requestAccessSuccess'));
       setHasSend(true);

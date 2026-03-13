@@ -1,11 +1,11 @@
-import React, { useContext } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { QuickNote } from '@/application/types';
+import { QuickNoteService } from '@/application/services/domains';
 import { NormalModal } from '@/components/_shared/modal';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
-import { ToastContext } from '@/components/quick-note/QuickNote.hooks';
+import { useToastContext } from '@/components/quick-note/QuickNote.hooks';
 import { getTitle } from '@/components/quick-note/utils';
 
 function DeleteNoteModal({
@@ -20,16 +20,16 @@ function DeleteNoteModal({
   onDelete: (id: string) => void;
 }) {
   const { t } = useTranslation();
-  const toast = useContext(ToastContext);
+  const toast = useToastContext();
 
   const [loading, setLoading] = React.useState(false);
   const currentWorkspaceId = useCurrentWorkspaceId();
-  const service = useService();
+
   const handleDelete = async () => {
-    if (!service || !currentWorkspaceId || loading) return;
+    if (!currentWorkspaceId || loading) return;
     setLoading(true);
     try {
-      await service.deleteQuickNote(currentWorkspaceId, note.id);
+      await QuickNoteService.remove(currentWorkspaceId, note.id);
 
       onDelete(note.id);
       onClose();

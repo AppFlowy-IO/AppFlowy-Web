@@ -125,16 +125,15 @@ export class WriterRequest {
               const data = JSON.parse(extracted.jsonStr);
 
               Object.entries(data).forEach(([key, value]) => {
-                if(key === StreamType.META_DATA || key === StreamType.KEEP_ALIVE_KEY) {
-                  return;
-                }
-
                 if(key === StreamType.COMMENT) {
                   comment += value;
                   return;
                 }
 
-                text += value;
+                // Only append known content types to the answer text
+                if(key === StreamType.TEXT || key === StreamType.IMAGE) {
+                  text += value;
+                }
               });
 
               onMessage(text, comment, false);

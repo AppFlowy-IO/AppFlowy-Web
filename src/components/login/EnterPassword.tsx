@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
+import { AuthService } from '@/application/services/domains';
 import { LOGIN_ACTION } from '@/components/login/const';
-import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { PasswordInput } from '@/components/ui/password-input';
 import { Progress } from '@/components/ui/progress';
@@ -13,17 +13,15 @@ import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 export function EnterPassword({ email, redirectTo }: { email: string; redirectTo: string }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const service = useService();
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.MouseEvent<HTMLButtonElement> | React.KeyboardEvent<HTMLInputElement>) => {
     e.preventDefault();
-    if (!service) return;
     setLoading(true);
     setError('');
     try {
-      await service.signInWithPassword({ email, password, redirectTo });
+      await AuthService.signInWithPassword({ email, password, redirectTo });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } catch (error: any) {
       setError(error.message);

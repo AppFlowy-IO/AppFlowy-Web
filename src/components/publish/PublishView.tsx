@@ -1,10 +1,10 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { PublishProvider } from '@/application/publish';
+import { PublishService } from '@/application/services/domains';
 import { YDoc } from '@/application/types';
 import NotFound from '@/components/error/NotFound';
-import { AFConfigContext } from '@/components/main/app.hooks';
 import PublishLayout from '@/components/publish/PublishLayout';
 import PublishMobileLayout from '@/components/publish/PublishMobileLayout';
 import { getPlatform } from '@/utils/platform';
@@ -17,21 +17,20 @@ export interface PublishViewProps {
 export function PublishView({ namespace, publishName }: PublishViewProps) {
   const [doc, setDoc] = useState<YDoc | undefined>();
   const [notFound, setNotFound] = useState<boolean>(false);
-  const service = useContext(AFConfigContext)?.service;
   const openPublishView = useCallback(async() => {
     let doc;
 
     setNotFound(false);
     setDoc(undefined);
     try {
-      doc = await service?.getPublishView(namespace, publishName);
+      doc = await PublishService.getView(namespace, publishName);
     } catch(e) {
       setNotFound(true);
       return;
     }
 
     setDoc(doc);
-  }, [namespace, publishName, service]);
+  }, [namespace, publishName]);
 
   useEffect(() => {
     void openPublishView();

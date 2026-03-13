@@ -11,6 +11,7 @@ import { convertToPageData } from '@/components/chat/lib/utils';
 import { findView } from '@/components/chat/lib/views';
 import {
   ChatMessage,
+  ChatSettings,
   GetChatMessagesPayload,
   RepeatedChatMessage,
   ResponseFormat,
@@ -22,17 +23,7 @@ import {
 import { ModelList } from '@/components/chat/types/ai-model';
 import { extractNextJsonObject } from './stream-json-parser';
 
-export interface ChatSettings {
-  name: string;
-  rag_ids: string[];
-  metadata: Record<string, unknown>;
-}
-
-export interface UpdateChatSettingsParams {
-  name?: string;
-  metadata?: Record<string, unknown>;
-  rag_ids?: string[];
-}
+export type UpdateChatSettingsParams = Partial<ChatSettings>;
 
 /**
  * ChatRequest class for handling chat-related API requests
@@ -242,7 +233,7 @@ export class ChatRequest {
     question_id: number;
     format: ResponseFormat;
     model_name?: string;
-  }, onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void) {
+  }, onMessage: (text: string, metadata: ChatMessageMetadata[], done?: boolean) => void, onProgress?: (step: string) => void) {
     const baseUrl = this.axiosInstance.defaults.baseURL;
     const url = `${baseUrl}/api/chat/${this.workspaceId}/${this.chatId}/answer/stream`;
 
@@ -311,15 +302,23 @@ export class ChatRequest {
               const data = JSON.parse(extracted.jsonStr);
 
               Object.entries(data).forEach(([key, value]) => {
-                if(key === StreamType.META_DATA) {
-                  if(Array.isArray(value)) {
+                if (key === StreamType.META_DATA) {
+                  if (Array.isArray(value)) {
                     metadata.push(...value);
                   }
 
                   return;
                 }
 
-                text += value;
+                if (key === StreamType.PROGRESS) {
+                  onProgress?.(value as string);
+                  return;
+                }
+
+                // Only append known content types to the answer text
+                if (key === StreamType.TEXT || key === StreamType.IMAGE) {
+                  text += value;
+                }
               });
 
               onMessage(text, [], false);

@@ -6,7 +6,7 @@ import { ViewLayout } from '@/application/types';
 import { ReactComponent as Add } from '@/assets/icons/add_new_page.svg';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { useAppHandlers, useAppOutline } from '@/components/app/app.hooks';
+import { useAppOperations, useOpenPageModal, useAppOutline } from '@/components/app/app.hooks';
 import CreateSpaceModal from '@/components/app/view-actions/CreateSpaceModal';
 import SpaceList from '@/components/publish/header/duplicate/SpaceList';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
@@ -36,7 +36,8 @@ function NewPage() {
     setOpen(false);
   }, []);
 
-  const { addPage, openPageModal } = useAppHandlers();
+  const { addPage } = useAppOperations();
+  const openPageModal = useOpenPageModal();
 
   const [createSpaceOpen, setCreateSpaceOpen] = React.useState(false);
 

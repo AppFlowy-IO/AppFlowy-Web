@@ -5,7 +5,7 @@ import { TemplateCategory, TemplateCategoryFormValues } from '@/application/temp
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import CategoryForm from '@/components/as-template/category/CategoryForm';
-import { useService } from '@/components/main/app.hooks';
+import { TemplateService } from '@/application/services/domains';
 import { Log } from '@/utils/log';
 
 function EditCategory({
@@ -21,19 +21,18 @@ function EditCategory({
 }) {
   const { t } = useTranslation();
   const submitRef = React.useRef<HTMLInputElement>(null);
-  const service = useService();
   const onSubmit = useCallback(
     async (data: TemplateCategoryFormValues) => {
       Log.debug('data', data);
       try {
-        await service?.updateTemplateCategory(category.id, data);
+        await TemplateService.updateCategory(category.id, data);
         onUpdated();
         onClose();
       } catch (error) {
         notify.error('Failed to update category');
       }
     },
-    [onUpdated, onClose, service, category.id]
+    [onUpdated, onClose, category.id]
   );
 
   return (

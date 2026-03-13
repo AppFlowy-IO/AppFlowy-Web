@@ -1,11 +1,13 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useChatContext } from '@/components/chat/chat/context';
+import { useChatSettingsLoader } from '@/components/chat/hooks/use-chat-settings-loader';
 import { ERROR_CODE_NO_LIMIT } from '@/components/chat/lib/const';
 import {
   AuthorType,
   ChatMessageMetadata,
+  ChatSettings,
   GetChatMessagesPayload,
   MessageType,
   OutputContent,
@@ -28,13 +30,16 @@ interface MessagesHandlerContextTypes {
   fetchAnswerStream: (
     questionId: number,
     format?: ResponseFormat,
-    onMessage?: (text: string, done?: boolean) => void
+    onMessage?: (text: string, done?: boolean) => void,
+    onProgress?: (step: string) => void
   ) => Promise<void>;
   cancelAnswerStream: () => void;
   questionSending: boolean;
   answerApplying: boolean;
   selectedModelName?: string;
-  setSelectedModelName?: (modelName: string) => void;
+  setSelectedModelName?: (modelName: string, explicit?: boolean) => void;
+  chatSettings: ChatSettings | null;
+  updateChatSettings: (payload: Partial<ChatSettings>) => Promise<void>;
 }
 
 export const MessagesHandlerContext = createContext<MessagesHandlerContextTypes | undefined>(undefined);
@@ -42,31 +47,45 @@ export const MessagesHandlerContext = createContext<MessagesHandlerContextTypes 
 function useMessagesHandler() {
   const { chatId, requestInstance, currentUser } = useChatContext();
 
+  const { chatSettings, fetchChatSettings, updateChatSettings } = useChatSettingsLoader();
+
   // Get the current model from chat settings
   const [selectedModelName, setSelectedModelName] = useState<string>();
-  
-  // Load initial model from settings
-  useEffect(() => {
-    const loadModel = async () => {
-      try {
-        const settings = await requestInstance.getChatSettings();
-        const model = settings.metadata?.ai_model as string | undefined;
+  // Track whether the user has explicitly selected a model in this session.
+  // Prevents async initialization (fetchChatSettings) from overwriting the user's choice.
+  const userExplicitlySelectedModel = useRef(false);
 
-        if (model) {
-          setSelectedModelName(model);
-        }
-      } catch (error) {
-        console.error('Failed to load chat model settings:', error);
+  useEffect(() => {
+    void fetchChatSettings();
+  }, [fetchChatSettings]);
+
+  // Reset the explicit selection flag when chatId changes (new chat opened)
+  useEffect(() => {
+    userExplicitlySelectedModel.current = false;
+  }, [chatId]);
+
+  // Extract model from shared settings (only if user hasn't explicitly selected one)
+  useEffect(() => {
+    if (chatSettings && !userExplicitlySelectedModel.current) {
+      const model = chatSettings.metadata?.ai_model as string | undefined;
+
+      if (model) {
+        setSelectedModelName(model);
       }
-    };
-    
-    if (chatId) {
-      void loadModel();
     }
-  }, [chatId, requestInstance]);
+  }, [chatSettings]);
 
   const { messageIds, addMessages, insertMessage, removeMessages, saveMessageContent, getMessage } =
     useChatMessagesContext();
+
+  // Use refs for values that change frequently but are only read inside callbacks,
+  // to avoid recreating the entire callback chain on each change.
+  const selectedModelNameRef = useRef(selectedModelName);
+
+  selectedModelNameRef.current = selectedModelName;
+  const messageIdsRef = useRef(messageIds);
+
+  messageIdsRef.current = messageIds;
 
   const { setResponseFormatWithId } = useResponseFormatContext();
 
@@ -144,6 +163,10 @@ function useMessagesHandler() {
       try {
         setQuestionSending(true);
 
+        // Capture whether this is the first message BEFORE we insert anything,
+        // so the rename-from-first-prompt logic works correctly.
+        const isFirstMessage = !messageIdsRef.current || messageIdsRef.current.length === 0;
+
         // insert fake message to show user message
         const fakeMessageId = Date.now();
         const author = {
@@ -167,7 +190,7 @@ function useMessagesHandler() {
           content: message,
           message_type: MessageType.User,
           prompt_id: promptId,
-          model_name: selectedModelName,
+          model_name: selectedModelNameRef.current,
         });
 
         const answerId = question.reply_message_id || question.message_id + 1;
@@ -195,7 +218,7 @@ function useMessagesHandler() {
           try {
             const view = await requestInstance.getCurrentView();
 
-            if ((!messageIds || messageIds.length === 0) && view) {
+            if (isFirstMessage && view) {
               await requestInstance.updateViewName(view, message);
             }
             // eslint-disable-next-line
@@ -222,8 +245,6 @@ function useMessagesHandler() {
       removeMessages,
       registerFetchSuggestions,
       createAssistantMessage,
-      messageIds,
-      selectedModelName,
     ]
   );
 
@@ -253,7 +274,7 @@ function useMessagesHandler() {
   );
 
   const fetchAnswerStream = useCallback(
-    async (questionId: number, format?: ResponseFormat, onMessage?: (text: string, done?: boolean) => void) => {
+    async (questionId: number, format?: ResponseFormat, onMessage?: (text: string, done?: boolean) => void, onProgress?: (step: string) => void) => {
       const question = getMessage(questionId);
       let answerId = question?.reply_message_id;
 
@@ -273,7 +294,7 @@ function useMessagesHandler() {
             void (async () => {
               await saveAnswer(questionId, message, metadata);
               setAnswerApplying(false);
-              if (answerId && messageIds.indexOf(answerId) === 0) {
+              if (answerId && messageIdsRef.current.indexOf(answerId) === 0) {
                 await startFetchSuggestions(questionId);
               }
             })();
@@ -298,9 +319,10 @@ function useMessagesHandler() {
               output_layout: OutputLayout.Paragraph,
               output_content: OutputContent.TEXT,
             },
-            model_name: selectedModelName,
+            model_name: selectedModelNameRef.current,
           },
-          handleMessageProgress
+          handleMessageProgress,
+          onProgress
         );
 
         cancelStreamRef.current = cancel;
@@ -328,11 +350,9 @@ function useMessagesHandler() {
       getMessage,
       setResponseFormatWithId,
       saveAnswer,
-      messageIds,
       startFetchSuggestions,
       removeAssistantMessage,
       requestInstance,
-      selectedModelName,
     ]
   );
 
@@ -342,21 +362,23 @@ function useMessagesHandler() {
     }
   }, []);
 
-  // Update local state and persist to chat settings
-  const updateSelectedModel = useCallback(async (modelName: string) => {
-    setSelectedModelName(modelName);
-    try {
-      await requestInstance.updateChatSettings({
-        metadata: {
-          ai_model: modelName
-        }
-      });
-    } catch (error) {
-      console.error('Failed to update chat model settings:', error);
+  // Update local state and persist to chat settings.
+  // Called from both initialization (ModelSelector loadCurrentModel) and explicit user selection.
+  // The `explicit` parameter distinguishes the two to prevent async init from overwriting user choices.
+  const updateSelectedModel = useCallback((modelName: string, explicit = true) => {
+    if (explicit) {
+      userExplicitlySelectedModel.current = true;
     }
-  }, [requestInstance]);
 
-  return {
+    setSelectedModelName(modelName);
+    void updateChatSettings({
+      metadata: {
+        ai_model: modelName,
+      },
+    });
+  }, [updateChatSettings]);
+
+  return useMemo(() => ({
     fetchMessages,
     submitQuestion,
     regenerateAnswer,
@@ -366,7 +388,21 @@ function useMessagesHandler() {
     answerApplying,
     selectedModelName,
     setSelectedModelName: updateSelectedModel,
-  };
+    chatSettings,
+    updateChatSettings,
+  }), [
+    fetchMessages,
+    submitQuestion,
+    regenerateAnswer,
+    fetchAnswerStream,
+    cancelAnswerStream,
+    questionSending,
+    answerApplying,
+    selectedModelName,
+    updateSelectedModel,
+    chatSettings,
+    updateChatSettings,
+  ]);
 }
 
 export function MessagesHandlerProvider({ children }: { children: ReactNode }) {

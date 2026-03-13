@@ -87,12 +87,16 @@ export const SelectionModeProvider = ({ children }: { children: ReactNode }) => 
   const handleUnselectAll = useCallback(() => {
     setMessages([]);
   }, []);
-
-  return <SelectionModeContext.Provider
-    value={{
+  const contextValue = useMemo(
+    () => ({
       messages,
       toggleMessage,
-    }}
+    }),
+    [messages, toggleMessage]
+  );
+
+  return <SelectionModeContext.Provider
+    value={contextValue}
   >
     <div
       className={cn('h-full w-full  px-1')}

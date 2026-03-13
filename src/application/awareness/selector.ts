@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSlate } from 'slate-react';
 import { Awareness } from 'y-protocols/awareness';
 
-import { useService } from '@/components/main/app.hooks';
+import { CollabService } from '@/application/services/domains';
 import { Log } from '@/utils/log';
 
 import { AwarenessMetadata, AwarenessState, AwarenessUser, Cursor } from './types';
@@ -101,8 +101,7 @@ export function useUsersSelector(awareness?: Awareness) {
 export function useRemoteSelectionsSelector(awareness?: Awareness) {
   const [cursors, setCursors] = useState<Cursor[]>([]);
   const editor = useSlate();
-  const service = useService();
-  const localDeviceId = service?.getDeviceId();
+  const localDeviceId = CollabService.getDeviceId();
 
   useEffect(() => {
     const renderCursors = () => {

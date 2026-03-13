@@ -6,11 +6,12 @@ import { useTranslation } from 'react-i18next';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 import { PublishContext } from '@/application/publish';
+import { PublishService } from '@/application/services/domains';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { notify } from '@/components/_shared/notify';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 import ReplyComment from '@/components/global-comment/ReplyComment';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional, useOpenLoginModalOptional } from '@/components/main/app.hooks';
 
 interface AddCommentProps {
   content: string;
@@ -24,9 +25,8 @@ function AddComment({ content, setContent, focus, setFocus, fixed }: AddCommentP
   const { reload, replyCommentId, replyComment: setReplyCommentId } = useGlobalCommentContext();
 
   const { t } = useTranslation();
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated;
-  const openLoginModal = useContext(AFConfigContext)?.openLoginModal;
-  const createCommentOnPublishView = useContext(AFConfigContext)?.service?.createCommentOnPublishView;
+  const isAuthenticated = useIsAuthenticatedOptional();
+  const openLoginModal = useOpenLoginModalOptional();
   const viewId = useContext(PublishContext)?.viewMeta?.view_id;
   const [loading, setLoading] = React.useState(false);
   const url = window.location.href + '#addComment';
@@ -39,7 +39,7 @@ function AddComment({ content, setContent, focus, setFocus, fixed }: AddCommentP
   };
 
   const handleSubmit = useCallback(async () => {
-    if (!createCommentOnPublishView || !viewId || loading) {
+    if (!viewId || loading) {
       return;
     }
 
@@ -47,7 +47,7 @@ function AddComment({ content, setContent, focus, setFocus, fixed }: AddCommentP
 
     setLoading(true);
     try {
-      await createCommentOnPublishView(viewId, content, replyCommentId || undefined);
+      await PublishService.createComment(viewId, content, replyCommentId || undefined);
       await reload();
       setContent('');
 
@@ -73,7 +73,6 @@ function AddComment({ content, setContent, focus, setFocus, fixed }: AddCommentP
     }
   }, [
     fixed,
-    createCommentOnPublishView,
     viewId,
     loading,
     content,

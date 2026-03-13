@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DateFormat, TimeFormat } from '@/application/types';
+import { UserService } from '@/application/services/domains';
 import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { useAppConfig } from '@/components/main/app.hooks';
@@ -19,7 +20,7 @@ import { cn } from '@/lib/utils';
 
 export function AccountSettings({ children }: { children?: React.ReactNode }) {
   const { t } = useTranslation();
-  const { currentUser, updateCurrentUser, service } = useAppConfig();
+  const { currentUser, updateCurrentUser } = useAppConfig();
   const [open, setIsOpen] = useState(false);
 
   const [dateFormat, setDateFormat] = useState(
@@ -34,11 +35,11 @@ export function AccountSettings({ children }: { children?: React.ReactNode }) {
 
   const debounceUpdateProfile = useMemo(() => {
     return debounce(async () => {
-      if (!service || !currentUser?.metadata || !metadataUpdateRef.current) return;
+      if (!currentUser?.metadata || !metadataUpdateRef.current) return;
 
-      await service?.updateUserProfile(metadataUpdateRef.current);
+      await UserService.updateProfile(metadataUpdateRef.current);
     }, 300);
-  }, [service, currentUser]);
+  }, [currentUser]);
 
   useEffect(() => {
     return () => {
@@ -88,7 +89,7 @@ export function AccountSettings({ children }: { children?: React.ReactNode }) {
   const onOpenChange = useCallback(
     async (isOpen: boolean) => {
       if (isOpen) {
-        const user = await service?.getCurrentUser();
+        const user = await UserService.getCurrentRaw();
 
         setDateFormat(Number(user?.metadata?.[MetadataKey.DateFormat] as DateFormat) || DateFormat.Local);
         setTimeFormat(Number(user?.metadata?.[MetadataKey.TimeFormat] as TimeFormat) || TimeFormat.TwelveHour);
@@ -108,10 +109,10 @@ export function AccountSettings({ children }: { children?: React.ReactNode }) {
 
       setIsOpen(isOpen);
     },
-    [currentUser, service, updateCurrentUser]
+    [currentUser, updateCurrentUser]
   );
 
-  if (!currentUser || !service) {
+  if (!currentUser) {
     return <></>;
   }
 

@@ -1,12 +1,12 @@
 import { Avatar, Button, CircularProgress, Divider, Tooltip } from '@mui/material';
-import { useCallback, useContext, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Workspace } from '@/application/types';
 import { ReactComponent as RightIcon } from '@/assets/icons/alt_arrow_right.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { Popover } from '@/components/_shared/popover';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { stringToColor } from '@/utils/color';
 
 export interface SelectWorkspaceProps {
@@ -27,7 +27,7 @@ function stringAvatar(name: string) {
 
 function SelectWorkspace({ loading, value, onChange, workspaceList }: SelectWorkspaceProps) {
   const { t } = useTranslation();
-  const email = useContext(AFConfigContext)?.currentUser?.email || '';
+  const email = useCurrentUserOptional()?.email || '';
   const selectedWorkspace = useMemo(() => {
     return workspaceList.find((workspace) => workspace.id === value);
   }, [value, workspaceList]);

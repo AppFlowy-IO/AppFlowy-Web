@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { RenderRow, useRenderRows } from '@/components/database/components/grid/grid-row';
 import { GridContext } from '@/components/database/grid/useGridContext';
@@ -64,26 +64,37 @@ export const GridProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const [showStickyHeader, setShowStickyHeader] = useState(false);
+  const contextValue = useMemo(
+    () => ({
+      hoverRowId,
+      setHoverRowId: handleHoverRowStart,
+      rows,
+      setRows,
+      activePropertyId,
+      setActivePropertyId,
+      activeCell,
+      setActiveCell,
+      resizeRows,
+      setResizeRow: onResizeRow,
+      onResizeRowEnd,
+      showStickyHeader,
+      setShowStickyHeader,
+    }),
+    [
+      hoverRowId,
+      handleHoverRowStart,
+      rows,
+      activePropertyId,
+      activeCell,
+      resizeRows,
+      onResizeRow,
+      onResizeRowEnd,
+      showStickyHeader,
+    ]
+  );
 
   return (
-    <GridContext.Provider
-      value={{
-        hoverRowId,
-        setHoverRowId: handleHoverRowStart,
-        rows,
-        setRows,
-        activePropertyId,
-        setActivePropertyId,
-
-        activeCell,
-        setActiveCell,
-        resizeRows,
-        setResizeRow: onResizeRow,
-        onResizeRowEnd,
-        showStickyHeader,
-        setShowStickyHeader,
-      }}
-    >
+    <GridContext.Provider value={contextValue}>
       <div ref={ref} className={'flex-1'}>
         {children}
       </div>

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
@@ -33,6 +33,8 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const contextValue = useGridDnd(columns, virtualizer, columnVirtualizer);
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
   const [isHover, setIsHover] = useState(false);
+  const handleMouseEnter = useCallback(() => setIsHover(true), []);
+  const handleMouseLeave = useCallback(() => setIsHover(false), []);
   const stickyHeaderRef = useRef<HTMLDivElement>(null);
   const rowsHeightRef = useRef<Map<string, number>>(new Map());
   const [isScrolling, setIsScrolling] = useState(false);
@@ -113,17 +115,41 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
     };
 
     onScroll();
-    scrollElement.addEventListener('scroll', onScroll);
+    const scrollListenerOptions: AddEventListenerOptions = { passive: true };
+
+    scrollElement.addEventListener('scroll', onScroll, scrollListenerOptions);
     return () => {
-      scrollElement.removeEventListener('scroll', onScroll);
+      clearTimeout(timeout);
+      scrollElement.removeEventListener('scroll', onScroll, scrollListenerOptions);
     };
   }, [parentRef, scrollMarginTop, virtualizer.scrollElement, setShowStickyHeader]);
+
+  const handleScroll = useCallback((e: React.UIEvent<HTMLDivElement>) => {
+    const scrollLeft = e.currentTarget.scrollLeft;
+
+    stickyHeaderRef.current?.scroll({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+
+    bottomScrollbarRef.current?.scroll({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+  }, []);
+
+  const handleScrollLeft = useCallback((scrollLeft: number) => {
+    parentRef.current?.scrollTo({
+      left: scrollLeft,
+      behavior: 'auto',
+    });
+  }, [parentRef]);
 
   return (
     <GridDragContext.Provider value={contextValue}>
       <div
-        onMouseEnter={() => setIsHover(true)}
-        onMouseLeave={() => setIsHover(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         ref={parentRef}
         className={'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar'}
         style={{
@@ -131,19 +157,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
           overflowX: 'auto',
           scrollBehavior: 'auto',
         }}
-        onScroll={(e) => {
-          const scrollLeft = e.currentTarget.scrollLeft;
-
-          stickyHeaderRef.current?.scroll({
-            left: scrollLeft,
-            behavior: 'auto',
-          });
-
-          bottomScrollbarRef.current?.scroll({
-            left: scrollLeft,
-            behavior: 'auto',
-          });
-        }}
+        onScroll={handleScroll}
       >
         <div
           style={{
@@ -207,12 +221,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
               data={data}
               totalSize={totalSize}
               columnItems={columnItems}
-              onScrollLeft={(scrollLeft) => {
-                parentRef.current?.scrollTo({
-                  left: scrollLeft,
-                  behavior: 'auto',
-                });
-              }}
+              onScrollLeft={handleScrollLeft}
               onResizeColumnStart={handleResizeStart}
             />
           </DatabaseStickyTopOverlay>
@@ -220,12 +229,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
 
         <DatabaseStickyBottomOverlay scrollElement={virtualizer.scrollElement}>
           <DatabaseStickyHorizontalScrollbar
-            onScrollLeft={(scrollLeft) => {
-              parentRef.current?.scrollTo({
-                left: scrollLeft,
-                behavior: 'auto',
-              });
-            }}
+            onScrollLeft={handleScrollLeft}
             ref={bottomScrollbarRef}
             totalSize={totalSize}
             visible={Boolean(isHover && totalSize)}

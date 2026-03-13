@@ -1,11 +1,11 @@
-import { useContext, useState } from 'react';
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import isEmail from 'validator/lib/isEmail';
 
+import { AuthService } from '@/application/services/domains';
 import { LOGIN_ACTION } from '@/components/login/const';
-import { AFConfigContext } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
@@ -18,7 +18,6 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string>('');
   const [, setSearch] = useSearchParams();
-  const service = useContext(AFConfigContext)?.service;
   const handleSubmitEmail = async (e?: React.MouseEvent<HTMLButtonElement>) => {
     if (loading) return;
     const isValidEmail = isEmail(email);
@@ -34,7 +33,7 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
 
     void (async () => {
       try {
-        await service?.signInMagicLink({
+        await AuthService.signInMagicLink({
           email,
           redirectTo,
         });

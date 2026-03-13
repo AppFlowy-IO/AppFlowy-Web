@@ -2,7 +2,7 @@ import { createContext, useContext } from 'react';
 
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 
-export const GridContext = createContext<{
+type GridContextType = {
   hoverRowId?: string;
   setHoverRowId: (hoverRowId?: string) => void;
   rows: RenderRow[];
@@ -19,17 +19,9 @@ export const GridContext = createContext<{
   onResizeRowEnd: (id: string) => void;
   showStickyHeader: boolean;
   setShowStickyHeader: (show: boolean) => void;
-}>({
-  rows: [],
-  setRows: (_rows: RenderRow[]) => undefined,
-  setHoverRowId: (_hoverRowId?: string) => undefined,
-  setActivePropertyId: (_activePropertyId?: string) => undefined,
-  setActiveCell: (_activeCell?: { rowId: string; fieldId: string }) => undefined,
-  setResizeRow: () => undefined,
-  onResizeRowEnd: () => undefined,
-  showStickyHeader: false,
-  setShowStickyHeader: (_show: boolean) => undefined,
-});
+};
+
+export const GridContext = createContext<GridContextType | undefined>(undefined);
 
 export function useGridContext() {
   const context = useContext(GridContext);

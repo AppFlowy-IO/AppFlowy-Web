@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { WorkspaceService } from '@/application/services/domains';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
-import { useService } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -27,15 +27,12 @@ function LeaveWorkspace({
 }) {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(false);
-  const service = useService();
   const currentWorkspaceId = useCurrentWorkspaceId();
 
   const handleOk = async () => {
-    if (!service) return;
-
     try {
       setLoading(true);
-      await service.leaveWorkspace(workspaceId);
+      await WorkspaceService.leave(workspaceId);
       openOnChange(false);
       if (currentWorkspaceId === workspaceId) {
         window.location.href = `/app`;

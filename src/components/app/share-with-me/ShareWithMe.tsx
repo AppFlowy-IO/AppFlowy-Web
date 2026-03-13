@@ -5,16 +5,16 @@ import { useTranslation } from 'react-i18next';
 import { ReactComponent as DownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as FillUsersIcon } from '@/assets/icons/fill_users.svg';
 import { findShareWithMeSpace } from '@/components/_shared/outline/utils';
-import { useAppHandlers } from '@/components/app/app.hooks';
-import { useBusinessInternal } from '@/components/app/contexts/BusinessInternalContext';
+import { useToView, useRefreshOutline, useAppOutline } from '@/components/app/app.hooks';
 import { ShareViewItem } from '@/components/app/share-with-me/ShareViewItem';
 
 const LOCAL_STORAGE_KEY = 'share_with_me_expanded';
 
 export function ShareWithMe({ width }: { width: number }) {
   const { t } = useTranslation();
-  const { toView: navigateToView } = useAppHandlers();
-  const { outline, refreshOutline } = useBusinessInternal();
+  const navigateToView = useToView();
+  const refreshOutline = useRefreshOutline();
+  const outline = useAppOutline();
 
   const [isExpanded, setIsExpanded] = useState(() => {
     return localStorage.getItem(LOCAL_STORAGE_KEY) !== 'false';

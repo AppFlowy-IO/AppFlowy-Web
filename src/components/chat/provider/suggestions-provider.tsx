@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useChatContext } from '@/components/chat/chat/context';
@@ -82,17 +82,25 @@ export const SuggestionsProvider = ({ children }: { children: ReactNode }) => {
     },
     [requestInstance, unregisterFetchSuggestions]
   );
+  const contextValue = useMemo(
+    () => ({
+      getMessageSuggestions,
+      startFetchSuggestions,
+      clearSuggestions,
+      registerFetchSuggestions,
+      unregisterFetchSuggestions,
+    }),
+    [
+      getMessageSuggestions,
+      startFetchSuggestions,
+      clearSuggestions,
+      registerFetchSuggestions,
+      unregisterFetchSuggestions,
+    ]
+  );
 
   return (
-    <SuggestionsContext.Provider
-      value={{
-        getMessageSuggestions,
-        startFetchSuggestions,
-        clearSuggestions,
-        registerFetchSuggestions,
-        unregisterFetchSuggestions,
-      }}
-    >
+    <SuggestionsContext.Provider value={contextValue}>
       {children}
     </SuggestionsContext.Provider>
   );
