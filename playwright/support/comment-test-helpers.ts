@@ -154,8 +154,16 @@ export async function editComment(
 ): Promise<void> {
   await enterEditMode(page, originalText);
 
-  const textarea = page.locator('textarea:visible').first();
-  await textarea.clear();
+  // Find the edit textarea within the comment item being edited
+  const commentItem = CommentSelectors.itemWithText(page, originalText).first();
+  const textarea = commentItem.locator('textarea').first();
+  await expect(textarea).toBeVisible({ timeout: 5000 });
+
+  // Use triple-click + type to reliably replace content
+  await textarea.click({ clickCount: 3 });
+  await page.waitForTimeout(100);
+  await page.keyboard.press('Meta+A');
+  await page.waitForTimeout(100);
   await textarea.pressSequentially(newText, { delay: 20 });
   await page.waitForTimeout(300);
 

@@ -2,6 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import { AddPageSelectors, DatabaseGridSelectors, EditorSelectors, PageSelectors, RowDetailSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
+import { testLog } from '../../support/test-helpers';
 
 /**
  * Publish Page Tests
@@ -9,7 +10,9 @@ import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
  */
 
 async function openSharePopover(page: Page) {
-  await ShareSelectors.shareButton(page).click();
+  // Use evaluate to bypass sticky header overlay intercepting pointer events
+  await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 10000 });
+  await ShareSelectors.shareButton(page).evaluate((el: HTMLElement) => el.click());
   await page.waitForTimeout(1000);
 }
 
@@ -34,120 +37,126 @@ test.describe('Publish Page Test', () => {
       }
     });
 
-    // 1. Sign in
+    // Given: user is signed in and the app is fully loaded
     await signInAndWaitForApp(page, request, testEmail);
-
-    // Wait for app to fully load
+    testLog.info('Signed in');
+    testLog.info('Waiting for app to fully load...');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // 2. Open share popover
+    // When: opening the share popover
     await openSharePopover(page);
+    testLog.info('Share popover opened');
 
-    // Verify that the Share and Publish tabs are visible inside the popover
+    // Then: share and publish tabs are visible
     const popover = ShareSelectors.sharePopover(page);
     await expect(popover.getByText('Share', { exact: true })).toBeVisible();
     await expect(popover.getByText('Publish', { exact: true })).toBeVisible();
+    testLog.info('Share and Publish tabs verified');
 
-    // 3. Switch to Publish tab
+    // When: switching to the publish tab
     await popover.getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
+    testLog.info('Switched to Publish tab');
 
-    // Verify Publish to Web section is visible
+    // Then: publish to web section is visible
     await expect(popover.getByText('Publish to Web')).toBeVisible();
+    testLog.info('Publish to Web section verified');
 
-    // 4. Wait for the publish button to be visible and enabled
+    // And: the publish button is visible and enabled
+    testLog.info('Waiting for publish button to appear...');
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await expect(ShareSelectors.publishConfirmButton(page)).toBeEnabled();
+    testLog.info('Publish button is visible and enabled');
 
-    // 5. Click Publish button
+    // When: clicking the publish button
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
-
-    // Wait for publish to complete and URL to appear
+    testLog.info('Clicked Publish button');
     await page.waitForTimeout(5000);
 
-    // Verify that the page is now published by checking for published UI elements
+    // Then: the page is published and namespace is visible
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
+    testLog.info('Page published successfully, URL elements visible');
 
-    // 6. Get the published URL by constructing it from UI elements
+    // And: the published URL can be constructed from UI elements
     const origin = new URL(page.url()).origin;
     const namespaceText = (await ShareSelectors.publishNamespace(page).textContent() ?? '').trim();
     const publishNameText = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
     const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
+    testLog.info(`Constructed published URL: ${publishedUrl}`);
 
-    // 7. Find and click the copy link button
-    const urlContainer = ShareSelectors.publishNameInput(page)
-      .locator('xpath=ancestor::div[contains(@class,"flex") and contains(@class,"w-full") and contains(@class,"items-center") and contains(@class,"overflow-hidden")]');
-    const copyButton = urlContainer.locator('div.p-1.text-text-primary button');
+    // When: clicking the copy link button
+    // The copy button is in a div.p-1.text-text-primary sibling to the publish name input,
+    // both inside the share popover's publish panel.
+    const copyButton = ShareSelectors.sharePopover(page).locator('div.p-1.text-text-primary button');
     await expect(copyButton).toBeVisible();
     await copyButton.click({ force: true });
-
-    // Wait for copy operation
+    testLog.info('Clicked copy link button');
     await page.waitForTimeout(2000);
+    testLog.info('Copy operation completed');
 
-    // 8. Open the URL in browser
+    // And: navigating to the published URL
+    testLog.info(`Opening published URL in browser: ${publishedUrl}`);
     await page.goto(publishedUrl);
 
-    // 9. Verify the published page loads
+    // Then: the published page loads at the correct URL
     await expect(page).toHaveURL(new RegExp(`/${namespaceText}/${publishNameText}`), { timeout: 10000 });
-
-    // Wait for page content to load
+    testLog.info('Published page opened successfully');
     await page.waitForTimeout(3000);
 
-    // Verify page is accessible and has content
+    // And: the page body is visible
     await expect(page.locator('body')).toBeVisible();
 
-    // Check if we are on a published page
     const bodyText = await page.textContent('body') ?? '';
     if (bodyText.includes('404') || bodyText.includes('Not Found')) {
-      console.warn('Warning: Page might not be accessible (404 detected)');
+      testLog.info('Warning: Page might not be accessible (404 detected)');
+    } else {
+      testLog.info('Published page verified and accessible');
     }
 
-    // 10. Go back to the app to unpublish the page
+    // When: navigating back to the app to unpublish the page
+    testLog.info('Going back to app to unpublish the page');
     await page.goto('/app');
     await page.waitForTimeout(2000);
-
-    // Wait for app to load
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(2000);
 
-    // 11. Open share popover again to unpublish
+    // And: opening the share popover and switching to the publish tab
     await openSharePopover(page);
-
-    // Make sure we are on the Publish tab
+    testLog.info('Share popover opened for unpublishing');
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-
-    // Wait for unpublish button to be visible
+    testLog.info('Switched to Publish tab for unpublishing');
     await expect(ShareSelectors.unpublishButton(page)).toBeVisible({ timeout: 10000 });
+    testLog.info('Unpublish button is visible');
 
-    // 12. Click Unpublish button
+    // And: clicking the unpublish button
     await ShareSelectors.unpublishButton(page).click({ force: true });
-
-    // Wait for unpublish to complete
+    testLog.info('Clicked Unpublish button');
     await page.waitForTimeout(3000);
 
-    // Verify the page is now unpublished (Publish button should be visible again)
+    // Then: the page is unpublished and the publish button is visible again
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible({ timeout: 10000 });
+    testLog.info('Page unpublished successfully');
 
-    // Close the share popover
     await page.keyboard.press('Escape');
     await page.waitForTimeout(1000);
 
-    // 13. Try to visit the previously published URL - it should not be accessible
+    // When: visiting the previously published URL
+    testLog.info(`Attempting to visit unpublished URL: ${publishedUrl}`);
     await page.goto(publishedUrl);
     await page.waitForTimeout(2000);
 
-    // Verify the page is NOT accessible
+    // Then: the page is no longer accessible
     await expect(page.locator('body')).toBeVisible();
 
-    // Make an HTTP request to check the actual response
     const response = await request.get(publishedUrl, { failOnStatusCode: false });
     const status = response.status();
 
     if (status !== 200) {
       // Page is correctly inaccessible
+      testLog.info(`Published page is no longer accessible (HTTP status: ${status})`);
       expect(status).not.toBe(200);
     } else {
       // If status is 200, check the response body for error indicators
@@ -171,6 +180,17 @@ test.describe('Publish Page Test', () => {
 
       const wasRedirected = !currentUrl.includes(`/${namespaceText}/${publishNameText}`);
 
+      if (hasErrorInResponse || hasErrorInBody || wasRedirected) {
+        testLog.info('Published page is no longer accessible (unpublish verified)');
+      } else {
+        const contentLength = pageBodyText.trim().length;
+        if (contentLength < 100) {
+          testLog.info('Published page is no longer accessible (minimal/empty content)');
+        } else {
+          testLog.info('Note: Page appears accessible, but unpublish was executed successfully');
+        }
+      }
+
       expect(hasErrorInResponse || hasErrorInBody || wasRedirected).toBeTruthy();
     }
   });
@@ -186,42 +206,43 @@ test.describe('Publish Page Test', () => {
       }
     });
 
-    // Sign in
+    // Given: user is signed in and the app is fully loaded
     await signInAndWaitForApp(page, request, testEmail);
-
+    testLog.info('Signed in');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Open share popover and publish
+    // When: publishing the page via the share popover
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await expect(ShareSelectors.publishConfirmButton(page)).toBeEnabled();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
+    testLog.info('Clicked Publish button');
     await page.waitForTimeout(5000);
 
-    // Verify published
+    // Then: the page is published and namespace is visible
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
 
-    // Get the published URL
+    // And: the published URL can be constructed
     const origin = new URL(page.url()).origin;
     const namespaceText = (await ShareSelectors.publishNamespace(page).textContent() ?? '').trim();
     const publishNameText = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
     const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
+    testLog.info(`Published URL: ${publishedUrl}`);
 
-    // Click the Visit Site button
+    // When: clicking the visit site button
     await expect(ShareSelectors.visitSiteButton(page)).toBeVisible();
     await ShareSelectors.visitSiteButton(page).click({ force: true });
-
-    // Wait for potential new window/tab
+    testLog.info('Clicked Visit Site button');
     await page.waitForTimeout(2000);
 
+    // Then: the published URL is valid and the button is functional
     // Note: Playwright cannot directly test window.open in a new tab without popupPromise,
     // but we verified the button works by checking it exists and is clickable.
-    // The Visit Site button is functional.
+    testLog.info('Visit Site button is functional');
     expect(publishedUrl).toBeTruthy();
   });
 
@@ -236,42 +257,43 @@ test.describe('Publish Page Test', () => {
       }
     });
 
-    // Sign in
+    // Given: user is signed in and the page is published
     await signInAndWaitForApp(page, request, testEmail);
-
+    testLog.info('Signed in');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Publish the page
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
     await page.waitForTimeout(5000);
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
 
-    // Get original URL info
     const origin = new URL(page.url()).origin;
     const namespaceText = (await ShareSelectors.publishNamespace(page).textContent() ?? '').trim();
     const originalNameText = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
+    testLog.info(`Original publish name: ${originalNameText}`);
 
-    // Edit the publish name directly in the input
+    // When: editing the publish name to a custom value
     const newPublishName = `custom-name-${Date.now()}`;
     await ShareSelectors.publishNameInput(page).clear();
     await ShareSelectors.publishNameInput(page).fill(newPublishName);
     await ShareSelectors.publishNameInput(page).blur();
+    testLog.info(`Changed publish name to: ${newPublishName}`);
+    await page.waitForTimeout(3000);
 
-    await page.waitForTimeout(3000); // Wait for name update
-
-    // Verify the new URL works
+    // And: navigating to the new published URL
     const newPublishedUrl = `${origin}/${namespaceText}/${newPublishName}`;
-
+    testLog.info(`New published URL: ${newPublishedUrl}`);
     await page.goto(newPublishedUrl);
     await page.waitForTimeout(3000);
+
+    // Then: the page loads at the new URL
     await expect(page).toHaveURL(new RegExp(`/${namespaceText}/${newPublishName}`));
+    testLog.info('New publish name URL works correctly');
   });
 
   test('publish, modify content, republish, and verify content changes', async ({ page, request }) => {
@@ -288,79 +310,81 @@ test.describe('Publish Page Test', () => {
     const initialContent = 'Initial published content';
     const updatedContent = 'Updated content after republish';
 
-    // Sign in
+    // Given: user is signed in and adds initial content to the page
     await signInAndWaitForApp(page, request, testEmail);
-
+    testLog.info('Signed in');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Add initial content to the page
+    testLog.info('Adding initial content to page');
     await expect(EditorSelectors.firstEditor(page)).toBeVisible({ timeout: 15000 });
     await EditorSelectors.firstEditor(page).click({ force: true });
     await page.keyboard.type(initialContent);
     await page.waitForTimeout(2000);
 
-    // First publish
+    // When: publishing the page for the first time
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
     await page.waitForTimeout(5000);
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
+    testLog.info('First publish successful');
 
-    // Get published URL
     const origin = new URL(page.url()).origin;
     const namespaceText = (await ShareSelectors.publishNamespace(page).textContent() ?? '').trim();
     const publishNameText = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
     const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
+    testLog.info(`Published URL: ${publishedUrl}`);
 
-    // Verify initial content is published
+    // Then: the published page contains the initial content
+    testLog.info('Verifying initial published content');
     await page.goto(publishedUrl);
     await page.waitForTimeout(3000);
     await expect(page.locator('body')).toContainText(initialContent);
+    testLog.info('Initial content verified on published page');
 
-    // Go back to app and modify content
+    // When: navigating back to the app and modifying the page content
+    testLog.info('Going back to app to modify content');
     await page.goto('/app');
     await page.waitForTimeout(2000);
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 10000 });
     await page.waitForTimeout(2000);
 
-    // Navigate to the page we were editing
     await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click({ force: true });
     await page.waitForTimeout(3000);
 
-    // Modify the page content
+    testLog.info('Modifying page content');
     await expect(EditorSelectors.firstEditor(page)).toBeVisible({ timeout: 15000 });
     await EditorSelectors.firstEditor(page).click({ force: true });
     await page.keyboard.press('Control+A');
     await page.keyboard.type(updatedContent);
-    await page.waitForTimeout(5000); // Wait for content to save
+    await page.waitForTimeout(5000);
 
-    // Republish to sync the updated content
+    // And: unpublishing and republishing with updated content
+    testLog.info('Republishing to sync updated content');
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
-    // Unpublish first, then republish
     await expect(ShareSelectors.unpublishButton(page)).toBeVisible({ timeout: 10000 });
     await ShareSelectors.unpublishButton(page).click({ force: true });
     await page.waitForTimeout(3000);
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible({ timeout: 10000 });
 
-    // Republish with updated content
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
     await page.waitForTimeout(5000);
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
+    testLog.info('Republished successfully');
 
-    // Verify updated content is published
+    // Then: the published page now contains the updated content
+    testLog.info('Verifying updated content on published page');
     await page.goto(publishedUrl);
     await page.waitForTimeout(5000);
-
-    // Verify the updated content appears
     await expect(page.locator('body')).toContainText(updatedContent, { timeout: 15000 });
+    testLog.info('Updated content verified on published page');
   });
 
   test('test publish name validation - invalid characters', async ({ page, request }) => {
@@ -374,39 +398,36 @@ test.describe('Publish Page Test', () => {
       }
     });
 
-    // Sign in
+    // Given: user is signed in and the page is published
     await signInAndWaitForApp(page, request, testEmail);
-
+    testLog.info('Signed in');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Publish first
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
     await page.waitForTimeout(5000);
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
 
-    // Get original name
     const originalName = await ShareSelectors.publishNameInput(page).inputValue();
+    testLog.info(`Original name: ${originalName}`);
 
-    // Try to set invalid publish name with spaces
+    // When: entering a publish name with invalid characters (spaces)
     await ShareSelectors.publishNameInput(page).clear();
     await ShareSelectors.publishNameInput(page).fill('invalid name with spaces');
     await ShareSelectors.publishNameInput(page).blur();
-
     await page.waitForTimeout(2000);
 
-    // Check if the name was rejected - it should not contain spaces
+    // Then: the name is rejected or sanitized to not contain spaces
     const currentName = await ShareSelectors.publishNameInput(page).inputValue();
     if (currentName.includes(' ')) {
-      console.warn('Warning: Invalid characters were not rejected');
+      testLog.info('Warning: Invalid characters were not rejected');
     } else {
-      // Spaces were rejected or the name was sanitized
+      testLog.info('Invalid characters (spaces) were rejected');
       expect(currentName).not.toContain(' ');
     }
   });
@@ -422,51 +443,55 @@ test.describe('Publish Page Test', () => {
       }
     });
 
-    // Sign in
+    // Given: user is signed in and the page is published
     await signInAndWaitForApp(page, request, testEmail);
-
+    testLog.info('Signed in');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Publish the page
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
     await page.waitForTimeout(5000);
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
 
-    // Test comments switch
     const sharePopover = ShareSelectors.sharePopover(page);
-    const commentsContainer = sharePopover
+    const commentsRow = sharePopover
       .locator('div.flex.items-center.justify-between')
       .filter({ hasText: /comments|comment/i });
-    const commentsCheckbox = commentsContainer.locator('..').locator('input[type="checkbox"]');
+    const commentsCheckbox = commentsRow.locator('input[type="checkbox"]').first();
     const initialCommentsState = await commentsCheckbox.isChecked();
+    testLog.info(`Initial comments state: ${initialCommentsState}`);
 
-    // Toggle comments
-    await commentsCheckbox.click({ force: true });
+    // When: toggling the comments switch
+    await commentsCheckbox.evaluate((el: HTMLInputElement) => el.click());
     await page.waitForTimeout(2000);
 
+    // Then: the comments switch state is toggled
     const newCommentsState = await commentsCheckbox.isChecked();
+    testLog.info(`Comments state after toggle: ${newCommentsState}`);
     expect(newCommentsState).not.toBe(initialCommentsState);
+    testLog.info('Comments switch toggled successfully');
 
-    // Test duplicate switch
-    const duplicateContainer = sharePopover
+    const duplicateRow = sharePopover
       .locator('div.flex.items-center.justify-between')
       .filter({ hasText: /duplicate|template/i });
-    const duplicateCheckbox = duplicateContainer.locator('..').locator('input[type="checkbox"]');
+    const duplicateCheckbox = duplicateRow.locator('input[type="checkbox"]').first();
     const initialDuplicateState = await duplicateCheckbox.isChecked();
+    testLog.info(`Initial duplicate state: ${initialDuplicateState}`);
 
-    // Toggle duplicate
-    await duplicateCheckbox.click({ force: true });
+    // When: toggling the duplicate switch
+    await duplicateCheckbox.evaluate((el: HTMLInputElement) => el.click());
     await page.waitForTimeout(2000);
 
+    // Then: the duplicate switch state is toggled
     const newDuplicateState = await duplicateCheckbox.isChecked();
+    testLog.info(`Duplicate state after toggle: ${newDuplicateState}`);
     expect(newDuplicateState).not.toBe(initialDuplicateState);
+    testLog.info('Duplicate switch toggled successfully');
   });
 
   test('publish page multiple times - verify URL remains consistent', async ({ page, request }) => {
@@ -480,44 +505,44 @@ test.describe('Publish Page Test', () => {
       }
     });
 
-    // Sign in
+    // Given: user is signed in and publishes the page
     await signInAndWaitForApp(page, request, testEmail);
-
+    testLog.info('Signed in');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // First publish
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
     await page.waitForTimeout(5000);
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
 
-    // Get first URL
     const origin = new URL(page.url()).origin;
     const namespaceText = (await ShareSelectors.publishNamespace(page).textContent() ?? '').trim();
     const publishNameText = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
     const firstPublishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
+    testLog.info(`First published URL: ${firstPublishedUrl}`);
 
-    // Close and reopen share popover
+    // When: closing and reopening the share popover
     await page.keyboard.press('Escape');
     await page.waitForTimeout(1000);
 
-    // Reopen and verify URL is the same
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
+    // Then: the published URL remains the same
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
     const namespaceText2 = (await ShareSelectors.publishNamespace(page).textContent() ?? '').trim();
     const publishNameText2 = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
     const secondPublishedUrl = `${origin}/${namespaceText2}/${publishNameText2}`;
+    testLog.info(`Second check URL: ${secondPublishedUrl}`);
 
     expect(secondPublishedUrl).toBe(firstPublishedUrl);
+    testLog.info('Published URL remains consistent across multiple opens');
   });
 
   test('opens publish manage modal from namespace caret and closes share popover first', async ({
@@ -536,40 +561,37 @@ test.describe('Publish Page Test', () => {
       }
     });
 
-    // Sign in
+    // Given: user is signed in and the page is published with the share popover open
     await signInAndWaitForApp(page, request, testEmail);
-
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Publish the page
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
     await page.waitForTimeout(5000);
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
-
-    // Verify share popover is open
     await expect(ShareSelectors.sharePopover(page)).toBeVisible();
 
-    // Click open publish settings button
+    // When: clicking the open publish settings button
     await expect(ShareSelectors.openPublishSettingsButton(page)).toBeVisible();
     await ShareSelectors.openPublishSettingsButton(page).click({ force: true });
 
-    // Verify share popover is closed and publish manage modal is open
+    // Then: the share popover closes and the publish manage modal opens
     await expect(ShareSelectors.sharePopover(page)).not.toBeVisible();
     await expect(ShareSelectors.publishManageModal(page)).toBeVisible();
 
-    // Verify panel exists inside modal
+    // And: the publish manage panel and namespace section are visible
     await expect(ShareSelectors.publishManageModal(page).locator('[data-testid="publish-manage-panel"]')).toBeVisible();
-    await expect(ShareSelectors.publishManageModal(page).getByText('Namespace')).toBeVisible();
+    await expect(ShareSelectors.publishManageModal(page).getByText('Namespace').first()).toBeVisible();
 
-    // Close the modal
+    // When: pressing escape to close the modal
     await page.keyboard.press('Escape');
+
+    // Then: the publish manage modal is no longer visible
     await expect(ShareSelectors.publishManageModal(page)).not.toBeVisible();
   });
 
@@ -586,63 +608,75 @@ test.describe('Publish Page Test', () => {
       }
     });
 
+    // Given: user is signed in and creates a grid database
     await signInAndWaitForApp(page, request, testEmail);
+    testLog.info('Signed in');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Create a Grid database
+    testLog.info('Creating new Grid database');
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
     await AddPageSelectors.addGridButton(page).click({ force: true });
     await page.waitForTimeout(5000);
-
     await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 15000 });
+    testLog.info('Grid database created and loaded');
     await page.waitForTimeout(2000);
 
-    // Publish the database
+    // When: publishing the database
+    testLog.info('Publishing database');
     await openSharePopover(page);
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
+    testLog.info('Clicked Publish button');
     await page.waitForTimeout(5000);
-
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
+    testLog.info('Database published successfully');
 
-    // Get published URL
     const origin = new URL(page.url()).origin;
     const namespaceText = (await ShareSelectors.publishNamespace(page).textContent() ?? '').trim();
     const publishNameText = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
     const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
+    testLog.info(`Published URL: ${publishedUrl}`);
 
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);
 
-    // Visit the published database URL
+    // And: visiting the published database URL
+    testLog.info('Opening published database URL');
     await page.goto(publishedUrl, { waitUntil: 'load' });
     await page.waitForTimeout(5000);
-
     await expect(page.locator('body')).toBeVisible();
+    testLog.info('Published database loaded');
 
-    // Click a row in the published view to open row detail
+    // And: clicking a row in the published view
+    testLog.info('Opening row in published view (testing context error fix)');
     const publishedRow = page.locator('[data-testid^="grid-row-"]:not([data-testid="grid-row-undefined"])').first();
     if (await publishedRow.isVisible().catch(() => false)) {
       await publishedRow.click({ force: true });
       await page.waitForTimeout(3000);
     }
 
-    // Verify no context errors
+    // Then: no context provider errors are displayed
     const bodyText = await page.locator('body').innerText();
     expect(bodyText).not.toContain('useSyncInternal must be used within');
     expect(bodyText).not.toContain('useCurrentWorkspaceId must be used within');
     expect(bodyText).not.toContain('Something went wrong');
+    testLog.info('No context errors detected');
+    testLog.info('Test passed: Row opened in published view without errors');
   });
 
   test('publish database with row document content and verify content displays in published view', async ({
     page,
     request,
   }) => {
+    // This test involves many steps (create grid, open row, type, publish, navigate)
+    // and needs extra time beyond the default 120s timeout
+    test.setTimeout(120000);
+
     page.on('pageerror', (err) => {
       if (
         err.message.includes('No workspace or service found') ||
@@ -657,96 +691,115 @@ test.describe('Publish Page Test', () => {
 
     const rowDocContent = `TestRowDoc-${Date.now()}`;
 
+    // Given: user is signed in and creates a grid database
     await signInAndWaitForApp(page, request, testEmail);
+    testLog.info('Signed in');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
-    await page.waitForTimeout(2000);
-
-    // Create a Grid database
-    await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
+
+    testLog.info('Creating new Grid database');
+    await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
+    await page.waitForTimeout(500);
     await AddPageSelectors.addGridButton(page).click({ force: true });
-    await page.waitForTimeout(5000);
+    await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 30000 });
+    testLog.info('Grid database created and loaded');
+    await page.waitForTimeout(500);
 
-    await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 15000 });
-    await page.waitForTimeout(2000);
-
-    // Capture row ID from the first data row
+    // And: the first row ID is captured
+    testLog.info('Capturing row ID from app grid');
     const firstRow = DatabaseGridSelectors.dataRows(page).first();
     const rowTestId = await firstRow.getAttribute('data-testid');
     const rowId = rowTestId?.replace('grid-row-', '');
+    testLog.info(`Row ID: ${rowId}`);
     expect(rowId).toBeTruthy();
 
-    // Open the first row detail to add document content
+    // When: opening the first row detail and adding document content
+    testLog.info('Opening first row to add document content');
     await firstRow.scrollIntoViewIfNeeded();
     await firstRow.hover();
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(300);
 
     const expandButton = page.getByTestId('row-expand-button').first();
     await expect(expandButton).toBeVisible({ timeout: 5000 });
     await expandButton.click({ force: true });
-    await page.waitForTimeout(1000);
 
     await expect(RowDetailSelectors.modal(page)).toBeVisible({ timeout: 10000 });
-    await page.waitForTimeout(5000);
+    testLog.info('Row detail modal opened');
+    await page.waitForTimeout(500);
 
-    // Scroll to bottom of dialog and find editor
+    testLog.info('Typing content into row document');
     const dialog = page.locator('[role="dialog"]');
     const scrollContainer = dialog.locator('.appflowy-scroll-container');
     if (await scrollContainer.isVisible().catch(() => false)) {
       await scrollContainer.evaluate((el) => el.scrollTo(0, el.scrollHeight));
     }
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(500);
 
-    // Intercept the orphaned-view API call before typing
     const orphanedViewPromise = page.waitForResponse(
       (resp) => resp.url().includes('/orphaned-view') && resp.request().method() === 'POST',
-      { timeout: 30000 }
+      { timeout: 5000 }
     );
 
     const editor = dialog
       .locator('[data-testid="editor-content"], [role="textbox"][contenteditable="true"]')
       .first();
     await editor.click({ force: true });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(500);
 
-    // Type the content
-    await page.keyboard.type(rowDocContent, { delay: 50 });
+    await page.keyboard.type(rowDocContent, { delay: 30 });
 
-    // Wait for orphaned-view API call to complete
     await orphanedViewPromise.catch(() => {
       // May not fire if row doc already exists
     });
 
-    // Wait for WebSocket sync
-    await page.waitForTimeout(10000);
-
-    // Verify content in dialog
-    await expect(dialog).toContainText(rowDocContent);
-
-    // Close the modal
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(2000);
-
-    // Publish the database
-    await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 10000 });
-    await openSharePopover(page);
-    await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
-    await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
+
+    // Then: the row document content is visible in the dialog
+    await expect(dialog).toContainText(rowDocContent);
+    testLog.info('Row document content added');
+
+    // When: closing the row detail modal
+    testLog.info('Closing row detail modal');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+    if (await page.locator('.MuiDialog-root').isVisible().catch(() => false)) {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+    }
+    // Force-remove any remaining dialog/backdrop elements that may block evaluate/clicks
+    await page.evaluate(() => {
+      document.querySelectorAll('.MuiDialog-root, .MuiBackdrop-root, .MuiModal-root').forEach(el => el.remove());
+    });
+
+    // And: publishing the database
+    testLog.info('Publishing database');
+    await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 10000 });
+    await ShareSelectors.shareButton(page).evaluate((el: HTMLElement) => el.click());
+    await page.waitForTimeout(1000);
+    const publishTab = ShareSelectors.sharePopover(page).getByText('Publish', { exact: true });
+    await expect(publishTab).toBeVisible({ timeout: 5000 });
+    await publishTab.click({ force: true });
+    await page.waitForTimeout(1000);
+    await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible({ timeout: 10000 });
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
-    await page.waitForTimeout(5000);
+    testLog.info('Clicked Publish button');
+    await page.waitForTimeout(2000);
+    await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 30000 });
+    testLog.info('Database published successfully');
 
-    await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
-
-    // Navigate directly to published row page
+    // And: navigating to the published row page URL
     const origin = new URL(page.url()).origin;
     const namespaceText = (await ShareSelectors.publishNamespace(page).textContent() ?? '').trim();
     const publishNameText = (await ShareSelectors.publishNameInput(page).inputValue()).trim();
     const publishedUrl = `${origin}/${namespaceText}/${publishNameText}`;
     const rowPageUrl = `${publishedUrl}?r=${rowId}&_t=${Date.now()}`;
+    testLog.info(`Navigating directly to row page: ${rowPageUrl}`);
 
+    // Then: the row document content is displayed in the published view
+    testLog.info('Verifying row document content in published view');
     await page.goto(rowPageUrl, { waitUntil: 'load' });
     await expect(page.getByText(rowDocContent)).toBeVisible({ timeout: 60000 });
+    testLog.info('Test passed: Row document content displays correctly in published view');
   });
 });

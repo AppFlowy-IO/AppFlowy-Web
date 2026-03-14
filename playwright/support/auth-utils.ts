@@ -242,3 +242,31 @@ export async function signInTestUser(
   const authUtils = new AuthTestUtils();
   await authUtils.signInWithTestUrl(page, request, email);
 }
+
+/**
+ * Create a user account without signing in via the browser.
+ * Uses GoTrue admin generate_link to create the user, then calls
+ * the verify endpoint to ensure the user profile exists.
+ */
+export async function createUserAccount(
+  request: APIRequestContext,
+  email: string
+): Promise<void> {
+  const authUtils = new AuthTestUtils();
+  const callbackLink = await authUtils.generateSignInUrl(request, email);
+
+  const hashIndex = callbackLink.indexOf('#');
+  if (hashIndex === -1) return;
+
+  const hash = callbackLink.substring(hashIndex);
+  const params = new URLSearchParams(hash.slice(1));
+  const accessToken = params.get('access_token');
+
+  if (!accessToken) return;
+
+  // Call verify endpoint to create the user profile in the backend
+  await request.get(`${TestConfig.apiUrl}/api/user/verify/${accessToken}`, {
+    failOnStatusCode: false,
+    timeout: 30000,
+  });
+}

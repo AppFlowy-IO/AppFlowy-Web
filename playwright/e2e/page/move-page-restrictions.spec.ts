@@ -28,6 +28,7 @@ import {
   createDocumentPageAndNavigate,
   insertLinkedDatabaseViaSlash,
 } from '../../support/page-utils';
+import { testLog } from '../../support/test-helpers';
 import { getSlashMenuItemName } from '../../support/i18n-constants';
 
 test.describe('Move Page Restrictions', () => {
@@ -55,17 +56,22 @@ test.describe('Move Page Restrictions', () => {
     const testEmail = generateRandomEmail();
     const sourceName = `SourceDB_${Date.now()}`;
 
+    testLog.testStart('Move to disabled for linked database view under document');
+    testLog.info(`Test email: ${testEmail}`);
+
+    // Given: a signed-in user with a standalone database in the sidebar
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
     await page.waitForTimeout(3000);
 
     // 1) Create a standalone database (container exists in the sidebar)
+    testLog.step(1, 'Create standalone Grid database');
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
     await AddPageSelectors.addGridButton(page).click({ force: true });
     await page.waitForTimeout(5000);
 
-    // Rename container to a unique name
+    // And: the database is renamed to a unique name
     await expandSpaceByName(page, spaceName);
     await expect(PageSelectors.itemByName(page, 'New Database')).toBeVisible({ timeout: 10000 });
     await PageSelectors.moreActionsButton(page, 'New Database').click({ force: true });
@@ -91,34 +97,36 @@ test.describe('Move Page Restrictions', () => {
     await expect(PageSelectors.itemByName(page, sourceName)).toBeVisible({ timeout: 10000 });
 
     // 2) Create a document page
+    testLog.step(2, 'Create document page');
     const docViewId = await createDocumentPageAndNavigate(page);
     await page.waitForTimeout(1000);
 
     // 3) Insert linked grid via slash menu
+    testLog.step(3, 'Insert linked grid via slash menu');
     await insertLinkedDatabaseViaSlash(page, docViewId, sourceName);
     await page.waitForTimeout(1000);
 
     // 4) Expand the document to see linked view in sidebar
+    testLog.step(4, 'Expand document and find linked view');
     await expandSpaceByName(page, spaceName);
     const referencedName = `View of ${sourceName}`;
 
     await ensurePageExpandedByViewId(page, docViewId);
     await page.waitForTimeout(1000);
 
-    // 5) Open More Actions for the linked database view
+    // Find the document's page-item using CSS :has() (more reliable than xpath=ancestor)
     const docItem = page
-      .getByTestId(`page-${docViewId}`)
-      .first()
-      .locator('xpath=ancestor::*[@data-testid="page-item"]')
+      .locator(`[data-testid="page-item"]:has(> [data-testid="page-${docViewId}"])`)
       .first();
 
+    // Find the linked view's page-item by filtering child page-items by name
     const linkedViewItem = docItem
-      .getByTestId('page-name')
-      .filter({ hasText: referencedName })
-      .first()
-      .locator('xpath=ancestor::*[@data-testid="page-item"]')
+      .locator('[data-testid="page-item"]')
+      .filter({ has: page.locator('[data-testid="page-name"]', { hasText: referencedName }) })
       .first();
 
+    // 5) Open More Actions for the linked database view
+    testLog.step(5, 'Open More Actions for linked database view');
     await linkedViewItem.hover({ force: true });
     await page.waitForTimeout(500);
 
@@ -126,37 +134,50 @@ test.describe('Move Page Restrictions', () => {
     await page.waitForTimeout(500);
 
     // 6) Verify Move to is disabled
+    testLog.step(6, 'Verify Move to is disabled');
+    // Then: "Move to" menu item is disabled
+    // Radix UI sets data-disabled="" (empty string) when disabled.
     await expect(ViewActionSelectors.popover(page)).toBeVisible();
-    const moveToItem = ViewActionSelectors.moveToButton(page);
-    await expect(moveToItem).toBeVisible();
-    await expect(moveToItem).toHaveAttribute('data-disabled', /.*/);
+    const moveToMenuItem = page.locator('[role="menuitem"]').filter({ hasText: 'Move to' });
+    await expect(moveToMenuItem).toBeVisible();
+    // Use programmatic getAttribute to avoid regex matching issues with empty string
+    await expect(async () => {
+      const disabledValue = await moveToMenuItem.getAttribute('data-disabled');
+      expect(disabledValue).not.toBeNull();
+    }).toPass({ timeout: 15000 });
+
+    testLog.testEnd('Move to disabled for linked database view under document');
   });
 
   test('should enable Move to for regular document pages', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
 
+    testLog.testStart('Move to enabled for regular document pages');
+    testLog.info(`Test email: ${testEmail}`);
+
+    // Given: a signed-in user with the General space expanded
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
     await page.waitForTimeout(3000);
 
-    // Wait for sidebar and find Getting started page
     await expandSpaceByName(page, spaceName);
     await page.waitForTimeout(2000);
 
-    // Hover over Getting started page
+    // When: opening more actions for the Getting started page
     await PageSelectors.itemByName(page, 'Getting started').hover({ force: true });
     await page.waitForTimeout(500);
 
-    // Click more actions
     await PageSelectors.moreActionsButton(page, 'Getting started').click({ force: true });
     await page.waitForTimeout(500);
 
-    // Verify Move to is NOT disabled for regular pages
+    // Then: "Move to" menu item is enabled
     await expect(ViewActionSelectors.popover(page)).toBeVisible();
-    const moveToItem2 = ViewActionSelectors.moveToButton(page);
+    const moveToItem2 = page.locator('[role="menuitem"]').filter({ hasText: 'Move to' });
     await expect(moveToItem2).toBeVisible();
     const hasDisabled = await moveToItem2.getAttribute('data-disabled');
     expect(hasDisabled).toBeNull();
+
+    testLog.testEnd('Move to enabled for regular document pages');
   });
 
   test('should enable Move to for database containers under document', async ({
@@ -165,15 +186,21 @@ test.describe('Move Page Restrictions', () => {
   }) => {
     const testEmail = generateRandomEmail();
 
+    testLog.testStart('Move to enabled for database containers');
+    testLog.info(`Test email: ${testEmail}`);
+
+    // Given: a signed-in user with a document containing an embedded grid
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
     await page.waitForTimeout(3000);
 
-    // 1) Create a document page
+    // 1) Create a document page first
+    testLog.step(1, 'Create document page');
     const docViewId = await createDocumentPageAndNavigate(page);
     await page.waitForTimeout(1000);
 
-    // 2) Insert NEW grid via slash menu (creates container, not linked view)
+    // 2) Insert NEW grid via slash menu (creates container)
+    testLog.step(2, 'Insert new grid via slash menu');
     const editor = page.locator(`#editor-${docViewId}`);
     await expect(editor).toBeVisible({ timeout: 15000 });
     await editor.click({ force: true });
@@ -187,19 +214,27 @@ test.describe('Move Page Restrictions', () => {
     await page.waitForTimeout(3000);
 
     // 3) Expand the document to see the database container in sidebar
+    // After inserting a grid, the sidebar may take time to create the container child.
+    // Retry expansion until children appear (the expand toggle won't exist until children load).
+    testLog.step(3, 'Expand document and find database container');
     await expandSpaceByName(page, spaceName);
 
-    await ensurePageExpandedByViewId(page, docViewId);
-    await page.waitForTimeout(1000);
-
-    // 4) Find the database container (child of the document)
     const docItem = page
-      .getByTestId(`page-${docViewId}`)
-      .first()
-      .locator('xpath=ancestor::*[@data-testid="page-item"]')
+      .locator(`[data-testid="page-item"]:has(> [data-testid="page-${docViewId}"])`)
       .first();
+    const childPageItems = docItem.locator('[data-testid="page-item"]');
 
-    const dbContainerItem = docItem.getByTestId('page-item').first();
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await ensurePageExpandedByViewId(page, docViewId);
+      if ((await childPageItems.count()) > 0) break;
+      await page.waitForTimeout(1500);
+    }
+
+    await expect(childPageItems.first()).toBeVisible({ timeout: 10000 });
+
+    // 4) Find the database container and open More Actions
+    testLog.step(4, 'Open More Actions for database container');
+    const dbContainerItem = childPageItems.first();
     await dbContainerItem.hover({ force: true });
     await page.waitForTimeout(500);
 
@@ -207,10 +242,14 @@ test.describe('Move Page Restrictions', () => {
     await page.waitForTimeout(500);
 
     // 5) Verify Move to is NOT disabled for database containers
+    testLog.step(5, 'Verify Move to is enabled for database container');
+    // Then: "Move to" menu item is enabled for database containers
     await expect(ViewActionSelectors.popover(page)).toBeVisible();
-    const moveToItem3 = ViewActionSelectors.moveToButton(page);
+    const moveToItem3 = page.locator('[role="menuitem"]').filter({ hasText: 'Move to' });
     await expect(moveToItem3).toBeVisible();
     const hasDisabled = await moveToItem3.getAttribute('data-disabled');
     expect(hasDisabled).toBeNull();
+
+    testLog.testEnd('Move to enabled for database containers');
   });
 });

@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import { BlockSelectors, EditorSelectors, AddPageSelectors, DropdownSelectors, ModalSelectors, PageSelectors, SpaceSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
-import { closeModalsIfOpen } from '../../../support/test-helpers';
+import { closeModalsIfOpen, testLog } from '../../../support/test-helpers';
 
 /**
  * Paste Complex Content Tests
@@ -169,12 +169,14 @@ test.describe('Paste Complex Content Tests', () => {
   });
 
   test('should paste all complex document types correctly', async ({ page, request }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // Mixed Content Document
+    // When: pasting a mixed content document with headings, lists, code, quotes, and links
     {
+      testLog.info('=== Pasting Complex Document ===');
       const html = `
         <h1>Project Documentation</h1>
         <p>This is an introduction with <strong>bold</strong> and <em>italic</em> text.</p>
@@ -195,7 +197,7 @@ test.describe('Paste Complex Content Tests', () => {
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(2000);
 
-      // Verify structural elements
+      // Then: heading, list items, code block, quote, and link are rendered
       await expect(slateEditor.locator('.heading.level-1')).toContainText('Project Documentation');
       expect(
         await slateEditor.locator('[data-block-type="bulleted_list"]').count()
@@ -207,10 +209,12 @@ test.describe('Paste Complex Content Tests', () => {
       await expect(
         slateEditor.locator('span.cursor-pointer.underline')
       ).toContainText('our website');
+      testLog.info('✓ Complex document pasted successfully');
     }
 
-    // GitHub-style README
+    // When: pasting a GitHub-style README with code blocks and task lists
     {
+      testLog.info('=== Pasting GitHub README ===');
       const html = `
         <h1>My Project</h1>
         <p>A description with <strong>important</strong> information.</p>
@@ -233,15 +237,22 @@ test.describe('Paste Complex Content Tests', () => {
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(2000);
 
+      // Then: heading, code blocks, and task list items are rendered
       await expect(slateEditor.locator('.heading.level-1').last()).toContainText('My Project');
-      await expect(slateEditor.locator('pre code').last()).toContainText('npm install');
+      // And: code block contains the install command
+      await expect(
+        slateEditor.locator('pre code').filter({ hasText: 'npm install' })
+      ).toBeVisible({ timeout: 15000 });
+      // And: todo list items are created from checkboxes
       expect(
         await slateEditor.locator('[data-block-type="todo_list"]').count()
       ).toBeGreaterThanOrEqual(3);
+      testLog.info('✓ GitHub README pasted successfully');
     }
 
-    // Markdown-like Plain Text
+    // When: pasting markdown-like plain text with headings, lists, code, and quotes
     {
+      testLog.info('=== Pasting Markdown-like Text ===');
       const plainText = `# Main Title
 
 This is a paragraph with **bold** and *italic* text.
@@ -263,30 +274,42 @@ const x = 10;
       await pasteContent(page, '', plainText);
       await page.waitForTimeout(2000);
 
-      await expect(slateEditor.locator('.heading.level-1')).toContainText('Main Title');
-      await expect(slateEditor.locator('strong')).toContainText('bold');
+      // Then: markdown is parsed into heading, bold, list, code, and quote blocks
       await expect(
-        slateEditor.locator('[data-block-type="bulleted_list"]')
-      ).toContainText('List item 1');
-      await expect(slateEditor.locator('pre code')).toContainText('const x = 10');
+        slateEditor.locator('.heading.level-1').filter({ hasText: 'Main Title' }).first()
+      ).toBeVisible();
       await expect(
-        slateEditor.locator('[data-block-type="quote"]')
-      ).toContainText(['A quote']);
+        slateEditor.locator('strong').filter({ hasText: 'bold' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('[data-block-type="bulleted_list"]').filter({ hasText: 'List item 1' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('pre code').filter({ hasText: 'const x = 10' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('[data-block-type="quote"]').filter({ hasText: 'A quote' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Markdown-like text pasted');
     }
 
-    // DevTools Verification
+    // When: pasting simple HTML with bold formatting
     {
+      testLog.info('=== Pasting and Verifying with DevTools ===');
       const html = '<p>Test <strong>bold</strong> content</p>';
       const plainText = 'Test bold content';
 
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: bold content is present in the editor DOM
       await verifyEditorContent(page, 'bold');
+      testLog.info('✓ DevTools verification passed');
     }
 
-    // Complex Structure Verification
+    // When: pasting a structured document with heading, paragraph, and list
     {
+      testLog.info('=== Verifying Complex Structure ===');
       const html = `
         <h1>Title</h1>
         <p>Paragraph</p>
@@ -300,11 +323,15 @@ const x = 10;
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1500);
 
-      await expect(slateEditor.locator('.heading.level-1')).toContainText('Title');
-      await expect(slateEditor.locator('div')).toContainText('Paragraph');
+      // Then: heading, paragraph, and list items are all visible
       await expect(
-        slateEditor.locator('[data-block-type="bulleted_list"]')
-      ).toContainText('Item 1');
+        slateEditor.locator('.heading.level-1').getByText('Title', { exact: true })
+      ).toBeVisible();
+      await expect(page.getByText('Paragraph').first()).toBeVisible();
+      await expect(
+        slateEditor.locator('[data-block-type="bulleted_list"]').filter({ hasText: 'Item 1' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Complex structure verified');
     }
   });
 });

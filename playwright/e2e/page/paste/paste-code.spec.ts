@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import { BlockSelectors, EditorSelectors, AddPageSelectors, DropdownSelectors, ModalSelectors, PageSelectors, SpaceSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
-import { closeModalsIfOpen } from '../../../support/test-helpers';
+import { closeModalsIfOpen, testLog } from '../../../support/test-helpers';
 
 /**
  * Paste Code Block Tests
@@ -163,34 +163,41 @@ test.describe('Paste Code Block Tests', () => {
   });
 
   test('should paste all code block formats correctly', async ({ page, request }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // HTML Code Block
+    // When: pasting an HTML code block
     {
       const html = '<pre><code>const x = 10;\nconsole.log(x);</code></pre>';
       const plainText = 'const x = 10;\nconsole.log(x);';
 
+      testLog.info('=== Pasting HTML Code Block ===');
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: code block is rendered with the pasted code content
       await expect(slateEditor.locator('pre code').first()).toContainText('const x = 10');
+      testLog.info('✓ HTML code block pasted successfully');
     }
 
-    // HTML Code Block with language
+    // When: pasting an HTML code block with a language class
     {
       const html =
         '<pre><code class="language-javascript">function hello() {\n  console.log("Hello");\n}</code></pre>';
       const plainText = 'function hello() {\n  console.log("Hello");\n}';
 
+      testLog.info('=== Pasting HTML Code Block with Language ===');
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: code block contains the function definition
       await expect(slateEditor.locator('pre code')).toContainText(['function hello']);
+      testLog.info('✓ HTML code block with language pasted successfully');
     }
 
-    // HTML Multiple Language Code Blocks
+    // When: pasting multiple HTML code blocks with different languages
     {
       const html = `
         <pre><code class="language-python">def greet():
@@ -200,27 +207,33 @@ test.describe('Paste Code Block Tests', () => {
       const plainText =
         'def greet():\n    print("Hello")\nconst greeting: string = "Hello";';
 
+      testLog.info('=== Pasting HTML Multiple Language Code Blocks ===');
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: both Python and TypeScript code blocks are rendered
       await expect(slateEditor.locator('pre code')).toContainText(['def greet']);
       await expect(slateEditor.locator('pre code')).toContainText(['const greeting']);
+      testLog.info('✓ HTML multiple language code blocks pasted successfully');
     }
 
-    // HTML Blockquote
+    // When: pasting an HTML blockquote
     {
       const html = '<blockquote>This is a quoted text</blockquote>';
       const plainText = 'This is a quoted text';
 
+      testLog.info('=== Pasting HTML Blockquote ===');
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: blockquote is rendered as a quote block
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
       ).toContainText(['This is a quoted text']);
+      testLog.info('✓ HTML blockquote pasted successfully');
     }
 
-    // HTML Nested Blockquotes
+    // When: pasting HTML with nested blockquotes
     {
       const html = `
         <blockquote>
@@ -230,31 +243,37 @@ test.describe('Paste Code Block Tests', () => {
       `;
       const plainText = 'First level quote\nSecond level quote';
 
+      testLog.info('=== Pasting HTML Nested Blockquotes ===');
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: both levels of nested quotes are rendered
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
       ).toContainText(['First level quote']);
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
       ).toContainText(['Second level quote']);
+      testLog.info('✓ HTML nested blockquotes pasted successfully');
     }
 
-    // Markdown Code Block with Language
+    // When: pasting a markdown fenced code block with language specifier
     {
       const markdown = `\`\`\`javascript
 const x = 10;
 console.log(x);
 \`\`\``;
 
+      testLog.info('=== Pasting Markdown Code Block with Language ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: code block is rendered with the javascript code
       await expect(slateEditor.locator('pre code')).toContainText(['const x = 10']);
+      testLog.info('✓ Markdown code block with language pasted successfully');
     }
 
-    // Markdown Code Block without Language
+    // When: pasting a markdown fenced code block without language specifier
     {
       const markdown = `\`\`\`
 function hello() {
@@ -262,25 +281,31 @@ function hello() {
 }
 \`\`\``;
 
+      testLog.info('=== Pasting Markdown Code Block without Language ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: code block is rendered with the function definition
       await expect(slateEditor.locator('pre code')).toContainText(['function hello']);
+      testLog.info('✓ Markdown code block without language pasted successfully');
     }
 
-    // Markdown Inline Code
+    // When: pasting markdown with inline code
     {
       const markdown = 'Use the `console.log()` function to print output.';
 
+      testLog.info('=== Pasting Markdown Inline Code ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: inline code is rendered with code styling
       await expect(
         slateEditor.locator('span.bg-border-primary')
       ).toContainText('console.log');
+      testLog.info('✓ Markdown inline code pasted successfully');
     }
 
-    // Markdown Multiple Language Code Blocks
+    // When: pasting multiple markdown code blocks with different languages
     {
       const markdown = `\`\`\`python
 def greet():
@@ -295,35 +320,43 @@ const greeting: string = "Hello";
 echo "Hello World"
 \`\`\``;
 
+      testLog.info('=== Pasting Markdown Multiple Language Code Blocks ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: all three code blocks (python, typescript, bash) are rendered
       await expect(slateEditor.locator('pre code')).toContainText(['def greet']);
       await expect(slateEditor.locator('pre code')).toContainText(['const greeting']);
       await expect(slateEditor.locator('pre code')).toContainText(['echo']);
+      testLog.info('✓ Markdown multiple language code blocks pasted successfully');
     }
 
-    // Markdown Blockquote
+    // When: pasting a markdown blockquote
     {
       const markdown = '> This is a quoted text';
 
+      testLog.info('=== Pasting Markdown Blockquote ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: blockquote is rendered as a quote block
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
       ).toContainText(['This is a quoted text']);
+      testLog.info('✓ Markdown blockquote pasted successfully');
     }
 
-    // Markdown Nested Blockquotes
+    // When: pasting markdown with nested blockquotes (>, >>, >>>)
     {
       const markdown = `> First level quote
 >> Second level quote
 >>> Third level quote`;
 
+      testLog.info('=== Pasting Markdown Nested Blockquotes ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: all three levels of nested quotes are rendered
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
       ).toContainText(['First level quote']);
@@ -333,19 +366,21 @@ echo "Hello World"
       await expect(
         slateEditor.locator('[data-block-type="quote"]')
       ).toContainText(['Third level quote']);
+      testLog.info('✓ Markdown nested blockquotes pasted successfully');
     }
 
-    // Markdown Blockquote with Formatting
+    // When: pasting a markdown blockquote with inline formatting (bold, italic, code)
     {
       const markdown = '> **Important:** This is a *quoted* text with `code`';
 
+      testLog.info('=== Pasting Markdown Blockquote with Formatting ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: quote block contains the formatted text content
       const quoteBlock = slateEditor.locator('[data-block-type="quote"]').last();
-      // Verify the quote block exists and contains some of the pasted text
-      // Note: markdown inline formatting (bold/italic/code) may be stripped in blockquotes
       await expect(quoteBlock).toContainText('quoted text');
+      testLog.info('✓ Markdown blockquote with formatting pasted successfully');
     }
   });
 });

@@ -193,9 +193,8 @@ test.describe('Cross-Tab Synchronization via BroadcastChannel', () => {
     ).toBeVisible({ timeout: 30000 });
 
     // Step 6: Delete the document from main window
-    await PageSelectors.nameContaining(mainPage, 'Untitled')
-      .first()
-      .locator('xpath=ancestor::*[@data-testid="page-item"]')
+    await mainPage
+      .locator('[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("Untitled"))')
       .first()
       .hover({ force: true });
     await mainPage.waitForTimeout(500);

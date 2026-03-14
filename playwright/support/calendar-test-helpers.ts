@@ -247,15 +247,30 @@ export async function openDatePickerInEventPopover(page: Page): Promise<void> {
 /**
  * Select a specific day number in the DateTimeCellPicker calendar.
  * Uses react-day-picker day buttons inside the datetime-picker-popover.
+ * Excludes "day-outside" buttons (days from adjacent months).
  */
 export async function selectDayInDatePicker(page: Page, dayNumber: number): Promise<void> {
   const pickerPopover = page.getByTestId('datetime-picker-popover');
   // react-day-picker renders day buttons inside table cells with role="gridcell"
-  // Each day button has the day number as text
-  const dayRegex = new RegExp(`^${dayNumber}$`);
-  const dayButton = pickerPopover.locator('button').filter({ hasText: dayRegex }).first();
-  await expect(dayButton).toBeVisible({ timeout: 5000 });
-  await dayButton.click({ force: true });
+  // Each day button has the day number as text.
+  // Exclude buttons with "day-outside" class (adjacent month days).
+  const dayButtons = pickerPopover.locator('button');
+  const count = await dayButtons.count();
+  let clicked = false;
+  for (let i = 0; i < count; i++) {
+    const btn = dayButtons.nth(i);
+    const text = (await btn.textContent())?.trim();
+    if (text !== String(dayNumber)) continue;
+    const cls = (await btn.getAttribute('class')) || '';
+    if (cls.includes('day-outside')) continue;
+    // Use evaluate click for reliability with React event handlers
+    await btn.evaluate(el => (el as HTMLElement).click());
+    clicked = true;
+    break;
+  }
+  if (!clicked) {
+    throw new Error(`Could not find day ${dayNumber} button in date picker (excluding day-outside)`);
+  }
   await page.waitForTimeout(500);
 }
 

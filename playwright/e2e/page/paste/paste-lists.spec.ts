@@ -3,6 +3,7 @@ import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { createDocumentPageAndNavigate } from '../../../support/page-utils';
+import { testLog } from '../../../support/test-helpers';
 
 /**
  * Paste List Tests
@@ -136,10 +137,12 @@ test.describe('Paste List Tests', () => {
   });
 
   test('should paste all list formats correctly', async ({ page, request }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
-    // HTML Unordered List
+    // When: pasting an HTML unordered list
     {
+      testLog.info('=== Pasting HTML Unordered List ===');
       const html = `
         <ul>
           <li>First item</li>
@@ -152,18 +155,21 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: three bulleted list items are created
       expect(
         await BlockSelectors.blockByType(page, 'bulleted_list').count()
       ).toBeGreaterThanOrEqual(3);
       await expect(page.getByText('First item').first()).toBeVisible();
       await expect(page.getByText('Second item').first()).toBeVisible();
       await expect(page.getByText('Third item').first()).toBeVisible();
+      testLog.info('✓ HTML unordered list pasted successfully');
 
       await exitListMode(page);
     }
 
-    // HTML Ordered List
+    // When: pasting an HTML ordered list
     {
+      testLog.info('=== Pasting HTML Ordered List ===');
       const html = `
         <ol>
           <li>Step one</li>
@@ -176,18 +182,21 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: three numbered list items are created
       expect(
         await BlockSelectors.blockByType(page, 'numbered_list').count()
       ).toBeGreaterThanOrEqual(3);
       await expect(page.getByText('Step one')).toBeVisible();
       await expect(page.getByText('Step two')).toBeVisible();
       await expect(page.getByText('Step three')).toBeVisible();
+      testLog.info('✓ HTML ordered list pasted successfully');
 
       await exitListMode(page);
     }
 
-    // HTML Todo List
+    // When: pasting an HTML todo list with checkboxes
     {
+      testLog.info('=== Pasting HTML Todo List ===');
       const html = `
         <ul>
           <li><input type="checkbox" checked> Completed task</li>
@@ -199,17 +208,20 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: todo list items are created from checkbox inputs
       expect(
         await BlockSelectors.blockByType(page, 'todo_list').count()
       ).toBeGreaterThanOrEqual(2);
       await expect(page.getByText('Completed task').first()).toBeVisible();
       await expect(page.getByText('Incomplete task').first()).toBeVisible();
+      testLog.info('✓ HTML todo list pasted successfully');
 
       await exitListMode(page);
     }
 
-    // Markdown Unordered List (dash)
+    // When: pasting a markdown unordered list using dashes
     {
+      testLog.info('=== Pasting Markdown Unordered List (dash) ===');
       const markdown = `- First item
 - Second item
 - Third item`;
@@ -217,16 +229,19 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: dash-prefixed items become bulleted list blocks
       expect(
         await BlockSelectors.blockByType(page, 'bulleted_list').count()
       ).toBeGreaterThanOrEqual(3);
       await expect(page.getByText('First item').first()).toBeVisible();
+      testLog.info('✓ Markdown unordered list (dash) pasted successfully');
 
       await exitListMode(page);
     }
 
-    // Markdown Unordered List (asterisk)
+    // When: pasting a markdown unordered list using asterisks
     {
+      testLog.info('=== Pasting Markdown Unordered List (asterisk) ===');
       const markdown = `* Apple
 * Banana
 * Orange`;
@@ -234,16 +249,19 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: asterisk-prefixed items become bulleted list blocks
       expect(
         await BlockSelectors.blockByType(page, 'bulleted_list').count()
       ).toBeGreaterThanOrEqual(3);
       await expect(page.getByText('Apple')).toBeVisible();
+      testLog.info('✓ Markdown unordered list (asterisk) pasted successfully');
 
       await exitListMode(page);
     }
 
-    // Markdown Ordered List
+    // When: pasting a markdown ordered list
     {
+      testLog.info('=== Pasting Markdown Ordered List ===');
       const markdown = `1. First step
 2. Second step
 3. Third step`;
@@ -251,16 +269,19 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: numbered items become numbered list blocks
       expect(
         await BlockSelectors.blockByType(page, 'numbered_list').count()
       ).toBeGreaterThanOrEqual(3);
       await expect(page.getByText('First step')).toBeVisible();
+      testLog.info('✓ Markdown ordered list pasted successfully');
 
       await exitListMode(page);
     }
 
-    // Markdown Task List
+    // When: pasting a markdown task list with checked and unchecked items
     {
+      testLog.info('=== Pasting Markdown Task List ===');
       const markdown = `- [x] Completed task
 - [ ] Incomplete task
 - [x] Another completed task`;
@@ -268,17 +289,20 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: task list items become todo list blocks
       expect(
         await BlockSelectors.blockByType(page, 'todo_list').count()
       ).toBeGreaterThanOrEqual(3);
       await expect(page.getByText('Completed task').first()).toBeVisible();
       await expect(page.getByText('Incomplete task').first()).toBeVisible();
+      testLog.info('✓ Markdown task list pasted successfully');
 
       await exitListMode(page);
     }
 
-    // Markdown Nested Lists
+    // When: pasting markdown nested lists with parent and child items
     {
+      testLog.info('=== Pasting Markdown Nested Lists ===');
       const markdown = `- Parent item 1
   - Child item 1.1
   - Child item 1.2
@@ -288,18 +312,21 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: parent and child items are rendered as bulleted list blocks
       await expect(
-        BlockSelectors.blockByType(page, 'bulleted_list')
-      ).toContainText('Parent item 1');
+        BlockSelectors.blockByType(page, 'bulleted_list').filter({ hasText: 'Parent item 1' }).first()
+      ).toBeVisible();
       await expect(
-        BlockSelectors.blockByType(page, 'bulleted_list')
-      ).toContainText('Child item 1.1');
+        BlockSelectors.blockByType(page, 'bulleted_list').filter({ hasText: 'Child item 1.1' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Markdown nested lists pasted successfully');
 
       await exitListMode(page);
     }
 
-    // Markdown List with Formatting
+    // When: pasting a markdown list with inline formatting (bold, italic, code, link)
     {
+      testLog.info('=== Pasting Markdown List with Formatting ===');
       const markdown = `- **Bold item**
 - *Italic item*
 - \`Code item\`
@@ -308,15 +335,18 @@ test.describe('Paste List Tests', () => {
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
+      // Then: list items with formatted text are visible
       await expect(page.getByText('Bold item')).toBeVisible();
       await expect(page.getByText('Italic item')).toBeVisible();
       await expect(page.getByText('Code item')).toBeVisible();
+      testLog.info('✓ Markdown list with formatting pasted successfully');
 
       await exitListMode(page);
     }
 
-    // Generic Text with Special Bullets
+    // When: pasting plain text with unicode bullet characters
     {
+      testLog.info('=== Pasting Generic Text with Special Bullets ===');
       const text = `Project Launch
 
 We are excited to announce the new features. This update includes:
@@ -329,25 +359,28 @@ Please let us know your feedback.`;
       await pasteContent(page, '', text);
       await page.waitForTimeout(1000);
 
+      // Then: paragraph text is visible
       await expect(page.getByText('Project Launch')).toBeVisible();
       await expect(page.getByText('We are excited to announce')).toBeVisible();
 
-      // Verify special bullets are converted to BulletedListBlock
+      // And: unicode bullet items are converted to bulleted list blocks
       await expect(
-        BlockSelectors.blockByType(page, 'bulleted_list')
-      ).toContainText('Fast performance');
+        BlockSelectors.blockByType(page, 'bulleted_list').filter({ hasText: 'Fast performance' }).first()
+      ).toBeVisible();
       await expect(
-        BlockSelectors.blockByType(page, 'bulleted_list')
-      ).toContainText('Secure encryption');
+        BlockSelectors.blockByType(page, 'bulleted_list').filter({ hasText: 'Secure encryption' }).first()
+      ).toBeVisible();
       await expect(
-        BlockSelectors.blockByType(page, 'bulleted_list')
-      ).toContainText('Offline mode');
+        BlockSelectors.blockByType(page, 'bulleted_list').filter({ hasText: 'Offline mode' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Generic text with special bullets pasted successfully');
 
       await exitListMode(page);
     }
 
-    // HTML List with Inner Newlines
+    // When: pasting an HTML list where items contain inner paragraph elements
     {
+      testLog.info('=== Pasting HTML List with Inner Newlines ===');
       const html = `
         <ul><li>
         <p class="p1">Private</p>
@@ -362,6 +395,7 @@ Please let us know your feedback.`;
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
+      // Then: each list item is rendered as a separate bulleted list block
       await expect(
         BlockSelectors.blockByType(page, 'bulleted_list').filter({ hasText: 'Private' })
       ).toBeVisible();
@@ -371,6 +405,7 @@ Please let us know your feedback.`;
       await expect(
         BlockSelectors.blockByType(page, 'bulleted_list').filter({ hasText: 'Self-hostable' })
       ).toBeVisible();
+      testLog.info('✓ HTML list with inner newlines pasted successfully');
     }
   });
 });

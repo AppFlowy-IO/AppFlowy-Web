@@ -3,6 +3,7 @@ import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { createDocumentPageAndNavigate } from '../../../support/page-utils';
+import { testLog } from '../../../support/test-helpers';
 
 /**
  * Paste Table Tests
@@ -125,12 +126,14 @@ test.describe('Paste Table Tests', () => {
   });
 
   test('should paste all table formats correctly', async ({ page, request }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // HTML Table
+    // When: pasting an HTML table with header and body rows
     {
+      testLog.info('=== Pasting HTML Table ===');
       const html = `
         <table>
           <thead>
@@ -156,16 +159,19 @@ test.describe('Paste Table Tests', () => {
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1500);
 
+      // Then: table is rendered with correct rows and cell content
       await expect(slateEditor.locator('.simple-table table').first()).toBeVisible();
       expect(
         await slateEditor.locator('.simple-table tr').count()
       ).toBeGreaterThanOrEqual(3);
       await expect(slateEditor.locator('.simple-table').first()).toContainText('Name');
       await expect(slateEditor.locator('.simple-table').first()).toContainText('John');
+      testLog.info('✓ HTML table pasted successfully');
     }
 
-    // HTML Table with Formatting
+    // When: pasting an HTML table with bold and italic formatting in cells
     {
+      testLog.info('=== Pasting HTML Table with Formatting ===');
       const html = `
         <table>
           <thead>
@@ -192,7 +198,7 @@ test.describe('Paste Table Tests', () => {
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1500);
 
-      // Formatting may or may not be preserved inside table cells
+      // Then: table contains formatted cell content (bold and italic if preserved)
       const hasTableStrong = await slateEditor.locator('.simple-table strong').count();
       if (hasTableStrong > 0) {
         await expect(slateEditor.locator('.simple-table strong').first()).toContainText('Authentication');
@@ -205,10 +211,12 @@ test.describe('Paste Table Tests', () => {
       } else {
         await expect(slateEditor.locator('.simple-table').last()).toContainText('Complete');
       }
+      testLog.info('✓ HTML table with formatting pasted successfully');
     }
 
-    // Markdown Table
+    // When: pasting a markdown table with product data
     {
+      testLog.info('=== Pasting Markdown Table ===');
       const markdownTable = `| Product | Price |
 |---------|-------|
 | Apple   | $1.50 |
@@ -218,13 +226,22 @@ test.describe('Paste Table Tests', () => {
       await pasteContent(page, '', markdownTable);
       await page.waitForTimeout(1500);
 
-      await expect(slateEditor.locator('.simple-table').last()).toContainText('Product');
-      await expect(slateEditor.locator('.simple-table').last()).toContainText('Apple');
-      await expect(slateEditor.locator('.simple-table').last()).toContainText('Banana');
+      // Then: markdown table is parsed into a simple-table with all rows
+      await expect(
+        slateEditor.locator('.simple-table').filter({ hasText: 'Product' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.simple-table').filter({ hasText: 'Apple' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.simple-table').filter({ hasText: 'Banana' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Markdown table pasted successfully');
     }
 
-    // Markdown Table with Alignment
+    // When: pasting a markdown table with column alignment specifiers
     {
+      testLog.info('=== Pasting Markdown Table with Alignment ===');
       const markdownTable = `| Left Align | Center Align | Right Align |
 |:-----------|:------------:|------------:|
 | Left       | Center       | Right       |
@@ -233,12 +250,19 @@ test.describe('Paste Table Tests', () => {
       await pasteContent(page, '', markdownTable);
       await page.waitForTimeout(1500);
 
-      await expect(slateEditor.locator('.simple-table').last()).toContainText('Left Align');
-      await expect(slateEditor.locator('.simple-table').last()).toContainText('Center Align');
+      // Then: table headers with alignment labels are rendered
+      await expect(
+        slateEditor.locator('.simple-table').filter({ hasText: 'Left Align' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.simple-table').filter({ hasText: 'Center Align' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Markdown table with alignment pasted successfully');
     }
 
-    // Markdown Table with Inline Formatting
+    // When: pasting a markdown table with inline formatting (bold, italic, code, strikethrough)
     {
+      testLog.info('=== Pasting Markdown Table with Inline Formatting ===');
       const markdownTable = `| Feature | Status |
 |---------|--------|
 | **Bold Feature** | *In Progress* |
@@ -247,23 +271,29 @@ test.describe('Paste Table Tests', () => {
       await pasteContent(page, '', markdownTable);
       await page.waitForTimeout(1500);
 
-      // Formatting may or may not be preserved in markdown tables
+      // Then: table contains formatted cell content (bold and italic if preserved)
       const hasMdTableStrong = await slateEditor.locator('.simple-table strong').count();
       if (hasMdTableStrong > 0) {
-        await expect(slateEditor.locator('.simple-table strong').last()).toContainText('Bold Feature');
+        await expect(slateEditor.locator('.simple-table strong').filter({ hasText: 'Bold Feature' }).first()).toBeVisible();
       } else {
-        await expect(slateEditor.locator('.simple-table').last()).toContainText('Bold Feature');
+        await expect(
+          slateEditor.locator('.simple-table').filter({ hasText: 'Bold Feature' }).first()
+        ).toBeVisible();
       }
       const hasMdTableEm = await slateEditor.locator('.simple-table em').count();
       if (hasMdTableEm > 0) {
-        await expect(slateEditor.locator('.simple-table em').last()).toContainText('In Progress');
+        await expect(slateEditor.locator('.simple-table em').filter({ hasText: 'In Progress' }).first()).toBeVisible();
       } else {
-        await expect(slateEditor.locator('.simple-table').last()).toContainText('In Progress');
+        await expect(
+          slateEditor.locator('.simple-table').filter({ hasText: 'In Progress' }).first()
+        ).toBeVisible();
       }
+      testLog.info('✓ Markdown table with inline formatting pasted successfully');
     }
 
-    // TSV Data
+    // When: pasting tab-separated values (TSV) data
     {
+      testLog.info('=== Pasting TSV Data ===');
       const tsvData = `Name\tEmail\tPhone
 Alice\talice@example.com\t555-1234
 Bob\tbob@example.com\t555-5678`;
@@ -271,9 +301,14 @@ Bob\tbob@example.com\t555-5678`;
       await pasteContent(page, '', tsvData);
       await page.waitForTimeout(1500);
 
-      await expect(slateEditor.locator('.simple-table').last()).toBeVisible();
-      await expect(slateEditor.locator('.simple-table').last()).toContainText('Alice');
-      await expect(slateEditor.locator('.simple-table').last()).toContainText('alice@example.com');
+      // Then: TSV is parsed into a table with names and emails
+      await expect(
+        slateEditor.locator('.simple-table').filter({ hasText: 'Alice' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.simple-table').filter({ hasText: 'alice@example.com' }).first()
+      ).toBeVisible();
+      testLog.info('✓ TSV data pasted successfully');
     }
   });
 });

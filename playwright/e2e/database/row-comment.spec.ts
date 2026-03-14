@@ -32,62 +32,62 @@ import { openRowDetail } from '../../support/row-detail-helpers';
 import { generateRandomEmail } from '../../support/test-config';
 
 test.describe('Database Row Comment Tests (Desktop Parity)', () => {
-  /**
-   * Test 1: Comment CRUD operations - add, edit with button verification, delete
-   */
   test('comment CRUD operations: add, edit with buttons, delete', async ({ page, request }) => {
+    // Given: a grid row with the comment section open
     setupCommentTest(page);
     const email = generateRandomEmail();
     await loginAndCreateGrid(page, request, email);
 
     const primaryFieldId = await getPrimaryFieldId(page);
-
-    // Type some content into first row
     await typeTextIntoCell(page, primaryFieldId, 0, 'Comment CRUD Test');
     await page.waitForTimeout(500);
 
-    // Open first row detail page
     await openRowDetail(page, 0);
     await page.waitForTimeout(1000);
-
-    // Wait for comment section to appear
     await waitForCommentSection(page);
 
-    // --- ADD ---
+    // When: adding a comment
     const originalComment = 'Original comment';
     await addComment(page, originalComment);
+
+    // Then: the comment should be visible
     await assertCommentExists(page, originalComment);
 
-    // --- ENTER EDIT MODE AND VERIFY BUTTONS ---
+    // When: entering edit mode on the comment
     await enterEditMode(page, originalComment);
+
+    // Then: the edit input and action buttons should be shown
     await assertEditInputShown(page);
     await assertEditModeButtonsShown(page);
 
-    // --- TEST CANCEL BUTTON ---
+    // When: cancelling the edit
     await cancelCommentEdit(page);
+
+    // Then: the original comment should remain unchanged
     await assertCommentExists(page, originalComment);
 
-    // --- EDIT (complete the edit) ---
+    // When: editing the comment with new text
     const updatedComment = 'Updated comment';
     await editComment(page, originalComment, updatedComment);
+
+    // Then: the updated comment should appear and the original should be gone
     await assertCommentExists(page, updatedComment);
     await assertCommentNotExists(page, originalComment);
 
-    // --- DELETE ---
+    // When: deleting the comment
     await deleteComment(page, updatedComment);
+
+    // Then: the comment should no longer exist
     await assertCommentNotExists(page, updatedComment);
   });
 
-  /**
-   * Test 2: Comment actions - resolve, reopen, and emoji reaction
-   */
   test('comment actions: resolve, reopen, and emoji reaction', async ({ page, request }) => {
+    // Given: a grid row with the comment section open
     setupCommentTest(page);
     const email = generateRandomEmail();
     await loginAndCreateGrid(page, request, email);
 
     const primaryFieldId = await getPrimaryFieldId(page);
-
     await typeTextIntoCell(page, primaryFieldId, 0, 'Resolve Test');
     await page.waitForTimeout(500);
 
@@ -95,43 +95,38 @@ test.describe('Database Row Comment Tests (Desktop Parity)', () => {
     await page.waitForTimeout(1000);
     await waitForCommentSection(page);
 
-    // Add a comment
+    // And: a comment has been added
     const testComment = 'Comment for resolve test';
     await addComment(page, testComment);
     await assertCommentExists(page, testComment);
 
-    // --- RESOLVE via hover action ---
+    // When: resolving the comment via hover action
     await toggleResolveComment(page, testComment);
     await page.waitForTimeout(1000);
 
-    // After resolving, the comment should be hidden
+    // Then: the comment should be hidden (resolved)
     await assertCommentCount(page, 0);
 
-    // --- EMOJI REACTION ---
+    // When: adding a new comment and reacting with an emoji
     const testComment2 = 'Comment for emoji';
     await addComment(page, testComment2);
     await assertCommentExists(page, testComment2);
-
-    // Add an emoji reaction by searching
     await addReactionToComment(page, testComment2, 'thumbs up');
 
-    // Verify at least one reaction badge appeared
+    // Then: at least one reaction badge should appear
     await assertAnyReactionExists(page, testComment2);
   });
 
-  /**
-   * Test 3: Multiple comments - add several, verify count, close/reopen, delete one
-   */
   test('multiple comments: add, verify count, close and reopen, delete one', async ({
     page,
     request,
   }) => {
+    // Given: a grid row with the comment section open
     setupCommentTest(page);
     const email = generateRandomEmail();
     await loginAndCreateGrid(page, request, email);
 
     const primaryFieldId = await getPrimaryFieldId(page);
-
     await typeTextIntoCell(page, primaryFieldId, 0, 'Multi Comment Test');
     await page.waitForTimeout(500);
 
@@ -139,7 +134,7 @@ test.describe('Database Row Comment Tests (Desktop Parity)', () => {
     await page.waitForTimeout(1000);
     await waitForCommentSection(page);
 
-    // Add multiple comments
+    // When: adding three comments
     const comment1 = 'First comment';
     const comment2 = 'Second comment';
     const comment3 = 'Third comment';
@@ -153,44 +148,40 @@ test.describe('Database Row Comment Tests (Desktop Parity)', () => {
     await addComment(page, comment3);
     await assertCommentExists(page, comment3);
 
-    // Verify exactly 3 comments
+    // Then: there should be exactly 3 comments
     await assertCommentCount(page, 3);
 
-    // --- CLOSE AND REOPEN to verify persistence ---
+    // When: closing and reopening the row detail
     await page.keyboard.press('Escape');
     await page.waitForTimeout(1500);
 
-    // Reopen the same row
     await openRowDetail(page, 0);
     await page.waitForTimeout(1000);
     await waitForCommentSection(page);
 
-    // Comments should still be there
+    // Then: all three comments should have persisted
     await assertCommentExists(page, comment1);
     await assertCommentExists(page, comment2);
     await assertCommentExists(page, comment3);
     await assertCommentCount(page, 3);
 
-    // Delete the middle comment
+    // When: deleting the middle comment
     await deleteComment(page, comment2);
 
-    // Verify deletion
+    // Then: only the first and third comments should remain
     await assertCommentNotExists(page, comment2);
     await assertCommentExists(page, comment1);
     await assertCommentExists(page, comment3);
     await assertCommentCount(page, 2);
   });
 
-  /**
-   * Test 4: Comment input UI - collapsed/expanded states
-   */
   test('comment input: collapsed and expanded states', async ({ page, request }) => {
+    // Given: a grid row with the comment section visible
     setupCommentTest(page);
     const email = generateRandomEmail();
     await loginAndCreateGrid(page, request, email);
 
     const primaryFieldId = await getPrimaryFieldId(page);
-
     await typeTextIntoCell(page, primaryFieldId, 0, 'Input State Test');
     await page.waitForTimeout(500);
 
@@ -198,28 +189,25 @@ test.describe('Database Row Comment Tests (Desktop Parity)', () => {
     await page.waitForTimeout(1000);
     await waitForCommentSection(page);
 
-    // Scroll comment section into view
     await CommentSelectors.section(page).scrollIntoViewIfNeeded();
     await page.waitForTimeout(500);
 
-    // Initially collapsed - placeholder should be visible
+    // Then: the comment input should initially be collapsed
     await expect(CommentSelectors.collapsedInput(page)).toBeVisible();
 
-    // Click to expand
+    // When: clicking the collapsed input to expand it
     await CommentSelectors.collapsedInput(page).click();
     await page.waitForTimeout(300);
 
-    // Input should now be visible
+    // Then: the expanded input and send button should be visible
     await expect(CommentSelectors.input(page)).toBeVisible();
-
-    // Send button should be visible
     await expect(CommentSelectors.sendButton(page)).toBeVisible();
 
-    // Press Escape to collapse back
+    // When: pressing escape to collapse the input
     await CommentSelectors.input(page).press('Escape');
     await page.waitForTimeout(1000);
 
-    // Should be collapsed again
+    // Then: the input should be collapsed again
     await expect(CommentSelectors.section(page)).toBeVisible();
     await expect(CommentSelectors.collapsedInput(page)).toBeVisible();
   });

@@ -103,7 +103,7 @@ export async function navigateAwayToNewPage(page: Page): Promise<void> {
  * Expands a page in the sidebar by its view ID.
  */
 export async function ensurePageExpandedByViewId(page: Page, viewId: string): Promise<void> {
-  const pageEl = page.getByTestId(`page-${viewId}`).first().locator('xpath=ancestor::*[@data-testid="page-item"]').first();
+  const pageEl = page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${viewId}"])`).first();
   await expect(pageEl).toBeVisible({ timeout: 10000 });
 
   const collapseToggle = pageEl.locator('[data-testid="outline-toggle-collapse"]');

@@ -17,18 +17,21 @@ import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Helper: Wait for calendar to fully load.
- * Uses the FullCalendar container (.fc) which is unique, unlike .database-calendar
- * which matches both the FC widget and its parent wrapper.
+ * Uses the `.database-calendar` container (outer wrapper) which contains the
+ * FullCalendar widget. We exclude the sticky header wrapper to target the
+ * real calendar content.
  */
 async function waitForCalendarReady(page: import('@playwright/test').Page) {
-  await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 15000 });
+  await expect(page.locator('.database-calendar:not(.sticky-header-wrapper)').first()).toBeVisible({ timeout: 15000 });
   // Ensure at least 28 day cells are rendered (a full month)
   const dayCellCount = await CalendarSelectors.dayCell(page).count();
   expect(dayCellCount).toBeGreaterThanOrEqual(28);
 }
 
 /**
- * Helper: Create an event by clicking a day cell
+ * Helper: Create an event by clicking a day cell.
+ * Matches Cypress flow: click cell -> if input visible type into it,
+ * else try hover/double-click -> type into visible input.
  */
 async function createEventOnCell(page: import('@playwright/test').Page, cellIndex: number, eventName: string) {
   // Click the day cell to trigger FullCalendar's select handler which creates a new event
@@ -36,18 +39,38 @@ async function createEventOnCell(page: import('@playwright/test').Page, cellInde
   await dayCell.click({ force: true });
   await page.waitForTimeout(2000);
 
-  // The event popover should auto-open for new events (EventWithPopover handles this)
+  // Check if a popover with an input appeared (EventWithPopover auto-opens for new events)
   const popover = page.locator('[data-radix-popper-content-wrapper]').last();
-  await expect(popover).toBeVisible({ timeout: 10000 });
+  const popoverVisible = await popover.isVisible().catch(() => false);
 
-  // Type the event name into the title field
-  const titleInput = popover.locator('input, textarea, [contenteditable="true"]').first();
-  await expect(titleInput).toBeVisible({ timeout: 5000 });
-  await titleInput.fill('');
-  await titleInput.pressSequentially(eventName, { delay: 30 });
-  await page.waitForTimeout(500);
+  if (popoverVisible) {
+    const titleInput = popover.locator('input').first();
+    const inputVisible = await titleInput.isVisible().catch(() => false);
 
-  // Close the popover
+    if (inputVisible) {
+      await titleInput.fill('');
+      await titleInput.pressSequentially(eventName, { delay: 30 });
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(2000);
+      return;
+    }
+  }
+
+  // Fallback: try double-clicking the cell
+  await dayCell.dblclick({ force: true });
+  await page.waitForTimeout(1500);
+
+  // Look for any visible input (from popover or inline)
+  const visibleInput = page.locator('input:visible').last();
+  const hasInput = await visibleInput.isVisible().catch(() => false);
+  if (hasInput) {
+    await visibleInput.fill('');
+    await visibleInput.pressSequentially(eventName, { delay: 30 });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1000);
+  }
+
   await page.keyboard.press('Escape');
   await page.waitForTimeout(2000);
 }
@@ -84,17 +107,18 @@ test.describe('Calendar Row Loading', () => {
     await createEventOnCell(page, 10, eventName1);
 
     // Then: the first event should appear in the calendar
-    await expect(CalendarSelectors.calendarContainer(page).getByText(eventName1)).toBeVisible({ timeout: 10000 });
+    const calendarContent = page.locator('.database-calendar:not(.sticky-header-wrapper)').first();
+    await expect(calendarContent.getByText(eventName1)).toBeVisible({ timeout: 10000 });
 
     // When: creating a second event on a different day cell
     await createEventOnCell(page, 15, eventName2);
 
     // Then: the second event should appear in the calendar
-    await expect(CalendarSelectors.calendarContainer(page).getByText(eventName2)).toBeVisible({ timeout: 10000 });
+    await expect(calendarContent.getByText(eventName2)).toBeVisible({ timeout: 10000 });
 
     // And: both events should still be visible
-    await expect(CalendarSelectors.calendarContainer(page).getByText(eventName1)).toBeVisible();
-    await expect(CalendarSelectors.calendarContainer(page).getByText(eventName2)).toBeVisible();
+    await expect(calendarContent.getByText(eventName1)).toBeVisible();
+    await expect(calendarContent.getByText(eventName2)).toBeVisible();
   });
 
   test('should display calendar events in Grid view when switching views', async ({
@@ -112,7 +136,8 @@ test.describe('Calendar Row Loading', () => {
     await createEventOnCell(page, 10, eventName);
 
     // Then: the event should appear in the calendar
-    await expect(CalendarSelectors.calendarContainer(page).first().getByText(eventName)).toBeVisible({ timeout: 10000 });
+    const calContent = page.locator('.database-calendar:not(.sticky-header-wrapper)').first();
+    await expect(calContent.getByText(eventName)).toBeVisible({ timeout: 10000 });
 
     // When: adding a Grid view via the database tabbar "+" button
     const addBtn = DatabaseViewSelectors.addViewButton(page);
@@ -135,7 +160,7 @@ test.describe('Calendar Row Loading', () => {
     await page.waitForTimeout(2000);
 
     // Then: the calendar should still show the event
-    await expect(CalendarSelectors.calendarContainer(page).first()).toBeVisible({ timeout: 15000 });
-    await expect(CalendarSelectors.calendarContainer(page).first().getByText(eventName)).toBeVisible({ timeout: 10000 });
+    await expect(calContent).toBeVisible({ timeout: 15000 });
+    await expect(calContent.getByText(eventName)).toBeVisible({ timeout: 10000 });
   });
 });

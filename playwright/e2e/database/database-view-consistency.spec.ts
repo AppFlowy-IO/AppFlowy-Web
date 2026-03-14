@@ -86,20 +86,43 @@ test.describe('Database View Consistency', () => {
 
   async function createEventInCalendar(page: import('@playwright/test').Page, eventName: string, cellIndex: number = 15) {
     const calCell = page.locator('.fc-daygrid-day').nth(cellIndex);
-    // Double-click to create an event (single click just selects the day)
+
+    // Click the day cell first (FullCalendar select handler creates a new event)
+    await calCell.click({ force: true });
+    await page.waitForTimeout(2000);
+
+    // Check if a popover with an input appeared (EventWithPopover auto-opens for new events)
+    const popover = page.locator('[data-radix-popper-content-wrapper]').last();
+    const popoverVisible = await popover.isVisible().catch(() => false);
+
+    if (popoverVisible) {
+      const titleInput = popover.locator('input').first();
+      const inputVisible = await titleInput.isVisible().catch(() => false);
+      if (inputVisible) {
+        await titleInput.fill('');
+        await titleInput.pressSequentially(eventName, { delay: 30 });
+        await page.waitForTimeout(500);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(2000);
+        return;
+      }
+    }
+
+    // Fallback: try double-click
     await calCell.dblclick({ force: true });
     await page.waitForTimeout(1500);
 
-    // The event popover uses contenteditable for the title, not input elements
-    const popover = page.locator('[data-radix-popper-content-wrapper]').last();
-    const titleInput = popover.locator('input, textarea, [contenteditable="true"]').first();
-
-    if (await titleInput.isVisible().catch(() => false)) {
-      await titleInput.fill('');
-      await titleInput.pressSequentially(eventName, { delay: 30 });
-      await page.waitForTimeout(500);
-      await page.keyboard.press('Escape');
+    // Look for any visible input
+    const visibleInput = page.locator('input:visible').last();
+    const hasInput = await visibleInput.isVisible().catch(() => false);
+    if (hasInput) {
+      await visibleInput.fill('');
+      await visibleInput.pressSequentially(eventName, { delay: 30 });
+      await page.keyboard.press('Enter');
+      await page.waitForTimeout(1000);
     }
+
+    await page.keyboard.press('Escape');
     await page.waitForTimeout(2000);
   }
 
@@ -107,6 +130,7 @@ test.describe('Database View Consistency', () => {
     page,
     request,
   }) => {
+    // Given: a database grid with a row named gridRow
     const testEmail = generateRandomEmail();
     const gridRow = `GridItem-${uuidv4().substring(0, 6)}`;
     const boardCard = `BoardItem-${uuidv4().substring(0, 6)}`;
@@ -114,47 +138,56 @@ test.describe('Database View Consistency', () => {
 
     await createGridAndWait(page, request, testEmail);
 
-    // Step 1: Edit first row in Grid view
     await editRowInGrid(page, 0, gridRow);
     await expect(page.locator('.database-grid')).toContainText(gridRow, { timeout: 10000 });
 
-    // Step 2: Add Board view and verify grid row appears, then create a card
+    // When: adding a Board view
     await addViewToDatabase(page, 'Board');
     await expect(BoardSelectors.boardContainer(page)).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(2000);
 
+    // Then: the grid row appears in the Board view
     await expect(BoardSelectors.boardContainer(page)).toContainText(gridRow, { timeout: 10000 });
 
+    // And: creating a new card in Board view shows it immediately
     await createCardInBoard(page, boardCard);
     await expect(BoardSelectors.boardContainer(page)).toContainText(boardCard, { timeout: 10000 });
 
-    // Step 3: Add Calendar view and create an event
+    // When: adding a Calendar view and creating an event
     await addViewToDatabase(page, 'Calendar');
-    await expect(page.locator('.database-calendar').first()).toBeVisible({ timeout: 15000 });
+    await expect(page.locator('.database-calendar:not(.sticky-header-wrapper)').first()).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(2000);
 
     await createEventInCalendar(page, calendarEvent);
-    await expect(page.locator('.database-calendar').first()).toContainText(calendarEvent, { timeout: 10000 });
 
-    // Step 4: Switch to Grid view and verify all items exist
+    // Then: the calendar event is visible
+    await expect(page.locator('.database-calendar:not(.sticky-header-wrapper)').first()).toContainText(calendarEvent, { timeout: 10000 });
+
+    // When: switching back to the Grid view
     await switchToView(page, 'Grid');
     await expect(page.locator('.database-grid')).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(2000);
+
+    // Then: all items from every view are present in the grid
     await expect(page.locator('.database-grid')).toContainText(gridRow, { timeout: 10000 });
     await expect(page.locator('.database-grid')).toContainText(boardCard, { timeout: 10000 });
     await expect(page.locator('.database-grid')).toContainText(calendarEvent, { timeout: 10000 });
 
-    // Step 5: Switch to Board view and verify all items exist
+    // When: switching to the Board view
     await switchToView(page, 'Board');
     await expect(BoardSelectors.boardContainer(page)).toBeVisible({ timeout: 15000 });
     await page.waitForTimeout(2000);
+
+    // Then: all items from every view are present in the board
     await expect(BoardSelectors.boardContainer(page)).toContainText(gridRow, { timeout: 10000 });
     await expect(BoardSelectors.boardContainer(page)).toContainText(boardCard, { timeout: 10000 });
     await expect(BoardSelectors.boardContainer(page)).toContainText(calendarEvent, { timeout: 10000 });
 
-    // Step 6: Switch back to Calendar view to verify it still works
+    // When: switching back to the Calendar view
     await switchToView(page, 'Calendar');
-    await expect(page.locator('.database-calendar').first()).toBeVisible({ timeout: 15000 });
-    await expect(page.locator('.database-calendar').first()).toContainText(calendarEvent, { timeout: 10000 });
+    await expect(page.locator('.database-calendar:not(.sticky-header-wrapper)').first()).toBeVisible({ timeout: 15000 });
+
+    // Then: the calendar event is still visible
+    await expect(page.locator('.database-calendar:not(.sticky-header-wrapper)').first()).toContainText(calendarEvent, { timeout: 10000 });
   });
 });

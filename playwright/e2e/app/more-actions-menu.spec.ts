@@ -34,8 +34,7 @@ test.describe('More Actions Menu', () => {
     await page.waitForTimeout(2000);
 
     // Find a page and hover to reveal more actions button
-    const gettingStarted = page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first();
-    await gettingStarted.first().locator('xpath=ancestor::*[2]').hover({ force: true });
+    await PageSelectors.itemByName(page, 'Getting started').locator('> div').first().hover({ force: true });
     await page.waitForTimeout(1000);
 
     // Click the more actions button
@@ -59,8 +58,7 @@ test.describe('More Actions Menu', () => {
     await page.waitForTimeout(2000);
 
     // Find a page and hover to reveal more actions button
-    const gettingStarted = page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first();
-    await gettingStarted.first().locator('xpath=ancestor::*[2]').hover({ force: true });
+    await PageSelectors.itemByName(page, 'Getting started').locator('> div').first().hover({ force: true });
     await page.waitForTimeout(1000);
 
     // Click the more actions button to open menu
@@ -101,8 +99,7 @@ test.describe('More Actions Menu', () => {
     await page.waitForTimeout(2000);
 
     // Open more actions menu
-    const gettingStarted = page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first();
-    await gettingStarted.first().locator('xpath=ancestor::*[2]').hover({ force: true });
+    await PageSelectors.itemByName(page, 'Getting started').locator('> div').first().hover({ force: true });
     await page.waitForTimeout(1000);
 
     await PageSelectors.moreActionsButton(page).first().click({ force: true });

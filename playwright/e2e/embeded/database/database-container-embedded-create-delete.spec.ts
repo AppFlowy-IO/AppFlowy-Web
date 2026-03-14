@@ -79,8 +79,9 @@ test.describe('Database Container - Embedded Create/Delete', () => {
     await ensurePageExpandedByViewId(page, docViewId);
 
     // Find the container under the document
-    const docPageItem = page.getByTestId(`page-${docViewId}`).first()
-      .locator('xpath=ancestor::*[@data-testid="page-item"]').first();
+    const docPageItem = page
+      .locator(`[data-testid="page-item"]:has(> [data-testid="page-${docViewId}"])`)
+      .first();
     const containerName = docPageItem.getByTestId('page-name').filter({ hasText: dbName });
     await expect(containerName.first()).toBeVisible({ timeout: 30000 });
 
@@ -123,8 +124,9 @@ test.describe('Database Container - Embedded Create/Delete', () => {
     await expandSpaceByName(page, spaceName);
 
     // Collapse and re-expand to force fresh API fetch
-    const pageItem = page.getByTestId(`page-${docViewId}`).first()
-      .locator('xpath=ancestor::*[@data-testid="page-item"]').first();
+    const pageItem = page
+      .locator(`[data-testid="page-item"]:has(> [data-testid="page-${docViewId}"])`)
+      .first();
 
     const collapseToggle = pageItem.locator('[data-testid="outline-toggle-collapse"]');
     if ((await collapseToggle.count()) > 0) {

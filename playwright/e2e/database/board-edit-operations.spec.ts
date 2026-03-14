@@ -105,8 +105,8 @@ test.describe('Board Operations', () => {
 
       // When: adding a card to the "To Do" column
       const todoColumn = BoardSelectors.boardContainer(page)
-        .getByText('To Do')
-        .locator('xpath=ancestor::*[@data-column-id]');
+        .locator('[data-column-id]')
+        .filter({ hasText: 'To Do' });
       await todoColumn.getByText('New').click({ force: true });
       await page.waitForTimeout(500);
       await page.keyboard.type(`${todoCard}`);
@@ -115,8 +115,8 @@ test.describe('Board Operations', () => {
 
       // And: adding a card to the "Doing" column
       const doingColumn = BoardSelectors.boardContainer(page)
-        .getByText('Doing')
-        .locator('xpath=ancestor::*[@data-column-id]');
+        .locator('[data-column-id]')
+        .filter({ hasText: 'Doing' });
       await doingColumn.getByText('New').click({ force: true });
       await page.waitForTimeout(500);
       await page.keyboard.type(`${doingCard}`);
@@ -125,8 +125,8 @@ test.describe('Board Operations', () => {
 
       // And: adding a card to the "Done" column
       const doneColumn = BoardSelectors.boardContainer(page)
-        .getByText('Done')
-        .locator('xpath=ancestor::*[@data-column-id]');
+        .locator('[data-column-id]')
+        .filter({ hasText: 'Done' });
       await doneColumn.getByText('New').click({ force: true });
       await page.waitForTimeout(500);
       await page.keyboard.type(`${doneCard}`);
@@ -192,8 +192,9 @@ test.describe('Board Operations', () => {
 
       // When: hovering over the card and clicking the more button
       const card = BoardSelectors.boardContainer(page)
-        .getByText(cardToDelete)
-        .locator('xpath=ancestor::*[contains(@class, "board-card")]');
+        .locator('[class*="board-card"]')
+        .filter({ hasText: cardToDelete })
+        .first();
       await card.hover({ force: true });
       await page.waitForTimeout(500);
       await card.locator('button').last().click({ force: true });
@@ -225,8 +226,8 @@ test.describe('Board Operations', () => {
       // Given: a Board with a card in the "To Do" column
       await createBoardAndWait(page, request, testEmail);
       const todoColumn = BoardSelectors.boardContainer(page)
-        .getByText('To Do')
-        .locator('xpath=ancestor::*[@data-column-id]');
+        .locator('[data-column-id]')
+        .filter({ hasText: 'To Do' });
       await todoColumn.getByText('New').click({ force: true });
       await page.waitForTimeout(500);
       await page.keyboard.type(`${cardName}`);
@@ -238,8 +239,9 @@ test.describe('Board Operations', () => {
 
       // When: duplicating the card via the toolbar menu
       const card = BoardSelectors.boardContainer(page)
-        .getByText(cardName)
-        .locator('xpath=ancestor::*[contains(@class, "board-card")]');
+        .locator('[class*="board-card"]')
+        .filter({ hasText: cardName })
+        .first();
       await card.hover({ force: true });
       await page.waitForTimeout(500);
       await card.locator('button').last().click({ force: true });

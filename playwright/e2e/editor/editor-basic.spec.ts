@@ -47,7 +47,7 @@ test.describe('Editor - Drag and Drop Blocks', () => {
     // Get the source block element
     const sourceBlock = sourceText.startsWith('[')
       ? slateEditor.locator(sourceText).first()
-      : slateEditor.getByText(sourceText).locator('xpath=ancestor::*[@data-block-type]').first();
+      : slateEditor.locator('[data-block-type]').filter({ hasText: sourceText }).first();
 
     // Hover over the source block to reveal the drag handle
     await sourceBlock.scrollIntoViewIfNeeded();
@@ -65,8 +65,8 @@ test.describe('Editor - Drag and Drop Blocks', () => {
 
     // Get target block
     const targetBlock = slateEditor
-      .getByText(targetText)
-      .locator('xpath=ancestor::*[@data-block-type]')
+      .locator('[data-block-type]')
+      .filter({ hasText: targetText })
       .first();
 
     const targetBBox = await targetBlock.boundingBox();

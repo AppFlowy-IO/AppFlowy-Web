@@ -84,7 +84,7 @@ test.describe('Row Document Test', () => {
     // Scroll down to make sure editor is visible
     const scrollContainer = page.locator('[role="dialog"]').locator('.appflowy-scroll-container');
     if ((await scrollContainer.count()) > 0) {
-      await scrollContainer.scrollTo(0, 9999);
+      await scrollContainer.evaluate(el => el.scrollTo(0, 9999));
       await page.waitForTimeout(1000);
     }
 
@@ -105,18 +105,13 @@ test.describe('Row Document Test', () => {
     const cardName = `Persist-${uuidv4().substring(0, 6)}`;
     const docText = `persist-test-${uuidv4().substring(0, 6)}`;
 
+    // Given: a board with a new card and its row detail editor open
     await createBoardAndWait(page, request, testEmail);
-
-    // Add a new card
     await addNewCard(page, cardName);
-
-    // Open row detail modal
     await openCard(page, cardName);
-
-    // Click into editor
     await clickIntoEditor(page);
 
-    // Type multiple lines
+    // When: typing multiple lines into the row document
     const line1 = `Line1-${docText}`;
     const line2 = `Line2-${docText}`;
     const line3 = `Line3-${docText}`;
@@ -127,14 +122,13 @@ test.describe('Row Document Test', () => {
     await page.keyboard.type(`${line3}`, { delay: 50 });
     await page.waitForTimeout(2000);
 
-    // Verify all lines are there before closing
+    // Then: all lines should be visible in the dialog
     const dialog = page.locator('[role="dialog"]');
     await expect(dialog).toContainText(line1);
     await expect(dialog).toContainText(line2);
     await expect(dialog).toContainText(line3);
 
-    // Close the modal
-    // Click outside editor first to remove focus
+    // When: closing the modal
     await dialog
       .locator('.MuiDialogTitle-root, [data-testid="row-detail-header"]')
       .first()
@@ -144,18 +138,17 @@ test.describe('Row Document Test', () => {
     await expect(dialog).toHaveCount(0);
     await page.waitForTimeout(3000);
 
-    // Reopen the same card
+    // And: reopening the same card
     await openCard(page, cardName);
     await page.waitForTimeout(3000);
 
-    // Scroll down to make editor visible
     const scrollContainer = page.locator('[role="dialog"]').locator('.appflowy-scroll-container');
     if ((await scrollContainer.count()) > 0) {
-      await scrollContainer.scrollTo(0, 9999);
+      await scrollContainer.evaluate(el => el.scrollTo(0, 9999));
       await page.waitForTimeout(1000);
     }
 
-    // Verify content persisted
+    // Then: the document content should have persisted
     await expect(page.locator('[role="dialog"]')).toContainText(`Line1-${docText}`);
     await expect(page.locator('[role="dialog"]')).toContainText(`Line2-${docText}`);
     await expect(page.locator('[role="dialog"]')).toContainText(`Line3-${docText}`);
@@ -165,26 +158,21 @@ test.describe('Row Document Test', () => {
     const testEmail = generateRandomEmail();
     const cardName = `Focus-${uuidv4().substring(0, 6)}`;
 
+    // Given: a board with a new card and the editor focused
     await createBoardAndWait(page, request, testEmail);
-
-    // Add a new card
     await addNewCard(page, cardName);
-
-    // Open row detail modal
     await openCard(page, cardName);
-
-    // Click into editor
     await clickIntoEditor(page);
 
-    // Type a long sentence with delays to simulate real typing
+    // When: typing a long sentence with delays to simulate real typing
     const longText =
       'This is a test sentence that should be typed without losing focus even after several seconds of typing';
-    await page.keyboard.type(longText, { delay: 50 }); // ~5 seconds of typing
+    await page.keyboard.type(longText, { delay: 50 });
 
-    // Verify the full text was typed (focus was maintained)
+    // Then: the full text should appear in the dialog (focus was maintained)
     await expect(page.locator('[role="dialog"]')).toContainText(longText);
 
-    // Close and verify content persisted
+    // When: closing and reopening the modal
     const dialog = page.locator('[role="dialog"]');
     await dialog
       .locator('.MuiDialogTitle-root, [data-testid="row-detail-header"]')
@@ -194,9 +182,11 @@ test.describe('Row Document Test', () => {
     await closeRowDetailWithEscape(page);
     await page.waitForTimeout(2000);
 
-    // Reopen and verify
+    // And: reopening the same card
     await openCard(page, cardName);
     await page.waitForTimeout(3000);
+
+    // Then: the content should have persisted
     await expect(page.locator('[role="dialog"]')).toContainText(longText);
   });
 
@@ -205,29 +195,24 @@ test.describe('Row Document Test', () => {
     const cardName = `RowDoc-${uuidv4().substring(0, 6)}`;
     const docText = `row-doc-${uuidv4().substring(0, 6)}`;
 
+    // Given: a board with a new card visible
     await createBoardAndWait(page, request, testEmail);
-
-    // Add a new card
     await addNewCard(page, cardName);
-
-    // Verify card is visible
     await expect(BoardSelectors.boardContainer(page).getByText(cardName)).toBeVisible({
       timeout: 10000,
     });
 
-    // Open row detail modal
+    // When: opening the card and typing into the row document editor
     await openCard(page, cardName);
-
-    // Click into editor and type
     await clickIntoEditor(page);
     await page.keyboard.type(docText, { delay: 30 });
     await page.waitForTimeout(1000);
 
-    // Close modal
+    // And: closing the modal
     await closeRowDetailWithEscape(page);
     await page.waitForTimeout(1000);
 
-    // Verify document indicator appears on the card
+    // Then: the document indicator icon should appear on the card
     await expect(
       BoardSelectors.boardContainer(page)
         .locator('.board-card')

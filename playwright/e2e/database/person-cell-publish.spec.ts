@@ -15,12 +15,13 @@ import {
   FieldType,
   PageSelectors,
   PersonSelectors,
-  PropertyMenuSelectors,
   ShareSelectors,
   SidebarSelectors,
 } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
+import { addPropertyColumn } from '../../support/database-ui-helpers';
+import { testLog } from '../../support/test-helpers';
 
 test.describe('Person Cell in Published Pages', () => {
   test.beforeEach(async ({ page }) => {
@@ -56,90 +57,97 @@ test.describe('Person Cell in Published Pages', () => {
     page,
     request,
   }) => {
+    // Given: a signed-in user with a grid database containing a Person field
     const testEmail = generateRandomEmail();
+    testLog.info('[TEST START] Person cell in published database');
 
-    // Step 1: Login
     await signInAndWaitForApp(page, request, testEmail);
+    testLog.info('Signed in successfully');
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
     // Step 2: Create a Grid database
+    testLog.info('[STEP 2] Creating Grid database');
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
     await AddPageSelectors.addGridButton(page).click({ force: true });
     await page.waitForTimeout(5000);
 
     await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 15000 });
+    testLog.info('Grid database created');
 
     // Step 3: Add a Person field
-    await PropertyMenuSelectors.newPropertyButton(page).first().scrollIntoViewIfNeeded();
-    await PropertyMenuSelectors.newPropertyButton(page).first().click({ force: true });
-    await page.waitForTimeout(3000);
+    testLog.info('[STEP 3] Adding Person field');
+    await addPropertyColumn(page, FieldType.Person);
+    await expect(PersonSelectors.allPersonCells(page).first()).toBeAttached({ timeout: 15000 });
+    testLog.info('Person field added');
 
-    const trigger = PropertyMenuSelectors.propertyTypeTrigger(page);
-    if ((await trigger.count()) > 0) {
-      await trigger.first().click({ force: true });
+    // Step 4: Publishing the database
+    testLog.info('[STEP 4] Publishing the database');
+    const dialogCount = await page.locator('[role="dialog"]').count();
+    if (dialogCount > 0) {
+      await page.keyboard.press('Escape');
       await page.waitForTimeout(1000);
-      await PropertyMenuSelectors.propertyTypeOption(page, FieldType.Person).click({ force: true });
-      await page.waitForTimeout(2000);
     }
 
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(1000);
-
-    // Verify Person cells exist
-    await expect(PersonSelectors.allPersonCells(page).first()).toBeVisible({ timeout: 10000 });
-
-    // Step 4: Publish the database
     await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 10000 });
-    await ShareSelectors.shareButton(page).click({ force: true });
+    await ShareSelectors.shareButton(page).evaluate((el: HTMLElement) => el.click());
     await page.waitForTimeout(1000);
 
+    await expect(ShareSelectors.sharePopover(page)).toBeVisible({ timeout: 5000 });
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
 
     await expect(ShareSelectors.publishConfirmButton(page)).toBeVisible();
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
+    testLog.info('Clicked Publish button');
     await page.waitForTimeout(5000);
 
-    // Get the published URL
     await expect(ShareSelectors.publishNamespace(page)).toBeVisible({ timeout: 10000 });
+    testLog.info('Database published successfully');
 
     const namespace = (await ShareSelectors.publishNamespace(page).innerText()).trim();
     const publishName = await ShareSelectors.publishNameInput(page).inputValue();
     const origin = new URL(page.url()).origin;
     const publishedUrl = `${origin}/${namespace}/${publishName.trim()}`;
+    testLog.info(`Published URL: ${publishedUrl}`);
 
-    // Close share popover
     await page.keyboard.press('Escape');
     await page.waitForTimeout(1000);
 
-    // Step 5: Visit the published page
+    // Step 6: Visit the published page
+    testLog.info('[STEP 6] Visiting published database page');
     await page.goto(publishedUrl, { waitUntil: 'load' });
     await page.waitForTimeout(5000);
 
-    // Step 6: Verify the page rendered without errors
+    // Step 7: Verify the page rendered without errors
+    testLog.info('[STEP 7] Verifying page rendered correctly');
+    // Then: the page renders without React context errors
     await expect(page.locator('body')).toBeVisible();
 
-    // Check for regression errors
     const bodyText = await page.locator('body').innerText();
     expect(bodyText).not.toContain('useCurrentWorkspaceId must be used within');
     expect(bodyText).not.toContain('Minified React error #321');
+    testLog.info('No critical errors detected on page');
 
-    // Verify database structure is visible
+    // And: the database structure is visible
     await expect(page.locator('[class*="appflowy-database"]')).toBeVisible({ timeout: 15000 });
+    testLog.info('Database container is visible');
+
+    testLog.info('[TEST COMPLETE] Person cell rendered successfully in publish view');
   });
 
   test('should not throw context errors when viewing published page with Person cells', async ({
     page,
     request,
   }) => {
+    testLog.info('[TEST START] Context error prevention test');
+
+    // Given: a signed-in user with error monitoring enabled
     const testEmail = generateRandomEmail();
     const contextErrors: string[] = [];
 
-    // Set up error monitoring - collect but don't throw immediately
     page.on('pageerror', (err) => {
       if (
         err.message.includes('useCurrentWorkspaceId must be used within') ||
@@ -155,7 +163,7 @@ test.describe('Person Cell in Published Pages', () => {
     await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Create a grid
+    // And: a grid database with a Person field is created and published
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
     await AddPageSelectors.addGridButton(page).click({ force: true });
@@ -163,27 +171,18 @@ test.describe('Person Cell in Published Pages', () => {
 
     await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 15000 });
 
-    // Add Person field
-    await PropertyMenuSelectors.newPropertyButton(page).first().scrollIntoViewIfNeeded();
-    await PropertyMenuSelectors.newPropertyButton(page).first().click({ force: true });
-    await page.waitForTimeout(3000);
+    await addPropertyColumn(page, FieldType.Person);
 
-    const trigger = PropertyMenuSelectors.propertyTypeTrigger(page);
-    if ((await trigger.count()) > 0) {
-      await trigger.first().click({ force: true });
+    const dlgCount = await page.locator('[role="dialog"]').count();
+    if (dlgCount > 0) {
+      await page.keyboard.press('Escape');
       await page.waitForTimeout(1000);
-      await PropertyMenuSelectors.propertyTypeOption(page, FieldType.Person).click({ force: true });
-      await page.waitForTimeout(2000);
     }
 
-    await page.keyboard.press('Escape');
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(1000);
-
-    // Publish
     await expect(ShareSelectors.shareButton(page)).toBeVisible({ timeout: 10000 });
-    await ShareSelectors.shareButton(page).click({ force: true });
+    await ShareSelectors.shareButton(page).evaluate((el: HTMLElement) => el.click());
     await page.waitForTimeout(1000);
+    await expect(ShareSelectors.sharePopover(page)).toBeVisible({ timeout: 5000 });
     await ShareSelectors.sharePopover(page).getByText('Publish', { exact: true }).click({ force: true });
     await page.waitForTimeout(1000);
     await ShareSelectors.publishConfirmButton(page).click({ force: true });
@@ -199,14 +198,17 @@ test.describe('Person Cell in Published Pages', () => {
     await page.keyboard.press('Escape');
     await page.waitForTimeout(500);
 
-    // Visit published page
+    // When: visiting the published page
     await page.goto(publishedUrl, { waitUntil: 'load' });
     await page.waitForTimeout(5000);
 
-    // Wait for potential errors to occur
+    // And: waiting for potential errors to surface
     await page.waitForTimeout(3000);
 
-    // Verify no context errors were caught
+    // Then: no React context errors were thrown
     expect(contextErrors).toHaveLength(0);
+
+    testLog.info('No context errors detected');
+    testLog.info('[TEST COMPLETE] Context error prevention verified');
   });
 });

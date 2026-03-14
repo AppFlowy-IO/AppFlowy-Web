@@ -79,8 +79,9 @@ test.describe('Database Container - Link Existing Database in Document', () => {
 
     await ensurePageExpandedByViewId(page, docViewId);
 
-    const docPageItem = page.getByTestId(`page-${docViewId}`).first()
-      .locator('xpath=ancestor::*[@data-testid="page-item"]').first();
+    const docPageItem = page
+      .locator(`[data-testid="page-item"]:has(> [data-testid="page-${docViewId}"])`)
+      .first();
 
     // Get all child page names under the document
     const childNames = await docPageItem.getByTestId('page-name').allInnerTexts();

@@ -44,10 +44,10 @@ export const PageSelectors = {
   names: (page: Page) => page.getByTestId('page-name'),
   pageByViewId: (page: Page, viewId: string) => page.getByTestId(`page-${viewId}`).first(),
   itemByViewId: (page: Page, viewId: string) =>
-    PageSelectors.pageByViewId(page, viewId).locator('xpath=ancestor::*[@data-testid="page-item"]').first(),
+    page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${viewId}"])`).first(),
   nameContaining: (page: Page, text: string) => page.getByTestId('page-name').filter({ hasText: text }),
   itemByName: (page: Page, pageName: string) =>
-    page.getByTestId('page-name').filter({ hasText: pageName }).first().locator('xpath=ancestor::*[@data-testid="page-item"]').first(),
+    page.locator(`[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${pageName}"))`).first(),
   moreActionsButton: (page: Page, pageName?: string) => {
     if (pageName) {
       return PageSelectors.itemByName(page, pageName).getByTestId('page-more-actions').first();
@@ -80,7 +80,7 @@ export const SpaceSelectors = {
   names: (page: Page) => page.getByTestId('space-name'),
   expanded: (page: Page) => page.getByTestId('space-expanded'),
   itemByName: (page: Page, spaceName: string) =>
-    page.getByTestId('space-name').filter({ hasText: spaceName }).locator('xpath=ancestor::*[@data-testid="space-item"]').first(),
+    page.locator(`[data-testid="space-item"]:has([data-testid="space-name"]:text-is("${spaceName}"))`).first(),
   moreActionsButton: (page: Page) => page.getByTestId('inline-more-actions'),
   createNewSpaceButton: (page: Page) => page.getByTestId('create-new-space-button'),
   createSpaceModal: (page: Page) => page.getByTestId('create-space-modal'),
@@ -494,7 +494,7 @@ export const RowDetailSelectors = {
   modalTitle: (page: Page) => page.locator('.MuiDialogTitle-root'),
   closeButton: (page: Page) => page.locator('.MuiDialogTitle-root button').first(),
   moreActionsButton: (page: Page) => page.locator('.MuiDialogTitle-root button').last(),
-  documentArea: (page: Page) => page.locator('.appflowy-scroll-container'),
+  documentArea: (page: Page) => page.locator('.MuiDialog-paper .appflowy-scroll-container'),
   duplicateMenuItem: (page: Page) => page.locator('[role="menuitem"]').filter({ hasText: /duplicate/i }),
   deleteMenuItem: (page: Page) => page.locator('[role="menuitem"]').filter({ hasText: /delete/i }),
   titleInput: (page: Page) => page.getByTestId('row-title-input'),
@@ -533,7 +533,7 @@ export const SlashCommandSelectors = {
       await searchInput.fill(dbName);
     }
     await page.waitForTimeout(2000);
-    await popover.locator('span').filter({ hasText: dbName }).first().locator('xpath=ancestor::div').first().click({ force: true });
+    await popover.locator('span').filter({ hasText: dbName }).first().click({ force: true });
   },
 };
 

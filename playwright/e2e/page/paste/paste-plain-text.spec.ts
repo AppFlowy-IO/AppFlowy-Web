@@ -2,7 +2,7 @@ import { test, expect, Page } from '@playwright/test';
 import { EditorSelectors, DropdownSelectors, PageSelectors, SpaceSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
-import { closeModalsIfOpen } from '../../../support/test-helpers';
+import { closeModalsIfOpen, testLog } from '../../../support/test-helpers';
 
 /**
  * Paste Plain Text Tests
@@ -147,41 +147,50 @@ test.describe('Paste Plain Text Tests', () => {
   });
 
   test('should paste all plain text formats correctly', async ({ page, request }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // Simple Plain Text - use keyboard.type as in the original Cypress test
+    // When: typing simple plain text into the editor
     {
       const plainText = 'This is simple plain text content.';
 
-      // Click the editor to focus it
+      testLog.info('=== Pasting Plain Text ===');
       await EditorSelectors.firstEditor(page).click({ force: true });
       await page.keyboard.type(plainText);
 
       await page.waitForTimeout(2000);
 
+      // Then: the typed text appears in the editor
       await expect(slateEditor).toContainText(plainText);
+      testLog.info('✓ Plain text pasted successfully');
     }
 
-    // Empty Paste - should not crash
+    // When: pasting empty content
     {
+      testLog.info('=== Testing Empty Paste ===');
       await pasteContent(page, '', '');
       await page.waitForTimeout(500);
 
+      // Then: the editor remains visible and does not crash
       await expect(slateEditor.first()).toBeVisible();
+      testLog.info('✓ Empty paste handled gracefully');
     }
 
-    // Very Long Content - use keyboard.type with a delay as in the original Cypress test
+    // When: typing a long repeated text string
     {
       const longText = 'Lorem ipsum dolor sit amet. '.repeat(3);
 
+      testLog.info('=== Pasting Long Content ===');
       await EditorSelectors.firstEditor(page).click({ force: true });
       await page.keyboard.type(longText, { delay: 10 });
 
       await page.waitForTimeout(1000);
 
+      // Then: the long content is present in the editor
       await expect(slateEditor).toContainText('Lorem ipsum');
+      testLog.info('✓ Long content pasted successfully');
     }
   });
 });

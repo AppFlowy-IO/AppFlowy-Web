@@ -17,6 +17,7 @@ export async function searchWorkspace(workspaceId: string, query: string) {
   >(() =>
     getAxios()?.get<APIResponse<{ object_id: string }[]>>(url, {
       params: { query },
+      headers: { 'x-request-time': Date.now().toString() },
     })
   );
 

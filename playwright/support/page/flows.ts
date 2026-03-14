@@ -67,8 +67,7 @@ export async function currentViewIdFromUrl(page: Page): Promise<string> {
 }
 
 export async function ensurePageExpandedByViewId(page: Page, viewId: string): Promise<void> {
-  const pageEl = page.getByTestId(`page-${viewId}`).first();
-  const pageItem = pageEl.locator('xpath=ancestor::*[@data-testid="page-item"]').first();
+  const pageItem = page.locator(`[data-testid="page-item"]:has(> [data-testid="page-${viewId}"])`).first();
   await expect(pageItem).toBeVisible();
 
   const isExpanded = await pageItem.locator('[data-testid="outline-toggle-collapse"]').count();

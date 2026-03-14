@@ -75,26 +75,28 @@ test.describe('Database View Tabs', () => {
     page,
     request,
   }) => {
+    // Given: a database grid view is created
     const testEmail = generateRandomEmail();
     await createGridAndWait(page, request, testEmail);
 
     const initialTabCount = await DatabaseViewSelectors.viewTab(page).count();
 
-    // Add Board view - verify appearance
+    // When: adding a Board view
     await addViewViaButton(page, 'Board');
     await page.waitForTimeout(1000);
+
+    // Then: the tab count increases by one and the Board tab is visible
     await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(initialTabCount + 1, { timeout: 5000 });
 
-    // Wait for stability after outline reload
     await page.waitForTimeout(3000);
     await expect(page.locator('[data-testid^="view-tab-"]').filter({ hasText: 'Board' })).toBeVisible({ timeout: 5000 });
 
-    // Add Calendar view - verify IMMEDIATE appearance
+    // And: adding a Calendar view increases the tab count again
     await addViewViaButton(page, 'Calendar');
     await page.waitForTimeout(3000);
     await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(initialTabCount + 2, { timeout: 5000 });
 
-    // Verify sidebar shows all views
+    // And: the sidebar shows all three views (Grid, Board, Calendar)
     await expandSpaceByName(page, spaceName);
     await page.waitForTimeout(500);
     await expandDatabaseInSidebar(page);
@@ -104,12 +106,12 @@ test.describe('Database View Tabs', () => {
     await expect(dbItem.locator(':text("Board")')).toBeVisible();
     await expect(dbItem.locator(':text("Calendar")')).toBeVisible();
 
-    // Verify tab bar matches
+    // And: the tab bar shows all three views
     await expect(DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Grid' })).toBeVisible();
     await expect(DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Board' })).toBeVisible();
     await expect(DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Calendar' })).toBeVisible();
 
-    // Navigate away and back to verify persistence
+    // When: navigating away and back to the database
     await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
     await page.waitForTimeout(1000);
     await page.locator('[role="menuitem"]').first().click({ force: true });
@@ -119,15 +121,16 @@ test.describe('Database View Tabs', () => {
     await PageSelectors.nameContaining(page, 'New Database').first().click({ force: true });
     await page.waitForTimeout(3000);
 
-    // Verify all tabs persist
+    // Then: all tabs persist after navigation
     await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(initialTabCount + 2);
   });
 
   test('renames views correctly', async ({ page, request }) => {
+    // Given: a database grid view is created
     const testEmail = generateRandomEmail();
     await createGridAndWait(page, request, testEmail);
 
-    // Rename Grid -> MyGrid
+    // When: renaming the Grid tab to "MyGrid"
     await openTabMenuByLabel(page, 'Grid');
     await expect(DatabaseViewSelectors.tabActionRename(page)).toBeVisible();
     await DatabaseViewSelectors.tabActionRename(page).click({ force: true });
@@ -136,13 +139,14 @@ test.describe('Database View Tabs', () => {
     await ModalSelectors.renameInput(page).fill('MyGrid');
     await ModalSelectors.renameSaveButton(page).click({ force: true });
     await page.waitForTimeout(1000);
+
+    // Then: the tab displays the new name "MyGrid"
     await expect(page.locator('[data-testid^="view-tab-"]').filter({ hasText: 'MyGrid' })).toBeVisible({ timeout: 10000 });
 
-    // Add Board view
+    // And: adding a Board view and renaming it to "MyBoard"
     await addViewViaButton(page, 'Board');
     await page.waitForTimeout(2000);
 
-    // Rename Board -> MyBoard
     await openTabMenuByLabel(page, 'Board');
     await expect(DatabaseViewSelectors.tabActionRename(page)).toBeVisible();
     await DatabaseViewSelectors.tabActionRename(page).click({ force: true });
@@ -153,64 +157,63 @@ test.describe('Database View Tabs', () => {
     await page.waitForTimeout(1000);
     await expect(page.locator('[data-testid^="view-tab-"]').filter({ hasText: 'MyBoard' })).toBeVisible({ timeout: 10000 });
 
-    // Verify both renamed tabs exist
+    // Then: both renamed tabs "MyGrid" and "MyBoard" are visible
     await expect(DatabaseViewSelectors.viewTab(page)).toHaveCount(2);
     await expect(page.locator('[data-testid^="view-tab-"]').filter({ hasText: 'MyGrid' })).toBeVisible();
     await expect(page.locator('[data-testid^="view-tab-"]').filter({ hasText: 'MyBoard' })).toBeVisible();
   });
 
   test('tab selection updates sidebar selection', async ({ page, request }) => {
+    // Given: a database with Grid and Board views, sidebar expanded
     const testEmail = generateRandomEmail();
     await createGridAndWait(page, request, testEmail);
 
-    // Add Board view
     await addViewViaButton(page, 'Board');
     await page.waitForTimeout(3000);
 
-    // Expand database in sidebar
     await expandSpaceByName(page, spaceName);
     await page.waitForTimeout(500);
     await expandDatabaseInSidebar(page);
 
-    // Click on Grid tab
+    // When: clicking on the Grid tab
     await DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Grid' }).click({ force: true });
     await page.waitForTimeout(1000);
 
-    // Verify Grid is selected in sidebar
+    // Then: Grid is marked as selected in the sidebar
     const dbItem = PageSelectors.itemByName(page, 'New Database');
-    await expect(dbItem.locator('[data-selected="true"]')).toContainText('Grid');
+    await expect(dbItem.locator('[data-selected="true"]').filter({ hasText: 'Grid' })).toBeVisible();
 
-    // Click on Board tab
+    // When: clicking on the Board tab
     await DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Board' }).click({ force: true });
     await page.waitForTimeout(1000);
 
-    // Verify Board is selected in sidebar
-    await expect(dbItem.locator('[data-selected="true"]')).toContainText('Board');
+    // Then: Board is marked as selected in the sidebar
+    await expect(dbItem.locator('[data-selected="true"]').filter({ hasText: 'Board' })).toBeVisible();
   });
 
   test('breadcrumb shows active database tab view', async ({ page, request }) => {
+    // Given: a database with Grid and Board views, sidebar expanded
     const testEmail = generateRandomEmail();
     await createGridAndWait(page, request, testEmail);
 
-    // Add Board view
     await addViewViaButton(page, 'Board');
     await page.waitForTimeout(3000);
 
-    // Expand database in sidebar so children populate the outline tree
     await expandSpaceByName(page, spaceName);
     await page.waitForTimeout(500);
     await expandDatabaseInSidebar(page);
     await page.waitForTimeout(2000);
 
-    // Switch to Board tab
+    // When: switching to the Board tab
     await DatabaseViewSelectors.viewTab(page).filter({ hasText: 'Board' }).click({ force: true });
     await page.waitForTimeout(1000);
     await expect(DatabaseViewSelectors.activeViewTab(page)).toContainText('Board');
 
-    // Verify breadcrumb shows Board as the active view
+    // Then: the breadcrumb shows "Board" as the active view
     const breadcrumbItems = BreadcrumbSelectors.items(page);
     await expect(breadcrumbItems.first()).toBeVisible({ timeout: 15000 });
     await expect(breadcrumbItems.last()).toContainText('Board');
+    // And: the breadcrumb does not show "Grid"
     await expect(breadcrumbItems.last()).not.toContainText('Grid');
   });
 });

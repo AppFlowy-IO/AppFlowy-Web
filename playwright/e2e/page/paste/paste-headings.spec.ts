@@ -3,6 +3,7 @@ import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { createDocumentPageAndNavigate } from '../../../support/page-utils';
+import { testLog } from '../../../support/test-helpers';
 
 /**
  * Paste Heading Tests
@@ -125,38 +126,48 @@ test.describe('Paste Heading Tests', () => {
   });
 
   test('should paste all heading formats correctly', async ({ page, request }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // HTML H1
+    // When: pasting an HTML H1 heading
     {
       const html = '<h1>Main Heading</h1>';
       const plainText = 'Main Heading';
 
+      testLog.info('=== Pasting HTML H1 ===');
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
-      await expect(slateEditor.locator('.heading.level-1')).toContainText('Main Heading');
+      // Then: H1 heading is rendered
+      await expect(
+        slateEditor.locator('.heading.level-1').filter({ hasText: 'Main Heading' }).first()
+      ).toBeVisible();
+      testLog.info('✓ HTML H1 pasted successfully');
 
-      // Add a new line to separate content
       await page.keyboard.press('Enter');
     }
 
-    // HTML H2
+    // When: pasting an HTML H2 heading
     {
       const html = '<h2>Section Title</h2>';
       const plainText = 'Section Title';
 
+      testLog.info('=== Pasting HTML H2 ===');
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
-      await expect(slateEditor.locator('.heading.level-2')).toContainText('Section Title');
+      // Then: H2 heading is rendered
+      await expect(
+        slateEditor.locator('.heading.level-2').filter({ hasText: 'Section Title' }).first()
+      ).toBeVisible();
+      testLog.info('✓ HTML H2 pasted successfully');
 
       await page.keyboard.press('Enter');
     }
 
-    // HTML Multiple Headings
+    // When: pasting multiple HTML headings (H1, H2, H3) together
     {
       const html = `
         <h1>Main Title</h1>
@@ -165,69 +176,99 @@ test.describe('Paste Heading Tests', () => {
       `;
       const plainText = 'Main Title\nSubtitle\nSection';
 
+      testLog.info('=== Pasting HTML Multiple Headings ===');
       await pasteContent(page, html, plainText);
       await page.waitForTimeout(1000);
 
-      // Use .last() because earlier test blocks already added headings of the same level
-      await expect(slateEditor.locator('.heading.level-1').last()).toContainText('Main Title');
-      await expect(slateEditor.locator('.heading.level-2').last()).toContainText('Subtitle');
-      await expect(slateEditor.locator('.heading.level-3')).toContainText('Section');
+      // Then: all three heading levels are rendered
+      await expect(
+        slateEditor.locator('.heading.level-1').filter({ hasText: 'Main Title' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.heading.level-2').filter({ hasText: 'Subtitle' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.heading.level-3').filter({ hasText: 'Section' }).first()
+      ).toBeVisible();
+      testLog.info('✓ HTML multiple headings pasted successfully');
 
       await page.keyboard.press('Enter');
     }
 
-    // Markdown H1
+    // When: pasting a markdown H1 heading
     {
       const markdown = '# Main Heading';
 
+      testLog.info('=== Pasting Markdown H1 ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
-      await expect(slateEditor.locator('.heading.level-1').last()).toContainText('Main Heading');
+      // Then: markdown H1 is parsed and rendered as heading level 1
+      await expect(
+        slateEditor.locator('.heading.level-1').filter({ hasText: 'Main Heading' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Markdown H1 pasted successfully');
 
       await page.keyboard.press('Enter');
     }
 
-    // Markdown H2
+    // When: pasting a markdown H2 heading
     {
       const markdown = '## Section Title';
 
+      testLog.info('=== Pasting Markdown H2 ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
-      await expect(slateEditor.locator('.heading.level-2').last()).toContainText('Section Title');
+      // Then: markdown H2 is parsed and rendered as heading level 2
+      await expect(
+        slateEditor.locator('.heading.level-2').filter({ hasText: 'Section Title' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Markdown H2 pasted successfully');
 
       await page.keyboard.press('Enter');
     }
 
-    // Markdown H3-H6
+    // When: pasting markdown headings H3 through H6
     {
       const markdown = `### Heading 3
 #### Heading 4
 ##### Heading 5
 ###### Heading 6`;
 
+      testLog.info('=== Pasting Markdown H3-H6 ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
-      await expect(slateEditor.locator('.heading.level-3').last()).toContainText('Heading 3');
-      await expect(slateEditor.locator('.heading.level-4')).toContainText('Heading 4');
-      await expect(slateEditor.locator('.heading.level-5')).toContainText('Heading 5');
-      await expect(slateEditor.locator('.heading.level-6')).toContainText('Heading 6');
+      // Then: all four heading levels (3-6) are rendered
+      await expect(
+        slateEditor.locator('.heading.level-3').filter({ hasText: 'Heading 3' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.heading.level-4').filter({ hasText: 'Heading 4' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.heading.level-5').filter({ hasText: 'Heading 5' }).first()
+      ).toBeVisible();
+      await expect(
+        slateEditor.locator('.heading.level-6').filter({ hasText: 'Heading 6' }).first()
+      ).toBeVisible();
+      testLog.info('✓ Markdown H3-H6 pasted successfully');
 
       await page.keyboard.press('Enter');
     }
 
-    // Markdown Headings with Formatting
+    // When: pasting markdown headings containing inline formatting (bold, italic, code)
     {
       const markdown = `# Heading with **bold** text
 ## Heading with *italic* text
 ### Heading with \`code\``;
 
+      testLog.info('=== Pasting Markdown Headings with Formatting ===');
       await pasteContent(page, '', markdown);
       await page.waitForTimeout(1000);
 
-      // Verify heading content (formatting may or may not be preserved as semantic elements)
+      // Then: headings contain the formatted text content
       const h1WithBold = slateEditor.locator('.heading.level-1').filter({ hasText: 'bold' }).last();
       await expect(h1WithBold).toContainText('bold');
 
@@ -236,6 +277,7 @@ test.describe('Paste Heading Tests', () => {
 
       const h3WithCode = slateEditor.locator('.heading.level-3').filter({ hasText: 'code' }).last();
       await expect(h3WithCode).toContainText('code');
+      testLog.info('✓ Markdown headings with formatting pasted successfully');
     }
   });
 });

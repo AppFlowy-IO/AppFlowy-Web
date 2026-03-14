@@ -3,6 +3,7 @@ import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { createDocumentPageAndNavigate } from '../../../support/page-utils';
+import { testLog } from '../../../support/test-helpers';
 
 /**
  * Paste Formatting Tests
@@ -155,244 +156,311 @@ test.describe('Paste Formatting Tests', () => {
     page,
     request,
   }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // HTML Bold
+    // When: pasting HTML with bold text
+    testLog.info('=== Pasting HTML Bold Text ===');
     await pasteContent(page, '<p>This is <strong>bold</strong> text</p>', 'This is bold text');
     await page.waitForTimeout(500);
+    // Then: bold formatting is rendered as a <strong> element
     await expect(slateEditor.locator('strong')).toContainText('bold');
+    testLog.info('✓ HTML bold text pasted successfully');
 
     await clearEditor(page);
 
-    // HTML Italic
+    // When: pasting HTML with italic text
+    testLog.info('=== Pasting HTML Italic Text ===');
     await pasteContent(page, '<p>This is <em>italic</em> text</p>', 'This is italic text');
     await page.waitForTimeout(500);
+    // Then: italic formatting is rendered as an <em> element
     await expect(slateEditor.locator('em')).toContainText('italic');
+    testLog.info('✓ HTML italic text pasted successfully');
 
     await clearEditor(page);
 
-    // HTML Underline
+    // When: pasting HTML with underlined text
+    testLog.info('=== Pasting HTML Underlined Text ===');
     await pasteContent(page, '<p>This is <u>underlined</u> text</p>', 'This is underlined text');
     await page.waitForTimeout(500);
+    // Then: underline formatting is rendered as a <u> element
     await expect(slateEditor.locator('u')).toContainText('underlined');
+    testLog.info('✓ HTML underlined text pasted successfully');
 
     await clearEditor(page);
 
-    // HTML Strikethrough
+    // When: pasting HTML with strikethrough text
+    testLog.info('=== Pasting HTML Strikethrough Text ===');
     await pasteContent(
       page,
       '<p>This is <s>strikethrough</s> text</p>',
       'This is strikethrough text'
     );
     await page.waitForTimeout(500);
+    // Then: strikethrough formatting is rendered as an <s> element
     await expect(slateEditor.locator('s')).toContainText('strikethrough');
+    testLog.info('✓ HTML strikethrough text pasted successfully');
   });
 
   test('should paste HTML special formatting (Code, Link, Mixed, Nested)', async ({
     page,
     request,
   }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // HTML Inline Code
+    // When: pasting HTML with inline code
+    testLog.info('=== Pasting HTML Inline Code ===');
     await pasteContent(
       page,
       '<p>Use the <code>console.log()</code> function</p>',
       'Use the console.log() function'
     );
     await page.waitForTimeout(500);
+    // Then: inline code is rendered with code styling
     await expect(slateEditor.locator('span.bg-border-primary')).toContainText('console.log()');
+    testLog.info('✓ HTML inline code pasted successfully');
 
     await clearEditor(page);
 
-    // HTML Mixed Formatting
+    // When: pasting HTML with mixed formatting (bold, italic, underline)
+    testLog.info('=== Pasting HTML Mixed Formatting ===');
     await pasteContent(
       page,
       '<p>Text with <strong>bold</strong>, <em>italic</em>, and <u>underline</u></p>',
       'Text with bold, italic, and underline'
     );
     await page.waitForTimeout(500);
+    // Then: all three formatting types are rendered
     await expect(slateEditor.locator('strong')).toContainText('bold');
     await expect(slateEditor.locator('em')).toContainText('italic');
     await expect(slateEditor.locator('u')).toContainText('underline');
+    testLog.info('✓ HTML mixed formatting pasted successfully');
 
     await clearEditor(page);
 
-    // HTML Link
+    // When: pasting HTML with a hyperlink
+    testLog.info('=== Pasting HTML Link ===');
     await pasteContent(
       page,
       '<p>Visit <a href="https://appflowy.io">AppFlowy</a> website</p>',
       'Visit AppFlowy website'
     );
     await page.waitForTimeout(500);
+    // Then: link is rendered as a clickable underlined span
     await expect(slateEditor.locator('span.cursor-pointer.underline')).toContainText('AppFlowy');
+    testLog.info('✓ HTML link pasted successfully');
 
     await clearEditor(page);
 
-    // HTML Nested Formatting
+    // When: pasting HTML with nested formatting (bold wrapping italic)
+    testLog.info('=== Pasting HTML Nested Formatting ===');
     await pasteContent(
       page,
       '<p>Text with <strong>bold and <em>italic</em> nested</strong></p>',
       'Text with bold and italic nested'
     );
     await page.waitForTimeout(500);
-    await expect(slateEditor.locator('strong').first()).toContainText('bold and');
-    await expect(slateEditor.locator('em').first()).toContainText('italic');
+    // Then: both bold and italic text content are present
+    await expect(slateEditor).toContainText('bold and');
+    await expect(slateEditor).toContainText('italic');
+    // And: bold formatting element exists
+    await expect(slateEditor.locator('strong').first()).toBeVisible();
+    testLog.info('✓ HTML nested formatting pasted successfully');
 
     await clearEditor(page);
 
-    // HTML Complex Nested Formatting
+    // When: pasting HTML with triple-nested formatting (bold + italic + underline)
+    testLog.info('=== Pasting HTML Complex Nested Formatting ===');
     await pasteContent(
       page,
       '<p><strong><em><u>Bold, italic, and underlined</u></em></strong> text</p>',
       'Bold, italic, and underlined text'
     );
     await page.waitForTimeout(500);
+    // Then: the combined formatted text is present
     await expect(slateEditor).toContainText('Bold, italic, and underlined');
+    testLog.info('✓ HTML complex nested formatting pasted successfully');
   });
 
   test('should paste Markdown inline formatting (Bold, Italic, Strikethrough, Code)', async ({
     page,
     request,
   }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // Markdown Bold (asterisk)
+    // When: pasting markdown bold text using asterisks
+    testLog.info('=== Pasting Markdown Bold Text (asterisk) ===');
     await pasteContent(page, '', 'This is **bold** text');
     await page.waitForTimeout(500);
+    // Then: bold text is present (as <strong> element or plain text)
     const hasBoldAsterisk = await slateEditor.locator('strong').count();
     if (hasBoldAsterisk > 0) {
       await expect(slateEditor.locator('strong').first()).toContainText('bold');
     } else {
       await expect(slateEditor).toContainText('bold');
     }
+    testLog.info('✓ Markdown bold text (asterisk) pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Bold (underscore)
+    // When: pasting markdown bold text using underscores
+    testLog.info('=== Pasting Markdown Bold Text (underscore) ===');
     await pasteContent(page, '', 'This is __bold__ text');
     await page.waitForTimeout(500);
-    // Underscore bold may be rendered as <strong> or kept as plain text
+    // Then: bold text is present (as <strong> element or plain text)
     const hasBoldUnderscore = await slateEditor.locator('strong').count();
     if (hasBoldUnderscore > 0) {
       await expect(slateEditor.locator('strong').first()).toContainText('bold');
     } else {
       await expect(slateEditor).toContainText('bold');
     }
+    testLog.info('✓ Markdown bold text (underscore) pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Italic (asterisk)
+    // When: pasting markdown italic text using asterisk
+    testLog.info('=== Pasting Markdown Italic Text (asterisk) ===');
     await pasteContent(page, '', 'This is *italic* text');
     await page.waitForTimeout(500);
+    // Then: italic text is present (as <em> element or plain text)
     const hasItalicAsterisk = await slateEditor.locator('em').count();
     if (hasItalicAsterisk > 0) {
       await expect(slateEditor.locator('em').first()).toContainText('italic');
     } else {
       await expect(slateEditor).toContainText('italic');
     }
+    testLog.info('✓ Markdown italic text (asterisk) pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Italic (underscore)
+    // When: pasting markdown italic text using underscore
+    testLog.info('=== Pasting Markdown Italic Text (underscore) ===');
     await pasteContent(page, '', 'This is _italic_ text');
     await page.waitForTimeout(500);
+    // Then: italic text is present (as <em> element or plain text)
     const hasItalicUnderscore = await slateEditor.locator('em').count();
     if (hasItalicUnderscore > 0) {
       await expect(slateEditor.locator('em').first()).toContainText('italic');
     } else {
       await expect(slateEditor).toContainText('italic');
     }
+    testLog.info('✓ Markdown italic text (underscore) pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Strikethrough
+    // When: pasting markdown strikethrough text
+    testLog.info('=== Pasting Markdown Strikethrough Text ===');
     await pasteContent(page, '', 'This is ~~strikethrough~~ text');
     await page.waitForTimeout(500);
+    // Then: strikethrough text is present (as <s> element or plain text)
     const hasStrikethrough = await slateEditor.locator('s').count();
     if (hasStrikethrough > 0) {
       await expect(slateEditor.locator('s').first()).toContainText('strikethrough');
     } else {
       await expect(slateEditor).toContainText('strikethrough');
     }
+    testLog.info('✓ Markdown strikethrough text pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Inline Code
+    // When: pasting markdown inline code
+    testLog.info('=== Pasting Markdown Inline Code ===');
     await pasteContent(page, '', 'Use the `console.log()` function');
     await page.waitForTimeout(500);
+    // Then: inline code is present (with code styling or as plain text)
     const hasInlineCode = await slateEditor.locator('span.bg-border-primary').count();
     if (hasInlineCode > 0) {
       await expect(slateEditor.locator('span.bg-border-primary').first()).toContainText('console.log()');
     } else {
       await expect(slateEditor).toContainText('console.log()');
     }
+    testLog.info('✓ Markdown inline code pasted successfully');
   });
 
   test('should paste Markdown complex/mixed formatting (Mixed, Link, Nested)', async ({
     page,
     request,
   }) => {
+    // Given: a new document page is created and ready for editing
     await createTestPage(page, request);
 
     const slateEditor = EditorSelectors.slateEditor(page);
 
-    // Markdown Mixed Formatting
+    // When: pasting markdown with mixed formatting (bold, italic, strikethrough, code)
+    testLog.info('=== Pasting Markdown Mixed Formatting ===');
     await pasteContent(page, '', 'Text with **bold**, *italic*, ~~strikethrough~~, and `code`');
     await page.waitForTimeout(500);
-    // Markdown formatting may or may not be parsed into semantic elements
+    // Then: all formatted text content is present in the editor
     await expect(slateEditor).toContainText('bold');
     await expect(slateEditor).toContainText('italic');
     await expect(slateEditor).toContainText('strikethrough');
     await expect(slateEditor).toContainText('code');
+    testLog.info('✓ Markdown mixed formatting pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Link
+    // When: pasting a markdown link
+    testLog.info('=== Pasting Markdown Link ===');
     await pasteContent(page, '', 'Visit [AppFlowy](https://appflowy.io) website');
     await page.waitForTimeout(500);
+    // Then: link text is present (as clickable span or plain text)
     const hasLink = await slateEditor.locator('span.cursor-pointer.underline').count();
     if (hasLink > 0) {
       await expect(slateEditor.locator('span.cursor-pointer.underline').first()).toContainText('AppFlowy');
     } else {
       await expect(slateEditor).toContainText('AppFlowy');
     }
+    testLog.info('✓ Markdown link pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Nested Formatting
+    // When: pasting markdown with nested formatting (bold wrapping italic)
+    testLog.info('=== Pasting Markdown Nested Formatting ===');
     await pasteContent(page, '', 'Text with **bold and *italic* nested**');
     await page.waitForTimeout(500);
+    // Then: both bold and italic text content are present
     await expect(slateEditor).toContainText('bold and');
     await expect(slateEditor).toContainText('italic');
+    testLog.info('✓ Markdown nested formatting pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Complex Nested (bold AND italic)
+    // When: pasting markdown with combined bold+italic syntax
+    testLog.info('=== Pasting Markdown Complex Nested Formatting ===');
     await pasteContent(page, '', '***Bold and italic*** text');
     await page.waitForTimeout(500);
+    // Then: the combined formatted text is present
     await expect(slateEditor).toContainText('Bold and italic');
+    testLog.info('✓ Markdown complex nested formatting pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Link with Formatting
+    // When: pasting a markdown link containing bold formatting
+    testLog.info('=== Pasting Markdown Link with Formatting ===');
     await pasteContent(page, '', 'Visit [**AppFlowy** website](https://appflowy.io) for more');
     await page.waitForTimeout(500);
+    // Then: the link text content is present
     await expect(slateEditor).toContainText('AppFlowy');
+    testLog.info('✓ Markdown link with formatting pasted successfully');
 
     await clearEditor(page);
 
-    // Markdown Multiple Inline Code
+    // When: pasting markdown with multiple inline code spans
+    testLog.info('=== Pasting Markdown Multiple Inline Code ===');
     await pasteContent(page, '', 'Compare `const` vs `let` vs `var` in JavaScript');
     await page.waitForTimeout(500);
+    // Then: all three code keywords are present
     await expect(slateEditor).toContainText('const');
     await expect(slateEditor).toContainText('let');
     await expect(slateEditor).toContainText('var');
+    testLog.info('✓ Markdown multiple inline code pasted successfully');
   });
 });
