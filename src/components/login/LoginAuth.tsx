@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { AuthService } from '@/application/services/domains';
 import { getRedirectTo } from '@/application/session/sign_in';
+import { Log } from '@/utils/log';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { NormalModal } from '@/components/_shared/modal';
@@ -18,12 +19,15 @@ function LoginAuth () {
 
   useEffect(() => {
     void (async () => {
+      Log.info('[Auth] LoginAuth: processing callback URL');
       setLoading(true);
       setError(null);
       try {
         await AuthService.login(window.location.href);
+        Log.info('[Auth] LoginAuth: login completed successfully');
         // eslint-disable-next-line
       } catch (e: any) {
+        Log.error('[Auth] LoginAuth: login failed', { code: e.code, message: e.message });
         setError(e.message);
         setModalOpened(true);
       } finally {
