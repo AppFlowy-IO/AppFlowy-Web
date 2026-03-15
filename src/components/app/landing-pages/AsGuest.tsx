@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 
@@ -10,6 +10,7 @@ import { ErrorPage } from '@/components/_shared/landing-page/ErrorPage';
 import { InvalidLink } from '@/components/_shared/landing-page/InvalidLink';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
 import { NotInvitationAccount } from '@/components/_shared/landing-page/NotInvitationAccount';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { Progress } from '@/components/ui/progress';
 
 export function AsGuest() {
@@ -28,6 +29,16 @@ export function AsGuest() {
   const [notInvitee, setNotInvitee] = useState(false);
 
   const [isError, setIsError] = useState(false);
+
+  const isAuthenticated = useIsAuthenticatedOptional();
+  const url = useMemo(() => window.location.href, []);
+
+  // Redirect unauthenticated users to login, preserving the invitation URL
+  useEffect(() => {
+    if (!isAuthenticated) {
+      window.open('/login?redirectTo=' + encodeURIComponent(url), '_self');
+    }
+  }, [isAuthenticated, url]);
 
   const loadInvitation = useCallback(async () => {
     setLoading(true);
@@ -77,8 +88,10 @@ export function AsGuest() {
   }, [code, workspaceId]);
 
   useEffect(() => {
-    void loadInvitation();
-  }, [loadInvitation]);
+    if (isAuthenticated) {
+      void loadInvitation();
+    }
+  }, [isAuthenticated, loadInvitation]);
 
   if (isInvalid) {
     return <InvalidLink message={invalidMessage} />;

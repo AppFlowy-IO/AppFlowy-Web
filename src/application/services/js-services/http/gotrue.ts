@@ -346,16 +346,10 @@ export async function signInOTP({
           emit(EventType.SESSION_VALID);
         }
 
-        // For new users, always redirect to /app (don't use saved redirectTo)
-        if (isNewUser) {
-          console.log('[signInOTP] New user, clearing old data and redirecting to /app');
-          localStorage.removeItem('redirectTo');
-          // Use replace to avoid adding to history and ensure clean navigation
-          window.location.replace('/app');
-        } else {
-          console.log('[signInOTP] Existing user, calling afterAuth');
-          afterAuth();
-        }
+        // afterAuth() handles redirect: it blocks stale /app/{uuid} paths
+        // (safe for new users) while allowing invitation paths like
+        // /app/accept-guest-invitation. Defaults to /app when no redirectTo exists.
+        afterAuth();
       } else {
         emit(EventType.SESSION_INVALID);
         return Promise.reject({
