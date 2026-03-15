@@ -31,29 +31,27 @@ function EmailLogin({ redirectTo }: { redirectTo: string }) {
     setError('');
     setLoading(true);
 
-    void (async () => {
-      try {
-        await AuthService.signInMagicLink({
-          email,
-          redirectTo,
-        });
-        // eslint-disable-next-line
-      } catch (e: any) {
-        if (e.code === 429 || e.response?.status === 429) {
-          toast.error(t('tooManyRequests'));
-        } else {
-          toast.error(e.message);
-        }
-      } finally {
-        setLoading(false);
-      }
-    })();
+    try {
+      await AuthService.signInMagicLink({
+        email,
+        redirectTo,
+      });
 
-    setSearch((prev) => {
-      prev.set('email', email);
-      prev.set('action', LOGIN_ACTION.CHECK_EMAIL);
-      return prev;
-    });
+      setSearch((prev) => {
+        prev.set('email', email);
+        prev.set('action', LOGIN_ACTION.CHECK_EMAIL);
+        return prev;
+      });
+      // eslint-disable-next-line
+    } catch (e: any) {
+      if (e.code === 429 || e.response?.status === 429) {
+        toast.error(t('tooManyRequests'));
+      } else {
+        toast.error(e.message);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmitPassword = async (e: React.MouseEvent<HTMLButtonElement>) => {
