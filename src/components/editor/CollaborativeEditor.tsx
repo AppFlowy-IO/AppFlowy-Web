@@ -1,7 +1,7 @@
 import { debounce } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createEditor, Descendant, Editor, Element as SlateElement, Node } from 'slate';
-import { Slate, withReact } from 'slate-react';
+import { ReactEditor, Slate, withReact } from 'slate-react';
 import * as Y from 'yjs';
 
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -14,6 +14,27 @@ import { withPlugins } from '@/components/editor/plugins';
 import { clipboardFormatKey } from '@/components/editor/plugins/withCopy';
 import { Log } from '@/utils/log';
 import { getTextCount } from '@/utils/word';
+
+// Patch ReactEditor.hasDOMNode to handle "Cannot resolve a DOM node" errors
+// gracefully. During page transitions the editor state can be temporarily out
+// of sync with the DOM (e.g., editor.connect() populates children before the
+// Editable component re-renders). When this happens, hasDOMNode should return
+// false instead of throwing, so that event handlers simply ignore the event.
+{
+  const originalHasDOMNode = ReactEditor.hasDOMNode;
+
+  ReactEditor.hasDOMNode = (editor, target, options) => {
+    try {
+      return originalHasDOMNode(editor, target, options);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Cannot resolve a DOM node')) {
+        return false;
+      }
+
+      throw error;
+    }
+  };
+}
 
 const defaultInitialValue: Descendant[] = [];
 const DATABASE_BLOCK_TYPES = new Set([BlockType.GridBlock, BlockType.BoardBlock, BlockType.CalendarBlock]);

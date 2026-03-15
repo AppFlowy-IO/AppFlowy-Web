@@ -44,6 +44,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const params = useParams();
 
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
+  const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
   const [enablePageHistory, setEnablePageHistory] = useState<boolean | undefined>(undefined);
 
   // Calculate current workspace ID from URL params or user info
@@ -60,13 +61,15 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
   // Load user workspace information
   const loadUserWorkspaceInfo = useCallback(async () => {
+    setWorkspaceInfoError(undefined);
     try {
       const res = await UserService.getWorkspaceInfo();
 
       setUserWorkspaceInfo(res);
       return res;
     } catch (e) {
-      console.error(e);
+      Log.error('[AppAuthLayer] Failed to load workspace info:', e);
+      setWorkspaceInfoError(e instanceof Error ? e : new Error(String(e)));
     }
   }, []);
 
@@ -175,9 +178,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       return;
     }
 
-    void loadUserWorkspaceInfo().catch((e) => {
-      console.error('[AppAuthLayer] Failed to load workspace info:', e);
-    });
+    void loadUserWorkspaceInfo();
 
     void AuthService.getServerInfo().then((info) => {
       setEnablePageHistory(info.enable_page_history);
@@ -195,8 +196,10 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       isAuthenticated: !!isAuthenticated,
       enablePageHistory,
       onChangeWorkspace,
+      workspaceInfoError,
+      retryLoadWorkspaceInfo: loadUserWorkspaceInfo,
     }),
-    [userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, onChangeWorkspace]
+    [userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, onChangeWorkspace, workspaceInfoError, loadUserWorkspaceInfo]
   );
 
   return <AuthInternalContext.Provider value={authContextValue}>{children}</AuthInternalContext.Provider>;
