@@ -65,7 +65,15 @@ const selectDateByDay = (day: number): void => {
       return text === String(day) && !el.classList.contains('day-outside');
     })
     .first()
-    .click({ force: true });
+    .then(($el) => {
+      // In react-day-picker single mode, clicking an already-selected day deselects it.
+      // When a date filter is first added, it defaults to today's date. If the desired
+      // day matches today, clicking would toggle it off instead of keeping it selected.
+      // Skip the click if the day is already selected.
+      if ($el.attr('aria-selected') !== 'true') {
+        cy.wrap($el).click({ force: true });
+      }
+    });
   waitForReactUpdate(500);
 };
 

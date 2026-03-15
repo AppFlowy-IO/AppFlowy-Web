@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import { UIVariant, View, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
@@ -46,15 +46,6 @@ const Transition = React.forwardRef(function Transition(
   return <Zoom ref={ref} {...props} />;
 });
 
-/**
- * Minimal view metadata used as fallback when view is not yet in outline
- */
-interface FallbackViewMeta {
-  view_id: string;
-  layout: ViewLayout;
-  name: string;
-}
-
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
   const workspaceId = useCurrentWorkspaceId();
   const { t } = useTranslation();
@@ -87,8 +78,10 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const [notFound, setNotFound] = useState(false);
   const [syncBound, setSyncBound] = useState(false);
 
-  // Fallback view metadata fetched from server (used when view not in outline yet)
-  const [fallbackMeta, setFallbackMeta] = useState<FallbackViewMeta | null>(null);
+  // Fallback view metadata fetched from server (used when view not in outline yet).
+  // Stores the full View (including children/extra) so getFirstChildView can
+  // resolve database containers to their first child view.
+  const [fallbackMeta, setFallbackMeta] = useState<View | null>(null);
 
   // Get view from outline
   const outlineView = useMemo(() => {
@@ -135,11 +128,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     ViewService.get(workspaceId, effectiveViewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
-          setFallbackMeta({
-            view_id: fetchedView.view_id,
-            layout: fetchedView.layout,
-            name: fetchedView.name,
-          });
+          setFallbackMeta(fetchedView);
         }
       })
       .catch((e) => {
@@ -169,14 +158,17 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     [loadView]
   );
 
+  // Wait for metadata (outline or fallback) before loading the doc.
+  // This ensures database containers resolve to their first child view,
+  // and the correct layout is known for the page-view API call.
+  const resolvedView = effectiveOutlineView || fallbackMeta;
+
   useEffect(() => {
-    if (open && effectiveViewId) {
+    if (open && effectiveViewId && resolvedView) {
       void loadPageDoc(effectiveViewId);
     }
-  }, [open, effectiveViewId, loadPageDoc]);
+  }, [open, effectiveViewId, loadPageDoc, resolvedView]);
 
-  // Use outline view if available, otherwise use fallback
-  const resolvedView = effectiveOutlineView || fallbackMeta;
   const layout = resolvedView?.layout ?? ViewLayout.Document;
 
   // Build viewMeta for the View component
@@ -197,15 +189,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       };
     }
 
-    // Fallback with minimal properties
+    // Fallback: resolvedView is a full View from the server
     return {
       name: resolvedView.name,
-      icon: undefined,
-      cover: undefined,
+      icon: resolvedView.icon || undefined,
+      cover: resolvedView.extra?.cover || undefined,
       layout: resolvedView.layout,
       visibleViewIds: [],
       viewId: resolvedView.view_id,
-      extra: undefined,
+      extra: resolvedView.extra,
       workspaceId,
     };
   }, [resolvedView, effectiveOutlineView, workspaceId]);
