@@ -366,6 +366,7 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
     await expandPageByName(page, parentPageName);
 
     // Then: main window shows 1 child
+    await waitForMainWindowChildCount(page, parentPageName, 1);
     let children = await getChildrenInMainWindow(page, parentPageName);
     logChildren('Main window children after doc #1', children);
     expect(children.length).toBe(1);
@@ -409,6 +410,7 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
     await addChildInMainWindow(page, parentPageName, 0); // 0 = Document
 
     // Then: main window shows the new document child
+    await waitForMainWindowChildCount(page, parentPageName, 3);
     children = await getChildrenInMainWindow(page, parentPageName);
     logChildren('Main window children after doc #3', children);
     const newDoc3Child = children.find((c) => !allCreatedViewIds.includes(c.viewId));
