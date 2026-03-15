@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Element, Text } from 'slate';
-import { ReactEditor, useReadOnly, useSlate } from 'slate-react';
+import { ReactEditor, useSlate } from 'slate-react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -19,7 +19,6 @@ import { useEditorContext } from '@/components/editor/EditorContext';
 import './style.css';
 
 function MentionPage({
-  text,
   pageId,
   blockId,
   type,
@@ -35,7 +34,7 @@ function MentionPage({
   const currentViewId = context.viewId;
   const eventEmitter = context.eventEmitter;
 
-  const { navigateToView, loadViewMeta, loadView, openPageModal } = context;
+  const { navigateToView, loadViewMeta, loadView } = context;
   const [noAccess, setNoAccess] = useState(false);
   const [meta, setMeta] = useState<View | null>(null);
   const [content, setContent] = useState<string>('');
@@ -157,8 +156,6 @@ function MentionPage({
     );
   }, [blockId, currentViewId, icon, meta?.layout, pageId, type]);
 
-  const readOnly = useReadOnly() || editor.isElementReadOnly(text as unknown as Element);
-
   const handleScrollToBlock = useCallback(async () => {
     if (blockId) {
       const entry = findSlateEntryByBlockId(editor as YjsEditor, blockId);
@@ -184,22 +181,26 @@ function MentionPage({
     <span
       onClick={(e) => {
         e.stopPropagation();
-        if (readOnly || meta?.layout === ViewLayout.AIChat) {
-          void navigateToView?.(pageId, blockId);
-        } else {
-          if (noAccess) return;
-          if (pageId === currentViewId) {
-            void handleScrollToBlock();
-            return;
-          }
+        if (noAccess) return;
 
-          openPageModal?.(pageId);
+        // Same-page block reference: scroll to the target block
+        if (pageId === currentViewId) {
+          void handleScrollToBlock();
+          return;
         }
+
+        // Navigate directly to the target view (matches desktop behavior,
+        // which always opens mentions in a new tab regardless of layout type).
+        // Deferred so Slate's event cycle completes before the route change
+        // unmounts the editor.
+        setTimeout(() => {
+          void navigateToView?.(pageId, blockId);
+        }, 0);
       }}
       style={{
         cursor: noAccess ? 'default' : undefined,
       }}
-      className={`mention-inline cursor-pointer pr-1 underline`}
+      className={`mention-inline cursor-pointer pr-1 underline select-none`}
       contentEditable={false}
       data-mention-id={pageId}
     >

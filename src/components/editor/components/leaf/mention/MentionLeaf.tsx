@@ -59,7 +59,7 @@ export function MentionLeaf({ mention, text, children }: { mention: Mention; tex
           top: isCursorBefore ? 0 : 'auto',
           bottom: isCursorBefore ? 'auto' : 0,
         }}
-        className={'absolute bottom-0 right-0 overflow-hidden !text-transparent'}
+        className={'absolute bottom-0 right-0 overflow-hidden !text-transparent pointer-events-none'}
       >
         {children}
       </span>
