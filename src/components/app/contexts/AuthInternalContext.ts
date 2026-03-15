@@ -34,6 +34,10 @@ export interface AuthInternalContextType {
   enablePageHistory?: boolean;
   /** Switch the active workspace. Triggers full data reload. */
   onChangeWorkspace: (workspaceId: string) => Promise<void>;
+  /** Error from loading workspace info — allows consumers to show error/retry UI. */
+  workspaceInfoError?: Error;
+  /** Retry loading workspace info after a failure. */
+  retryLoadWorkspaceInfo?: () => void;
 }
 
 export const AuthInternalContext = createContext<AuthInternalContextType | null>(null);

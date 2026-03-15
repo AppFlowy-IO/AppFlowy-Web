@@ -36,6 +36,7 @@ export function initGrantService(baseURL: string) {
 }
 
 export async function refreshToken(refresh_token: string) {
+  Log.info('[Auth] refreshToken: requesting new token');
   const response = await axiosInstance?.post<{
     access_token: string;
     expires_at: number;
@@ -47,8 +48,10 @@ export async function refreshToken(refresh_token: string) {
   const newToken = response?.data;
 
   if (newToken) {
+    Log.info('[Auth] refreshToken: success, saving token');
     saveGoTrueAuth(JSON.stringify(newToken));
   } else {
+    Log.error('[Auth] refreshToken: no token data in response');
     return Promise.reject('Failed to refresh token');
   }
 
@@ -56,6 +59,7 @@ export async function refreshToken(refresh_token: string) {
 }
 
 export async function signInWithPassword(params: { email: string; password: string; redirectTo: string }) {
+  Log.info('[Auth] signInWithPassword: starting', { email: params.email });
   try {
     const response = await axiosInstance?.post<{
       access_token: string;
@@ -69,12 +73,16 @@ export async function signInWithPassword(params: { email: string; password: stri
     const data = response?.data;
 
     if (data) {
+      Log.info('[Auth] signInWithPassword: GoTrue returned tokens, verifying with AppFlowy Cloud');
       try {
         await verifyToken(data.access_token);
         saveGoTrueAuth(JSON.stringify(data));
+        Log.info('[Auth] signInWithPassword: token verified and saved');
       } catch (error: unknown) {
-        emit(EventType.SESSION_INVALID);
         const err = error as { message?: string; code?: number };
+
+        Log.error('[Auth] signInWithPassword: verifyToken failed', { code: err?.code, message: err?.message });
+        emit(EventType.SESSION_INVALID);
         const message =
           typeof err?.message === 'string'
             ? err.message.replace(/\s*\[.*\]$/, '')
@@ -86,9 +94,11 @@ export async function signInWithPassword(params: { email: string; password: stri
         });
       }
 
+      Log.info('[Auth] signInWithPassword: success, calling afterAuth');
       emit(EventType.SESSION_VALID);
       afterAuth();
     } else {
+      Log.error('[Auth] signInWithPassword: GoTrue returned no data');
       emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: -1,
@@ -97,8 +107,6 @@ export async function signInWithPassword(params: { email: string; password: stri
     }
     // eslint-disable-next-line
   } catch (e: any) {
-    emit(EventType.SESSION_INVALID);
-
     // Parse error from response
     const error = parseGoTrueError({
       error: e.response?.data?.error,
@@ -106,6 +114,9 @@ export async function signInWithPassword(params: { email: string; password: stri
       errorCode: e.response?.status,
       message: e.response?.data?.message || 'Incorrect password. Please try again.',
     });
+
+    Log.error('[Auth] signInWithPassword: failed', { status: e.response?.status, code: error.code, message: error.message });
+    emit(EventType.SESSION_INVALID);
 
     return Promise.reject({
       code: error.code,
@@ -115,6 +126,7 @@ export async function signInWithPassword(params: { email: string; password: stri
 }
 
 export async function signUpWithPassword(params: { email: string; password: string; redirectTo: string }) {
+  Log.info('[Auth] signUpWithPassword: starting', { email: params.email });
   try {
     const response = await axiosInstance?.post<{
       access_token?: string;
@@ -129,13 +141,18 @@ export async function signUpWithPassword(params: { email: string; password: stri
 
     const data = response?.data;
 
-    Log.debug('signUpWithPassword response', data);
+    Log.info('[Auth] signUpWithPassword: GoTrue response', {
+      hasAccessToken: !!data?.access_token,
+      hasConfirmation: !!data?.confirmation_sent_at,
+      identitiesCount: data?.identities?.length,
+    });
 
     if (data) {
       // GoTrue returns 200 with an empty identities array when the email is
       // already registered and confirmed (to prevent email enumeration).
       // Treat this as "already registered".
       if (!data.access_token && Array.isArray(data.identities) && data.identities.length === 0) {
+        Log.warn('[Auth] signUpWithPassword: email already registered', { email: params.email });
         return Promise.reject({
           code: 422,
           message: 'Email already registered',
@@ -166,11 +183,14 @@ export async function signUpWithPassword(params: { email: string; password: stri
         });
       }
 
+      Log.info('[Auth] signUpWithPassword: verifying token with AppFlowy Cloud');
       try {
         await verifyToken(data.access_token as string);
       } catch (error: unknown) {
-        emit(EventType.SESSION_INVALID);
         const err = error as { message?: string; code?: number };
+
+        Log.error('[Auth] signUpWithPassword: verifyToken failed', { code: err?.code, message: err?.message });
+        emit(EventType.SESSION_INVALID);
         const message =
           typeof err?.message === 'string'
             ? err.message.replace(/\s*\[.*\]$/, '')
@@ -182,11 +202,14 @@ export async function signUpWithPassword(params: { email: string; password: stri
         });
       }
 
+      Log.info('[Auth] signUpWithPassword: refreshing token');
       try {
         await refreshToken(data.refresh_token as string);
       } catch (error: unknown) {
-        emit(EventType.SESSION_INVALID);
         const err = error as { message?: string; code?: number };
+
+        Log.error('[Auth] signUpWithPassword: refreshToken failed', { code: err?.code, message: (err as Error)?.message });
+        emit(EventType.SESSION_INVALID);
 
         return Promise.reject({
           code: err?.code ?? -1,
@@ -194,9 +217,11 @@ export async function signUpWithPassword(params: { email: string; password: stri
         });
       }
 
+      Log.info('[Auth] signUpWithPassword: success, calling afterAuth');
       emit(EventType.SESSION_VALID);
       afterAuth();
     } else {
+      Log.error('[Auth] signUpWithPassword: GoTrue returned no data');
       emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: -1,
@@ -205,14 +230,15 @@ export async function signUpWithPassword(params: { email: string; password: stri
     }
     // eslint-disable-next-line
   } catch (e: any) {
-    emit(EventType.SESSION_INVALID);
-
     const error = parseGoTrueError({
       error: e.response?.data?.error,
       errorDescription: e.response?.data?.error_description || e.response?.data?.msg,
       errorCode: e.response?.status,
       message: e.response?.data?.message || 'Failed to sign up with password.',
     });
+
+    Log.error('[Auth] signUpWithPassword: failed', { status: e.response?.status, code: error.code, message: error.message });
+    emit(EventType.SESSION_INVALID);
 
     return Promise.reject({
       code: error.code,
@@ -222,6 +248,7 @@ export async function signUpWithPassword(params: { email: string; password: stri
 }
 
 export async function forgotPassword(params: { email: string }) {
+  Log.info('[Auth] forgotPassword: sending recovery email', { email: params.email });
   try {
     const response = await axiosInstance?.post<{
       access_token: string;
@@ -232,8 +259,10 @@ export async function forgotPassword(params: { email: string }) {
     });
 
     if (response?.data) {
+      Log.info('[Auth] forgotPassword: recovery email sent');
       return;
     } else {
+      Log.error('[Auth] forgotPassword: GoTrue returned no data');
       emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: -1,
@@ -242,6 +271,7 @@ export async function forgotPassword(params: { email: string }) {
     }
     // eslint-disable-next-line
   } catch (e: any) {
+    Log.error('[Auth] forgotPassword: failed', { status: e.response?.status, message: e.message });
     emit(EventType.SESSION_INVALID);
     return Promise.reject({
       code: -1,
@@ -251,11 +281,13 @@ export async function forgotPassword(params: { email: string }) {
 }
 
 export async function changePassword(params: { password: string }) {
+  Log.info('[Auth] changePassword: starting');
   try {
     const token = getTokenParsed();
     const access_token = token?.access_token;
 
     if (!access_token) {
+      Log.warn('[Auth] changePassword: no access token found');
       return Promise.reject({
         code: -1,
         message: 'You have not logged in yet. Can not change password.',
@@ -279,9 +311,11 @@ export async function changePassword(params: { password: string }) {
       }
     );
 
+    Log.info('[Auth] changePassword: success');
     return;
     // eslint-disable-next-line
   } catch (e: any) {
+    Log.error('[Auth] changePassword: failed', { status: e.response?.status, message: e.response?.data?.msg || e.message });
     emit(EventType.SESSION_INVALID);
     return Promise.reject({
       code: -1,
@@ -299,6 +333,7 @@ export async function signInOTP({
   code: string;
   type?: 'magiclink' | 'recovery' | 'signup';
 }) {
+  Log.info('[Auth] signInOTP: starting', { email, type });
   try {
     const response = await axiosInstance?.post<{
       access_token: string;
@@ -314,25 +349,22 @@ export async function signInOTP({
 
     const data = response?.data;
 
-    console.log('[signInOTP] Response data:', data);
-
     if (data) {
       if (!data.code) {
-        // Save token first so axios interceptor can use it
-        console.log('[signInOTP] Saving token to localStorage');
+        Log.info('[Auth] signInOTP: GoTrue returned tokens, saving to localStorage');
         saveGoTrueAuth(JSON.stringify(data));
 
         // Verify token with AppFlowy Cloud to create user if needed
         let isNewUser = false;
 
+        Log.info('[Auth] signInOTP: verifying token with AppFlowy Cloud');
         try {
-          console.log('[signInOTP] Calling verifyToken');
           const result = await verifyToken(data.access_token);
 
           isNewUser = result.is_new;
-          console.log('[signInOTP] verifyToken completed, isNewUser:', isNewUser);
+          Log.info('[Auth] signInOTP: verifyToken completed', { isNewUser });
         } catch (error) {
-          console.error('[signInOTP] Failed to verify token with AppFlowy Cloud:', error);
+          Log.error('[Auth] signInOTP: verifyToken failed', error);
           emit(EventType.SESSION_INVALID);
 
           return Promise.reject({
@@ -346,17 +378,13 @@ export async function signInOTP({
           emit(EventType.SESSION_VALID);
         }
 
-        // For new users, always redirect to /app (don't use saved redirectTo)
-        if (isNewUser) {
-          console.log('[signInOTP] New user, clearing old data and redirecting to /app');
-          localStorage.removeItem('redirectTo');
-          // Use replace to avoid adding to history and ensure clean navigation
-          window.location.replace('/app');
-        } else {
-          console.log('[signInOTP] Existing user, calling afterAuth');
-          afterAuth();
-        }
+        // afterAuth() handles redirect: it blocks stale /app/{uuid} paths
+        // (safe for new users) while allowing invitation paths like
+        // /app/accept-guest-invitation. Defaults to /app when no redirectTo exists.
+        Log.info('[Auth] signInOTP: success, calling afterAuth');
+        afterAuth();
       } else {
+        Log.error('[Auth] signInOTP: GoTrue returned error', { code: data.code, msg: data.msg });
         emit(EventType.SESSION_INVALID);
         return Promise.reject({
           code: data.code,
@@ -364,6 +392,7 @@ export async function signInOTP({
         });
       }
     } else {
+      Log.error('[Auth] signInOTP: GoTrue returned no data');
       emit(EventType.SESSION_INVALID);
       return Promise.reject({
         code: 'invalid_token',
@@ -372,6 +401,7 @@ export async function signInOTP({
     }
     // eslint-disable-next-line
   } catch (e: any) {
+    Log.error('[Auth] signInOTP: failed', { status: e.response?.status, code: e.response?.data?.code, message: e.response?.data?.msg || e.message });
     emit(EventType.SESSION_INVALID);
     return Promise.reject({
       code: e.response?.data?.code || e.response?.status,
@@ -383,6 +413,7 @@ export async function signInOTP({
 }
 
 export async function signInWithMagicLink(email: string, authUrl: string) {
+  Log.info('[Auth] signInWithMagicLink: requesting magic link', { email });
   const res = await axiosInstance?.post(
     '/magiclink',
     {
@@ -398,6 +429,7 @@ export async function signInWithMagicLink(email: string, authUrl: string) {
     }
   );
 
+  Log.info('[Auth] signInWithMagicLink: magic link sent');
   return res?.data;
 }
 
@@ -415,6 +447,7 @@ export function signInGoogle(authUrl: string) {
   const baseURL = axiosInstance?.defaults.baseURL;
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}&access_type=${accessType}&prompt=${prompt}`;
 
+  Log.info('[Auth] signInGoogle: redirecting to Google OAuth');
   window.open(url, '_current');
 }
 
@@ -424,6 +457,7 @@ export function signInApple(authUrl: string) {
   const baseURL = axiosInstance?.defaults.baseURL;
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
+  Log.info('[Auth] signInApple: redirecting to Apple OAuth');
   window.open(url, '_current');
 }
 
@@ -433,6 +467,7 @@ export function signInGithub(authUrl: string) {
   const baseURL = axiosInstance?.defaults.baseURL;
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
+  Log.info('[Auth] signInGithub: redirecting to GitHub OAuth');
   window.open(url, '_current');
 }
 
@@ -442,6 +477,7 @@ export function signInDiscord(authUrl: string) {
   const baseURL = axiosInstance?.defaults.baseURL;
   const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
 
+  Log.info('[Auth] signInDiscord: redirecting to Discord OAuth');
   window.open(url, '_current');
 }
 

@@ -66,7 +66,7 @@ export function Leaf({ attributes, children, leaf, text }: RenderLeafProps) {
     );
   }
 
-  if (leaf.href) {
+  if (leaf.href && text.text?.trim()) {
     newChildren = (
       <Href text={text} leaf={leaf} textColor={style['color']}>
         {newChildren}

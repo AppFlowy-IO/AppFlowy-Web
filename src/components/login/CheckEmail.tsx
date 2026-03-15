@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AuthService } from '@/application/services/domains';
+import { Log } from '@/utils/log';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -29,20 +30,20 @@ function CheckEmail ({ email, redirectTo, otpType }: {
     }
 
     setLoading(true);
-    console.log('[CheckEmail] Starting OTP verification', { email, code: code.substring(0, 3) + '***' });
+    Log.info('[Auth] CheckEmail: starting OTP verification', { email });
 
     try {
-      console.log('[CheckEmail] Calling AuthService.signInOTP');
+      Log.info('[Auth] CheckEmail: calling signInOTP');
       await AuthService.signInOTP({
         email,
         redirectTo,
         code,
         ...(otpType ? { type: otpType } : {}),
       });
-      console.log('[CheckEmail] signInOTP completed successfully');
+      Log.info('[Auth] CheckEmail: signInOTP completed successfully');
       // eslint-disable-next-line
     } catch (e: any) {
-      console.error('[CheckEmail] signInOTP failed:', e);
+      Log.error('[Auth] CheckEmail: signInOTP failed', e);
       if (e.code === 403) {
         setError(t('invalidOTPCode'));
       } else {
