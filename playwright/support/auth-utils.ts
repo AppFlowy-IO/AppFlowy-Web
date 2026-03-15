@@ -92,14 +92,18 @@ export class AuthTestUtils {
     // http://localhost:9999/gotrue/verify?... which don't work because GoTrue at :9999
     // doesn't know about the /gotrue prefix. Rewrite the URL to go through the proxy.
     let normalizedLink = actionLink;
-    const gotrueUrl = this.config.gotrueUrl; // e.g. http://localhost/gotrue
+    const gotrueUrl = this.config.gotrueUrl; // e.g. http://localhost:3000/gotrue
     try {
       const actionUrl = new URL(actionLink);
       // If the action link host:port differs from our gotrueUrl, rewrite it
       const gotrueUrlObj = new URL(gotrueUrl);
       if (actionUrl.host !== gotrueUrlObj.host) {
-        // Replace the origin with gotrueUrl origin, keeping the path
-        normalizedLink = gotrueUrlObj.origin + actionUrl.pathname + actionUrl.search;
+        // Replace the origin with gotrueUrl origin and prepend the proxy path prefix.
+        // e.g. gotrueUrl = http://localhost:3000/gotrue => prefix = /gotrue
+        // action link = http://localhost:9999/verify?token=...
+        // normalized  = http://localhost:3000/gotrue/verify?token=...
+        const proxyPrefix = gotrueUrlObj.pathname.replace(/\/+$/, ''); // e.g. "/gotrue"
+        normalizedLink = gotrueUrlObj.origin + proxyPrefix + actionUrl.pathname + actionUrl.search;
       }
     } catch {
       // If URL parsing fails, use as-is

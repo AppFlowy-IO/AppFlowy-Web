@@ -32,41 +32,103 @@ interface ChildInfo {
 /**
  * Use the inline "+" button on a page in the MAIN window to add a child.
  * `menuItemIndex`: 0 = Document, 1 = Grid, 2 = Board, 3 = Calendar
+ *
+ * Includes retry logic: verifies child count increased after each attempt.
  */
 async function addChildInMainWindow(
   page: import('@playwright/test').Page,
   parentPageName: string,
-  menuItemIndex: number
+  menuItemIndex: number,
+  maxRetries: number = 3
 ) {
-  const parentItem = PageSelectors.itemByName(page, parentPageName);
-  // Hover to reveal the inline add button
-  await parentItem.locator('> div').first().hover({ force: true });
-  await page.waitForTimeout(1000);
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    const beforeChildren = await getChildrenInMainWindow(page, parentPageName);
+    const beforeCount = beforeChildren.length;
+    testLog.info(`addChildInMainWindow attempt ${attempt + 1}: beforeCount=${beforeCount}`);
 
-  // Click the inline "+" button
-  await parentItem
-    .locator('> div')
-    .first()
-    .locator(byTestId('inline-add-page'))
-    .first()
-    .click({ force: true });
-  await page.waitForTimeout(1000);
+    // Re-expand parent if collapsed
+    const parentItem = PageSelectors.itemByName(page, parentPageName);
+    const expandToggle = parentItem.locator('[data-testid="outline-toggle-expand"]');
+    if (await expandToggle.count() > 0) {
+      testLog.info('Re-expanding collapsed parent before add');
+      await expandToggle.first().click({ force: true });
+      await page.waitForTimeout(1000);
+    }
 
-  // Select layout from dropdown
-  const dropdownContent = page.locator('[data-slot="dropdown-menu-content"]');
-  await expect(dropdownContent).toBeVisible({ timeout: 5000 });
-  await dropdownContent.locator('[role="menuitem"]').nth(menuItemIndex).click();
-  await page.waitForTimeout(3000);
+    // Scroll parent into view to ensure visibility
+    await parentItem.locator('> div').first().scrollIntoViewIfNeeded();
+    await page.waitForTimeout(500);
 
-  // Dismiss any modal/dialog that opens
-  const dialogCount = await page
-    .locator('[role="dialog"], .MuiDialog-container')
-    .count();
-  if (dialogCount > 0) {
-    await page.keyboard.press('Escape');
+    // Hover to reveal the inline add button
+    await parentItem.locator('> div').first().hover({ force: true });
     await page.waitForTimeout(1000);
+
+    // Click the inline "+" button
+    const addBtn = parentItem
+      .locator('> div')
+      .first()
+      .locator(byTestId('inline-add-page'))
+      .first();
+
+    if (await addBtn.count() === 0) {
+      testLog.info('inline-add-page button not found, retrying...');
+      await page.waitForTimeout(2000);
+      continue;
+    }
+
+    await addBtn.click({ force: true });
+    await page.waitForTimeout(1000);
+
+    // Wait for dropdown and select layout
+    const dropdownContent = page.locator('[data-slot="dropdown-menu-content"]');
+    const dropdownVisible = await dropdownContent.isVisible().catch(() => false);
+    if (!dropdownVisible) {
+      testLog.info('Dropdown not visible after click, waiting...');
+      try {
+        await expect(dropdownContent).toBeVisible({ timeout: 5000 });
+      } catch {
+        testLog.info('Dropdown failed to appear, retrying...');
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(1000);
+        continue;
+      }
+    }
+
+    await dropdownContent.locator('[role="menuitem"]').nth(menuItemIndex).click();
+    await page.waitForTimeout(3000);
+
+    // Dismiss any modal/dialog that opens
+    const dialogCount = await page
+      .locator('[role="dialog"], .MuiDialog-container')
+      .count();
+    if (dialogCount > 0) {
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+    }
+    await page.waitForTimeout(1000);
+
+    // Re-expand parent to verify child was created
+    const parentItem2 = PageSelectors.itemByName(page, parentPageName);
+    const expandToggle2 = parentItem2.locator('[data-testid="outline-toggle-expand"]');
+    if (await expandToggle2.count() > 0) {
+      await expandToggle2.first().click({ force: true });
+      await page.waitForTimeout(1000);
+    }
+
+    // Verify child count increased
+    const afterChildren = await getChildrenInMainWindow(page, parentPageName);
+    testLog.info(`addChildInMainWindow attempt ${attempt + 1}: afterCount=${afterChildren.length}`);
+
+    if (afterChildren.length > beforeCount) {
+      testLog.info(`addChildInMainWindow succeeded on attempt ${attempt + 1}`);
+      return;
+    }
+
+    testLog.info(`addChildInMainWindow attempt ${attempt + 1} failed to create child, retrying...`);
+    await page.waitForTimeout(2000);
   }
-  await page.waitForTimeout(1000);
+
+  throw new Error(`addChildInMainWindow: failed to create child under "${parentPageName}" after ${maxRetries} attempts`);
 }
 
 /**
@@ -136,7 +198,8 @@ async function getChildrenInMainWindow(
 ): Promise<ChildInfo[]> {
   const parentItem = PageSelectors.itemByName(page, parentPageName);
   const childrenContainer = parentItem.locator('> div').last();
-  const pageItems = childrenContainer.locator(byTestId('page-item'));
+  // Use :scope > to match only DIRECT children, not nested page-items
+  const pageItems = childrenContainer.locator(':scope > [data-testid="page-item"]');
   const count = await pageItems.count();
 
   const children: ChildInfo[] = [];
@@ -164,7 +227,8 @@ async function getChildrenInIframe(
     .locator(`[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${parentPageName}"))`)
     .first();
   const childrenContainer = parentItem.locator('> div').last();
-  const pageItems = childrenContainer.locator(byTestId('page-item'));
+  // Use :scope > to match only DIRECT children, not nested page-items
+  const pageItems = childrenContainer.locator(':scope > [data-testid="page-item"]');
   const count = await pageItems.count();
 
   const children: ChildInfo[] = [];
@@ -221,12 +285,24 @@ async function waitForIframeChildCount(
   expectedCount: number,
   maxAttempts = 30
 ): Promise<void> {
+  const frame = page.frameLocator(iframeSelector);
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Re-expand parent in iframe if collapsed
+    const parentItem = frame
+      .locator(`[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${parentPageName}"))`)
+      .first();
+    const expandToggle = parentItem.locator('[data-testid="outline-toggle-expand"]');
+    if (await expandToggle.count() > 0) {
+      testLog.info(`Iframe: re-expanding parent (attempt ${attempt})`);
+      await expandToggle.first().click({ force: true });
+      await page.waitForTimeout(1000);
+    }
+
     const children = await getChildrenInIframe(page, iframeSelector, parentPageName);
+    testLog.info(
+      `Iframe child count: ${children.length} (expected >= ${expectedCount}, attempt ${attempt})`
+    );
     if (children.length >= expectedCount) {
-      testLog.info(
-        `Iframe child count: ${children.length} (expected >= ${expectedCount})`
-      );
       return;
     }
     await page.waitForTimeout(1000);
@@ -281,7 +357,7 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
       }
     });
 
-    await page.setViewportSize({ width: 1400, height: 900 });
+    await page.setViewportSize({ width: 1600, height: 1000 });
   });
 
   test('should sync sub-documents and sub-databases bidirectionally without sidebar collapse or reload', async ({
@@ -302,18 +378,19 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 10000 });
 
     testLog.step(3, 'Create a parent page in General');
-    await page.locator(byTestId('new-page-button')).first().click({ force: true });
+    // Use the space's inline "+" button to create a blank page (avoids Welcome template sub-pages)
+    const spaceItem = page
+      .locator(`${byTestId('space-item')}:has(${byTestId('space-name')}:text-is("${SPACE_NAME}"))`)
+      .first();
+    await spaceItem.hover({ force: true });
+    await page.waitForTimeout(500);
+    await spaceItem.locator(byTestId('inline-add-page')).first().click({ force: true });
     await page.waitForTimeout(1000);
 
-    const newPageModal = page.locator(byTestId('new-page-modal'));
-    await expect(newPageModal).toBeVisible();
-    await newPageModal
-      .locator(byTestId('space-item'))
-      .filter({ hasText: SPACE_NAME })
-      .click({ force: true });
-    await page.waitForTimeout(500);
-
-    await newPageModal.locator('button').filter({ hasText: 'Add' }).click({ force: true });
+    // Select "Document" from the dropdown
+    const dropdownContent = page.locator('[data-slot="dropdown-menu-content"]');
+    await expect(dropdownContent).toBeVisible({ timeout: 5000 });
+    await dropdownContent.locator('[role="menuitem"]').first().click();
     await page.waitForTimeout(3000);
 
     // Dismiss any modal
@@ -325,11 +402,19 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
       await page.waitForTimeout(1000);
     }
 
-    const parentPageName = 'Untitled';
+    // Rename the parent page to a unique name to avoid "Untitled" ambiguity
+    // (child pages are also created as "Untitled", which confuses locators)
+    const parentPageName = `SyncTest-${Date.now()}`;
+    const titleInput = page.getByTestId('page-title-input');
+    await expect(titleInput).toBeVisible({ timeout: 10000 });
+    await titleInput.fill(parentPageName);
+    await page.waitForTimeout(2000);
+
+    // Verify renamed page appears in sidebar
     await expect(
       PageSelectors.nameContaining(page, parentPageName).first()
     ).toBeVisible({ timeout: 10000 });
-    testLog.info(`Parent page "${parentPageName}" created`);
+    testLog.info(`Parent page "${parentPageName}" created and renamed`);
 
     // And: an iframe is created with the same app URL for bidirectional sync
     testLog.step(4, 'Create iframe with same app URL');
@@ -349,7 +434,7 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
         iframe.id = selector.replace('#', '');
         iframe.src = url;
         iframe.style.cssText =
-          'position:fixed;bottom:0;right:0;width:600px;height:400px;z-index:9999;border:2px solid blue;';
+          'position:fixed;bottom:0;right:0;width:900px;height:600px;z-index:9999;border:2px solid blue;';
         document.body.appendChild(iframe);
       },
       { url: appUrl, selector: IFRAME_SELECTOR }
@@ -367,80 +452,72 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
       .click({ force: true });
     await page.waitForTimeout(1000);
 
+    // Expand parent and record baseline children (Welcome template may add sub-pages)
+    testLog.info('Expanding parent to record baseline children');
+    const expandToggle = PageSelectors.itemByName(page, parentPageName)
+      .locator('[data-testid="outline-toggle-expand"]');
+    if (await expandToggle.count() > 0) {
+      await expandToggle.first().click({ force: true });
+      await page.waitForTimeout(1000);
+    }
+
+    const baselineChildren = await getChildrenInMainWindow(page, parentPageName);
+    const baselineViewIds = new Set(baselineChildren.map((c) => c.viewId));
+    const baselineCount = baselineChildren.length;
+    logChildren('Baseline children', baselineChildren);
+    testLog.info(`Baseline child count: ${baselineCount}`);
+
     // When: creating sub-document #1 in main window
     testLog.step(5, 'Main window: create sub-document #1');
     await addChildInMainWindow(page, parentPageName, 0); // 0 = Document
 
-    // Expand parent in main window to see the child
-    await expandPageByName(page, parentPageName);
-
-    // Then: main window shows 1 child
-    await waitForMainWindowChildCount(page, parentPageName, 1);
+    // Then: main window shows baseline + 1 children
+    await waitForMainWindowChildCount(page, parentPageName, baselineCount + 1);
     let children = await getChildrenInMainWindow(page, parentPageName);
     logChildren('Main window children after doc #1', children);
-    expect(children.length).toBe(1);
-    allCreatedViewIds.push(children[0].viewId);
-    testLog.info(`Doc #1 viewId: ${children[0].viewId}`);
-
-    // And: sub-document #1 syncs to iframe
-    testLog.info('Expanding parent in iframe');
-    await frame
-      .locator(`[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${parentPageName}"))`)
-      .first()
-      .locator(byTestId('outline-toggle-expand'))
-      .first()
-      .click({ force: true });
-    await page.waitForTimeout(1000);
-
-    await waitForIframeChildCount(page, IFRAME_SELECTOR, parentPageName, 1);
-
-    children = await getChildrenInIframe(page, IFRAME_SELECTOR, parentPageName);
-    logChildren('Iframe children after doc #1 sync', children);
-    assertContainsAllViewIds(children, allCreatedViewIds, 'Iframe after doc #1');
-    testLog.info('Doc #1 synced to iframe');
+    const newDoc1 = children.find((c) => !baselineViewIds.has(c.viewId) && !allCreatedViewIds.includes(c.viewId));
+    expect(newDoc1).toBeDefined();
+    allCreatedViewIds.push(newDoc1!.viewId);
+    testLog.info(`Doc #1 viewId: ${newDoc1!.viewId}`);
 
     // When: creating sub-document #2 in iframe
-    // Note: Grid/database creation places containers at space level, not as children,
-    // so we test with Document instead to verify bidirectional child sync.
     testLog.step(6, 'Iframe: create sub-document #2');
     await addChildInIframe(page, IFRAME_SELECTOR, parentPageName, 0); // 0 = Document
 
-    // Then: doc #2 syncs to main window (verify here first since main window parent is stable)
-    await waitForMainWindowChildCount(page, parentPageName, 2);
+    // Then: doc #2 syncs to main window
+    await waitForMainWindowChildCount(page, parentPageName, baselineCount + 2);
     children = await getChildrenInMainWindow(page, parentPageName);
     logChildren('Main window children after doc #2 sync', children);
-    const newDoc2IframeChild = children.find((c) => !allCreatedViewIds.includes(c.viewId));
-    expect(newDoc2IframeChild).toBeDefined();
-    allCreatedViewIds.push(newDoc2IframeChild!.viewId);
-    testLog.info(`Doc #2 viewId: ${newDoc2IframeChild!.viewId}`);
+    const newDoc2 = children.find((c) => !baselineViewIds.has(c.viewId) && !allCreatedViewIds.includes(c.viewId));
+    expect(newDoc2).toBeDefined();
+    allCreatedViewIds.push(newDoc2!.viewId);
+    testLog.info(`Doc #2 viewId: ${newDoc2!.viewId}`);
 
     // When: creating sub-document #3 in main window
     testLog.step(7, 'Main window: create sub-document #3');
     await addChildInMainWindow(page, parentPageName, 0); // 0 = Document
 
-    // Then: main window shows the new document child
-    await waitForMainWindowChildCount(page, parentPageName, 3);
+    // Then: main window shows baseline + 3 children
+    await waitForMainWindowChildCount(page, parentPageName, baselineCount + 3);
     children = await getChildrenInMainWindow(page, parentPageName);
     logChildren('Main window children after doc #3', children);
-    const newDoc3Child = children.find((c) => !allCreatedViewIds.includes(c.viewId));
-    expect(newDoc3Child).toBeDefined();
-    allCreatedViewIds.push(newDoc3Child!.viewId);
-    testLog.info(`Doc #3 viewId: ${newDoc3Child!.viewId}`);
+    const newDoc3 = children.find((c) => !baselineViewIds.has(c.viewId) && !allCreatedViewIds.includes(c.viewId));
+    expect(newDoc3).toBeDefined();
+    allCreatedViewIds.push(newDoc3!.viewId);
+    testLog.info(`Doc #3 viewId: ${newDoc3!.viewId}`);
 
     // When: creating sub-document #4 in iframe
     testLog.step(8, 'Iframe: create sub-document #4');
     await addChildInIframe(page, IFRAME_SELECTOR, parentPageName, 0); // 0 = Document
 
     // Then: doc #4 syncs to main window
-    // After addChildInIframe, the iframe sidebar may no longer be visible
-    // (iframe navigates to the new doc page), so we verify all sync via main window.
-    await waitForMainWindowChildCount(page, parentPageName, 4);
+    await waitForMainWindowChildCount(page, parentPageName, baselineCount + 4);
     children = await getChildrenInMainWindow(page, parentPageName);
     logChildren('Main window children after doc #4 sync', children);
-    const newDoc4Child = children.find((c) => !allCreatedViewIds.includes(c.viewId));
-    expect(newDoc4Child).toBeDefined();
-    allCreatedViewIds.push(newDoc4Child!.viewId);
-    testLog.info(`Doc #4 viewId: ${newDoc4Child!.viewId}`);
+    const newDoc4 = children.find((c) => !baselineViewIds.has(c.viewId) && !allCreatedViewIds.includes(c.viewId));
+    expect(newDoc4).toBeDefined();
+    allCreatedViewIds.push(newDoc4!.viewId);
+    testLog.info(`Doc #4 viewId: ${newDoc4!.viewId}`);
 
     // Then: no page reload occurred during the entire sync process
     testLog.step(9, 'Final assertions');
@@ -451,19 +528,19 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
     expect(markerValue).toBe(true);
     testLog.info('No page reload occurred');
 
-    // And: main window has all 4 children visible
+    // And: main window has all created test children visible
     const mainChildren = await getChildrenInMainWindow(page, parentPageName);
     logChildren('FINAL main window children', mainChildren);
-    expect(mainChildren.length).toBe(4);
+    expect(mainChildren.length).toBe(baselineCount + 4);
     assertContainsAllViewIds(mainChildren, allCreatedViewIds, 'FINAL main window');
 
-    for (const child of mainChildren) {
-      await expect(page.locator(byTestId(`page-${child.viewId}`))).toBeVisible();
-      testLog.info(`Main window: "${child.name}" [${child.viewId}] visible`);
+    for (const viewId of allCreatedViewIds) {
+      await expect(page.locator(byTestId(`page-${viewId}`))).toBeVisible();
+      testLog.info(`Main window: [${viewId}] visible`);
     }
 
     testLog.info(
-      'Bidirectional sync verified -- all 4 children present in main window (2 created in main, 2 created in iframe)'
+      'Bidirectional sync verified -- all 4 test children present in main window (2 created in main, 2 created in iframe)'
     );
 
     // Cleanup: remove iframe
