@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { WorkspaceService } from '@/application/services/domains';
 import { Workspace } from '@/application/types';
@@ -37,13 +37,21 @@ function WorkspaceList({
     }
   }, []);
 
+  const sortedWorkspaces = useMemo(() => {
+    // Sort by creation time ascending (oldest first), matching desktop app behavior
+    return [...workspaces].sort((a, b) => {
+      if (!a.createdAt || !b.createdAt) return 0;
+      return a.createdAt < b.createdAt ? -1 : a.createdAt > b.createdAt ? 1 : 0;
+    });
+  }, [workspaces]);
+
   useEffect(() => {
     void fetchWorkspaces();
   }, [fetchWorkspaces]);
 
   return (
     <>
-      {workspaces.map((workspace) => {
+      {sortedWorkspaces.map((workspace) => {
         return (
           <WorkspaceItem
             key={workspace.id}
