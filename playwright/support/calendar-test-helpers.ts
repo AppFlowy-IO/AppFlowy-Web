@@ -263,15 +263,15 @@ export async function selectDayInDatePicker(page: Page, dayNumber: number): Prom
     if (text !== String(dayNumber)) continue;
     const cls = (await btn.getAttribute('class')) || '';
     if (cls.includes('day-outside')) continue;
-    // Use evaluate click for reliability with React event handlers
-    await btn.evaluate(el => (el as HTMLElement).click());
+    // Use Playwright's native click to properly trigger React synthetic events
+    await btn.click({ force: true });
     clicked = true;
     break;
   }
   if (!clicked) {
     throw new Error(`Could not find day ${dayNumber} button in date picker (excluding day-outside)`);
   }
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1000);
 }
 
 /**

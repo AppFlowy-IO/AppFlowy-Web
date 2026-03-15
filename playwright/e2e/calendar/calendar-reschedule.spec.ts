@@ -71,6 +71,16 @@ test.describe('Calendar Reschedule Tests (Desktop Parity)', () => {
     await openDatePickerInEventPopover(page);
 
     const targetDay = today.getDate() === 15 ? 16 : 15;
+
+    // Calendar events default to range mode (End date ON).
+    // Disable it so clicking a day changes the single date, not the end date.
+    const pickerPopover = page.getByTestId('datetime-picker-popover');
+    const endDateSwitch = pickerPopover.locator('button[role="switch"]').first();
+    if ((await endDateSwitch.getAttribute('data-state')) === 'checked') {
+      await endDateSwitch.click({ force: true });
+      await page.waitForTimeout(500);
+    }
+
     await selectDayInDatePicker(page, targetDay);
     await page.waitForTimeout(1000);
 

@@ -188,11 +188,20 @@ async function waitForMainWindowChildCount(
   maxAttempts = 30
 ): Promise<void> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    // Re-expand parent if it collapsed (outline re-render can collapse it)
+    const parentItem = PageSelectors.itemByName(page, parentPageName);
+    const expandToggle = parentItem.locator('[data-testid="outline-toggle-expand"]');
+    if (await expandToggle.count() > 0) {
+      testLog.info(`Re-expanding collapsed parent "${parentPageName}" (attempt ${attempt})`);
+      await expandToggle.first().click({ force: true });
+      await page.waitForTimeout(1000);
+    }
+
     const children = await getChildrenInMainWindow(page, parentPageName);
+    testLog.info(
+      `Main window child count: ${children.length} (expected >= ${expectedCount}, attempt ${attempt})`
+    );
     if (children.length >= expectedCount) {
-      testLog.info(
-        `Main window child count: ${children.length} (expected >= ${expectedCount})`
-      );
       return;
     }
     await page.waitForTimeout(1000);
