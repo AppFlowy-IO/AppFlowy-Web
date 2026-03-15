@@ -80,6 +80,7 @@ export async function signInWithPassword(params: { email: string; password: stri
         Log.info('[Auth] signInWithPassword: token verified and saved');
       } catch (error: unknown) {
         const err = error as { message?: string; code?: number };
+
         Log.error('[Auth] signInWithPassword: verifyToken failed', { code: err?.code, message: err?.message });
         emit(EventType.SESSION_INVALID);
         const message =
