@@ -272,11 +272,13 @@ export const AIMeetingBlock = memo(
       });
 
       // Close regenerate menu when switching away from summary tab
+      const { handleRegenerateMenuClose } = regenerate;
+
       useEffect(() => {
         if (activeTabKey !== 'summary') {
-          regenerate.handleRegenerateMenuClose();
+          handleRegenerateMenuClose();
         }
-      }, [activeTabKey, regenerate.handleRegenerateMenuClose]);
+      }, [activeTabKey, handleRegenerateMenuClose]);
 
       const showSummaryRegenerate = activeTabKey === 'summary' && activeCopyItem.hasContent;
 

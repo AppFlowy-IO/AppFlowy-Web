@@ -123,7 +123,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block, editor.children.length, node, t]);
+  }, [block, editor, node, t]);
 
   const selectedPlaceholder = useMemo(() => {
 
