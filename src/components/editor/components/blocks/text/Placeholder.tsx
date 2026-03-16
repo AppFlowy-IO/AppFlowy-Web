@@ -3,7 +3,6 @@ import { useTranslation } from 'react-i18next';
 import { Editor, Element, Range } from 'slate';
 import { ReactEditor, useFocused, useSelected, useSlate } from 'slate-react';
 
-
 import { BlockType, ToggleListBlockData } from '@/application/types';
 import { HeadingNode, ToggleListNode } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -124,7 +123,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block, editor, node, t]);
+  }, [block, editor.children.length, node, t]);
 
   const selectedPlaceholder = useMemo(() => {
 
