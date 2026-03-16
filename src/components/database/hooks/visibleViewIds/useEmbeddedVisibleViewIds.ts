@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 interface UseEmbeddedVisibleViewIdsProps {
   /**
@@ -11,12 +11,12 @@ interface UseEmbeddedVisibleViewIdsProps {
 interface UseEmbeddedVisibleViewIdsResult {
   /**
    * The visible view IDs for this embedded database.
-   * Initialized from allowedViewIds and updated when views are added.
+   * Derived from allowedViewIds merged with any locally-added views.
    */
   visibleViewIds: string[];
   /**
    * Callback to add a new view ID when a view is created via the + button.
-   * Updates visibleViewIds immediately before Yjs sync.
+   * Updates visibleViewIds immediately before the Slate block data catches up.
    */
   onViewAdded: (viewId: string) => void;
 }
@@ -24,47 +24,47 @@ interface UseEmbeddedVisibleViewIdsResult {
 /**
  * Hook to manage visible view IDs for embedded database blocks.
  *
- * For embedded databases (databases inside documents), the visible views
- * are determined by the block data's `view_ids` array. This hook:
+ * Uses a two-source approach to avoid race conditions:
+ * - `allowedViewIds` (from block data) is the source of truth for persisted views
+ * - `locallyAddedViewIds` (local state) tracks views added via the + button
+ *   that haven't yet propagated to block data
  *
- * 1. Initializes visibleViewIds from allowedViewIds (block data)
- * 2. Syncs when allowedViewIds changes (e.g., after Yjs update)
- * 3. Provides onViewAdded to immediately add new views before sync
- *
- * @example
- * const allowedViewIds = node.data?.view_ids;
- * const { visibleViewIds, onViewAdded } = useEmbeddedVisibleViewIds({ allowedViewIds });
- *
- * // Pass to Database component
- * <Database visibleViewIds={visibleViewIds} onViewAdded={onViewAdded} />
+ * `visibleViewIds` is derived via useMemo (synchronous, no effect needed),
+ * which avoids the race condition where a useEffect-based sync would
+ * discard pending state updates from onViewAdded.
  */
 export function useEmbeddedVisibleViewIds({
   allowedViewIds,
 }: UseEmbeddedVisibleViewIdsProps): UseEmbeddedVisibleViewIdsResult {
-  const [visibleViewIds, setVisibleViewIds] = useState<string[]>(() => allowedViewIds ?? []);
-  const allowedViewIdsRef = useRef<string[] | undefined>(allowedViewIds);
+  // Track view IDs added locally via the + button.
+  // These are temporary — once allowedViewIds (block data) catches up
+  // and includes them, they're automatically filtered out by useMemo.
+  const [locallyAddedViewIds, setLocallyAddedViewIds] = useState<string[]>([]);
 
-  // Keep ref updated
-  useEffect(() => {
-    allowedViewIdsRef.current = allowedViewIds;
-  }, [allowedViewIds]);
+  // Derive visibleViewIds synchronously from both sources.
+  // No useEffect needed — this runs during render, so there's no
+  // window where a state update can be lost.
+  const visibleViewIds = useMemo(() => {
+    const base = allowedViewIds ?? [];
 
-  // Sync visibleViewIds when allowedViewIds changes (e.g., after Yjs sync)
-  useEffect(() => {
-    if (!allowedViewIds || allowedViewIds.length === 0) {
-      return;
-    }
+    if (locallyAddedViewIds.length === 0) return base;
 
-    setVisibleViewIds(allowedViewIds);
-  }, [allowedViewIds]);
+    // Only include locally-added views that aren't yet in allowedViewIds
+    const allowedSet = new Set(base);
+    const additions = locallyAddedViewIds.filter((id) => !allowedSet.has(id));
+
+    if (additions.length === 0) return base;
+
+    return [...base, ...additions];
+  }, [allowedViewIds, locallyAddedViewIds]);
 
   /**
    * Called when a new view is added to the database via the + button.
-   * Updates visibleViewIds immediately to ensure the new tab renders
-   * before the Yjs sync completes.
+   * Adds the view ID to locallyAddedViewIds, which immediately updates
+   * visibleViewIds via useMemo on the next render.
    */
   const onViewAdded = useCallback((newViewId: string) => {
-    setVisibleViewIds((current) => {
+    setLocallyAddedViewIds((current) => {
       if (current.includes(newViewId)) {
         return current;
       }

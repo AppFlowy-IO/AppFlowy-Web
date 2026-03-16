@@ -97,41 +97,53 @@ test.describe('Embedded Database - Plus Button View Creation', () => {
     const embeddedDB = await setupEmbeddedDatabase(page, request);
     await expect(embeddedDB).toBeVisible({ timeout: 15000 });
 
-    // Find and click the + button to create a new view
-    const plusButton = embeddedDB.locator('[data-testid="add-view-button"]');
-    await plusButton.scrollIntoViewIfNeeded();
-    await plusButton.click({ force: true });
-    await page.waitForTimeout(1000);
+    // Verify we start with 1 tab
+    const viewTabs = embeddedDB.locator('[data-testid^="view-tab-"]');
+    await expect(viewTabs).toHaveCount(1, { timeout: 10000 });
 
-    // A new view tab should appear - select Board type if available
-    const viewMenu = page.locator('[role="menu"], [data-slot="popover-content"]').last();
-    if (await viewMenu.isVisible()) {
-      const boardOption = viewMenu.locator('[role="menuitem"]').filter({ hasText: /board/i });
-      if ((await boardOption.count()) > 0) {
-        await boardOption.first().click({ force: true });
-      } else {
-        // Just click the first option
-        await viewMenu.locator('[role="menuitem"]').first().click({ force: true });
+    // The embedded database may be inside a MUI Dialog (ViewModal).
+    // Close the dialog first so that Radix dropdown portals render above everything.
+    const dialog = page.locator('[role="dialog"]');
+    if (await dialog.isVisible().catch(() => false)) {
+      // Click the "expand" button to open the page as a full page instead
+      const expandBtn = dialog.locator('button').first();
+      if (await expandBtn.isVisible().catch(() => false)) {
+        await expandBtn.click();
+        await page.waitForTimeout(2000);
       }
     }
-    await page.waitForTimeout(2000);
 
-    // Verify at least 2 view tabs exist (original + new one)
-    const viewTabs = embeddedDB.locator('[data-testid^="view-tab-"]');
-    const tabCount = await viewTabs.count();
-    expect(tabCount).toBeGreaterThanOrEqual(2);
+    // Re-locate embedded database after potential navigation
+    const embeddedDBFresh = page.locator('[class*="appflowy-database"]').last();
+    await expect(embeddedDBFresh).toBeVisible({ timeout: 15000 });
+    const viewTabsFresh = embeddedDBFresh.locator('[data-testid^="view-tab-"]');
+    await expect(viewTabsFresh).toHaveCount(1, { timeout: 10000 });
 
-    // Verify the new tab is auto-selected (last tab should be active)
-    const lastTab = viewTabs.last();
-    const isActive = await lastTab.evaluate((el) => {
-      return el.classList.contains('active') ||
-             el.getAttribute('data-active') === 'true' ||
-             el.getAttribute('aria-selected') === 'true' ||
-             window.getComputedStyle(el).fontWeight === '700' ||
-             parseInt(window.getComputedStyle(el).fontWeight) >= 600;
-    });
+    // Click the + button to create a new view
+    const plusButton = embeddedDBFresh.locator('[data-testid="add-view-button"]');
+    await plusButton.scrollIntoViewIfNeeded();
+    await plusButton.click({ force: true });
+    await page.waitForTimeout(500);
 
-    // The new view should either be visually active or at least visible
+    // Wait for the dropdown menu to appear (Radix DropdownMenu)
+    const dropdownMenu = page.locator('[data-slot="dropdown-menu-content"]').last();
+    await expect(dropdownMenu).toBeVisible({ timeout: 5000 });
+
+    // Click "Board" menu item - use evaluate to bypass potential z-index issues
+    const boardOption = dropdownMenu.locator('[role="menuitem"]').filter({ hasText: /board/i });
+    await expect(boardOption.first()).toBeVisible({ timeout: 3000 });
+    await boardOption.first().click();
+
+    // Wait for dropdown to close (confirms click processed)
+    await expect(dropdownMenu).not.toBeVisible({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1000);
+
+    // Wait for the new view tab to appear
+    await expect(viewTabsFresh).toHaveCount(2, { timeout: 15000 });
+
+    // Verify the new tab is visible and auto-selected
+    const lastTab = viewTabsFresh.last();
     await expect(lastTab).toBeVisible();
+    await expect(lastTab).toHaveAttribute('data-state', 'active', { timeout: 5000 });
   });
 });

@@ -50,59 +50,100 @@ async function ensureParentExpanded(
 /**
  * Use the inline "+" button on a page in the MAIN window to add a child.
  * `menuItemIndex`: 0 = Document, 1 = Grid, 2 = Board, 3 = Calendar
+ *
+ * Retries the entire click flow (hover → click "+" → select menu item)
+ * up to `maxAttempts` times, since the dropdown menu item click can
+ * occasionally fail to trigger the handler in automated tests.
  */
 async function addChildInMainWindow(
   page: import('@playwright/test').Page,
   parentPageName: string,
-  menuItemIndex: number
+  menuItemIndex: number,
+  maxAttempts: number = 3
 ) {
-  await ensureParentExpanded(page, parentPageName);
-
-  const parentItem = PageSelectors.itemByName(page, parentPageName);
-  const childrenContainer = parentItem.locator('> div').last();
-  const directChildren = childrenContainer.locator(
-    ':scope > [data-testid="page-item"]'
-  );
-  const beforeCount = await directChildren.count();
-  testLog.info(`addChildInMainWindow: beforeCount=${beforeCount}`);
-
-  // Scroll parent into view and hover to reveal action buttons
-  await parentItem.locator('> div').first().scrollIntoViewIfNeeded();
-  await parentItem.locator('> div').first().hover({ force: true });
-
-  // Click the inline "+" button
-  const addBtn = parentItem
-    .locator('> div')
-    .first()
-    .locator(byTestId('inline-add-page'))
-    .first();
-  await expect(addBtn).toBeVisible({ timeout: 5000 });
-  await addBtn.click({ force: true });
-
-  // Wait for the view-actions-popover dropdown and select layout
-  const popover = page.getByTestId('view-actions-popover');
-  await expect(popover).toBeVisible({ timeout: 5000 });
-  await popover.locator('[role="menuitem"]').nth(menuItemIndex).click();
-
-  // Wait for the new child to appear in the sidebar (auto-retries)
-  await expect(async () => {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await ensureParentExpanded(page, parentPageName);
-    const count = await directChildren.count();
-    expect(count).toBeGreaterThan(beforeCount);
-  }).toPass({ timeout: 15000 });
 
-  testLog.info(
-    `addChildInMainWindow: child created, count now > ${beforeCount}`
-  );
+    const parentItem = PageSelectors.itemByName(page, parentPageName);
+    const childrenContainer = parentItem.locator('> div').last();
+    const directChildren = childrenContainer.locator(
+      ':scope > [data-testid="page-item"]'
+    );
+    const beforeCount = await directChildren.count();
+    testLog.info(`addChildInMainWindow attempt ${attempt}: beforeCount=${beforeCount}`);
 
-  // Dismiss any dialog that opened (Document type opens a page modal)
-  const dialog = page.locator('[role="dialog"]');
-  if (await dialog.isVisible().catch(() => false)) {
-    await page.keyboard.press('Escape');
-    await expect(dialog)
-      .not.toBeVisible({ timeout: 5000 })
-      .catch(() => {});
+    // Scroll parent into view and hover to reveal action buttons
+    await parentItem.locator('> div').first().scrollIntoViewIfNeeded();
+    await parentItem.locator('> div').first().hover({ force: true });
+    await page.waitForTimeout(500);
+
+    // Click the inline "+" button
+    const addBtn = parentItem
+      .locator('> div')
+      .first()
+      .locator(byTestId('inline-add-page'))
+      .first();
+
+    if ((await addBtn.count()) === 0) {
+      testLog.info(`attempt ${attempt}: inline-add-page not found, retrying`);
+      await page.waitForTimeout(2000);
+      continue;
+    }
+
+    await addBtn.click({ force: true });
+    await page.waitForTimeout(500);
+
+    // Wait for the view-actions-popover dropdown
+    const popover = page.getByTestId('view-actions-popover');
+    const popoverVisible = await popover.isVisible().catch(() => false);
+    if (!popoverVisible) {
+      try {
+        await expect(popover).toBeVisible({ timeout: 5000 });
+      } catch {
+        testLog.info(`attempt ${attempt}: popover did not appear, retrying`);
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(1000);
+        continue;
+      }
+    }
+
+    // Click the menu item to create the page
+    await popover.locator('[role="menuitem"]').nth(menuItemIndex).click();
+
+    // Wait for popover to close (confirms the click was processed)
+    await expect(popover).not.toBeVisible({ timeout: 5000 }).catch(() => {});
+    await page.waitForTimeout(1000);
+
+    // Dismiss any dialog that opened (Document type opens a page modal)
+    const dialog = page.locator('[role="dialog"]');
+    if (await dialog.isVisible().catch(() => false)) {
+      await page.keyboard.press('Escape');
+      await expect(dialog)
+        .not.toBeVisible({ timeout: 5000 })
+        .catch(() => {});
+    }
+
+    // Wait for the new child to appear, re-expanding parent if needed
+    try {
+      await expect(async () => {
+        await ensureParentExpanded(page, parentPageName);
+        const count = await directChildren.count();
+        expect(count).toBeGreaterThan(beforeCount);
+      }).toPass({ timeout: 15000 });
+
+      testLog.info(
+        `addChildInMainWindow: child created on attempt ${attempt}, count now > ${beforeCount}`
+      );
+      return; // success
+    } catch {
+      testLog.info(`attempt ${attempt}: child count did not increase, retrying`);
+      await page.waitForTimeout(2000);
+    }
   }
+
+  throw new Error(
+    `addChildInMainWindow: failed to create child under "${parentPageName}" after ${maxAttempts} attempts`
+  );
 }
 
 /**
@@ -157,9 +198,11 @@ async function addChildInIframe(
   // Wait for popover to close (confirms click was processed)
   await expect(popover).not.toBeVisible({ timeout: 5000 });
 
-  // Dismiss any dialog in iframe
+  // Dismiss any dialog in iframe by clicking its close/escape area
   const dialog = frame.locator('[role="dialog"]');
   if (await dialog.isVisible().catch(() => false)) {
+    // Focus the iframe first, then press Escape
+    await frame.locator('body').first().click({ force: true, position: { x: 0, y: 0 } }).catch(() => {});
     await page.keyboard.press('Escape');
     await expect(dialog)
       .not.toBeVisible({ timeout: 5000 })
@@ -371,7 +414,7 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
     testLog.info('Expanding parent to record baseline children');
     await ensureParentExpanded(page, parentPageName);
 
-    // Wait for collapse toggle or timeout — indicates children are loaded
+    // Wait for collapse toggle — indicates children are loaded
     await expect(
       PageSelectors.itemByName(page, parentPageName).locator(
         '[data-testid="outline-toggle-collapse"]'
@@ -381,6 +424,21 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
       .catch(() => {
         // No collapse toggle = parent has no children (baseline = 0)
       });
+
+    // Wait for children to fully load and stabilize (lazy loading)
+    await page.waitForTimeout(2000);
+
+    // Re-expand after loading to ensure children are visible
+    await ensureParentExpanded(page, parentPageName);
+
+    // Wait for the child count to stabilize (stop changing)
+    let stableCount = -1;
+    for (let i = 0; i < 5; i++) {
+      const c = await getChildrenInMainWindow(page, parentPageName);
+      if (c.length === stableCount) break;
+      stableCount = c.length;
+      await page.waitForTimeout(1000);
+    }
 
     const baselineChildren = await getChildrenInMainWindow(
       page,
