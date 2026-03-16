@@ -10,13 +10,12 @@ import { ReactComponent as TranscriptIcon } from '@/assets/icons/ai_meeting_tran
 import { ReactComponent as NotesIcon } from '@/assets/icons/ai_notes.svg';
 import { ReactComponent as SummaryIcon } from '@/assets/icons/ai_summary_tab.svg';
 import { AIMeetingNode, EditorElementProps } from '@/components/editor/editor.type';
-import { useEditorContext } from '@/components/editor/EditorContext';
 import { cn } from '@/lib/utils';
 
 import { AIMeetingMoreMenu } from './AIMeetingMoreMenu';
-import { getBaseSpeakerId, parseSpeakerInfoMap } from './ai-meeting.utils';
+import { buildCopyText, COPY_META, type CopyMeta, type TabKey, getBaseSpeakerId, parseSpeakerInfoMap } from './ai-meeting.utils';
 import { RegenerateMenu } from './RegenerateMenu';
-import { buildCopyText, COPY_META, type CopyMeta, type TabKey, useAIMeetingClipboard } from './useAIMeetingClipboard';
+import { useAIMeetingClipboard } from './useAIMeetingClipboard';
 import { SUMMARY_LANGUAGE_OPTIONS, useAIMeetingRegenerate } from './useAIMeetingRegenerate';
 import './ai-meeting.scss';
 
@@ -56,7 +55,6 @@ export const AIMeetingBlock = memo(
     ({ node, children, className, ...attributes }, ref) => {
       const { t } = useTranslation();
       const editor = useSlateStatic() as YjsEditor;
-      const { workspaceId, viewId, requestInstance } = useEditorContext();
       const slateReadOnly = useReadOnly();
       const readOnly = slateReadOnly || editor.isElementReadOnly(node as unknown as Element);
       const data = node.data ?? {};
@@ -263,21 +261,14 @@ export const AIMeetingBlock = memo(
         contentRef,
         activeCopyItem,
         resolveSpeakerName,
-        t,
       });
 
       // --- Regenerate hook ---
       const regenerate = useAIMeetingRegenerate({
-        editor,
         node,
-        readOnly,
         sectionNodes,
         resolveSpeakerName,
         speakerInfoMap,
-        requestInstance,
-        workspaceId,
-        viewId,
-        t,
       });
 
       // Close regenerate menu when switching away from summary tab

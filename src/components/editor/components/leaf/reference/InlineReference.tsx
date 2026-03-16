@@ -215,21 +215,19 @@ ReferenceBadge.displayName = 'ReferenceBadge';
 const ReferencePopoverContent = memo(({
   statuses,
   referenceNumber,
-  editor,
-  yjsEditor,
   editorReadOnly,
   meetingNode,
   onClose,
 }: {
   statuses: ReferenceBlockStatus[];
   referenceNumber: number;
-  editor: ReactEditor;
-  yjsEditor: YjsEditor;
   editorReadOnly: boolean;
   meetingNode: Element;
   onClose: () => void;
 }) => {
   const { t } = useTranslation();
+  const editor = useSlateStatic() as ReactEditor;
+  const yjsEditor = editor as unknown as YjsEditor;
 
   const handleReferenceClick = useCallback((status: ReferenceBlockStatus) => {
     if (!status.sourceType) return;
@@ -353,7 +351,6 @@ ReferencePopoverContent.displayName = 'ReferencePopoverContent';
 export const InlineReference = memo(
   ({ reference, text, children }: { reference: InlineReferenceData; text: Text; children: React.ReactNode }) => {
     const editor = useSlateStatic();
-    const yjsEditor = editor as YjsEditor;
     const { t } = useTranslation();
     const editorReadOnly = useReadOnly();
     const elementReadOnly = useMemo(() => {
@@ -441,8 +438,6 @@ export const InlineReference = memo(
               <ReferencePopoverContent
                 statuses={statuses}
                 referenceNumber={reference.number}
-                editor={editor as ReactEditor}
-                yjsEditor={yjsEditor}
                 editorReadOnly={editorReadOnly}
                 meetingNode={meetingNode}
                 onClose={handleClose}

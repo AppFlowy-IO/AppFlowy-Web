@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { Popover } from '@/components/_shared/popover';
 
-import type { CopyMeta } from './useAIMeetingClipboard';
+import type { CopyMeta } from './ai-meeting.utils';
 
 interface AIMeetingMoreMenuProps {
   activeCopyItem: CopyMeta;
@@ -18,8 +18,9 @@ export const AIMeetingMoreMenu = memo(({ activeCopyItem, onCopy }: AIMeetingMore
   const menuOpen = Boolean(menuAnchor);
   const handleMenuClose = useCallback(() => setMenuAnchor(null), []);
 
-  const handleCopyClick = useCallback(() => {
-    void onCopy().then(() => handleMenuClose());
+  const handleCopyClick = useCallback(async () => {
+    await onCopy();
+    handleMenuClose();
   }, [handleMenuClose, onCopy]);
 
   return (
@@ -49,19 +50,19 @@ export const AIMeetingMoreMenu = memo(({ activeCopyItem, onCopy }: AIMeetingMore
             <button
               type="button"
               className="flex items-center gap-2 rounded-md px-3 py-2 text-left text-text-primary hover:bg-fill-list-hover"
-              onClick={handleCopyClick}
+              onClick={() => { void handleCopyClick(); }}
             >
-              {String(t(activeCopyItem.labelKey as never))}
+              {t(activeCopyItem.labelKey)}
             </button>
           ) : (
-            <Tooltip title={String(t('document.aiMeeting.copy.noContent'))}>
+            <Tooltip title={t('document.aiMeeting.copy.noContent')}>
               <span>
                 <button
                   type="button"
                   className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-text-tertiary"
                   disabled
                 >
-                  {String(t(activeCopyItem.labelKey as never))}
+                  {t(activeCopyItem.labelKey)}
                 </button>
               </span>
             </Tooltip>

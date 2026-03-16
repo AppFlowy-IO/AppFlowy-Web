@@ -1,6 +1,7 @@
-import type { AxiosInstance } from 'axios';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Element, Node } from 'slate';
+import { useReadOnly, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
@@ -8,6 +9,7 @@ import { AIMeetingBlockData } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { WriterRequest } from '@/components/chat/request';
 import { AIAssistantType } from '@/components/chat/types';
+import { useEditorContext } from '@/components/editor/EditorContext';
 
 import {
   buildSummaryRegeneratePrompt,
@@ -21,25 +23,17 @@ import {
   SUMMARY_LANGUAGE_OPTIONS,
 } from './ai-meeting.summary-regenerate';
 import type { SummaryRegenerateTemplateConfig, SummaryTemplateOption } from './ai-meeting.summary-regenerate';
-import { buildCopyText, buildTranscriptCopyText } from './useAIMeetingClipboard';
+import { buildCopyText, buildTranscriptCopyText } from './ai-meeting.utils';
 
 export { SUMMARY_LANGUAGE_OPTIONS, type SummaryTemplateOption };
 
 export function useAIMeetingRegenerate({
-  editor,
   node,
-  readOnly,
   sectionNodes,
   resolveSpeakerName,
   speakerInfoMap,
-  requestInstance,
-  workspaceId,
-  viewId,
-  t,
 }: {
-  editor: YjsEditor;
   node: { blockId: string; data?: AIMeetingBlockData };
-  readOnly: boolean;
   sectionNodes: {
     summaryNode?: Node;
     notesNode?: Node;
@@ -47,17 +41,18 @@ export function useAIMeetingRegenerate({
   };
   resolveSpeakerName: (speakerId?: string) => string;
   speakerInfoMap: Record<string, Record<string, unknown>> | null;
-  requestInstance?: AxiosInstance | null;
-  workspaceId: string;
-  viewId: string;
-  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+  const { t } = useTranslation();
+  const editor = useSlateStatic() as YjsEditor;
+  const readOnly = useReadOnly();
+  const { workspaceId, viewId, requestInstance } = useEditorContext();
   const data = node.data ?? ({} as AIMeetingBlockData);
 
   const [summaryTemplateConfig, setSummaryTemplateConfig] = useState<SummaryRegenerateTemplateConfig>(
     FALLBACK_SUMMARY_REGENERATE_TEMPLATE_CONFIG
   );
   const [isRegeneratingSummary, setIsRegeneratingSummary] = useState(false);
+  const isRegeneratingRef = useRef(false);
   const [regenerateMenuAnchor, setRegenerateMenuAnchor] = useState<HTMLElement | null>(null);
   const regenerateMenuOpen = Boolean(regenerateMenuAnchor);
   const handleRegenerateMenuClose = useCallback(() => setRegenerateMenuAnchor(null), []);
@@ -100,7 +95,7 @@ export function useAIMeetingRegenerate({
     detailId?: string;
     languageCode?: string;
   }) => {
-    if (readOnly || isRegeneratingSummary) return;
+    if (readOnly || isRegeneratingRef.current) return;
 
     const summaryBlockId = (sectionNodes.summaryNode as (Node & { blockId?: string }) | undefined)?.blockId;
 
@@ -153,6 +148,7 @@ export function useAIMeetingRegenerate({
       speakerInfoMap,
     });
 
+    isRegeneratingRef.current = true;
     setIsRegeneratingSummary(true);
     handleRegenerateMenuClose();
 
@@ -210,12 +206,12 @@ export function useAIMeetingRegenerate({
       console.error('AI meeting regenerate failed:', error);
       notify.error(reason ? `${baseMessage}: ${reason}` : baseMessage);
     } finally {
+      isRegeneratingRef.current = false;
       setIsRegeneratingSummary(false);
     }
   }, [
     editor,
     handleRegenerateMenuClose,
-    isRegeneratingSummary,
     readOnly,
     requestInstance,
     resolveSpeakerName,
@@ -234,7 +230,7 @@ export function useAIMeetingRegenerate({
 
   const handleSummaryOptionSelect = useCallback(
     (updates: Partial<Pick<AIMeetingBlockData, 'summary_template' | 'summary_detail' | 'summary_language'>>) => {
-      if (readOnly || isRegeneratingSummary) return;
+      if (readOnly || isRegeneratingRef.current) return;
 
       updateSummaryOptions(updates);
 
@@ -256,7 +252,6 @@ export function useAIMeetingRegenerate({
     },
     [
       handleRegenerateSummary,
-      isRegeneratingSummary,
       readOnly,
       selectedSummaryDetail,
       selectedSummaryLanguage,

@@ -1,3 +1,83 @@
+import { Element, Node as SlateNode } from 'slate';
+
+import { CustomEditor } from '@/application/slate-yjs/command';
+import { BlockType } from '@/application/types';
+
+export type TabKey = 'summary' | 'notes' | 'transcript';
+
+export type CopyLabelKey =
+  | 'document.aiMeeting.copy.summary'
+  | 'document.aiMeeting.copy.notes'
+  | 'document.aiMeeting.copy.transcript';
+
+export type CopySuccessKey =
+  | 'document.aiMeeting.copy.summarySuccess'
+  | 'document.aiMeeting.copy.notesSuccess'
+  | 'document.aiMeeting.copy.transcriptSuccess';
+
+export interface CopyMeta {
+  tabKey: TabKey;
+  node?: SlateNode;
+  labelKey: CopyLabelKey;
+  successKey: CopySuccessKey;
+  dataBlockType: string;
+  hasContent: boolean;
+}
+
+export const COPY_META: Record<TabKey, Omit<CopyMeta, 'tabKey' | 'node' | 'hasContent'>> = {
+  summary: {
+    labelKey: 'document.aiMeeting.copy.summary',
+    successKey: 'document.aiMeeting.copy.summarySuccess',
+    dataBlockType: 'ai_meeting_summary',
+  },
+  notes: {
+    labelKey: 'document.aiMeeting.copy.notes',
+    successKey: 'document.aiMeeting.copy.notesSuccess',
+    dataBlockType: 'ai_meeting_notes',
+  },
+  transcript: {
+    labelKey: 'document.aiMeeting.copy.transcript',
+    successKey: 'document.aiMeeting.copy.transcriptSuccess',
+    dataBlockType: 'ai_meeting_transcription',
+  },
+};
+
+export const buildCopyText = (node?: SlateNode) => {
+  if (!node || !Element.isElement(node)) return '';
+
+  const lines = node.children
+    .map((child) => CustomEditor.getBlockTextContent(child).trim())
+    .filter((line) => line.length > 0);
+
+  if (lines.length) return lines.join('\n');
+
+  return CustomEditor.getBlockTextContent(node).trim();
+};
+
+export const buildTranscriptCopyText = (node: SlateNode, resolveSpeakerName: (speakerId?: string) => string) => {
+  if (!Element.isElement(node)) return '';
+
+  const lines: string[] = [];
+
+  node.children.forEach((child) => {
+    if (Element.isElement(child) && child.type === BlockType.AIMeetingSpeakerBlock) {
+      const speakerData = child.data as Record<string, unknown> | undefined;
+      const speakerId = (speakerData?.speaker_id || speakerData?.speakerId) as string | undefined;
+      const speakerName = resolveSpeakerName(speakerId);
+      const transcript = stripTranscriptReferences(
+        child.children
+          .map((speakerChild) => CustomEditor.getBlockTextContent(speakerChild).trim())
+          .filter((line) => line.length > 0)
+          .join(' ')
+      );
+
+      lines.push(transcript ? `${speakerName}: ${transcript}` : `${speakerName}:`);
+    }
+  });
+
+  return lines.join('\n');
+};
+
 export const formatTimestamp = (value?: number) => {
   if (!Number.isFinite(value)) return '';
 

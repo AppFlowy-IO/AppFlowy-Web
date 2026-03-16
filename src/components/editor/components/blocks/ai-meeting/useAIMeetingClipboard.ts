@@ -1,10 +1,13 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { Element, Node } from 'slate';
+import { useTranslation } from 'react-i18next';
 
-import { CustomEditor } from '@/application/slate-yjs/command';
-import { BlockType } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import {
+  buildCopyText,
+  buildTranscriptCopyText,
+  COPY_META,
+  type CopyMeta,
+  type TabKey,
   documentFragmentToHTML,
   isRangeInsideElement,
   normalizeAppFlowyClipboardHTML,
@@ -12,17 +15,6 @@ import {
   selectionToContextualHTML,
   stripTranscriptReferences,
 } from './ai-meeting.utils';
-
-type TabKey = 'summary' | 'notes' | 'transcript';
-
-interface CopyMeta {
-  tabKey: TabKey;
-  node?: Node;
-  labelKey: string;
-  successKey: string;
-  dataBlockType: string;
-  hasContent: boolean;
-}
 
 interface ClipboardPayload {
   plainText: string;
@@ -34,42 +26,6 @@ interface PayloadBuildOptions {
 }
 
 const normalizePlainText = (text: string) => text.replace(/\u00a0/g, ' ');
-
-const buildCopyText = (node?: Node) => {
-  if (!node || !Element.isElement(node)) return '';
-
-  const lines = node.children
-    .map((child) => CustomEditor.getBlockTextContent(child).trim())
-    .filter((line) => line.length > 0);
-
-  if (lines.length) return lines.join('\n');
-
-  return CustomEditor.getBlockTextContent(node).trim();
-};
-
-const buildTranscriptCopyText = (node: Node, resolveSpeakerName: (speakerId?: string) => string) => {
-  if (!Element.isElement(node)) return '';
-
-  const lines: string[] = [];
-
-  node.children.forEach((child) => {
-    if (Element.isElement(child) && child.type === BlockType.AIMeetingSpeakerBlock) {
-      const speakerData = child.data as Record<string, unknown> | undefined;
-      const speakerId = (speakerData?.speaker_id || speakerData?.speakerId) as string | undefined;
-      const speakerName = resolveSpeakerName(speakerId);
-      const transcript = stripTranscriptReferences(
-        child.children
-          .map((speakerChild) => CustomEditor.getBlockTextContent(speakerChild).trim())
-          .filter((line) => line.length > 0)
-          .join(' ')
-      );
-
-      lines.push(transcript ? `${speakerName}: ${transcript}` : `${speakerName}:`);
-    }
-  });
-
-  return lines.join('\n');
-};
 
 const buildTranscriptCopyTextFromElement = (element: HTMLElement) => {
   const speakerElements = Array.from(
@@ -95,37 +51,16 @@ const buildTranscriptCopyTextFromElement = (element: HTMLElement) => {
   return lines.join('\n');
 };
 
-const COPY_META: Record<TabKey, Omit<CopyMeta, 'tabKey' | 'node' | 'hasContent'>> = {
-  summary: {
-    labelKey: 'document.aiMeeting.copy.summary',
-    successKey: 'document.aiMeeting.copy.summarySuccess',
-    dataBlockType: 'ai_meeting_summary',
-  },
-  notes: {
-    labelKey: 'document.aiMeeting.copy.notes',
-    successKey: 'document.aiMeeting.copy.notesSuccess',
-    dataBlockType: 'ai_meeting_notes',
-  },
-  transcript: {
-    labelKey: 'document.aiMeeting.copy.transcript',
-    successKey: 'document.aiMeeting.copy.transcriptSuccess',
-    dataBlockType: 'ai_meeting_transcription',
-  },
-};
-
-export { buildCopyText, buildTranscriptCopyText, COPY_META, type CopyMeta, type TabKey };
-
 export function useAIMeetingClipboard({
   contentRef,
   activeCopyItem,
   resolveSpeakerName,
-  t,
 }: {
   contentRef: React.RefObject<HTMLDivElement | null>;
   activeCopyItem: CopyMeta;
   resolveSpeakerName: (speakerId?: string) => string;
-  t: (key: string, options?: Record<string, unknown>) => string;
 }) {
+  const { t } = useTranslation();
   const isProgrammaticCopyRef = useRef(false);
 
   const getSectionElementByTab = useCallback((tabKey: TabKey) => {
@@ -294,7 +229,9 @@ export function useAIMeetingClipboard({
     writePayloadToClipboard,
   ]);
 
-  // Intercept native copy events within the meeting block to strip references
+  // Intercept native copy events within the meeting block to strip references.
+  // Note: activeTabKey is intentionally not a dependency — the listener re-queries
+  // the DOM for the active section at copy time via getSectionElementByTab.
   useEffect(() => {
     const handleSelectionCopy = (event: ClipboardEvent) => {
       if (isProgrammaticCopyRef.current) return;
