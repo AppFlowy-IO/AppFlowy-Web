@@ -2,7 +2,7 @@ import { Button } from '@mui/material';
 import { PopoverOrigin } from '@mui/material/Popover/Popover';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Transforms } from 'slate';
+import { Editor, Element, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
@@ -73,6 +73,15 @@ type DatabaseOption = {
   databaseId: string;
   view: View;
 };
+
+const AI_MEETING_DATABASE_OPTION_KEYS = new Set([
+  'grid',
+  'linkedGrid',
+  'board',
+  'linkedKanban',
+  'calendar',
+  'linkedCalendar',
+]);
 
 function filterViewsByDatabases(views: View[], allowedIds: Set<string>, keyword: string) {
   const lowercaseKeyword = keyword.toLowerCase();
@@ -224,6 +233,47 @@ export function SlashPanel({
   const open = useMemo(() => {
     return isPanelOpen(PanelType.Slash);
   }, [isPanelOpen]);
+
+  const shouldRestrictAIMeetingDatabaseOptions = useCallback(() => {
+    const domSelection = window.getSelection();
+    const anchorNode = domSelection?.anchorNode ?? null;
+    const anchorElement =
+      anchorNode instanceof HTMLElement ? anchorNode : anchorNode?.parentElement;
+
+    if (anchorElement) {
+      const inSummary = anchorElement.closest(`[data-block-type="${BlockType.AIMeetingSummaryBlock}"]`);
+
+      if (inSummary) return true;
+
+      const inNotes = anchorElement.closest(`[data-block-type="${BlockType.AIMeetingNotesBlock}"]`);
+
+      if (inNotes) return true;
+    }
+
+    const { selection } = editor;
+
+    if (!selection) return false;
+
+    const inSummary = Editor.above(editor, {
+      at: selection,
+      match: (n) =>
+        !Editor.isEditor(n) &&
+        Element.isElement(n) &&
+        n.type === BlockType.AIMeetingSummaryBlock,
+    });
+
+    if (inSummary) return true;
+
+    const inNotes = Editor.above(editor, {
+      at: selection,
+      match: (n) =>
+        !Editor.isEditor(n) &&
+        Element.isElement(n) &&
+        n.type === BlockType.AIMeetingNotesBlock,
+    });
+
+    return Boolean(inNotes);
+  }, [editor]);
 
   useEffect(() => {
     if (documentId && open) {
@@ -620,6 +670,8 @@ export function SlashPanel({
     keywords: string[];
     onClick?: () => void;
   }[] = useMemo(() => {
+    const restrictDatabaseOptionsInAIMeeting = shouldRestrictAIMeetingDatabaseOptions();
+
     return [
       {
         label: t('document.slashMenu.name.askAIAnything'),
@@ -1164,6 +1216,7 @@ export function SlashPanel({
       },
     ].filter((option) => {
       if (option.disabled) return false;
+      if (restrictDatabaseOptionsInAIMeeting && AI_MEETING_DATABASE_OPTION_KEYS.has(option.key)) return false;
       if (!searchText) return true;
       return option.keywords.some((keyword: string) => {
         return keyword.toLowerCase().includes(searchText.toLowerCase());
@@ -1184,6 +1237,7 @@ export function SlashPanel({
     searchText,
     handleOpenLinkedDatabasePicker,
     editor,
+    shouldRestrictAIMeetingDatabaseOptions,
   ]);
 
   const resultLength = options.length;

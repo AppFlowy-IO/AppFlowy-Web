@@ -3,6 +3,7 @@ import { Element } from 'slate';
 
 import {
   AIMeetingBlockData,
+  AIMeetingSpeakerBlockData,
   BlockType,
   CalloutBlockData,
   CodeBlockData,
@@ -195,6 +196,23 @@ export interface ColumnNode extends BlockNode {
 export interface AIMeetingNode extends BlockNode {
   type: BlockType.AIMeetingBlock;
   data: AIMeetingBlockData;
+}
+
+export interface AIMeetingSummaryNode extends BlockNode {
+  type: BlockType.AIMeetingSummaryBlock;
+}
+
+export interface AIMeetingNotesNode extends BlockNode {
+  type: BlockType.AIMeetingNotesBlock;
+}
+
+export interface AIMeetingTranscriptionNode extends BlockNode {
+  type: BlockType.AIMeetingTranscriptionBlock;
+}
+
+export interface AIMeetingSpeakerNode extends BlockNode {
+  type: BlockType.AIMeetingSpeakerBlock;
+  data: AIMeetingSpeakerBlockData;
 }
 
 export interface PDFNode extends BlockNode {

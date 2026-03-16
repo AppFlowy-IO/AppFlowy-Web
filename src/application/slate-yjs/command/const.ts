@@ -18,6 +18,10 @@ export const CONTAINER_BLOCK_TYPES = [
   BlockType.SimpleTableBlock,
   BlockType.SimpleTableRowBlock,
   BlockType.SimpleTableCellBlock,
+  BlockType.AIMeetingSummaryBlock,
+  BlockType.AIMeetingNotesBlock,
+  BlockType.AIMeetingTranscriptionBlock,
+  BlockType.AIMeetingSpeakerBlock,
 ];
 export const SOFT_BREAK_TYPES = [BlockType.CodeBlock];
 
