@@ -8,7 +8,7 @@ import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
 import { ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 import { BillingService } from '@/application/services/domains';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useGetSubscriptions, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import CancelSubscribe from '@/components/billing/CancelSubscribe';
 import { isAppFlowyHosted } from '@/utils/subscription';
 
@@ -17,7 +17,7 @@ function UpgradePlan({ open, onClose, onOpen }: { open: boolean; onClose: () => 
   const [activeSubscription, setActiveSubscription] = React.useState<Subscription | null>(null);
   const currentWorkspaceId = useCurrentWorkspaceId();
   const [cancelOpen, setCancelOpen] = React.useState(false);
-  const { getSubscriptions } = useAppHandlers();
+  const getSubscriptions = useGetSubscriptions();
 
   const [search, setSearch] = useSearchParams();
   const action = search.get('action');

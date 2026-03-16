@@ -5,14 +5,24 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
-import { UIVariant, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
+import { UIVariant, View, ViewComponentProps, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { getFirstChildView } from '@/application/view-utils';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as ExpandIcon } from '@/assets/icons/full_screen.svg';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
-import { useAppHandlers, useAppOutline, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import {
+  useAppOperations,
+  useAppOutline,
+  useCurrentWorkspaceId,
+  useEventEmitter,
+  useGetMentionUser,
+  useLoadDatabaseRelations,
+  useLoadViews,
+  useOpenPageModal,
+  useScheduleDeferredCleanup,
+} from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
 import { useViewOperations } from '@/components/app/hooks/useViewOperations';
@@ -36,18 +46,10 @@ const Transition = React.forwardRef(function Transition(
   return <Zoom ref={ref} {...props} />;
 });
 
-/**
- * Minimal view metadata used as fallback when view is not yet in outline
- */
-interface FallbackViewMeta {
-  view_id: string;
-  layout: ViewLayout;
-  name: string;
-}
-
 function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; onClose: () => void }) {
   const workspaceId = useCurrentWorkspaceId();
   const { t } = useTranslation();
+  const operations = useAppOperations();
   const {
     toView,
     loadViewMeta,
@@ -57,13 +59,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
-    eventEmitter,
-    ...handlers
-  } = useAppHandlers();
+  } = operations;
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
+  const eventEmitter = useEventEmitter();
+  const getMentionUser = useGetMentionUser();
+  const loadDatabaseRelations = useLoadDatabaseRelations();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
 
   const outline = useAppOutline();
   const requestInstance = getAxiosInstance();
@@ -74,8 +78,10 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   const [notFound, setNotFound] = useState(false);
   const [syncBound, setSyncBound] = useState(false);
 
-  // Fallback view metadata fetched from server (used when view not in outline yet)
-  const [fallbackMeta, setFallbackMeta] = useState<FallbackViewMeta | null>(null);
+  // Fallback view metadata fetched from server (used when view not in outline yet).
+  // Stores the full View (including children/extra) so getFirstChildView can
+  // resolve database containers to their first child view.
+  const [fallbackMeta, setFallbackMeta] = useState<View | null>(null);
 
   // Get view from outline
   const outlineView = useMemo(() => {
@@ -122,11 +128,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     ViewService.get(workspaceId, effectiveViewId)
       .then((fetchedView) => {
         if (!cancelled && fetchedView) {
-          setFallbackMeta({
-            view_id: fetchedView.view_id,
-            layout: fetchedView.layout,
-            name: fetchedView.name,
-          });
+          setFallbackMeta(fetchedView);
         }
       })
       .catch((e) => {
@@ -156,14 +158,17 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     [loadView]
   );
 
+  // Wait for metadata (outline or fallback) before loading the doc.
+  // This ensures database containers resolve to their first child view,
+  // and the correct layout is known for the page-view API call.
+  const resolvedView = effectiveOutlineView || fallbackMeta;
+
   useEffect(() => {
-    if (open && effectiveViewId) {
+    if (open && effectiveViewId && resolvedView) {
       void loadPageDoc(effectiveViewId);
     }
-  }, [open, effectiveViewId, loadPageDoc]);
+  }, [open, effectiveViewId, loadPageDoc, resolvedView]);
 
-  // Use outline view if available, otherwise use fallback
-  const resolvedView = effectiveOutlineView || fallbackMeta;
   const layout = resolvedView?.layout ?? ViewLayout.Document;
 
   // Build viewMeta for the View component
@@ -184,15 +189,15 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       };
     }
 
-    // Fallback with minimal properties
+    // Fallback: resolvedView is a full View from the server
     return {
       name: resolvedView.name,
-      icon: undefined,
-      cover: undefined,
+      icon: resolvedView.icon || undefined,
+      cover: resolvedView.extra?.cover || undefined,
       layout: resolvedView.layout,
       visibleViewIds: [],
       viewId: resolvedView.view_id,
-      extra: undefined,
+      extra: resolvedView.extra,
       workspaceId,
     };
   }, [resolvedView, effectiveOutlineView, workspaceId]);
@@ -354,7 +359,22 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         onWordCountChange={setWordCount}
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
-        {...handlers}
+        scheduleDeferredCleanup={scheduleDeferredCleanup}
+        getSubscriptions={operations.getSubscriptions}
+        getMentionUser={getMentionUser}
+        eventEmitter={eventEmitter}
+        getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
+        loadDatabaseRelations={loadDatabaseRelations}
+        createDatabaseView={operations.createDatabaseView}
+        loadDatabasePrompts={operations.loadDatabasePrompts}
+        testDatabasePromptConfig={operations.testDatabasePromptConfig}
+        checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
+        loadRowDocument={operations.loadRowDocument}
+        createRowDocument={operations.createRowDocument}
+        updatePageIcon={operations.updatePageIcon}
+        updatePageName={operations.updatePageName}
+        generateAISummaryForRow={operations.generateAISummaryForRow}
+        generateAITranslateForRow={operations.generateAITranslateForRow}
       />
     );
   }, [
@@ -376,7 +396,11 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     loadViews,
     setWordCount,
     handleUploadFile,
-    handlers,
+    scheduleDeferredCleanup,
+    operations,
+    getMentionUser,
+    eventEmitter,
+    loadDatabaseRelations,
   ]);
 
   const currentUser = useCurrentUser();

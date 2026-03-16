@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { SpacePermission } from '@/application/types';
 import { NormalModal } from '@/components/_shared/modal';
 import { notify } from '@/components/_shared/notify';
-import { useAppHandlers, useAppView } from '@/components/app/app.hooks';
+import { useAppOperations, useAppView } from '@/components/app/app.hooks';
 import SpaceIconButton from '@/components/app/view-actions/SpaceIconButton';
 import SpacePermissionButton from '@/components/app/view-actions/SpacePermissionButton';
 
@@ -20,7 +20,7 @@ function ManageSpace({ open, onClose, viewId }: { open: boolean; onClose: () => 
 
   const [loading, setLoading] = React.useState<boolean>(false);
   const { t } = useTranslation();
-  const { updateSpace } = useAppHandlers();
+  const { updateSpace } = useAppOperations();
 
   const handleOk = async () => {
     if (!updateSpace) return;

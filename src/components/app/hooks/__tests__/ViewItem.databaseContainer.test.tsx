@@ -14,7 +14,7 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useSidebarSelectedViewId: () => global.__selectedViewId,
-  useAppHandlers: () => ({
+  useAppOperations: () => ({
     updatePage: jest.fn(),
     uploadFile: jest.fn(),
   }),

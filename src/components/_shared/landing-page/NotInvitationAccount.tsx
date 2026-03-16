@@ -1,15 +1,15 @@
-import { useContext, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
 import { ReactComponent as Logo } from '@/assets/icons/no_access.svg';
 import LandingPage from '@/components/_shared/landing-page/LandingPage';
-import { AFConfigContext, useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUser, useOpenLoginModalOptional } from '@/components/main/app.hooks';
 
 export function NotInvitationAccount() {
   const { t } = useTranslation();
 
   const currentUser = useCurrentUser();
-  const openLoginModal = useContext(AFConfigContext)?.openLoginModal;
+  const openLoginModal = useOpenLoginModalOptional();
 
   const url = useMemo(() => {
     return window.location.href;

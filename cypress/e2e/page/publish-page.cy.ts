@@ -1,8 +1,79 @@
 import 'cypress-real-events';
+import * as Y from 'yjs';
 import { TestTool } from '../../support/page-utils';
 import { AddPageSelectors, DatabaseGridSelectors, EditorSelectors, PageSelectors, RowDetailSelectors, ShareSelectors, SidebarSelectors, waitForReactUpdate } from '../../support/selectors';
 import { generateRandomEmail, logAppFlowyEnvironment } from '../../support/test-config';
 import { testLog } from '../../support/test-helpers';
+
+const ROW_DOC_SYNC_MAX_ATTEMPTS = 20;
+const ROW_DOC_SYNC_INTERVAL_MS = 2000;
+
+const getWorkspaceIdFromOrphanedViewUrl = (url: string): string => {
+    const match = url.match(/\/api\/workspace\/([^/]+)\/orphaned-view(?:\?|$)/);
+
+    if (!match?.[1]) {
+        throw new Error(`Unable to parse workspaceId from orphaned-view url: ${url}`);
+    }
+
+    return match[1];
+};
+
+const docStateContainsText = (docState: number[], expectedText: string): boolean => {
+    try {
+        const doc = new Y.Doc();
+        Y.applyUpdate(doc, new Uint8Array(docState));
+        return JSON.stringify(doc.toJSON()).includes(expectedText);
+    } catch (error) {
+        testLog.warn(`[row-doc-sync] Failed to decode doc state: ${String(error)}`);
+        return false;
+    }
+};
+
+const waitUntilRowDocContainsText = ({
+    workspaceId,
+    documentId,
+    expectedText,
+    maxAttempts = ROW_DOC_SYNC_MAX_ATTEMPTS,
+    intervalMs = ROW_DOC_SYNC_INTERVAL_MS,
+}: {
+    workspaceId: string;
+    documentId: string;
+    expectedText: string;
+    maxAttempts?: number;
+    intervalMs?: number;
+}): Cypress.Chainable<void> => {
+    const poll = (attempt: number): Cypress.Chainable<void> => {
+        testLog.info(`[row-doc-sync] Polling server doc ${documentId} (attempt ${attempt}/${maxAttempts})`);
+
+        return cy.request({
+            url: `/api/workspace/v1/${workspaceId}/collab/${documentId}`,
+            qs: { collab_type: 0 },
+            failOnStatusCode: false,
+            timeout: 30000,
+        }).then((response) => {
+            const docState = response.body?.data?.doc_state;
+            const hasContent = response.status === 200 && Array.isArray(docState) && docStateContainsText(docState, expectedText);
+
+            if (hasContent) {
+                testLog.info('[row-doc-sync] Server document contains expected row content');
+                return;
+            }
+
+            if (attempt >= maxAttempts) {
+                const stateSize = Array.isArray(docState) ? docState.length : 0;
+                throw new Error(
+                    `[row-doc-sync] Timeout waiting for content in server doc ${documentId}; ` +
+                    `status=${response.status}, doc_state_size=${stateSize}`
+                );
+            }
+
+            cy.wait(intervalMs);
+            return poll(attempt + 1);
+        });
+    };
+
+    return poll(1);
+};
 
 describe('Publish Page Test', () => {
     let testEmail: string;
@@ -897,6 +968,7 @@ describe('Publish Page Test', () => {
                     // to create the row document on the server. We need to wait for this to
                     // complete before the WebSocket sync timer starts counting down.
                     cy.intercept('POST', '**/orphaned-view').as('createRowDoc');
+                    let rowDocSyncContext: { workspaceId: string; documentId: string } | null = null;
 
                     cy.get('@editor').click({ force: true });
                     waitForReactUpdate(1000);
@@ -912,15 +984,30 @@ describe('Publish Page Test', () => {
                     // This ensures the row document exists on the server before we
                     // start counting on WebSocket to sync the content.
                     cy.wait('@createRowDoc', { timeout: 30000 }).then((interception) => {
+                        const documentId = interception.request?.body?.document_id as string | undefined;
+                        const workspaceId = getWorkspaceIdFromOrphanedViewUrl(interception.request.url);
+
+                        if (!documentId) {
+                            throw new Error('Missing document_id in orphaned-view request');
+                        }
+
+                        rowDocSyncContext = { workspaceId, documentId };
                         testLog.info(`Row document created on server (status: ${interception.response?.statusCode})`);
                     });
 
-                    // Keep the modal open for an extended period to ensure:
-                    // 1. WebSocket sync sends the content to the server
-                    // 2. Server persists the content to its storage layer
-                    // The orphaned-view creation is already confirmed above,
-                    // so this full window is dedicated to content sync.
-                    waitForReactUpdate(20000);
+                    // Deterministically wait for the server row-document collab state
+                    // to contain the text we typed, instead of sleeping fixed durations.
+                    cy.then(() => {
+                        if (!rowDocSyncContext) {
+                            throw new Error('Row document sync context was not captured');
+                        }
+
+                        return waitUntilRowDocContainsText({
+                            workspaceId: rowDocSyncContext.workspaceId,
+                            documentId: rowDocSyncContext.documentId,
+                            expectedText: rowDocContent,
+                        });
+                    });
 
                     cy.get('[role="dialog"]').should('contain.text', rowDocContent);
                     testLog.info('Row document content added');
@@ -933,15 +1020,6 @@ describe('Publish Page Test', () => {
                     waitForReactUpdate(2000);
                     RowDetailSelectors.modal().should('not.exist');
 
-                    // Wait for server-side storage to fully settle.
-                    // Even after WebSocket sync completes, the server needs time to
-                    // persist the data to its storage backend (e.g., Postgres).
-                    // The publish blob is generated from this storage, so it must
-                    // contain the row document before we publish.
-                    // In CI environments, this can take significantly longer due to
-                    // shared resources and slower I/O.
-                    waitForReactUpdate(30000);
-
                     // Step 6: Publish the database
                     testLog.info('Publishing database');
                     ShareSelectors.shareButton().should('be.visible', { timeout: 10000 });
@@ -952,8 +1030,6 @@ describe('Publish Page Test', () => {
                     ShareSelectors.publishConfirmButton().should('be.visible').should('not.be.disabled');
                     ShareSelectors.publishConfirmButton().click({ force: true });
                     testLog.info('Clicked Publish button');
-                    cy.wait(5000);
-
                     ShareSelectors.publishNamespace().should('be.visible', { timeout: 10000 });
                     testLog.info('Database published successfully');
 
@@ -972,55 +1048,14 @@ describe('Publish Page Test', () => {
                                 testLog.info(`Navigating directly to row page: ${rowPageUrl}`);
 
                                 // Step 8: Visit published row page and verify content.
-                                // The row document content is baked into the publish blob.
-                                // Use a retry-with-reload strategy: if the publish blob was
-                                // generated before the server fully persisted the row document
-                                // content, the first visit may not show it. A reload fetches
-                                // a fresh blob which may now include the content.
+                                // Server-side sync has already been validated before publish,
+                                // so a single cache-busted visit is enough.
                                 testLog.info('Verifying row document content in published view');
+                                const cacheBustUrl = `${rowPageUrl}&_t=${Date.now()}`;
 
-                                const maxAttempts = 5;
-
-                                const verifyRowDocContent = (attempt: number) => {
-                                    testLog.info(`Visiting published row page (attempt ${attempt})`);
-
-                                    // Clear IndexedDB caches to force a fresh publish blob fetch.
-                                    // The publish view caches blobs in IndexedDB; without clearing,
-                                    // retries would keep showing the same stale data.
-                                    cy.clearAllLocalStorage();
-                                    cy.clearAllSessionStorage();
-                                    cy.window().then((win) => {
-                                        win.indexedDB.databases().then((dbs) => {
-                                            dbs.forEach((db) => {
-                                                if (db.name) win.indexedDB.deleteDatabase(db.name);
-                                            });
-                                        });
-                                    });
-
-                                    // Append a cache-busting parameter to force a fresh fetch
-                                    // of the publish blob on each retry attempt.
-                                    const cacheBustUrl = `${rowPageUrl}&_t=${Date.now()}`;
-
-                                    cy.visit(cacheBustUrl, { failOnStatusCode: false });
-                                    cy.wait(8000);
-
-                                    cy.get('body', { timeout: 30000 }).then(($body) => {
-                                        if ($body.text().includes(rowDocContent)) {
-                                            cy.contains(rowDocContent).should('be.visible');
-                                            testLog.info('✓ Test passed: Row document content displays correctly in published view');
-                                        } else if (attempt < maxAttempts) {
-                                            testLog.info(`Content not found on attempt ${attempt}, retrying after wait...`);
-                                            cy.wait(15000);
-                                            verifyRowDocContent(attempt + 1);
-                                        } else {
-                                            // Final attempt - use standard assertion to produce a clear error
-                                            cy.contains(rowDocContent, { timeout: 30000 }).should('be.visible');
-                                            testLog.info('✓ Test passed: Row document content displays correctly in published view');
-                                        }
-                                    });
-                                };
-
-                                verifyRowDocContent(1);
+                                cy.visit(cacheBustUrl, { failOnStatusCode: false });
+                                cy.contains(rowDocContent, { timeout: 60000 }).should('be.visible');
+                                testLog.info('✓ Test passed: Row document content displays correctly in published view');
                             });
                         });
                     });

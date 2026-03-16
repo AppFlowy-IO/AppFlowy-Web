@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
 import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
 import { WorkspaceService } from '@/application/services/domains';
-import { useAppHandlers } from '@/components/app/app.hooks';
+import { useGetSubscriptions } from '@/components/app/app.hooks';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -24,7 +24,7 @@ function InviteMember({
   open?: boolean;
   openOnChange?: (open: boolean) => void;
 }) {
-  const { getSubscriptions } = useAppHandlers();
+  const getSubscriptions = useGetSubscriptions();
   const { t } = useTranslation();
   const [value, setValue] = useState('');
   const [loading, setLoading] = useState(false);

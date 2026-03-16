@@ -3,7 +3,7 @@ import React, { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { View } from '@/application/types';
-import { useAppHandlers } from '@/components/app/app.hooks';
+import { useToView } from '@/components/app/app.hooks';
 import ListItem from '@/components/app/search/ListItem';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
@@ -20,7 +20,7 @@ function ViewList({
 }) {
   const { t } = useTranslation();
   const [selectedView, setSelectedView] = React.useState<string>('');
-  const { toView: navigateToView } = useAppHandlers();
+  const navigateToView = useToView();
   const ref = React.useRef<HTMLDivElement>(null);
 
   useEffect(() => {

@@ -1,13 +1,13 @@
-import { useContext, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 
-import { AFConfigContext, useCurrentUser } from '@/components/main/app.hooks';
+import { useCurrentUserOptional, useOpenLoginModalOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 
 function LandingFooter() {
   const { t } = useTranslation();
-  const openLoginModal = useContext(AFConfigContext)?.openLoginModal;
-  const currentUser = useCurrentUser();
+  const openLoginModal = useOpenLoginModalOptional();
+  const currentUser = useCurrentUserOptional();
 
   const url = useMemo(() => {
     return window.location.href;

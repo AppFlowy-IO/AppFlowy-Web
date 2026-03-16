@@ -1,11 +1,11 @@
-import React, { useContext } from 'react';
+import React from 'react';
 import { useTranslation } from 'react-i18next';
 import SwipeableViews from 'react-swipeable-views';
 
 import MobileMore from '@/components/_shared/mobile-topbar/MobileMore';
 import { AFScroller } from '@/components/_shared/scroller';
 import { ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
-import { AppContext, useAppOutline, useAppViewId } from '@/components/app/app.hooks';
+import { useAppOutline, useAppViewId, useToView } from '@/components/app/app.hooks';
 import MobileFavorite from '@/components/app/favorite/MobileFavorite';
 import MobileRecent from '@/components/app/recent/MobileRecent';
 import MobileWorkspaces from '@/components/app/workspaces/MobileWorkspaces';
@@ -22,7 +22,7 @@ enum ViewTabsKey {
 function MobileFolder({ onClose }: { onClose: () => void }) {
   const outline = useAppOutline();
   const viewId = useAppViewId();
-  const navigateToView = useContext(AppContext)?.toView;
+  const navigateToView = useToView();
   const [selectedTab, setSelectedTab] = React.useState<ViewTabsKey>(ViewTabsKey.Space);
   const { t } = useTranslation();
 

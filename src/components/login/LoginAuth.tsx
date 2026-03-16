@@ -1,29 +1,33 @@
-import { useContext, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { AuthService } from '@/application/services/domains';
 import { getRedirectTo } from '@/application/session/sign_in';
+import { Log } from '@/utils/log';
 import { ReactComponent as ErrorIcon } from '@/assets/icons/error.svg';
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { NormalModal } from '@/components/_shared/modal';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useOpenLoginModalOptional } from '@/components/main/app.hooks';
 
 function LoginAuth () {
   const [loading, setLoading] = useState<boolean>(false);
   const [modalOpened, setModalOpened] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { t } = useTranslation();
-  const openLoginModal = useContext(AFConfigContext)?.openLoginModal;
+  const openLoginModal = useOpenLoginModalOptional();
 
   useEffect(() => {
     void (async () => {
+      Log.info('[Auth] LoginAuth: processing callback URL');
       setLoading(true);
       setError(null);
       try {
         await AuthService.login(window.location.href);
+        Log.info('[Auth] LoginAuth: login completed successfully');
         // eslint-disable-next-line
       } catch (e: any) {
+        Log.error('[Auth] LoginAuth: login failed', { code: e.code, message: e.message });
         setError(e.message);
         setModalOpened(true);
       } finally {

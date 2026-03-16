@@ -7,7 +7,7 @@ import { SubscriptionPlan, View } from '@/application/types';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { notify } from '@/components/_shared/notify';
 import { flattenViews } from '@/components/_shared/outline/utils';
-import { useAppHandlers, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { usePublishing, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import HomePageSetting from '@/components/app/publish-manage/HomePageSetting';
 import PublishedPages from '@/components/app/publish-manage/PublishedPages';
 import PublishPagesSkeleton from '@/components/app/publish-manage/PublishPagesSkeleton';
@@ -142,7 +142,8 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     }
   }, [isOwner, t, workspaceId]);
 
-  const { publish, unpublish } = useAppHandlers();
+  const { publish, unpublish } = usePublishing();
+  const getSubscriptions = useGetSubscriptions();
   const handlePublish = useCallback(
     async (view: View, publishName: string) => {
       if (!publish) return;
@@ -174,7 +175,6 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
     [loadPublishPages, t, unpublish]
   );
 
-  const { getSubscriptions } = useAppHandlers();
   const [activeSubscription, setActiveSubscription] = React.useState<SubscriptionPlan | null>(null);
   const loadSubscription = useCallback(async () => {
     if (!isAppFlowyHosted()) {

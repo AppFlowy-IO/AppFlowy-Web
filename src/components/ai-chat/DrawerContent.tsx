@@ -6,7 +6,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { UIVariant, ViewMetaProps, YDoc, YDocWithMeta } from '@/application/types';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { insertDataToDoc } from '@/components/ai-chat/utils';
-import { useAppHandlers, useAppView, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useAppView, useCurrentWorkspaceId, useOpenPageModal, useLoadViews } from '@/components/app/app.hooks';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
 import { getAxiosInstance } from '@/application/services/js-services/http';
@@ -24,12 +24,12 @@ function DrawerContent({
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
     bindViewSync,
-  } = useAppHandlers();
+  } = useAppOperations();
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
   const {
     getInsertData,
     clearInsertData,

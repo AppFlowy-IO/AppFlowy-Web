@@ -1,5 +1,5 @@
 import { AppFlowyEditor } from '@appflowyinc/editor';
-import { createContext, ReactNode, useCallback, useContext, useEffect, useRef } from 'react';
+import { createContext, ReactNode, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 
 import { useChatContext } from '@/components/chat/chat/context';
 
@@ -27,14 +27,16 @@ export const EditorProvider = ({ children }: { children: ReactNode }) => {
   const setEditor = useCallback((messageId: number, editor: AppFlowyEditor) => {
     editorsRef.current.set(messageId, editor);
   }, [editorsRef]);
+  const contextValue = useMemo(
+    () => ({
+      getEditor,
+      setEditor,
+    }),
+    [getEditor, setEditor]
+  );
 
   return (
-    <EditorContext.Provider
-      value={{
-        getEditor,
-        setEditor,
-      }}
-    >
+    <EditorContext.Provider value={contextValue}>
       {children}
     </EditorContext.Provider>
   );

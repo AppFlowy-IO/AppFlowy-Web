@@ -1,13 +1,11 @@
 import { EditorData } from '@appflowyinc/editor';
 import { findLast } from 'lodash-es';
-import { ReactNode, useCallback, useEffect, useRef, useState } from 'react';
+import { ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { ConfirmDiscard } from '@/components/chat/components/ai-writer/confirm-discard';
 import { ModelSelectorContext } from '@/components/chat/contexts/model-selector-context';
-
-// Using main AppFlowy i18n system - no separate chat context needed
 import { WriterRequest } from '@/components/chat/request';
 import {
   AIAssistantType,
@@ -23,6 +21,8 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 
 import { usePromptModal } from './prompt-modal-provider';
 import { ViewLoaderProvider } from './view-loader-provider';
+
+const WRITER_MODEL_STORAGE_KEY = 'writer_selected_model';
 
 export const AIAssistantProvider = ({
   isGlobalDocument,
@@ -67,7 +67,9 @@ export const AIAssistantProvider = ({
   const isApplying = applyingState === ApplyingState.applying;
   const cancelRef = useRef<(() => void) | undefined>();
   const initialScrollTopRef = useRef<number | null>(null);
-  const [selectedModelName, setSelectedModelName] = useState<string>('Auto');
+  const [selectedModelName, setSelectedModelName] = useState<string>(
+    () => localStorage.getItem(WRITER_MODEL_STORAGE_KEY) || 'Auto'
+  );
 
   const { currentPromptId, updateCurrentPromptId, prompts } = usePromptModal();
 
@@ -363,75 +365,128 @@ export const AIAssistantProvider = ({
     return () => {
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [exit, stop]);
+  }, [stop]);
 
   const hasAIAnswer = useCallback(() => {
     return completionHistoryRef.current.some((item) => item.role === CompletionRole.AI);
   }, []);
+  const modelRequestInstance = useMemo(
+    () => ({
+      getModelList: () => request.getModelList(),
+      getCurrentModel: async () => {
+        return localStorage.getItem(WRITER_MODEL_STORAGE_KEY) || 'Auto';
+      },
+      setCurrentModel: async (modelName: string) => {
+        localStorage.setItem(WRITER_MODEL_STORAGE_KEY, modelName);
+      },
+    }),
+    [request]
+  );
+  const modelSelectorValue = useMemo(
+    () => ({
+      selectedModelName,
+      setSelectedModelName,
+      requestInstance: modelRequestInstance,
+    }),
+    [selectedModelName, setSelectedModelName, modelRequestInstance]
+  );
+  const writerContextValue = useMemo(
+    () => ({
+      viewId,
+      fetchViews: request.fetchViews,
+      placeholderContent,
+      comment,
+      improveWriting,
+      assistantType,
+      isFetching,
+      isApplying,
+      askAIAnything,
+      continueWriting,
+      explain,
+      fixSpelling,
+      makeLonger,
+      makeShorter,
+      askAIAnythingWithRequest,
+      setOpenDiscard,
+      applyingState,
+      setRagIds,
+      exit,
+      setEditorData,
+      keep,
+      accept,
+      rewrite,
+      stop,
+      responseMode,
+      setResponseMode,
+      responseFormat,
+      setResponseFormat,
+      isGlobalDocument,
+      error,
+      scrollContainer,
+      hasAIAnswer,
+      selectedModelName,
+      setSelectedModelName,
+    }),
+    [
+      viewId,
+      request.fetchViews,
+      placeholderContent,
+      comment,
+      improveWriting,
+      assistantType,
+      isFetching,
+      isApplying,
+      askAIAnything,
+      continueWriting,
+      explain,
+      fixSpelling,
+      makeLonger,
+      makeShorter,
+      askAIAnythingWithRequest,
+      setOpenDiscard,
+      applyingState,
+      setRagIds,
+      exit,
+      setEditorData,
+      keep,
+      accept,
+      rewrite,
+      stop,
+      responseMode,
+      setResponseMode,
+      responseFormat,
+      setResponseFormat,
+      isGlobalDocument,
+      error,
+      scrollContainer,
+      hasAIAnswer,
+      selectedModelName,
+      setSelectedModelName,
+    ]
+  );
+
+  const getView = useCallback(
+    (viewId: string) => request.getView(viewId),
+    [request]
+  );
+  const fetchViews = useCallback(
+    () => request.fetchViews(),
+    [request]
+  );
+  const handleCloseDiscard = useCallback(() => {
+    setOpenDiscard(false);
+  }, []);
 
   return (
-    <ModelSelectorContext.Provider
-      value={{
-        selectedModelName,
-        setSelectedModelName,
-        requestInstance: {
-          getModelList: () => request.getModelList(),
-          getCurrentModel: async () => {
-            // For writer context, get from localStorage
-            return localStorage.getItem('writer_selected_model') || '';
-          },
-          setCurrentModel: async (modelName: string) => {
-            // For writer context, save to localStorage
-            localStorage.setItem('writer_selected_model', modelName);
-          },
-        },
-      }}
-    >
-      <WriterContext.Provider
-        value={{
-          viewId,
-          fetchViews: request.fetchViews,
-          placeholderContent,
-          comment,
-          improveWriting,
-          assistantType,
-          isFetching,
-          isApplying,
-          askAIAnything,
-          continueWriting,
-          explain,
-          fixSpelling,
-          makeLonger,
-          makeShorter,
-          askAIAnythingWithRequest,
-          setOpenDiscard,
-          applyingState,
-          setRagIds,
-          exit,
-          setEditorData,
-          keep,
-          accept,
-          rewrite,
-          stop,
-          responseMode,
-          setResponseMode,
-          responseFormat,
-          setResponseFormat,
-          isGlobalDocument,
-          error,
-          scrollContainer,
-          hasAIAnswer,
-          selectedModelName,
-          setSelectedModelName,
-        }}
-      >
+    <ModelSelectorContext.Provider value={modelSelectorValue}>
+      <WriterContext.Provider value={writerContextValue}>
         <TooltipProvider>
           <ViewLoaderProvider
-            getView={(viewId: string) => request.getView(viewId)}
-            fetchViews={() => request.fetchViews()}
+            getView={getView}
+            fetchViews={fetchViews}
           >
             {children}
-            <ConfirmDiscard open={openDiscard} onClose={() => setOpenDiscard(false)} />
+            <ConfirmDiscard open={openDiscard} onClose={handleCloseDiscard} />
           </ViewLoaderProvider>
         </TooltipProvider>
       </WriterContext.Provider>

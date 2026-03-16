@@ -187,6 +187,11 @@ export function useNotifications(workspaceId: string | undefined): UseNotificati
     }
   }, [workspaceId, refresh]);
 
+  // Use a ref so the polling effect doesn't re-fire when `refresh` identity changes
+  const refreshRef = useRef(refresh);
+
+  refreshRef.current = refresh;
+
   // Initial load + polling
   useEffect(() => {
     mountedRef.current = true;
@@ -196,17 +201,17 @@ export function useNotifications(workspaceId: string | undefined): UseNotificati
       return;
     }
 
-    void refresh();
+    void refreshRef.current();
 
     const interval = setInterval(() => {
-      void refresh();
+      void refreshRef.current();
     }, REFRESH_INTERVAL);
 
     return () => {
       mountedRef.current = false;
       clearInterval(interval);
     };
-  }, [workspaceId, refresh]);
+  }, [workspaceId]);
 
   // Derived lists
   const inboxNotifications = useMemo(() => notifications.filter((n) => !n.isArchived), [notifications]);

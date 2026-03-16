@@ -1,4 +1,4 @@
-import React, { lazy, memo, Suspense, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, memo, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { APP_EVENTS } from '@/application/constants';
@@ -9,11 +9,19 @@ import Help from '@/components/_shared/help/Help';
 import { findView } from '@/components/_shared/outline/utils';
 import { AIChat } from '@/components/ai-chat';
 import {
-  AppContext,
-  useAppHandlers,
+  useAppOperations,
   useAppOutline,
+  useAppRendered,
   useAppViewId,
+  useAppendBreadcrumb,
   useCurrentWorkspaceId,
+  useEventEmitter,
+  useGetMentionUser,
+  useLoadDatabaseRelations,
+  useLoadViews,
+  useOnRendered,
+  useOpenPageModal,
+  useScheduleDeferredCleanup,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
@@ -32,25 +40,27 @@ function AppPage() {
   const outline = useAppOutline();
   const ref = React.useRef<HTMLDivElement>(null);
   const workspaceId = useCurrentWorkspaceId();
+  const operations = useAppOperations();
   const {
     toView,
     loadViewMeta,
     createRow,
     loadView,
-    appendBreadcrumb,
-    onRendered,
     updatePage,
     addPage,
     deletePage,
-    openPageModal,
-    loadViews,
     setWordCount,
     uploadFile,
     bindViewSync,
-    scheduleDeferredCleanup,
-    ...handlers
-  } = useAppHandlers();
-  const { eventEmitter } = handlers;
+  } = operations;
+  const appendBreadcrumb = useAppendBreadcrumb();
+  const onRendered = useOnRendered();
+  const openPageModal = useOpenPageModal();
+  const loadViews = useLoadViews();
+  const eventEmitter = useEventEmitter();
+  const scheduleDeferredCleanup = useScheduleDeferredCleanup();
+  const getMentionUser = useGetMentionUser();
+  const loadDatabaseRelations = useLoadDatabaseRelations();
 
   const currentUser = useCurrentUser();
 
@@ -104,7 +114,7 @@ function AppPage() {
   const view = outlineView ?? (fallbackView?.view_id === viewId ? fallbackView : null);
   const layout = view?.layout;
 
-  const rendered = useContext(AppContext)?.rendered;
+  const rendered = useAppRendered();
 
   const helmet = useMemo(() => {
     return view && rendered ? (
@@ -476,7 +486,21 @@ function AppPage() {
           onWordCountChange={setWordCount}
           uploadFile={handleUploadFile}
           variant={UIVariant.App}
-          {...handlers}
+          getSubscriptions={operations.getSubscriptions}
+          getMentionUser={getMentionUser}
+          eventEmitter={eventEmitter}
+          getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
+          loadDatabaseRelations={loadDatabaseRelations}
+          createDatabaseView={operations.createDatabaseView}
+          loadDatabasePrompts={operations.loadDatabasePrompts}
+          testDatabasePromptConfig={operations.testDatabasePromptConfig}
+          checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
+          loadRowDocument={operations.loadRowDocument}
+          createRowDocument={operations.createRowDocument}
+          updatePageIcon={operations.updatePageIcon}
+          updatePageName={operations.updatePageName}
+          generateAISummaryForRow={operations.generateAISummaryForRow}
+          generateAITranslateForRow={operations.generateAITranslateForRow}
         />
       );
     }
@@ -505,13 +529,26 @@ function AppPage() {
         uploadFile={handleUploadFile}
         variant={UIVariant.App}
         scheduleDeferredCleanup={scheduleDeferredCleanup}
-        {...handlers}
+        getSubscriptions={operations.getSubscriptions}
+        getMentionUser={getMentionUser}
+        eventEmitter={eventEmitter}
+        getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
+        loadDatabaseRelations={loadDatabaseRelations}
+        createDatabaseView={operations.createDatabaseView}
+        loadDatabasePrompts={operations.loadDatabasePrompts}
+        testDatabasePromptConfig={operations.testDatabasePromptConfig}
+        checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
+        loadRowDocument={operations.loadRowDocument}
+        createRowDocument={operations.createRowDocument}
+        updatePageIcon={operations.updatePageIcon}
+        updatePageName={operations.updatePageName}
+        generateAISummaryForRow={operations.generateAISummaryForRow}
+        generateAITranslateForRow={operations.generateAITranslateForRow}
       />
     );
   }, [
     doc,
     layout,
-    handlers,
     viewId,
     viewMeta,
     workspaceId,
@@ -533,6 +570,10 @@ function AppPage() {
     handleUploadFile,
     scheduleDeferredCleanup,
     getDocViewId,
+    operations,
+    getMentionUser,
+    eventEmitter,
+    loadDatabaseRelations,
   ]);
 
   // Keep previous view content visible during transitions to prevent

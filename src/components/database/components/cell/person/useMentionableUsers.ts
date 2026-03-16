@@ -1,9 +1,9 @@
-import { useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { db } from '@/application/db';
 import { WorkspaceService } from '@/application/services/domains';
 import { MentionablePerson } from '@/application/types';
-import { AppContext } from '@/components/app/app.hooks';
+import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 
 interface CacheEntry {
   users: MentionablePerson[];
@@ -75,9 +75,7 @@ async function saveToDisk(workspaceId: string, users: MentionablePerson[]): Prom
 }
 
 export function useMentionableUsers() {
-  // Use AppContext directly to avoid throwing when outside AppProvider (e.g., in publish view)
-  const appContext = useContext(AppContext);
-  const workspaceId = appContext?.currentWorkspaceId;
+  const workspaceId = useCurrentWorkspaceIdOptional();
 
   // Track current workspaceId for race condition prevention
   const workspaceIdRef = useRef(workspaceId);

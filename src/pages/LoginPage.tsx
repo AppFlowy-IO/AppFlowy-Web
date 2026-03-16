@@ -1,4 +1,4 @@
-import { useContext, useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { Login } from '@/components/login';
@@ -10,7 +10,7 @@ import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
 import { SignUpPassword } from '@/components/login/SignUpPassword';
 import { isSafeRedirectUrl, safeDecodeRedirectParam } from '@/application/session/sign_in';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 function LoginPage() {
   const [search, setSearch] = useSearchParams();
@@ -19,7 +19,7 @@ function LoginPage() {
   const force = search.get('force') === 'true';
   const redirectTo = search.get('redirectTo') || '';
   const type = search.get('type') || '';
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
+  const isAuthenticated = useIsAuthenticatedOptional();
 
 
   // Strip unsafe redirectTo from URL immediately, preserving all other params

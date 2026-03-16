@@ -46,7 +46,7 @@ export async function markAllNotificationsRead(workspaceId: string): Promise<voi
   const url = `/api/workspace/${workspaceId}/notifications/read-all`;
 
   return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url)
+    getAxios()?.post<APIResponse>(url, {})
   );
 }
 
@@ -62,6 +62,6 @@ export async function archiveAllNotifications(workspaceId: string): Promise<void
   const url = `/api/workspace/${workspaceId}/notifications/archive-all`;
 
   return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url)
+    getAxios()?.post<APIResponse>(url, {})
   );
 }

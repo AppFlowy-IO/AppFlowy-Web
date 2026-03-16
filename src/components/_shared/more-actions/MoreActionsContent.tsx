@@ -11,7 +11,7 @@ import { ReactComponent as MoonIcon } from '@/assets/icons/moon.svg';
 import { ReactComponent as SunIcon } from '@/assets/icons/sun.svg';
 import CacheClearingDialog from '@/components/_shared/modal/CacheClearingDialog';
 import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { openUrl } from '@/utils/url';
 
@@ -21,7 +21,7 @@ function MoreActionsContent({
   itemClicked: (item: { Icon: React.ElementType; label: string; onClick: () => void }) => void;
 }) {
   const { isDark, setDark } = useContext(ThemeModeContext) || {};
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
+  const isAuthenticated = useIsAuthenticatedOptional();
   const { t } = useTranslation();
   const navigate = useNavigate();
 

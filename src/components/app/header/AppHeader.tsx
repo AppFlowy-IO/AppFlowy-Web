@@ -1,5 +1,5 @@
 import { IconButton } from '@mui/material';
-import { lazy, memo, Suspense, useContext, useMemo } from 'react';
+import { lazy, memo, Suspense, useMemo } from 'react';
 
 import { UIVariant } from '@/application/types';
 import { ReactComponent as DoubleArrowRight } from '@/assets/icons/double_arrow_right.svg';
@@ -7,7 +7,7 @@ import { Breadcrumb } from '@/components/_shared/breadcrumb';
 import { useOutlinePopover } from '@/components/_shared/outline/outline.hooks';
 import OutlinePopover from '@/components/_shared/outline/OutlinePopover';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
-import { AppContext, useAppHandlers, useBreadcrumb } from '@/components/app/app.hooks';
+import { useAppRendered, useToView, useBreadcrumb } from '@/components/app/app.hooks';
 import Recent from '@/components/app/recent/Recent';
 
 const RightMenu = lazy(() => import('@/components/app/header/RightMenu'));
@@ -35,8 +35,8 @@ export function AppHeader({ onOpenDrawer, openDrawer, onCloseDrawer }: AppHeader
 
   const displayMenuButton = !openDrawer && window.innerWidth >= 480;
 
-  const toView = useAppHandlers().toView;
-  const rendered = useContext(AppContext)?.rendered;
+  const toView = useToView();
+  const rendered = useAppRendered();
 
   const recent = useMemo(() => <Recent />, []);
 

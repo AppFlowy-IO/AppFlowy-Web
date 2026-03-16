@@ -10,15 +10,16 @@ export interface ServerInfo {
 }
 
 export async function signInWithUrl(url: string) {
+  Log.info('[Auth] signInWithUrl: processing OAuth callback');
+
   // First check for GoTrue errors in the URL
   const gotrueError = parseGoTrueErrorFromUrl(url);
 
   if (gotrueError) {
-    console.warn('[signInWithUrl] GoTrue error detected in callback URL', {
+    Log.error('[Auth] signInWithUrl: GoTrue error in callback URL', {
       code: gotrueError.code,
       message: gotrueError.message,
     });
-    // GoTrue returned an error, reject with parsed error
     return Promise.reject({
       code: gotrueError.code,
       message: gotrueError.message,
@@ -30,7 +31,7 @@ export async function signInWithUrl(url: string) {
   const hash = urlObj.hash;
 
   if (!hash) {
-    console.warn('[signInWithUrl] No hash found in callback URL');
+    Log.error('[Auth] signInWithUrl: no hash fragment in callback URL');
     return Promise.reject('No hash found');
   }
 
@@ -39,7 +40,7 @@ export async function signInWithUrl(url: string) {
   const refresh_token = params.get('refresh_token');
 
   if (!accessToken || !refresh_token) {
-    console.warn('[signInWithUrl] Missing tokens in callback hash', {
+    Log.error('[Auth] signInWithUrl: missing tokens in callback hash', {
       hasAccessToken: !!accessToken,
       hasRefreshToken: !!refresh_token,
     });
@@ -48,6 +49,8 @@ export async function signInWithUrl(url: string) {
       message: 'No access token or refresh token found',
     });
   }
+
+  Log.info('[Auth] signInWithUrl: tokens extracted from callback URL');
 
   // CRITICAL: Clear old token BEFORE processing new OAuth tokens
   // This prevents axios interceptor from trying to auto-refresh the old expired token
@@ -60,29 +63,33 @@ export async function signInWithUrl(url: string) {
   const hadOldToken = !!localStorage.getItem('token');
 
   if (hadOldToken) {
-    Log.debug('[signInWithUrl] Clearing old token before processing OAuth callback to prevent race condition');
+    Log.info('[Auth] signInWithUrl: clearing old token to prevent race condition');
     localStorage.removeItem('token');
   }
 
+  Log.info('[Auth] signInWithUrl: verifying token with AppFlowy Cloud');
   try {
     await verifyToken(accessToken);
   } catch (e) {
-    console.warn('[signInWithUrl] Verify token failed', { message: (e as Error)?.message });
+    Log.error('[Auth] signInWithUrl: verifyToken failed', { message: (e as Error)?.message });
     return Promise.reject({
       code: -1,
       message: 'Verify token failed',
     });
   }
 
+  Log.info('[Auth] signInWithUrl: refreshing token');
   try {
     await refreshToken(refresh_token);
   } catch (e) {
-    console.warn('[signInWithUrl] Refresh token failed', { message: (e as Error)?.message });
+    Log.error('[Auth] signInWithUrl: refreshToken failed', { message: (e as Error)?.message });
     return Promise.reject({
       code: -1,
       message: 'Refresh token failed',
     });
   }
+
+  Log.info('[Auth] signInWithUrl: OAuth callback processed successfully');
 }
 
 export async function verifyToken(accessToken: string) {

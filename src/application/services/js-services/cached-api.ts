@@ -7,6 +7,7 @@ import * as random from 'lib0/random';
 import * as Y from 'yjs';
 
 import { openCollabDB } from '@/application/db';
+import { Log } from '@/utils/log';
 import {
   createRow,
   deleteRow,
@@ -283,12 +284,15 @@ export async function getPublishInfoCached(viewId: string) {
 }
 
 export async function loginAuth(url: string) {
+  Log.info('[Auth] loginAuth: processing OAuth callback');
   try {
     await signInWithUrl(url);
+    Log.info('[Auth] loginAuth: success, calling afterAuth');
     emit(EventType.SESSION_VALID);
     afterAuth();
     return;
   } catch (e) {
+    Log.error('[Auth] loginAuth: failed', e);
     emit(EventType.SESSION_INVALID);
     return Promise.reject(e);
   }

@@ -1,7 +1,7 @@
 import EventEmitter from 'events';
 
 import { AxiosInstance } from 'axios';
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useMemo, useState } from 'react';
 import { BaseRange, Range } from 'slate';
 import { Awareness } from 'y-protocols/awareness';
 
@@ -44,6 +44,25 @@ export interface Decorate {
   class_name: string;
 }
 
+/**
+ * Local editor state managed within the EditorContextProvider.
+ * Split into a separate context so consumers that only need config props
+ * don't re-render when local state (decorateState, selectedBlockIds, collapsedMap) changes.
+ */
+export interface EditorLocalState {
+  decorateState: Record<string, Decorate>;
+  addDecorate: (range: BaseRange, class_name: string, type: string) => void;
+  removeDecorate: (type: string) => void;
+  selectedBlockIds: string[];
+  setSelectedBlockIds: React.Dispatch<React.SetStateAction<string[]>>;
+  collapsedMap: Record<string, boolean>;
+  toggleCollapsed: (blockId: string) => void;
+}
+
+/**
+ * Config props passed from the parent into the editor.
+ * These change infrequently compared to local state.
+ */
 export interface EditorContextState {
   fullWidth?: boolean;
   workspaceId: string;
@@ -62,11 +81,6 @@ export interface EditorContextState {
   onJumpedBlockId?: () => void;
   variant?: UIVariant;
   onRendered?: () => void;
-  decorateState?: Record<string, Decorate>;
-  addDecorate?: (range: BaseRange, class_name: string, type: string) => void;
-  removeDecorate?: (type: string) => void;
-  selectedBlockIds?: string[];
-  setSelectedBlockIds?: React.Dispatch<React.SetStateAction<string[]>>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
   openPageModal?: (viewId: string) => void;
@@ -83,22 +97,53 @@ export interface EditorContextState {
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   awareness?: Awareness;
   getDeviceId?: () => string;
-  collapsedMap?: Record<string, boolean>;
-  toggleCollapsed?: (blockId: string) => void;
   databaseRelations?: DatabaseRelations;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
 }
 
-export const EditorContext = createContext<EditorContextState>({
-  readOnly: true,
-  layoutStyle: defaultLayoutStyle,
-  codeGrammars: {},
-  viewId: '',
-  workspaceId: '',
-});
+export const EditorContext = createContext<EditorContextState | undefined>(undefined);
+export const EditorLocalStateContext = createContext<EditorLocalState | undefined>(undefined);
 
-export const EditorContextProvider = ({ children, ...props }: EditorContextState & { children: React.ReactNode }) => {
+export const EditorContextProvider = ({
+  children,
+  fullWidth,
+  workspaceId,
+  viewId,
+  readOnly,
+  layoutStyle,
+  codeGrammars,
+  addCodeGrammars,
+  navigateToView,
+  loadViewMeta,
+  loadView,
+  createRow,
+  bindViewSync,
+  readSummary,
+  jumpBlockId,
+  onJumpedBlockId,
+  variant,
+  onRendered,
+  addPage,
+  deletePage,
+  openPageModal,
+  loadViews,
+  createDatabaseView,
+  onWordCountChange,
+  uploadFile,
+  requestInstance,
+  getMoreAIContext,
+  loadDatabasePrompts,
+  testDatabasePromptConfig,
+  getSubscriptions,
+  eventEmitter,
+  getMentionUser,
+  awareness,
+  getDeviceId,
+  databaseRelations,
+  getViewIdFromDatabaseId,
+  loadDatabaseRelations,
+}: EditorContextState & { children: React.ReactNode }) => {
   const [decorateState, setDecorateState] = useState<Record<string, Decorate>>({});
   const [selectedBlockIds, setSelectedBlockIds] = useState<string[]>([]);
   const [collapsedMap, setCollapsedMap] = useState<Record<string, boolean>>({});
@@ -141,30 +186,129 @@ export const EditorContextProvider = ({ children, ...props }: EditorContextState
     }));
   }, []);
 
+  const configValue = useMemo(
+    () => ({
+      fullWidth,
+      workspaceId,
+      viewId,
+      readOnly,
+      layoutStyle,
+      codeGrammars,
+      addCodeGrammars,
+      navigateToView,
+      loadViewMeta,
+      loadView,
+      createRow,
+      bindViewSync,
+      readSummary,
+      jumpBlockId,
+      onJumpedBlockId,
+      variant,
+      onRendered,
+      addPage,
+      deletePage,
+      openPageModal,
+      loadViews,
+      createDatabaseView,
+      onWordCountChange,
+      uploadFile,
+      requestInstance,
+      getMoreAIContext,
+      loadDatabasePrompts,
+      testDatabasePromptConfig,
+      getSubscriptions,
+      eventEmitter,
+      getMentionUser,
+      awareness,
+      getDeviceId,
+      databaseRelations,
+      getViewIdFromDatabaseId,
+      loadDatabaseRelations,
+    }),
+    [
+      fullWidth,
+      workspaceId,
+      viewId,
+      readOnly,
+      layoutStyle,
+      codeGrammars,
+      addCodeGrammars,
+      navigateToView,
+      loadViewMeta,
+      loadView,
+      createRow,
+      bindViewSync,
+      readSummary,
+      jumpBlockId,
+      onJumpedBlockId,
+      variant,
+      onRendered,
+      addPage,
+      deletePage,
+      openPageModal,
+      loadViews,
+      createDatabaseView,
+      onWordCountChange,
+      uploadFile,
+      requestInstance,
+      getMoreAIContext,
+      loadDatabasePrompts,
+      testDatabasePromptConfig,
+      getSubscriptions,
+      eventEmitter,
+      getMentionUser,
+      awareness,
+      getDeviceId,
+      databaseRelations,
+      getViewIdFromDatabaseId,
+      loadDatabaseRelations,
+    ]
+  );
+
+  const localStateValue = useMemo(
+    () => ({
+      decorateState,
+      addDecorate,
+      removeDecorate,
+      selectedBlockIds,
+      setSelectedBlockIds,
+      collapsedMap,
+      toggleCollapsed,
+    }),
+    [decorateState, addDecorate, removeDecorate, selectedBlockIds, collapsedMap, toggleCollapsed]
+  );
+
   return (
-    <EditorContext.Provider
-      value={{
-        ...props,
-        decorateState,
-        addDecorate,
-        removeDecorate,
-        setSelectedBlockIds,
-        selectedBlockIds,
-        collapsedMap,
-        toggleCollapsed,
-      }}
-    >
-      {children}
+    <EditorContext.Provider value={configValue}>
+      <EditorLocalStateContext.Provider value={localStateValue}>
+        {children}
+      </EditorLocalStateContext.Provider>
     </EditorContext.Provider>
   );
 };
 
 export function useEditorContext() {
-  return useContext(EditorContext);
+  const context = useContext(EditorContext);
+
+  if (!context) {
+    throw new Error('useEditorContext must be used within an EditorContextProvider');
+  }
+
+  return context;
+}
+
+export function useEditorLocalState() {
+  const context = useContext(EditorLocalStateContext);
+
+  if (!context) {
+    throw new Error('useEditorLocalState must be used within an EditorContextProvider');
+  }
+
+  return context;
 }
 
 export function useBlockSelected(blockId: string) {
-  const { selectedBlockIds } = useEditorContext();
+  const { selectedBlockIds } = useEditorLocalState();
 
   return selectedBlockIds?.includes(blockId);
 }

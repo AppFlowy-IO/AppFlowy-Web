@@ -173,20 +173,30 @@ function DatabaseViews({
         return null;
     }
   }, [effectiveLayout]);
+  const databaseConditionsValue = useMemo(
+    () => ({
+      expanded: conditionsExpanded,
+      toggleExpanded,
+      setExpanded,
+      openFilterId,
+      setOpenFilterId,
+      isAdvancedMode,
+      setAdvancedMode,
+    }),
+    [
+      conditionsExpanded,
+      toggleExpanded,
+      setExpanded,
+      openFilterId,
+      setOpenFilterId,
+      isAdvancedMode,
+      setAdvancedMode,
+    ]
+  );
 
   return (
     <>
-      <DatabaseConditionsContext.Provider
-        value={{
-          expanded: conditionsExpanded,
-          toggleExpanded,
-          setExpanded,
-          openFilterId,
-          setOpenFilterId,
-          isAdvancedMode,
-          setAdvancedMode,
-        }}
-      >
+      <DatabaseConditionsContext.Provider value={databaseConditionsValue}>
         <DatabaseTabs
           viewName={viewName}
           databasePageId={databasePageId}

@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Trans, useTranslation } from 'react-i18next';
 import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 import { invalidToken } from '@/application/session/token';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { AuthService } from '@/application/services/domains';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { PasswordInput } from '@/components/ui/password-input';
@@ -23,7 +23,7 @@ export function ChangePassword({ email, redirectTo }: { email: string; redirectT
   const [error, setError] = useState('');
   const [passwordErrors, setPasswordErrors] = useState<string[]>([]);
 
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated || false;
+  const isAuthenticated = useIsAuthenticatedOptional();
   const [, setSearchParams] = useSearchParams();
 
   useEffect(() => {

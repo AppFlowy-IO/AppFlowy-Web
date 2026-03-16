@@ -1,3 +1,5 @@
+import { Log } from '@/utils/log';
+
 export function saveRedirectTo(redirectTo: string) {
   localStorage.setItem('redirectTo', redirectTo);
 }
@@ -97,15 +99,19 @@ export function afterAuth() {
 
     if (hasUserSpecificIds) {
       // Don't redirect to user-specific pages from previous sessions
+      Log.info('[Auth] afterAuth: blocking user-specific redirect, going to /app', { pathname });
       window.location.href = '/app';
     } else if (pathname === '/' || !pathname) {
       // Preserve query params and hash but redirect to /app path
       url.pathname = '/app';
+      Log.info('[Auth] afterAuth: root path redirect, going to /app');
       window.location.href = url.toString();
     } else {
-      window.location.href = decoded;
+      Log.info('[Auth] afterAuth: redirecting to saved destination', { pathname });
+      window.location.href = url.toString();
     }
   } else {
+    Log.info('[Auth] afterAuth: no redirectTo saved, going to /app');
     window.location.href = '/app';
   }
 }

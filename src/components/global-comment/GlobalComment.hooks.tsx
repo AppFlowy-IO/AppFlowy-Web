@@ -8,11 +8,11 @@ import { PublishService } from '@/application/services/domains';
 import { AFWebUser } from '@/application/types';
 import { getUserIconUrl } from '@/application/user-metadata';
 import { useCurrentUserWorkspaceAvatar } from '@/components/app/useWorkspaceMemberProfile';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { stringAvatar } from '@/utils/color';
 import { isFlagEmoji } from '@/utils/emoji';
 
-export const GlobalCommentContext = React.createContext<{
+type GlobalCommentContextType = {
   reload: () => Promise<void>;
   getComment: (commentId: string) => GlobalComment | undefined;
   loading: boolean;
@@ -23,26 +23,23 @@ export const GlobalCommentContext = React.createContext<{
   toggleReaction: (commentId: string, reactionType: string) => void;
   setHighLightCommentId: (commentId: string | null) => void;
   highLightCommentId: string | null;
-}>({
-  reload: () => Promise.resolve(),
-  getComment: () => undefined,
-  loading: false,
-  comments: null,
-  replyComment: () => undefined,
-  replyCommentId: null,
-  reactions: null,
-  toggleReaction: () => undefined,
-  setHighLightCommentId: () => undefined,
-  highLightCommentId: null,
-});
+};
+
+export const GlobalCommentContext = React.createContext<GlobalCommentContextType | undefined>(undefined);
 
 export function useGlobalCommentContext() {
-  return useContext(GlobalCommentContext);
+  const context = useContext(GlobalCommentContext);
+
+  if (!context) {
+    throw new Error('useGlobalCommentContext must be used within a GlobalCommentProvider');
+  }
+
+  return context;
 }
 
 export function useLoadReactions() {
   const viewId = useContext(PublishContext)?.viewMeta?.view_id;
-  const currentUser = useContext(AFConfigContext)?.currentUser;
+  const currentUser = useCurrentUserOptional();
   const workspaceAvatar = useCurrentUserWorkspaceAvatar();
   const currentUserAvatar = useMemo(() => getUserIconUrl(currentUser, workspaceAvatar), [currentUser, workspaceAvatar]);
   const [reactions, setReactions] = useState<Record<string, Reaction[]> | null>(null);

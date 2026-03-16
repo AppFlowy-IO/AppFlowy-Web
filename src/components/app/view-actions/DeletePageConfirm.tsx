@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 
 import { NormalModal } from '@/components/_shared/modal';
 import { filterViewsByCondition } from '@/components/_shared/outline/utils';
-import { useAppHandlers, useAppView } from '@/components/app/app.hooks';
+import { useAppOperations, useAppView } from '@/components/app/app.hooks';
 
 function DeletePageConfirm({
   open,
@@ -19,7 +19,7 @@ function DeletePageConfirm({
 }) {
   const view = useAppView(viewId);
   const [loading, setLoading] = React.useState(false);
-  const { deletePage } = useAppHandlers();
+  const { deletePage } = useAppOperations();
   const { t } = useTranslation();
 
   const handleOk = useCallback(async () => {

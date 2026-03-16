@@ -19,7 +19,7 @@ import {
   OutlineDepthControl,
 } from '@/components/editor/components/toolbar/block-controls/OutlineControls';
 import { BlockNode, CalloutNode, OutlineNode } from '@/components/editor/editor.type';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorLocalState } from '@/components/editor/EditorContext';
 import { copyTextToClipboard } from '@/utils/copy';
 
 import CalloutIconControl from './CalloutIconControl';
@@ -49,7 +49,7 @@ function ControlsMenu({
   onClose: () => void;
   anchorEl: HTMLElement | null;
 }) {
-  const { selectedBlockIds } = useEditorContext();
+  const { selectedBlockIds } = useEditorLocalState();
   const editor = useSlateStatic() as YjsEditor;
   const onlySingleBlockSelected = selectedBlockIds?.length === 1;
   const node = useMemo(() => {

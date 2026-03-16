@@ -74,8 +74,9 @@ export function ChatMessages({ currentUser }: {
     const container = scrollContainerRef.current;
 
     if(!container) return;
+    const scrollListenerOptions: AddEventListenerOptions = { passive: true };
 
-    container.addEventListener('scroll', checkScrollPosition);
+    container.addEventListener('scroll', checkScrollPosition, scrollListenerOptions);
     return () => container.removeEventListener('scroll', checkScrollPosition);
   }, [checkScrollPosition]);
 

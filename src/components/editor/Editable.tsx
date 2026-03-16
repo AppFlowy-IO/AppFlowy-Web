@@ -1,6 +1,6 @@
 import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
 import { Skeleton } from '@mui/material';
-import React, { lazy, Suspense, useCallback, useEffect } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo } from 'react';
 import { ErrorBoundary } from 'react-error-boundary';
 import { BaseRange, Editor, Element as SlateElement, NodeEntry, Range, Text } from 'slate';
 import { Editable, ReactEditor, RenderElementProps, useSlate } from 'slate-react';
@@ -15,7 +15,7 @@ import HrefPopover from '@/components/editor/components/leaf/href/HrefPopover';
 import { LeafContext } from '@/components/editor/components/leaf/leaf.hooks';
 import { PanelProvider } from '@/components/editor/components/panels/PanelsContext';
 import { RemoteSelectionsLayer } from '@/components/editor/components/remote-selections';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { useShortcuts } from '@/components/editor/shortcut.hooks';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { getScrollParent } from '@/components/global-comment/utils';
@@ -26,7 +26,8 @@ import { Element } from './components/element';
 const EditorOverlay = lazy(() => import('@/components/editor/EditorOverlay'));
 
 const EditorEditable = () => {
-  const { readOnly, decorateState, viewId, workspaceId, fullWidth } = useEditorContext();
+  const { readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
+  const { decorateState } = useEditorLocalState();
   const editor = useSlate();
 
   const codeDecorate = useDecorate(editor);
@@ -112,6 +113,14 @@ const EditorEditable = () => {
   const handleCloseLinkPopover = useCallback(() => {
     setLinkOpen(undefined);
   }, []);
+  const leafContextValue = useMemo(
+    () => ({
+      linkOpen,
+      openLinkPopover: handleOpenLinkPopover,
+      closeLinkPopover: handleCloseLinkPopover,
+    }),
+    [linkOpen, handleOpenLinkPopover, handleCloseLinkPopover]
+  );
 
   useEffect(() => {
     try {
@@ -132,11 +141,7 @@ const EditorEditable = () => {
     <PanelProvider editor={editor}>
       <BlockPopoverProvider editor={editor}>
         <LeafContext.Provider
-          value={{
-            linkOpen,
-            openLinkPopover: handleOpenLinkPopover,
-            closeLinkPopover: handleCloseLinkPopover,
-          }}
+          value={leafContextValue}
         >
           <ErrorBoundary fallbackRender={ElementFallbackRender}>
             <Editable

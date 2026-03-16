@@ -1,19 +1,19 @@
 import { debounce } from 'lodash-es';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { Range } from 'slate';
+import { Editor, Element, Range } from 'slate';
 import { ReactEditor, useFocused, useReadOnly, useSlate, useSlateStatic } from 'slate-react';
 
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { useAIWriter } from '@/components/chat';
 import { getSelectionPosition } from '@/components/editor/components/toolbar/selection-toolbar/utils';
-import { Decorate, useEditorContext } from '@/components/editor/EditorContext';
+import { Decorate, useEditorLocalState } from '@/components/editor/EditorContext';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 export function useVisible() {
   const editor = useSlate();
   const selection = editor.selection;
-  const { decorateState, addDecorate, removeDecorate } = useEditorContext();
+  const { decorateState, addDecorate, removeDecorate } = useEditorLocalState();
   const [forceShow, setForceShow] = useState<boolean>(false);
   const [isDragging, setDragging] = useState<boolean>(false);
   const readOnly = useReadOnly()
@@ -27,6 +27,22 @@ export function useVisible() {
     return CustomEditor.getTextNodes(editor).length;
   }, [editor, selection]);
   const [visible, setVisible] = useState<boolean>(false);
+  const isSelectionInReadOnly = useMemo(() => {
+    if (!selection) return false;
+
+    const elementMatch = Editor.above(editor, {
+      at: selection,
+      match: (n) => !Editor.isEditor(n) && Element.isElement(n),
+    });
+
+    if (!elementMatch) return false;
+
+    try {
+      return editor.isElementReadOnly(elementMatch[0]);
+    } catch {
+      return false;
+    }
+  }, [editor, selection]);
 
   const {
     assistantType,
@@ -45,6 +61,7 @@ export function useVisible() {
         if(!focus) return false;
 
         if(document.getSelection()?.isCollapsed || assistantTypeRef.current !== undefined) return false;
+        if(isSelectionInReadOnly) return false;
 
         return Boolean(selectedText && isExpanded && !isDragging);
       });
@@ -56,7 +73,7 @@ export function useVisible() {
     return () => {
       document.removeEventListener('selectionchange', handleSelectionChange);
     };
-  }, [focus, forceShow, isDragging, isExpanded, selectedText]);
+  }, [focus, forceShow, isDragging, isExpanded, isSelectionInReadOnly, selectedText]);
 
   useEffect(() => {
     if(!visible) {
@@ -257,18 +274,21 @@ export function useToolbarPosition() {
   };
 }
 
-export const SelectionToolbarContext = createContext<{
+type SelectionToolbarContextType = {
   visible: boolean;
   forceShow: (forceVisible: boolean) => void;
   rePosition: () => void;
   getDecorateState: () => Decorate | undefined;
-}>({
-  visible: false,
-  forceShow: () => undefined,
-  rePosition: () => undefined,
-  getDecorateState: () => undefined,
-});
+};
+
+export const SelectionToolbarContext = createContext<SelectionToolbarContextType | undefined>(undefined);
 
 export function useSelectionToolbarContext() {
-  return useContext(SelectionToolbarContext);
+  const context = useContext(SelectionToolbarContext);
+
+  if (!context) {
+    throw new Error('useSelectionToolbarContext must be used within SelectionToolbarContext.Provider');
+  }
+
+  return context;
 }

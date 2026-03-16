@@ -15,6 +15,47 @@ import { DragContext, useDragContextValue } from '@/components/database/componen
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
+function FileMediaListItem({
+  file,
+  images,
+  rowId,
+  onUpdateName,
+  onDelete,
+  onPreview,
+}: {
+  file: FileMediaCellDataItem;
+  images: FileMediaCellDataItem[];
+  rowId: string;
+  onUpdateName: (file: FileMediaCellDataItem, name: string) => void;
+  onDelete: (fileId: string) => void;
+  onPreview: (index: number) => void;
+}) {
+  const handleUpdateName = useCallback((name: string) => {
+    onUpdateName(file, name);
+  }, [file, onUpdateName]);
+
+  const handleDelete = useCallback(() => {
+    onDelete(file.id);
+  }, [file.id, onDelete]);
+
+  const handlePreview = useCallback(() => {
+    const index = images.findIndex(item => item.id === file.id);
+
+    if (index === -1) return;
+    onPreview(index);
+  }, [file.id, images, onPreview]);
+
+  return (
+    <FileMediaItem
+      onUpdateName={handleUpdateName}
+      onDelete={handleDelete}
+      onPreview={handlePreview}
+      file={file}
+      rowId={rowId}
+    />
+  );
+}
+
 function FileMediaList ({
   cell,
   fieldId,
@@ -90,24 +131,13 @@ function FileMediaList ({
                   <DragIcon className={'w-5 h-5 text-text-secondary'} />
                 </div>}
               >
-                <FileMediaItem
-                  onUpdateName={(name) => {
-                    onUpdateName(file, name);
-                  }}
-                  onDelete={() => {
-                    onDelete(file.id);
-                  }}
-                  onPreview={() => {
-                    const index = images.findIndex(item => item.id === file.id);
-
-                    if (index === -1) {
-                      return;
-                    }
-
-                    onPreview(index);
-                  }}
+                <FileMediaListItem
                   file={file}
+                  images={images}
                   rowId={rowId}
+                  onUpdateName={onUpdateName}
+                  onDelete={onDelete}
+                  onPreview={onPreview}
                 />
               </DragItem>
             </div>

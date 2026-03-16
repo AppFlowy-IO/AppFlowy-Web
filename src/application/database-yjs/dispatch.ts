@@ -2491,7 +2491,17 @@ export function useDeleteView() {
 
   return useCallback(
     async (viewId: string) => {
-      await deletePage?.(viewId);
+      // Attempt to remove the view from the folder (move to trash).
+      // This is a secondary cleanup — the primary operation is the Yjs deletion below.
+      // Database views may not exist in the folder (created via collab sync without a
+      // corresponding folder entry), or the folder's space ancestry may be broken.
+      // In either case we log the failure and proceed with the Yjs deletion so the
+      // user is never stuck with an undeletable view tab.
+      try {
+        await deletePage?.(viewId);
+      } catch (e) {
+        Log.warn('[useDeleteView] Failed to move view to trash, proceeding with Yjs deletion:', e);
+      }
 
       executeOperations(
         sharedRoot,

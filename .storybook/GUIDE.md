@@ -440,32 +440,15 @@ Dark mode is automatically handled in the preview decorator. The `data-dark-mode
 
 ### Issue 2: "useUserWorkspaceInfo must be used within an AppProvider"
 
-**Problem**: Component uses `useUserWorkspaceInfo()` or other AppContext hooks but no `AppContext.Provider` is provided.
+**Problem**: Component uses `useUserWorkspaceInfo()` or other app hooks but no context provider is present.
 
-**Solution**: Wrap your story in `AppContext.Provider` with mock values:
+**Solution**: Use the shared `withContextsMinimal` or `withContexts` decorator, which provides all split context providers:
 
 ```typescript
-import { AppContext } from '@/components/app/app.hooks';
-
-const mockAppContextValue = {
-  userWorkspaceInfo: {
-    selectedWorkspace: {
-      id: 'storybook-workspace-id',
-      owner: { uid: 'storybook-uid' },
-    },
-    workspaces: [],
-  },
-  // ... other required properties
-};
+import { withContextsMinimal } from '../../../.storybook/decorators';
 
 const meta = {
-  decorators: [
-    (Story) => (
-      <AppContext.Provider value={mockAppContextValue}>
-        <Story />
-      </AppContext.Provider>
-    ),
-  ],
+  decorators: [withContextsMinimal],
 };
 ```
 
@@ -626,12 +609,13 @@ When you need custom behavior (like managing modal state), use shared mocks and 
 
 ```typescript
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import React, { useEffect, useState } from 'react';
-import { AppContext } from '@/components/app/app.hooks';
+import React, { useState } from 'react';
+import { AppOperationsContext } from '@/components/app/contexts/AppOperationsContext';
+import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { AFConfigContext } from '@/components/main/app.hooks';
 import { hostnameArgType, openArgType } from '../../../.storybook/argTypes';
-import { mockHostname } from '../../../.storybook/decorators';
-import { mockAFConfigValue, mockAppContextValue } from '../../../.storybook/mocks';
+import { useHostnameMock } from '../../../.storybook/decorators';
+import { mockAFConfigValue, mockAuthInternalValue, mockOperationsValue } from '../../../.storybook/mocks';
 import UpgradePlan from './UpgradePlan';
 
 const meta = {
@@ -646,21 +630,18 @@ const meta = {
       const hostname = context.args.hostname || 'beta.appflowy.cloud';
       const [open, setOpen] = useState(context.args.open ?? false);
 
-      mockHostname(hostname);
-
-      useEffect(() => {
-        mockHostname(hostname);
-        return () => delete (window as any).__STORYBOOK_MOCK_HOSTNAME__;
-      }, [hostname]);
+      useHostnameMock(hostname);
 
       return (
         <AFConfigContext.Provider value={mockAFConfigValue}>
-          <AppContext.Provider value={mockAppContextValue}>
-            <div style={{ padding: '20px', maxWidth: '800px' }}>
-              <button onClick={() => setOpen(true)}>Open Modal</button>
-              <Story args={{ ...context.args, open, onClose: () => setOpen(false) }} />
-            </div>
-          </AppContext.Provider>
+          <AuthInternalContext.Provider value={mockAuthInternalValue}>
+            <AppOperationsContext.Provider value={mockOperationsValue}>
+              <div style={{ padding: '20px', maxWidth: '800px' }}>
+                <button onClick={() => setOpen(true)}>Open Modal</button>
+                <Story args={{ ...context.args, open, onClose: () => setOpen(false) }} />
+              </div>
+            </AppOperationsContext.Provider>
+          </AuthInternalContext.Provider>
         </AFConfigContext.Provider>
       );
     },

@@ -3,7 +3,7 @@ import React, { useEffect, useMemo } from 'react';
 
 import { getUserIconUrl } from '@/application/user-metadata';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useAppOperations, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useCurrentUserWorkspaceAvatar } from '@/components/app/useWorkspaceMemberProfile';
 import { Chat, ChatRequest } from '@/components/chat';
 import { useCurrentUser } from '@/components/main/app.hooks';
@@ -29,7 +29,7 @@ export function AIChat({ chatId, onRendered }: { chatId: string; onRendered?: ()
   const isMobile = getPlatform().isMobile;
   const [openMobilePrompt, setOpenMobilePrompt] = React.useState(isMobile);
 
-  const { updatePage, loadDatabasePrompts, testDatabasePromptConfig } = useAppHandlers();
+  const { updatePage, loadDatabasePrompts, testDatabasePromptConfig } = useAppOperations();
 
   const {
     selectionMode,

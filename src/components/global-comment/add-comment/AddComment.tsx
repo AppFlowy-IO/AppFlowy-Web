@@ -11,7 +11,7 @@ import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { notify } from '@/components/_shared/notify';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 import ReplyComment from '@/components/global-comment/ReplyComment';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useIsAuthenticatedOptional, useOpenLoginModalOptional } from '@/components/main/app.hooks';
 
 interface AddCommentProps {
   content: string;
@@ -25,8 +25,8 @@ function AddComment({ content, setContent, focus, setFocus, fixed }: AddCommentP
   const { reload, replyCommentId, replyComment: setReplyCommentId } = useGlobalCommentContext();
 
   const { t } = useTranslation();
-  const isAuthenticated = useContext(AFConfigContext)?.isAuthenticated;
-  const openLoginModal = useContext(AFConfigContext)?.openLoginModal;
+  const isAuthenticated = useIsAuthenticatedOptional();
+  const openLoginModal = useOpenLoginModalOptional();
   const viewId = useContext(PublishContext)?.viewMeta?.view_id;
   const [loading, setLoading] = React.useState(false);
   const url = window.location.href + '#addComment';

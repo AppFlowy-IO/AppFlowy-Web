@@ -5,7 +5,15 @@ import * as Y from 'yjs';
 import { CollabVersionRecord } from '@/application/collab-version.type';
 import { Types, ViewIcon } from '@/application/types';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
-import { useAppHandlers, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import {
+  useAppOperations,
+  useCollabHistory,
+  useGetSubscriptions,
+  useCurrentWorkspaceId,
+  useEventEmitter,
+  useGetMentionUser,
+  useLoadDatabaseRelations,
+} from '@/components/app/app.hooks';
 import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { Editor } from '@/components/editor';
 import { EditorContextState } from '@/components/editor/EditorContext';
@@ -84,17 +92,15 @@ export function DocumentHistoryModal({
   };
 }) {
   const {
-    getSubscriptions,
-    getCollabHistory,
-    previewCollabVersion,
-    revertCollabVersion,
     loadViewMeta,
     createRow,
-    eventEmitter,
-    getMentionUser,
     getViewIdFromDatabaseId,
-    loadDatabaseRelations,
-  } = useAppHandlers();
+  } = useAppOperations();
+  const { getCollabHistory, previewCollabVersion, revertCollabVersion } = useCollabHistory();
+  const getSubscriptions = useGetSubscriptions();
+  const eventEmitter = useEventEmitter();
+  const getMentionUser = useGetMentionUser();
+  const loadDatabaseRelations = useLoadDatabaseRelations();
   const workspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const { isPro } = useSubscriptionPlan(getSubscriptions);

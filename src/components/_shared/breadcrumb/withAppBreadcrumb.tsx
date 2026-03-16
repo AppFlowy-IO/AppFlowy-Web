@@ -8,7 +8,7 @@ import { ReactComponent as TeamIcon } from '@/assets/icons/team.svg';
 import { AccessService } from '@/application/services/domains';
 import { BreadcrumbProps } from '@/components/_shared/breadcrumb/Breadcrumb';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
-import { useAppHandlers, useBreadcrumb, useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useToView, useBreadcrumb, useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Progress } from '@/components/ui/progress';
 
@@ -16,7 +16,7 @@ export function withAppBreadcrumb (Component: React.ComponentType<BreadcrumbProp
   return function AppBreadcrumbComponent () {
     const isTrash = window.location.pathname === '/app/trash';
     const crumbs = useBreadcrumb();
-    const toView = useAppHandlers().toView;
+    const toView = useToView();
     const currentWorkspaceId = useCurrentWorkspaceId();
     const currentUser = useCurrentUser();
     const { t } = useTranslation();

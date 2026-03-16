@@ -1,10 +1,10 @@
 import { useLiveQuery } from 'dexie-react-hooks';
-import { useContext, useEffect, useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 
 import { db } from '@/application/db';
 import { getWorkspaceMemberProfile } from '@/application/services/js-services/http/user-api';
-import { AppContext } from '@/components/app/app.hooks';
-import { AFConfigContext } from '@/components/main/app.hooks';
+import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
+import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
 const pendingHydrations = new Set<string>();
 
@@ -18,12 +18,8 @@ const pendingHydrations = new Set<string>();
  * Safe to use in both App and Publish contexts - returns null when App context is unavailable.
  */
 export function useCurrentUserWorkspaceAvatar() {
-  // Use useContext directly to avoid errors when AppProvider is not mounted
-  const appContext = useContext(AppContext);
-  const configContext = useContext(AFConfigContext);
-
-  const currentWorkspaceId = appContext?.currentWorkspaceId;
-  const currentUser = configContext?.currentUser;
+  const currentWorkspaceId = useCurrentWorkspaceIdOptional();
+  const currentUser = useCurrentUserOptional();
 
   useEffect(() => {
     if (!currentWorkspaceId || !currentUser?.uuid) {

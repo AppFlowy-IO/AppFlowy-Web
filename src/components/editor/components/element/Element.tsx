@@ -7,7 +7,7 @@ import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'sl
 import { YjsEditor } from '@/application/slate-yjs';
 import { CONTAINER_BLOCK_TYPES, SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockData, BlockType, ColumnNodeData, YjsEditorKey } from '@/application/types';
-import { AIMeetingBlock } from '@/components/editor/components/blocks/ai-meeting';
+import { AIMeetingBlock, AIMeetingSection, AIMeetingSpeakerBlock } from '@/components/editor/components/blocks/ai-meeting';
 import { BulletedList } from '@/components/editor/components/blocks/bulleted-list';
 import { Callout } from '@/components/editor/components/blocks/callout';
 import { CodeBlock } from '@/components/editor/components/blocks/code';
@@ -36,7 +36,7 @@ import { handleBlockDrop } from '@/components/editor/components/drag-drop/handle
 import { useBlockDrop } from '@/components/editor/components/drag-drop/useBlockDrop';
 import { BlockNotFound } from '@/components/editor/components/element/BlockNotFound';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
-import { useEditorContext } from '@/components/editor/EditorContext';
+import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { renderColor } from '@/utils/color';
 
@@ -54,8 +54,8 @@ export const Element = ({
   const {
     jumpBlockId,
     onJumpedBlockId,
-    selectedBlockIds,
   } = useEditorContext();
+  const { selectedBlockIds } = useEditorLocalState();
 
   const { blockId, type } = node;
   const isSelected = useSelected();
@@ -216,6 +216,12 @@ export const Element = ({
         return Column;
       case BlockType.AIMeetingBlock:
         return AIMeetingBlock;
+      case BlockType.AIMeetingSummaryBlock:
+      case BlockType.AIMeetingNotesBlock:
+      case BlockType.AIMeetingTranscriptionBlock:
+        return AIMeetingSection;
+      case BlockType.AIMeetingSpeakerBlock:
+        return AIMeetingSpeakerBlock;
       case BlockType.PDFBlock:
         return PDFBlock;
       default:

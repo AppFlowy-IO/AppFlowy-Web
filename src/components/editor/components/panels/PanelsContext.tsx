@@ -1,8 +1,9 @@
-import React, { createContext, useCallback, useEffect, useRef, useState } from 'react';
-import { BaseRange, Point } from 'slate';
+import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { BaseRange, Editor, Element, Point } from 'slate';
 import { TextInsertTextOptions } from 'slate/dist/interfaces/transforms/text';
 import { ReactEditor } from 'slate-react';
 
+import { BlockType } from '@/application/types';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
 export enum PanelType {
@@ -22,21 +23,7 @@ export interface PanelContextType {
   removeContent: () => void;
 }
 
-export const PanelContext = createContext({
-  setActivePanel: () => {
-    return;
-  },
-  closePanel: () => {
-    return;
-  },
-  openPanel: () => {
-    return;
-  },
-  removeContent: () => {
-    return;
-  },
-  isPanelOpen: () => false,
-} as PanelContextType);
+export const PanelContext = createContext<PanelContextType | undefined>(undefined);
 
 const panelTypeChars = ['/', '@', '+'];
 
@@ -117,6 +104,19 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
         const panelType = { '/': PanelType.Slash, '+': PanelType.PageReference, '@': PanelType.Mention }[text];
 
         if (!panelType) return;
+
+        if (panelType === PanelType.Slash && selection) {
+          const inTranscript = Editor.above(editor, {
+            at: selection,
+            match: (n) =>
+              !Editor.isEditor(n) &&
+              Element.isElement(n) &&
+              (n.type === BlockType.AIMeetingTranscriptionBlock ||
+                n.type === BlockType.AIMeetingSpeakerBlock),
+          });
+
+          if (inTranscript) return;
+        }
 
         openPanel(panelType, { top: position.top, left: position.left });
 
@@ -250,19 +250,30 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
     };
   }, [closePanel, editor]);
 
+  const contextValue = useMemo(
+    () => ({
+      activePanel,
+      setActivePanel,
+      closePanel,
+      openPanel,
+      isPanelOpen,
+      panelPosition,
+      searchText,
+      removeContent,
+    }),
+    [
+      activePanel,
+      closePanel,
+      openPanel,
+      isPanelOpen,
+      panelPosition,
+      searchText,
+      removeContent,
+    ]
+  );
+
   return (
-    <PanelContext.Provider
-      value={{
-        activePanel,
-        setActivePanel,
-        closePanel,
-        openPanel,
-        isPanelOpen,
-        panelPosition,
-        searchText,
-        removeContent,
-      }}
-    >
+    <PanelContext.Provider value={contextValue}>
       {children}
     </PanelContext.Provider>
   );

@@ -5,7 +5,6 @@ import { validate as uuidValidate } from 'uuid';
 import { ViewService } from '@/application/services/domains';
 import { TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
-import { AppContext, AppContextType } from '@/components/app/app.hooks';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
 import { AppOutlineContext, AppOutlineContextType } from '@/components/app/contexts/AppOutlineContext';
@@ -554,33 +553,18 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
     [syncContext.eventEmitter, awarenessMap, syncContext.scheduleDeferredCleanup]
   );
 
-  // Legacy merged context — kept for useAppHandlers (91 usages) and useAppContextOptional
-  const allContextValue: AppContextType = useMemo(
-    () => ({
-      ...navigationValue,
-      ...outlineValue,
-      ...operationsValue,
-      ...syncValue,
-      currentWorkspaceId: authContext.currentWorkspaceId,
-      userWorkspaceInfo: authContext.userWorkspaceInfo,
-    }),
-    [navigationValue, outlineValue, operationsValue, syncValue, authContext.currentWorkspaceId, authContext.userWorkspaceInfo]
-  );
-
   return (
     <AppNavigationContext.Provider value={navigationValue}>
       <AppOutlineContext.Provider value={outlineValue}>
         <AppOperationsContext.Provider value={operationsValue}>
           <AppSyncContext.Provider value={syncValue}>
-            <AppContext.Provider value={allContextValue}>
-              <AppContextConsumer
-                requestAccessError={requestAccessError}
-                openModalViewId={openModalViewId}
-                setOpenModalViewId={setOpenModalViewId}
-              >
-                {children}
-              </AppContextConsumer>
-            </AppContext.Provider>
+            <AppContextConsumer
+              requestAccessError={requestAccessError}
+              openModalViewId={openModalViewId}
+              setOpenModalViewId={setOpenModalViewId}
+            >
+              {children}
+            </AppContextConsumer>
           </AppSyncContext.Provider>
         </AppOperationsContext.Provider>
       </AppOutlineContext.Provider>
