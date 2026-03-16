@@ -370,3 +370,29 @@ export const selectionToContextualHTML = (selection: Selection) => {
 export const isRangeInsideElement = (range: Range, container: HTMLElement) => {
   return container.contains(range.commonAncestorContainer);
 };
+
+export const parseSpeakerInfoMap = (raw: unknown): Record<string, Record<string, unknown>> | null => {
+  if (!raw) return null;
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as Record<string, Record<string, unknown>>;
+
+      if (parsed && typeof parsed === 'object') return parsed;
+    } catch {
+      return null;
+    }
+  }
+
+  if (typeof raw === 'object') {
+    return raw as Record<string, Record<string, unknown>>;
+  }
+
+  return null;
+};
+
+export const getBaseSpeakerId = (speakerId: string) => {
+  const [base] = speakerId.split('_');
+
+  return base || speakerId;
+};

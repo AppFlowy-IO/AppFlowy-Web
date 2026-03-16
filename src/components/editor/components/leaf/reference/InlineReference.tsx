@@ -1,4 +1,4 @@
-import { memo, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { Editor, Element, Node, Text } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 import smoothScrollIntoViewIfNeeded from 'smooth-scroll-into-view-if-needed';
@@ -171,6 +171,31 @@ const buildStatuses = (meetingNode: Element, blockIds: string[]): ReferenceBlock
   });
 };
 
+const HIGHLIGHT_DURATION_MS = 5000;
+
+const highlightDomElement = (dom: HTMLElement) => {
+  dom.classList.add('highlight-block');
+  setTimeout(() => {
+    dom.classList.remove('highlight-block');
+  }, HIGHLIGHT_DURATION_MS);
+};
+
+const scrollAndHighlight = (editor: ReactEditor, yjsEditor: YjsEditor, blockId: string) => {
+  const entry = findSlateEntryByBlockId(yjsEditor, blockId);
+
+  if (!entry) return;
+
+  const [node] = entry;
+  const dom = ReactEditor.toDOMNode(editor, node);
+
+  void smoothScrollIntoViewIfNeeded(dom, {
+    behavior: 'smooth',
+    scrollMode: 'if-needed',
+    block: 'center',
+  });
+  highlightDomElement(dom);
+};
+
 const ReferenceBadge = memo(({ number, hasError }: { number: number; hasError?: boolean }) => {
   return (
     <span
@@ -186,6 +211,144 @@ const ReferenceBadge = memo(({ number, hasError }: { number: number; hasError?: 
 });
 
 ReferenceBadge.displayName = 'ReferenceBadge';
+
+const ReferencePopoverContent = memo(({
+  statuses,
+  referenceNumber,
+  editor,
+  yjsEditor,
+  editorReadOnly,
+  meetingNode,
+  onClose,
+}: {
+  statuses: ReferenceBlockStatus[];
+  referenceNumber: number;
+  editor: ReactEditor;
+  yjsEditor: YjsEditor;
+  editorReadOnly: boolean;
+  meetingNode: Element;
+  onClose: () => void;
+}) => {
+  const { t } = useTranslation();
+
+  const handleReferenceClick = useCallback((status: ReferenceBlockStatus) => {
+    if (!status.sourceType) return;
+
+    onClose();
+
+    // Wait for popover close animation, then switch tab and scroll
+    requestAnimationFrame(() => {
+      let shouldDelayScroll = false;
+
+      if (meetingNode.blockId) {
+        const tabs = getAvailableTabs(meetingNode);
+        const targetKey = status.sourceType === 'transcript' ? 'transcript' : 'notes';
+        const targetIndex = Math.max(0, tabs.indexOf(targetKey));
+
+        if (targetIndex >= 0 && Number.isFinite(targetIndex)) {
+          const currentIndexRaw = (meetingNode.data as Record<string, unknown> | undefined)
+            ?.selected_tab_index;
+          const currentIndex =
+            typeof currentIndexRaw === 'number'
+              ? currentIndexRaw
+              : typeof currentIndexRaw === 'string'
+                ? Number(currentIndexRaw)
+                : NaN;
+
+          const shouldSwitch = !Number.isNaN(currentIndex) ? currentIndex !== targetIndex : true;
+
+          shouldDelayScroll = shouldSwitch;
+
+          if (editorReadOnly) {
+            try {
+              const meetingDom = ReactEditor.toDOMNode(editor, meetingNode);
+              const inner = meetingDom.querySelector('.ai-meeting-block');
+              const target = inner ?? meetingDom;
+
+              target.dispatchEvent(
+                new CustomEvent('ai-meeting-switch-tab', {
+                  detail: { tabKey: targetKey },
+                  bubbles: true,
+                })
+              );
+            } catch {
+              // ignore
+            }
+          } else if (shouldSwitch) {
+            CustomEditor.setBlockData(yjsEditor, meetingNode.blockId, {
+              selected_tab_index: targetIndex,
+            });
+          }
+        }
+      }
+
+      const doScroll = () => scrollAndHighlight(editor, yjsEditor, status.blockId);
+
+      if (shouldDelayScroll) {
+        // Allow the tab switch to render before scrolling
+        requestAnimationFrame(doScroll);
+      } else {
+        doScroll();
+      }
+    });
+  }, [editor, editorReadOnly, meetingNode, onClose, yjsEditor]);
+
+  return (
+    <div
+      className="ai-meeting-reference-popover w-[360px] max-w-[360px] max-h-[300px] overflow-y-auto"
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {statuses.map((status) => {
+        if (status.status === 'deleted') {
+          return (
+            <div
+              key={status.blockId}
+              className="flex items-center gap-2 px-4 py-3"
+            >
+              <ReferenceBadge number={referenceNumber} hasError />
+              <WarningIcon className="h-4 w-4 text-text-error" />
+              <span className="text-xs text-text-error">{t('document.aiMeeting.reference.deleted')}</span>
+            </div>
+          );
+        }
+
+        const isTranscript = status.sourceType === 'transcript';
+        const timestampLabel = isTranscript ? formatTimestamp(status.timestamp) : '';
+
+        return (
+          <button
+            key={status.blockId}
+            type="button"
+            className="flex w-full flex-col items-start gap-2 rounded-xl px-4 py-3 text-left hover:bg-fill-list-hover"
+            onClick={() => handleReferenceClick(status)}
+          >
+            <div className="flex items-center gap-2">
+              <ReferenceBadge number={referenceNumber} />
+              {isTranscript ? (
+                <TranscriptIcon className="h-4 w-4 text-icon-secondary" />
+              ) : (
+                <NotesIcon className="h-4 w-4 text-icon-secondary" />
+              )}
+              {timestampLabel && (
+                <span className="inline-flex items-center rounded-md bg-fill-list-active px-2 py-[1px] text-[11px] text-text-secondary">
+                  {timestampLabel}
+                </span>
+              )}
+            </div>
+            {status.content && (
+              <div className="text-sm text-text-primary whitespace-pre-wrap break-words">
+                {status.content}
+              </div>
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+});
+
+ReferencePopoverContent.displayName = 'ReferencePopoverContent';
 
 export const InlineReference = memo(
   ({ reference, text, children }: { reference: InlineReferenceData; text: Text; children: React.ReactNode }) => {
@@ -241,140 +404,9 @@ export const InlineReference = memo(
     }, [meetingNode, normalizedBlockIds]);
 
     const hasDeleted = statuses.some((status) => status.status === 'deleted');
-    const popoverContent = useMemo(() => {
-      if (!statuses.length) return null;
+    const hasStatuses = statuses.length > 0;
 
-      return (
-        <div
-          className="ai-meeting-reference-popover w-[360px] max-w-[360px] max-h-[300px] overflow-y-auto"
-          onMouseDown={(event) => event.stopPropagation()}
-          onClick={(event) => event.stopPropagation()}
-        >
-          {statuses.map((status) => {
-            if (status.status === 'deleted') {
-              return (
-                <div
-                  key={status.blockId}
-                  className="flex items-center gap-2 px-4 py-3"
-                >
-                  <ReferenceBadge number={reference.number} hasError />
-                  <WarningIcon className="h-4 w-4 text-text-error" />
-                  <span className="text-xs text-text-error">{t('document.aiMeeting.reference.deleted')}</span>
-                </div>
-              );
-            }
-
-            const isTranscript = status.sourceType === 'transcript';
-            const timestampLabel = isTranscript ? formatTimestamp(status.timestamp) : '';
-
-            return (
-              <button
-                key={status.blockId}
-                type="button"
-                className="flex w-full flex-col items-start gap-2 rounded-xl px-4 py-3 text-left hover:bg-fill-list-hover"
-                onClick={() => {
-                  if (!meetingNode || !status.sourceType) return;
-
-                  setOpen(false);
-
-                  const run = () => {
-                    let shouldDelayScroll = false;
-
-                    if (meetingNode.blockId) {
-                      const tabs = getAvailableTabs(meetingNode);
-                      const targetKey = status.sourceType === 'transcript' ? 'transcript' : 'notes';
-                      const targetIndex = Math.max(0, tabs.indexOf(targetKey));
-
-                      if (targetIndex >= 0 && Number.isFinite(targetIndex)) {
-                        const currentIndexRaw = (meetingNode.data as Record<string, unknown> | undefined)
-                          ?.selected_tab_index;
-                        const currentIndex =
-                          typeof currentIndexRaw === 'number'
-                            ? currentIndexRaw
-                            : typeof currentIndexRaw === 'string'
-                              ? Number(currentIndexRaw)
-                              : NaN;
-
-                        const shouldSwitch = !Number.isNaN(currentIndex) ? currentIndex !== targetIndex : true;
-
-                        shouldDelayScroll = shouldSwitch;
-
-                        if (editorReadOnly) {
-                          try {
-                            const meetingDom = ReactEditor.toDOMNode(editor, meetingNode);
-                            const inner = meetingDom.querySelector('.ai-meeting-block');
-                            const target = inner ?? meetingDom;
-
-                            target.dispatchEvent(
-                              new CustomEvent('ai-meeting-switch-tab', {
-                                detail: { tabKey: targetKey },
-                                bubbles: true,
-                              })
-                            );
-                          } catch {
-                            // ignore
-                          }
-                        } else if (shouldSwitch) {
-                          CustomEditor.setBlockData(yjsEditor, meetingNode.blockId, {
-                            selected_tab_index: targetIndex,
-                          });
-                        }
-                      }
-                    }
-
-                    const scrollToTarget = () => {
-                      const entry = findSlateEntryByBlockId(yjsEditor, status.blockId);
-
-                      if (entry) {
-                        const [node] = entry;
-                        const dom = ReactEditor.toDOMNode(editor, node);
-
-                        void smoothScrollIntoViewIfNeeded(dom, {
-                          behavior: 'smooth',
-                          scrollMode: 'if-needed',
-                          block: 'center',
-                        });
-                        dom.className += ' highlight-block';
-                        setTimeout(() => {
-                          dom.className = dom.className.replace('highlight-block', '');
-                        }, 5000);
-                      }
-                    };
-
-                    if (shouldDelayScroll) {
-                      setTimeout(scrollToTarget, 80);
-                    } else {
-                      scrollToTarget();
-                    }
-                  };
-
-                  setTimeout(run, 360);
-                }}
-              >
-                <div className="flex items-center gap-2">
-                  <ReferenceBadge number={reference.number} />
-                  {isTranscript ? (
-                    <TranscriptIcon className="h-4 w-4 text-icon-secondary" />
-                  ) : (
-                    <NotesIcon className="h-4 w-4 text-icon-secondary" />
-                  )}
-                  {timestampLabel && (
-                    <span className="inline-flex items-center rounded-md bg-fill-list-active px-2 py-[1px] text-[11px] text-text-secondary">
-                      {timestampLabel}
-                    </span>
-                  )}
-                </div>
-                {status.content && (
-                  <div className="text-sm text-text-primary whitespace-pre-wrap break-words">
-                    {status.content}
-                  </div>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      );
-    }, [editor, editorReadOnly, meetingNode, reference.number, statuses, t, yjsEditor]);
+    const handleClose = useCallback(() => setOpen(false), []);
 
     if (!meetingNode || normalizedBlockIds.length === 0) {
       return <>{children}</>;
@@ -399,12 +431,26 @@ export const InlineReference = memo(
         </span>
         <RichTooltip
           open={open}
-          onClose={() => setOpen(false)}
+          onClose={handleClose}
           placement="bottom-start"
           PaperProps={{
             className: 'bg-background-primary shadow-md',
           }}
-          content={popoverContent ?? <div />}
+          content={
+            hasStatuses ? (
+              <ReferencePopoverContent
+                statuses={statuses}
+                referenceNumber={reference.number}
+                editor={editor as ReactEditor}
+                yjsEditor={yjsEditor}
+                editorReadOnly={editorReadOnly}
+                meetingNode={meetingNode}
+                onClose={handleClose}
+              />
+            ) : (
+              <div />
+            )
+          }
         >
           <span
             contentEditable={false}
@@ -420,7 +466,7 @@ export const InlineReference = memo(
                 select();
               }
 
-              if (popoverContent) {
+              if (hasStatuses) {
                 setOpen((prev) => !prev);
               }
             }}
