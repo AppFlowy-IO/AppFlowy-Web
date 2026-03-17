@@ -19,8 +19,8 @@ async function setupPublishManagePanel(page: Page, request: APIRequestContext, e
   await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
   await page.waitForTimeout(2000);
 
-  // Open share and publish
-  await ShareSelectors.shareButton(page).click();
+  // Open share and publish (use evaluate to bypass sticky header overlay)
+  await ShareSelectors.shareButton(page).evaluate((el) => (el as HTMLElement).click());
   await page.waitForTimeout(1000);
   await page.getByText('Publish').click({ force: true });
   await page.waitForTimeout(1000);
@@ -195,8 +195,8 @@ test.describe('Publish Manage - Subscription and Namespace Tests', () => {
     await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 30000 });
     await page.waitForTimeout(2000);
 
-    // Publish a page
-    await ShareSelectors.shareButton(page).click();
+    // Publish a page (use evaluate to bypass sticky header overlay)
+    await ShareSelectors.shareButton(page).evaluate((el) => (el as HTMLElement).click());
     await page.waitForTimeout(1000);
     await page.getByText('Publish').click({ force: true });
     await page.waitForTimeout(1000);

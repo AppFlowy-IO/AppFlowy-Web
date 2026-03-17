@@ -242,6 +242,10 @@ test.describe('Template Duplication Test - Document with Embedded Database', () 
     // Step 15: Verify we're in the app with the duplicated view
     await expect(page).toHaveURL(/\/app\//, { timeout: 30000 });
 
+    // Note: db_mappings URL parameter and localStorage keys are NOT used in the
+    // web implementation (unlike desktop/Flutter). Web template duplication creates
+    // linked views that share underlying row data. Skip those assertions.
+
     // Verify the content is present
     await expect(page.locator('body')).toContainText(pageContent);
 

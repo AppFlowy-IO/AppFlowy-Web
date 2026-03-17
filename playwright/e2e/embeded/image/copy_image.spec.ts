@@ -61,5 +61,9 @@ test.describe('Copy Image Test', () => {
     // Verify clipboard write was called
     const clipboardWriteCalled = await page.evaluate(() => (window as any).__clipboardWriteCalled);
     expect(clipboardWriteCalled).toBeTruthy();
+
+    // Verify the clipboard write included image/png MIME type
+    const clipboardWriteTypes = await page.evaluate(() => (window as any).__clipboardWriteTypes);
+    expect(clipboardWriteTypes).toContain('image/png');
   });
 });

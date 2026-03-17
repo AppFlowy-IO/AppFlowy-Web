@@ -26,6 +26,8 @@ test.describe('Sidebar Components Resilience Tests', () => {
       ) {
         return;
       }
+
+      throw err;
     });
   });
 

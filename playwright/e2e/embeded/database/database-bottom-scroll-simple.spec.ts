@@ -37,7 +37,7 @@ test.describe('Embedded Database - Bottom Scroll Preservation (Simplified)', () 
 
     // Clear existing content and add 30 lines
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
     await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
 

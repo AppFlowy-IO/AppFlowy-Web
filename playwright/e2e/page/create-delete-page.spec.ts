@@ -10,6 +10,8 @@ import { closeModalsIfOpen } from '../../support/test-helpers';
  * Page Create and Delete Tests
  * Migrated from: cypress/e2e/page/create-delete-page.cy.ts
  */
+const isMac = process.platform === 'darwin';
+
 test.describe('Page Create and Delete Tests', () => {
   let testEmail: string;
   let testPageName: string;
@@ -62,7 +64,7 @@ test.describe('Page Create and Delete Tests', () => {
       await page.waitForTimeout(1000);
 
       await titleInput.click({ force: true });
-      await page.keyboard.press('Control+A');
+      await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
       await titleInput.pressSequentially(testPageName, { delay: 50 });
       await page.keyboard.press('Enter');
       await page.waitForTimeout(2000);

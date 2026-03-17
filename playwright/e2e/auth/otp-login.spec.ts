@@ -101,6 +101,7 @@ test.describe('OTP Login Flow', () => {
 
       // Step 5: Verify we're on the check email page
       await expect(page).toHaveURL(/action=checkEmail/);
+      await expect(page).toHaveURL(new RegExp(`email=${encodeURIComponent(testEmail)}`));
       await page.waitForTimeout(1000);
 
       // Step 6: Verify localStorage has the redirectTo saved
@@ -122,9 +123,13 @@ test.describe('OTP Login Flow', () => {
       );
       await AuthSelectors.otpSubmitButton(page).click();
 
-      // Step 10: Wait for OTP verification
+      // Step 10: Wait for OTP verification and assert request body
       const otpResponse = await otpPromise;
       expect(otpResponse.status()).toBe(200);
+      const otpRequestBody = otpResponse.request().postDataJSON();
+      expect(otpRequestBody.email).toBe(testEmail);
+      expect(otpRequestBody.token).toBe(testOtpCode);
+      expect(otpRequestBody.type).toBe('magiclink');
 
       // Step 11: Wait for user verification
       await userVerifyPromise;

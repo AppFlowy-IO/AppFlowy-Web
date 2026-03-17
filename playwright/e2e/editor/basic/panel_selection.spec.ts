@@ -9,6 +9,7 @@ import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
  */
 test.describe('Panel Selection - Shift+Arrow Keys', () => {
   const testEmail = generateRandomEmail();
+  const isMac = process.platform === 'darwin';
 
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', () => {
@@ -28,7 +29,7 @@ test.describe('Panel Selection - Shift+Arrow Keys', () => {
     await page.waitForTimeout(2000);
 
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
+    await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
     await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
   }

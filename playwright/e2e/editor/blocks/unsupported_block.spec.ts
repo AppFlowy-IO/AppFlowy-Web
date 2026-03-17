@@ -12,6 +12,7 @@ import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
  */
 test.describe('Unsupported Block Display', () => {
   const testEmail = generateRandomEmail();
+  const isMac = process.platform === 'darwin';
 
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', (err) => {
@@ -43,7 +44,7 @@ test.describe('Unsupported Block Display', () => {
     await page.keyboard.press('Escape');
 
     await EditorSelectors.slateEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
+    await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
     await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
   }

@@ -15,6 +15,8 @@ import { closeModalsIfOpen } from '../../support/test-helpers';
  * Delete Page, Verify in Trash, and Restore Tests
  * Migrated from: cypress/e2e/page/delete-page-verify-trash.cy.ts
  */
+const isMac = process.platform === 'darwin';
+
 test.describe('Delete Page, Verify in Trash, and Restore Tests', () => {
   let testEmail: string;
   let testPageName: string;
@@ -65,7 +67,7 @@ test.describe('Delete Page, Verify in Trash, and Restore Tests', () => {
       await page.waitForTimeout(1000);
 
       await titleInput.click({ force: true });
-      await page.keyboard.press('Control+A');
+      await page.keyboard.press(isMac ? 'Meta+A' : 'Control+A');
       await titleInput.pressSequentially(testPageName, { delay: 50 });
       await page.keyboard.press('Enter');
       await page.waitForTimeout(2000);

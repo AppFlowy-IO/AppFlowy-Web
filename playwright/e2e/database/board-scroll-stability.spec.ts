@@ -75,6 +75,8 @@ test.describe('Board Scroll Stability', () => {
 
     // Then: the board should still be functional
     await expect(BoardSelectors.boardContainer(page)).toBeVisible();
+    const cardCount = await BoardSelectors.cards(page).count();
+    expect(cardCount).toBeGreaterThanOrEqual(1);
   });
 
   test('should handle navigating away while board is scrolling', async ({

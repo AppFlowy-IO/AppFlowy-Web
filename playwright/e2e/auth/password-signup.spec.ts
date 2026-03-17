@@ -240,6 +240,9 @@ test.describe('Password Sign Up Flow', () => {
 
       const signUpResponse = await signUpPromise;
       expect(signUpResponse.status()).toBe(200);
+      const signUpRequestBody = signUpResponse.request().postDataJSON();
+      expect(signUpRequestBody.email).toBe(testEmail);
+      expect(signUpRequestBody.password).toBe(validPassword);
 
       // Verify redirect to app
       await expect(page).toHaveURL(/\/app(?:\?|$)/, { timeout: 15000 });

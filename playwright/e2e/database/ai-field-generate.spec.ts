@@ -36,8 +36,10 @@ test.describe('AI Field - Generate Button', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
 
-    // Mock the AI summary endpoint
+    // Mock the AI summary endpoint and capture the request body
+    let capturedBody: any = null;
     await page.route('**/api/ai/*/summarize_row', async (route) => {
+      capturedBody = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -66,8 +68,13 @@ test.describe('AI Field - Generate Button', () => {
     await expect(generateButton).toBeVisible();
     await generateButton.click();
 
-    // Verify the summary text appears in the cell
+    // Verify the request payload contains a Content key with row data
     await page.waitForTimeout(2000);
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody).toHaveProperty('data');
+    expect(capturedBody.data).toHaveProperty('Content');
+
+    // Verify the summary text appears in the cell
     await expect(DatabaseGridSelectors.cellsForField(page, fieldId).first()).toContainText(mockSummary);
   });
 
@@ -88,8 +95,10 @@ test.describe('AI Field - Generate Button', () => {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(500);
 
-    // Mock the AI translate endpoint
+    // Mock the AI translate endpoint and capture the request body
+    let capturedBody: any = null;
     await page.route('**/api/ai/*/translate_row', async (route) => {
+      capturedBody = route.request().postDataJSON();
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
@@ -117,8 +126,14 @@ test.describe('AI Field - Generate Button', () => {
     await expect(generateButton).toBeVisible();
     await generateButton.click();
 
-    // Verify the translated text appears in the cell
+    // Verify the request payload contains cells and language
     await page.waitForTimeout(2000);
+    expect(capturedBody).not.toBeNull();
+    expect(capturedBody).toHaveProperty('data');
+    expect(capturedBody.data).toHaveProperty('cells');
+    expect(capturedBody.data).toHaveProperty('language');
+
+    // Verify the translated text appears in the cell
     await expect(DatabaseGridSelectors.cellsForField(page, fieldId).first()).toContainText(mockTranslation);
   });
 

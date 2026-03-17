@@ -128,5 +128,77 @@ test.describe('Embedded Database View Isolation', () => {
       // No toggle means no children — which is also correct (no embedded views leaked)
       expect(await dbExpandToggle.count()).toBe(0);
     }
+
+    // Step 11: Create a SECOND view in the embedded database (using + button)
+    // Navigate back to the document page first
+    // The document was just created and is named "Untitled" by default
+    await page.getByTestId('page-name').filter({ hasText: 'Untitled' }).first().click({ force: true });
+    await page.waitForTimeout(3000);
+
+    // Find the embedded database container
+    const embeddedDB = page.locator('[class*="appflowy-database"]').last();
+    await expect(embeddedDB).toBeVisible({ timeout: 10000 });
+
+    // Click the + button to add a new view
+    await embeddedDB.getByTestId('add-view-button').scrollIntoViewIfNeeded();
+    await embeddedDB.getByTestId('add-view-button').click({ force: true });
+    await page.waitForTimeout(500);
+
+    // Select Board view type from dropdown
+    const viewMenu = page.locator('[data-slot="dropdown-menu-content"]');
+    await expect(viewMenu).toBeVisible({ timeout: 5000 });
+    await viewMenu.locator('[role="menuitem"]').filter({ hasText: 'Board' }).click({ force: true });
+    await page.waitForTimeout(3000);
+
+    // Step 12: Verify second view was created (now 2 tabs in the embedded database)
+    const embeddedDBFresh = page.locator('[class*="appflowy-database"]').last();
+    const viewTabs = embeddedDBFresh.locator('[data-testid^="view-tab-"]');
+    await expect(viewTabs).toHaveCount(2, { timeout: 10000 });
+
+    // Step 13: Navigate to the original standalone database
+    await expandSpaceByName(page, spaceName);
+    await page.waitForTimeout(500);
+
+    // Verify original database still has no "View of" children
+    const standaloneDbAfter = PageSelectors.itemByName(page, dbName);
+    const dbToggleAfter = standaloneDbAfter.locator(
+      '[data-testid="outline-toggle-expand"], [data-testid="outline-toggle-collapse"]'
+    );
+    const hasToggleAfter = (await dbToggleAfter.count()) > 0;
+    if (hasToggleAfter) {
+      await dbToggleAfter.first().click({ force: true });
+      await page.waitForTimeout(500);
+      const childNamesAfter = await standaloneDbAfter.getByTestId('page-name').allInnerTexts();
+      const hasViewOfAfter = childNamesAfter.some((n) => n.trim().startsWith('View of'));
+      expect(hasViewOfAfter).toBeFalsy();
+    }
+
+    // Click on the standalone database to navigate to it
+    await PageSelectors.nameContaining(page, dbName).first().click({ force: true });
+    await page.waitForTimeout(3000);
+
+    // Step 14: Create a new view directly in the standalone database
+    const standaloneDBView = page.locator('[class*="appflowy-database"]').first();
+    await expect(standaloneDBView).toBeVisible({ timeout: 10000 });
+
+    await standaloneDBView.getByTestId('add-view-button').scrollIntoViewIfNeeded();
+    await standaloneDBView.getByTestId('add-view-button').click({ force: true });
+    await page.waitForTimeout(500);
+
+    // Select Board view type from dropdown
+    const standaloneViewMenu = page.locator('[data-slot="dropdown-menu-content"]');
+    await expect(standaloneViewMenu).toBeVisible({ timeout: 5000 });
+    await standaloneViewMenu.locator('[role="menuitem"]').filter({ hasText: 'Board' }).click({ force: true });
+    await page.waitForTimeout(3000);
+
+    // Step 15: Verify tab count in standalone database (at least 2: original Grid + new Board)
+    const standaloneDBFresh = page.locator('[class*="appflowy-database"]').first();
+    const standaloneTabs = standaloneDBFresh.locator('[data-testid^="view-tab-"]');
+    await expect(standaloneTabs).toHaveCount(2, { timeout: 10000 });
+
+    // Step 16: Verify the standalone database tabs don't include "linked" views from the embedded database
+    const standaloneTabTexts = await standaloneTabs.allInnerTexts();
+    const hasLinkedViewOfTab = standaloneTabTexts.some((t) => t.trim().startsWith('View of'));
+    expect(hasLinkedViewOfTab).toBeFalsy();
   });
 });

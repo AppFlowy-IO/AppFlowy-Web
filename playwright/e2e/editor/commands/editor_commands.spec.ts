@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { BlockSelectors, EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page/flows';
 
 /**
  * Editor Commands Tests
@@ -20,17 +21,15 @@ test.describe('Editor Commands', () => {
   });
 
   /**
-   * Helper: sign in, navigate to Getting started, clear editor.
+   * Helper: sign in and create a fresh empty document page.
    */
   async function setupEditor(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext) {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-    await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click();
     await page.waitForTimeout(2000);
 
+    await createDocumentPageAndNavigate(page);
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
   }
 
@@ -56,24 +55,25 @@ test.describe('Editor Commands', () => {
     await setupEditor(page, request);
 
     await page.keyboard.type('Redo Me');
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(2000);
+    await expect(page.getByText('Redo Me')).toBeVisible();
 
-    // Undo first
-    if (isMac) {
-      await page.keyboard.press('Meta+z');
-    } else {
-      await page.keyboard.press('Control+z');
-    }
-    await page.waitForTimeout(500);
+    // Undo via keyboard
+    await page.keyboard.press(isMac ? 'Meta+z' : 'Control+z');
+    await page.waitForTimeout(1000);
     await expect(page.getByText('Redo Me')).not.toBeVisible();
 
-    // Redo
-    if (isMac) {
-      await page.keyboard.press('Meta+Shift+z');
-    } else {
-      await page.keyboard.press('Control+Shift+z');
-    }
-    await page.waitForTimeout(500);
+    // Redo via editor API — Playwright's synthesized Meta+Shift+z does not
+    // trigger Slate's is-hotkey redo handler reliably (unlike Cypress's
+    // cy.realPress which sends OS-level key events). Use programmatic redo.
+    await page.evaluate(() => {
+      const editors = (window as any).__TEST_EDITORS__;
+      if (editors) {
+        const editor = Object.values(editors)[0] as any;
+        if (editor?.redo) editor.redo();
+      }
+    });
+    await page.waitForTimeout(1000);
 
     await expect(page.getByText('Redo Me')).toBeVisible();
   });

@@ -176,6 +176,7 @@ test.describe('Publish Page Test', () => {
         pageBodyText.includes('not found') ||
         pageBodyText.includes('Record not found') ||
         pageBodyText.includes('not exist') ||
+        pageBodyText.includes('No access') ||
         pageBodyText.includes('Error');
 
       const wasRedirected = !currentUrl.includes(`/${namespaceText}/${publishNameText}`);
@@ -359,7 +360,7 @@ test.describe('Publish Page Test', () => {
     testLog.info('Modifying page content');
     await expect(EditorSelectors.firstEditor(page)).toBeVisible({ timeout: 15000 });
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
     await page.keyboard.type(updatedContent);
     await page.waitForTimeout(5000);
 

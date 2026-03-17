@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page/flows';
 
 /**
  * Block Merging Tests
@@ -21,12 +22,10 @@ test.describe('Block Merging', () => {
   test('should merge next block using Backspace at start of block', async ({ page, request }) => {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-    await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click();
-    await page.waitForTimeout(3000);
+    await page.waitForTimeout(2000);
 
+    await createDocumentPageAndNavigate(page);
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
 
     // Setup 2 blocks

@@ -69,7 +69,7 @@ test.describe('Database View Consistency', () => {
     await firstCell.click({ force: true });
     await page.waitForTimeout(500);
 
-    await page.keyboard.press('Control+A');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
     await page.keyboard.type(rowName);
     await page.keyboard.press('Enter');
     await page.waitForTimeout(2000);

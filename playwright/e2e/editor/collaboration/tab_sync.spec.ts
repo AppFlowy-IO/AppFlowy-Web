@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test';
 import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page/flows';
 
 /**
  * Editor Tab Synchronization Tests
@@ -26,16 +27,15 @@ test.describe('Editor Tab Synchronization', () => {
   test('should sync changes between two "tabs" (iframe)', async ({ page, request }) => {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-    await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click();
     await page.waitForTimeout(2000);
 
-    // Capture current URL
+    // Create a fresh document page to avoid existing content issues
+    await createDocumentPageAndNavigate(page);
+
+    // Capture current URL for the iframe
     const testPageUrl = page.url();
 
-    // Clear editor for clean state
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press('Control+A');
-    await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
 
     // Inject an iframe pointing to the same URL to simulate a second tab
@@ -76,7 +76,7 @@ test.describe('Editor Tab Synchronization', () => {
     // We need to use the iframe's keyboard context
     // Since Playwright sends keyboard events to the focused frame,
     // clicking the iframe editor should set focus there
-    await iframeEditor.type(' and Iframe');
+    await iframeEditor.pressSequentially(' and Iframe');
     await page.waitForTimeout(2000);
 
     // 4. Verify in Main Window with longer timeout

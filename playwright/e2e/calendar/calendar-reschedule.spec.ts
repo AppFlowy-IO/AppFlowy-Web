@@ -17,6 +17,7 @@ import {
   closeEventPopover,
   dragEventToDate,
   openUnscheduledEventsPopup,
+  clickUnscheduledEvent,
   assertTotalEventCount,
   assertEventCountOnDay,
   assertUnscheduledEventCount,
@@ -124,6 +125,73 @@ test.describe('Calendar Reschedule Tests (Desktop Parity)', () => {
     await assertTotalEventCount(page, 0);
     // And: the event appears in the unscheduled list
     await assertUnscheduledEventCount(page, 1);
+  });
+
+  test('reschedule from unscheduled popup', async ({ page, request }) => {
+    // Given: a calendar with one event that has been unscheduled
+    setupCalendarTest(page);
+    const email = generateRandomEmail();
+    await loginAndCreateCalendar(page, request, email);
+    await waitForCalendarLoad(page);
+
+    const today = getToday();
+
+    // Create an event
+    await doubleClickCalendarDay(page, today);
+    await editEventTitle(page, 'Reschedule From Unscheduled');
+    await closeEventPopover(page);
+
+    // Clear the date to make it unscheduled
+    await clickEvent(page, 0);
+    await page.waitForTimeout(500);
+    await openDatePickerInEventPopover(page);
+    await clearDateInPicker(page);
+    await page.waitForTimeout(500);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+
+    // Verify it's unscheduled
+    await assertTotalEventCount(page, 0);
+    await assertUnscheduledEventCount(page, 1);
+
+    // When: opening the unscheduled popup and clicking the unscheduled event
+    await openUnscheduledEventsPopup(page);
+    await clickUnscheduledEvent(page, 0);
+
+    // Clicking an unscheduled event opens a row detail dialog (not a popover).
+    // Click "Add Date" to open the date picker from the dialog.
+    const addDateButton = page.getByText('Add Date');
+    await expect(addDateButton).toBeVisible({ timeout: 5000 });
+    await addDateButton.click({ force: true });
+    await page.waitForTimeout(500);
+
+    // Wait for the date picker popover
+    const pickerPopover = page.getByTestId('datetime-picker-popover');
+    await expect(pickerPopover).toBeVisible({ timeout: 5000 });
+
+    // Disable end date range mode if active
+    const endDateSwitch = pickerPopover.locator('button[role="switch"]').first();
+    if ((await endDateSwitch.count()) > 0 && (await endDateSwitch.getAttribute('data-state')) === 'checked') {
+      await endDateSwitch.click({ force: true });
+      await page.waitForTimeout(500);
+    }
+
+    const targetDay = today.getDate() === 15 ? 16 : 15;
+    await selectDayInDatePicker(page, targetDay);
+    await page.waitForTimeout(1000);
+
+    // Close date picker and dialog
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+
+    // Then: the event is back on the calendar on the target day
+    const targetDate = new Date(today.getFullYear(), today.getMonth(), targetDay);
+    await assertEventCountOnDay(page, targetDate, 1);
+
+    // And: no unscheduled events remain
+    await assertUnscheduledEventCount(page, 0);
   });
 
   test('unscheduled events popup shows correct count', async ({ page, request }) => {

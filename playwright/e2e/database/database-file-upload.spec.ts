@@ -32,6 +32,14 @@ test.describe('Database File Upload', () => {
     const headerCount = await page.locator('[data-testid^="grid-field-header-"]').count();
     expect(headerCount).toBeGreaterThanOrEqual(2);
 
+    // Set up console log listener to verify upload tracker logs
+    const consoleInfoMessages: string[] = [];
+    page.on('console', (msg) => {
+      if (msg.type() === 'info') {
+        consoleInfoMessages.push(msg.text());
+      }
+    });
+
     // Step 2: Click on a cell in the file/media column to open upload dialog
     const fieldId = await getLastFieldId(page);
     await getCellsForField(page, fieldId).first().click({ force: true });
@@ -63,5 +71,11 @@ test.describe('Database File Upload', () => {
     // Step 4: Verify the files were uploaded (image thumbnails)
     const cell = getCellsForField(page, fieldId).first();
     await expect(cell.locator('img')).toHaveCount(2, { timeout: 10000 });
+
+    // Step 5: Verify upload tracker was called
+    const hasUploadStarted = consoleInfoMessages.some((msg) => /\[UploadTracker\] Upload started/.test(msg));
+    const hasUploadCompleted = consoleInfoMessages.some((msg) => /\[UploadTracker\] Upload completed/.test(msg));
+    expect(hasUploadStarted).toBeTruthy();
+    expect(hasUploadCompleted).toBeTruthy();
   });
 });
