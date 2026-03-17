@@ -8,6 +8,22 @@ import { expandSpace } from '../../support/page/flows';
  * Breadcrumb Navigation Complete Tests
  * Migrated from: cypress/e2e/page/breadcrumb-navigation.cy.ts
  */
+
+/**
+ * Expands a page item in the sidebar by name to reveal its children.
+ * Clicks the expand toggle (▶) if the page item has one.
+ */
+async function expandPageInSidebar(page: import('@playwright/test').Page, pageName: string) {
+  const pageItem = page.locator(
+    `[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${pageName}"))`
+  ).first();
+  const expandToggle = pageItem.locator('[data-testid="outline-toggle-expand"]');
+  if (await expandToggle.count() > 0) {
+    await expandToggle.first().click({ force: true });
+    await page.waitForTimeout(500);
+  }
+}
+
 test.describe('Breadcrumb Navigation Complete Tests', () => {
   let testEmail: string;
 
@@ -45,18 +61,10 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
 
       // Step 4: Check for breadcrumb navigation
-      const navCount = await BreadcrumbSelectors.navigation(page).count();
-      if (navCount > 0) {
-        const itemCount = await BreadcrumbSelectors.items(page).count();
-        // Breadcrumb navigation found on this page
-        expect(itemCount).toBeGreaterThanOrEqual(0);
-      }
-      // No breadcrumb navigation is normal for top-level pages
-
-      // Verify no errors
-      const bodyText = await page.locator('body').textContent();
-      const hasError = bodyText?.includes('Error') || bodyText?.includes('Failed');
-      // Navigation completed (error check is informational only)
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const itemCount = await BreadcrumbSelectors.items(page).count();
+      // Top-level pages show at least 2 breadcrumb items (space + page)
+      expect(itemCount).toBeGreaterThanOrEqual(2);
     });
 
     test('should navigate to nested pages and use breadcrumb to go back', async ({ page, request }) => {
@@ -78,12 +86,16 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       await expandSpace(page, 0);
       await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 10000 });
 
-      // Step 2: Navigate to first page
+      // Step 2: Navigate to first page and expand it to reveal children
+      const firstPageName = (await PageSelectors.names(page).first().textContent())?.trim() ?? '';
       await PageSelectors.names(page).first().click();
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
       await page.waitForTimeout(2000); // Wait for sidebar to update
 
-      // Step 3: Check for nested pages
+      // Expand the page in sidebar to reveal its children
+      await expandPageInSidebar(page, firstPageName);
+
+      // Step 3: Navigate to a child page
       const pages = PageSelectors.names(page);
       const pagesCount = await pages.count();
 
@@ -110,17 +122,14 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       await page.waitForTimeout(2000);
 
       // Step 4: Testing breadcrumb navigation
-      const navCount = await BreadcrumbSelectors.navigation(page).count();
-      if (navCount > 0) {
-        const itemCount = await BreadcrumbSelectors.items(page).count();
-        expect(itemCount).toBeGreaterThanOrEqual(1);
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const itemCount = await BreadcrumbSelectors.items(page).count();
+      // Nested page should show at least 3 breadcrumb items (space + parent + child)
+      expect(itemCount).toBeGreaterThanOrEqual(3);
 
-        if (itemCount > 1) {
-          await BreadcrumbSelectors.items(page).first().click({ force: true });
-          // Wait for navigation to complete
-          await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-        }
-      }
+      // Click the first breadcrumb item to navigate back to parent
+      await BreadcrumbSelectors.items(page).first().click({ force: true });
+      await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
     });
   });
 
@@ -165,6 +174,10 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
         return lower.includes('get') || lower.includes('start') || lower.includes('welcome') || lower.includes('guide');
       });
 
+      const clickedPageName = getStartedIndex !== -1
+        ? trimmedPageNames[getStartedIndex]
+        : trimmedPageNames[0];
+
       if (getStartedIndex !== -1) {
         await PageSelectors.names(page).nth(getStartedIndex).click();
       } else {
@@ -174,6 +187,9 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       // Wait for page to load
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
       await page.waitForTimeout(2000); // Wait for sidebar to update
+
+      // Expand the page in sidebar to reveal its children
+      await expandPageInSidebar(page, clickedPageName);
 
       // Step 3: Look for Desktop Guide or sub-page
       const subPages = PageSelectors.names(page);
@@ -216,25 +232,16 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       await page.waitForTimeout(2000);
 
       // Step 4: Test breadcrumb navigation
-      const navCount = await BreadcrumbSelectors.navigation(page).count();
-      if (navCount > 0) {
-        const items = BreadcrumbSelectors.items(page);
-        const itemCount = await items.count();
-        expect(itemCount).toBeGreaterThanOrEqual(1);
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const items = BreadcrumbSelectors.items(page);
+      const itemCount = await items.count();
+      // Nested page should show at least 3 breadcrumb items
+      expect(itemCount).toBeGreaterThanOrEqual(3);
 
-        if (itemCount > 1) {
-          const targetIndex = Math.max(0, itemCount - 2);
-          await items.nth(targetIndex).click({ force: true });
-          // Wait for navigation to complete
-          await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-        }
-      }
-
-      // Final verification - check for errors
-      const bodyText = await page.locator('body').textContent();
-      const alertCount = await page.locator('[role="alert"]').count();
-      const hasError = bodyText?.includes('Error') || bodyText?.includes('Failed') || alertCount > 0;
-      // Test completed (error check is informational only)
+      // Click second-to-last breadcrumb to navigate to parent
+      const targetIndex = Math.max(0, itemCount - 2);
+      await items.nth(targetIndex).click({ force: true });
+      await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
     });
   });
 
@@ -253,16 +260,19 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       const pageCount = await PageSelectors.names(page).count();
       expect(pageCount).toBeGreaterThanOrEqual(1);
 
-      // Step 1: Navigate to nested page
+      // Step 1: Navigate to first page and expand it
       await expandSpace(page, 0);
       await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 10000 });
 
-      // Navigate to first page
+      const firstPageNameText = (await PageSelectors.names(page).first().textContent())?.trim() ?? '';
       await PageSelectors.names(page).first().click();
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
       await page.waitForTimeout(2000); // Wait for sidebar to update
 
-      // Navigate to nested page if available
+      // Expand the page in sidebar to reveal its children
+      await expandPageInSidebar(page, firstPageNameText);
+
+      // Navigate to a child page
       const pages = PageSelectors.names(page);
       const pagesCount = await pages.count();
       const childPageNames = ['Desktop guide', 'Mobile guide', 'Web guide'];
@@ -285,22 +295,19 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       await page.waitForTimeout(2000);
 
       // Step 2: Verify breadcrumb items
-      const navCount = await BreadcrumbSelectors.navigation(page).count();
-      if (navCount > 0) {
-        const items = BreadcrumbSelectors.items(page);
-        const itemCount = await items.count();
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const items = BreadcrumbSelectors.items(page);
+      const itemCount = await items.count();
+      expect(itemCount).toBeGreaterThanOrEqual(3);
 
-        // Verify each breadcrumb item has text
-        for (let index = 0; index < itemCount; index++) {
-          const itemText = (await items.nth(index).textContent())?.trim() ?? '';
-          expect(itemText).not.toBe('');
-        }
-
-        // Verify last item exists
-        if (itemCount > 0) {
-          await expect(items.last()).toBeVisible();
-        }
+      // Verify each breadcrumb item has text
+      for (let index = 0; index < itemCount; index++) {
+        const itemText = (await items.nth(index).textContent())?.trim() ?? '';
+        expect(itemText).not.toBe('');
       }
+
+      // Verify last item is visible
+      await expect(items.last()).toBeVisible();
     });
 
     test('should verify breadcrumb navigation updates correctly when navigating', async ({ page, request }) => {
@@ -317,7 +324,7 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       const pageCount = await PageSelectors.names(page).count();
       expect(pageCount).toBeGreaterThanOrEqual(1);
 
-      // Step 1: Navigate to parent page
+      // Step 1: Navigate to parent page and expand it
       await expandSpace(page, 0);
       await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 10000 });
 
@@ -325,6 +332,9 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       await PageSelectors.names(page).first().click();
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
       await page.waitForTimeout(2000); // Wait for sidebar to update
+
+      // Expand the page in sidebar to reveal its children
+      await expandPageInSidebar(page, parentPageName);
 
       // Step 2: Navigate to nested page
       const pages = PageSelectors.names(page);
@@ -349,27 +359,19 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       await page.waitForTimeout(2000);
 
       // Step 3: Verify breadcrumb shows parent
-      const navCount = await BreadcrumbSelectors.navigation(page).count();
-      if (navCount > 0) {
-        const items = BreadcrumbSelectors.items(page);
-        const itemCount = await items.count();
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const bcItems = BreadcrumbSelectors.items(page);
+      const bcItemCount = await bcItems.count();
+      expect(bcItemCount).toBeGreaterThanOrEqual(3);
 
-        if (itemCount > 1) {
-          // Verify parent page appears in breadcrumb
-          const breadcrumbTexts = await items.allTextContents();
-          const hasParent = breadcrumbTexts.some((text) => text.includes(parentPageName));
-          // Parent page check is informational
-        }
-      }
+      // Verify parent page appears in breadcrumb
+      const breadcrumbTexts = await bcItems.allTextContents();
+      const hasParent = breadcrumbTexts.some((text) => text.includes(parentPageName));
+      expect(hasParent).toBe(true);
 
-      // Step 4: Navigate back via breadcrumb
-      const breadcrumbItems = BreadcrumbSelectors.items(page);
-      const breadcrumbCount = await breadcrumbItems.count();
-      if (breadcrumbCount > 1) {
-        // Click first breadcrumb (parent)
-        await breadcrumbItems.first().click({ force: true });
-        await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-      }
+      // Step 4: Navigate back via breadcrumb — click first item (space)
+      await bcItems.first().click({ force: true });
+      await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
     });
   });
 
@@ -402,6 +404,9 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
 
       // Wait for page to load and sidebar to potentially update
       await page.waitForTimeout(2000);
+
+      // Expand the page in sidebar to reveal its children
+      await expandPageInSidebar(page, firstPageName);
 
       // Step 2: Navigate to second level
       const pagesAfterFirst = PageSelectors.names(page);
@@ -448,29 +453,16 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
         await page.waitForTimeout(2000); // Wait for page to fully load
 
         // Step 4: Verify breadcrumb shows all levels
-        await page.waitForTimeout(1000); // Wait a bit more for breadcrumb to render
+        await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+        const items = BreadcrumbSelectors.items(page);
+        const itemCount = await items.count();
+        // 3+ level deep pages should show at least 4 breadcrumb items
+        expect(itemCount).toBeGreaterThanOrEqual(3);
 
-        const navCount = await BreadcrumbSelectors.navigation(page).count();
-        if (navCount > 0) {
-          const items = BreadcrumbSelectors.items(page);
-          const itemCount = await items.count();
-          expect(itemCount).toBeGreaterThanOrEqual(1);
-
-          // Log breadcrumb item texts for debugging
-          const breadcrumbTexts = await items.allTextContents();
-          const trimmedBreadcrumbs = breadcrumbTexts.map((t) => t.trim());
-
-          expect(itemCount).toBeGreaterThanOrEqual(2);
-
-          // Verify we can navigate back through breadcrumbs
-          if (itemCount > 2) {
-            // Click second-to-last breadcrumb
-            const targetIndex = itemCount - 2;
-            await items.nth(targetIndex).click({ force: true });
-            await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-            await page.waitForTimeout(1000);
-          }
-        }
+        // Verify we can navigate back through breadcrumbs
+        const targetIndex = itemCount - 2;
+        await items.nth(targetIndex).click({ force: true });
+        await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
       }
     });
   });
@@ -490,58 +482,52 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       const pageCount = await PageSelectors.names(page).count();
       expect(pageCount).toBeGreaterThanOrEqual(1);
 
-      // Step 1: Navigate to a page
+      // Step 1: Navigate to a page (the parent)
       await expandSpace(page, 0);
       await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 10000 });
 
+      const parentName = (await PageSelectors.names(page).first().textContent())?.trim() ?? '';
       await PageSelectors.names(page).first().click();
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
       await page.waitForTimeout(2000); // Wait for page to load
 
-      // Step 2: Create a new nested page
-      const newPageName = `Test Page ${Date.now()}`;
+      // Step 2: Create a child page by clicking the "+" button on the parent page item
+      const parentItem = page.locator(
+        `[data-testid="page-item"]:has(> div:first-child [data-testid="page-name"]:text-is("${parentName}"))`
+      ).first();
+      const addChildBtn = parentItem.getByTestId('inline-add-page');
+      await expect(addChildBtn).toBeVisible({ timeout: 5000 });
+      await addChildBtn.click({ force: true });
+      await page.waitForTimeout(500);
 
-      // Create page using the new page button
-      await expect(PageSelectors.newPageButton(page)).toBeVisible();
-      await PageSelectors.newPageButton(page).click();
+      // Select "Document" from the dropdown menu
+      const menuItem = page.locator('[role="menuitem"]').filter({ hasText: 'Document' });
+      await expect(menuItem).toBeVisible({ timeout: 5000 });
+      await menuItem.click({ force: true });
       await page.waitForTimeout(1000);
 
-      // Close any modals that might appear
-      const dialogCount = await page.locator('[role="dialog"]').count();
-      if (dialogCount > 0) {
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(500);
+      // The child page opens in a ViewModal — expand it to full-page view
+      const dialog = page.locator('[role="dialog"]');
+      if (await dialog.count() > 0) {
+        // Click the expand button (↗) at the top-left of the ViewModal to navigate to full view
+        await dialog.last().locator('button').first().click({ force: true });
+        await page.waitForTimeout(2000);
       }
 
-      // Wait for page to be created and navigate to it
+      // Wait for child page to be fully loaded
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-      await page.waitForTimeout(2000); // Wait for page to fully load
+      await page.waitForTimeout(2000);
 
-      // Set page title if title input is available
-      const titleInputCount = await PageSelectors.titleInput(page).count();
-      if (titleInputCount > 0) {
-        const titleInput = PageSelectors.titleInput(page).first();
-        await titleInput.click({ force: true });
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Control+A');
-        await titleInput.pressSequentially(newPageName, { delay: 50 });
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(1000);
-      }
+      // Step 3: Verify breadcrumb appears for child page
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const bcItems = BreadcrumbSelectors.items(page);
+      const bcItemCount = await bcItems.count();
+      // Child page should show at least 3 breadcrumb items (space + parent + child)
+      expect(bcItemCount).toBeGreaterThanOrEqual(3);
 
-      // Step 3: Verify breadcrumb appears for new page
-      const navCount = await BreadcrumbSelectors.navigation(page).count();
-      if (navCount > 0) {
-        const items = BreadcrumbSelectors.items(page);
-        const itemCount = await items.count();
-        expect(itemCount).toBeGreaterThanOrEqual(1);
-
-        // Verify we can navigate back
-        if (itemCount > 1) {
-          await items.first().click({ force: true });
-          await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-        }
-      }
+      // Verify we can navigate back
+      await bcItems.first().click({ force: true });
+      await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
     });
   });
 
@@ -567,48 +553,48 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       const allPageTexts = await PageSelectors.names(page).allTextContents();
       const collectedPageNames = allPageTexts.slice(0, 3).map((t) => t.trim());
 
-      if (collectedPageNames.length > 0) {
-        // Navigate to first page
-        await PageSelectors.names(page).first().click();
-        await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-        await page.waitForTimeout(2000); // Wait for sidebar to update
+      expect(collectedPageNames.length).toBeGreaterThan(0);
 
-        // Find and navigate to nested page
-        const childPageNames = ['Desktop guide', 'Mobile guide', 'Web guide'];
-        const subPages = PageSelectors.names(page);
-        const subPagesCount = await subPages.count();
-        let childFound = false;
+      // Navigate to first page and expand it
+      await PageSelectors.names(page).first().click();
+      await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
+      await page.waitForTimeout(2000); // Wait for sidebar to update
 
-        for (let i = 0; i < subPagesCount; i++) {
-          const pageName = (await subPages.nth(i).textContent())?.trim() ?? '';
-          if (childPageNames.includes(pageName)) {
-            await subPages.nth(i).click({ force: true });
-            childFound = true;
-            break;
-          }
-        }
+      // Expand the page in sidebar to reveal its children
+      await expandPageInSidebar(page, collectedPageNames[0]);
 
-        if (!childFound && subPagesCount > 1) {
-          await subPages.nth(1).click({ force: true });
-        }
+      // Find and navigate to nested page
+      const childPageNames = ['Desktop guide', 'Mobile guide', 'Web guide'];
+      const subPages = PageSelectors.names(page);
+      const subPagesCount = await subPages.count();
+      let childFound = false;
 
-        await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-        await page.waitForTimeout(2000);
-
-        // Step 2: Verify breadcrumb contains page names
-        const navCount = await BreadcrumbSelectors.navigation(page).count();
-        if (navCount > 0) {
-          const items = BreadcrumbSelectors.items(page);
-          const breadcrumbTexts = await items.allTextContents();
-          const trimmedBreadcrumbs = breadcrumbTexts.map((t) => t.trim());
-
-          // Verify parent page name appears in breadcrumb
-          if (collectedPageNames.length > 0 && trimmedBreadcrumbs.length > 0) {
-            const hasParentName = trimmedBreadcrumbs.some((text) => text.includes(collectedPageNames[0]));
-            // Parent name presence check is informational
-          }
+      for (let i = 0; i < subPagesCount; i++) {
+        const pageName = (await subPages.nth(i).textContent())?.trim() ?? '';
+        if (childPageNames.includes(pageName)) {
+          await subPages.nth(i).click({ force: true });
+          childFound = true;
+          break;
         }
       }
+
+      if (!childFound && subPagesCount > 1) {
+        await subPages.nth(1).click({ force: true });
+      }
+
+      await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
+      await page.waitForTimeout(2000);
+
+      // Step 2: Verify breadcrumb contains page names
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const bcItems = BreadcrumbSelectors.items(page);
+      const breadcrumbTexts = await bcItems.allTextContents();
+      const trimmedBreadcrumbs = breadcrumbTexts.map((t) => t.trim());
+      expect(trimmedBreadcrumbs.length).toBeGreaterThanOrEqual(3);
+
+      // Verify parent page name appears in breadcrumb
+      const hasParentName = trimmedBreadcrumbs.some((text) => text.includes(collectedPageNames[0]));
+      expect(hasParentName).toBe(true);
     });
   });
 
@@ -627,48 +613,52 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       const pageCount = await PageSelectors.names(page).count();
       expect(pageCount).toBeGreaterThanOrEqual(1);
 
-      // Step 1: Navigate to first space
+      // Step 1: Navigate to first page and expand it
       await expandSpace(page, 0);
       await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 10000 });
 
+      const topPageName = (await PageSelectors.names(page).first().textContent())?.trim() ?? '';
       await PageSelectors.names(page).first().click();
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
       await page.waitForTimeout(2000); // Wait for sidebar to update
 
-      // Step 2: Check breadcrumb state
-      const navCount = await BreadcrumbSelectors.navigation(page).count();
-      if (navCount > 0) {
-        const initialItemCount = await BreadcrumbSelectors.items(page).count();
+      // Step 2: Check breadcrumb state on top-level page
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const initialItemCount = await BreadcrumbSelectors.items(page).count();
+      // Top-level page should show 2 breadcrumb items (space + page)
+      expect(initialItemCount).toBeGreaterThanOrEqual(2);
 
-        // Navigate to nested page
-        const pages = PageSelectors.names(page);
-        const pagesCount = await pages.count();
-        const childPageNames = ['Desktop guide', 'Mobile guide', 'Web guide'];
-        let childFound = false;
+      // Expand the page in sidebar to reveal its children
+      await expandPageInSidebar(page, topPageName);
 
-        for (let i = 0; i < pagesCount; i++) {
-          const pageName = (await pages.nth(i).textContent())?.trim() ?? '';
-          if (childPageNames.includes(pageName)) {
-            await pages.nth(i).click({ force: true });
-            childFound = true;
-            break;
-          }
+      // Navigate to nested page
+      const pages = PageSelectors.names(page);
+      const pagesCount = await pages.count();
+      const childPageNames = ['Desktop guide', 'Mobile guide', 'Web guide'];
+      let childFound = false;
+
+      for (let i = 0; i < pagesCount; i++) {
+        const pageName = (await pages.nth(i).textContent())?.trim() ?? '';
+        if (childPageNames.includes(pageName)) {
+          await pages.nth(i).click({ force: true });
+          childFound = true;
+          break;
         }
-
-        if (!childFound && pagesCount > 1) {
-          await pages.nth(1).click({ force: true });
-        }
-
-        await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
-        await page.waitForTimeout(2000);
-
-        // Verify breadcrumb updates
-        const newItemCount = await BreadcrumbSelectors.items(page).count();
-        // Breadcrumb update check is informational (newItemCount vs initialItemCount)
       }
+
+      if (!childFound && pagesCount > 1) {
+        await pages.nth(1).click({ force: true });
+      }
+
+      await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
+      await page.waitForTimeout(2000);
+
+      // Verify breadcrumb has more items after navigating to nested page
+      const newItemCount = await BreadcrumbSelectors.items(page).count();
+      expect(newItemCount).toBeGreaterThan(initialItemCount);
     });
 
-    test('should verify breadcrumb does not appear on top-level pages', async ({ page, request }) => {
+    test('should show breadcrumb with space and page name on top-level pages', async ({ page, request }) => {
       page.on('pageerror', (err) => {
         if (err.message.includes('No workspace or service found')) return;
         if (err.message.includes('View not found')) return;
@@ -686,21 +676,16 @@ test.describe('Breadcrumb Navigation Complete Tests', () => {
       await expandSpace(page, 0);
       await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 10000 });
 
-      // Click first page (likely top-level)
+      // Click first page (top-level)
       await PageSelectors.names(page).first().click();
       await expect(page).toHaveURL(/\/app\//, { timeout: 10000 });
       await page.waitForTimeout(2000); // Wait for page to load
 
-      // Step 2: Verify breadcrumb behavior on top-level page
-      const navCount = await BreadcrumbSelectors.navigation(page).count();
-      if (navCount === 0) {
-        // No breadcrumb on top-level page (expected behavior)
-        expect(navCount).toBe(0);
-      } else {
-        // Top-level pages may or may not have breadcrumbs depending on structure
-        const itemCount = await BreadcrumbSelectors.items(page).count();
-        // Informational: found breadcrumb items on top-level page
-      }
+      // Step 2: Verify breadcrumb shows space + page name on top-level page
+      await expect(BreadcrumbSelectors.navigation(page)).toBeVisible({ timeout: 10000 });
+      const itemCount = await BreadcrumbSelectors.items(page).count();
+      // Top-level pages show exactly 2 breadcrumb items (space name + page name)
+      expect(itemCount).toBe(2);
     });
   });
 });

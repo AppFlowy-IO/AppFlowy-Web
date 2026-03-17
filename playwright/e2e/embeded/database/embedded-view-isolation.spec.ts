@@ -124,6 +124,9 @@ test.describe('Embedded Database View Isolation', () => {
       // Should not contain "View of" entries (those belong to the document)
       const hasViewOf = trimmedNames.some((n) => n.startsWith('View of'));
       expect(hasViewOf).toBeFalsy();
+    } else {
+      // No toggle means no children — which is also correct (no embedded views leaked)
+      expect(await dbExpandToggle.count()).toBe(0);
     }
   });
 });

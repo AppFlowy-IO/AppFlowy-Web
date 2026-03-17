@@ -112,20 +112,20 @@ test.describe('Publish Manage - Subscription and Namespace Tests', () => {
     // Wait a moment for any modal to potentially appear
     await page.waitForTimeout(1000);
 
-    // The UpdateNamespace dialog should NOT appear because:
-    // 1. User is on Free plan
-    // 2. localhost is treated as official host (isAppFlowyHosted returns true)
+    // On hosted environments with Free plan, the guard should block the dialog.
+    // However, if subscription data hasn't loaded yet (activeSubscription is undefined),
+    // the guard may not trigger and the dialog could appear. This is environment-dependent.
     const namespaceDialogs = page.locator('[role="dialog"]').filter({
       hasText: /Update namespace|Namespace/,
     });
     const dialogCount = await namespaceDialogs.count();
 
-    if (dialogCount === 0) {
-      // Correctly blocked on official host with Free plan
-      expect(dialogCount).toBe(0);
+    if (dialogCount > 0) {
+      // Dialog appeared (subscription race condition) – verify it IS the namespace dialog
+      await expect(namespaceDialogs.first()).toBeVisible();
     } else {
-      // If modal appeared, this might be a self-hosted environment where check is skipped
-      console.log('Note: Namespace dialog appeared - may be self-hosted environment');
+      // No dialog – expected behavior for Free plan on hosted environment
+      expect(dialogCount).toBe(0);
     }
 
     // Close any open dialogs
@@ -223,18 +223,12 @@ test.describe('Publish Manage - Subscription and Namespace Tests', () => {
     // Wait and check if the namespace update dialog appears
     await page.waitForTimeout(1000);
 
-    // The dialog should appear on self-hosted environments
+    // The dialog should appear on self-hosted environments (no subscription check)
     const dialogs = page.locator('[role="dialog"]');
     const dialogCount = await dialogs.count();
-
-    if (dialogCount > 0) {
-      // Dialog opened on self-hosted environment as expected
-      expect(dialogCount).toBeGreaterThan(0);
-      // Close the dialog
-      await page.keyboard.press('Escape');
-    } else {
-      console.log('Note: Dialog did not open - this may indicate the owner check failed');
-    }
+    expect(dialogCount).toBeGreaterThan(0);
+    // Close the dialog
+    await page.keyboard.press('Escape');
 
     // Clean up: remove the override
     await page.evaluate(() => {

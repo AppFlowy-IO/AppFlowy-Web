@@ -80,6 +80,8 @@ test.describe('Database View Tabs', () => {
     await createGridAndWait(page, request, testEmail);
 
     const initialTabCount = await DatabaseViewSelectors.viewTab(page).count();
+    // Guard: database should have at least 1 tab (the default Grid view)
+    expect(initialTabCount).toBeGreaterThan(0);
 
     // When: adding a Board view
     await addViewViaButton(page, 'Board');

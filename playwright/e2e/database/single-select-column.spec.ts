@@ -40,73 +40,50 @@ test.describe('Single Select Column Type', () => {
 
     // Then: select option cells should be available for interaction
     const selectCellCount = await SingleSelectSelectors.allSelectOptionCells(page).count();
-    if (selectCellCount > 0) {
-      // When: scrolling the new column into view and clicking the first cell
-      await page.evaluate(() => {
-        const el = document.querySelector('[data-testid^="select-option-cell-"]');
-        if (el) el.scrollIntoView({ block: 'center', inline: 'center' });
-      });
-      await page.waitForTimeout(500);
-      await page.evaluate(() => {
-        const el = document.querySelector('[data-testid^="select-option-cell-"]');
-        if (el) (el as HTMLElement).click();
-      });
-      await page.waitForTimeout(500);
+    expect(selectCellCount).toBeGreaterThan(0);
 
-      // And: typing "Option A" and pressing Enter
-      await page.keyboard.type('Option A');
+    // When: scrolling the new column into view and clicking the first cell
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-testid^="select-option-cell-"]');
+      if (el) el.scrollIntoView({ block: 'center', inline: 'center' });
+    });
+    await page.waitForTimeout(500);
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-testid^="select-option-cell-"]');
+      if (el) (el as HTMLElement).click();
+    });
+    await page.waitForTimeout(500);
+
+    // And: typing "Option A" and pressing Enter
+    await page.keyboard.type('Option A');
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(1000);
+
+    // When: adding Option B to the second cell if it exists
+    if (selectCellCount > 1) {
+      await page.evaluate(() => {
+        const els = document.querySelectorAll('[data-testid^="select-option-cell-"]');
+        if (els[1]) (els[1] as HTMLElement).click();
+      });
+      await page.waitForTimeout(500);
+      await page.keyboard.type('Option B');
       await page.keyboard.press('Enter');
       await page.waitForTimeout(1000);
-
-      // When: adding Option B to the second cell if it exists
-      if (selectCellCount > 1) {
-        await page.evaluate(() => {
-          const els = document.querySelectorAll('[data-testid^="select-option-cell-"]');
-          if (els[1]) (els[1] as HTMLElement).click();
-        });
-        await page.waitForTimeout(500);
-        await page.keyboard.type('Option B');
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(1000);
-      }
-    } else {
-      // Fallback: use regular cells like Cypress does
-      const rows = DatabaseGridSelectors.rows(page);
-      const rowCount = await rows.count();
-
-      if (rowCount > 0) {
-        await rows.first().locator('[data-testid^="grid-cell-"]').last().click({ force: true });
-        await page.waitForTimeout(500);
-        await page.keyboard.type('Option A');
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(1000);
-      }
-
-      if (rowCount > 1) {
-        await rows.nth(1).locator('[data-testid^="grid-cell-"]').last().click({ force: true });
-        await page.waitForTimeout(500);
-        await page.keyboard.type('Option B');
-        await page.keyboard.press('Enter');
-        await page.waitForTimeout(1000);
-      }
     }
 
     // Then: clicking a select cell should open the option dropdown
     const selectCellCountAfter = await SingleSelectSelectors.allSelectOptionCells(page).count();
-    if (selectCellCountAfter > 0) {
-      await page.evaluate(() => {
-        const el = document.querySelector('[data-testid^="select-option-cell-"]');
-        if (el) {
-          el.scrollIntoView({ block: 'center', inline: 'center' });
-          (el as HTMLElement).click();
-        }
-      });
-      await page.waitForTimeout(500);
+    expect(selectCellCountAfter).toBeGreaterThan(0);
 
-      const menuCount = await SingleSelectSelectors.selectOptionMenu(page).count();
-      if (menuCount > 0) {
-        // Select option menu opened successfully
+    await page.evaluate(() => {
+      const el = document.querySelector('[data-testid^="select-option-cell-"]');
+      if (el) {
+        el.scrollIntoView({ block: 'center', inline: 'center' });
+        (el as HTMLElement).click();
       }
-    }
+    });
+    await page.waitForTimeout(500);
+
+    await expect(SingleSelectSelectors.selectOptionMenu(page)).toBeVisible({ timeout: 5000 });
   });
 });

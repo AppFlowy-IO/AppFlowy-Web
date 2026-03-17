@@ -129,11 +129,8 @@ test.describe('Real Authentication Login', () => {
     // Step 2: Try to visit the app
     await page.goto('/app', { waitUntil: 'domcontentloaded' });
 
-    // Step 3: Should be redirected to login (eventually)
-    await expect(async () => {
-      const url = page.url();
-      expect(url.includes('/login') || url.includes('/app')).toBeTruthy();
-    }).toPass({ timeout: 30000 });
+    // Step 3: Should be redirected to login
+    await expect(page).toHaveURL(/\/login/, { timeout: 30000 });
   });
 
   test('should change password, login with new password, then revert', async ({

@@ -361,17 +361,10 @@ test.describe('Share Page Test', () => {
     const popover = ShareSelectors.sharePopover(page);
     await expect(popover.getByText(userBEmail).first()).toBeVisible({ timeout: 10000 });
 
-    // And: user B's entry may show a "Pending" status badge
+    // And: user B's entry shows a "Pending" status badge (invitation not yet accepted)
     const groupContainer2 = popover.locator('.group').filter({ hasText: userBEmail }).first();
-    const groupText = (await groupContainer2.textContent() || '').toLowerCase();
-    const hasPending = groupText.includes('pending');
-
-    if (hasPending) {
-      testLog.info('User B shows pending status');
-      await expect(groupContainer2.getByText(/pending/i)).toBeVisible();
-    } else {
-      testLog.info('Note: Pending status may not be visible immediately');
-    }
+    await expect(groupContainer2.getByText(/pending/i)).toBeVisible({ timeout: 5000 });
+    testLog.info('User B shows pending status');
 
     await page.keyboard.press('Escape');
     testLog.info('Test completed successfully');

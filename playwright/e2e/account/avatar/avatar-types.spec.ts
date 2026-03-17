@@ -8,7 +8,7 @@ import { testLog } from '../../../support/test-helpers';
  * Avatar Types Tests
  * Migrated from: cypress/e2e/account/avatar/avatar-types.cy.ts
  *
- * These tests verify that different avatar URL types (HTTPS, emoji) are
+ * These tests verify that HTTPS avatar URLs and emoji avatars are
  * handled correctly.
  */
 
@@ -83,7 +83,7 @@ test.describe('Avatar Types', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  test('should handle different avatar URL types (HTTP, HTTPS, data URL)', async ({
+  test('should handle HTTPS avatar URL', async ({
     page,
     request,
   }) => {

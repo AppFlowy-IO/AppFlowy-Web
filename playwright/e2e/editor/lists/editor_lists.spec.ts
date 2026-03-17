@@ -41,13 +41,28 @@ test.describe('Editor Lists Manipulation', () => {
       await page.keyboard.type('Item 2');
       await page.waitForTimeout(200);
 
-      // Indent with Tab
+      // Both items should be at root level before indent
+      const item2Block = page.locator('[data-block-type="bulleted_list"]', { hasText: 'Item 2' });
+      await expect(item2Block).toBeVisible();
+
+      // Indent with Tab — Item 2 should become a child of Item 1
       await page.keyboard.press('Tab');
       await page.waitForTimeout(200);
 
-      // Outdent with Shift+Tab
+      // After indent: Item 2's parent block should be Item 1 (a bulleted_list)
+      const item1Block = page.locator('[data-block-type="bulleted_list"]', { hasText: 'Item 1' });
+      const nestedItem2 = item1Block.locator('[data-block-type="bulleted_list"]', { hasText: 'Item 2' });
+      await expect(nestedItem2).toBeVisible();
+
+      // Outdent with Shift+Tab — Item 2 should return to root level
       await page.keyboard.press('Shift+Tab');
       await page.waitForTimeout(200);
+
+      // After outdent: Item 2 should no longer be nested inside Item 1
+      await expect(nestedItem2).not.toBeVisible();
+      // Both items should still exist at top level
+      await expect(item1Block).toBeVisible();
+      await expect(item2Block).toBeVisible();
     });
 
     test('should convert empty list item to paragraph on Enter', async ({ page, request }) => {

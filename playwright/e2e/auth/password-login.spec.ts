@@ -297,8 +297,13 @@ test.describe('Password Login Flow', () => {
       // Wait for network error
       await page.waitForResponse(`${gotrueUrl}/token?grant_type=password`);
 
-      // Verify error handling - still on password page
+      // Verify error handling - still on password page with error message
       await expect(page).toHaveURL(/action=enterPassword/);
+      await page.waitForTimeout(1000);
+
+      // Verify an error message is displayed to the user
+      const errorText = page.locator('text=/error|Error|unexpected|failed/i');
+      await expect(errorText.first()).toBeVisible({ timeout: 5000 });
 
       // Verify user can retry
       await expect(AuthSelectors.passwordInput(page)).toBeVisible();

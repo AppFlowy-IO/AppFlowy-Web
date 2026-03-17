@@ -75,6 +75,9 @@ test.describe('Field Type Switch Tests (Desktop Parity)', () => {
       await page.waitForTimeout(500);
 
       const originalContents = await getAllCellContents(page, fieldId);
+      // Guard: verify data was actually populated before round-trip
+      const nonEmptyCount = originalContents.filter(v => v).length;
+      expect(nonEmptyCount).toBeGreaterThan(0);
 
       await changeFieldTypeById(page, fieldId, FieldType.RichText);
       await page.waitForTimeout(1000);

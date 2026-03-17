@@ -59,7 +59,7 @@ async function addChildInMainWindow(
   page: import('@playwright/test').Page,
   parentPageName: string,
   menuItemIndex: number,
-  maxAttempts: number = 3
+  maxAttempts: number = 5
 ) {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     await ensureParentExpanded(page, parentPageName);
@@ -75,7 +75,7 @@ async function addChildInMainWindow(
     // Scroll parent into view and hover to reveal action buttons
     await parentItem.locator('> div').first().scrollIntoViewIfNeeded();
     await parentItem.locator('> div').first().hover({ force: true });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
     // Click the inline "+" button
     const addBtn = parentItem
@@ -91,36 +91,38 @@ async function addChildInMainWindow(
     }
 
     await addBtn.click({ force: true });
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
     // Wait for the view-actions-popover dropdown
     const popover = page.getByTestId('view-actions-popover');
-    const popoverVisible = await popover.isVisible().catch(() => false);
-    if (!popoverVisible) {
-      try {
-        await expect(popover).toBeVisible({ timeout: 5000 });
-      } catch {
-        testLog.info(`attempt ${attempt}: popover did not appear, retrying`);
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(1000);
-        continue;
-      }
+    try {
+      await expect(popover).toBeVisible({ timeout: 8000 });
+    } catch {
+      testLog.info(`attempt ${attempt}: popover did not appear, retrying`);
+      await page.keyboard.press('Escape');
+      await page.waitForTimeout(1000);
+      continue;
     }
 
     // Click the menu item to create the page
-    await popover.locator('[role="menuitem"]').nth(menuItemIndex).click();
+    const menuItems = popover.locator('[role="menuitem"]');
+    await expect(menuItems.nth(menuItemIndex)).toBeVisible({ timeout: 3000 });
+    await menuItems.nth(menuItemIndex).click();
 
     // Wait for popover to close (confirms the click was processed)
     await expect(popover).not.toBeVisible({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(1500);
 
     // Dismiss any dialog that opened (Document type opens a page modal)
+    // Wait a moment for the dialog to appear (it may render asynchronously)
+    await page.waitForTimeout(500);
     const dialog = page.locator('[role="dialog"]');
     if (await dialog.isVisible().catch(() => false)) {
       await page.keyboard.press('Escape');
       await expect(dialog)
         .not.toBeVisible({ timeout: 5000 })
         .catch(() => {});
+      await page.waitForTimeout(500);
     }
 
     // Wait for the new child to appear, re-expanding parent if needed
@@ -129,7 +131,7 @@ async function addChildInMainWindow(
         await ensureParentExpanded(page, parentPageName);
         const count = await directChildren.count();
         expect(count).toBeGreaterThan(beforeCount);
-      }).toPass({ timeout: 15000 });
+      }).toPass({ timeout: 20000 });
 
       testLog.info(
         `addChildInMainWindow: child created on attempt ${attempt}, count now > ${beforeCount}`
@@ -339,12 +341,18 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
     await expect(titleInput).toBeVisible({ timeout: 15000 });
 
     const parentPageName = `SyncTest-${Date.now()}`;
-    await titleInput.fill(parentPageName);
+    // Clear existing text then type the new name (contentEditable div)
+    await titleInput.click();
+    await page.keyboard.press('Meta+A');
+    await page.keyboard.type(parentPageName);
+    // Blur to trigger immediate sendUpdateImmediately (bypasses 300ms debounce)
+    await titleInput.evaluate((el) => el.blur());
+    await page.waitForTimeout(1000);
 
     // Wait for the rename to sync to the sidebar
     await expect(
       PageSelectors.nameContaining(page, parentPageName).first()
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible({ timeout: 30000 });
     testLog.info(`Parent page "${parentPageName}" created and renamed`);
 
     // Step 4: Create iframe for bidirectional sync

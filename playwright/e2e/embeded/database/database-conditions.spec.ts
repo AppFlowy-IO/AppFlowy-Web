@@ -95,6 +95,8 @@ test.describe('Database Conditions - Filters and Sorts UI', () => {
       return gridTop - tabsBottom;
     });
 
+    // Verify elements were found (gap !== -1) and gap is minimal
+    expect(gap).toBeGreaterThanOrEqual(0);
     expect(gap).toBeLessThan(10);
 
     // Verify no filter/sort conditions visible

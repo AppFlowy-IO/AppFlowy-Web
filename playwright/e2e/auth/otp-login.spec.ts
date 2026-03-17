@@ -412,7 +412,7 @@ test.describe('OTP Login Flow', () => {
       await verifyPromise;
       await userVerifyPromise;
 
-      // Verify User B is redirected to /app (NOT User A workspace)
+      // Verify User B is redirected to /app (the app uses the redirect URL as-is)
       await expect(page).toHaveURL(new RegExp(`${baseUrl}/app`), { timeout: 10000 });
 
       // Verify redirectTo was cleared for new user

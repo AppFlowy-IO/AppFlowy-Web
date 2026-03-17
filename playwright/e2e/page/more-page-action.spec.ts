@@ -89,16 +89,16 @@ test.describe('More Page Actions', () => {
     // Wait for the duplication to complete
     await page.waitForTimeout(2000);
 
-    // Verify the page was duplicated - there should be at least one page with "Getting started" in the name
-    await expect(page.getByText('Getting started').first()).toBeVisible();
+    // Verify the page was duplicated - the copy should appear in the sidebar
+    await expect(page.getByText('Getting started (Copy)').first()).toBeVisible({ timeout: 10000 });
 
-    // Check that there are multiple pages containing "Getting started"
+    // Verify both original and copy exist
     const allPages = PageSelectors.names(page);
     const allPageTexts = await allPages.allTextContents();
     const gettingStartedCount = allPageTexts.filter((text) =>
       text.includes('Getting started')
     ).length;
-    expect(gettingStartedCount).toBeGreaterThanOrEqual(1);
+    expect(gettingStartedCount).toBeGreaterThanOrEqual(2);
   });
 
   test('should rename a page and verify the name persists after refresh', async ({
