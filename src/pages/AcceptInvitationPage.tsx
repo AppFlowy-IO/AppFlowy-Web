@@ -27,6 +27,7 @@ function AcceptInvitationPage() {
   const [loading, setLoading] = useState(false);
   const [notInvitee, setNotInvitee] = useState(false);
   const [isError, setIsError] = useState(false);
+  const [errorInfo, setErrorInfo] = useState<{ code?: number; message?: string }>();
   const [invalidMessage, setInvalidMessage] = useState<string>();
 
   const loadInvitation = useCallback(async () => {
@@ -56,6 +57,7 @@ function AcceptInvitationPage() {
         return;
       }
 
+      setErrorInfo({ code: e.code, message: e.message });
       setIsError(true);
     }
   }, [invitationId]);
@@ -109,6 +111,7 @@ function AcceptInvitationPage() {
         return;
       }
 
+      setErrorInfo({ code: e.code, message: e.message });
       setIsError(true);
     } finally {
       setLoading(false);
@@ -136,7 +139,7 @@ function AcceptInvitationPage() {
   }
 
   if (isError) {
-    return <ErrorPage onRetry={handleJoinWorkspace} />;
+    return <ErrorPage onRetry={handleJoinWorkspace} error={errorInfo} />;
   }
 
   if (hasJoined) {
