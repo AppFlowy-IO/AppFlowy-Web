@@ -355,6 +355,11 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
     ).toBeVisible({ timeout: 30000 });
     testLog.info(`Parent page "${parentPageName}" created and renamed`);
 
+    // Give the server extra time to fully commit the rename before the iframe
+    // fetches folder data (WebSocket notification can arrive before the DB
+    // write is visible to new API reads on a loaded CI server).
+    await page.waitForTimeout(3000);
+
     // Step 4: Create iframe for bidirectional sync
     testLog.step(4, 'Create iframe with same app URL');
 
@@ -407,16 +412,22 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
       (await iframeExpanded.getAttribute('data-expanded')) === 'true';
     if (!isIframeExpanded) {
       await iframeSpaceItem.getByTestId('space-name').click({ force: true });
+      // Wait for expansion to complete — page items should appear
+      await expect(
+        iframeSpaceItem.locator('[data-testid="page-item"]').first()
+      ).toBeVisible({ timeout: 15000 });
     }
 
-    // Wait for parent page to be visible in iframe sidebar
+    // Wait for parent page to be visible in iframe sidebar.
+    // The iframe fetches folder data from the server; on CI under load this
+    // can take longer, so use a generous timeout.
     await expect(
       frame
         .locator(
           `[data-testid="page-name"]:text-is("${parentPageName}")`
         )
         .first()
-    ).toBeVisible({ timeout: 15000 });
+    ).toBeVisible({ timeout: 45000 });
 
     // Expand parent and record baseline children
     testLog.info('Expanding parent to record baseline children');
