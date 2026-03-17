@@ -418,16 +418,83 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
       ).toBeVisible({ timeout: 15000 });
     }
 
+    // --- DEBUG: dump iframe sidebar state ---
+    const iframeSpaceExpandedAttr = await iframeExpanded
+      .getAttribute('data-expanded')
+      .catch(() => 'NOT_FOUND');
+    testLog.info(`Iframe space expanded attr: ${iframeSpaceExpandedAttr}`);
+
+    const iframePageNames = await frame
+      .locator('[data-testid="page-name"]')
+      .allTextContents()
+      .catch(() => [] as string[]);
+    testLog.info(
+      `Iframe page-name elements (${iframePageNames.length}): ${JSON.stringify(iframePageNames)}`
+    );
+
+    const iframePageItems = await frame
+      .locator('[data-testid="page-item"]')
+      .count()
+      .catch(() => -1);
+    testLog.info(`Iframe page-item count: ${iframePageItems}`);
+
+    // Also check what the main window sidebar shows at this point
+    const mainPageNames = await page
+      .locator('[data-testid="page-name"]')
+      .allTextContents();
+    testLog.info(
+      `Main window page-name elements (${mainPageNames.length}): ${JSON.stringify(mainPageNames)}`
+    );
+    // --- END DEBUG ---
+
     // Wait for parent page to be visible in iframe sidebar.
     // The iframe fetches folder data from the server; on CI under load this
     // can take longer, so use a generous timeout.
-    await expect(
-      frame
-        .locator(
-          `[data-testid="page-name"]:text-is("${parentPageName}")`
-        )
-        .first()
-    ).toBeVisible({ timeout: 45000 });
+    try {
+      await expect(
+        frame
+          .locator(
+            `[data-testid="page-name"]:text-is("${parentPageName}")`
+          )
+          .first()
+      ).toBeVisible({ timeout: 45000 });
+    } catch (err) {
+      // Dump iframe state on failure for CI debugging
+      const failPageNames = await frame
+        .locator('[data-testid="page-name"]')
+        .allTextContents()
+        .catch(() => [] as string[]);
+      const failPageItems = await frame
+        .locator('[data-testid="page-item"]')
+        .count()
+        .catch(() => -1);
+      const failSpaceExpanded = await iframeExpanded
+        .getAttribute('data-expanded')
+        .catch(() => 'NOT_FOUND');
+      const failSpaceNames = await frame
+        .locator('[data-testid="space-name"]')
+        .allTextContents()
+        .catch(() => [] as string[]);
+      const failSidebarHeader = await frame
+        .locator('[data-testid="sidebar-page-header"]')
+        .isVisible()
+        .catch(() => false);
+      const iframeUrl = await frame
+        .locator('html')
+        .evaluate(() => window.location.href)
+        .catch(() => 'EVAL_FAILED');
+
+      testLog.info(`=== IFRAME DEBUG ON FAILURE ===`);
+      testLog.info(`Looking for: "${parentPageName}"`);
+      testLog.info(`Iframe URL: ${iframeUrl}`);
+      testLog.info(`Sidebar header visible: ${failSidebarHeader}`);
+      testLog.info(`Space names: ${JSON.stringify(failSpaceNames)}`);
+      testLog.info(`Space expanded: ${failSpaceExpanded}`);
+      testLog.info(`Page items: ${failPageItems}`);
+      testLog.info(`Page names: ${JSON.stringify(failPageNames)}`);
+      testLog.info(`=== END IFRAME DEBUG ===`);
+      throw err;
+    }
 
     // Expand parent and record baseline children
     testLog.info('Expanding parent to record baseline children');
