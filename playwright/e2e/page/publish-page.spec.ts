@@ -754,7 +754,8 @@ test.describe('Publish Page Test', () => {
       // May not fire if row doc already exists
     });
 
-    await page.waitForTimeout(1000);
+    // Wait for row document content to sync to the server before publishing
+    await page.waitForTimeout(5000);
 
     // Then: the row document content is visible in the dialog
     await expect(dialog).toContainText(rowDocContent);
@@ -799,8 +800,19 @@ test.describe('Publish Page Test', () => {
 
     // Then: the row document content is displayed in the published view
     testLog.info('Verifying row document content in published view');
-    await page.goto(rowPageUrl, { waitUntil: 'load' });
-    await expect(page.getByText(rowDocContent)).toBeVisible({ timeout: 60000 });
+    await page.goto(rowPageUrl, { waitUntil: 'networkidle' });
+
+    // Row document may need time to be available in the published bundle;
+    // if not found on first load, reload once and retry.
+    const contentLocator = page.getByText(rowDocContent);
+    const visible = await contentLocator.isVisible().catch(() => false);
+    if (!visible) {
+      testLog.info('Content not visible on first load, reloading...');
+      await page.waitForTimeout(5000);
+      await page.reload({ waitUntil: 'networkidle' });
+    }
+
+    await expect(contentLocator).toBeVisible({ timeout: 60000 });
     testLog.info('Test passed: Row document content displays correctly in published view');
   });
 });

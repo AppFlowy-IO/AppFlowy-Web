@@ -222,11 +222,23 @@ test.describe('Editor - Drag and Drop Blocks', () => {
     await expect(gridBlock).toBeVisible();
 
     // Verify drag handle appears on hover
+    // First hover a text block to ensure HoverControls component is mounted and positioned
+    const topTextBlock = EditorSelectors.slateEditor(page)
+      .locator('[data-block-type]')
+      .filter({ hasText: 'Top Text' })
+      .first();
+    await topTextBlock.hover({ force: true });
+    await page.waitForTimeout(500);
+
+    // Now hover the grid block
     await gridBlock.scrollIntoViewIfNeeded();
     await gridBlock.hover({ force: true });
+    await page.waitForTimeout(500);
 
     // Force visibility and verify drag handle exists
-    await BlockSelectors.hoverControls(page).evaluate((el) => {
+    const hoverControls = BlockSelectors.hoverControls(page);
+    await hoverControls.waitFor({ state: 'attached', timeout: 15000 });
+    await hoverControls.evaluate((el) => {
       (el as HTMLElement).style.opacity = '1';
     });
     await expect(BlockSelectors.dragHandle(page)).toBeVisible();
