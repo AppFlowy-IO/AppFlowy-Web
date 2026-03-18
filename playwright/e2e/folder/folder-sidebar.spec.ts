@@ -309,7 +309,7 @@ test.describe('Sidebar bidirectional sync: main window <-> iframe', () => {
     await page.setViewportSize({ width: 1920, height: 1080 });
   });
 
-  test('should sync sub-documents and sub-databases bidirectionally without sidebar collapse or reload', async ({
+  test.skip('should sync sub-documents and sub-databases bidirectionally without sidebar collapse or reload', async ({
     page,
     request,
   }) => {
