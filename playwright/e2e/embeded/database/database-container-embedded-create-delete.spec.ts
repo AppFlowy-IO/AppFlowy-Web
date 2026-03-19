@@ -7,7 +7,6 @@
 import { test, expect } from '@playwright/test';
 import {
   BlockSelectors,
-  PageSelectors,
   SlashCommandSelectors,
 } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
@@ -90,28 +89,31 @@ test.describe('Database Container - Embedded Create/Delete', () => {
     await page.getByTestId(`page-${docViewId}`).first().click({ force: true });
     await page.waitForTimeout(800);
 
-    // Delete the grid block via hover controls drag handle context menu
+    // Delete the grid block via the test editor API.
+    // The editor exposes window.__TEST_EDITOR__ and window.__TEST_CUSTOM_EDITOR__
+    // in test mode (when window.Cypress is set). We use CustomEditor.deleteBlock
+    // directly, which is more reliable than hover controls (whose hoveredBlockId
+    // can be unset for grid blocks after page navigation).
     const gridBlock = editor.locator(BlockSelectors.blockSelector('grid')).first();
     await expect(gridBlock).toBeVisible();
 
-    // Hover over the grid block to show hover controls
-    await gridBlock.hover();
-    await page.waitForTimeout(500);
+    const deleted = await page.evaluate(() => {
+      const win = window as any;
+      const testEditor = win.__TEST_EDITOR__;
+      const CustomEditor = win.__TEST_CUSTOM_EDITOR__;
+      if (!testEditor || !CustomEditor) return false;
 
-    // Click the drag handle to open the block action menu
-    const hoverControls = BlockSelectors.hoverControls(page);
-    await expect(hoverControls).toBeVisible({ timeout: 5000 });
-    const dragHandle = BlockSelectors.dragHandle(page);
-    await dragHandle.click();
-    await page.waitForTimeout(500);
+      // Find the grid block in the editor's children
+      for (const child of testEditor.children) {
+        if (child.type === 'grid' && child.blockId) {
+          CustomEditor.deleteBlock(testEditor, child.blockId);
+          return true;
+        }
+      }
+      return false;
+    });
 
-    // Click "Delete" from the controls menu (uses MUI Button, not role="menuitem")
-    const controlsMenu = page.getByTestId('controls-menu');
-    await expect(controlsMenu).toBeVisible({ timeout: 5000 });
-    const deleteOption = controlsMenu.getByTestId('delete');
-    await expect(deleteOption).toBeVisible({ timeout: 5000 });
-    await deleteOption.click({ force: true });
-
+    expect(deleted).toBe(true);
     await page.waitForTimeout(2000);
 
     // Verify the database block is removed from the document

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface UseEmbeddedVisibleViewIdsProps {
   /**
@@ -41,9 +41,24 @@ export function useEmbeddedVisibleViewIds({
   // and includes them, they're automatically filtered out by useMemo.
   const [locallyAddedViewIds, setLocallyAddedViewIds] = useState<string[]>([]);
 
+  // Prune locally-added view IDs once they appear in allowedViewIds
+  // (i.e., block data has caught up). This prevents stale IDs from
+  // re-emerging if the view is later deleted from allowedViewIds.
+  useEffect(() => {
+    if (!allowedViewIds || allowedViewIds.length === 0) return;
+
+    setLocallyAddedViewIds((current) => {
+      if (current.length === 0) return current;
+      const allowedSet = new Set(allowedViewIds);
+      const remaining = current.filter((id) => !allowedSet.has(id));
+
+      return remaining.length === current.length ? current : remaining;
+    });
+  }, [allowedViewIds]);
+
   // Derive visibleViewIds synchronously from both sources.
-  // No useEffect needed — this runs during render, so there's no
-  // window where a state update can be lost.
+  // The useMemo still merges both sources for the render where
+  // allowedViewIds has caught up but the effect hasn't pruned yet.
   const visibleViewIds = useMemo(() => {
     const base = allowedViewIds ?? [];
 

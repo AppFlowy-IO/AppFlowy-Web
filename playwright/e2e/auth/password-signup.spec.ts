@@ -271,9 +271,9 @@ test.describe('Password Sign Up Flow', () => {
       await SignUpSelectors.emailInput(page).fill(testEmail);
       await SignUpSelectors.passwordInput(page).fill(validPassword);
       await SignUpSelectors.confirmPasswordInput(page).fill(validPassword);
+      const responsePromise = page.waitForResponse(`${gotrueUrl}/signup`);
       await SignUpSelectors.submitButton(page).click();
-
-      await page.waitForResponse(`${gotrueUrl}/signup`);
+      await responsePromise;
 
       await expect(page.getByText(/already registered/i)).toBeVisible();
       await expect(page).toHaveURL(/action=signUpPassword/);
@@ -300,9 +300,10 @@ test.describe('Password Sign Up Flow', () => {
       await SignUpSelectors.emailInput(page).fill(testEmail);
       await SignUpSelectors.passwordInput(page).fill(validPassword);
       await SignUpSelectors.confirmPasswordInput(page).fill(validPassword);
-      await SignUpSelectors.submitButton(page).click();
 
-      await page.waitForResponse(`${gotrueUrl}/signup`);
+      const responsePromise429 = page.waitForResponse(`${gotrueUrl}/signup`);
+      await SignUpSelectors.submitButton(page).click();
+      await responsePromise429;
 
       await expect(page.getByText(/Too many requests/i)).toBeVisible({ timeout: 5000 });
     });
@@ -327,9 +328,10 @@ test.describe('Password Sign Up Flow', () => {
       await SignUpSelectors.emailInput(page).fill(testEmail);
       await SignUpSelectors.passwordInput(page).fill(validPassword);
       await SignUpSelectors.confirmPasswordInput(page).fill(validPassword);
-      await SignUpSelectors.submitButton(page).click();
 
-      await page.waitForResponse(`${gotrueUrl}/signup`);
+      const responsePromise500 = page.waitForResponse(`${gotrueUrl}/signup`);
+      await SignUpSelectors.submitButton(page).click();
+      await responsePromise500;
 
       await expect(page).toHaveURL(/action=signUpPassword/);
       await expect(SignUpSelectors.emailInput(page)).toBeVisible();

@@ -9,6 +9,9 @@ import { TestConfig } from '../../support/test-config';
  * Uses password-based authentication via GoTrue.
  */
 test.describe('Real Authentication Login', () => {
+  // Run tests serially — the password-change test mutates shared account state
+  test.describe.configure({ mode: 'serial' });
+
   const { gotrueUrl, apiUrl } = TestConfig;
 
   // Test account credentials
@@ -139,6 +142,8 @@ test.describe('Real Authentication Login', () => {
   }) => {
     const originalPassword = testPassword;
     const newPassword = 'NewAppFlowy!@456';
+    let passwordChanged = false;
+    let latestAccessToken = '';
 
     // Step 1: Login with original password
     const loginResponse = await request.post(`${gotrueUrl}/token?grant_type=password`, {
@@ -146,57 +151,75 @@ test.describe('Real Authentication Login', () => {
       headers: { 'Content-Type': 'application/json' },
     });
     expect(loginResponse.status()).toBe(200);
-    const accessToken = (await loginResponse.json()).access_token;
+    latestAccessToken = (await loginResponse.json()).access_token;
 
-    // Step 2: Change password to new password
-    const changeResponse = await request.put(`${gotrueUrl}/user`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      data: { password: newPassword },
-    });
-    expect(changeResponse.status()).toBe(200);
+    try {
+      // Step 2: Change password to new password
+      const changeResponse = await request.put(`${gotrueUrl}/user`, {
+        headers: {
+          Authorization: `Bearer ${latestAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        data: { password: newPassword },
+      });
+      expect(changeResponse.status()).toBe(200);
+      passwordChanged = true;
 
-    // Step 3: Verify old password no longer works
-    const oldPasswordResponse = await request.post(
-      `${gotrueUrl}/token?grant_type=password`,
-      {
-        data: { email: testEmail, password: originalPassword },
-        headers: { 'Content-Type': 'application/json' },
-        failOnStatusCode: false,
+      // Step 3: Verify old password no longer works
+      const oldPasswordResponse = await request.post(
+        `${gotrueUrl}/token?grant_type=password`,
+        {
+          data: { email: testEmail, password: originalPassword },
+          headers: { 'Content-Type': 'application/json' },
+          failOnStatusCode: false,
+        }
+      );
+      expect(oldPasswordResponse.status()).toBe(400);
+
+      // Step 4: Login with new password
+      const newLoginResponse = await request.post(
+        `${gotrueUrl}/token?grant_type=password`,
+        {
+          data: { email: testEmail, password: newPassword },
+          headers: { 'Content-Type': 'application/json' },
+        }
+      );
+      expect(newLoginResponse.status()).toBe(200);
+      latestAccessToken = (await newLoginResponse.json()).access_token;
+
+      // Step 5: Store token and verify app access
+      await page.evaluate((data) => {
+        localStorage.setItem('token', JSON.stringify(data));
+      }, await newLoginResponse.json());
+
+      await page.goto('/app', { waitUntil: 'domcontentloaded' });
+      await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
+    } finally {
+      // Always revert password if it was changed, even if test assertions fail
+      if (passwordChanged) {
+        // If we don't have a token from the new password, try to get one
+        if (!latestAccessToken) {
+          const recovery = await request.post(`${gotrueUrl}/token?grant_type=password`, {
+            data: { email: testEmail, password: newPassword },
+            headers: { 'Content-Type': 'application/json' },
+            failOnStatusCode: false,
+          });
+          if (recovery.ok()) {
+            latestAccessToken = (await recovery.json()).access_token;
+          }
+        }
+
+        if (latestAccessToken) {
+          await request.put(`${gotrueUrl}/user`, {
+            headers: {
+              Authorization: `Bearer ${latestAccessToken}`,
+              'Content-Type': 'application/json',
+            },
+            data: { password: originalPassword },
+          });
+        }
       }
-    );
-    expect(oldPasswordResponse.status()).toBe(400);
-
-    // Step 4: Login with new password
-    const newLoginResponse = await request.post(
-      `${gotrueUrl}/token?grant_type=password`,
-      {
-        data: { email: testEmail, password: newPassword },
-        headers: { 'Content-Type': 'application/json' },
-      }
-    );
-    expect(newLoginResponse.status()).toBe(200);
-    const newAccessToken = (await newLoginResponse.json()).access_token;
-
-    // Step 5: Store token and verify app access
-    await page.evaluate((data) => {
-      localStorage.setItem('token', JSON.stringify(data));
-    }, await newLoginResponse.json());
-
-    await page.goto('/app', { waitUntil: 'domcontentloaded' });
-    await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-
-    // Step 6: Revert password back to original
-    const revertResponse = await request.put(`${gotrueUrl}/user`, {
-      headers: {
-        Authorization: `Bearer ${newAccessToken}`,
-        'Content-Type': 'application/json',
-      },
-      data: { password: originalPassword },
-    });
-    expect(revertResponse.status()).toBe(200);
+    }
 
     // Step 7: Verify original password works again
     const finalLoginResponse = await request.post(
