@@ -2,7 +2,7 @@ import * as Y from 'yjs';
 
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { closeCollabDB, db, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import { closeCollabDB, db, evictProviderCache, openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { Fetcher, StrategyType } from '@/application/services/js-services/cache/types';
 import {
   DatabaseId,
@@ -453,17 +453,24 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   const existing = rowDocs.get(rowKey);
 
   if (existing) {
-    Log.debug('[Database] getOrCreateRowDocEntry returning existing entry', {
-      rowKey,
-      hasDoc: Boolean(existing.doc),
-    });
     return existing;
   }
 
-  Log.debug('[Database] getOrCreateRowDocEntry creating new entry', {
-    rowKey,
-  });
+  // providerCache in openCollabDBWithProvider handles concurrent dedup
+  const entry = await _createRowDocEntry(rowKey);
 
+  // Post-await race check: another caller may have populated rowDocs
+  const raceWinner = rowDocs.get(rowKey);
+
+  if (raceWinner) {
+    return raceWinner;
+  }
+
+  rowDocs.set(rowKey, entry);
+  return entry;
+}
+
+async function _createRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   const startedAt = Date.now();
   const { doc, provider } = await openCollabDBWithProvider(rowKey, { awaitSync: false });
 
@@ -498,10 +505,8 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
         resolve();
       });
     });
-  const entry = { doc, whenSynced };
 
-  rowDocs.set(rowKey, entry);
-  return entry;
+  return { doc, whenSynced };
 }
 
 export async function createRow(rowKey: string) {
@@ -569,6 +574,7 @@ export function deleteRow(rowKey: string) {
   }
 
   rowDocs.delete(rowKey);
+  evictProviderCache(rowKey);
 }
 
 // ============================================================================
@@ -678,6 +684,14 @@ export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
 
   const entry = { doc, whenSynced };
 
+  // Post-await race check: another caller may have populated rowSubDocs
+  const raceWinner = rowSubDocs.get(documentId);
+
+  if (raceWinner) {
+    await raceWinner.whenSynced;
+    return raceWinner.doc;
+  }
+
   rowSubDocs.set(documentId, entry);
 
   await whenSynced;
@@ -713,4 +727,5 @@ export function deleteRowSubDoc(documentId: string) {
   }
 
   rowSubDocs.delete(documentId);
+  evictProviderCache(documentId);
 }

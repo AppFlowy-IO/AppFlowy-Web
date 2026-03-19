@@ -228,8 +228,12 @@ export const useRow = (rowId: string) => {
 
   // Observe row document for changes and re-render when data updates.
   useEffect(() => {
-    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) return;
+    if (!rowDoc || !rowDoc.share.has(YjsEditorKey.data_section)) {
+      return;
+    }
+
     const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+
     let detachRowObserver: (() => void) | null = null;
     const update = () => {
       forceUpdate((prev) => prev + 1);
@@ -276,7 +280,7 @@ export const useRow = (rowId: string) => {
 
       rowSharedRoot.unobserve(handleRootChange);
     };
-  }, [rowDoc]);
+  }, [rowDoc, rowId]);
 
   return rowDoc?.getMap(YjsEditorKey.data_section);
 };

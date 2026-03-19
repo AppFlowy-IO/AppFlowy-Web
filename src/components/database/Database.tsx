@@ -406,6 +406,9 @@ function Database(props: Database2Props) {
         pendingRowDocsRef.current.delete(rowId);
       }
     },
+    // Omitted deps are stable: setRowMap (useState setter), refs (rowMapRef, pendingRowDocsRef,
+    // localCachePrimedRef), and module-level imports (createRowFast, takeDatabaseRowDocSeed, getRowKey).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [createRow, getDatabaseId, ensureBlobPrefetch, registerRowSync]
   );
 
