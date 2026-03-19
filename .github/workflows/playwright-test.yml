@@ -1,0 +1,255 @@
+name: Playwright E2E Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CLOUD_VERSION: latest-amd64
+  APPFLOWY_ENABLE_RELATION_ROLLUP_EDIT: "true"
+  NODE_VERSION: "24"
+  PNPM_VERSION: "10.9.0"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Build once and share artifact with all test jobs
+  build:
+    runs-on: ubuntu-latest
+    name: "Build"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Get pnpm store directory
+        id: pnpm-cache
+        shell: bash
+        run: echo "STORE_PATH=$(pnpm store path)" >> $GITHUB_OUTPUT
+
+      - name: Cache pnpm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.pnpm-cache.outputs.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Setup environment
+        run: cp deploy.env .env
+
+      - name: Build project
+        run: pnpm run build
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-dist
+          path: dist/
+          retention-days: 1
+
+  test:
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        test-group:
+          - name: "auth-chat"
+            spec: "playwright/e2e/auth playwright/e2e/chat"
+            description: "Authentication and AI chat"
+          - name: "editor"
+            spec: "playwright/e2e/editor"
+            description: "Document editing and formatting"
+          - name: "database"
+            spec: "playwright/e2e/database/"
+            description: "Database and grid operations"
+          - name: "database-filters"
+            spec: "playwright/e2e/database2 playwright/e2e/database3"
+            description: "Database filters and field type switching"
+          - name: "embedded"
+            spec: "playwright/e2e/embeded"
+            description: "Embedded database and image operations"
+          - name: "page"
+            spec: "playwright/e2e/page"
+            description: "Page management (create, delete, share, publish, paste)"
+          - name: "account-space-user"
+            spec: "playwright/e2e/account playwright/e2e/space playwright/e2e/user playwright/e2e/app playwright/e2e/folder playwright/e2e/calendar"
+            description: "Account, Space, User, App, Folder, and Calendar tests"
+
+    name: "${{ matrix.test-group.name }}"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Checkout AppFlowy-Cloud-Premium
+        uses: actions/checkout@v4
+        with:
+          repository: AppFlowy-IO/AppFlowy-Cloud-Premium
+          ref: main
+          token: ${{ secrets.CI_TOKEN }}
+          path: AppFlowy-Cloud-Premium
+
+      - name: Setup AppFlowy Cloud
+        working-directory: AppFlowy-Cloud-Premium
+        env:
+          OPENAI_KEY: ${{ secrets.CI_OPENAI_API_KEY }}
+        run: |
+          cp deploy.env .env
+          sed -i 's/GOTRUE_EXTERNAL_GOOGLE_ENABLED=.*/GOTRUE_EXTERNAL_GOOGLE_ENABLED=true/' .env
+          sed -i 's|GOTRUE_MAILER_AUTOCONFIRM=.*|GOTRUE_MAILER_AUTOCONFIRM=true|' .env
+          sed -i 's|API_EXTERNAL_URL=.*|API_EXTERNAL_URL=http://localhost|' .env
+          sed -i "s|AI_OPENAI_API_KEY=.*|AI_OPENAI_API_KEY=${OPENAI_KEY}|" .env
+          sed -i 's|APPFLOWY_SPAM_DETECT_ENABLED=.*|APPFLOWY_SPAM_DETECT_ENABLED=false|' .env
+          echo '' >> .env
+          echo 'APPFLOWY_PAGE_HISTORY_ENABLE=true' >> .env
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+
+      # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
+      - name: Install deps and pull Docker images (parallel)
+        env:
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
+        run: |
+          # Start Docker pull in background
+          (cd AppFlowy-Cloud-Premium && docker compose pull appflowy_cloud gotrue ai appflowy_worker) &
+          DOCKER_PID=$!
+
+          # Get pnpm store path and install deps concurrently
+          pnpm install --frozen-lockfile
+
+          # Wait for Docker pull to complete
+          wait $DOCKER_PID
+
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
+
+      - name: Install Playwright browsers
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Install Playwright deps (cached browsers)
+        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
+
+      - name: Setup environment
+        run: cp deploy.env .env
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: build-dist
+          path: dist/
+
+      - name: Start Docker services
+        working-directory: AppFlowy-Cloud-Premium
+        env:
+          APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
+          APPFLOWY_WORKER_VERSION: ${{ env.CLOUD_VERSION }}
+          RUST_LOG: appflowy_cloud=info
+        run: |
+          docker compose -f docker-compose-web-ci.yml up -d
+
+          echo "Waiting for backend services..."
+          timeout 180 bash -c 'until curl -sf http://localhost/api/health > /dev/null 2>&1; do
+            echo "Waiting for backend... ($(date +%T))"
+            sleep 5
+          done' && echo "Backend is ready" || (
+            echo "Backend failed to start after 3 minutes"
+            echo "Docker container status:"
+            docker compose -f docker-compose-web-ci.yml ps
+            echo "Docker logs:"
+            docker compose -f docker-compose-web-ci.yml logs --tail=50
+            exit 1
+          )
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install Bun SSR dependencies
+        run: bun install cheerio pino pino-pretty
+
+      - name: Start SSR server
+        run: |
+          pnpm run dev:server &
+          echo $! > ssr-server.pid
+
+          timeout 60 bash -c 'until curl -sf http://localhost:3000 > /dev/null 2>&1; do
+            echo "Waiting for SSR server... ($(date +%T))"
+            sleep 2
+          done' && echo "SSR server is ready" || (echo "SSR server failed to start" && exit 1)
+
+      - name: Run ${{ matrix.test-group.name }} tests
+        run: pnpm exec playwright test --workers=2 ${{ matrix.test-group.spec }}
+        env:
+          CI: true
+          BASE_URL: http://localhost:3000
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report-${{ matrix.test-group.name }}
+          path: playwright-report/
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Upload test traces
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces-${{ matrix.test-group.name }}
+          path: test-results/
+          if-no-files-found: ignore
+          retention-days: 3
+
+      - name: Cleanup
+        if: always()
+        run: |
+          if [ -f ssr-server.pid ]; then
+            kill $(cat ssr-server.pid) 2>/dev/null || true
+          fi
+          pkill -f "bun deploy/server.ts" 2>/dev/null || true
+
+          cd AppFlowy-Cloud-Premium && docker compose down || true

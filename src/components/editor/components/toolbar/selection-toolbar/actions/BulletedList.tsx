@@ -39,7 +39,7 @@ export function BulletedList() {
   }, [editor]);
 
   return (
-    <ActionButton active={isActivated} onClick={onClick} tooltip={t('document.plugins.bulletedList')}>
+    <ActionButton active={isActivated} onClick={onClick} tooltip={t('document.plugins.bulletedList')} data-testid="toolbar-bulleted-list-button">
       <BulletedListSvg className='h-4 w-4' />
     </ActionButton>
   );
