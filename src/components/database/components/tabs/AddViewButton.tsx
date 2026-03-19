@@ -70,7 +70,7 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
         onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <DropdownMenuItem
-          onSelect={() => {
+          onClick={() => {
             void handleAddView(DatabaseViewLayout.Grid, t('grid.menuName'));
           }}
         >
@@ -78,7 +78,7 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
           {t('grid.menuName')}
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={() => {
+          onClick={() => {
             void handleAddView(DatabaseViewLayout.Board, t('board.menuName'));
           }}
         >
@@ -86,7 +86,7 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
           {t('board.menuName')}
         </DropdownMenuItem>
         <DropdownMenuItem
-          onSelect={() => {
+          onClick={() => {
             void handleAddView(DatabaseViewLayout.Calendar, t('calendar.menuName'));
           }}
         >

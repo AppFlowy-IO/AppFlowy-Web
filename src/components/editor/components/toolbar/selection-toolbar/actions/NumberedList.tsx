@@ -39,7 +39,7 @@ export function NumberedList() {
   }, [editor]);
 
   return (
-    <ActionButton active={isActivated} onClick={onClick} tooltip={t('document.plugins.numberedList')}>
+    <ActionButton active={isActivated} onClick={onClick} tooltip={t('document.plugins.numberedList')} data-testid="toolbar-numbered-list-button">
       <NumberedListSvg className='h-4 w-4' />
     </ActionButton>
   );

@@ -111,7 +111,7 @@ function EventPopoverContent({
         {!readOnly && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant='ghost' size='icon' className='hover:text-text-error' onClick={handleDelete}>
+              <Button data-testid='calendar-event-delete' variant='ghost' size='icon' className='hover:text-text-error' onClick={handleDelete}>
                 <DeleteIcon className='h-5 w-5' />
               </Button>
             </TooltipTrigger>
