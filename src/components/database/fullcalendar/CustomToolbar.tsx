@@ -146,10 +146,11 @@ export const CustomToolbar = memo(
     });
 
     return (
-      <div className='grid grid-cols-3 items-center bg-background-primary px-1 py-4'>
+      <div data-testid='calendar-toolbar' className='grid grid-cols-3 items-center bg-background-primary px-1 py-4'>
         <div className='relative flex h-8 items-center overflow-hidden'>
           <AnimatePresence mode='wait'>
             <motion.h2
+              data-testid='calendar-title'
               key={`${currentMonth}-${animationKey}`}
               className='whitespace-nowrap text-xl font-semibold text-text-primary'
               initial={{
@@ -209,7 +210,7 @@ export const CustomToolbar = memo(
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant='ghost' onClick={handlePrev} size='icon'>
+              <Button data-testid='calendar-prev-button' variant='ghost' onClick={handlePrev} size='icon'>
                 <ChevronLeft className='h-5 w-5' />
               </Button>
             </TooltipTrigger>
@@ -221,7 +222,7 @@ export const CustomToolbar = memo(
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant='outline' size='sm' onClick={handleToday}>
+              <Button data-testid='calendar-today-button' variant='outline' size='sm' onClick={handleToday}>
                 {t('calendar.navigation.today')}
               </Button>
             </TooltipTrigger>
@@ -233,7 +234,7 @@ export const CustomToolbar = memo(
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant='ghost' size='icon' onClick={handleNext}>
+              <Button data-testid='calendar-next-button' variant='ghost' size='icon' onClick={handleNext}>
                 <ChevronRight className='h-5 w-5' />
               </Button>
             </TooltipTrigger>

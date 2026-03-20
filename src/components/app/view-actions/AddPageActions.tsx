@@ -130,7 +130,7 @@ function AddPageActions({ view }: { view: View }) {
             key={action.label}
             data-testid={action.testId}
             disabled={action.disabled}
-            onSelect={() => {
+            onClick={() => {
               action.onSelect();
             }}
           >
