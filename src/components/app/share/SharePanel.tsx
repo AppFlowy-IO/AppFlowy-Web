@@ -38,7 +38,7 @@ function SharePanel({ viewId }: { viewId: string }) {
     return role === Role.Member;
   }, [role]);
 
-  const loadPeople = useCallback(async () => {
+  const loadPeople = useCallback(async (signal?: AbortSignal) => {
     if (!currentWorkspaceId || !viewId || !currentUser) {
       return;
     }
@@ -47,19 +47,26 @@ function SharePanel({ viewId }: { viewId: string }) {
 
     setIsLoading(true);
     try {
-      const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds);
+      const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
 
+      if (signal?.aborted) return;
       setPeople(detail.shared_with);
     } catch (error) {
+      if (signal?.aborted) return;
       console.error(error);
       setPeople([]);
     } finally {
-      setIsLoading(false);
+      if (!signal?.aborted) {
+        setIsLoading(false);
+      }
     }
   }, [currentUser, currentWorkspaceId, viewId, outline]);
 
   useEffect(() => {
-    void loadPeople();
+    const controller = new AbortController();
+
+    void loadPeople(controller.signal);
+    return () => controller.abort();
   }, [loadPeople]);
 
   // Load mentionable users

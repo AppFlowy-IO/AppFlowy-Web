@@ -10,7 +10,7 @@ import {
   Workspace,
 } from '@/application/types';
 
-import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios, withRetry } from './core';
 
 interface AFWorkspace {
   workspace_id: string;
@@ -106,31 +106,36 @@ export async function sendRequestAccess(workspaceId: string, viewId: string) {
   );
 }
 
-export async function getShareDetail(workspaceId: string, viewId: string, ancestorViewIds: string[]) {
+export async function getShareDetail(workspaceId: string, viewId: string, ancestorViewIds: string[], signal?: AbortSignal) {
   const url = `api/sharing/workspace/${workspaceId}/view/${viewId}/access-details`;
 
-  return executeAPIRequest<{
-    view_id: string;
-    shared_with: IPeopleWithAccessType[];
-  }>(() =>
-    getAxios()?.post<APIResponse<{
+  return withRetry(() =>
+    executeAPIRequest<{
       view_id: string;
       shared_with: IPeopleWithAccessType[];
-    }>>(url, {
-      ancestor_view_ids: ancestorViewIds,
-    })
+    }>(() =>
+      getAxios()?.post<APIResponse<{
+        view_id: string;
+        shared_with: IPeopleWithAccessType[];
+      }>>(url, {
+        ancestor_view_ids: ancestorViewIds,
+      })
+    ),
+    { signal }
   );
 }
 
 export async function sharePageTo(workspaceId: string, viewId: string, emails: string[], accessLevel?: AccessLevel) {
   const url = `/api/sharing/workspace/${workspaceId}/view`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.put<APIResponse>(url, {
-      view_id: viewId,
-      emails,
-      access_level: accessLevel || AccessLevel.ReadOnly,
-    })
+  return withRetry(() =>
+    executeAPIVoidRequest(() =>
+      getAxios()?.put<APIResponse>(url, {
+        view_id: viewId,
+        emails,
+        access_level: accessLevel || AccessLevel.ReadOnly,
+      })
+    )
   );
 }
 
