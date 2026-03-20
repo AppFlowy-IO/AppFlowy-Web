@@ -153,83 +153,129 @@ export interface OpenCollabOptions {
 }
 
 /**
+ * Unified provider cache for Y.Doc + IndexeddbPersistence instances.
+ * All paths that create Y.Docs funnel through openCollabDBWithProvider,
+ * which uses this cache to ensure the same Y.Doc is shared across consumers.
+ */
+interface CachedProviderEntry {
+  doc: YDoc;
+  provider: IndexeddbPersistence;
+  whenSynced: Promise<void>;
+}
+
+const providerCache = new Map<string, CachedProviderEntry>();
+const pendingOpens = new Map<string, Promise<CachedProviderEntry>>();
+
+/**
  * Open the collaboration database, and return a function to close it
  */
 export async function openCollabDB(name: string, options: OpenCollabOptions = {}): Promise<YDoc> {
-  // `name` is the canonical collab object id for this local IndexedDB-backed doc.
-  // Set Y.Doc guid to the same value so reopen/close/sync paths address the same document identity.
-  let doc = new Y.Doc({
-    guid: name,
-  }) as YDoc;
-
-  await ensureYjsStores(name);
-
-  let provider = new IndexeddbPersistence(name, doc);
-  let version = await provider.get(name + '/version');
-
-  if (options.forceReset || (options.expectedVersion && version !== options.expectedVersion)) {
-    // version was provided and it differs from the one we persisted
-    await provider.clearData();
-    doc = new Y.Doc({
-      guid: name,
-    }) as YDoc;
-    provider = new IndexeddbPersistence(name, doc);
-
-    if (options.expectedVersion) {
-      await provider.set(name + '/version', options.expectedVersion);
-      version = options.expectedVersion;
-    } else {
-      version = undefined;
-    }
-  }
-
-  doc.version = version;
-
-  provider.on('synced', () => {
-    if (!openedSet.has(name)) {
-      openedSet.add(name);
-    }
+  const { doc } = await openCollabDBWithProvider(name, {
+    awaitSync: true,
+    expectedVersion: options.expectedVersion,
+    forceReset: options.forceReset,
   });
-
-  await provider.whenSynced;
 
   return doc;
 }
 
 export async function openCollabDBWithProvider(
   name: string,
-  options?: { awaitSync?: boolean, expectedVersion?: string, forceReset?: boolean }
+  options?: { awaitSync?: boolean; expectedVersion?: string; forceReset?: boolean; skipCache?: boolean }
 ): Promise<{ doc: YDoc; provider: IndexeddbPersistence }> {
+  // Ephemeral callers bypass cache entirely
+  if (options?.skipCache) {
+    const entry = await _openCollabDBWithProviderInternal(name, options);
+
+    if (options.awaitSync !== false) {
+      await entry.whenSynced;
+    }
+
+    return { doc: entry.doc, provider: entry.provider };
+  }
+
+  const needsReset = options?.forceReset || options?.expectedVersion;
+
+  if (needsReset) {
+    // Evict stale entry so a fresh one is created below
+    providerCache.delete(name);
+    pendingOpens.delete(name);
+  } else {
+    // Check providerCache for a resolved entry
+    const cached = providerCache.get(name);
+
+    if (cached) {
+      if (options?.awaitSync !== false) {
+        await cached.whenSynced;
+      }
+
+      return { doc: cached.doc, provider: cached.provider };
+    }
+
+    // Join an in-flight open for the same name
+    const pending = pendingOpens.get(name);
+
+    if (pending) {
+      const entry = await pending;
+
+      if (options?.awaitSync !== false) {
+        await entry.whenSynced;
+      }
+
+      return { doc: entry.doc, provider: entry.provider };
+    }
+  }
+
+  // Create new entry and cache it
+  const promise = _openCollabDBWithProviderInternal(name, options);
+
+  pendingOpens.set(name, promise);
+
+  try {
+    const entry = await promise;
+
+    providerCache.set(name, entry);
+
+    // Auto-evict if the doc is destroyed via an external path
+    // (e.g., handleAccessChanged, version revert) so subsequent
+    // callers don't receive a stale, destroyed Y.Doc.
+    entry.doc.on('destroy', () => {
+      if (providerCache.get(name) === entry) {
+        providerCache.delete(name);
+      }
+    });
+
+    if (options?.awaitSync !== false) {
+      await entry.whenSynced;
+    }
+
+    return { doc: entry.doc, provider: entry.provider };
+  } finally {
+    pendingOpens.delete(name);
+  }
+}
+
+async function _openCollabDBWithProviderInternal(
+  name: string,
+  options?: { expectedVersion?: string; forceReset?: boolean }
+): Promise<CachedProviderEntry> {
   const startedAt = Date.now();
 
   Log.debug('[DB] openCollabDBWithProvider start', {
     name,
-    awaitSync: options?.awaitSync !== false,
     alreadyOpened: openedSet.has(name),
   });
 
-  // Keep guid equal to `name` because provider persistence and sync registration use this object id.
   let doc = new Y.Doc({
     guid: name,
   }) as YDoc;
 
   await ensureYjsStores(name);
 
-  Log.debug('[DB] openCollabDBWithProvider stores ensured', {
-    name,
-    ensureDurationMs: Date.now() - startedAt,
-  });
-
   let provider = new IndexeddbPersistence(name, doc);
   let version = await provider.get(name + '/version');
 
-  let resolveSync: (() => void) | null = null;
-  const syncPromise = new Promise<void>((resolveFn) => {
-    resolveSync = resolveFn;
-  });
-
   if (options?.forceReset || (options?.expectedVersion && version !== options.expectedVersion)) {
-    // version was provided and it differs from the one we persisted
     await provider.clearData();
     doc = new Y.Doc({
       guid: name,
@@ -246,39 +292,30 @@ export async function openCollabDBWithProvider(
 
   doc.version = version;
 
-  provider.on('synced', () => {
-    Log.debug('[DB] openCollabDBWithProvider synced', {
-      name,
-      syncDurationMs: Date.now() - startedAt,
-      wasOpened: openedSet.has(name),
-    });
+  const whenSynced = new Promise<void>((resolve) => {
+    const handleSync = () => {
+      Log.debug('[DB] openCollabDBWithProvider synced', {
+        name,
+        syncDurationMs: Date.now() - startedAt,
+        wasOpened: openedSet.has(name),
+      });
 
-    if (!openedSet.has(name)) {
-      openedSet.add(name);
-    }
+      if (!openedSet.has(name)) {
+        openedSet.add(name);
+      }
 
-    if (resolveSync) {
-      resolveSync();
-      resolveSync = null;
+      resolve();
+    };
+
+    provider.on('synced', handleSync);
+
+    // If provider already synced before listener was attached
+    if ((provider as unknown as { synced?: boolean }).synced) {
+      handleSync();
     }
   });
 
-  if (options?.awaitSync !== false) {
-    // In most paths this is resolved by the provider 'synced' callback.
-    // Keep a fallback for cases where sync already completed before listener work.
-    if (!(provider as unknown as { synced?: boolean }).synced) {
-      await syncPromise;
-    }
-  }
-
-  Log.debug('[DB] openCollabDBWithProvider ready', {
-    name,
-    doc,
-    totalDurationMs: Date.now() - startedAt,
-    awaitedSync: options?.awaitSync !== false,
-  });
-
-  return { doc, provider };
+  return { doc, provider, whenSynced };
 }
 
 export async function closeCollabDB(name: string) {
@@ -286,7 +323,17 @@ export async function closeCollabDB(name: string) {
     openedSet.delete(name);
   }
 
-  // Recreate a doc with the same guid/name to destroy the exact persisted provider instance for that object.
+  const cached = providerCache.get(name);
+
+  providerCache.delete(name);
+  pendingOpens.delete(name);
+
+  if (cached) {
+    await cached.provider.destroy();
+    return;
+  }
+
+  // No cached entry — create a temp provider to destroy the IndexedDB store
   const doc = new Y.Doc({
     guid: name,
   });
@@ -294,6 +341,22 @@ export async function closeCollabDB(name: string) {
   const provider = new IndexeddbPersistence(name, doc);
 
   await provider.destroy();
+}
+
+/**
+ * Synchronously evict an entry from the provider cache.
+ * Used by deleteRow / deleteRowSubDoc after they destroy the Y.Doc themselves.
+ */
+export function evictProviderCache(name: string) {
+  providerCache.delete(name);
+  pendingOpens.delete(name);
+}
+
+/**
+ * Return the cached Y.Doc for a given name, if one exists in the provider cache.
+ */
+export function getCachedProviderDoc(name: string): YDoc | undefined {
+  return providerCache.get(name)?.doc;
 }
 
 export async function clearData() {

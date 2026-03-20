@@ -1,7 +1,7 @@
 import { stringify as uuidStringify } from 'uuid';
 
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { openCollabDBWithProvider } from '@/application/db';
+import { getCachedProviderDoc, openCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { YDoc, YjsEditorKey } from '@/application/types';
@@ -367,7 +367,7 @@ async function applyCollabUpdate(objectId: string, docState: database_blob.IColl
     return;
   }
 
-  const cachedDoc = getCachedRowDoc(objectId);
+  const cachedDoc = getCachedRowDoc(objectId) || getCachedProviderDoc(objectId);
 
   if (cachedDoc) {
     const beforeState = inspectDocRowData(cachedDoc, objectId);
@@ -397,7 +397,7 @@ async function applyCollabUpdate(objectId: string, docState: database_blob.IColl
   });
 
   const openStartedAt = Date.now();
-  const { doc, provider } = await openCollabDBWithProvider(objectId);
+  const { doc, provider } = await openCollabDBWithProvider(objectId, { skipCache: true });
 
   const beforeState = inspectDocRowData(doc, objectId);
 

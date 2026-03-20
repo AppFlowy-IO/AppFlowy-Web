@@ -367,6 +367,16 @@ export function useWorkspaceData() {
           });
           return;
         }
+
+        // Error 1040 (InvalidFolderView): PG has no folder data yet.
+        // The server auto-triggers a background projection. Retry once after 3s.
+        if (e.code === 1040) {
+          Log.info('[Outline] Folder data not yet projected, retrying in 3s...');
+          setTimeout(() => {
+            void loadOutline(workspaceId, force);
+          }, 3000);
+          return;
+        }
       }
     },
     [navigate, eventEmitter, updateLastFolderRid, userWorkspaceInfo?.userId, replaceOutlinePreservingChildren]

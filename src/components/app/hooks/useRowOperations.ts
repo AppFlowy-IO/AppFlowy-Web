@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef } from 'react';
 
 import { RowService } from '@/application/services/domains';
 import { Types, YDoc } from '@/application/types';
-import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
@@ -28,21 +27,15 @@ export function useRowOperations() {
           throw new Error('Failed to create row doc');
         }
 
-        const [databaseId, rowId] = rowKey.split('_rows_');
+        const rowId = rowKey.split('_rows_')[1];
 
         if (!rowId) {
           throw new Error('Failed to create row doc');
         }
 
         // Row collaboration is scoped to the row object itself.
-        // Use rowId as guid; databaseId remains contextual metadata in rowKey.
         doc.guid = rowId;
 
-        Log.debug('[Database] row sync bind start', {
-          rowKey,
-          rowId,
-          databaseId,
-        });
         const syncContext = registerSyncContext({
           doc,
           collabType: Types.DatabaseRow

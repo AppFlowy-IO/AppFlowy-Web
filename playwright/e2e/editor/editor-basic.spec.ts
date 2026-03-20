@@ -221,22 +221,32 @@ test.describe('Editor - Drag and Drop Blocks', () => {
     const gridBlock = BlockSelectors.blockByType(page, 'grid');
     await expect(gridBlock).toBeVisible();
 
-    // Verify drag handle appears on hover
-    // First hover a text block to ensure HoverControls component is mounted and positioned
+    // Verify drag handle appears on hover.
+    // Hover a text block first to mount HoverControls, then hover the grid.
+    // Retry the hover sequence because HoverControls positioning can be timing-sensitive.
     const topTextBlock = EditorSelectors.slateEditor(page)
       .locator('[data-block-type]')
       .filter({ hasText: 'Top Text' })
       .first();
-    await topTextBlock.hover({ force: true });
-    await page.waitForTimeout(500);
 
-    // Now hover the grid block
-    await gridBlock.scrollIntoViewIfNeeded();
-    await gridBlock.hover({ force: true });
-    await page.waitForTimeout(500);
-
-    // Force visibility and verify drag handle exists
     const hoverControls = BlockSelectors.hoverControls(page);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await topTextBlock.hover({ force: true });
+      await page.waitForTimeout(500);
+
+      await gridBlock.scrollIntoViewIfNeeded();
+      await gridBlock.hover({ force: true });
+      await page.waitForTimeout(500);
+
+      const attached = await hoverControls.isVisible().catch(() => false);
+
+      if (attached) break;
+      // Move mouse away and retry
+      await page.mouse.move(0, 0);
+      await page.waitForTimeout(500);
+    }
+
     await hoverControls.waitFor({ state: 'attached', timeout: 15000 });
     await hoverControls.evaluate((el) => {
       (el as HTMLElement).style.opacity = '1';

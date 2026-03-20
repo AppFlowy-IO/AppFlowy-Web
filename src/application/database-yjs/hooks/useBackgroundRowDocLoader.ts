@@ -125,7 +125,7 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
 
               const rowKey = getRowKey(databaseDoc.guid, rowId);
               const pending = (async () => {
-                const { doc, provider } = await openCollabDBWithProvider(rowKey);
+                const { doc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
 
                 await provider.destroy();
                 return doc;

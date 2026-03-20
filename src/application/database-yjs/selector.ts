@@ -1587,7 +1587,6 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
   const { row } = useRowDataSelector(rowId);
   const cells = row?.get(YjsDatabaseKey.cells);
   const { field, clock: fieldClock } = useFieldSelector(fieldId);
-
   const cell = cells?.get(fieldId);
   const [, setClock] = useState<number>(0);
   const [cellValue, setCellValue] = useState(() => {
@@ -1608,7 +1607,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     return () => {
       cell?.unobserveDeep(observerEvent);
     };
-  }, [cell, field]);
+  }, [cell, field, rowId, fieldId]);
 
   useEffect(() => {
     if (!cells) return;
@@ -1620,9 +1619,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
         setCellValue(undefined);
         return;
       } else {
-        const cellValue = parseYDatabaseCellToCell(cell, field);
-
-        setCellValue(cellValue);
+        setCellValue(parseYDatabaseCellToCell(cell, field));
       }
     };
 
@@ -1633,7 +1630,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     return () => {
       cells.unobserve(observerEvent);
     };
-  }, [cells, fieldId, field]);
+  }, [cells, fieldId, field, rowId]);
 
   if (fieldType === FieldType.Rollup) {
     return rollupCell;
