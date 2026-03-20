@@ -2,6 +2,7 @@ import { MutableRefObject, useCallback } from 'react';
 import { toast } from 'sonner';
 
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
+import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
 import {
   CreateDatabaseViewPayload,
   CreatePagePayload,
@@ -166,7 +167,27 @@ export function usePageOperations({
       }
 
       try {
+        // Collect view IDs to clear from IndexedDB cache
+        let viewIdsToClear: string[] = [];
+
+        if (viewId) {
+          viewIdsToClear = [viewId];
+        } else {
+          // Delete all — fetch trash list first to know which caches to clear
+          try {
+            const trashItems = await ViewService.getTrash(currentWorkspaceId);
+
+            viewIdsToClear = trashItems?.map((item) => item.view_id) || [];
+          } catch {
+            // If we can't fetch trash list, proceed with deletion anyway
+          }
+        }
+
         await PageService.deleteTrash(currentWorkspaceId, viewId);
+
+        // Clear IndexedDB cache for permanently deleted views (parallel)
+        await Promise.allSettled(viewIdsToClear.map((id) => clearViewCache(id)));
+
         void loadOutline?.(currentWorkspaceId, false);
         return;
       } catch (e) {

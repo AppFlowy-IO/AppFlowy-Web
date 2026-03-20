@@ -31,7 +31,7 @@ export const DatabaseBlock = memo(
     const bindViewSync = context?.bindViewSync;
 
     const [hasDatabase, setHasDatabase] = useState(false);
-    const [deletionStatus, setDeletionStatus] = useState<'none' | 'inTrash' | 'deleted'>('none');
+    const [deletionStatus, setDeletionStatus] = useState<'none' | 'inTrash' | 'deleted' | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
     const editor = useSlateStatic();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
@@ -87,21 +87,24 @@ export const DatabaseBlock = memo(
           // deleted view, causing it to be misclassified as "restored".
           ViewService.invalidateCache(workspaceId, viewId);
 
-          // Fetch view metadata. Only treat 404-like failures (record not found)
-          // as evidence of permanent deletion. Transient errors (5xx, network)
-          // are re-thrown so they fall through to the outer catch (keep current state).
-          let viewMeta: Awaited<ReturnType<typeof ViewService.get>> | null = null;
-          let viewGone = false;
+          // Fetch view metadata and trash list in parallel (async-parallel rule).
+          // Only treat 404-like failures (record not found) as permanent deletion.
+          const [viewResult, trashResult] = await Promise.allSettled([
+            ViewService.get(workspaceId, viewId),
+            ViewService.getTrash(workspaceId),
+          ]);
 
-          try {
-            viewMeta = await ViewService.get(workspaceId, viewId);
-          } catch {
-            // If the get fails, check whether the view simply doesn't exist
-            // by verifying the trash list still loaded successfully.
-            viewGone = true;
+          const viewMeta = viewResult.status === 'fulfilled' ? viewResult.value : null;
+          const viewGone = viewResult.status === 'rejected';
+          const trashItems = trashResult.status === 'fulfilled' ? trashResult.value : null;
+
+          // If both requests failed, optimistically allow rendering rather than
+          // blocking the user with an infinite spinner.
+          if (viewResult.status === 'rejected' && trashResult.status === 'rejected') {
+            if (cancelled) return;
+            setDeletionStatus('none');
+            return;
           }
-
-          const trashItems = await ViewService.getTrash(workspaceId);
 
           // Build the set of IDs to check: the view itself, its parent (database container),
           // and the document page. When a database container is trashed, only the container
@@ -130,10 +133,13 @@ export const DatabaseBlock = memo(
             if (!notFoundRef.current) {
               setNotFound(true);
             }
-          } else if (viewMeta && notFoundRef.current) {
-            // View exists and is not in trash — restored
+          } else if (viewMeta) {
+            // View exists and is not in trash — confirmed alive (or restored)
             setDeletionStatus('none');
-            setNotFound(false);
+
+            if (notFoundRef.current) {
+              setNotFound(false);
+            }
           }
         } catch {
           // Network error — do nothing, keep current state

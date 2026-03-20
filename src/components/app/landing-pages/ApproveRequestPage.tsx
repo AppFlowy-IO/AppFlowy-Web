@@ -79,7 +79,7 @@ function ApproveRequestPage() {
       setHasSend(true);
       // eslint-disable-next-line
     } catch (e: any) {
-      if (e.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED) {
+      if (e.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED || e.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED) {
         if (isAppFlowyHosted()) {
           setUpgradeModalOpen(true);
         }

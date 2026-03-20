@@ -351,7 +351,7 @@ export function useWorkspaceData() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         Log.error('[Outline] App outline not found', e);
-        if (e.code === ERROR_CODE.USER_UNAUTHORIZED) {
+        if (e.code === ERROR_CODE.USER_UNAUTHORIZED || e.code === ERROR_CODE.NOT_LOGGED_IN) {
           invalidToken();
           navigate('/login');
           return;
