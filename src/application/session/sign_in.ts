@@ -108,7 +108,7 @@ export function afterAuth() {
       window.location.href = url.toString();
     } else {
       Log.info('[Auth] afterAuth: redirecting to saved destination', { pathname });
-      window.location.href = url.toString();
+      window.location.href = decoded;
     }
   } else {
     Log.info('[Auth] afterAuth: no redirectTo saved, going to /app');
