@@ -235,44 +235,19 @@ export function SlashPanel({
   }, [isPanelOpen]);
 
   const shouldRestrictAIMeetingDatabaseOptions = useCallback(() => {
-    const domSelection = window.getSelection();
-    const anchorNode = domSelection?.anchorNode ?? null;
-    const anchorElement =
-      anchorNode instanceof HTMLElement ? anchorNode : anchorNode?.parentElement;
-
-    if (anchorElement) {
-      const inSummary = anchorElement.closest(`[data-block-type="${BlockType.AIMeetingSummaryBlock}"]`);
-
-      if (inSummary) return true;
-
-      const inNotes = anchorElement.closest(`[data-block-type="${BlockType.AIMeetingNotesBlock}"]`);
-
-      if (inNotes) return true;
-    }
-
     const { selection } = editor;
 
     if (!selection) return false;
 
-    const inSummary = Editor.above(editor, {
+    const inAIMeetingSection = Editor.above(editor, {
       at: selection,
       match: (n) =>
         !Editor.isEditor(n) &&
         Element.isElement(n) &&
-        n.type === BlockType.AIMeetingSummaryBlock,
+        (n.type === BlockType.AIMeetingSummaryBlock || n.type === BlockType.AIMeetingNotesBlock),
     });
 
-    if (inSummary) return true;
-
-    const inNotes = Editor.above(editor, {
-      at: selection,
-      match: (n) =>
-        !Editor.isEditor(n) &&
-        Element.isElement(n) &&
-        n.type === BlockType.AIMeetingNotesBlock,
-    });
-
-    return Boolean(inNotes);
+    return Boolean(inAIMeetingSection);
   }, [editor]);
 
   useEffect(() => {

@@ -5,7 +5,7 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 
 import { getUserIconUrl } from '@/application/user-metadata';
 import { BlockType } from '@/application/types';
-import { formatTimestamp } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
+import { formatTimestamp, getBaseSpeakerId, parseSpeakerInfoMap } from '@/components/editor/components/blocks/ai-meeting/ai-meeting.utils';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { AIMeetingNode, AIMeetingSpeakerNode, EditorElementProps } from '@/components/editor/editor.type';
@@ -16,32 +16,6 @@ import { cn } from '@/lib/utils';
 const isImageSource = (value?: string) => {
   if (!value) return false;
   return /^https?:\/\//i.test(value) || value.startsWith('data:') || value.startsWith('blob:') || value.startsWith('/');
-};
-
-const parseSpeakerInfoMap = (raw: unknown) => {
-  if (!raw) return null;
-
-  if (typeof raw === 'string') {
-    try {
-      const parsed = JSON.parse(raw) as Record<string, Record<string, unknown>>;
-
-      if (parsed && typeof parsed === 'object') return parsed;
-    } catch {
-      return null;
-    }
-  }
-
-  if (typeof raw === 'object') {
-    return raw as Record<string, Record<string, unknown>>;
-  }
-
-  return null;
-};
-
-const getBaseSpeakerId = (speakerId: string) => {
-  const [base] = speakerId.split('_');
-
-  return base || speakerId;
 };
 
 const resolveSpeakerInfo = (

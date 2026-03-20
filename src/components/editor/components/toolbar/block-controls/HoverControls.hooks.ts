@@ -178,15 +178,13 @@ export function useHoverControls({ disabled }: { disabled: boolean }) {
         }
       }
 
-      {
-        recalculatePosition(blockElement);
-        el.style.opacity = '1';
-        el.style.pointerEvents = 'auto';
+      recalculatePosition(blockElement);
+      el.style.opacity = '1';
+      el.style.pointerEvents = 'auto';
 
-        setCssProperty(getBlockCssProperty(node));
-        setHoveredBlockId(node.blockId as string);
-        updateParentId(node.blockId as string);
-      }
+      setCssProperty(getBlockCssProperty(node));
+      setHoveredBlockId(node.blockId as string);
+      updateParentId(node.blockId as string);
     };
 
     const dom = ReactEditor.toDOMNode(editor, editor);

@@ -161,8 +161,17 @@ export const FALLBACK_SUMMARY_REGENERATE_TEMPLATE_CONFIG: SummaryRegenerateTempl
   fixedPrompt: '',
 };
 
+const TEMPLATE_CONFIG_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 let remoteTemplateConfigCache: SummaryRegenerateTemplateConfig | null = null;
+let remoteTemplateConfigCacheTime = 0;
 let remoteTemplateConfigRequest: Promise<SummaryRegenerateTemplateConfig | null> | null = null;
+
+export const clearSummaryRegenerateTemplateConfigCache = () => {
+  remoteTemplateConfigCache = null;
+  remoteTemplateConfigCacheTime = 0;
+  remoteTemplateConfigRequest = null;
+};
 
 const languageNameByCode = SUMMARY_LANGUAGE_OPTIONS.reduce<Record<string, string>>((acc, language) => {
   acc[language.code.toLowerCase()] = language.defaultLabel;
@@ -284,7 +293,9 @@ const normalizeRemoteTemplateConfig = (
 export const fetchSummaryRegenerateTemplateConfig = async (
   requestInstance?: AxiosInstance | null
 ): Promise<SummaryRegenerateTemplateConfig | null> => {
-  if (remoteTemplateConfigCache) return remoteTemplateConfigCache;
+  const isCacheValid = remoteTemplateConfigCache && (Date.now() - remoteTemplateConfigCacheTime) < TEMPLATE_CONFIG_TTL_MS;
+
+  if (isCacheValid) return remoteTemplateConfigCache;
   if (remoteTemplateConfigRequest) return remoteTemplateConfigRequest;
 
   remoteTemplateConfigRequest = (async () => {
@@ -304,6 +315,7 @@ export const fetchSummaryRegenerateTemplateConfig = async (
       if (!normalized) return null;
 
       remoteTemplateConfigCache = normalized;
+      remoteTemplateConfigCacheTime = Date.now();
       return normalized;
     } catch {
       return null;

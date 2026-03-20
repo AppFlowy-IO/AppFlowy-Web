@@ -220,14 +220,18 @@ test.describe('Editor - Drag and Drop Blocks', () => {
     // Verify grid block exists and has correct structure
     const gridBlock = BlockSelectors.blockByType(page, 'grid');
     await expect(gridBlock).toBeVisible();
+    // Verify drag handle appears on hover over a text block.
+    // Note: HoverControls are intentionally hidden for table/grid blocks
+    // (shouldSkipParentTypes in HoverControls.hooks.ts), so we hover a
+    // text block to verify the drag handle works.
 
-    // Verify drag handle appears on hover.
-    // Hover a text block first to mount HoverControls, then hover the grid.
-    // Retry the hover sequence because HoverControls positioning can be timing-sensitive.
     const topTextBlock = EditorSelectors.slateEditor(page)
       .locator('[data-block-type]')
       .filter({ hasText: 'Top Text' })
       .first();
+    await topTextBlock.scrollIntoViewIfNeeded();
+    await topTextBlock.hover({ force: true });
+    await page.waitForTimeout(500);
 
     const hoverControls = BlockSelectors.hoverControls(page);
 
