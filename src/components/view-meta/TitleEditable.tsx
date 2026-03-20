@@ -81,8 +81,7 @@ function TitleEditable({
   // Component state and refs
   const [isFocused, setIsFocused] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
-  const cursorPositionRef = useRef<number>(0);
-  
+
   // Timing and cache refs
   const lastInputTimeRef = useRef<number>(0);
   const lastUpdateSentTimeRef = useRef<number>(0);
@@ -150,57 +149,37 @@ function TitleEditable({
 
   // Handle remote updates with echo prevention
   useEffect(() => {
-    Log.debug('🌐 Remote name changed:', {
-      name,
-      isFocused,
-      isCurrentlyTyping: isTyping(),
-      isRecentlyUpdated: isRecentlyUpdated(),
-      isPotentialEcho: isPotentialEcho(name),
-    });
+    // Never overwrite user edits while the title is focused.
+    // The title uses a plain contentEditable (not Y.js CRDT), so
+    // last-writer-wins via the API is the correct model.
+    // On blur, sendUpdateImmediately sends the user's final value.
+    if (isFocused) {
+      return;
+    }
 
-    // Step 1: Ignore if user is actively interacting
     if (isTyping() || isRecentlyUpdated()) {
-      Log.debug('✋ User activity detected, ignoring remote update');
       return;
     }
 
-    // Step 2: Detect and ignore echo updates (values we recently sent)
     if (isPotentialEcho(name)) {
-      Log.debug('🔄 Echo detected, ignoring remote update');
       return;
     }
 
-    // Step 3: Handle genuine remote updates
-    Log.debug('✨ Genuine remote update detected');
-    
-    // Clean old cache entries (keep recent ones to prevent immediate re-acceptance)
+    // Genuine remote update — clean old cache entries
     const now = Date.now();
 
     for (const [value, timestamp] of sentValuesRef.current.entries()) {
-      if (now - timestamp > 5000) { // Keep values from last 5 seconds
+      if (now - timestamp > 5000) {
         sentValuesRef.current.delete(value);
       }
     }
 
-    // Step 4: Update UI if content differs
+    // Apply remote update to UI
     if (contentRef.current) {
       const currentContent = contentRef.current.textContent || '';
 
       if (currentContent !== name) {
-        Log.debug('✅ Applying remote update to UI');
         contentRef.current.textContent = name;
-
-        // Preserve cursor position for focused input
-        if (isFocused && document.activeElement === contentRef.current) {
-          const cursorPos = Math.min(cursorPositionRef.current, name.length);
-
-          // Use microtask to ensure DOM update completes first
-          queueMicrotask(() => {
-            if (contentRef.current) {
-              setCursorPosition(contentRef.current, cursorPos);
-            }
-          });
-        }
       }
     }
   }, [name, isTyping, isRecentlyUpdated, isPotentialEcho, isFocused]);
@@ -268,8 +247,7 @@ function TitleEditable({
     if (!contentRef.current) return;
     
     lastInputTimeRef.current = Date.now();
-    cursorPositionRef.current = getCursorOffset();
-    
+
     // Clean up browser auto-inserted <br> tags
     if (contentRef.current.innerHTML === '<br>') {
       contentRef.current.innerHTML = '';
@@ -292,8 +270,7 @@ function TitleEditable({
     if (!contentRef.current) return;
     
     lastInputTimeRef.current = Date.now();
-    cursorPositionRef.current = getCursorOffset();
-    
+
     if (e.key === 'Enter' || e.key === 'Escape') {
       e.preventDefault();
       

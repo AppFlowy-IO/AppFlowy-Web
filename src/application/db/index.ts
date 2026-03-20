@@ -330,6 +330,7 @@ export async function closeCollabDB(name: string) {
 
   if (cached) {
     await cached.provider.destroy();
+    cached.doc.destroy();
     return;
   }
 
@@ -341,6 +342,7 @@ export async function closeCollabDB(name: string) {
   const provider = new IndexeddbPersistence(name, doc);
 
   await provider.destroy();
+  doc.destroy();
 }
 
 /**
