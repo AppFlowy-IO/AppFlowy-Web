@@ -46,7 +46,7 @@ function LoginPage() {
     if (isAuthenticated && redirectTo) {
       const decodedRedirect = safeDecodeRedirectParam(redirectTo);
 
-      if (decodedRedirect && decodedRedirect !== window.location.href) {
+      if (decodedRedirect && isSafeRedirectUrl(decodedRedirect) && decodedRedirect !== window.location.href) {
         window.location.href = decodedRedirect;
       }
     }
