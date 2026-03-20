@@ -209,9 +209,11 @@ export async function withRetry<T>(
 
       if (attempt >= delays.length) break;
 
-      // Only retry on network errors or 5xx
-      const apiError = error as APIError | undefined;
-      const isRetryable = apiError?.code === -1 || (apiError?.code !== undefined && apiError.code >= 500);
+      // Normalize to APIError for consistent retryable detection.
+      // handleAPIError handles AxiosError (string codes like "ERR_NETWORK"),
+      // raw Error, and unknown shapes — always returns { code, message }.
+      const normalized = handleAPIError(error);
+      const isRetryable = normalized.code === -1 || normalized.code >= 500;
 
       if (!isRetryable) break;
 
@@ -234,6 +236,10 @@ export async function withRetry<T>(
         }, { once: true });
       });
     }
+  }
+
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
   }
 
   return Promise.reject(lastError);

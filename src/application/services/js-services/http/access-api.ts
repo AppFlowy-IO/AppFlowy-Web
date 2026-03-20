@@ -128,14 +128,12 @@ export async function getShareDetail(workspaceId: string, viewId: string, ancest
 export async function sharePageTo(workspaceId: string, viewId: string, emails: string[], accessLevel?: AccessLevel) {
   const url = `/api/sharing/workspace/${workspaceId}/view`;
 
-  return withRetry(() =>
-    executeAPIVoidRequest(() =>
-      getAxios()?.put<APIResponse>(url, {
-        view_id: viewId,
-        emails,
-        access_level: accessLevel || AccessLevel.ReadOnly,
-      })
-    )
+  return executeAPIVoidRequest(() =>
+    getAxios()?.put<APIResponse>(url, {
+      view_id: viewId,
+      emails,
+      access_level: accessLevel || AccessLevel.ReadOnly,
+    })
   );
 }
 
