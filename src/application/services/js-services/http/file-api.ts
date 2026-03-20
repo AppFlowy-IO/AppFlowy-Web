@@ -1,3 +1,4 @@
+import { ERROR_CODE } from '@/application/constants';
 import { notify } from '@/components/_shared/notify';
 import { getAppFlowyFileUploadUrl, getAppFlowyFileUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
@@ -27,7 +28,7 @@ export async function uploadFile(
       notify.error('Your file is over 7 MB limit of the Free plan. Upgrade for unlimited uploads.');
 
       return Promise.reject({
-        code: 413,
+        code: ERROR_CODE.PAYLOAD_TOO_LARGE,
         message: 'File size is too large. Please upgrade your plan for unlimited uploads.',
       });
     }
@@ -63,7 +64,7 @@ export async function uploadFile(
   } catch (e: any) {
     if (e.response?.status === 413) {
       return Promise.reject({
-        code: 413,
+        code: ERROR_CODE.PAYLOAD_TOO_LARGE,
         message: 'File size is too large. Please upgrade your plan for unlimited uploads.',
       });
     }

@@ -430,7 +430,7 @@ export function InviteGuest({
       notify.success(t('shareAction.inviteSuccess'));
       // eslint-disable-next-line
     } catch (error: any) {
-      if (error.code === ERROR_CODE.NOT_HAS_PERMISSION_TO_INVITE_GUEST) {
+      if (error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED) {
         setUpgradeModalOpen(true);
         return;
       }

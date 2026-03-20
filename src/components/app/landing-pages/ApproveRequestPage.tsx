@@ -21,9 +21,6 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
 import { hasProAccessFromPlans, isAppFlowyHosted } from '@/utils/subscription';
 
-const GuestLimitExceededCode = 1070;
-const REPEAT_REQUEST_CODE = 1122;
-
 function ApproveRequestPage() {
   const [searchParams] = useSearchParams();
 
@@ -82,7 +79,7 @@ function ApproveRequestPage() {
       setHasSend(true);
       // eslint-disable-next-line
     } catch (e: any) {
-      if (e.code === GuestLimitExceededCode) {
+      if (e.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED) {
         if (isAppFlowyHosted()) {
           setUpgradeModalOpen(true);
         }
@@ -90,7 +87,7 @@ function ApproveRequestPage() {
         return;
       }
 
-      if (e.code === REPEAT_REQUEST_CODE) {
+      if (e.code === ERROR_CODE.ACCESS_REQUEST_ALREADY_APPROVED) {
         toast.error(t('approveAccess.repeatApproveError'));
         return;
       }
