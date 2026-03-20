@@ -1947,6 +1947,10 @@
     }
   },
   "document": {
+    "inlineDatabase": {
+      "viewInTrash": "This referenced database is in Trash",
+      "viewDeleted": "This referenced database was permanently deleted"
+    },
     "callout": {
       "changeIcon": "Icon",
       "quickStyle": "Quick Style",
