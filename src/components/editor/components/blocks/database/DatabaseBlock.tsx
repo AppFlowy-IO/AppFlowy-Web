@@ -2,7 +2,9 @@ import { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'reac
 import { Element, Transforms } from 'slate';
 import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 
+import { APP_EVENTS } from '@/application/constants';
 import { DatabaseContextState } from '@/application/database-yjs';
+import { ViewService } from '@/application/services/domains';
 import { YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
 import { DatabaseNode, EditorElementProps } from '@/components/editor/editor.type';
@@ -29,6 +31,7 @@ export const DatabaseBlock = memo(
     const bindViewSync = context?.bindViewSync;
 
     const [hasDatabase, setHasDatabase] = useState(false);
+    const [deletionStatus, setDeletionStatus] = useState<'none' | 'inTrash' | 'deleted'>('none');
     const containerRef = useRef<HTMLDivElement | null>(null);
     const editor = useSlateStatic();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
@@ -59,6 +62,94 @@ export const DatabaseBlock = memo(
       ignoreMetaErrors: true, // Embedded databases don't require meta
       onNotFound: () => setNotFound(true),
     });
+
+    // 5. Detect when the database page is deleted from (or restored to) the sidebar.
+    //    When OUTLINE_LOADED fires (after any folder change), fetch the fresh trash list
+    //    and check if our view is in it. This is reliable because:
+    //    - The server API (ViewService.get) returns trashed views as if they still exist
+    //    - The app's trashList state may not be updated yet due to async race conditions
+    //    - Fetching trash directly from the API gives an authoritative answer
+    const notFoundRef = useRef(notFound);
+
+    notFoundRef.current = notFound;
+
+    useEffect(() => {
+      const eventEmitter = context.eventEmitter;
+
+      if (!eventEmitter || !viewId || !hasDatabase || !workspaceId) return;
+
+      let cancelled = false;
+
+      const checkView = async () => {
+        try {
+          // Invalidate the view cache to get an authoritative answer from the server.
+          // Without this, the 5-second cache could return stale data for a permanently
+          // deleted view, causing it to be misclassified as "restored".
+          ViewService.invalidateCache(workspaceId, viewId);
+
+          // Fetch view metadata. Only treat 404-like failures (record not found)
+          // as evidence of permanent deletion. Transient errors (5xx, network)
+          // are re-thrown so they fall through to the outer catch (keep current state).
+          let viewMeta: Awaited<ReturnType<typeof ViewService.get>> | null = null;
+          let viewGone = false;
+
+          try {
+            viewMeta = await ViewService.get(workspaceId, viewId);
+          } catch {
+            // If the get fails, check whether the view simply doesn't exist
+            // by verifying the trash list still loaded successfully.
+            viewGone = true;
+          }
+
+          const trashItems = await ViewService.getTrash(workspaceId);
+
+          // Build the set of IDs to check: the view itself, its parent (database container),
+          // and the document page. When a database container is trashed, only the container
+          // ID appears in trash — not its child view IDs.
+          const idsToCheck = new Set<string>([viewId]);
+
+          if (viewMeta?.parent_view_id) {
+            idsToCheck.add(viewMeta.parent_view_id);
+          }
+
+          const isInTrash = trashItems?.some((item) => idsToCheck.has(item.view_id));
+
+          if (cancelled) return;
+
+          if (isInTrash) {
+            // Database container is in the trash
+            setDeletionStatus('inTrash');
+
+            if (!notFoundRef.current) {
+              setNotFound(true);
+            }
+          } else if (viewGone && !viewMeta) {
+            // Not in trash AND API can't find the view — permanently deleted
+            setDeletionStatus('deleted');
+
+            if (!notFoundRef.current) {
+              setNotFound(true);
+            }
+          } else if (viewMeta && notFoundRef.current) {
+            // View exists and is not in trash — restored
+            setDeletionStatus('none');
+            setNotFound(false);
+          }
+        } catch {
+          // Network error — do nothing, keep current state
+        }
+      };
+
+      // Check immediately on mount (covers navigating back to a page after deletion)
+      void checkView();
+
+      eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, checkView);
+      return () => {
+        cancelled = true;
+        eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, checkView);
+      };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- node.data excluded to avoid re-subscribing on every block edit
+    }, [context.eventEmitter, viewId, workspaceId, hasDatabase, setNotFound]);
 
     // Combined callback when a view is added
     const onViewAdded = useCallback(
@@ -100,7 +191,7 @@ export const DatabaseBlock = memo(
         }
       };
 
-      scrollContainer.addEventListener('scroll', handleScroll);
+      scrollContainer.addEventListener('scroll', handleScroll, { passive: true });
       return () => {
         scrollContainer?.removeEventListener('scroll', handleScroll);
       };
@@ -241,6 +332,7 @@ export const DatabaseBlock = memo(
             selectedViewId={selectedViewId}
             hasDatabase={hasDatabase}
             notFound={notFound}
+            deletionStatus={deletionStatus}
             paddingStart={paddingStart}
             paddingEnd={paddingEnd}
             width={width}

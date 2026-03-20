@@ -18,6 +18,7 @@ interface DatabaseContentProps {
   selectedViewId: string | null;
   hasDatabase: boolean;
   notFound: boolean;
+  deletionStatus?: 'none' | 'inTrash' | 'deleted';
   paddingStart: number;
   paddingEnd: number;
   width: number;
@@ -43,6 +44,7 @@ export const DatabaseContent = ({
   selectedViewId,
   hasDatabase,
   notFound,
+  deletionStatus,
   paddingStart,
   paddingEnd,
   width,
@@ -101,11 +103,24 @@ export const DatabaseContent = ({
     );
   }
 
+  const getNotFoundMessage = () => {
+    if (isPublishVarient) return t('publish.hasNotBeenPublished');
+
+    switch (deletionStatus) {
+      case 'inTrash':
+        return t('document.inlineDatabase.viewInTrash', 'This referenced database is in Trash');
+      case 'deleted':
+        return t('document.inlineDatabase.viewDeleted', 'This referenced database was permanently deleted');
+      default:
+        return t('error.generalError');
+    }
+  };
+
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4">
       {notFound ? (
         <div className="text-base font-medium">
-          {isPublishVarient ? t('publish.hasNotBeenPublished') : t('error.generalError')}
+          {getNotFoundMessage()}
         </div>
       ) : (
         <CircularProgress size={20} />
