@@ -36,14 +36,11 @@ export interface APIError {
  */
 export function handleAPIError(error: unknown): APIError {
   if (axios.isAxiosError(error)) {
-    // Extract just the path from URL (no query params or sensitive data)
-    const url = error.config?.url || 'unknown';
-
     // Network error (no response from server)
     if (!error.response) {
       return {
         code: -1,
-        message: `${error.message || 'Network error'} [${url}]`,
+        message: error.message || 'Network error',
       };
     }
 
@@ -52,7 +49,22 @@ export function handleAPIError(error: unknown): APIError {
 
     return {
       code: errorData?.code ?? error.response.status,
-      message: `${errorData?.message || error.message || 'Request failed'} [${url}]`,
+      message: errorData?.message || error.message || 'Request failed',
+    };
+  }
+
+  // Normalized APIError (plain { code, message } from executeAPIRequest/executeAPIVoidRequest)
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof (error as { code: unknown }).code === 'number'
+  ) {
+    const apiError = error as { code: number; message?: string };
+
+    return {
+      code: apiError.code,
+      message: apiError.message || 'Request failed',
     };
   }
 
@@ -114,7 +126,7 @@ export async function executeAPIRequest<TResponseData = unknown>(
     // Server returned an error response
     return Promise.reject({
       code: response.data.code,
-      message: `${response.data.message || 'Request failed'} [${response.config?.url || 'unknown'}]`,
+      message: response.data.message || 'Request failed',
     });
   } catch (error) {
     return Promise.reject(handleAPIError(error));
@@ -145,8 +157,6 @@ export async function executeAPIVoidRequest(
       });
     }
 
-    const requestUrl = response.config?.url || 'unknown';
-
     // Many "void" endpoints return 204 or a 2xx with an empty body. Treat any 2xx as success
     // unless the standard APIResponse envelope is present and indicates an error.
     if (response.status >= 200 && response.status < 300) {
@@ -164,7 +174,7 @@ export async function executeAPIVoidRequest(
 
         return Promise.reject({
           code: data.code,
-          message: `${data.message || 'Request failed'} [${requestUrl}]`,
+          message: data.message || 'Request failed',
         });
       }
 
@@ -173,7 +183,7 @@ export async function executeAPIVoidRequest(
 
     return Promise.reject({
       code: response.status,
-      message: `${response.statusText || 'Request failed'} [${requestUrl}]`,
+      message: response.statusText || 'Request failed',
     });
   } catch (error) {
     return Promise.reject(handleAPIError(error));
@@ -217,7 +227,8 @@ export async function withRetry<T>(
 
       if (!isRetryable) break;
 
-      const delay = delays[attempt];
+      // Add random jitter (50%-150% of base delay) to avoid thundering herd
+      const delay = Math.round(delays[attempt] * (0.5 + Math.random()));
 
       Log.debug(`[withRetry] Attempt ${attempt + 1}/${delays.length} failed, retrying in ${delay}ms`);
 

@@ -107,7 +107,7 @@ export async function sendRequestAccess(workspaceId: string, viewId: string) {
 }
 
 export async function getShareDetail(workspaceId: string, viewId: string, ancestorViewIds: string[], signal?: AbortSignal) {
-  const url = `api/sharing/workspace/${workspaceId}/view/${viewId}/access-details`;
+  const url = `/api/sharing/workspace/${workspaceId}/view/${viewId}/access-details`;
 
   return withRetry(() =>
     executeAPIRequest<{

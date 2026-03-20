@@ -105,6 +105,92 @@ export interface AppError {
  * }
  * ```
  */
+
+/**
+ * Maps a server error code (from the APIResponse `code` field) to an ErrorType.
+ * Returns undefined if the code is not recognized — caller should fall back to
+ * HTTP status mapping or Unknown.
+ *
+ * This is the single source of truth for error-code-to-UI-type mapping.
+ * Both the AxiosError path and the normalized APIError path delegate here.
+ */
+function mapErrorCodeToType(code: number | undefined): ErrorType | undefined {
+  if (code === undefined) return undefined;
+
+  // Network error (code -1 from handleAPIError)
+  if (code === -1) return ErrorType.NetworkError;
+
+  // Not found
+  if (code === ERROR_CODE.RECORD_NOT_FOUND || code === ERROR_CODE.WORKSPACE_NOT_FOUND) {
+    return ErrorType.PageNotFound;
+  }
+
+  // Deleted / gone
+  if (code === ERROR_CODE.RECORD_DELETED) return ErrorType.Gone;
+
+  // Unauthorized (need to sign in)
+  if (code === ERROR_CODE.USER_UNAUTHORIZED || code === ERROR_CODE.NOT_LOGGED_IN) {
+    return ErrorType.Unauthorized;
+  }
+
+  // Forbidden (signed in but no permission, or plan guest limit exceeded)
+  if (
+    code === ERROR_CODE.NOT_HAS_PERMISSION ||
+    code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED ||
+    code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
+  ) {
+    return ErrorType.Forbidden;
+  }
+
+  // Invalid invitation link
+  if (code === ERROR_CODE.INVALID_LINK) return ErrorType.InvalidLink;
+
+  // Already joined / exists
+  if (code === ERROR_CODE.ALREADY_JOINED || code === ERROR_CODE.RECORD_ALREADY_EXISTS) {
+    return ErrorType.AlreadyJoined;
+  }
+
+  // Not invitee
+  if (code === ERROR_CODE.NOT_INVITEE_OF_INVITATION) return ErrorType.NotInvitee;
+
+  // Rate limited
+  if (code === ERROR_CODE.TOO_MANY_REQUESTS) return ErrorType.RateLimited;
+
+  // Service unavailable
+  if (code === ERROR_CODE.AI_SERVICE_UNAVAILABLE || code === ERROR_CODE.SERVICE_TEMPORARY_UNAVAILABLE) {
+    return ErrorType.ServerError;
+  }
+
+  // Timeout
+  if (code === ERROR_CODE.REQUEST_TIMEOUT) return ErrorType.Timeout;
+
+  // Storage / payload limits
+  if (
+    code === ERROR_CODE.PAYLOAD_TOO_LARGE ||
+    code === ERROR_CODE.SINGLE_UPLOAD_LIMIT_EXCEEDED ||
+    code === ERROR_CODE.FILE_STORAGE_LIMIT_EXCEEDED ||
+    code === ERROR_CODE.STORAGE_SPACE_NOT_ENOUGH
+  ) {
+    return ErrorType.Forbidden;
+  }
+
+  return undefined;
+}
+
+/**
+ * Maps an HTTP status code to an ErrorType.
+ */
+function mapHttpStatusToType(status: number): ErrorType {
+  if (status === 404) return ErrorType.PageNotFound;
+  if (status === 401) return ErrorType.Unauthorized;
+  if (status === 403) return ErrorType.Forbidden;
+  if (status === 408) return ErrorType.Timeout;
+  if (status === 410) return ErrorType.Gone;
+  if (status === 429) return ErrorType.RateLimited;
+  if (status >= 500 && status < 600) return ErrorType.ServerError;
+  return ErrorType.Unknown;
+}
+
 export function determineErrorType(error: unknown): AppError {
   // Network error (no response from server)
   if (axios.isAxiosError(error) && !error.response) {
@@ -119,106 +205,41 @@ export function determineErrorType(error: unknown): AppError {
     const status = error.response.status;
     const data = error.response.data as { code?: number; message?: string } | undefined;
     const code = data?.code;
-    const message = data?.message || error.message;
+    const message = data?.message || error.message || 'An unexpected error occurred';
 
-    // Priority 1: Check for specific error codes that need custom handling
-    // These codes require specific UX beyond generic status code handling
-    if (code === ERROR_CODE.INVALID_LINK) {
-      return {
-        type: ErrorType.InvalidLink,
-        message: message || 'Invalid or expired link',
-        code,
-        statusCode: status,
-      };
+    // Priority 1: Map by server error code
+    const typeFromCode = mapErrorCodeToType(code);
+
+    if (typeFromCode) {
+      return { type: typeFromCode, message, code, statusCode: status };
     }
 
-    if (code === ERROR_CODE.ALREADY_JOINED) {
-      return {
-        type: ErrorType.AlreadyJoined,
-        message: message || 'You have already joined this workspace',
-        code,
-        statusCode: status,
-      };
+    // Priority 2: Map by HTTP status code
+    return { type: mapHttpStatusToType(status), message, code, statusCode: status };
+  }
+
+  // Normalized APIError from executeAPIRequest / executeAPIVoidRequest / handleAPIError.
+  // These are plain { code: number, message: string } objects — not AxiosError instances.
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof (error as { code: unknown }).code === 'number'
+  ) {
+    const apiError = error as { code: number; message?: string };
+    const code = apiError.code;
+    const message = apiError.message || 'Request failed';
+
+    // Priority 1: Map by server error code
+    const typeFromCode = mapErrorCodeToType(code);
+
+    if (typeFromCode) {
+      return { type: typeFromCode, message, code };
     }
 
-    if (code === ERROR_CODE.NOT_INVITEE_OF_INVITATION) {
-      return {
-        type: ErrorType.NotInvitee,
-        message: message || 'You are not the intended recipient of this invitation',
-        code,
-        statusCode: status,
-      };
-    }
-
-    // Priority 2: Map HTTP status codes to error types
-    switch (status) {
-      case 404:
-        return {
-          type: ErrorType.PageNotFound,
-          message: message || 'Page or resource not found',
-          statusCode: status,
-          code,
-        };
-
-      case 401:
-        return {
-          type: ErrorType.Unauthorized,
-          message: message || 'You need to sign in to access this resource',
-          statusCode: status,
-          code,
-        };
-
-      case 403:
-        return {
-          type: ErrorType.Forbidden,
-          message: message || 'You do not have permission to access this resource',
-          statusCode: status,
-          code,
-        };
-
-      case 408:
-        return {
-          type: ErrorType.Timeout,
-          message: message || 'Request timed out. Please try again.',
-          statusCode: status,
-          code,
-        };
-
-      case 410:
-        return {
-          type: ErrorType.Gone,
-          message: message || 'This resource has been deleted',
-          statusCode: status,
-          code,
-        };
-
-      case 429:
-        return {
-          type: ErrorType.RateLimited,
-          message: message || 'Too many requests. Please try again later.',
-          statusCode: status,
-          code,
-        };
-
-      case 500:
-      case 502:
-      case 503:
-      case 504:
-        return {
-          type: ErrorType.ServerError,
-          message: message || 'Server error. Please try again later.',
-          statusCode: status,
-          code,
-        };
-
-      default:
-        return {
-          type: ErrorType.Unknown,
-          message: message || 'An unexpected error occurred',
-          statusCode: status,
-          code,
-        };
-    }
+    // Priority 2: Treat the code as an HTTP status (fallback for errors
+    // where handleAPIError used response.status as the code value)
+    return { type: mapHttpStatusToType(code), message, statusCode: code };
   }
 
   // Non-axios error (e.g., thrown exception, logic error)

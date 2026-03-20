@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { AccessService, ViewService, WorkspaceService } from '@/application/services/domains';
 import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
@@ -101,9 +101,6 @@ export function preserveLoadedChildren(
 
   return { outline: finalOutline, loadedIds: nextLoadedIds };
 }
-
-const USER_NO_ACCESS_CODE = 1012;
-const USER_UNAUTHORIZED_CODE = 1024;
 
 const FOLDER_VIEW_CHANGE_TYPE = {
   VIEW_FIELDS_CHANGED: 0,
@@ -354,13 +351,13 @@ export function useWorkspaceData() {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } catch (e: any) {
         Log.error('[Outline] App outline not found', e);
-        if (e.code === USER_UNAUTHORIZED_CODE) {
+        if (e.code === ERROR_CODE.USER_UNAUTHORIZED || e.code === ERROR_CODE.NOT_LOGGED_IN) {
           invalidToken();
           navigate('/login');
           return;
         }
 
-        if (e.code === USER_NO_ACCESS_CODE) {
+        if (e.code === ERROR_CODE.NOT_HAS_PERMISSION) {
           setRequestAccessError({
             code: e.code,
             message: e.message,
@@ -368,9 +365,9 @@ export function useWorkspaceData() {
           return;
         }
 
-        // Error 1040 (InvalidFolderView): PG has no folder data yet.
+        // InvalidFolderView: PG has no folder data yet.
         // The server auto-triggers a background projection. Retry once after 3s.
-        if (e.code === 1040) {
+        if (e.code === ERROR_CODE.INVALID_FOLDER_VIEW) {
           Log.info('[Outline] Folder data not yet projected, retrying in 3s...');
           setTimeout(() => {
             void loadOutline(workspaceId, force);

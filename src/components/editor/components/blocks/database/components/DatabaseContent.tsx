@@ -18,7 +18,7 @@ interface DatabaseContentProps {
   selectedViewId: string | null;
   hasDatabase: boolean;
   notFound: boolean;
-  deletionStatus?: 'none' | 'inTrash' | 'deleted';
+  deletionStatus?: 'none' | 'inTrash' | 'deleted' | null;
   paddingStart: number;
   paddingEnd: number;
   width: number;
@@ -67,7 +67,7 @@ export const DatabaseContent = ({
   const { t } = useTranslation();
   const isPublishVarient = context?.variant === UIVariant.Publish;
 
-  if (selectedViewId && doc && hasDatabase && !notFound) {
+  if (selectedViewId && doc && hasDatabase && !notFound && deletionStatus === 'none') {
     return (
       <div
         className={'relative'}
@@ -116,9 +116,11 @@ export const DatabaseContent = ({
     }
   };
 
+  const showError = notFound || deletionStatus === 'inTrash' || deletionStatus === 'deleted';
+
   return (
     <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4">
-      {notFound ? (
+      {showError ? (
         <div className="text-base font-medium">
           {getNotFoundMessage()}
         </div>
