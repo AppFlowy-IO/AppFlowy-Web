@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
-import { EditorSelectors, SlashCommandSelectors } from '../../../support/selectors';
+import { EditorSelectors } from '../../../support/selectors';
 import { generateRandomEmail } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { createDocumentPageAndNavigate } from '../../../support/page-utils';
 
 /**
  * Basic Text Editing Tests
@@ -25,17 +26,15 @@ test.describe('Basic Text Editing', () => {
   });
 
   /**
-   * Helper: sign in, navigate to Getting started, clear editor.
+   * Helper: sign in, create a fresh blank document page.
    */
   async function setupEditor(page: import('@playwright/test').Page, request: import('@playwright/test').APIRequestContext) {
     await signInAndWaitForApp(page, request, testEmail);
     await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
-    await page.getByTestId('page-name').filter({ hasText: 'Getting started' }).first().click();
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(1000);
 
+    await createDocumentPageAndNavigate(page);
     await EditorSelectors.firstEditor(page).click({ force: true });
-    await page.keyboard.press(`${cmdKey}+A`);
-    await page.keyboard.press('Backspace');
     await page.waitForTimeout(500);
   }
 
@@ -113,15 +112,13 @@ test.describe('Basic Text Editing', () => {
       await page.keyboard.type('Hello World');
       await page.waitForTimeout(200);
 
-      // Ensure at end
+      // Select "World" using word-level selection (more reliable than character-by-character)
       await page.keyboard.press('End');
-      // Select "World" (5 chars backwards)
-      for (let i = 0; i < 5; i++) {
-        await page.keyboard.press('Shift+ArrowLeft');
-      }
+      await page.keyboard.press(`Shift+${wordJumpKey}+ArrowLeft`);
       await page.waitForTimeout(200);
 
       await page.keyboard.type('AppFlowy');
+      await page.waitForTimeout(200);
       const editor = EditorSelectors.slateEditor(page);
       await expect(editor).toContainText('Hello AppFlowy');
       await expect(editor).not.toContainText('Hello World');
