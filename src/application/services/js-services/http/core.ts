@@ -269,6 +269,64 @@ export function initAPIService(config: AFCloudConfig) {
 
   axiosInstance.interceptors.response.use((response) => response, handleUnauthorized);
 
+  // ---------------------------------------------------------------------------
+  // ETag / 304 Not Modified caching
+  //
+  // Stores ETags from server responses keyed by URL. On subsequent GET requests,
+  // sends If-None-Match so the server can return 304 (empty body) when the data
+  // hasn't changed. The browser's HTTP cache handles body storage — on 304, axios
+  // receives the cached body transparently.
+  //
+  // For programmatic requests (axios.get), the browser doesn't always use its HTTP
+  // cache, so we also keep a lightweight JS response cache as fallback.
+  // ---------------------------------------------------------------------------
+  const etagStore = new Map<string, string>();
+  const responseStore = new Map<string, unknown>();
+
+  // Request: attach stored ETag as If-None-Match
+  axiosInstance.interceptors.request.use((config) => {
+    if (config.method?.toLowerCase() === 'get' && config.url) {
+      const etag = etagStore.get(config.url);
+
+      if (etag) {
+        config.headers.set('If-None-Match', etag);
+      }
+    }
+
+    return config;
+  });
+
+  // Response: store ETag + handle 304
+  axiosInstance.interceptors.response.use(
+    (response) => {
+      const etag = response.headers?.['etag'];
+
+      if (etag && response.config.url) {
+        etagStore.set(response.config.url, etag);
+        responseStore.set(response.config.url, response.data);
+      }
+
+      return response;
+    },
+    (error) => {
+      if (axios.isAxiosError(error) && error.response?.status === 304) {
+        const url = error.config?.url;
+        const cached = url ? responseStore.get(url) : undefined;
+
+        if (cached) {
+          // Return the cached response as if it were a 200
+          return {
+            ...error.response,
+            status: 200,
+            data: cached,
+          };
+        }
+      }
+
+      return Promise.reject(error);
+    }
+  );
+
   // Retry interceptor: automatic retry with exponential backoff for transient failures.
   // Only retries GET requests (idempotent) on network errors or 5xx server errors.
   const RETRY_COUNT = 3;

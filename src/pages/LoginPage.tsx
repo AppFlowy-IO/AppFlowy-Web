@@ -9,10 +9,11 @@ import { LOGIN_ACTION } from '@/components/login/const';
 import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
 import { SignUpPassword } from '@/components/login/SignUpPassword';
+import { isSafeRedirectUrl, safeDecodeRedirectParam } from '@/application/session/sign_in';
 import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 function LoginPage() {
-  const [search] = useSearchParams();
+  const [search, setSearch] = useSearchParams();
   const action = search.get('action') || '';
   const email = search.get('email') || '';
   const force = search.get('force') === 'true';
@@ -21,15 +22,31 @@ function LoginPage() {
   const isAuthenticated = useIsAuthenticatedOptional();
 
 
+  // Strip unsafe redirectTo from URL immediately, preserving all other params
+  useEffect(() => {
+    if (!redirectTo) return;
+
+    const decodedRedirect = safeDecodeRedirectParam(redirectTo);
+
+    if (!decodedRedirect || !isSafeRedirectUrl(decodedRedirect)) {
+      setSearch((prev) => {
+        const next = new URLSearchParams(prev);
+
+        next.delete('redirectTo');
+        return next;
+      });
+    }
+  }, [redirectTo, setSearch]);
+
   useEffect(() => {
     if (action === LOGIN_ACTION.CHANGE_PASSWORD || force) {
       return;
     }
 
     if (isAuthenticated && redirectTo) {
-      const decodedRedirect = decodeURIComponent(redirectTo);
+      const decodedRedirect = safeDecodeRedirectParam(redirectTo);
 
-      if (decodedRedirect !== window.location.href) {
+      if (decodedRedirect && isSafeRedirectUrl(decodedRedirect) && decodedRedirect !== window.location.href) {
         window.location.href = decodedRedirect;
       }
     }
