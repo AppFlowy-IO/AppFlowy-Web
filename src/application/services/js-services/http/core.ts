@@ -180,6 +180,71 @@ export async function executeAPIVoidRequest(
   }
 }
 
+/**
+ * Retry wrapper for non-GET API calls that are safe to retry
+ * (e.g. idempotent POSTs used as reads, or upsert-style writes).
+ * Uses fixed backoff delays: 1s, 4s, 8s.
+ * Only retries on network errors or 5xx server errors.
+ *
+ * Pass an AbortSignal to cancel pending retries (e.g. on component unmount).
+ */
+const RETRY_DELAYS = [1000, 4000, 8000];
+
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts?: { delays?: number[]; signal?: AbortSignal }
+): Promise<T> {
+  const delays = opts?.delays ?? RETRY_DELAYS;
+  const signal = opts?.signal;
+
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt <= delays.length; attempt++) {
+    if (signal?.aborted) break;
+
+    try {
+      return await fn();
+    } catch (error: unknown) {
+      lastError = error;
+
+      if (attempt >= delays.length) break;
+
+      // Normalize to APIError for consistent retryable detection.
+      // handleAPIError handles AxiosError (string codes like "ERR_NETWORK"),
+      // raw Error, and unknown shapes — always returns { code, message }.
+      const normalized = handleAPIError(error);
+      const isRetryable = normalized.code === -1 || normalized.code >= 500;
+
+      if (!isRetryable) break;
+
+      const delay = delays[attempt];
+
+      Log.debug(`[withRetry] Attempt ${attempt + 1}/${delays.length} failed, retrying in ${delay}ms`);
+
+      // Wait for backoff, but abort early if signal fires
+      await new Promise<void>((resolve) => {
+        if (signal?.aborted) {
+          resolve();
+          return;
+        }
+
+        const timer = setTimeout(resolve, delay);
+
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          resolve();
+        }, { once: true });
+      });
+    }
+  }
+
+  if (signal?.aborted) {
+    return Promise.reject(new DOMException('The operation was aborted', 'AbortError'));
+  }
+
+  return Promise.reject(lastError);
+}
+
 export function initAPIService(config: AFCloudConfig) {
   if (axiosInstance) {
     return;
