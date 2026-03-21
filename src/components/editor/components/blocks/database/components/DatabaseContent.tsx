@@ -65,7 +65,7 @@ export const DatabaseContent = ({
   onRendered,
 }: DatabaseContentProps) => {
   const { t } = useTranslation();
-  const isPublishVarient = context?.variant === UIVariant.Publish;
+  const isPublishVariant = context?.variant === UIVariant.Publish;
 
   if (selectedViewId && doc && hasDatabase && !notFound && deletionStatus === 'none') {
     return (
@@ -104,7 +104,7 @@ export const DatabaseContent = ({
   }
 
   const getNotFoundMessage = () => {
-    if (isPublishVarient) return t('publish.hasNotBeenPublished');
+    if (isPublishVariant) return t('publish.hasNotBeenPublished');
 
     switch (deletionStatus) {
       case 'inTrash':

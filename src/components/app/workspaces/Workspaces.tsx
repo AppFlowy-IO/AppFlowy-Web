@@ -69,6 +69,7 @@ export function Workspaces() {
   const [openDeleteWorkspace, setOpenDeleteWorkspace] = useState<Workspace | null>(null);
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openLogoutConfirm, setOpenLogoutConfirm] = useState(false);
+  const [openAccountSettings, setOpenAccountSettings] = useState(false);
 
   const isOwner = currentWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
 
@@ -225,12 +226,10 @@ export function Workspaces() {
 
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <AccountSettings>
-                <DropdownMenuItem data-testid='account-settings-button' onSelect={(e) => e.preventDefault()}>
-                  <SettingsIcon />
-                  <div className={'flex-1 text-left'}>{t('web.accountSettings')}</div>
-                </DropdownMenuItem>
-              </AccountSettings>
+              <DropdownMenuItem data-testid='account-settings-button' onSelect={() => setOpenAccountSettings(true)}>
+                <SettingsIcon />
+                <div className={'flex-1 text-left'}>{t('web.accountSettings')}</div>
+              </DropdownMenuItem>
               <DropdownMenuItem data-testid='logout-menu-item' onSelect={() => setOpenLogoutConfirm(true)}>
                 <LogoutIcon />
                 {t('button.logout')}
@@ -326,6 +325,7 @@ export function Workspaces() {
         />
       )}
 
+      <AccountSettings open={openAccountSettings} onClose={() => setOpenAccountSettings(false)} />
       <LogoutConfirm open={openLogoutConfirm} onClose={() => setOpenLogoutConfirm(false)} onConfirm={handleSignOut} />
     </>
   );

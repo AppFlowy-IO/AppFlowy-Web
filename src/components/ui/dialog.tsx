@@ -36,9 +36,10 @@ const DialogOverlay = forwardRef<HTMLDivElement>(
           // Background styling
           'bg-surface-overlay', // Semi-transparent black background
 
-          // Animation states for opening/closing
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
+          // Enter animation only — no exit animation to avoid blocking
+          // react-remove-scroll unmount (which releases pointer-events on body)
+          'data-[state=open]:animate-in',
+          'data-[state=open]:fade-in-0',
 
           className
         )}
@@ -66,10 +67,11 @@ const dialogVariants = cva(
     // Animation settings
     'duration-200',
 
-    // Animation states for opening/closing
-    'data-[state=open]:animate-in data-[state=closed]:animate-out',
-    'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-    'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95'
+    // Enter animation only — no exit animation to avoid blocking
+    // react-remove-scroll unmount (which releases pointer-events on body)
+    'data-[state=open]:animate-in',
+    'data-[state=open]:fade-in-0',
+    'data-[state=open]:zoom-in-95'
   ),
   {
     variants: {

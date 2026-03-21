@@ -174,6 +174,26 @@ function mapErrorCodeToType(code: number | undefined): ErrorType | undefined {
     return ErrorType.Forbidden;
   }
 
+  // Plan / quota limits
+  if (
+    code === ERROR_CODE.WORKSPACE_LIMIT_EXCEEDED ||
+    code === ERROR_CODE.WORKSPACE_MEMBER_LIMIT_EXCEEDED ||
+    code === ERROR_CODE.AI_RESPONSE_LIMIT_EXCEEDED ||
+    code === ERROR_CODE.AI_IMAGE_RESPONSE_LIMIT_EXCEEDED ||
+    code === ERROR_CODE.FEATURE_NOT_AVAILABLE ||
+    code === ERROR_CODE.INVALID_GUEST
+  ) {
+    return ErrorType.Forbidden;
+  }
+
+  // Access request conflicts
+  if (code === ERROR_CODE.ACCESS_REQUEST_ALREADY_APPROVED || code === ERROR_CODE.ACCESS_REQUEST_ALREADY_DENIED) {
+    return ErrorType.AlreadyJoined;
+  }
+
+  // Invalid view
+  if (code === ERROR_CODE.INVALID_FOLDER_VIEW) return ErrorType.PageNotFound;
+
   return undefined;
 }
 
