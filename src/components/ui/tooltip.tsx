@@ -39,6 +39,7 @@ function TooltipContent ({
           // Animation behavior
           'animate-in fade-in-0 zoom-in-95',
           'data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95',
+          'data-[state=closed]:pointer-events-none',
 
           // Slide-in effects based on tooltip position
           'data-[side=bottom]:slide-in-from-top-2',

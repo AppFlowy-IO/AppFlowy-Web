@@ -40,6 +40,9 @@ const DialogOverlay = forwardRef<HTMLDivElement>(
           'data-[state=open]:animate-in data-[state=closed]:animate-out',
           'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
 
+          // Prevent closed overlay from blocking pointer events during exit animation
+          'data-[state=closed]:pointer-events-none',
+
           className
         )}
         {...props}
@@ -69,7 +72,10 @@ const dialogVariants = cva(
     // Animation states for opening/closing
     'data-[state=open]:animate-in data-[state=closed]:animate-out',
     'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-    'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95'
+    'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
+
+    // Prevent closed content from blocking pointer events during exit animation
+    'data-[state=closed]:pointer-events-none'
   ),
   {
     variants: {
