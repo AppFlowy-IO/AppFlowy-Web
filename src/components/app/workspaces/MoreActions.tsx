@@ -16,11 +16,13 @@ function MoreActions({
   onUpdate,
   onDelete,
   onLeave,
+  workspaceCount,
 }: {
   workspace: Workspace;
   onUpdate?: () => void;
   onDelete?: () => void;
   onLeave?: () => void;
+  workspaceCount?: number;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -56,17 +58,19 @@ function MoreActions({
                 <EditIcon />
                 {t('workspace.rename')}
               </div>
-              <div
-                className={dropdownMenuItemVariants({ variant: 'destructive', className: 'w-full overflow-hidden' })}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete?.();
-                  setOpen(false);
-                }}
-              >
-                <DeleteIcon />
-                {t('workspace.delete')}
-              </div>
+              {(workspaceCount ?? 1) > 1 && (
+                <div
+                  className={dropdownMenuItemVariants({ variant: 'destructive', className: 'w-full overflow-hidden' })}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDelete?.();
+                    setOpen(false);
+                  }}
+                >
+                  <DeleteIcon />
+                  {t('workspace.delete')}
+                </div>
+              )}
             </div>
           ) : (
             <div

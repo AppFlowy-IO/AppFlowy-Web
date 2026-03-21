@@ -64,6 +64,7 @@ function WorkspaceList({
             onLeave={onLeave}
             showActions={showActions}
             useDropdownItem={useDropdownItem}
+            workspaceCount={sortedWorkspaces.length}
           />
         );
       })}

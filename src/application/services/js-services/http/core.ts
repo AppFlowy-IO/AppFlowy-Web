@@ -227,8 +227,8 @@ export async function withRetry<T>(
 
       if (!isRetryable) break;
 
-      // Add random jitter (50%-150% of base delay) to avoid thundering herd
-      const delay = Math.round(delays[attempt] * (0.5 + Math.random()));
+      // Add random jitter (100%-200% of base delay) to avoid thundering herd
+      const delay = Math.round(delays[attempt] * (1.0 + Math.random()));
 
       Log.debug(`[withRetry] Attempt ${attempt + 1}/${delays.length} failed, retrying in ${delay}ms`);
 

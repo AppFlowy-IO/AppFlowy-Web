@@ -6,10 +6,11 @@ import { toast } from 'sonner';
 import { SubscriptionPlan, Workspace, WorkspaceMember } from '@/application/types';
 import { ReactComponent as TipIcon } from '@/assets/icons/warning.svg';
 import { WorkspaceService } from '@/application/services/domains';
+import { NormalModal } from '@/components/_shared/modal';
 import { useGetSubscriptions } from '@/components/app/app.hooks';
+import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Progress } from '@/components/ui/progress';
@@ -34,6 +35,7 @@ function InviteMember({
   const currentUser = useCurrentUser();
   const [memberCount, setMemberCount] = React.useState<number>(0);
   const memberListRef = useRef<WorkspaceMember[]>([]);
+  const inputRef = useRef<HTMLInputElement>(null);
   const isOwner = workspace.owner?.uid.toString() === currentUser?.uid.toString();
 
   const loadMembers = useCallback(async () => {
@@ -114,6 +116,10 @@ function InviteMember({
     } else {
       void loadMembers();
       void loadSubscription();
+      // Focus input after MUI Dialog animation completes
+      const timer = setTimeout(() => inputRef.current?.focus(), 100);
+
+      return () => clearTimeout(timer);
     }
   }, [open, loadMembers, loadSubscription]);
 
@@ -127,51 +133,52 @@ function InviteMember({
   if (!isOwner) return null;
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={openOnChange}>
-        <DialogContent className={'w-[500px]'}>
-          <DialogHeader>
-            <DialogTitle>{t('inviteMember.requestInviteMembers')}</DialogTitle>
-          </DialogHeader>
-          <div
-            style={{
-              display: isExceed ? 'flex' : 'none',
+    <NormalModal
+      open={!!open}
+      onClose={() => openOnChange?.(false)}
+      title={<div style={{ textAlign: 'left' }}>{t('inviteMember.requestInviteMembers')}</div>}
+      classes={MODAL_CLASSES}
+      disableAutoFocus
+      disableEnforceFocus
+      PaperProps={MODAL_PAPER_PROPS}
+      okButtonProps={HIDDEN_BUTTON_PROPS}
+      cancelButtonProps={HIDDEN_BUTTON_PROPS}
+    >
+      {isExceed && (
+        <div className={'mb-4 flex w-full flex-wrap items-center gap-1 overflow-hidden text-text-secondary'}>
+          <TipIcon className={'h-4 w-4 text-function-warning'} />
+          {t('inviteMember.inviteFailedMemberLimit')}
+          <span onClick={handleUpgrade} className={'cursor-pointer text-text-action hover:underline'}>
+            {t('inviteMember.upgrade')}
+          </span>
+        </div>
+      )}
+      <div className='grid gap-4'>
+        <div className='grid gap-3'>
+          <Label htmlFor='emails'>{t('inviteMember.emails')}</Label>
+          <Input
+            id='emails'
+            name='emails'
+            disabled={isExceed}
+            ref={inputRef}
+            onChange={(e) => setValue(e.target.value)}
+            value={value}
+            placeholder={t('inviteMember.addEmail')}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                void handleOk();
+              }
             }}
-            className={'mb-4 flex w-full flex-wrap items-center gap-1 overflow-hidden text-text-secondary'}
-          >
-            <TipIcon className={'h-4 w-4 text-function-warning'} />
-            {t('inviteMember.inviteFailedMemberLimit')}
-            <span onClick={handleUpgrade} className={'cursor-pointer text-text-action hover:underline'}>
-              {t('inviteMember.upgrade')}
-            </span>
-          </div>
-          <div className='grid gap-4'>
-            <div className='grid gap-3'>
-              <Label htmlFor='emails'>{t('inviteMember.emails')}</Label>
-              <Input
-                id='emails'
-                name='emails'
-                disabled={isExceed}
-                onChange={(e) => setValue(e.target.value)}
-                value={value}
-                placeholder={t('inviteMember.addEmail')}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    void handleOk();
-                  }
-                }}
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button loading={loading} onClick={handleOk} disabled={!value}>
-              {loading && <Progress />}
-              {t('inviteMember.requestInvites')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+          />
+        </div>
+      </div>
+      <div className='flex w-full justify-end gap-3 mt-4'>
+        <Button loading={loading} onClick={() => void handleOk()} disabled={!value || isExceed}>
+          {loading && <Progress />}
+          {t('inviteMember.requestInvites')}
+        </Button>
+      </div>
+    </NormalModal>
   );
 }
 

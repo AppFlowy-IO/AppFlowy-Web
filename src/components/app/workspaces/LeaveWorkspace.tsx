@@ -3,16 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { WorkspaceService } from '@/application/services/domains';
+import { NormalModal } from '@/components/_shared/modal';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 
 function LeaveWorkspace({
   workspaceId,
@@ -46,30 +40,29 @@ function LeaveWorkspace({
   };
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={openOnChange}>
-        <DialogContent
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              void handleOk();
-            }
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>{t('workspace.leaveWorkspace', { workspaceName })}</DialogTitle>
-          </DialogHeader>
-          <DialogDescription>{t('workspace.leaveWorkspacePrompt', { workspaceName })}</DialogDescription>
-          <DialogFooter>
-            <Button variant='outline' onClick={() => openOnChange(false)}>
-              {t('button.cancel')}
-            </Button>
-            <Button variant='destructive' loading={loading} onClick={handleOk}>
-              {t('button.yes')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <NormalModal
+      open={open}
+      onClose={() => openOnChange(false)}
+      title={
+        <div style={{ textAlign: 'left' }}>{t('workspace.leaveWorkspace', { workspaceName })}</div>
+      }
+      classes={MODAL_CLASSES}
+      PaperProps={MODAL_PAPER_PROPS}
+      okButtonProps={HIDDEN_BUTTON_PROPS}
+      cancelButtonProps={HIDDEN_BUTTON_PROPS}
+    >
+      <div className='text-text-secondary'>
+        {t('workspace.leaveWorkspacePrompt', { workspaceName })}
+      </div>
+      <div className='flex w-full justify-end gap-3 mt-4'>
+        <Button variant='outline' onClick={() => openOnChange(false)}>
+          {t('button.cancel')}
+        </Button>
+        <Button variant='destructive' loading={loading} onClick={() => void handleOk()}>
+          {t('button.yes')}
+        </Button>
+      </div>
+    </NormalModal>
   );
 }
 

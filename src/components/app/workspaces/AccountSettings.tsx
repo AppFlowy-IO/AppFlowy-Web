@@ -7,8 +7,9 @@ import { DateFormat, TimeFormat } from '@/application/types';
 import { UserService } from '@/application/services/domains';
 import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { NormalModal } from '@/components/_shared/modal';
+import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES } from '@/components/app/workspaces/modal-props';
 import { useAppConfig } from '@/components/main/app.hooks';
-import { Dialog, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,10 +19,11 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
 
-export function AccountSettings({ children }: { children?: React.ReactNode }) {
+const ACCOUNT_SETTINGS_PAPER_PROPS = { sx: { width: 500, minHeight: 400 } } as const;
+
+export function AccountSettings({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { t } = useTranslation();
   const { currentUser, updateCurrentUser } = useAppConfig();
-  const [open, setIsOpen] = useState(false);
 
   const [dateFormat, setDateFormat] = useState(
     () => Number(currentUser?.metadata?.[MetadataKey.DateFormat] as DateFormat) || DateFormat.Local
@@ -86,9 +88,9 @@ export function AccountSettings({ children }: { children?: React.ReactNode }) {
     [debounceUpdateProfile]
   );
 
-  const onOpenChange = useCallback(
-    async (isOpen: boolean) => {
-      if (isOpen) {
+  useEffect(() => {
+    if (open) {
+      void (async () => {
         const user = await UserService.getCurrentRaw();
 
         setDateFormat(Number(user?.metadata?.[MetadataKey.DateFormat] as DateFormat) || DateFormat.Local);
@@ -98,45 +100,47 @@ export function AccountSettings({ children }: { children?: React.ReactNode }) {
         metadataUpdateRef.current = {
           ...user?.metadata,
         };
-      } else {
-        if (currentUser) {
-          void updateCurrentUser({
-            ...currentUser,
-            metadata: metadataUpdateRef.current || currentUser.metadata,
-          });
-        }
-      }
+      })();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
 
-      setIsOpen(isOpen);
-    },
-    [currentUser, updateCurrentUser]
-  );
+  const handleClose = useCallback(() => {
+    if (currentUser) {
+      void updateCurrentUser({
+        ...currentUser,
+        metadata: metadataUpdateRef.current || currentUser.metadata,
+      });
+    }
+
+    onClose();
+  }, [currentUser, updateCurrentUser, onClose]);
 
   if (!currentUser) {
     return <></>;
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent
+    <NormalModal
+      open={open}
+      onClose={handleClose}
+      title={<div style={{ textAlign: 'left' }}>{t('web.accountSettings')}</div>}
+      classes={MODAL_CLASSES}
+      PaperProps={ACCOUNT_SETTINGS_PAPER_PROPS}
+      okButtonProps={HIDDEN_BUTTON_PROPS}
+      cancelButtonProps={HIDDEN_BUTTON_PROPS}
+    >
+      <div
         data-testid='account-settings-dialog'
-        className='flex h-[500px] min-h-0 w-[400px] flex-col gap-3 sm:max-w-[calc(100%-2rem)]'
+        className='flex min-h-0 w-full flex-col items-start gap-4 py-4'
       >
-        <DialogTitle className='text-md font-bold text-text-primary'>{t('web.accountSettings')}</DialogTitle>
-        <DialogDescription className='sr-only'>
-          Configure your account preferences including date format, time format, and week start day
-        </DialogDescription>
-        <div className='flex min-h-0 w-full flex-1 flex-col items-start gap-4 overflow-y-auto py-4'>
-          {/* Date/Time Settings */}
-          <div className='flex w-full flex-col items-start gap-3'>
-            <DateFormatDropdown dateFormat={dateFormat} onSelect={handleSelectDateFormat} />
-            <TimeFormatDropdown timeFormat={timeFormat} onSelect={handleSelectTimeFormat} />
-            <StartWeekOnDropdown startWeekOn={startWeekOn} onSelect={handleSelectStartWeekOn} />
-          </div>
+        <div className='flex w-full flex-col items-start gap-3'>
+          <DateFormatDropdown dateFormat={dateFormat} onSelect={handleSelectDateFormat} />
+          <TimeFormatDropdown timeFormat={timeFormat} onSelect={handleSelectTimeFormat} />
+          <StartWeekOnDropdown startWeekOn={startWeekOn} onSelect={handleSelectStartWeekOn} />
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </NormalModal>
   );
 }
 
