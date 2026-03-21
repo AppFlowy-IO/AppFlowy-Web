@@ -43,13 +43,11 @@ function DropdownMenuContent({ className, sideOffset = 4, container, forceMount,
           'origin-(--radix-dropdown-menu-content-transform-origin)',
           'overflow-y-auto overflow-x-hidden',
 
-          // Animation states for opening/closing
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-          'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
-
-          // Prevent closed content from blocking pointer events during exit animation
-          'data-[state=closed]:pointer-events-none',
+          // Enter animation only — no exit animation to avoid blocking
+          // react-remove-scroll unmount (modal menus use RemoveScroll)
+          'data-[state=open]:animate-in',
+          'data-[state=open]:fade-in-0',
+          'data-[state=open]:zoom-in-95',
 
           // Position-based animations
           'data-[side=bottom]:slide-in-from-top-2',
@@ -247,13 +245,11 @@ const DropdownMenuSubContent = forwardRef<HTMLDivElement, React.ComponentProps<t
           'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
           'origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden',
 
-          // Animation states for opening/closing
-          'data-[state=open]:animate-in data-[state=closed]:animate-out',
-          'data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0',
-          'data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95',
-
-          // Prevent closed content from blocking pointer events during exit animation
-          'data-[state=closed]:pointer-events-none',
+          // Enter animation only — no exit animation to avoid blocking
+          // react-remove-scroll unmount (modal menus use RemoveScroll)
+          'data-[state=open]:animate-in',
+          'data-[state=open]:fade-in-0',
+          'data-[state=open]:zoom-in-95',
 
           // Position-based animations
           'data-[side=bottom]:slide-in-from-top-2',
