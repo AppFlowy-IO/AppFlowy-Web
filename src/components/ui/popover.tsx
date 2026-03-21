@@ -34,15 +34,10 @@ function PopoverContent({
           'origin-(--radix-popover-content-transform-origin)',
 
           'data-[state=open]:animate-in',
-          'data-[state=closed]:animate-out',
 
           'data-[state=open]:fade-in-0',
-          'data-[state=closed]:fade-out-0',
 
           'data-[state=open]:zoom-in-95',
-          'data-[state=closed]:zoom-out-95',
-
-          'data-[state=closed]:pointer-events-none',
 
           'data-[side=bottom]:slide-in-from-top-2',
           'data-[side=left]:slide-in-from-right-2',
