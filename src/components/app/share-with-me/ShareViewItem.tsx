@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
 import { AccessLevel, View, ViewIconType } from '@/application/types';
+import { getViewUrl } from '@/application/view-utils';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as LogoutIcon } from '@/assets/icons/logout.svg';
@@ -172,8 +173,10 @@ export function ShareViewItem({
         <DropdownMenuGroup>
           <DropdownMenuItem
             onSelect={() => {
-              if (!currentWorkspaceId) return;
-              window.open(`/app/${currentWorkspaceId}/${view.view_id}`, '_blank');
+              const url = getViewUrl(view, currentWorkspaceId);
+
+              if (!url) return;
+              window.open(url, '_blank');
             }}
           >
             <OpenIcon />

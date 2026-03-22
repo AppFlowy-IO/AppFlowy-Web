@@ -1150,6 +1150,7 @@ export interface View {
   publish_timestamp?: string;
   parent_view_id?: string;
   access_level?: AccessLevel;
+  workspace_id?: string;
 }
 
 export interface UpdatePublishConfigPayload {
