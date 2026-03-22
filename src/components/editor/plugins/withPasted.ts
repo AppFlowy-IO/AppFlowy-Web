@@ -6,13 +6,14 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import { getBlockEntry, getSharedRoot } from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, YjsEditorKey } from '@/application/types';
+import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, VideoType, YjsEditorKey } from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 import { parseTSVTable } from '@/components/editor/parsers/table-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
 import { processUrl } from '@/utils/url';
+import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -196,14 +197,12 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
   }
 
   // Check for video URLs
-  const isVideoUrl = isURL(url, {
-    host_whitelist: ['youtube.com', 'www.youtube.com', 'youtu.be', 'vimeo.com'],
-  });
+  const isVideoUrl = isValidVideoUrl(url);
 
   if (isVideoUrl) {
     return insertBlock(editor, {
       type: BlockType.VideoBlock,
-      data: { url } as VideoBlockData,
+      data: { url: processUrl(url) || url, ...videoTypeData(VideoType.External) } as VideoBlockData,
       children: [{ text: '' }],
     });
   }

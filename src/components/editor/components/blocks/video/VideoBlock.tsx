@@ -23,6 +23,10 @@ export const VideoBlock = memo(forwardRef<HTMLDivElement, EditorElementProps<Vid
   const editor = useSlateStatic() as YjsEditor;
   const [error, setError] = React.useState<string | undefined>(undefined);
 
+  React.useEffect(() => {
+    setError(undefined);
+  }, [url]);
+
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
 
   const className = useMemo(() => {

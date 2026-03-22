@@ -146,12 +146,21 @@ export enum VideoType {
   External = 2,
 }
 
+/**
+ * Desktop (Flutter) stores video type as string in `url_type`: "local" | "network" | "cloud"
+ * Web stores video type as number in `video_type`: 0 | 1 | 2
+ * Both keys are read/written for cross-platform compatibility.
+ */
+export type DesktopVideoUrlType = 'local' | 'network' | 'cloud';
+
 export interface VideoBlockData extends BlockData {
   url?: string;
   width?: number;
   height?: number;
   align?: AlignType;
   video_type?: VideoType;
+  url_type?: DesktopVideoUrlType;
+  name?: string;
 }
 
 export interface AIMeetingBlockData extends BlockData {
