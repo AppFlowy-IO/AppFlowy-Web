@@ -1,8 +1,9 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { RenderColumn } from '@/components/database/components/grid/grid-column';
+import { GridColumnType } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRow } from '@/components/database/components/grid/grid-row';
 import { getScrollParent } from '@/components/global-comment/utils';
 import { getPlatform } from '@/utils/platform';
@@ -187,8 +188,57 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     };
   }, [getScrollElement, updateParentOffset, isDocumentBlock]);
 
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useLayoutEffect(() => {
+    const el = parentRef.current;
+
+    if (!el) return;
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+
+      if (entry) {
+        setContainerWidth(entry.contentRect.width);
+      }
+    });
+
+    observer.observe(el);
+    setContainerWidth(el.clientWidth);
+
+    return () => observer.disconnect();
+  }, []);
+
+  const effectivePaddingStart = paddingStart || PADDING_INLINE;
+  const effectivePaddingEnd = paddingEnd || PADDING_INLINE;
+
+  const lastColumn = columns[columns.length - 1];
+  const isLastColumnNewProperty = lastColumn?.type === GridColumnType.NewProperty;
+
+  const { shouldFill, fillWidth } = useMemo(() => {
+    if (!isLastColumnNewProperty || containerWidth <= 0) {
+      return { shouldFill: false, fillWidth: lastColumn?.width || 150 };
+    }
+
+    const sumOfOtherWidths = columns.reduce((sum, c, i) => i < columns.length - 1 ? sum + c.width : sum, 0);
+    const remainingWidth = containerWidth - effectivePaddingStart - sumOfOtherWidths - effectivePaddingEnd;
+
+    if (remainingWidth > lastColumn.width) {
+      return { shouldFill: true, fillWidth: remainingWidth };
+    }
+
+    return { shouldFill: false, fillWidth: lastColumn.width };
+  }, [isLastColumnNewProperty, containerWidth, columns, effectivePaddingStart, effectivePaddingEnd, lastColumn]);
+
   const getColumn = useCallback((index: number) => columns[index], [columns]);
-  const getColumnWidth = useCallback((index: number) => getColumn(index).width, [getColumn]);
+  const lastIndex = columns.length - 1;
+  const getColumnWidth = useCallback((index: number) => {
+    if (shouldFill && index === lastIndex) {
+      return fillWidth;
+    }
+
+    return getColumn(index).width;
+  }, [getColumn, shouldFill, fillWidth, lastIndex]);
 
   const columnVirtualizer = useVirtualizer({
     horizontal: true,
@@ -196,8 +246,8 @@ export function useGridVirtualizer({ data, columns }: { columns: RenderColumn[];
     getScrollElement: () => parentRef.current,
     estimateSize: getColumnWidth,
     overscan: 5,
-    paddingStart: paddingStart || PADDING_INLINE,
-    paddingEnd: paddingEnd || PADDING_INLINE,
+    paddingStart: effectivePaddingStart,
+    paddingEnd: effectivePaddingEnd,
     getItemKey: (index) => columns[index].fieldId || columns[index].type,
   });
 

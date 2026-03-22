@@ -91,7 +91,7 @@ function GridVirtualColumn({
         readOnly && rowType === RenderRowType.CalculateRow ? 'border-t border-border-primary' : ''
       )}
       style={{
-        width: columnData.width,
+        width: column.size,
       }}
     >
       <GridCell
