@@ -1,6 +1,7 @@
 /// <reference types="jest" />
 import ReactPlayer from 'react-player';
-import { getVideoErrorMessage, isValidVideoUrl } from '../video-url';
+import { VideoType } from '../../application/types';
+import { getVideoErrorMessage, isValidVideoUrl, resolveVideoType, videoTypeData } from '../video-url';
 
 /**
  * Integration tests for video-url utilities
@@ -257,6 +258,36 @@ describe('video-url integration tests', () => {
         // All messages should start with 'document.plugins.video.'
         expect(message).toMatch(/^document\.plugins\.video\./);
       });
+    });
+  });
+
+  describe('Cross-platform video type compatibility', () => {
+    it('should convert desktop url_type to web VideoType', () => {
+      expect(resolveVideoType({ url_type: 'network' })).toBe(VideoType.External);
+      expect(resolveVideoType({ url_type: 'cloud' })).toBe(VideoType.Internal);
+      expect(resolveVideoType({ url_type: 'local' })).toBe(VideoType.Local);
+    });
+
+    it('should prefer web video_type over desktop url_type', () => {
+      expect(resolveVideoType({ video_type: VideoType.External, url_type: 'local' })).toBe(VideoType.External);
+    });
+
+    it('should return undefined when neither key is set', () => {
+      expect(resolveVideoType({})).toBeUndefined();
+    });
+
+    it('should produce both web and desktop keys via videoTypeData', () => {
+      const data = videoTypeData(VideoType.External);
+      expect(data.video_type).toBe(VideoType.External);
+      expect(data.url_type).toBe('network');
+
+      const data2 = videoTypeData(VideoType.Internal);
+      expect(data2.video_type).toBe(VideoType.Internal);
+      expect(data2.url_type).toBe('cloud');
+
+      const data3 = videoTypeData(VideoType.Local);
+      expect(data3.video_type).toBe(VideoType.Local);
+      expect(data3.url_type).toBe('local');
     });
   });
 });

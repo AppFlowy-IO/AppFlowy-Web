@@ -1,4 +1,7 @@
 import ReactPlayer from 'react-player';
+
+import { VideoType } from '@/application/types';
+import type { DesktopVideoUrlType } from '@/application/types';
 import { processUrl } from '@/utils/url';
 
 /**
@@ -48,4 +51,40 @@ export function getVideoErrorMessage(url: string): string {
   }
 
   return 'document.plugins.video.errorGeneric';
+}
+
+/**
+ * Cross-platform compatibility: Desktop stores url_type as string, web stores video_type as number.
+ * Mapping: desktop "local" ↔ web Local(0), "network" ↔ External(2), "cloud" ↔ Internal(1)
+ */
+const DESKTOP_TO_WEB_TYPE: Record<DesktopVideoUrlType, VideoType> = {
+  local: VideoType.Local,
+  network: VideoType.External,
+  cloud: VideoType.Internal,
+};
+
+const WEB_TO_DESKTOP_TYPE: Record<VideoType, DesktopVideoUrlType> = {
+  [VideoType.Local]: 'local',
+  [VideoType.Internal]: 'cloud',
+  [VideoType.External]: 'network',
+};
+
+/**
+ * Resolve video type from block data, reading both web and desktop keys.
+ * Desktop writes `url_type` (string), web writes `video_type` (number).
+ */
+export function resolveVideoType(data: { video_type?: VideoType; url_type?: DesktopVideoUrlType }): VideoType | undefined {
+  if (data.video_type !== undefined) return data.video_type;
+  if (data.url_type !== undefined) return DESKTOP_TO_WEB_TYPE[data.url_type];
+  return undefined;
+}
+
+/**
+ * Build cross-platform video block data with both web and desktop type keys.
+ */
+export function videoTypeData(webType: VideoType): { video_type: VideoType; url_type: DesktopVideoUrlType } {
+  return {
+    video_type: webType,
+    url_type: WEB_TO_DESKTOP_TYPE[webType],
+  };
 }

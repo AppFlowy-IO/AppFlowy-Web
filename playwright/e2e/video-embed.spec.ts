@@ -7,6 +7,9 @@ import { signInAndNavigate } from './support/auth-utils';
  */
 
 test.describe('Feature: Video Embed Block', () => {
+  // Run serially — each test creates a new user via GoTrue which can't handle parallel auth requests
+  test.describe.configure({ mode: 'serial' });
+
   let page: Page;
 
   test.beforeEach(async ({ browser }) => {

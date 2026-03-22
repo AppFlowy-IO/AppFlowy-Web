@@ -10,7 +10,7 @@ import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs'
 
 import EmbedLink from '@/components/_shared/image-upload/EmbedLink';
 import { processUrl } from '@/utils/url';
-import { isValidVideoUrl } from '@/utils/video-url';
+import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 
 function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
   const editor = useSlateStatic() as YjsEditor;
@@ -32,7 +32,7 @@ function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
     (url: string) => {
       CustomEditor.setBlockData(editor, blockId, {
         url: processUrl(url) || url,
-        video_type: VideoType.External,
+        ...videoTypeData(VideoType.External),
       } as VideoBlockData);
       onClose();
     },
