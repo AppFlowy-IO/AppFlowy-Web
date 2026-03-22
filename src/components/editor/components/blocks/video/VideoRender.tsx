@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactPlayer from 'react-player';
 import { Element } from 'slate';
 import { useReadOnly, useSlateStatic } from 'slate-react';
@@ -9,6 +9,7 @@ import ImageResizer from '@/components/editor/components/blocks/image/ImageResiz
 import { MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
 import VideoToolbar from '@/components/editor/components/blocks/video/VideoToolbar';
 import { VideoBlockNode } from '@/components/editor/editor.type';
+import { processUrl } from '@/utils/url';
 import { getVideoErrorMessage } from '@/utils/video-url';
 
 function VideoRender({
@@ -20,8 +21,10 @@ function VideoRender({
 }) {
   const editor = useSlateStatic() as YjsEditor;
   const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
-  const { width: imageWidth } = useMemo(() => node.data || {}, [node.data]);
-  const url = node.data.url;
+  const { width: imageWidth } = node.data || {};
+  const rawUrl = node.data.url;
+  const processedUrl = rawUrl ? (processUrl(rawUrl) || rawUrl) : undefined;
+  const url = processedUrl && /^https?:\/\//i.test(processedUrl) ? processedUrl : undefined;
   const ref = useRef<HTMLDivElement>(null);
   const handleWidthChange = useCallback(
     (newWidth: number) => {
@@ -41,17 +44,23 @@ function VideoRender({
     };
   }, [url]);
   const onDragStart = useCallback(() => {
-    if(!ref.current) return;
+    if (!ref.current) return;
     ref.current.style.pointerEvents = 'none';
   }, []);
 
   const onDragEnd = useCallback(() => {
-    if(!ref.current) return;
+    if (!ref.current) return;
     ref.current.style.pointerEvents = 'auto';
   }, []);
   const [showToolbar, setShowToolbar] = useState(false);
 
-  if(!url) return null;
+  useEffect(() => {
+    if (!url && rawUrl && onError) {
+      onError(getVideoErrorMessage(rawUrl));
+    }
+  }, [url, rawUrl, onError]);
+
+  if (!url) return null;
 
   return (
     <div
@@ -75,8 +84,8 @@ function VideoRender({
           className={'w-full absolute left-0 top-0 h-full'}
         >
           <ReactPlayer {...playerProps} onError={() => {
-            if(onError) {
-              const message = getVideoErrorMessage(url || '');
+            if (onError) {
+              const message = getVideoErrorMessage(url);
 
               onError(message);
             }

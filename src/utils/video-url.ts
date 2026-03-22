@@ -8,13 +8,18 @@ import { processUrl } from '@/utils/url';
  * - Direct video files (.mp4, .webm, .mov, .ogv, etc.)
  * - HLS (.m3u8) and DASH (.mpd) streaming
  */
+const AUDIO_ONLY_EXTENSIONS = /\.(m4a|m4b|mp4a|mpga|mp2|mp2a|mp3|m2a|m3a|wav|weba|aac|oga|spx)($|\?)/i;
+
 export function isValidVideoUrl(url: string): boolean {
   const processedUrl = processUrl(url);
 
   if (!processedUrl) return false;
 
   // Only allow http/https protocols for security
-  if (!processedUrl.match(/^https?:\/\//)) return false;
+  if (!processedUrl.match(/^https?:\/\//i)) return false;
+
+  // Exclude audio-only file URLs (ReactPlayer.canPlay returns true for audio files)
+  if (AUDIO_ONLY_EXTENSIONS.test(processedUrl)) return false;
 
   // Use react-player's built-in validation
   return ReactPlayer.canPlay(processedUrl);
@@ -38,7 +43,7 @@ export function getVideoErrorMessage(url: string): string {
     return 'document.plugins.video.errorFacebookPrivacy';
   }
 
-  if (processedUrl.match(/\.(mp4|webm|mov|ogv)$/i)) {
+  if (processedUrl.match(/\.(mp4|webm|mov|ogv)($|\?|#)/i)) {
     return 'document.plugins.video.errorFileCors';
   }
 

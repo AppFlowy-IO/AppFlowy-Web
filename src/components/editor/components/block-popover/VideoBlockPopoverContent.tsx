@@ -8,7 +8,8 @@ import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { VideoBlockData, VideoType } from '@/application/types';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 
-import EmbedLink from 'src/components/_shared/image-upload/EmbedLink';
+import EmbedLink from '@/components/_shared/image-upload/EmbedLink';
+import { processUrl } from '@/utils/url';
 import { isValidVideoUrl } from '@/utils/video-url';
 
 function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
@@ -30,7 +31,7 @@ function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
   const handleInsertEmbedLink = useCallback(
     (url: string) => {
       CustomEditor.setBlockData(editor, blockId, {
-        url,
+        url: processUrl(url) || url,
         video_type: VideoType.External,
       } as VideoBlockData);
       onClose();
@@ -46,7 +47,7 @@ function VideoBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
           <div className={'my-2 flex flex-col'}>
             <EmbedLink
               onDone={handleInsertEmbedLink}
-              defaultLink={(entry?.[0].data as VideoBlockData).url}
+              defaultLink={(entry?.[0]?.data as VideoBlockData | undefined)?.url}
               placeholder={t('embedVideoLinkPlaceholder')}
               validator={isValidVideoUrl}
             />

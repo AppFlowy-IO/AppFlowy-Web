@@ -71,6 +71,31 @@ describe('video-url integration tests', () => {
       });
     });
 
+    it('should reject audio-only file URLs', () => {
+      const audioUrls = [
+        'https://example.com/audio.mp3',
+        'https://example.com/sound.wav',
+        'https://example.com/track.aac',
+        'https://example.com/music.m4a',
+        'https://example.com/file.oga',
+      ];
+
+      audioUrls.forEach(url => {
+        expect(isValidVideoUrl(url)).toBe(false);
+      });
+    });
+
+    it('should accept URLs with case-insensitive HTTP(S) scheme', () => {
+      const urls = [
+        'HTTPS://www.youtube.com/watch?v=dQw4w9WgXcQ',
+        'HTTP://example.com/video.mp4',
+      ];
+
+      urls.forEach(url => {
+        expect(isValidVideoUrl(url)).toBe(true);
+      });
+    });
+
     it('should reject dangerous protocols even if ReactPlayer could theoretically handle them', () => {
       // Security check should happen BEFORE ReactPlayer.canPlay()
       const dangerousUrls = [

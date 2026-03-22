@@ -6,7 +6,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import { getBlockEntry, getSharedRoot } from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, YjsEditorKey } from '@/application/types';
+import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, VideoType, YjsEditorKey } from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 import { parseTSVTable } from '@/components/editor/parsers/table-parser';
@@ -202,7 +202,7 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
   if (isVideoUrl) {
     return insertBlock(editor, {
       type: BlockType.VideoBlock,
-      data: { url } as VideoBlockData,
+      data: { url: processUrl(url) || url, video_type: VideoType.External } as VideoBlockData,
       children: [{ text: '' }],
     });
   }
