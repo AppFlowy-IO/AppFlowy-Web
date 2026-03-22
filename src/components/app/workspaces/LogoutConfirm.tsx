@@ -1,15 +1,8 @@
 import { useTranslation } from 'react-i18next';
 
+import { NormalModal } from '@/components/_shared/modal';
+import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 export function LogoutConfirm({
   open,
@@ -28,41 +21,27 @@ export function LogoutConfirm({
   };
 
   return (
-    <Dialog
+    <NormalModal
       open={open}
-      onOpenChange={(status) => {
-        if (!status) {
-          onClose();
-        }
-      }}
+      onClose={onClose}
+      title={<div style={{ textAlign: 'left' }}>{t('button.logout')}</div>}
+      classes={MODAL_CLASSES}
+      PaperProps={MODAL_PAPER_PROPS}
+      okButtonProps={HIDDEN_BUTTON_PROPS}
+      cancelButtonProps={HIDDEN_BUTTON_PROPS}
     >
-      <DialogContent
-        onCloseAutoFocus={(e) => {
-          e.preventDefault();
-        }}
-        onKeyDown={(e) => {
-          e.stopPropagation();
-          if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent)) {
-            handleLogout();
-          }
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle>{t('button.logout')}</DialogTitle>
-        </DialogHeader>
-        <DialogDescription>
-          {t('settings.menu.logoutPrompt')}
-        </DialogDescription>
-        <DialogFooter>
-          <Button variant={'outline'} onClick={onClose}>
-            {t('button.cancel')}
-          </Button>
-          <Button variant={'destructive'} onClick={handleLogout} data-testid="logout-confirm-button">
-            {t('button.logout')}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      <div className='text-text-secondary'>
+        {t('settings.menu.logoutPrompt')}
+      </div>
+      <div className='flex w-full justify-end gap-3 mt-4'>
+        <Button variant='outline' onClick={onClose}>
+          {t('button.cancel')}
+        </Button>
+        <Button variant='destructive' onClick={handleLogout} data-testid='logout-confirm-button'>
+          {t('button.logout')}
+        </Button>
+      </div>
+    </NormalModal>
   );
 }
 

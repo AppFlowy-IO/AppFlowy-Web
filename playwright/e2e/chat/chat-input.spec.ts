@@ -78,10 +78,12 @@ test.describe('Chat Input Tests', () => {
 
     // Test 3: Browse prompts
     await ChatSelectors.browsePromptsButton(page).click();
-    await expect(page.locator('[role="dialog"]')).toBeAttached();
-    await expect(page.locator('[role="dialog"]').filter({ hasText: 'Browse prompts' })).toBeVisible();
+    const browsePromptsDialog = page.getByRole('dialog', { name: 'Browse prompts' });
+
+    await expect(browsePromptsDialog).toBeAttached();
+    await expect(browsePromptsDialog).toBeVisible();
     await page.keyboard.press('Escape');
-    await expect(page.locator('[role="dialog"]')).toHaveCount(0);
+    await expect(browsePromptsDialog).not.toBeAttached();
 
     // Test 4: Related views
     await ChatSelectors.relatedViewsButton(page).click();

@@ -6,6 +6,7 @@ import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
+import LoadingDots from '@/components/chat/components/ui/loading-dots';
 import { findView } from '@/components/_shared/outline/utils';
 import { AIChat } from '@/components/ai-chat';
 import {
@@ -675,6 +676,11 @@ function AppPage() {
       {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : (
         <div className={`h-full w-full ${isTransitioning ? 'pointer-events-none opacity-80' : ''}`}>
           {displayDom}
+          {!displayDom && (
+            <div className='flex h-full w-full items-center justify-center'>
+              <LoadingDots />
+            </div>
+          )}
         </div>
       )}
       {view && <Help />}

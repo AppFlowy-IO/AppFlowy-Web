@@ -18,6 +18,7 @@ export function WorkspaceItem({
   onDelete,
   onLeave,
   useDropdownItem = true,
+  workspaceCount,
 }: {
   showActions?: boolean;
   workspace: Workspace;
@@ -28,6 +29,7 @@ export function WorkspaceItem({
   onDelete?: (workspace: Workspace) => void;
   onLeave?: (workspace: Workspace) => void;
   useDropdownItem?: boolean;
+  workspaceCount?: number;
 }) {
   const { t } = useTranslation();
   const [hovered, setHovered] = useState(false);
@@ -65,11 +67,12 @@ export function WorkspaceItem({
             onUpdate={() => onUpdate?.(workspace)}
             onDelete={() => onDelete?.(workspace)}
             onLeave={() => onLeave?.(workspace)}
+            workspaceCount={workspaceCount}
           />
         </div>
       </div>
     );
-  }, [changeLoading, currentWorkspaceId, hovered, onDelete, onLeave, onUpdate, showActions, workspace]);
+  }, [changeLoading, currentWorkspaceId, hovered, onDelete, onLeave, onUpdate, showActions, workspace, workspaceCount]);
 
   const handleSelect = useCallback(() => {
     if (workspace.id === currentWorkspaceId) return;

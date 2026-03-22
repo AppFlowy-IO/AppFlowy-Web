@@ -3,16 +3,10 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { WorkspaceService } from '@/application/services/domains';
+import { NormalModal } from '@/components/_shared/modal';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 
 function DeleteWorkspace({
@@ -47,33 +41,30 @@ function DeleteWorkspace({
   };
 
   return (
-    <>
-      <Dialog open={open} onOpenChange={openOnChange}>
-        <DialogContent
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              void handleOk();
-            }
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>
-              {t('button.delete')}: {name}
-            </DialogTitle>
-          </DialogHeader>
-          <DialogDescription>{t('workspace.deleteWorkspaceHintText')}</DialogDescription>
-          <DialogFooter>
-            <Button variant='outline' onClick={() => openOnChange(false)}>
-              {t('button.cancel')}
-            </Button>
-            <Button variant='destructive' loading={loading} onClick={handleOk}>
-              {loading && <Progress />}
-              {t('button.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+    <NormalModal
+      open={open}
+      onClose={() => openOnChange(false)}
+      title={
+        <div style={{ textAlign: 'left' }}>{t('button.delete')}: {name}</div>
+      }
+      classes={MODAL_CLASSES}
+      PaperProps={MODAL_PAPER_PROPS}
+      okButtonProps={HIDDEN_BUTTON_PROPS}
+      cancelButtonProps={HIDDEN_BUTTON_PROPS}
+    >
+      <div className='text-text-secondary'>
+        {t('workspace.deleteWorkspaceHintText')}
+      </div>
+      <div className='flex w-full justify-end gap-3 mt-4'>
+        <Button variant='outline' onClick={() => openOnChange(false)}>
+          {t('button.cancel')}
+        </Button>
+        <Button variant='destructive' loading={loading} onClick={() => void handleOk()}>
+          {loading && <Progress />}
+          {t('button.delete')}
+        </Button>
+      </div>
+    </NormalModal>
   );
 }
 
