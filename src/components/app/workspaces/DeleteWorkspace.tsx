@@ -7,7 +7,6 @@ import { NormalModal } from '@/components/_shared/modal';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES, MODAL_PAPER_PROPS } from '@/components/app/workspaces/modal-props';
 import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
 
 function DeleteWorkspace({
   workspaceId,
@@ -60,7 +59,6 @@ function DeleteWorkspace({
           {t('button.cancel')}
         </Button>
         <Button variant='destructive' loading={loading} onClick={() => void handleOk()}>
-          {loading && <Progress />}
           {t('button.delete')}
         </Button>
       </div>

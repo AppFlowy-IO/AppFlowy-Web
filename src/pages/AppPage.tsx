@@ -6,7 +6,7 @@ import { UIVariant, View, ViewLayout, ViewMetaProps, YDoc, YDocWithMeta } from '
 import { AppError, determineErrorType, formatErrorForLogging } from '@/application/utils/error-utils';
 import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
 import Help from '@/components/_shared/help/Help';
-import LoadingDots from '@/components/chat/components/ui/loading-dots';
+import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import { AIChat } from '@/components/ai-chat';
 import {

@@ -126,6 +126,8 @@ export function AccountSettings({ open, onClose }: { open: boolean; onClose: () 
       onClose={handleClose}
       title={<div style={{ textAlign: 'left' }}>{t('web.accountSettings')}</div>}
       classes={MODAL_CLASSES}
+      disableAutoFocus
+      disableEnforceFocus
       PaperProps={ACCOUNT_SETTINGS_PAPER_PROPS}
       okButtonProps={HIDDEN_BUTTON_PROPS}
       cancelButtonProps={HIDDEN_BUTTON_PROPS}
@@ -333,7 +335,7 @@ function StartWeekOnDropdown({
               )}
             >
               <span className='flex-1 truncate' onMouseDown={(e) => e.preventDefault()}>
-                {value?.label || t('grid.field.timeFormatTwelveHour')}
+                {value?.label || t('web.startWeekOn')}
               </span>
               <ChevronDownIcon className='text-icon-primary' />
             </div>

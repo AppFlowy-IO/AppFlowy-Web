@@ -8,7 +8,6 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 
 function EditWorkspace({
   open,
@@ -102,7 +101,6 @@ function EditWorkspace({
           loading={loading}
           onClick={() => void handleCreate()}
         >
-          {loading ? <Progress /> : null}
           {okText || t('workspace.create')}
         </Button>
       </div>
