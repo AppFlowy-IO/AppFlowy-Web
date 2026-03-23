@@ -271,6 +271,13 @@ export function useViewOperations() {
         }
       }
 
+      // Use the view's workspace_id (for shared/cross-workspace views) or fall back
+      // to the current workspace. This prevents permission errors when navigating to
+      // views shared from another workspace.
+      const resolvedWorkspaceId = view?.workspace_id || currentWorkspaceId;
+
+      if (!resolvedWorkspaceId) return;
+
       // If this is a database container, navigate to the first child view instead
       // This matches Desktop/Flutter behavior where clicking a container opens its first child
       let targetViewId = viewId;
@@ -280,9 +287,9 @@ export function useViewOperations() {
         let firstChild = getFirstChildView(view);
 
         // Fallback: fetch the container subtree from server to resolve first child.
-        if (!firstChild && currentWorkspaceId) {
+        if (!firstChild) {
           try {
-            const remote = await ViewService.get(currentWorkspaceId, viewId);
+            const remote = await ViewService.get(resolvedWorkspaceId, viewId);
 
             // Update local variable so blockId routing below uses the correct layout.
             view = remote;
@@ -309,7 +316,7 @@ export function useViewOperations() {
         }
       }
 
-      let url = `/app/${currentWorkspaceId}/${targetViewId}`;
+      let url = `/app/${resolvedWorkspaceId}/${targetViewId}`;
       const searchParams = new URLSearchParams(keepSearch ? window.location.search : undefined);
 
       if (blockId && targetView) {

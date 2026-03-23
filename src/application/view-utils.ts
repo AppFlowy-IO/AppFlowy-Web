@@ -214,3 +214,16 @@ export function getDatabaseTabViewIds(currentViewId: string, containerView: View
   // Otherwise, treat it as opening the container (or a stale route param).
   return displayViewIds;
 }
+
+/**
+ * Build the app URL for a view, resolving the workspace from the view's
+ * `workspace_id` when available (cross-workspace / shared views) and
+ * falling back to the caller-supplied current workspace.
+ *
+ * Returns `null` when no workspace can be determined.
+ */
+export function getViewUrl(view: View, currentWorkspaceId?: string): string | null {
+  const workspaceId = view.workspace_id || currentWorkspaceId;
+
+  return workspaceId ? `/app/${workspaceId}/${view.view_id}` : null;
+}

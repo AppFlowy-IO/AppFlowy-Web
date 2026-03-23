@@ -998,6 +998,9 @@ export interface FolderView {
   isPrivate: boolean;
   children: FolderView[];
   accessLevel?: AccessLevel;
+  // Optional for backward compatibility: servers older than the
+  // return_workspace_id change do not include this field in responses.
+  workspaceId?: string;
 }
 
 export enum AuthProvider {
@@ -1150,6 +1153,7 @@ export interface View {
   publish_timestamp?: string;
   parent_view_id?: string;
   access_level?: AccessLevel;
+  workspace_id?: string;
 }
 
 export interface UpdatePublishConfigPayload {

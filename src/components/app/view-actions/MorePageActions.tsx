@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { View, ViewIconType } from '@/application/types';
+import { getViewUrl } from '@/application/view-utils';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/emoji.svg';
 import { ReactComponent as OpenIcon } from '@/assets/icons/open.svg';
@@ -108,8 +109,10 @@ function MorePageActions({ view, onClose }: {
         <DropdownMenuItem
           data-testid={'more-page-open-new-tab'}
           onSelect={() => {
-            if (!currentWorkspaceId) return;
-            window.open(`/app/${currentWorkspaceId}/${view.view_id}`, '_blank');
+            const url = getViewUrl(view, currentWorkspaceId);
+
+            if (!url) return;
+            window.open(url, '_blank');
           }}
         >
           <OpenIcon />
