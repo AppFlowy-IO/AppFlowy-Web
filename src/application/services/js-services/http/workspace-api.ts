@@ -87,6 +87,8 @@ export interface WorkspaceFolder {
   is_space: boolean;
   is_private: boolean;
   access_level?: AccessLevel;
+  // Optional for backward compatibility with older servers.
+  workspace_id?: string;
   extra: {
     is_space: boolean;
     space_created_at: number;
@@ -109,6 +111,7 @@ function iterateFolder(folder: WorkspaceFolder): FolderView {
     extra: folder.extra ? JSON.stringify(folder.extra) : null,
     isPrivate: folder.is_private,
     accessLevel: folder.access_level,
+    workspaceId: folder.workspace_id,
     children: folder.children.map((child: WorkspaceFolder) => {
       return iterateFolder(child);
     }),
