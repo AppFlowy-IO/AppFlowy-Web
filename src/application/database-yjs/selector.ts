@@ -1234,7 +1234,14 @@ export function useRowOrdersSelector() {
 
     if (!originalRowOrders) return;
 
-    if (!hasConditions) {
+    // Read current filter/sort state directly from Yjs refs instead of the
+    // closed-over `hasConditions`.  The Yjs YArray references are stable but
+    // their `.length` always reflects the live document state, so this avoids
+    // a stale-closure problem when the callback is invoked by a Yjs observer
+    // before React has re-rendered (e.g. remote filter/sort sync from desktop).
+    const currentHasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
+
+    if (!currentHasConditions) {
       setRowOrders(originalRowOrders);
       return;
     }
@@ -1267,7 +1274,6 @@ export function useRowOrdersSelector() {
   }, [
     fields,
     filters,
-    hasConditions,
     rowDocsForConditions,
     sorts,
     view,
