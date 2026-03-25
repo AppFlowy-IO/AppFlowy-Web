@@ -46,9 +46,14 @@ function NewPage() {
       if (!addPage || !openPageModal) return;
       setLoading(true);
       try {
-        Log.debug('[handleAddPage]', { parentId, layout: ViewLayout.Document });
+        // Append after the last child so the new page appears at the bottom.
+        const parentSpace = outline?.find((v) => v.view_id === parentId);
+        const lastChild = parentSpace?.children?.[parentSpace.children.length - 1];
+
+        Log.debug('[handleAddPage]', { parentId, layout: ViewLayout.Document, prev_view_id: lastChild?.view_id });
         const response = await addPage(parentId, {
           layout: ViewLayout.Document,
+          prev_view_id: lastChild?.view_id,
         });
 
         openPageModal(response.view_id);
@@ -60,7 +65,7 @@ function NewPage() {
         setLoading(false);
       }
     },
-    [addPage, openPageModal, onClose]
+    [addPage, openPageModal, onClose, outline]
   );
 
   return (

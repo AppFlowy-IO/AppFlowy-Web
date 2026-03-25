@@ -14,16 +14,17 @@ import { Log } from '@/utils/log';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
-export async function addAppPage(workspaceId: string, parentViewId: string, { layout, name }: CreatePagePayload) {
+export async function addAppPage(workspaceId: string, parentViewId: string, { layout, name, prev_view_id }: CreatePagePayload) {
   const url = `/api/workspace/${workspaceId}/page-view`;
 
-  Log.debug('[addAppPage] request', { url, workspaceId, parentViewId, layout, name });
+  Log.debug('[addAppPage] request', { url, workspaceId, parentViewId, layout, name, prev_view_id });
 
   const response = await executeAPIRequest<CreatePageResponse>(() =>
     getAxios()?.post<APIResponse<CreatePageResponse>>(url, {
       parent_view_id: parentViewId,
       layout,
       name,
+      prev_view_id,
     })
   );
 

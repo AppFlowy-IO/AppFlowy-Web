@@ -19,7 +19,10 @@ function AddPageActions({ view }: { view: View }) {
       if (!addPage) return;
       toast.loading(t('document.creating'));
       try {
-        const response = await addPage(view.view_id, { layout, name });
+        // Append after the last child so the new page appears at the bottom.
+        // When prev_view_id is omitted the backend prepends (inserts at index 0).
+        const lastChild = view.children?.[view.children.length - 1];
+        const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChild?.view_id });
 
         if (layout === ViewLayout.Document) {
           void openPageModal?.(response.view_id);
@@ -33,7 +36,7 @@ function AddPageActions({ view }: { view: View }) {
         toast.error(e.message);
       }
     },
-    [addPage, openPageModal, t, toView, view.view_id]
+    [addPage, openPageModal, t, toView, view.view_id, view.children]
   );
 
   const actions: {

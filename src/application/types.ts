@@ -1369,6 +1369,8 @@ export interface ViewComponentProps {
 export interface CreatePagePayload {
   layout: ViewLayout;
   name?: string;
+  /** Insert the new page after this sibling. When omitted the backend prepends. */
+  prev_view_id?: string;
 }
 
 export interface CreatePageResponse {
