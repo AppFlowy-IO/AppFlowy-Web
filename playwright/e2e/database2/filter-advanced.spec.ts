@@ -74,21 +74,31 @@ async function deleteAllFilters(page: Page): Promise<void> {
   await page.waitForTimeout(500);
 }
 
+/** Change the operator on ALL non-first rows in the advanced panel */
 async function changeFilterOperator(page: Page, operator: 'And' | 'Or'): Promise<void> {
   const rows = page
     .locator('[data-radix-popper-content-wrapper]')
     .last()
     .getByTestId('advanced-filter-row');
-  const secondRow = rows.nth(1);
-  const operatorBtn = secondRow.locator('button').filter({ hasText: /and|or/i }).first();
-  await operatorBtn.click({ force: true });
-  await page.waitForTimeout(300);
+  const rowCount = await rows.count();
 
-  await page
-    .locator('[data-slot="dropdown-menu-item"]')
-    .filter({ hasText: new RegExp(`^${operator}$`, 'i') })
-    .click({ force: true });
-  await page.waitForTimeout(500);
+  for (let i = 1; i < rowCount; i++) {
+    const row = rows.nth(i);
+    const operatorBtn = row.locator('button').filter({ hasText: /and|or/i }).first();
+    const currentText = (await operatorBtn.textContent())?.trim().toLowerCase() ?? '';
+
+    // Only click if the operator needs to change
+    if (currentText !== operator.toLowerCase()) {
+      await operatorBtn.click({ force: true });
+      await page.waitForTimeout(300);
+
+      await page
+        .locator('[data-slot="dropdown-menu-item"]')
+        .filter({ hasText: new RegExp(`^${operator}$`, 'i') })
+        .click({ force: true });
+      await page.waitForTimeout(500);
+    }
+  }
 }
 
 function assertFilterBadgeText(page: Page, expectedText: string) {
