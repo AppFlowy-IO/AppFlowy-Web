@@ -676,8 +676,8 @@ function AppPage() {
       {error ? <RecordNotFound viewId={viewId} error={error} onRetry={handleRetry} /> : (
         <div className={`h-full w-full ${isTransitioning ? 'pointer-events-none opacity-80' : ''}`}>
           {displayDom}
-          {!displayDom && (
-            <div className='flex h-full w-full items-center justify-center'>
+          {(isTransitioning || !displayDom) && (
+            <div className='absolute inset-0 z-10 flex items-center justify-center'>
               <LoadingDots />
             </div>
           )}
