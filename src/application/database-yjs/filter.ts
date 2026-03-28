@@ -114,8 +114,22 @@ export function parseFilter(fieldType: FieldType, filter: YDatabaseFilter) {
   return value;
 }
 
-function isValidFilterNode(node: unknown): node is YDatabaseFilter {
-  return node !== null && typeof node === 'object' && typeof (node as YDatabaseFilter).get === 'function';
+function wrapPlainObjectAsFilter(obj: Record<string, unknown>): YDatabaseFilter {
+  return {
+    get: (key: string) => obj[key],
+  } as unknown as YDatabaseFilter;
+}
+
+function normalizeFilterNode(node: unknown): YDatabaseFilter | null {
+  if (node === null || typeof node !== 'object') return null;
+
+  // Already a Yjs Map with .get()
+  if (typeof (node as YDatabaseFilter).get === 'function') {
+    return node as YDatabaseFilter;
+  }
+
+  // Plain object from desktop sync -- wrap it
+  return wrapPlainObjectAsFilter(node as Record<string, unknown>);
 }
 
 function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
@@ -133,8 +147,9 @@ function getFilterChildren(filter: YDatabaseFilter): YDatabaseFilter[] {
     return [];
   }
 
-  // Filter out invalid children that don't have a .get() method
-  return childArray.filter(isValidFilterNode);
+  return childArray
+    .map(normalizeFilterNode)
+    .filter((node): node is YDatabaseFilter => node !== null);
 }
 
 function parseRelationFilterIds(content: string): string[] | null {
@@ -227,6 +242,168 @@ export function relationFilterCheck(cellData: unknown, filterRowIds: string[], c
   }
 }
 
+// ============================================================================
+// Tree utility types and functions for per-row operator support
+// ============================================================================
+
+export interface FilterDraft {
+  id: string;
+  fieldId: string;
+  fieldType: number;
+  condition: number;
+  content: string;
+  operator: FilterType.And | FilterType.Or | null;
+}
+
+/**
+ * Recursively flatten a filter tree into a flat list with per-row operators.
+ * Mirrors the desktop's `collectFilters()` logic from `filter_entities.dart`.
+ */
+export function flattenFilterTree(
+  filtersArray: YDatabaseFilters,
+  fields: YDatabaseFields
+): FilterDraft[] {
+  const result: FilterDraft[] = [];
+
+  if (!filtersArray || filtersArray.length === 0) return result;
+
+  const rootFilter = filtersArray.get(0);
+
+  if (!rootFilter) return result;
+
+  const rootNode = typeof rootFilter.get === 'function'
+    ? rootFilter
+    : wrapPlainObjectAsFilter(rootFilter as unknown as Record<string, unknown>);
+
+  const rootType = Number(rootNode.get(YjsDatabaseKey.filter_type));
+
+  if (rootType !== FilterType.And && rootType !== FilterType.Or) {
+    // Not in advanced mode - single flat data filter
+    return result;
+  }
+
+  const rootOperator = rootType; // Already narrowed to And | Or by the guard above
+  const children = getFilterChildren(rootNode);
+
+  for (let i = 0; i < children.length; i++) {
+    collectFiltersRecursive(
+      children[i],
+      i === 0 ? null : rootOperator,
+      fields,
+      result
+    );
+  }
+
+  // Also collect any sibling top-level filters at indices 1+ (can appear from
+  // concurrent desktop sync adding flat filters while web is in advanced mode).
+  // filterBy() combines top-level entries with AND, so siblings always get And.
+  for (let i = 1; i < filtersArray.length; i++) {
+    const sibling = filtersArray.get(i);
+
+    if (!sibling) continue;
+
+    // Siblings are always AND'd with the root group by filterBy().
+    collectFiltersRecursive(
+      sibling,
+      FilterType.And,
+      fields,
+      result
+    );
+  }
+
+  return result;
+}
+
+function collectFiltersRecursive(
+  filterNode: YDatabaseFilter,
+  inheritedOperator: FilterType.And | FilterType.Or | null,
+  fields: YDatabaseFields,
+  result: FilterDraft[]
+): void {
+  const node = typeof filterNode.get === 'function'
+    ? filterNode
+    : wrapPlainObjectAsFilter(filterNode as unknown as Record<string, unknown>);
+
+  const filterType = Number(node.get(YjsDatabaseKey.filter_type));
+
+  if (filterType === FilterType.And || filterType === FilterType.Or) {
+    const groupOperator = filterType; // Already narrowed to And | Or by the guard above
+    const children = getFilterChildren(node);
+
+    for (let i = 0; i < children.length; i++) {
+      collectFiltersRecursive(
+        children[i],
+        i === 0 ? inheritedOperator : groupOperator,
+        fields,
+        result
+      );
+    }
+
+    return;
+  }
+
+  // Data filter - extract as draft
+  const fieldId = node.get(YjsDatabaseKey.field_id);
+
+  if (!fieldId) return;
+
+  const field = fields.get(fieldId);
+  let fieldTypeNum: number;
+
+  if (field) {
+    fieldTypeNum = Number(field.get(YjsDatabaseKey.type));
+  } else {
+    // Desktop stores field type under 'ty' key; YjsDatabaseKey.type resolves to 'ty'
+    const tyValue = node.get(YjsDatabaseKey.type);
+
+    fieldTypeNum = tyValue !== undefined ? Number(tyValue) : FieldType.RichText;
+  }
+
+  result.push({
+    id: String(node.get(YjsDatabaseKey.id) ?? ''),
+    fieldId,
+    fieldType: fieldTypeNum,
+    condition: Number(node.get(YjsDatabaseKey.condition)),
+    content: String(node.get(YjsDatabaseKey.content) ?? ''),
+    operator: inheritedOperator,
+  });
+}
+
+/**
+ * Group consecutive drafts by their operator.
+ * Mirrors desktop's `_groupByConsecutiveOperator()`.
+ *
+ * Example: [A(null), B(Or), C(Or), D(And)] →
+ *   [{ operator: Or, drafts: [A, B, C] }, { operator: And, drafts: [D] }]
+ */
+export function groupByConsecutiveOperator(
+  drafts: FilterDraft[]
+): { operator: FilterType.And | FilterType.Or; drafts: FilterDraft[] }[] {
+  if (drafts.length < 2) {
+    return [{ operator: FilterType.And, drafts }];
+  }
+
+  const groups: { operator: FilterType.And | FilterType.Or; drafts: FilterDraft[] }[] = [];
+  let currentOperator = drafts[1].operator ?? FilterType.And;
+  let currentDrafts: FilterDraft[] = [drafts[0], drafts[1]];
+
+  for (let i = 2; i < drafts.length; i++) {
+    const op = drafts[i].operator ?? FilterType.And;
+
+    if (op === currentOperator) {
+      currentDrafts.push(drafts[i]);
+    } else {
+      groups.push({ operator: currentOperator, drafts: currentDrafts });
+      currentOperator = op;
+      currentDrafts = [drafts[i]];
+    }
+  }
+
+  groups.push({ operator: currentOperator, drafts: currentDrafts });
+
+  return groups;
+}
+
 type FilterOptions = {
   getRelationCellText?: (rowId: string, fieldId: string) => string;
   getRollupCellText?: (rowId: string, fieldId: string) => string;
@@ -250,15 +427,19 @@ export function filterBy(
   if (filterArray.length === 0 || Object.keys(rowMetas).length === 0 || fields.size === 0) return rows;
 
   const evaluateFilter = (filterNode: YDatabaseFilter, row: Row): boolean => {
-    // Validate filterNode is a valid Yjs Map with .get() method
-    if (!filterNode || typeof filterNode.get !== 'function') {
+    if (!filterNode || typeof filterNode !== 'object') {
       return true;
     }
 
-    const filterType = Number(filterNode.get(YjsDatabaseKey.filter_type));
+    // Wrap plain objects that lack .get() (e.g. from desktop sync)
+    const node = typeof filterNode.get === 'function'
+      ? filterNode
+      : wrapPlainObjectAsFilter(filterNode as unknown as Record<string, unknown>);
+
+    const filterType = Number(node.get(YjsDatabaseKey.filter_type));
 
     if (filterType === FilterType.And || filterType === FilterType.Or) {
-      const children = getFilterChildren(filterNode);
+      const children = getFilterChildren(node);
 
       if (children.length === 0) return true;
 
@@ -269,7 +450,7 @@ export function filterBy(
       return some(children, (child) => evaluateFilter(child, row));
     }
 
-    const fieldId = filterNode.get(YjsDatabaseKey.field_id);
+    const fieldId = node.get(YjsDatabaseKey.field_id);
     const field = fields.get(fieldId);
 
     if (!field) return true;
@@ -280,7 +461,7 @@ export function filterBy(
 
     if (!rowMeta) return false;
 
-    const filterValue = parseFilter(fieldType, filterNode);
+    const filterValue = parseFilter(fieldType, node);
     const meta = rowMeta.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
 
     if (!meta) return false;
@@ -569,13 +750,23 @@ export function selectOptionFilterCheck(field: YDatabaseField, data: unknown, co
 
   switch (condition) {
     case SelectOptionFilterCondition.OptionIs:
-    case SelectOptionFilterCondition.OptionContains:
       if (!content) return true;
-      return some(filterOptionIds, (option) => selectedIdsByName.includes(option));
+      if (selectedIdsByName.length === 0) return false;
+      return every(selectedIdsByName, (id) => filterOptionIds.includes(id));
 
     case SelectOptionFilterCondition.OptionIsNot:
+      if (!content) return true;
+      if (selectedIdsByName.length === 0) return true;
+      return !every(selectedIdsByName, (id) => filterOptionIds.includes(id));
+
+    case SelectOptionFilterCondition.OptionContains:
+      if (!content) return true;
+      if (selectedIdsByName.length === 0) return false;
+      return some(filterOptionIds, (option) => selectedIdsByName.includes(option));
+
     case SelectOptionFilterCondition.OptionDoesNotContain:
       if (!content) return true;
+      if (selectedIdsByName.length === 0) return true;
       return every(filterOptionIds, (option) => !selectedIdsByName.includes(option));
 
     default:
@@ -597,17 +788,17 @@ export function personFilterCheck(data: string, content: string, condition: numb
   }
 
   if (PersonFilterCondition.PersonIsEmpty === condition) {
-    return filterIds.length === 0 || data === '';
+    return userIds.length === 0;
   }
 
   if (PersonFilterCondition.PersonIsNotEmpty === condition) {
-    return filterIds.length > 0 && data !== '';
+    return userIds.length > 0;
   }
 
   switch (condition) {
     case PersonFilterCondition.PersonContains:
       if (filterIds.length === 0) return true;
-      return some(filterIds, (id) => userIds.includes(id));
+      return every(filterIds, (id) => userIds.includes(id));
 
     case PersonFilterCondition.PersonDoesNotContain:
       if (filterIds.length === 0) return true;

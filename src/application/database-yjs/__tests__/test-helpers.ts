@@ -465,6 +465,10 @@ export function loadV020DatabaseFixture(): CsvDatabaseFixture {
   return createDatabaseFixtureFromCsv(loadCsvFixture('v020.afdb'), 'db-v020', 'view-v020');
 }
 
+export function loadV070DatabaseFixture(): CsvDatabaseFixture {
+  return createDatabaseFixtureFromCsv(loadCsvFixture('v070.afdb'), 'db-v070', 'view-v070');
+}
+
 export function loadAuthorsDatabaseFixture(): CsvDatabaseFixture {
   return createDatabaseFixtureFromCsv(loadCsvFixture('authors.afdb'), 'db-authors', 'view-authors');
 }

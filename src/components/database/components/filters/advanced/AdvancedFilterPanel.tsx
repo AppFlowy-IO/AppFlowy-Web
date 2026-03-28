@@ -2,7 +2,13 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { useAdvancedFiltersSelector, useReadOnly } from '@/application/database-yjs';
-import { useAddAdvancedFilter, useClearAllFilters } from '@/application/database-yjs/dispatch';
+import { FilterType } from '@/application/database-yjs/database.type';
+import { FilterDraft } from '@/application/database-yjs/filter';
+import {
+  useAddAdvancedFilterAndRebuild,
+  useClearAllFilters,
+  useRebuildFilterTree,
+} from '@/application/database-yjs/dispatch';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
@@ -16,8 +22,9 @@ export function AdvancedFilterPanel() {
   const filters = useAdvancedFiltersSelector();
   const readOnly = useReadOnly();
 
-  const addFilter = useAddAdvancedFilter();
+  const addFilter = useAddAdvancedFilterAndRebuild();
   const clearAllFilters = useClearAllFilters();
+  const rebuildTree = useRebuildFilterTree();
 
   const context = useConditionsContext();
   const setAdvancedMode = context?.setAdvancedMode;
@@ -37,12 +44,33 @@ export function AdvancedFilterPanel() {
     setAdvancedMode?.(false);
   }, [clearAllFilters, setAdvancedMode]);
 
+  const handleOperatorChange = useCallback(
+    (filterId: string, newOperator: FilterType.And | FilterType.Or) => {
+      const drafts: FilterDraft[] = filters.map((f, index) => ({
+        id: f.id,
+        fieldId: f.fieldId,
+        fieldType: f.fieldType ?? 0,
+        condition: f.condition,
+        content: f.content,
+        operator: f.id === filterId ? newOperator : (index === 0 ? null : f.operator ?? FilterType.And),
+      }));
+
+      rebuildTree(drafts);
+    },
+    [filters, rebuildTree]
+  );
+
   return (
     <div className='flex flex-col'>
       {/* Filter rows */}
       <div className='flex flex-col'>
         {filters.map((filter, index) => (
-          <FilterPanelRow key={filter.id} filter={filter} isFirst={index === 0} />
+          <FilterPanelRow
+            key={filter.id}
+            filter={filter}
+            isFirst={index === 0}
+            onOperatorChange={handleOperatorChange}
+          />
         ))}
       </div>
 

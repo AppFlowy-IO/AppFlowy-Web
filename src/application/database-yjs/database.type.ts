@@ -73,6 +73,10 @@ export interface Filter {
   condition: number;
   id: string;
   content: string;
+  /** Per-row operator: null for the first row ("Where"), And/Or for subsequent rows */
+  operator?: FilterType.And | FilterType.Or | null;
+  /** The actual field column type (RichText, Number, etc.) */
+  fieldType?: FieldType;
 }
 
 export enum CalendarLayout {

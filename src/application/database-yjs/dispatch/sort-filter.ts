@@ -18,7 +18,7 @@ import * as Y from 'yjs';
 
 import { useDatabaseFields, useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
 import { FilterType, SortCondition } from '@/application/database-yjs/database.type';
-import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
+import { FilterDraft, flattenFilterTree, getDefaultFilterCondition, groupByConsecutiveOperator } from '@/application/database-yjs/filter';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import { YDatabaseFilter, YDatabaseFilters, YDatabaseSort, YDatabaseSorts, YjsDatabaseKey } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -726,6 +726,38 @@ export function useRemoveAdvancedFilter() {
 /**
  * Updates a filter within the children array in advanced mode
  */
+/**
+ * Recursively search a filter tree for a Data filter node with the given ID.
+ * Returns the Yjs Map if found, null otherwise.
+ */
+function findFilterNodeRecursive(node: YDatabaseFilter, targetId: string): YDatabaseFilter | null {
+  if (!node || typeof node.get !== 'function') return null;
+
+  const id = node.get(YjsDatabaseKey.id);
+
+  if (id === targetId) return node;
+
+  const children = node.get(YjsDatabaseKey.children) as YDatabaseFilters | undefined;
+
+  if (!children) return null;
+
+  const arr = typeof children.toArray === 'function' ? children.toArray() : [];
+
+  for (const child of arr) {
+    if (!child || typeof child.get !== 'function') continue;
+    const found = findFilterNodeRecursive(child, targetId);
+
+    if (found) return found;
+  }
+
+  return null;
+}
+
+/**
+ * Lightweight in-place filter updater.
+ * Searches the entire nested tree (not just root children) to find the target filter.
+ * Use this for content-only changes (text, number values) that don't affect tree structure.
+ */
 export function useUpdateAdvancedFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
@@ -743,48 +775,26 @@ export function useUpdateAdvancedFilter() {
         sharedRoot,
         [
           () => {
-            const filters = view.get(YjsDatabaseKey.filters);
-            const rootFilter = filters?.get(0);
+            const filtersArray = view.get(YjsDatabaseKey.filters);
 
-            if (!rootFilter) {
-              Log.warn('[useUpdateAdvancedFilter] No root filter found');
+            if (!filtersArray || filtersArray.length === 0) {
+              Log.warn('[useUpdateAdvancedFilter] No filters found');
               return;
             }
 
-            const children = rootFilter.get(YjsDatabaseKey.children) as YDatabaseFilters;
+            // Search all top-level entries (root group + possible siblings)
+            let filter: YDatabaseFilter | null = null;
 
-            if (!children) {
-              Log.warn('[useUpdateAdvancedFilter] No children found');
-              return;
+            for (let i = 0; i < filtersArray.length; i++) {
+              const entry = filtersArray.get(i);
+
+              if (!entry) continue;
+              filter = findFilterNodeRecursive(entry, filterId);
+              if (filter) break;
             }
-
-            // Find the filter - need to handle both Yjs Map and plain object (from desktop sync)
-            let filterIndex = -1;
-            const childrenArray = children.toArray();
-
-            for (let i = 0; i < childrenArray.length; i++) {
-              const f = childrenArray[i];
-              const isYjsMap = typeof (f as { get?: unknown }).get === 'function';
-              const id = isYjsMap
-                ? (f as { get: (key: string) => unknown }).get(YjsDatabaseKey.id)
-                : (f as unknown as Record<string, unknown>)[YjsDatabaseKey.id];
-
-              if (id === filterId) {
-                filterIndex = i;
-                break;
-              }
-            }
-
-            if (filterIndex === -1) {
-              Log.warn('[useUpdateAdvancedFilter] Filter not found in children', { filterId });
-              return;
-            }
-
-            // Get the actual Yjs Map from the children array using index
-            const filter = children.get(filterIndex);
 
             if (!filter) {
-              Log.warn('[useUpdateAdvancedFilter] Filter not found at index', { filterId, filterIndex });
+              Log.warn('[useUpdateAdvancedFilter] Filter not found in tree', { filterId });
               return;
             }
 
@@ -800,7 +810,7 @@ export function useUpdateAdvancedFilter() {
               filter.set(YjsDatabaseKey.content, content);
             }
 
-            Log.debug('[useUpdateAdvancedFilter] Updated filter in children', { filterId });
+            Log.debug('[useUpdateAdvancedFilter] Updated filter in tree', { filterId });
           },
         ],
         'updateAdvancedFilter'
@@ -911,4 +921,341 @@ export function useClearAllFilters() {
       'clearAllFilters'
     );
   }, [view, sharedRoot]);
+}
+
+// ============================================================================
+// Per-row operator: tree rebuild
+// ============================================================================
+
+function createGroupNode(operator: FilterType.And | FilterType.Or): YDatabaseFilter {
+  const node = new Y.Map() as YDatabaseFilter;
+
+  node.set(YjsDatabaseKey.id, nanoid(6));
+  node.set(YjsDatabaseKey.filter_type, operator);
+
+  return node;
+}
+
+function createDataFilterNode(draft: FilterDraft): YDatabaseFilter {
+  const node = new Y.Map() as YDatabaseFilter;
+
+  node.set(YjsDatabaseKey.id, draft.id);
+  node.set(YjsDatabaseKey.field_id, draft.fieldId);
+  node.set(YjsDatabaseKey.filter_type, FilterType.Data);
+  node.set(YjsDatabaseKey.type, draft.fieldType);
+  node.set(YjsDatabaseKey.condition, draft.condition);
+
+  if (draft.content !== undefined) {
+    node.set(YjsDatabaseKey.content, draft.content);
+  }
+
+  return node;
+}
+
+/**
+ * Build a (possibly left-nested) filter tree from a flat list of drafts.
+ *
+ * When all drafts share the same operator → flat group: Op(D0, D1, D2, …)
+ * When operators are mixed → left-nested tree matching the desktop algorithm:
+ *   [A(null), B(Or), C(And)] → And(Or(A, B), C)
+ */
+function buildFilterTreeFromDrafts(drafts: FilterDraft[]): YDatabaseFilter {
+  if (drafts.length <= 1) {
+    const root = createGroupNode(FilterType.And);
+    const children = new Y.Array() as YDatabaseFilters;
+
+    if (drafts.length === 1) {
+      children.push([createDataFilterNode(drafts[0])]);
+    }
+
+    root.set(YjsDatabaseKey.children, children);
+
+    return root;
+  }
+
+  const groups = groupByConsecutiveOperator(drafts);
+
+  if (groups.length === 1) {
+    // All same operator: flat group
+    const root = createGroupNode(groups[0].operator);
+    const children = new Y.Array() as YDatabaseFilters;
+
+    for (const draft of drafts) {
+      children.push([createDataFilterNode(draft)]);
+    }
+
+    root.set(YjsDatabaseKey.children, children);
+
+    return root;
+  }
+
+  // Mixed operators: build left-nested tree from innermost to outermost
+  let currentNode = createGroupNode(groups[0].operator);
+  const innermostChildren = new Y.Array() as YDatabaseFilters;
+
+  for (const draft of groups[0].drafts) {
+    innermostChildren.push([createDataFilterNode(draft)]);
+  }
+
+  currentNode.set(YjsDatabaseKey.children, innermostChildren);
+
+  for (let i = 1; i < groups.length; i++) {
+    const outerNode = createGroupNode(groups[i].operator);
+    const outerChildren = new Y.Array() as YDatabaseFilters;
+
+    // First child is the nested tree so far
+    outerChildren.push([currentNode]);
+
+    // Remaining children are the data filters from this group
+    for (const draft of groups[i].drafts) {
+      outerChildren.push([createDataFilterNode(draft)]);
+    }
+
+    outerNode.set(YjsDatabaseKey.children, outerChildren);
+    currentNode = outerNode;
+  }
+
+  return currentNode;
+}
+
+/**
+ * Rebuild the entire filter tree from a flat list of drafts.
+ * Used when a per-row operator changes, or when adding/removing filters
+ * in a tree that may already be nested.
+ */
+export function useRebuildFilterTree() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (drafts: FilterDraft[]) => {
+      if (!view) return;
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const filters = view.get(YjsDatabaseKey.filters);
+
+            if (!filters) return;
+
+            // Clear existing tree
+            filters.delete(0, filters.length);
+
+            if (drafts.length === 0) {
+              Log.debug('[useRebuildFilterTree] All filters removed');
+              return;
+            }
+
+            const rootNode = buildFilterTreeFromDrafts(drafts);
+
+            filters.push([rootNode]);
+
+            Log.debug('[useRebuildFilterTree] Tree rebuilt', { draftCount: drafts.length });
+          },
+        ],
+        'rebuildFilterTree'
+      );
+    },
+    [view, sharedRoot]
+  );
+}
+
+/**
+ * Add a new filter and rebuild the tree (works with nested trees).
+ */
+export function useAddAdvancedFilterAndRebuild() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+  const fields = useDatabaseFields();
+
+  return useCallback(
+    (fieldId: string) => {
+      if (!view || !fieldId) return;
+
+      const id = nanoid(6);
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const field = fields.get(fieldId);
+
+            if (!field) return;
+
+            const fieldType = Number(field.get(YjsDatabaseKey.type));
+            const conditionData = getDefaultFilterCondition(fieldType);
+
+            if (!conditionData) return;
+
+            let filters = view.get(YjsDatabaseKey.filters);
+
+            if (!filters) {
+              filters = new Y.Array() as YDatabaseFilters;
+              view.set(YjsDatabaseKey.filters, filters);
+            }
+
+            // Get current flat list
+            const currentDrafts = flattenFilterTree(filters, fields);
+
+            // Determine default operator: inherit from existing drafts or root group type
+            let defaultOperator: FilterType.And | FilterType.Or | null = null;
+
+            if (currentDrafts.length > 0) {
+              const existingOps = currentDrafts.slice(1).map((d) => d.operator ?? FilterType.And);
+
+              if (existingOps.length > 0) {
+                // Multiple drafts: use dominant operator
+                defaultOperator = existingOps.every((op) => op === FilterType.Or)
+                  ? FilterType.Or
+                  : FilterType.And;
+              } else {
+                // Single draft: inspect the root group's actual type to preserve OR roots
+                const rootFilter = filters.get(0);
+                const rootType = rootFilter ? Number(rootFilter.get(YjsDatabaseKey.filter_type)) : FilterType.And;
+
+                defaultOperator = rootType === FilterType.Or ? FilterType.Or : FilterType.And;
+              }
+            }
+
+            // Add new draft
+            const newDraft: FilterDraft = {
+              id,
+              fieldId,
+              fieldType,
+              condition: conditionData.condition,
+              content: conditionData.content ?? '',
+              operator: defaultOperator,
+            };
+
+            const allDrafts = [...currentDrafts, newDraft];
+
+            // Rebuild tree
+            filters.delete(0, filters.length);
+
+            const rootNode = buildFilterTreeFromDrafts(allDrafts);
+
+            filters.push([rootNode]);
+
+            Log.debug('[useAddAdvancedFilterAndRebuild] Filter added and tree rebuilt', { id });
+          },
+        ],
+        'addAdvancedFilterAndRebuild'
+      );
+
+      return id;
+    },
+    [view, sharedRoot, fields]
+  );
+}
+
+/**
+ * Remove a filter and rebuild the tree (works with nested trees).
+ */
+export function useRemoveAdvancedFilterAndRebuild() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+  const fields = useDatabaseFields();
+
+  return useCallback(
+    (filterId: string) => {
+      if (!view) return;
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const filters = view.get(YjsDatabaseKey.filters);
+
+            if (!filters) return;
+
+            // Flatten, remove target, rebuild
+            const currentDrafts = flattenFilterTree(filters, fields);
+            const newDrafts = currentDrafts.filter((d) => d.id !== filterId);
+
+            filters.delete(0, filters.length);
+
+            if (newDrafts.length === 0) {
+              Log.debug('[useRemoveAdvancedFilterAndRebuild] All filters removed');
+              return;
+            }
+
+            // Fix first draft's operator to null
+            newDrafts[0] = { ...newDrafts[0], operator: null };
+
+            const rootNode = buildFilterTreeFromDrafts(newDrafts);
+
+            filters.push([rootNode]);
+
+            Log.debug('[useRemoveAdvancedFilterAndRebuild] Filter removed and tree rebuilt', { filterId });
+          },
+        ],
+        'removeAdvancedFilterAndRebuild'
+      );
+    },
+    [view, sharedRoot, fields]
+  );
+}
+
+/**
+ * Update a filter's field/condition/content and rebuild the tree (works with nested trees).
+ */
+export function useUpdateAdvancedFilterAndRebuild() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+  const fields = useDatabaseFields();
+
+  return useCallback(
+    (params: UpdateFilterParams) => {
+      const { filterId, fieldId, condition, content } = params;
+
+      if (!view) return;
+
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            const filters = view.get(YjsDatabaseKey.filters);
+
+            if (!filters) return;
+
+            const currentDrafts = flattenFilterTree(filters, fields);
+            const idx = currentDrafts.findIndex((d) => d.id === filterId);
+
+            if (idx === -1) {
+              Log.warn('[useUpdateAdvancedFilterAndRebuild] Filter not found', { filterId });
+              return;
+            }
+
+            const draft = { ...currentDrafts[idx] };
+
+            if (fieldId) {
+              draft.fieldId = fieldId;
+
+              const field = fields.get(fieldId);
+
+              if (field) {
+                draft.fieldType = Number(field.get(YjsDatabaseKey.type));
+              }
+            }
+
+            if (condition !== undefined) draft.condition = condition;
+            if (content !== undefined) draft.content = content;
+
+            currentDrafts[idx] = draft;
+
+            filters.delete(0, filters.length);
+
+            const rootNode = buildFilterTreeFromDrafts(currentDrafts);
+
+            filters.push([rootNode]);
+
+            Log.debug('[useUpdateAdvancedFilterAndRebuild] Filter updated and tree rebuilt', { filterId });
+          },
+        ],
+        'updateAdvancedFilterAndRebuild'
+      );
+    },
+    [view, sharedRoot, fields]
+  );
 }
