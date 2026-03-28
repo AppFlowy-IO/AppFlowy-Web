@@ -23,7 +23,7 @@ import {
   parseSelectOptionTypeOptions,
   SelectOption,
 } from '@/application/database-yjs/fields';
-import { filterBy, parseFilter } from '@/application/database-yjs/filter';
+import { filterBy, flattenFilterTree, parseFilter } from '@/application/database-yjs/filter';
 import { groupByField } from '@/application/database-yjs/group';
 import { useBackgroundRowDocLoader, useRollupFieldObservers } from '@/application/database-yjs/hooks';
 import {
@@ -516,7 +516,9 @@ export function useRootFilterInfo() {
 }
 
 /**
- * Returns parsed filters from the root filter's children in advanced mode
+ * Returns parsed filters from the root filter's children in advanced mode.
+ * Recursively flattens nested AND/OR trees, extracting per-row operators.
+ * Mirrors the desktop's `collectFilters()` logic.
  */
 export function useAdvancedFiltersSelector() {
   const database = useDatabase();
@@ -529,111 +531,41 @@ export function useAdvancedFiltersSelector() {
     const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
     const filtersArray = view?.get(YjsDatabaseKey.filters);
 
-    // Always set up observer even if array is empty - filters may be added later
     if (!filtersArray) {
       setFilters([]);
       return;
     }
 
     const observerEvent = () => {
-      // Return early if no filters
       if (filtersArray.length === 0) {
         setFilters([]);
         return;
       }
 
-      const rootFilter = filtersArray.get(0);
+      const drafts = flattenFilterTree(filtersArray, fields);
 
-      if (!rootFilter) {
-        setFilters([]);
-        return;
-      }
+      const parsedFilters: Filter[] = drafts.map((draft) => {
+        const ft = draft.fieldType as FieldType;
+        const proxy = {
+          get: (key: string) => {
+            if (key === YjsDatabaseKey.field_id) return draft.fieldId;
+            if (key === YjsDatabaseKey.filter_type) return FilterType.Data;
+            if (key === YjsDatabaseKey.id) return draft.id;
+            if (key === YjsDatabaseKey.content) return draft.content;
+            if (key === YjsDatabaseKey.condition) return draft.condition;
 
-      // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
-      const isRootYjsMap = typeof (rootFilter as { get?: unknown }).get === 'function';
-      const getRootValue = (key: string): unknown => {
-        if (isRootYjsMap) {
-          return (rootFilter as { get: (key: string) => unknown }).get(key);
-        }
-
-        return (rootFilter as unknown as Record<string, unknown>)[key];
-      };
-
-      const filterType = Number(getRootValue(YjsDatabaseKey.filter_type));
-
-      // If not in advanced mode, return empty array
-      if (filterType !== FilterType.And && filterType !== FilterType.Or) {
-        setFilters([]);
-        return;
-      }
-
-      const children = getRootValue(YjsDatabaseKey.children);
-
-      if (!children) {
-        setFilters([]);
-        return;
-      }
-
-      const parsedFilters: Filter[] = [];
-
-      // Handle both Yjs Y.Array (with .get() method) and plain JavaScript array (from desktop sync)
-      const isYArray = typeof (children as { get?: unknown }).get === 'function';
-      const childrenArray = children as { length: number; get?: (index: number) => unknown } | unknown[];
-      const childCount = Array.isArray(childrenArray) ? childrenArray.length : (childrenArray as { length: number }).length;
-
-      for (let i = 0; i < childCount; i++) {
-        const child = isYArray
-          ? (childrenArray as { get: (index: number) => unknown }).get(i)
-          : (childrenArray as unknown[])[i];
-
-        if (!child) {
-          continue;
-        }
-
-        // Handle both Yjs Map (with .get() method) and plain object (from desktop sync)
-        const isYjsMap = typeof (child as { get?: unknown }).get === 'function';
-        const getValue = (key: string): unknown => {
-          if (isYjsMap) {
-            return (child as { get: (key: string) => unknown }).get(key);
-          }
-
-          return (child as Record<string, unknown>)[key];
+            return undefined;
+          },
         };
 
-        const fieldId = getValue(YjsDatabaseKey.field_id) as string;
+        const parsed = parseFilter(ft, proxy as Parameters<typeof parseFilter>[1]);
 
-        // Skip if no field_id (this is a nested And/Or, not a Data filter)
-        if (!fieldId) {
-          continue;
-        }
-
-        const field = fields.get(fieldId);
-
-        // Use field type from filter's "ty" key as fallback if field not found
-        // This handles sync delays where filters arrive before fields
-        let fieldType: FieldType;
-
-        if (field) {
-          fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
-        } else {
-          // Fallback: use the "ty" field from the filter data (set by desktop)
-          const tyValue = getValue('ty');
-
-          fieldType = tyValue !== undefined ? (Number(tyValue) as FieldType) : FieldType.RichText;
-        }
-
-        // For plain objects, we need to wrap them to work with parseFilter
-        // parseFilter expects objects with .get() method
-        const filterProxy = isYjsMap
-          ? (child as Parameters<typeof parseFilter>[1])
-          : {
-              get: (key: string) => (child as Record<string, unknown>)[key],
-            };
-
-        const parsed = parseFilter(fieldType, filterProxy as Parameters<typeof parseFilter>[1]);
-
-        parsedFilters.push(parsed);
-      }
+        return {
+          ...parsed,
+          operator: draft.operator,
+          fieldType: ft,
+        } as Filter;
+      });
 
       setFilters(parsedFilters);
     };

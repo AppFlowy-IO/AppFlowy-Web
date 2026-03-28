@@ -3893,4 +3893,8 @@ export {
   useUpdateAdvancedFilter,
   useExitAdvancedMode,
   useClearAllFilters,
+  useRebuildFilterTree,
+  useAddAdvancedFilterAndRebuild,
+  useRemoveAdvancedFilterAndRebuild,
+  useUpdateAdvancedFilterAndRebuild,
 } from './dispatch/sort-filter';

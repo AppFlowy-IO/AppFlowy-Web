@@ -49,6 +49,7 @@ import {
   createRelationRollupFixtureFromV069,
   createRowDoc,
   loadV069DatabaseFixture,
+  loadV070DatabaseFixture,
   resolveRelationText,
   resolveRollupValue,
   setRelationCellRowIds,
@@ -536,44 +537,181 @@ describe('filterBy integration for select and person fields', () => {
   });
 });
 
-describe('filterBy with v069 fixture', () => {
+describe('v069 comprehensive filter tests (desktop parity)', () => {
+  // Mirrors: database_filter_v069_comprehensive_test.dart
+  //
+  // v069 Database Structure (13 rows):
+  // | Row | Name      | Amount  | Delta  | Reg Complete | Priority | Tags                  |
+  // |-----|-----------|---------|--------|--------------|----------|-----------------------|
+  // | 1   | Olaf      | 55200   | 0.5    | unchecked    | VIP      | Education             |
+  // | 2   | Beatrice  | 828600  | -2.25  | checked      | High     | Health, Family        |
+  // | 3   | Lancelot  | 22500   | 11.6   | unchecked    | VIP      | Hobby                 |
+  // | 4   | Scotty    | 10900   | 0      | checked      | (empty)  | Hobby, Health         |
+  // | 5   | (empty)   | (empty) | (empty)| unchecked    | (empty)  | (empty)               |
+  // | 6   | Thomas    | 465800  | -0.03  | checked      | High     | Health, Hobby         |
+  // | 7   | Juan      | 93100   | 4.86   | checked      | Medium   | Work, Health, Edu     |
+  // | 8   | Alex      | 3560    | 1.96   | checked      | Medium   | Work, Education       |
+  // | 9   | Alexander | 2073    | 0.5    | unchecked    | High     | Hobby                 |
+  // | 10  | George    | (empty) | (empty)| checked      | Medium   | Work, Health          |
+  // | 11  | Joanna    | 16470   | -5.36  | unchecked    | Medium   | Family, Health        |
+  // | 12  | George    | 9500    | 1.7    | unchecked    | Medium   | Work, Edu, Health, Hobby |
+  // | 13  | Judy      | (empty) | (empty)| checked      | (empty)  | Work                  |
+
   const fixture = loadV069DatabaseFixture();
   const nameFieldId = fixture.fieldIdByName.get('Name') ?? '';
   const amountFieldId = fixture.fieldIdByName.get('Amount') ?? '';
+  const deltaFieldId = fixture.fieldIdByName.get('Delta') ?? '';
   const checkboxFieldId = fixture.fieldIdByName.get('Registration Complete') ?? '';
   const priorityFieldId = fixture.fieldIdByName.get('Priority') ?? '';
+  const tagsFieldId = fixture.fieldIdByName.get('Tags') ?? '';
 
-  function getRowName(rowId: string) {
-    const rowDoc = fixture.rowMetas[rowId];
-    const rowMap = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
-    return rowMap.get(YjsDatabaseKey.cells)?.get(nameFieldId)?.get(YjsDatabaseKey.data) as string;
+  // Priority option IDs
+  const VIP = 'cplL';
+  const HIGH = 'GSf_';
+  const MEDIUM = 'qnja';
+
+  function apply(configs: { fieldId: string; fieldType: FieldType; condition: number; content?: string }[]) {
+    return filterBy(fixture.rows, createFilters(configs), fixture.fields, fixture.rowMetas);
   }
 
-  it('filters checkbox values from csv dataset', () => {
-    const filters = createFilters([
+  function names(rows: Row[]) {
+    return rows.map((r) => {
+      const doc = fixture.rowMetas[r.id];
+      const row = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+      return (row.get(YjsDatabaseKey.cells)?.get(nameFieldId)?.get(YjsDatabaseKey.data) as string) ?? '';
+    });
+  }
+
+  // --- Checkbox ---
+
+  it('checkbox is checked => 7 rows', () => {
+    const result = apply([{ fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsChecked }]);
+    expect(result.length).toBe(7);
+    expect(names(result)).toEqual(['Beatrice', 'Scotty', 'Thomas', 'Juan', 'Alex', 'George', 'Judy']);
+  });
+
+  it('checkbox is unchecked => 6 rows', () => {
+    const result = apply([{ fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsUnChecked }]);
+    expect(result.length).toBe(6);
+  });
+
+  // --- Number (Amount) - isEmpty/isNotEmpty ---
+
+  it('Amount is empty => 3 rows', () => {
+    const result = apply([{ fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsEmpty }]);
+    expect(result.length).toBe(3);
+  });
+
+  it('Amount is not empty => 10 rows', () => {
+    const result = apply([{ fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsNotEmpty }]);
+    expect(result.length).toBe(10);
+  });
+
+  // --- Number (Delta) - value comparisons ---
+
+  it('Delta equals 0 => 1 row (Scotty)', () => {
+    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.Equal, content: '0' }]);
+    expect(result.length).toBe(1);
+    expect(names(result)).toEqual(['Scotty']);
+  });
+
+  it('Delta less than 0 => 3 rows', () => {
+    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.LessThan, content: '0' }]);
+    expect(result.length).toBe(3);
+    expect(names(result)).toEqual(['Beatrice', 'Thomas', 'Joanna']);
+  });
+
+  it('Delta greater than 0 => 6 rows', () => {
+    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.GreaterThan, content: '0' }]);
+    expect(result.length).toBe(6);
+  });
+
+  it('Delta less than or equal to 0 => 4 rows', () => {
+    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.LessThanOrEqualTo, content: '0' }]);
+    expect(result.length).toBe(4);
+  });
+
+  it('Delta greater than or equal to 0 => 7 rows', () => {
+    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.GreaterThanOrEqualTo, content: '0' }]);
+    expect(result.length).toBe(7);
+  });
+
+  it('Delta not equal to 0 => 9 rows', () => {
+    const result = apply([{ fieldId: deltaFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NotEqual, content: '0' }]);
+    expect(result.length).toBe(9);
+  });
+
+  // --- Text (Name) ---
+
+  it('Name contains "George" => 2 rows', () => {
+    const result = apply([{ fieldId: nameFieldId, fieldType: FieldType.RichText, condition: TextFilterCondition.TextContains, content: 'George' }]);
+    expect(result.length).toBe(2);
+  });
+
+  // --- SingleSelect (Priority) ---
+
+  it('Priority is VIP => 2 rows', () => {
+    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: VIP }]);
+    expect(result.length).toBe(2);
+    expect(names(result)).toEqual(['Olaf', 'Lancelot']);
+  });
+
+  it('Priority is High => 3 rows', () => {
+    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: HIGH }]);
+    expect(result.length).toBe(3);
+    expect(names(result)).toEqual(['Beatrice', 'Thomas', 'Alexander']);
+  });
+
+  it('Priority is Medium => 5 rows', () => {
+    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: MEDIUM }]);
+    expect(result.length).toBe(5);
+  });
+
+  it('Priority is empty => 3 rows', () => {
+    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIsEmpty }]);
+    expect(result.length).toBe(3);
+  });
+
+  it('Priority is not empty => 10 rows', () => {
+    const result = apply([{ fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIsNotEmpty }]);
+    expect(result.length).toBe(10);
+  });
+
+  // --- MultiSelect (Tags) ---
+
+  it('Tags contains (no selection) => 13 rows (all)', () => {
+    const result = apply([{ fieldId: tagsFieldId, fieldType: FieldType.MultiSelect, condition: SelectOptionFilterCondition.OptionContains, content: '' }]);
+    expect(result.length).toBe(13);
+  });
+
+  // --- Combined filters (AND logic) ---
+
+  it('checkbox checked AND Amount not empty => 5 rows', () => {
+    const result = apply([
       { fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsChecked },
+      { fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsNotEmpty },
     ]);
-
-    const result = filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((row) => getRowName(row.id));
-    expect(result).toEqual(['Beatrice', 'Scotty', 'Thomas', 'Juan', 'Alex', 'George', 'Judy']);
+    expect(result.length).toBe(5);
+    expect(names(result)).toEqual(['Beatrice', 'Scotty', 'Thomas', 'Juan', 'Alex']);
   });
 
-  it('filters single select options from csv dataset', () => {
-    const filters = createFilters([
-      { fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: 'cplL' },
+  it('checkbox checked AND Priority High => 2 rows', () => {
+    const result = apply([
+      { fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsChecked },
+      { fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: HIGH },
     ]);
-
-    const result = filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((row) => getRowName(row.id));
-    expect(result).toEqual(['Olaf', 'Lancelot']);
+    expect(result.length).toBe(2);
+    expect(names(result)).toEqual(['Beatrice', 'Thomas']);
   });
 
-  it('filters numbers greater than from csv dataset', () => {
-    const filters = createFilters([
-      { fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.GreaterThan, content: '100000' },
+  it('three filters: checked AND Amount not empty AND Priority Medium => 2 rows', () => {
+    const result = apply([
+      { fieldId: checkboxFieldId, fieldType: FieldType.Checkbox, condition: CheckboxFilterCondition.IsChecked },
+      { fieldId: amountFieldId, fieldType: FieldType.Number, condition: NumberFilterCondition.NumberIsNotEmpty },
+      { fieldId: priorityFieldId, fieldType: FieldType.SingleSelect, condition: SelectOptionFilterCondition.OptionIs, content: MEDIUM },
     ]);
-
-    const result = filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((row) => getRowName(row.id));
-    expect(result).toEqual(['Beatrice', 'Thomas']);
+    expect(result.length).toBe(2);
+    expect(names(result)).toEqual(['Juan', 'Alex']);
   });
 });
 
@@ -1843,5 +1981,1009 @@ describe('desktop sync filter operations (delete/update with plain objects)', ()
       return (f as Record<string, unknown>)[YjsDatabaseKey.id];
     });
     expect(remaining).toEqual(['filter-to-keep', 'another-to-keep']);
+  });
+});
+
+// ============================================================
+// v070 advanced filter tests (matches desktop Rust tests)
+// ============================================================
+
+describe('v070 advanced filter tests', () => {
+  let fixture: ReturnType<typeof loadV070DatabaseFixture>;
+
+  beforeEach(() => {
+    fixture = loadV070DatabaseFixture();
+  });
+
+  // Helper to build Yjs filter structures
+  function buildHarness() {
+    const doc = new Y.Doc();
+    let counter = 0;
+
+    const makeDataFilter = (
+      fieldName: string,
+      fieldType: FieldType,
+      condition: number,
+      content: string = ''
+    ) => {
+      const fieldId = fixture.fieldIdByName.get(fieldName);
+      if (!fieldId) throw new Error(`Field "${fieldName}" not found`);
+      const f = new Y.Map() as YDatabaseFilter;
+      f.set(YjsDatabaseKey.id, `f-${counter}`);
+      f.set(YjsDatabaseKey.field_id, fieldId);
+      f.set(YjsDatabaseKey.type, fieldType);
+      f.set(YjsDatabaseKey.filter_type, FilterType.Data);
+      f.set(YjsDatabaseKey.condition, condition);
+      f.set(YjsDatabaseKey.content, content);
+      counter += 1;
+      return f;
+    };
+
+    const makeGroupFilter = (type: FilterType.And | FilterType.Or, children: YDatabaseFilter[]) => {
+      const f = new Y.Map() as YDatabaseFilter;
+      f.set(YjsDatabaseKey.id, `f-${counter}`);
+      f.set(YjsDatabaseKey.filter_type, type);
+      const childArray = new Y.Array() as YDatabaseFilters;
+      childArray.push(children);
+      f.set(YjsDatabaseKey.children, childArray);
+      counter += 1;
+      return f;
+    };
+
+    const makeFilters = (nodes: YDatabaseFilter[]) => {
+      const filters = new Y.Array() as YDatabaseFilters;
+      doc.getMap('root').set('filters', filters);
+      filters.push(nodes);
+      return filters;
+    };
+
+    return { makeDataFilter, makeGroupFilter, makeFilters };
+  }
+
+  function getOptionId(fieldName: string, optionName: string): string {
+    const fieldId = fixture.fieldIdByName.get(fieldName);
+    if (!fieldId) throw new Error(`Field "${fieldName}" not found`);
+    const field = fixture.fields.get(fieldId);
+    const typeOption = field?.get(YjsDatabaseKey.type_option);
+    const fieldType = Number(field?.get(YjsDatabaseKey.type));
+    const option = typeOption?.get(String(fieldType));
+    const content = option?.get(YjsDatabaseKey.content);
+    if (typeof content !== 'string') throw new Error(`No type option content for "${fieldName}"`);
+    const parsed = JSON.parse(content) as { options: Array<{ id: string; name: string }> };
+    const opt = parsed.options.find((o) => o.name === optionName);
+    if (!opt) throw new Error(`Option "${optionName}" not found in "${fieldName}"`);
+    return opt.id;
+  }
+
+  function applyFilters(filters: YDatabaseFilters) {
+    return filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((r) => r.id);
+  }
+
+  // Resolve Name|Website composite key for a row
+  function getRowKey(rowId: string): string {
+    const rowDoc = fixture.rowMetas[rowId];
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cells = row.get(YjsDatabaseKey.cells);
+    const nameFieldId = fixture.fieldIdByName.get('Name') ?? '';
+    const webFieldId = fixture.fieldIdByName.get('Website') ?? '';
+    const name = cells.get(nameFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    const web = cells.get(webFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    return `${name}|${web}`;
+  }
+
+  function assertVisibleRows(result: string[], expectedKeys: string[], message: string) {
+    const actualKeys = result.map((id) => getRowKey(id)).sort();
+    const expected = [...expectedKeys].sort();
+    expect(actualKeys).toEqual(expected);
+  }
+
+  // Case 1: AND(Name Contains "Ali", Status Is Active) => 1
+  it('case 1: AND(Name Contains Ali, Status Is Active)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const activeId = getOptionId('Status', 'Active');
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, activeId),
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, ['Alice|https://alice.com'], 'Case 1');
+  });
+
+  // Case 1b: OR(Name Contains "Ali", Status Is Inactive) => 5
+  it('case 1b: OR(Name Contains Ali, Status Is Inactive)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const inactiveId = getOptionId('Status', 'Inactive');
+
+    const orGroup = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, inactiveId),
+    ]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Alice Wang|https://awang.io',
+      'Frank|https://frank.net',
+      'Alice|https://alice2.com',
+      'Jane|',
+    ], 'Case 1b');
+  });
+
+  // Case 2: OR(Name Contains "Ali", AND(Notes Is "Team lead", Status Is Pending)) => 3
+  it('case 2: OR(Name Contains Ali, AND(Notes Is Team lead, Status Is Pending))', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const pendingId = getOptionId('Status', 'Pending');
+
+    const andChild = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Notes', FieldType.RichText, TextFilterCondition.TextIs, 'Team lead'),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, pendingId),
+    ]);
+
+    const orGroup = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      andChild,
+    ]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Alice Wang|https://awang.io',
+      'Alice|https://alice2.com',
+    ], 'Case 2');
+  });
+
+  // Case 3: AND(Age > 30, Active IsChecked, Status Is Active) => 3
+  it('case 3: AND(Age > 30, Active IsChecked, Status Is Active)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const activeId = getOptionId('Status', 'Active');
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Age', FieldType.Number, NumberFilterCondition.GreaterThan, '30'),
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, activeId),
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, [
+      'Dave|https://dave.org',
+      '|https://unknown.com',
+      'Karl|https://karl.de',
+    ], 'Case 3');
+  });
+
+  // Case 4: OR(Name Is "Bob", Age Equal 50, Status Is Inactive) => 4
+  it('case 4: OR(Name Is Bob, Age Equal 50, Status Is Inactive)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const inactiveId = getOptionId('Status', 'Inactive');
+
+    const orGroup = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextIs, 'Bob'),
+      makeDataFilter('Age', FieldType.Number, NumberFilterCondition.Equal, '50'),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, inactiveId),
+    ]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    assertVisibleRows(result, [
+      'Bob|https://bob.dev',
+      'Alice Wang|https://awang.io',
+      'Frank|https://frank.net',
+      'Jane|',
+    ], 'Case 4');
+  });
+
+  // Case 5: OR(Active IsChecked, AND(Age > 25, Status Is Pending)) => 10
+  it('case 5: OR(Active IsChecked, AND(Age > 25, Status Is Pending))', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const pendingId = getOptionId('Status', 'Pending');
+
+    const andChild = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Age', FieldType.Number, NumberFilterCondition.GreaterThan, '25'),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, pendingId),
+    ]);
+
+    const orGroup = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked),
+      andChild,
+    ]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    expect(result.length).toBe(10);
+  });
+
+  // Case 6: AND(OR(Name Contains "Ali", Name Contains "Eve"), Status IsNotEmpty) => 4
+  it('case 6: AND(OR(Name Contains Ali, Name Contains Eve), Status IsNotEmpty)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+
+    const orChild = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Eve'),
+    ]);
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      orChild,
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIsNotEmpty),
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Alice Wang|https://awang.io',
+      'Eve|',
+      'Alice|https://alice2.com',
+    ], 'Case 6');
+  });
+
+  // Case 7: AND(Name EndsWith "e", Categories Contains Work) => 3
+  it('case 7: AND(Name EndsWith e, Categories Contains Work)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const workId = getOptionId('Categories', 'Work');
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextEndsWith, 'e'),
+      makeDataFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionContains, workId),
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Dave|https://dave.org',
+      'Alice|https://alice2.com',
+    ], 'Case 7');
+  });
+
+  // Case 8: OR(Age < 30, Active IsUnChecked) => 10
+  it('case 8: OR(Age < 30, Active IsUnChecked)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+
+    const orGroup = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Age', FieldType.Number, NumberFilterCondition.LessThan, '30'),
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsUnChecked),
+    ]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Charlie|',
+      '|',
+      'Eve|',
+      'Grace|https://grace.ai',
+      'Hank|',
+      'Alice|https://alice2.com',
+      'Ivan|https://ivan.ru',
+      'Jane|',
+      'Lily|',
+    ], 'Case 8');
+  });
+
+  // Case 10: AND(Tasks IsComplete, Active IsChecked, Status Is Active) => 3
+  it('case 10: AND(Tasks IsComplete, Active IsChecked, Status Is Active)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const activeId = getOptionId('Status', 'Active');
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Tasks', FieldType.Checklist, ChecklistFilterCondition.IsComplete),
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, activeId),
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      '|https://unknown.com',
+      'Karl|https://karl.de',
+    ], 'Case 10');
+  });
+
+  // Case 12: AND(Categories Contains Health, Tasks IsIncomplete) => 2
+  it('case 12: AND(Categories Contains Health, Tasks IsIncomplete)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const healthId = getOptionId('Categories', 'Health');
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionContains, healthId),
+      makeDataFilter('Tasks', FieldType.Checklist, ChecklistFilterCondition.IsIncomplete),
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, [
+      'Charlie|',
+      'Ivan|https://ivan.ru',
+    ], 'Case 12');
+  });
+
+  // Case 15: OR(AND(Name Contains "Ali", Status Active), AND(Score < 0, Active IsChecked)) => 2
+  it('case 15: OR(AND(Name Contains Ali, Status Active), AND(Score < 0, Active IsChecked))', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const activeId = getOptionId('Status', 'Active');
+
+    const and1 = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, activeId),
+    ]);
+
+    const and2 = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Score', FieldType.Number, NumberFilterCondition.LessThan, '0'),
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked),
+    ]);
+
+    const orGroup = makeGroupFilter(FilterType.Or, [and1, and2]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Alice Wang|https://awang.io',
+    ], 'Case 15');
+  });
+
+  // Case 17: AND(Name Contains "Ali", Website Contains "alice") => 2
+  it('case 17: AND(Name Contains Ali, Website Contains alice)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      makeDataFilter('Website', FieldType.URL, TextFilterCondition.TextContains, 'alice'),
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Alice|https://alice2.com',
+    ], 'Case 17');
+  });
+
+  // Case 18: OR(Name IsEmpty, Age NumberIsEmpty, Status OptionIsEmpty) => 3
+  it('case 18: OR(Name IsEmpty, Age NumberIsEmpty, Status OptionIsEmpty)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+
+    const orGroup = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextIsEmpty),
+      makeDataFilter('Age', FieldType.Number, NumberFilterCondition.NumberIsEmpty),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIsEmpty),
+    ]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    assertVisibleRows(result, [
+      '|',
+      '|https://unknown.com',
+      'Hank|',
+    ], 'Case 18');
+  });
+
+  // Case 19: Left-nested And(Or(Active, Name "Ali"), Status Pending) => 1
+  it('case 19: left-nested And(Or(Active, Name Ali), Status Pending)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const pendingId = getOptionId('Status', 'Pending');
+
+    const orChild = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked),
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+    ]);
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      orChild,
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, pendingId),
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, ['Alice|https://alice2.com'], 'Case 19');
+  });
+
+  // Case 20: Right-nested Or(Active, And(Name "Ali", Status Pending)) => 9
+  it('case 20: right-nested Or(Active, And(Name Ali, Status Pending))', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+    const pendingId = getOptionId('Status', 'Pending');
+
+    const andChild = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      makeDataFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, pendingId),
+    ]);
+
+    const orGroup = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked),
+      andChild,
+    ]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    expect(result.length).toBe(9);
+  });
+
+  // Case 21: Left-nested Or(And(Name "Ali", Active), Age IsEmpty) => 5
+  it('case 21: left-nested Or(And(Name Ali, Active), Age IsEmpty)', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+
+    const andChild = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked),
+    ]);
+
+    const orGroup = makeGroupFilter(FilterType.Or, [
+      andChild,
+      makeDataFilter('Age', FieldType.Number, NumberFilterCondition.NumberIsEmpty),
+    ]);
+
+    const result = applyFilters(makeFilters([orGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Alice Wang|https://awang.io',
+      '|',
+      'Hank|',
+      'Alice|https://alice2.com',
+    ], 'Case 21');
+  });
+
+  // Case 22: Right-nested And(Name "Ali", Or(Active, Age IsEmpty)) => 3
+  it('case 22: right-nested And(Name Ali, Or(Active, Age IsEmpty))', () => {
+    const { makeDataFilter, makeGroupFilter, makeFilters } = buildHarness();
+
+    const orChild = makeGroupFilter(FilterType.Or, [
+      makeDataFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked),
+      makeDataFilter('Age', FieldType.Number, NumberFilterCondition.NumberIsEmpty),
+    ]);
+
+    const andGroup = makeGroupFilter(FilterType.And, [
+      makeDataFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'Ali'),
+      orChild,
+    ]);
+
+    const result = applyFilters(makeFilters([andGroup]));
+    assertVisibleRows(result, [
+      'Alice|https://alice.com',
+      'Alice Wang|https://awang.io',
+      'Alice|https://alice2.com',
+    ], 'Case 22');
+  });
+});
+
+// ============================================================
+// Bug fix regression tests
+// ============================================================
+
+describe('selectOptionFilter OptionIs vs OptionContains semantics', () => {
+  const field = createField('sel', FieldType.MultiSelect, {
+    options: [
+      { id: 'A', name: 'A', color: 0 },
+      { id: 'B', name: 'B', color: 0 },
+      { id: 'C', name: 'C', color: 0 },
+    ],
+    disable_color: false,
+  });
+
+  it('OptionIs: all cell options must be within filter set', () => {
+    // cell=[A], filter=[A,B] => true (A is within {A,B})
+    expect(selectOptionFilterCheck(field, 'A', 'A,B', SelectOptionFilterCondition.OptionIs)).toBe(true);
+    // cell=[A,B], filter=[A,B,C] => true (all within)
+    expect(selectOptionFilterCheck(field, 'A,B', 'A,B,C', SelectOptionFilterCondition.OptionIs)).toBe(true);
+    // cell=[A,C], filter=[A,B] => false (C not in {A,B})
+    expect(selectOptionFilterCheck(field, 'A,C', 'A,B', SelectOptionFilterCondition.OptionIs)).toBe(false);
+    // cell=empty, filter=[A] => false
+    expect(selectOptionFilterCheck(field, '', 'A', SelectOptionFilterCondition.OptionIs)).toBe(false);
+  });
+
+  it('OptionIsNot: negation of OptionIs', () => {
+    // cell=[A,C], filter=[A,B] => true (not all within)
+    expect(selectOptionFilterCheck(field, 'A,C', 'A,B', SelectOptionFilterCondition.OptionIsNot)).toBe(true);
+    // cell=[A], filter=[A,B] => false (all within, so IsNot = false)
+    expect(selectOptionFilterCheck(field, 'A', 'A,B', SelectOptionFilterCondition.OptionIsNot)).toBe(false);
+    // cell=empty, filter=[A] => true
+    expect(selectOptionFilterCheck(field, '', 'A', SelectOptionFilterCondition.OptionIsNot)).toBe(true);
+  });
+
+  it('OptionContains: any filter option in cell', () => {
+    // cell=[A,C], filter=[A,B] => true (A is in cell)
+    expect(selectOptionFilterCheck(field, 'A,C', 'A,B', SelectOptionFilterCondition.OptionContains)).toBe(true);
+    // cell=[C], filter=[A,B] => false (neither A nor B in cell)
+    expect(selectOptionFilterCheck(field, 'C', 'A,B', SelectOptionFilterCondition.OptionContains)).toBe(false);
+  });
+
+  it('OptionDoesNotContain: none of filter options in cell', () => {
+    // cell=[C], filter=[A,B] => true (neither in cell)
+    expect(selectOptionFilterCheck(field, 'C', 'A,B', SelectOptionFilterCondition.OptionDoesNotContain)).toBe(true);
+    // cell=[A,C], filter=[A,B] => false (A is in cell)
+    expect(selectOptionFilterCheck(field, 'A,C', 'A,B', SelectOptionFilterCondition.OptionDoesNotContain)).toBe(false);
+  });
+});
+
+describe('personFilter bug fixes', () => {
+  it('PersonIsEmpty checks only cell data', () => {
+    // Non-empty filter content should not matter; only cell data matters
+    expect(personFilterCheck('[]', JSON.stringify(['u1']), PersonFilterCondition.PersonIsEmpty)).toBe(true);
+    expect(personFilterCheck(JSON.stringify(['u1']), '[]', PersonFilterCondition.PersonIsEmpty)).toBe(false);
+  });
+
+  it('PersonIsNotEmpty checks only cell data', () => {
+    expect(personFilterCheck(JSON.stringify(['u1']), '[]', PersonFilterCondition.PersonIsNotEmpty)).toBe(true);
+    expect(personFilterCheck('[]', JSON.stringify(['u1']), PersonFilterCondition.PersonIsNotEmpty)).toBe(false);
+  });
+
+  it('PersonContains uses ALL semantics', () => {
+    // ALL filter IDs must be present in cell
+    expect(personFilterCheck(JSON.stringify(['u1', 'u2']), JSON.stringify(['u1', 'u2']), PersonFilterCondition.PersonContains)).toBe(true);
+    // u2 not in cell
+    expect(personFilterCheck(JSON.stringify(['u1']), JSON.stringify(['u1', 'u2']), PersonFilterCondition.PersonContains)).toBe(false);
+    // all filter IDs present (cell has extra)
+    expect(personFilterCheck(JSON.stringify(['u1', 'u2', 'u3']), JSON.stringify(['u1', 'u2']), PersonFilterCondition.PersonContains)).toBe(true);
+  });
+});
+
+// ============================================================
+// Tree utility tests (groupByConsecutiveOperator)
+// ============================================================
+
+import { groupByConsecutiveOperator, FilterDraft } from '@/application/database-yjs/filter';
+
+describe('groupByConsecutiveOperator', () => {
+  function draft(id: string, op: FilterType.And | FilterType.Or | null): FilterDraft {
+    return { id, fieldId: 'f', fieldType: 0, condition: 0, content: '', operator: op };
+  }
+
+  it('groups all-AND drafts into single group', () => {
+    const groups = groupByConsecutiveOperator([
+      draft('A', null), draft('B', FilterType.And), draft('C', FilterType.And),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].operator).toBe(FilterType.And);
+    expect(groups[0].drafts.map(d => d.id)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('groups all-OR drafts into single group', () => {
+    const groups = groupByConsecutiveOperator([
+      draft('A', null), draft('B', FilterType.Or), draft('C', FilterType.Or),
+    ]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].operator).toBe(FilterType.Or);
+    expect(groups[0].drafts.map(d => d.id)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('splits mixed operators into consecutive groups', () => {
+    // [A(null), B(Or), C(And)] → [{Or: [A,B]}, {And: [C]}]
+    const groups = groupByConsecutiveOperator([
+      draft('A', null), draft('B', FilterType.Or), draft('C', FilterType.And),
+    ]);
+    expect(groups).toHaveLength(2);
+    expect(groups[0].operator).toBe(FilterType.Or);
+    expect(groups[0].drafts.map(d => d.id)).toEqual(['A', 'B']);
+    expect(groups[1].operator).toBe(FilterType.And);
+    expect(groups[1].drafts.map(d => d.id)).toEqual(['C']);
+  });
+
+  it('handles complex mixed operators', () => {
+    // [A(null), B(Or), C(Or), D(And), E(And), F(Or)]
+    const groups = groupByConsecutiveOperator([
+      draft('A', null), draft('B', FilterType.Or), draft('C', FilterType.Or),
+      draft('D', FilterType.And), draft('E', FilterType.And), draft('F', FilterType.Or),
+    ]);
+    expect(groups).toHaveLength(3);
+    expect(groups[0].drafts.map(d => d.id)).toEqual(['A', 'B', 'C']);
+    expect(groups[0].operator).toBe(FilterType.Or);
+    expect(groups[1].drafts.map(d => d.id)).toEqual(['D', 'E']);
+    expect(groups[1].operator).toBe(FilterType.And);
+    expect(groups[2].drafts.map(d => d.id)).toEqual(['F']);
+    expect(groups[2].operator).toBe(FilterType.Or);
+  });
+
+  it('handles single draft', () => {
+    const groups = groupByConsecutiveOperator([draft('A', null)]);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].drafts.map(d => d.id)).toEqual(['A']);
+  });
+});
+
+// ============================================================
+// v070 single-field filter tests (desktop parity)
+// ============================================================
+
+describe('v070 text/url filter tests', () => {
+  let fixture: ReturnType<typeof loadV070DatabaseFixture>;
+
+  beforeEach(() => {
+    fixture = loadV070DatabaseFixture();
+  });
+
+  function applySingleFilter(
+    fieldName: string,
+    fieldType: FieldType,
+    condition: number,
+    content: string = ''
+  ) {
+    const fieldId = fixture.fieldIdByName.get(fieldName)!;
+    const filters = createFilters([{ fieldId, fieldType, condition, content }]);
+    return filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((r) => r.id);
+  }
+
+  function getRowKey(rowId: string): string {
+    const rowDoc = fixture.rowMetas[rowId];
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cells = row.get(YjsDatabaseKey.cells);
+    const nameFieldId = fixture.fieldIdByName.get('Name')!;
+    const webFieldId = fixture.fieldIdByName.get('Website')!;
+    const name = cells.get(nameFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    const web = cells.get(webFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    return `${name}|${web}`;
+  }
+
+  function assertKeys(result: string[], expectedKeys: string[]) {
+    const actual = result.map((id) => getRowKey(id)).sort();
+    expect(actual).toEqual([...expectedKeys].sort());
+  }
+
+  // Name (RichText) field tests
+  it('Name TextIs "Alice" => 2 rows', () => {
+    const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextIs, 'Alice');
+    assertKeys(result, ['Alice|https://alice.com', 'Alice|https://alice2.com']);
+  });
+
+  it('Name TextIsNot "Alice" => 14 rows', () => {
+    const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextIsNot, 'Alice');
+    expect(result.length).toBe(14);
+  });
+
+  it('Name TextContains "ali" => 3 rows', () => {
+    const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextContains, 'ali');
+    assertKeys(result, ['Alice|https://alice.com', 'Alice Wang|https://awang.io', 'Alice|https://alice2.com']);
+  });
+
+  it('Name TextDoesNotContain "ali" => 13 rows', () => {
+    const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextDoesNotContain, 'ali');
+    expect(result.length).toBe(13);
+  });
+
+  it('Name TextStartsWith "A" => 3 rows', () => {
+    const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextStartsWith, 'A');
+    assertKeys(result, ['Alice|https://alice.com', 'Alice Wang|https://awang.io', 'Alice|https://alice2.com']);
+  });
+
+  it('Name TextEndsWith "e" => 7 rows', () => {
+    const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextEndsWith, 'e');
+    assertKeys(result, [
+      'Alice|https://alice.com', 'Charlie|', 'Dave|https://dave.org',
+      'Eve|', 'Grace|https://grace.ai', 'Alice|https://alice2.com', 'Jane|',
+    ]);
+  });
+
+  it('Name TextIsEmpty => 2 rows', () => {
+    const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextIsEmpty);
+    assertKeys(result, ['|', '|https://unknown.com']);
+  });
+
+  it('Name TextIsNotEmpty => 14 rows', () => {
+    const result = applySingleFilter('Name', FieldType.RichText, TextFilterCondition.TextIsNotEmpty);
+    expect(result.length).toBe(14);
+  });
+
+  // Website (URL) field tests
+  it('Website TextIsEmpty => 6 rows', () => {
+    const result = applySingleFilter('Website', FieldType.URL, TextFilterCondition.TextIsEmpty);
+    assertKeys(result, ['Charlie|', '|', 'Eve|', 'Hank|', 'Jane|', 'Lily|']);
+  });
+
+  it('Website TextIsNotEmpty => 10 rows', () => {
+    const result = applySingleFilter('Website', FieldType.URL, TextFilterCondition.TextIsNotEmpty);
+    expect(result.length).toBe(10);
+  });
+
+  it('Website TextContains "alice" => 2 rows', () => {
+    const result = applySingleFilter('Website', FieldType.URL, TextFilterCondition.TextContains, 'alice');
+    assertKeys(result, ['Alice|https://alice.com', 'Alice|https://alice2.com']);
+  });
+
+  // Notes (RichText) field tests
+  it('Notes TextIs "Team lead" => 2 rows', () => {
+    const result = applySingleFilter('Notes', FieldType.RichText, TextFilterCondition.TextIs, 'Team lead');
+    assertKeys(result, ['Alice|https://alice.com', 'Alice|https://alice2.com']);
+  });
+
+  it('Notes TextIsEmpty => 2 rows', () => {
+    const result = applySingleFilter('Notes', FieldType.RichText, TextFilterCondition.TextIsEmpty);
+    assertKeys(result, ['|', '|https://unknown.com']);
+  });
+
+  it('Notes TextContains "er" => 5 rows', () => {
+    const result = applySingleFilter('Notes', FieldType.RichText, TextFilterCondition.TextContains, 'er');
+    assertKeys(result, [
+      'Bob|https://bob.dev', 'Dave|https://dave.org', 'Eve|', 'Jane|', 'Lily|',
+    ]);
+  });
+});
+
+describe('v070 number filter tests', () => {
+  let fixture: ReturnType<typeof loadV070DatabaseFixture>;
+
+  beforeEach(() => {
+    fixture = loadV070DatabaseFixture();
+  });
+
+  function applySingleFilter(fieldName: string, condition: number, content: string = '') {
+    const fieldId = fixture.fieldIdByName.get(fieldName)!;
+    const filters = createFilters([{ fieldId, fieldType: FieldType.Number, condition, content }]);
+    return filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((r) => r.id);
+  }
+
+  function getRowKey(rowId: string): string {
+    const rowDoc = fixture.rowMetas[rowId];
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cells = row.get(YjsDatabaseKey.cells);
+    const nameFieldId = fixture.fieldIdByName.get('Name')!;
+    const webFieldId = fixture.fieldIdByName.get('Website')!;
+    const name = cells.get(nameFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    const web = cells.get(webFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    return `${name}|${web}`;
+  }
+
+  function assertKeys(result: string[], expectedKeys: string[]) {
+    const actual = result.map((id) => getRowKey(id)).sort();
+    expect(actual).toEqual([...expectedKeys].sort());
+  }
+
+  // Age field tests
+  it('Age Equal 25 => 3 rows', () => {
+    const result = applySingleFilter('Age', NumberFilterCondition.Equal, '25');
+    assertKeys(result, ['Alice|https://alice.com', 'Charlie|', 'Alice|https://alice2.com']);
+  });
+
+  it('Age NotEqual 25 => 11 rows', () => {
+    const result = applySingleFilter('Age', NumberFilterCondition.NotEqual, '25');
+    expect(result.length).toBe(11);
+  });
+
+  it('Age GreaterThan 35 => 4 rows', () => {
+    const result = applySingleFilter('Age', NumberFilterCondition.GreaterThan, '35');
+    assertKeys(result, [
+      'Alice Wang|https://awang.io', 'Frank|https://frank.net',
+      '|https://unknown.com', 'Karl|https://karl.de',
+    ]);
+  });
+
+  it('Age LessThan 25 => 2 rows', () => {
+    const result = applySingleFilter('Age', NumberFilterCondition.LessThan, '25');
+    assertKeys(result, ['Grace|https://grace.ai', 'Lily|']);
+  });
+
+  it('Age GreaterThanOrEqualTo 35 => 5 rows', () => {
+    const result = applySingleFilter('Age', NumberFilterCondition.GreaterThanOrEqualTo, '35');
+    assertKeys(result, [
+      'Alice Wang|https://awang.io', 'Dave|https://dave.org',
+      'Frank|https://frank.net', '|https://unknown.com', 'Karl|https://karl.de',
+    ]);
+  });
+
+  it('Age LessThanOrEqualTo 25 => 5 rows', () => {
+    const result = applySingleFilter('Age', NumberFilterCondition.LessThanOrEqualTo, '25');
+    assertKeys(result, [
+      'Alice|https://alice.com', 'Charlie|', 'Grace|https://grace.ai',
+      'Alice|https://alice2.com', 'Lily|',
+    ]);
+  });
+
+  it('Age NumberIsEmpty => 2 rows', () => {
+    const result = applySingleFilter('Age', NumberFilterCondition.NumberIsEmpty);
+    assertKeys(result, ['|', 'Hank|']);
+  });
+
+  it('Age NumberIsNotEmpty => 14 rows', () => {
+    const result = applySingleFilter('Age', NumberFilterCondition.NumberIsNotEmpty);
+    expect(result.length).toBe(14);
+  });
+
+  // Score field tests
+  it('Score Equal 0 => 2 rows', () => {
+    const result = applySingleFilter('Score', NumberFilterCondition.Equal, '0');
+    assertKeys(result, ['Charlie|', 'Jane|']);
+  });
+
+  it('Score LessThan 0 => 2 rows', () => {
+    const result = applySingleFilter('Score', NumberFilterCondition.LessThan, '0');
+    assertKeys(result, ['Alice Wang|https://awang.io', 'Hank|']);
+  });
+
+  it('Score GreaterThan 0 => 10 rows', () => {
+    const result = applySingleFilter('Score', NumberFilterCondition.GreaterThan, '0');
+    expect(result.length).toBe(10);
+  });
+
+  it('Score NumberIsEmpty => 2 rows', () => {
+    const result = applySingleFilter('Score', NumberFilterCondition.NumberIsEmpty);
+    assertKeys(result, ['|', 'Grace|https://grace.ai']);
+  });
+});
+
+describe('v070 select filter tests', () => {
+  let fixture: ReturnType<typeof loadV070DatabaseFixture>;
+
+  beforeEach(() => {
+    fixture = loadV070DatabaseFixture();
+  });
+
+  function getOptionId(fieldName: string, optionName: string): string {
+    const fieldId = fixture.fieldIdByName.get(fieldName)!;
+    const field = fixture.fields.get(fieldId)!;
+    const typeOption = field.get(YjsDatabaseKey.type_option);
+    const fieldType = Number(field.get(YjsDatabaseKey.type));
+    const option = typeOption?.get(String(fieldType));
+    const content = option?.get(YjsDatabaseKey.content) as string;
+    const parsed = JSON.parse(content) as { options: Array<{ id: string; name: string }> };
+    return parsed.options.find((o) => o.name === optionName)!.id;
+  }
+
+  function applySingleFilter(fieldName: string, fieldType: FieldType, condition: number, content: string = '') {
+    const fieldId = fixture.fieldIdByName.get(fieldName)!;
+    const filters = createFilters([{ fieldId, fieldType, condition, content }]);
+    return filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((r) => r.id);
+  }
+
+  function getRowKey(rowId: string): string {
+    const rowDoc = fixture.rowMetas[rowId];
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cells = row.get(YjsDatabaseKey.cells);
+    const nameFieldId = fixture.fieldIdByName.get('Name')!;
+    const webFieldId = fixture.fieldIdByName.get('Website')!;
+    const name = cells.get(nameFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    const web = cells.get(webFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    return `${name}|${web}`;
+  }
+
+  function assertKeys(result: string[], expectedKeys: string[]) {
+    const actual = result.map((id) => getRowKey(id)).sort();
+    expect(actual).toEqual([...expectedKeys].sort());
+  }
+
+  // Status (SingleSelect) tests
+  it('Status OptionIs Active => 7 rows', () => {
+    const activeId = getOptionId('Status', 'Active');
+    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIs, activeId);
+    assertKeys(result, [
+      'Alice|https://alice.com', 'Bob|https://bob.dev', 'Dave|https://dave.org',
+      'Grace|https://grace.ai', '|https://unknown.com', 'Ivan|https://ivan.ru', 'Karl|https://karl.de',
+    ]);
+  });
+
+  it('Status OptionIsNot Active => 9 rows', () => {
+    const activeId = getOptionId('Status', 'Active');
+    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIsNot, activeId);
+    expect(result.length).toBe(9);
+  });
+
+  it('Status OptionContains Active => 7 rows', () => {
+    const activeId = getOptionId('Status', 'Active');
+    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionContains, activeId);
+    expect(result.length).toBe(7);
+  });
+
+  it('Status OptionDoesNotContain Active => 9 rows', () => {
+    const activeId = getOptionId('Status', 'Active');
+    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionDoesNotContain, activeId);
+    expect(result.length).toBe(9);
+  });
+
+  it('Status OptionIsEmpty => 2 rows', () => {
+    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIsEmpty);
+    assertKeys(result, ['|', 'Hank|']);
+  });
+
+  it('Status OptionIsNotEmpty => 14 rows', () => {
+    const result = applySingleFilter('Status', FieldType.SingleSelect, SelectOptionFilterCondition.OptionIsNotEmpty);
+    expect(result.length).toBe(14);
+  });
+
+  // Categories (MultiSelect) tests
+  it('Categories OptionIs Work => 1 row (subset check: only Work)', () => {
+    const workId = getOptionId('Categories', 'Work');
+    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionIs, workId);
+    // OptionIs = all cell options must be within filter set. Only Bob has exactly {Work}
+    assertKeys(result, ['Bob|https://bob.dev']);
+  });
+
+  it('Categories OptionIsNot Work => 15 rows', () => {
+    const workId = getOptionId('Categories', 'Work');
+    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionIsNot, workId);
+    expect(result.length).toBe(15);
+  });
+
+  it('Categories OptionContains Work => 7 rows', () => {
+    const workId = getOptionId('Categories', 'Work');
+    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionContains, workId);
+    assertKeys(result, [
+      'Alice|https://alice.com', 'Bob|https://bob.dev', 'Dave|https://dave.org',
+      'Frank|https://frank.net', '|https://unknown.com', 'Alice|https://alice2.com', 'Karl|https://karl.de',
+    ]);
+  });
+
+  it('Categories OptionDoesNotContain Work => 9 rows', () => {
+    const workId = getOptionId('Categories', 'Work');
+    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionDoesNotContain, workId);
+    expect(result.length).toBe(9);
+  });
+
+  it('Categories OptionContains Work,Health => 10 rows', () => {
+    const workId = getOptionId('Categories', 'Work');
+    const healthId = getOptionId('Categories', 'Health');
+    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionContains, `${workId},${healthId}`);
+    expect(result.length).toBe(10);
+  });
+
+  it('Categories OptionIs Work,Health => 4 rows (subset check)', () => {
+    const workId = getOptionId('Categories', 'Work');
+    const healthId = getOptionId('Categories', 'Health');
+    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionIs, `${workId},${healthId}`);
+    // OptionIs = all cell options must be within {Work, Health}
+    // Alice: {Work,Health} ✓, Bob: {Work} ✓, Frank: {Health,Work} ✓, Ivan: {Health} ✓
+    assertKeys(result, [
+      'Alice|https://alice.com', 'Bob|https://bob.dev', 'Frank|https://frank.net', 'Ivan|https://ivan.ru',
+    ]);
+  });
+
+  it('Categories OptionIsEmpty => 2 rows', () => {
+    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionIsEmpty);
+    assertKeys(result, ['|', 'Hank|']);
+  });
+
+  it('Categories OptionIsNotEmpty => 14 rows', () => {
+    const result = applySingleFilter('Categories', FieldType.MultiSelect, SelectOptionFilterCondition.OptionIsNotEmpty);
+    expect(result.length).toBe(14);
+  });
+});
+
+describe('v070 checkbox/checklist filter tests', () => {
+  let fixture: ReturnType<typeof loadV070DatabaseFixture>;
+
+  beforeEach(() => {
+    fixture = loadV070DatabaseFixture();
+  });
+
+  function applySingleFilter(fieldName: string, fieldType: FieldType, condition: number, content: string = '') {
+    const fieldId = fixture.fieldIdByName.get(fieldName)!;
+    const filters = createFilters([{ fieldId, fieldType, condition, content }]);
+    return filterBy(fixture.rows, filters, fixture.fields, fixture.rowMetas).map((r) => r.id);
+  }
+
+  function getRowKey(rowId: string): string {
+    const rowDoc = fixture.rowMetas[rowId];
+    const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const cells = row.get(YjsDatabaseKey.cells);
+    const nameFieldId = fixture.fieldIdByName.get('Name')!;
+    const webFieldId = fixture.fieldIdByName.get('Website')!;
+    const name = cells.get(nameFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    const web = cells.get(webFieldId)?.get(YjsDatabaseKey.data) ?? '';
+    return `${name}|${web}`;
+  }
+
+  function assertKeys(result: string[], expectedKeys: string[]) {
+    const actual = result.map((id) => getRowKey(id)).sort();
+    expect(actual).toEqual([...expectedKeys].sort());
+  }
+
+  // Active (Checkbox) tests
+  it('Active IsChecked => 9 rows', () => {
+    const result = applySingleFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsChecked);
+    assertKeys(result, [
+      'Alice|https://alice.com', 'Bob|https://bob.dev', 'Alice Wang|https://awang.io',
+      'Dave|https://dave.org', 'Frank|https://frank.net', '|https://unknown.com',
+      'Alice|https://alice2.com', 'Jane|', 'Karl|https://karl.de',
+    ]);
+  });
+
+  it('Active IsUnChecked => 7 rows', () => {
+    const result = applySingleFilter('Active', FieldType.Checkbox, CheckboxFilterCondition.IsUnChecked);
+    assertKeys(result, [
+      'Charlie|', '|', 'Eve|', 'Grace|https://grace.ai', 'Hank|', 'Ivan|https://ivan.ru', 'Lily|',
+    ]);
+  });
+
+  // Tasks (Checklist) tests
+  it('Tasks IsComplete => 6 rows', () => {
+    const result = applySingleFilter('Tasks', FieldType.Checklist, ChecklistFilterCondition.IsComplete);
+    assertKeys(result, [
+      'Alice|https://alice.com', 'Alice Wang|https://awang.io', 'Frank|https://frank.net',
+      '|https://unknown.com', 'Jane|', 'Karl|https://karl.de',
+    ]);
+  });
+
+  it('Tasks IsIncomplete => 10 rows', () => {
+    const result = applySingleFilter('Tasks', FieldType.Checklist, ChecklistFilterCondition.IsIncomplete);
+    assertKeys(result, [
+      'Bob|https://bob.dev', 'Charlie|', '|', 'Dave|https://dave.org', 'Eve|',
+      'Grace|https://grace.ai', 'Hank|', 'Alice|https://alice2.com', 'Ivan|https://ivan.ru', 'Lily|',
+    ]);
   });
 });

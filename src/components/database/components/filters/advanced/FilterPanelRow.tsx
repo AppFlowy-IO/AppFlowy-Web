@@ -19,13 +19,12 @@ import {
   TextFilterCondition,
   useFieldSelector,
   useReadOnly,
-  useRootFilterInfo,
 } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
 import {
-  useRemoveAdvancedFilter,
+  useRemoveAdvancedFilterAndRebuild,
   useUpdateAdvancedFilter,
-  useUpdateRootFilterType,
+  useUpdateAdvancedFilterAndRebuild,
 } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
@@ -52,16 +51,15 @@ import AdvancedDateFilterValueInput from './AdvancedDateFilterValueInput';
 interface FilterPanelRowProps {
   filter: Filter;
   isFirst: boolean;
+  onOperatorChange?: (filterId: string, newOperator: FilterType.And | FilterType.Or) => void;
 }
 
-export function FilterPanelRow({ filter, isFirst }: FilterPanelRowProps) {
+export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPanelRowProps) {
   const { t } = useTranslation();
   const readOnly = useReadOnly();
-  const removeFilter = useRemoveAdvancedFilter();
-  const updateFilter = useUpdateAdvancedFilter();
-  const updateRootFilterType = useUpdateRootFilterType();
+  const removeFilter = useRemoveAdvancedFilterAndRebuild();
+  const updateFilter = useUpdateAdvancedFilterAndRebuild();
   const { field } = useFieldSelector(filter.fieldId);
-  const rootFilterInfo = useRootFilterInfo();
 
   const [fieldSelectorOpen, setFieldSelectorOpen] = useState(false);
 
@@ -83,13 +81,6 @@ export function FilterPanelRow({ filter, isFirst }: FilterPanelRowProps) {
       setFieldSelectorOpen(false);
     },
     [filter.id, updateFilter]
-  );
-
-  const handleOperatorChange = useCallback(
-    (operator: FilterType.And | FilterType.Or) => {
-      updateRootFilterType(operator);
-    },
-    [updateRootFilterType]
   );
 
   const handleConditionChange = useCallback(
@@ -116,19 +107,19 @@ export function FilterPanelRow({ filter, isFirst }: FilterPanelRowProps) {
             <DropdownMenuTrigger asChild disabled={readOnly}>
               <button className='flex h-7 w-full items-center justify-between gap-1 rounded-md px-2 hover:bg-fill-list-hover'>
                 <span className='text-xs text-text-primary'>
-                  {rootFilterInfo?.rootType === FilterType.Or ? t('grid.filter.or') : t('grid.filter.and')}
+                  {filter.operator === FilterType.Or ? t('grid.filter.or') : t('grid.filter.and')}
                 </span>
                 <ArrowDownSvg className='h-3 w-3 text-text-primary' />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align='start' className='min-w-[80px]'>
-              <DropdownMenuItem onSelect={() => handleOperatorChange(FilterType.And)}>
+              <DropdownMenuItem onSelect={() => onOperatorChange?.(filter.id, FilterType.And)}>
                 {t('grid.filter.and')}
-                {rootFilterInfo?.rootType === FilterType.And && <DropdownMenuItemTick />}
+                {filter.operator === FilterType.And && <DropdownMenuItemTick />}
               </DropdownMenuItem>
-              <DropdownMenuItem onSelect={() => handleOperatorChange(FilterType.Or)}>
+              <DropdownMenuItem onSelect={() => onOperatorChange?.(filter.id, FilterType.Or)}>
                 {t('grid.filter.or')}
-                {rootFilterInfo?.rootType === FilterType.Or && <DropdownMenuItemTick />}
+                {filter.operator === FilterType.Or && <DropdownMenuItemTick />}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
@@ -367,7 +358,7 @@ function ValueInput({ filter, fieldType, disabled }: ValueInputProps) {
     return null;
   }
 
-  // Person field - person picker (placeholder for now)
+  // Person field - person picker
   if (fieldType === FieldType.Person) {
     return <PersonValueInput filter={filter as PersonFilter} disabled={disabled} />;
   }
@@ -375,7 +366,7 @@ function ValueInput({ filter, fieldType, disabled }: ValueInputProps) {
   return null;
 }
 
-// Text Value Input
+// Text Value Input — uses lightweight in-place updater (no tree rebuild on every keystroke)
 function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
@@ -419,7 +410,7 @@ function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: b
   );
 }
 
-// Number Value Input
+// Number Value Input — uses lightweight in-place updater (no tree rebuild on every keystroke)
 function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
@@ -485,7 +476,7 @@ function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: b
   );
 }
 
-// Select Option Value Input
+// Select Option Value Input — uses lightweight in-place updater (content-only change)
 function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
@@ -546,7 +537,7 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
   );
 }
 
-// Checkbox Value Input - dropdown showing Checked/Unchecked
+// Checkbox Value Input — uses lightweight in-place updater (condition-only change, no tree restructure)
 function CheckboxValueInput({ filter, disabled }: { filter: CheckboxFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
@@ -601,7 +592,7 @@ function CheckboxValueInput({ filter, disabled }: { filter: CheckboxFilter; disa
   );
 }
 
-// Person Value Input - shows person picker
+// Person Value Input — uses lightweight in-place updater (content-only change)
 function PersonValueInput({ filter, disabled }: { filter: PersonFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
