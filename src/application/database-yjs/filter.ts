@@ -294,6 +294,23 @@ export function flattenFilterTree(
     );
   }
 
+  // Also collect any sibling top-level filters at indices 1+ (can appear from
+  // concurrent desktop sync adding flat filters while web is in advanced mode).
+  // filterBy() combines top-level entries with AND, so siblings always get And.
+  for (let i = 1; i < filtersArray.length; i++) {
+    const sibling = filtersArray.get(i);
+
+    if (!sibling) continue;
+
+    // Siblings are always AND'd with the root group by filterBy().
+    collectFiltersRecursive(
+      sibling,
+      FilterType.And,
+      fields,
+      result
+    );
+  }
+
   return result;
 }
 

@@ -775,16 +775,23 @@ export function useUpdateAdvancedFilter() {
         sharedRoot,
         [
           () => {
-            const filters = view.get(YjsDatabaseKey.filters);
-            const rootFilter = filters?.get(0);
+            const filtersArray = view.get(YjsDatabaseKey.filters);
 
-            if (!rootFilter) {
-              Log.warn('[useUpdateAdvancedFilter] No root filter found');
+            if (!filtersArray || filtersArray.length === 0) {
+              Log.warn('[useUpdateAdvancedFilter] No filters found');
               return;
             }
 
-            // Recursively search the entire tree for the target filter
-            const filter = findFilterNodeRecursive(rootFilter, filterId);
+            // Search all top-level entries (root group + possible siblings)
+            let filter: YDatabaseFilter | null = null;
+
+            for (let i = 0; i < filtersArray.length; i++) {
+              const entry = filtersArray.get(i);
+
+              if (!entry) continue;
+              filter = findFilterNodeRecursive(entry, filterId);
+              if (filter) break;
+            }
 
             if (!filter) {
               Log.warn('[useUpdateAdvancedFilter] Filter not found in tree', { filterId });
@@ -1091,16 +1098,24 @@ export function useAddAdvancedFilterAndRebuild() {
             // Get current flat list
             const currentDrafts = flattenFilterTree(filters, fields);
 
-            // Determine default operator: inherit from existing drafts
+            // Determine default operator: inherit from existing drafts or root group type
             let defaultOperator: FilterType.And | FilterType.Or | null = null;
 
             if (currentDrafts.length > 0) {
-              // Use the dominant operator from existing drafts
               const existingOps = currentDrafts.slice(1).map((d) => d.operator ?? FilterType.And);
 
-              defaultOperator = existingOps.length > 0 && existingOps.every((op) => op === FilterType.Or)
-                ? FilterType.Or
-                : FilterType.And;
+              if (existingOps.length > 0) {
+                // Multiple drafts: use dominant operator
+                defaultOperator = existingOps.every((op) => op === FilterType.Or)
+                  ? FilterType.Or
+                  : FilterType.And;
+              } else {
+                // Single draft: inspect the root group's actual type to preserve OR roots
+                const rootFilter = filters.get(0);
+                const rootType = rootFilter ? Number(rootFilter.get(YjsDatabaseKey.filter_type)) : FilterType.And;
+
+                defaultOperator = rootType === FilterType.Or ? FilterType.Or : FilterType.And;
+              }
             }
 
             // Add new draft
