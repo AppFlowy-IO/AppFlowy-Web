@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -246,19 +246,21 @@ function DatabaseView(props: DatabaseViewProps) {
         />
       )}
 
-      <Database
-        key={databasePageId}
-        databaseName={pageMeta.name || ''}
-        databasePageId={databasePageId || ''}
-        {...props}
-        activeViewId={activeViewId}
-        rowId={rowId}
-        showActions={true}
-        onChangeView={handleChangeView}
-        onOpenRowPage={handleNavigateToRow}
-        modalRowId={modalRowId}
-        visibleViewIds={visibleViewIds}
-      />
+      <Suspense fallback={skeleton}>
+        <Database
+          key={databasePageId}
+          databaseName={pageMeta.name || ''}
+          databasePageId={databasePageId || ''}
+          {...props}
+          activeViewId={activeViewId}
+          rowId={rowId}
+          showActions={true}
+          onChangeView={handleChangeView}
+          onOpenRowPage={handleNavigateToRow}
+          modalRowId={modalRowId}
+          visibleViewIds={visibleViewIds}
+        />
+      </Suspense>
     </div>
   );
 }
