@@ -60,7 +60,7 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
     },
   });
 
-  if (response.status === 200) {
+  if (response.status === 200 || response.status === 204) {
     return;
   }
 
@@ -83,42 +83,48 @@ export async function uploadImportFileMultipart(
   const partCount = multipart.part_presigned_urls.length;
   const partSize = Math.ceil(file.size / partCount);
 
-  const partProgress = new Array<number>(partCount).fill(0);
+  const bytesUploaded = new Array<number>(partCount).fill(0);
   const completedParts: { e_tag: string; part_number: number }[] = [];
+  let aborted = false;
 
   const reportProgress = () => {
-    const total = partProgress.reduce((sum, p) => sum + p, 0);
+    const total = bytesUploaded.reduce((sum, b) => sum + b, 0);
 
-    onProgress(total / partCount);
+    onProgress(total / file.size);
   };
 
   const uploadPart = async (i: number) => {
-    const partInfo = multipart.part_presigned_urls[i]!;
+    if (aborted) return;
+
+    const partInfo = multipart.part_presigned_urls[i];
     const start = i * partSize;
     const end = Math.min(start + partSize, file.size);
     const blob = file.slice(start, end);
 
     const resp = await axios.put(partInfo.presigned_url, blob, {
+      validateStatus: () => true,
       onUploadProgress: (progressEvent) => {
-        partProgress[i] = progressEvent.progress ?? 0;
+        bytesUploaded[i] = progressEvent.loaded ?? 0;
         reportProgress();
       },
     });
 
     if (resp.status < 200 || resp.status >= 300) {
-      throw {
+      aborted = true;
+      return Promise.reject({
         code: -1,
         message: `Multipart upload failed for part ${partInfo.part_number}. ${resp.statusText}`,
-      };
+      });
     }
 
     const eTag = (resp.headers['etag'] as string | undefined)?.replace(/"/g, '');
 
     if (!eTag) {
-      throw {
+      aborted = true;
+      return Promise.reject({
         code: -1,
         message: `Missing ETag in response for part ${partInfo.part_number}`,
-      };
+      });
     }
 
     completedParts.push({ e_tag: eTag, part_number: partInfo.part_number });
@@ -127,7 +133,7 @@ export async function uploadImportFileMultipart(
   // Upload parts with limited concurrency
   const queue = Array.from({ length: partCount }, (_, i) => i);
   const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, partCount) }, async () => {
-    while (queue.length > 0) {
+    while (queue.length > 0 && !aborted) {
       const idx = queue.shift()!;
 
       await uploadPart(idx);
@@ -140,7 +146,7 @@ export async function uploadImportFileMultipart(
   await completeImportMultipart({
     s3_key: multipart.s3_key,
     upload_id: multipart.upload_id,
-    parts: completedParts,
+    parts: completedParts.sort((a, b) => a.part_number - b.part_number),
   });
 }
 
