@@ -97,7 +97,7 @@ export async function uploadImportFileMultipart(
     if (aborted) return;
 
     const partInfo = multipart.part_presigned_urls[i];
-    const start = i * partSize;
+    const start = (partInfo.part_number - 1) * partSize;
     const end = Math.min(start + partSize, file.size);
     const blob = file.slice(start, end);
 
