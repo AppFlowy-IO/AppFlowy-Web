@@ -103,6 +103,9 @@ export async function uploadImportFileMultipart(
 
     const resp = await axios.put(partInfo.presigned_url, blob, {
       validateStatus: () => true,
+      headers: {
+        'Content-Type': 'application/zip',
+      },
       onUploadProgress: (progressEvent) => {
         bytesUploaded[i] = progressEvent.loaded ?? 0;
         reportProgress();
@@ -148,6 +151,12 @@ export async function uploadImportFileMultipart(
     upload_id: multipart.upload_id,
     parts: completedParts.sort((a, b) => a.part_number - b.part_number),
   });
+}
+
+export async function cancelImportTask(taskId: string) {
+  const url = `/api/import/tasks/${encodeURIComponent(taskId)}/cancel`;
+
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url));
 }
 
 async function completeImportMultipart(data: {

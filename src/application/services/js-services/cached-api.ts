@@ -31,6 +31,7 @@ import {
   getView,
   signInWithUrl,
   uploadFileMultipart,
+  cancelImportTask,
   createImportTask,
   uploadImportFile,
   uploadImportFileMultipart,
@@ -373,10 +374,16 @@ export async function uploadFileWithTracking(workspaceId: string, viewId: string
 export async function importFileWithUpload(file: File, onProgress: (progress: number) => void) {
   const task = await createImportTask(file);
 
-  if (task.multipart) {
-    await uploadImportFileMultipart(file, task.multipart, onProgress);
-  } else {
-    await uploadImportFile(task.presignedUrl, file, onProgress);
+  try {
+    if (task.multipart) {
+      await uploadImportFileMultipart(file, task.multipart, onProgress);
+    } else {
+      await uploadImportFile(task.presignedUrl, file, onProgress);
+    }
+  } catch (err) {
+    // Cancel the task so the worker doesn't try to process a partial upload
+    cancelImportTask(task.taskId).catch(() => {});
+    throw err;
   }
 }
 

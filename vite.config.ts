@@ -171,6 +171,13 @@ export default defineConfig({
       ignored: ['node_modules'],
     },
     proxy: {
+      // Proxy S3/MinIO presigned URL uploads to avoid CORS issues in local dev.
+      // Set APPFLOWY_S3_PRESIGNED_URL_ENDPOINT=http://localhost:3000/s3 on the API server.
+      '/s3': {
+        target: 'http://localhost:9000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/s3/, ''),
+      },
       '/gotrue': {
         target: 'http://localhost:9999',
         changeOrigin: true,
