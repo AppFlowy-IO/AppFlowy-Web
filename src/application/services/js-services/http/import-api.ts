@@ -10,12 +10,29 @@ import { getConfigValue } from '@/utils/runtime-config';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
+export interface ImportPartPresignedUrl {
+  part_number: number;
+  presigned_url: string;
+}
+
+export interface ImportMultipartUploadInfo {
+  upload_id: string;
+  s3_key: string;
+  part_presigned_urls: ImportPartPresignedUrl[];
+}
+
+interface CreateImportTaskRaw {
+  task_id: string;
+  presigned_url: string;
+  multipart?: ImportMultipartUploadInfo | null;
+}
+
 export async function createImportTask(file: File) {
   const url = `/api/import/create`;
   const fileName = file.name.split('.').slice(0, -1).join('.') || crypto.randomUUID();
 
-  return executeAPIRequest<{ task_id: string; presigned_url: string }>(() =>
-    getAxios()?.post<APIResponse<{ task_id: string; presigned_url: string }>>(url, {
+  return executeAPIRequest<CreateImportTaskRaw>(() =>
+    getAxios()?.post<APIResponse<CreateImportTaskRaw>>(url, {
       workspace_name: fileName,
       content_length: file.size,
     }, {
@@ -26,6 +43,7 @@ export async function createImportTask(file: File) {
   ).then((data) => ({
     taskId: data.task_id,
     presignedUrl: data.presigned_url,
+    multipart: data.multipart ?? null,
   }));
 }
 
@@ -42,7 +60,7 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
     },
   });
 
-  if (response.status === 200) {
+  if (response.status === 200 || response.status === 204) {
     return;
   }
 
@@ -50,6 +68,98 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
     code: -1,
     message: `Upload file failed. ${response.statusText}`,
   });
+}
+
+/**
+ * Upload a file using multipart presigned URLs, then complete the upload.
+ * Parts are uploaded with limited concurrency; progress is reported smoothly.
+ */
+export async function uploadImportFileMultipart(
+  file: File,
+  multipart: ImportMultipartUploadInfo,
+  onProgress: (progress: number) => void,
+) {
+  const MAX_CONCURRENCY = 5;
+  const partCount = multipart.part_presigned_urls.length;
+  const partSize = Math.ceil(file.size / partCount);
+
+  const bytesUploaded = new Array<number>(partCount).fill(0);
+  const completedParts: { e_tag: string; part_number: number }[] = [];
+  let aborted = false;
+
+  const reportProgress = () => {
+    const total = bytesUploaded.reduce((sum, b) => sum + b, 0);
+
+    onProgress(total / file.size);
+  };
+
+  const uploadPart = async (i: number) => {
+    if (aborted) return;
+
+    const partInfo = multipart.part_presigned_urls[i];
+    const start = (partInfo.part_number - 1) * partSize;
+    const end = Math.min(start + partSize, file.size);
+    const blob = file.slice(start, end);
+
+    const resp = await axios.put(partInfo.presigned_url, blob, {
+      validateStatus: () => true,
+      onUploadProgress: (progressEvent) => {
+        bytesUploaded[i] = progressEvent.loaded ?? 0;
+        reportProgress();
+      },
+    });
+
+    if (resp.status < 200 || resp.status >= 300) {
+      aborted = true;
+      return Promise.reject({
+        code: -1,
+        message: `Multipart upload failed for part ${partInfo.part_number}. ${resp.statusText}`,
+      });
+    }
+
+    const eTag = (resp.headers['etag'] as string | undefined)?.replace(/"/g, '');
+
+    if (!eTag) {
+      aborted = true;
+      return Promise.reject({
+        code: -1,
+        message: `Missing ETag in response for part ${partInfo.part_number}`,
+      });
+    }
+
+    completedParts.push({ e_tag: eTag, part_number: partInfo.part_number });
+  };
+
+  // Upload parts with limited concurrency
+  const queue = Array.from({ length: partCount }, (_, i) => i);
+  const workers = Array.from({ length: Math.min(MAX_CONCURRENCY, partCount) }, async () => {
+    while (queue.length > 0 && !aborted) {
+      const idx = queue.shift()!;
+
+      await uploadPart(idx);
+    }
+  });
+
+  await Promise.all(workers);
+
+  // Complete the multipart upload on the server
+  await completeImportMultipart({
+    s3_key: multipart.s3_key,
+    upload_id: multipart.upload_id,
+    parts: completedParts.sort((a, b) => a.part_number - b.part_number),
+  });
+}
+
+async function completeImportMultipart(data: {
+  s3_key: string;
+  upload_id: string;
+  parts: { e_tag: string; part_number: number }[];
+}) {
+  const url = `/api/import/complete-multipart`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.post<APIResponse>(url, data)
+  );
 }
 
 export async function createDatabaseCsvImportTask(

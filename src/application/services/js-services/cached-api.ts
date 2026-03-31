@@ -33,6 +33,7 @@ import {
   uploadFileMultipart,
   createImportTask,
   uploadImportFile,
+  uploadImportFileMultipart,
   publishView as publishViewAPI,
   unpublishView as unpublishViewAPI,
   updatePublishConfig as updatePublishConfigAPI,
@@ -372,7 +373,11 @@ export async function uploadFileWithTracking(workspaceId: string, viewId: string
 export async function importFileWithUpload(file: File, onProgress: (progress: number) => void) {
   const task = await createImportTask(file);
 
-  await uploadImportFile(task.presignedUrl, file, onProgress);
+  if (task.multipart) {
+    await uploadImportFileMultipart(file, task.multipart, onProgress);
+  } else {
+    await uploadImportFile(task.presignedUrl, file, onProgress);
+  }
 }
 
 export async function publishViewClearingCache(workspaceId: string, viewId: string, payload?: PublishViewPayload) {
