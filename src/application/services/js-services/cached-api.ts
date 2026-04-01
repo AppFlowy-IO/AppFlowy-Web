@@ -382,7 +382,9 @@ export async function importFileWithUpload(file: File, onProgress: (progress: nu
     }
   } catch (err) {
     // Cancel the task so the worker doesn't try to process a partial upload
-    cancelImportTask(task.taskId).catch(() => {});
+    void cancelImportTask(task.taskId).catch((cancelError) => {
+      Log.warn('[Import] Failed to cancel import task after upload error', cancelError);
+    });
     throw err;
   }
 }

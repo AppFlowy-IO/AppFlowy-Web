@@ -16,7 +16,7 @@ export const messages = $root.messages = (() => {
      */
     const messages = {};
 
-    messages.Message = (function () {
+    messages.Message = (function() {
 
         /**
          * Properties of a Message.
@@ -126,24 +126,26 @@ export const messages = $root.messages = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Message.decode = function decode(reader, length) {
+        Message.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.messages.Message();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.collabMessage = $root.collab.CollabMessage.decode(reader, reader.uint32());
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.notification = $root.notification.WorkspaceNotification.decode(reader, reader.uint32());
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -278,7 +280,7 @@ export const messages = $root.messages = (() => {
         return Message;
     })();
 
-    messages.HttpRealtimeMessage = (function () {
+    messages.HttpRealtimeMessage = (function() {
 
         /**
          * Properties of a HttpRealtimeMessage.
@@ -374,24 +376,26 @@ export const messages = $root.messages = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        HttpRealtimeMessage.decode = function decode(reader, length) {
+        HttpRealtimeMessage.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.messages.HttpRealtimeMessage();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.deviceId = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.payload = reader.bytes();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -526,7 +530,7 @@ export const collab = $root.collab = (() => {
      */
     const collab = {};
 
-    collab.Rid = (function () {
+    collab.Rid = (function() {
 
         /**
          * Properties of a Rid.
@@ -561,7 +565,7 @@ export const collab = $root.collab = (() => {
          * @memberof collab.Rid
          * @instance
          */
-        Rid.prototype.timestamp = $util.Long ? $util.Long.fromBits(0, 0, false) : 0;
+        Rid.prototype.timestamp = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
 
         /**
          * Rid counter.
@@ -626,24 +630,26 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Rid.decode = function decode(reader, length) {
+        Rid.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.Rid();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.timestamp = reader.fixed64();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.counter = reader.uint32();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -771,7 +777,7 @@ export const collab = $root.collab = (() => {
         return Rid;
     })();
 
-    collab.SyncRequest = (function () {
+    collab.SyncRequest = (function() {
 
         /**
          * Properties of a SyncRequest.
@@ -882,28 +888,30 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        SyncRequest.decode = function decode(reader, length) {
+        SyncRequest.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.SyncRequest();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.lastMessageId = $root.collab.Rid.decode(reader, reader.uint32());
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.stateVector = reader.bytes();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.version = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -1039,7 +1047,7 @@ export const collab = $root.collab = (() => {
         return SyncRequest;
     })();
 
-    collab.Update = (function () {
+    collab.Update = (function() {
 
         /**
          * Properties of an Update.
@@ -1159,32 +1167,34 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        Update.decode = function decode(reader, length) {
+        Update.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.Update();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.messageId = $root.collab.Rid.decode(reader, reader.uint32());
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.flags = reader.uint32();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.payload = reader.bytes();
                         break;
                     }
-                    case 4: {
+                case 4: {
                         message.version = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -1328,7 +1338,7 @@ export const collab = $root.collab = (() => {
         return Update;
     })();
 
-    collab.AwarenessUpdate = (function () {
+    collab.AwarenessUpdate = (function() {
 
         /**
          * Properties of an AwarenessUpdate.
@@ -1414,20 +1424,22 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        AwarenessUpdate.decode = function decode(reader, length) {
+        AwarenessUpdate.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.AwarenessUpdate();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.payload = reader.bytes();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -1541,7 +1553,7 @@ export const collab = $root.collab = (() => {
         return AwarenessUpdate;
     })();
 
-    collab.AccessChanged = (function () {
+    collab.AccessChanged = (function() {
 
         /**
          * Properties of an AccessChanged.
@@ -1649,28 +1661,30 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        AccessChanged.decode = function decode(reader, length) {
+        AccessChanged.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.AccessChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.canRead = reader.bool();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.canWrite = reader.bool();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.reason = reader.int32();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -1792,7 +1806,7 @@ export const collab = $root.collab = (() => {
         return AccessChanged;
     })();
 
-    collab.CollabMessage = (function () {
+    collab.CollabMessage = (function() {
 
         /**
          * Properties of a CollabMessage.
@@ -1946,40 +1960,42 @@ export const collab = $root.collab = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        CollabMessage.decode = function decode(reader, length) {
+        CollabMessage.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabMessage();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.objectId = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.collabType = reader.int32();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.syncRequest = $root.collab.SyncRequest.decode(reader, reader.uint32());
                         break;
                     }
-                    case 4: {
+                case 4: {
                         message.update = $root.collab.Update.decode(reader, reader.uint32());
                         break;
                     }
-                    case 5: {
+                case 5: {
                         message.awarenessUpdate = $root.collab.AwarenessUpdate.decode(reader, reader.uint32());
                         break;
                     }
-                    case 6: {
+                case 6: {
                         message.accessChanged = $root.collab.AccessChanged.decode(reader, reader.uint32());
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -2180,7 +2196,7 @@ export const collab = $root.collab = (() => {
      * @property {number} COMPRESSION_ZSTD=1 COMPRESSION_ZSTD value
      * @property {number} COMPRESSION_GZIP=2 COMPRESSION_GZIP value
      */
-    collab.PayloadCompressionType = (function () {
+    collab.PayloadCompressionType = (function() {
         const valuesById = {}, values = Object.create(valuesById);
         values[valuesById[0] = "COMPRESSION_NONE"] = 0;
         values[valuesById[1] = "COMPRESSION_ZSTD"] = 1;
@@ -2188,7 +2204,7 @@ export const collab = $root.collab = (() => {
         return values;
     })();
 
-    collab.CollabDocStateParams = (function () {
+    collab.CollabDocStateParams = (function() {
 
         /**
          * Properties of a CollabDocStateParams.
@@ -2326,29 +2342,29 @@ export const collab = $root.collab = (() => {
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.objectId = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.collabType = reader.int32();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.compression = reader.int32();
                         break;
                     }
-                    case 4: {
+                case 4: {
                         message.sv = reader.bytes();
                         break;
                     }
-                    case 5: {
+                case 5: {
                         message.docState = reader.bytes();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -2389,12 +2405,12 @@ export const collab = $root.collab = (() => {
                     return "collabType: integer expected";
             if (message.compression != null && message.hasOwnProperty("compression"))
                 switch (message.compression) {
-                    default:
-                        return "compression: enum value expected";
-                    case 0:
-                    case 1:
-                    case 2:
-                        break;
+                default:
+                    return "compression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
                 }
             if (message.sv != null && message.hasOwnProperty("sv"))
                 if (!(message.sv && typeof message.sv.length === "number" || $util.isString(message.sv)))
@@ -2422,24 +2438,24 @@ export const collab = $root.collab = (() => {
             if (object.collabType != null)
                 message.collabType = object.collabType | 0;
             switch (object.compression) {
-                default:
-                    if (typeof object.compression === "number") {
-                        message.compression = object.compression;
-                        break;
-                    }
+            default:
+                if (typeof object.compression === "number") {
+                    message.compression = object.compression;
                     break;
-                case "COMPRESSION_NONE":
-                case 0:
-                    message.compression = 0;
-                    break;
-                case "COMPRESSION_ZSTD":
-                case 1:
-                    message.compression = 1;
-                    break;
-                case "COMPRESSION_GZIP":
-                case 2:
-                    message.compression = 2;
-                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.compression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.compression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.compression = 2;
+                break;
             }
             if (object.sv != null)
                 if (typeof object.sv === "string")
@@ -2528,7 +2544,7 @@ export const collab = $root.collab = (() => {
         return CollabDocStateParams;
     })();
 
-    collab.CollabBatchSyncRequest = (function () {
+    collab.CollabBatchSyncRequest = (function() {
 
         /**
          * Properties of a CollabBatchSyncRequest.
@@ -2636,19 +2652,19 @@ export const collab = $root.collab = (() => {
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         if (!(message.items && message.items.length))
                             message.items = [];
                         message.items.push($root.collab.CollabDocStateParams.decode(reader, reader.uint32()));
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.responseCompression = reader.int32();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -2692,12 +2708,12 @@ export const collab = $root.collab = (() => {
             }
             if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
                 switch (message.responseCompression) {
-                    default:
-                        return "responseCompression: enum value expected";
-                    case 0:
-                    case 1:
-                    case 2:
-                        break;
+                default:
+                    return "responseCompression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
                 }
             return null;
         };
@@ -2725,24 +2741,24 @@ export const collab = $root.collab = (() => {
                 }
             }
             switch (object.responseCompression) {
-                default:
-                    if (typeof object.responseCompression === "number") {
-                        message.responseCompression = object.responseCompression;
-                        break;
-                    }
+            default:
+                if (typeof object.responseCompression === "number") {
+                    message.responseCompression = object.responseCompression;
                     break;
-                case "COMPRESSION_NONE":
-                case 0:
-                    message.responseCompression = 0;
-                    break;
-                case "COMPRESSION_ZSTD":
-                case 1:
-                    message.responseCompression = 1;
-                    break;
-                case "COMPRESSION_GZIP":
-                case 2:
-                    message.responseCompression = 2;
-                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.responseCompression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.responseCompression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.responseCompression = 2;
+                break;
             }
             return message;
         };
@@ -2803,7 +2819,7 @@ export const collab = $root.collab = (() => {
         return CollabBatchSyncRequest;
     })();
 
-    collab.CollabBatchSyncResult = (function () {
+    collab.CollabBatchSyncResult = (function() {
 
         /**
          * Properties of a CollabBatchSyncResult.
@@ -2952,33 +2968,33 @@ export const collab = $root.collab = (() => {
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.objectId = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.collabType = reader.int32();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.compression = reader.int32();
                         break;
                     }
-                    case 4: {
+                case 4: {
                         message.missingUpdate = reader.bytes();
                         break;
                     }
-                    case 5: {
+                case 5: {
                         message.error = reader.string();
                         break;
                     }
-                    case 6: {
+                case 6: {
                         message.serverStateVector = reader.bytes();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -3019,12 +3035,12 @@ export const collab = $root.collab = (() => {
                     return "collabType: integer expected";
             if (message.compression != null && message.hasOwnProperty("compression"))
                 switch (message.compression) {
-                    default:
-                        return "compression: enum value expected";
-                    case 0:
-                    case 1:
-                    case 2:
-                        break;
+                default:
+                    return "compression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
                 }
             if (message.missingUpdate != null && message.hasOwnProperty("missingUpdate"))
                 if (!(message.missingUpdate && typeof message.missingUpdate.length === "number" || $util.isString(message.missingUpdate)))
@@ -3055,24 +3071,24 @@ export const collab = $root.collab = (() => {
             if (object.collabType != null)
                 message.collabType = object.collabType | 0;
             switch (object.compression) {
-                default:
-                    if (typeof object.compression === "number") {
-                        message.compression = object.compression;
-                        break;
-                    }
+            default:
+                if (typeof object.compression === "number") {
+                    message.compression = object.compression;
                     break;
-                case "COMPRESSION_NONE":
-                case 0:
-                    message.compression = 0;
-                    break;
-                case "COMPRESSION_ZSTD":
-                case 1:
-                    message.compression = 1;
-                    break;
-                case "COMPRESSION_GZIP":
-                case 2:
-                    message.compression = 2;
-                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.compression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.compression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.compression = 2;
+                break;
             }
             if (object.missingUpdate != null)
                 if (typeof object.missingUpdate === "string")
@@ -3166,7 +3182,7 @@ export const collab = $root.collab = (() => {
         return CollabBatchSyncResult;
     })();
 
-    collab.CollabBatchSyncResponse = (function () {
+    collab.CollabBatchSyncResponse = (function() {
 
         /**
          * Properties of a CollabBatchSyncResponse.
@@ -3273,19 +3289,19 @@ export const collab = $root.collab = (() => {
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         if (!(message.results && message.results.length))
                             message.results = [];
                         message.results.push($root.collab.CollabBatchSyncResult.decode(reader, reader.uint32()));
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.responseCompression = reader.int32();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -3329,12 +3345,12 @@ export const collab = $root.collab = (() => {
             }
             if (message.responseCompression != null && message.hasOwnProperty("responseCompression"))
                 switch (message.responseCompression) {
-                    default:
-                        return "responseCompression: enum value expected";
-                    case 0:
-                    case 1:
-                    case 2:
-                        break;
+                default:
+                    return "responseCompression: enum value expected";
+                case 0:
+                case 1:
+                case 2:
+                    break;
                 }
             return null;
         };
@@ -3362,24 +3378,24 @@ export const collab = $root.collab = (() => {
                 }
             }
             switch (object.responseCompression) {
-                default:
-                    if (typeof object.responseCompression === "number") {
-                        message.responseCompression = object.responseCompression;
-                        break;
-                    }
+            default:
+                if (typeof object.responseCompression === "number") {
+                    message.responseCompression = object.responseCompression;
                     break;
-                case "COMPRESSION_NONE":
-                case 0:
-                    message.responseCompression = 0;
-                    break;
-                case "COMPRESSION_ZSTD":
-                case 1:
-                    message.responseCompression = 1;
-                    break;
-                case "COMPRESSION_GZIP":
-                case 2:
-                    message.responseCompression = 2;
-                    break;
+                }
+                break;
+            case "COMPRESSION_NONE":
+            case 0:
+                message.responseCompression = 0;
+                break;
+            case "COMPRESSION_ZSTD":
+            case 1:
+                message.responseCompression = 1;
+                break;
+            case "COMPRESSION_GZIP":
+            case 2:
+                message.responseCompression = 2;
+                break;
             }
             return message;
         };
@@ -3440,353 +3456,6 @@ export const collab = $root.collab = (() => {
         return CollabBatchSyncResponse;
     })();
 
-    /**
-     * PayloadCompressionType enum.
-     * @name collab.PayloadCompressionType
-     * @enum {number}
-     * @property {number} NONE=0 NONE value
-     * @property {number} ZSTD=1 ZSTD value
-     */
-    collab.PayloadCompressionType = (function () {
-        const valuesById = {}, values = Object.create(valuesById);
-        values[valuesById[0] = "NONE"] = 0;
-        values[valuesById[1] = "ZSTD"] = 1;
-        return values;
-    })();
-
-    collab.CollabDocStateParams = (function () {
-
-        /**
-         * Properties of a CollabDocStateParams.
-         * @memberof collab
-         * @interface ICollabDocStateParams
-         * @property {string|null} [objectId] CollabDocStateParams objectId
-         * @property {number|null} [collabType] CollabDocStateParams collabType
-         * @property {collab.PayloadCompressionType|null} [compression] CollabDocStateParams compression
-         * @property {Uint8Array|null} [sv] CollabDocStateParams sv
-         * @property {Uint8Array|null} [docState] CollabDocStateParams docState
-         */
-
-        /**
-         * Constructs a new CollabDocStateParams.
-         * @memberof collab
-         * @classdesc Represents a CollabDocStateParams.
-         * @implements ICollabDocStateParams
-         * @constructor
-         * @param {collab.ICollabDocStateParams=} [properties] Properties to set
-         */
-        function CollabDocStateParams(properties) {
-            if (properties)
-                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                    if (properties[keys[i]] != null)
-                        this[keys[i]] = properties[keys[i]];
-        }
-
-        /**
-         * CollabDocStateParams objectId.
-         * @member {string} objectId
-         * @memberof collab.CollabDocStateParams
-         * @instance
-         */
-        CollabDocStateParams.prototype.objectId = "";
-
-        /**
-         * CollabDocStateParams collabType.
-         * @member {number} collabType
-         * @memberof collab.CollabDocStateParams
-         * @instance
-         */
-        CollabDocStateParams.prototype.collabType = 0;
-
-        /**
-         * CollabDocStateParams compression.
-         * @member {collab.PayloadCompressionType} compression
-         * @memberof collab.CollabDocStateParams
-         * @instance
-         */
-        CollabDocStateParams.prototype.compression = 0;
-
-        /**
-         * CollabDocStateParams sv.
-         * @member {Uint8Array} sv
-         * @memberof collab.CollabDocStateParams
-         * @instance
-         */
-        CollabDocStateParams.prototype.sv = $util.newBuffer([]);
-
-        /**
-         * CollabDocStateParams docState.
-         * @member {Uint8Array} docState
-         * @memberof collab.CollabDocStateParams
-         * @instance
-         */
-        CollabDocStateParams.prototype.docState = $util.newBuffer([]);
-
-        /**
-         * Creates a new CollabDocStateParams instance using the specified properties.
-         * @function create
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {collab.ICollabDocStateParams=} [properties] Properties to set
-         * @returns {collab.CollabDocStateParams} CollabDocStateParams instance
-         */
-        CollabDocStateParams.create = function create(properties) {
-            return new CollabDocStateParams(properties);
-        };
-
-        /**
-         * Encodes the specified CollabDocStateParams message. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
-         * @function encode
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {collab.ICollabDocStateParams} message CollabDocStateParams message or plain object to encode
-         * @param {$protobuf.Writer} [writer] Writer to encode to
-         * @returns {$protobuf.Writer} Writer
-         */
-        CollabDocStateParams.encode = function encode(message, writer) {
-            if (!writer)
-                writer = $Writer.create();
-            if (message.objectId != null && Object.hasOwnProperty.call(message, "objectId"))
-                writer.uint32(/* id 1, wireType 2 =*/10).string(message.objectId);
-            if (message.collabType != null && Object.hasOwnProperty.call(message, "collabType"))
-                writer.uint32(/* id 2, wireType 0 =*/16).int32(message.collabType);
-            if (message.compression != null && Object.hasOwnProperty.call(message, "compression"))
-                writer.uint32(/* id 3, wireType 0 =*/24).int32(message.compression);
-            if (message.sv != null && Object.hasOwnProperty.call(message, "sv"))
-                writer.uint32(/* id 4, wireType 2 =*/34).bytes(message.sv);
-            if (message.docState != null && Object.hasOwnProperty.call(message, "docState"))
-                writer.uint32(/* id 5, wireType 2 =*/42).bytes(message.docState);
-            return writer;
-        };
-
-        /**
-         * Encodes the specified CollabDocStateParams message, length delimited. Does not implicitly {@link collab.CollabDocStateParams.verify|verify} messages.
-         * @function encodeDelimited
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {collab.ICollabDocStateParams} message CollabDocStateParams message or plain object to encode
-         * @param {$protobuf.Writer} [writer] Writer to encode to
-         * @returns {$protobuf.Writer} Writer
-         */
-        CollabDocStateParams.encodeDelimited = function encodeDelimited(message, writer) {
-            return this.encode(message, writer).ldelim();
-        };
-
-        /**
-         * Decodes a CollabDocStateParams message from the specified reader or buffer.
-         * @function decode
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @param {number} [length] Message length if known beforehand
-         * @returns {collab.CollabDocStateParams} CollabDocStateParams
-         * @throws {Error} If the payload is not a reader or valid buffer
-         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-         */
-        CollabDocStateParams.decode = function decode(reader, length) {
-            if (!(reader instanceof $Reader))
-                reader = $Reader.create(reader);
-            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.collab.CollabDocStateParams();
-            while (reader.pos < end) {
-                let tag = reader.uint32();
-                switch (tag >>> 3) {
-                    case 1: {
-                        message.objectId = reader.string();
-                        break;
-                    }
-                    case 2: {
-                        message.collabType = reader.int32();
-                        break;
-                    }
-                    case 3: {
-                        message.compression = reader.int32();
-                        break;
-                    }
-                    case 4: {
-                        message.sv = reader.bytes();
-                        break;
-                    }
-                    case 5: {
-                        message.docState = reader.bytes();
-                        break;
-                    }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
-                }
-            }
-            return message;
-        };
-
-        /**
-         * Decodes a CollabDocStateParams message from the specified reader or buffer, length delimited.
-         * @function decodeDelimited
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-         * @returns {collab.CollabDocStateParams} CollabDocStateParams
-         * @throws {Error} If the payload is not a reader or valid buffer
-         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-         */
-        CollabDocStateParams.decodeDelimited = function decodeDelimited(reader) {
-            if (!(reader instanceof $Reader))
-                reader = new $Reader(reader);
-            return this.decode(reader, reader.uint32());
-        };
-
-        /**
-         * Verifies a CollabDocStateParams message.
-         * @function verify
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {Object.<string,*>} message Plain object to verify
-         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-         */
-        CollabDocStateParams.verify = function verify(message) {
-            if (typeof message !== "object" || message === null)
-                return "object expected";
-            if (message.objectId != null && message.hasOwnProperty("objectId"))
-                if (!$util.isString(message.objectId))
-                    return "objectId: string expected";
-            if (message.collabType != null && message.hasOwnProperty("collabType"))
-                if (!$util.isInteger(message.collabType))
-                    return "collabType: integer expected";
-            if (message.compression != null && message.hasOwnProperty("compression"))
-                switch (message.compression) {
-                    default:
-                        return "compression: enum value expected";
-                    case 0:
-                    case 1:
-                        break;
-                }
-            if (message.sv != null && message.hasOwnProperty("sv"))
-                if (!(message.sv && typeof message.sv.length === "number" || $util.isString(message.sv)))
-                    return "sv: buffer expected";
-            if (message.docState != null && message.hasOwnProperty("docState"))
-                if (!(message.docState && typeof message.docState.length === "number" || $util.isString(message.docState)))
-                    return "docState: buffer expected";
-            return null;
-        };
-
-        /**
-         * Creates a CollabDocStateParams message from a plain object. Also converts values to their respective internal types.
-         * @function fromObject
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {Object.<string,*>} object Plain object
-         * @returns {collab.CollabDocStateParams} CollabDocStateParams
-         */
-        CollabDocStateParams.fromObject = function fromObject(object) {
-            if (object instanceof $root.collab.CollabDocStateParams)
-                return object;
-            let message = new $root.collab.CollabDocStateParams();
-            if (object.objectId != null)
-                message.objectId = String(object.objectId);
-            if (object.collabType != null)
-                message.collabType = object.collabType | 0;
-            switch (object.compression) {
-                default:
-                    if (typeof object.compression === "number") {
-                        message.compression = object.compression;
-                        break;
-                    }
-                    break;
-                case "NONE":
-                case 0:
-                    message.compression = 0;
-                    break;
-                case "ZSTD":
-                case 1:
-                    message.compression = 1;
-                    break;
-            }
-            if (object.sv != null)
-                if (typeof object.sv === "string")
-                    $util.base64.decode(object.sv, message.sv = $util.newBuffer($util.base64.length(object.sv)), 0);
-                else if (object.sv.length >= 0)
-                    message.sv = object.sv;
-            if (object.docState != null)
-                if (typeof object.docState === "string")
-                    $util.base64.decode(object.docState, message.docState = $util.newBuffer($util.base64.length(object.docState)), 0);
-                else if (object.docState.length >= 0)
-                    message.docState = object.docState;
-            return message;
-        };
-
-        /**
-         * Creates a plain object from a CollabDocStateParams message. Also converts values to other types if specified.
-         * @function toObject
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {collab.CollabDocStateParams} message CollabDocStateParams
-         * @param {$protobuf.IConversionOptions} [options] Conversion options
-         * @returns {Object.<string,*>} Plain object
-         */
-        CollabDocStateParams.toObject = function toObject(message, options) {
-            if (!options)
-                options = {};
-            let object = {};
-            if (options.defaults) {
-                object.objectId = "";
-                object.collabType = 0;
-                object.compression = options.enums === String ? "NONE" : 0;
-                if (options.bytes === String)
-                    object.sv = "";
-                else {
-                    object.sv = [];
-                    if (options.bytes !== Array)
-                        object.sv = $util.newBuffer(object.sv);
-                }
-                if (options.bytes === String)
-                    object.docState = "";
-                else {
-                    object.docState = [];
-                    if (options.bytes !== Array)
-                        object.docState = $util.newBuffer(object.docState);
-                }
-            }
-            if (message.objectId != null && message.hasOwnProperty("objectId"))
-                object.objectId = message.objectId;
-            if (message.collabType != null && message.hasOwnProperty("collabType"))
-                object.collabType = message.collabType;
-            if (message.compression != null && message.hasOwnProperty("compression"))
-                object.compression = options.enums === String ? $root.collab.PayloadCompressionType[message.compression] === undefined ? message.compression : $root.collab.PayloadCompressionType[message.compression] : message.compression;
-            if (message.sv != null && message.hasOwnProperty("sv"))
-                object.sv = options.bytes === String ? $util.base64.encode(message.sv, 0, message.sv.length) : options.bytes === Array ? Array.prototype.slice.call(message.sv) : message.sv;
-            if (message.docState != null && message.hasOwnProperty("docState"))
-                object.docState = options.bytes === String ? $util.base64.encode(message.docState, 0, message.docState.length) : options.bytes === Array ? Array.prototype.slice.call(message.docState) : message.docState;
-            return object;
-        };
-
-        /**
-         * Converts this CollabDocStateParams to JSON.
-         * @function toJSON
-         * @memberof collab.CollabDocStateParams
-         * @instance
-         * @returns {Object.<string,*>} JSON object
-         */
-        CollabDocStateParams.prototype.toJSON = function toJSON() {
-            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-        };
-
-        /**
-         * Gets the default type url for CollabDocStateParams
-         * @function getTypeUrl
-         * @memberof collab.CollabDocStateParams
-         * @static
-         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
-         * @returns {string} The default type url
-         */
-        CollabDocStateParams.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
-            if (typeUrlPrefix === undefined) {
-                typeUrlPrefix = "type.googleapis.com";
-            }
-            return typeUrlPrefix + "/collab.CollabDocStateParams";
-        };
-
-        return CollabDocStateParams;
-    })();
-
     return collab;
 })();
 
@@ -3799,7 +3468,7 @@ export const notification = $root.notification = (() => {
      */
     const notification = {};
 
-    notification.WorkspaceNotification = (function () {
+    notification.WorkspaceNotification = (function() {
 
         /**
          * Properties of a WorkspaceNotification.
@@ -3814,6 +3483,7 @@ export const notification = $root.notification = (() => {
          * @property {notification.IWorkspaceMemberProfileChanged|null} [workspaceMemberProfileChanged] WorkspaceNotification workspaceMemberProfileChanged
          * @property {notification.IFolderChanged|null} [folderChanged] WorkspaceNotification folderChanged
          * @property {notification.IFolderViewChanged|null} [folderViewChanged] WorkspaceNotification folderViewChanged
+         * @property {notification.IInboxNotification|null} [inboxNotification] WorkspaceNotification inboxNotification
          */
 
         /**
@@ -3903,17 +3573,25 @@ export const notification = $root.notification = (() => {
          */
         WorkspaceNotification.prototype.folderViewChanged = null;
 
+        /**
+         * WorkspaceNotification inboxNotification.
+         * @member {notification.IInboxNotification|null|undefined} inboxNotification
+         * @memberof notification.WorkspaceNotification
+         * @instance
+         */
+        WorkspaceNotification.prototype.inboxNotification = null;
+
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
         /**
          * WorkspaceNotification payload.
-         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|undefined} payload
+         * @member {"profileChange"|"permissionChanged"|"sectionChanged"|"shareViewsChanged"|"mentionablePersonListChanged"|"serverLimit"|"workspaceMemberProfileChanged"|"folderChanged"|"folderViewChanged"|"inboxNotification"|undefined} payload
          * @memberof notification.WorkspaceNotification
          * @instance
          */
         Object.defineProperty(WorkspaceNotification.prototype, "payload", {
-            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged"]),
+            get: $util.oneOfGetter($oneOfFields = ["profileChange", "permissionChanged", "sectionChanged", "shareViewsChanged", "mentionablePersonListChanged", "serverLimit", "workspaceMemberProfileChanged", "folderChanged", "folderViewChanged", "inboxNotification"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
@@ -3959,6 +3637,8 @@ export const notification = $root.notification = (() => {
                 $root.notification.FolderChanged.encode(message.folderChanged, writer.uint32(/* id 8, wireType 2 =*/66).fork()).ldelim();
             if (message.folderViewChanged != null && Object.hasOwnProperty.call(message, "folderViewChanged"))
                 $root.notification.FolderViewChanged.encode(message.folderViewChanged, writer.uint32(/* id 9, wireType 2 =*/74).fork()).ldelim();
+            if (message.inboxNotification != null && Object.hasOwnProperty.call(message, "inboxNotification"))
+                $root.notification.InboxNotification.encode(message.inboxNotification, writer.uint32(/* id 10, wireType 2 =*/82).fork()).ldelim();
             return writer;
         };
 
@@ -3986,52 +3666,58 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        WorkspaceNotification.decode = function decode(reader, length) {
+        WorkspaceNotification.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.WorkspaceNotification();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.profileChange = $root.notification.UserProfileChange.decode(reader, reader.uint32());
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.permissionChanged = $root.notification.PermissionChanged.decode(reader, reader.uint32());
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.sectionChanged = $root.notification.SectionChanged.decode(reader, reader.uint32());
                         break;
                     }
-                    case 4: {
+                case 4: {
                         message.shareViewsChanged = $root.notification.ShareViewsChanged.decode(reader, reader.uint32());
                         break;
                     }
-                    case 5: {
+                case 5: {
                         message.mentionablePersonListChanged = $root.notification.MentionablePersonListChanged.decode(reader, reader.uint32());
                         break;
                     }
-                    case 6: {
+                case 6: {
                         message.serverLimit = $root.notification.ServerLimit.decode(reader, reader.uint32());
                         break;
                     }
-                    case 7: {
+                case 7: {
                         message.workspaceMemberProfileChanged = $root.notification.WorkspaceMemberProfileChanged.decode(reader, reader.uint32());
                         break;
                     }
-                    case 8: {
+                case 8: {
                         message.folderChanged = $root.notification.FolderChanged.decode(reader, reader.uint32());
                         break;
                     }
-                    case 9: {
+                case 9: {
                         message.folderViewChanged = $root.notification.FolderViewChanged.decode(reader, reader.uint32());
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
+                case 10: {
+                        message.inboxNotification = $root.notification.InboxNotification.decode(reader, reader.uint32());
                         break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -4153,6 +3839,16 @@ export const notification = $root.notification = (() => {
                         return "folderViewChanged." + error;
                 }
             }
+            if (message.inboxNotification != null && message.hasOwnProperty("inboxNotification")) {
+                if (properties.payload === 1)
+                    return "payload: multiple values";
+                properties.payload = 1;
+                {
+                    let error = $root.notification.InboxNotification.verify(message.inboxNotification);
+                    if (error)
+                        return "inboxNotification." + error;
+                }
+            }
             return null;
         };
 
@@ -4212,6 +3908,11 @@ export const notification = $root.notification = (() => {
                 if (typeof object.folderViewChanged !== "object")
                     throw TypeError(".notification.WorkspaceNotification.folderViewChanged: object expected");
                 message.folderViewChanged = $root.notification.FolderViewChanged.fromObject(object.folderViewChanged);
+            }
+            if (object.inboxNotification != null) {
+                if (typeof object.inboxNotification !== "object")
+                    throw TypeError(".notification.WorkspaceNotification.inboxNotification: object expected");
+                message.inboxNotification = $root.notification.InboxNotification.fromObject(object.inboxNotification);
             }
             return message;
         };
@@ -4274,6 +3975,11 @@ export const notification = $root.notification = (() => {
                 if (options.oneofs)
                     object.payload = "folderViewChanged";
             }
+            if (message.inboxNotification != null && message.hasOwnProperty("inboxNotification")) {
+                object.inboxNotification = $root.notification.InboxNotification.toObject(message.inboxNotification, options);
+                if (options.oneofs)
+                    object.payload = "inboxNotification";
+            }
             return object;
         };
 
@@ -4306,7 +4012,7 @@ export const notification = $root.notification = (() => {
         return WorkspaceNotification;
     })();
 
-    notification.UserProfileChange = (function () {
+    notification.UserProfileChange = (function() {
 
         /**
          * Properties of a UserProfileChange.
@@ -4338,7 +4044,7 @@ export const notification = $root.notification = (() => {
          * @memberof notification.UserProfileChange
          * @instance
          */
-        UserProfileChange.prototype.uid = $util.Long ? $util.Long.fromBits(0, 0, false) : 0;
+        UserProfileChange.prototype.uid = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
 
         /**
          * UserProfileChange name.
@@ -4359,13 +4065,23 @@ export const notification = $root.notification = (() => {
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
-        // Virtual OneOf for proto3 optional field
+        /**
+         * UserProfileChange _name.
+         * @member {"name"|undefined} _name
+         * @memberof notification.UserProfileChange
+         * @instance
+         */
         Object.defineProperty(UserProfileChange.prototype, "_name", {
             get: $util.oneOfGetter($oneOfFields = ["name"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
-        // Virtual OneOf for proto3 optional field
+        /**
+         * UserProfileChange _email.
+         * @member {"email"|undefined} _email
+         * @memberof notification.UserProfileChange
+         * @instance
+         */
         Object.defineProperty(UserProfileChange.prototype, "_email", {
             get: $util.oneOfGetter($oneOfFields = ["email"]),
             set: $util.oneOfSetter($oneOfFields)
@@ -4428,28 +4144,30 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        UserProfileChange.decode = function decode(reader, length) {
+        UserProfileChange.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.UserProfileChange();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.uid = reader.int64();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.name = reader.string();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.email = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -4593,7 +4311,7 @@ export const notification = $root.notification = (() => {
         return UserProfileChange;
     })();
 
-    notification.PermissionChanged = (function () {
+    notification.PermissionChanged = (function() {
 
         /**
          * Properties of a PermissionChanged.
@@ -4689,24 +4407,26 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        PermissionChanged.decode = function decode(reader, length) {
+        PermissionChanged.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.PermissionChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.objectId = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.reason = reader.uint32();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -4820,7 +4540,7 @@ export const notification = $root.notification = (() => {
         return PermissionChanged;
     })();
 
-    notification.SectionChanged = (function () {
+    notification.SectionChanged = (function() {
 
         /**
          * Properties of a SectionChanged.
@@ -4905,20 +4625,22 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        SectionChanged.decode = function decode(reader, length) {
+        SectionChanged.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.SectionChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.data = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -5023,7 +4745,7 @@ export const notification = $root.notification = (() => {
         return SectionChanged;
     })();
 
-    notification.MentionablePersonListChanged = (function () {
+    notification.MentionablePersonListChanged = (function() {
 
         /**
          * Properties of a MentionablePersonListChanged.
@@ -5155,32 +4877,34 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        MentionablePersonListChanged.decode = function decode(reader, length) {
+        MentionablePersonListChanged.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.MentionablePersonListChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.updateMemberRole = $root.notification.UpdateMemberRole.decode(reader, reader.uint32());
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.pageMention = $root.notification.PageMention.decode(reader, reader.uint32());
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.newMember = $root.notification.NewMember.decode(reader, reader.uint32());
                         break;
                     }
-                    case 4: {
+                case 4: {
                         message.removedMember = $root.notification.RemovedMember.decode(reader, reader.uint32());
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -5355,7 +5079,7 @@ export const notification = $root.notification = (() => {
         return MentionablePersonListChanged;
     })();
 
-    notification.NewMember = (function () {
+    notification.NewMember = (function() {
 
         /**
          * Properties of a NewMember.
@@ -5440,20 +5164,22 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        NewMember.decode = function decode(reader, length) {
+        NewMember.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.NewMember();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.userUuid = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -5558,7 +5284,7 @@ export const notification = $root.notification = (() => {
         return NewMember;
     })();
 
-    notification.RemovedMember = (function () {
+    notification.RemovedMember = (function() {
 
         /**
          * Properties of a RemovedMember.
@@ -5643,20 +5369,22 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        RemovedMember.decode = function decode(reader, length) {
+        RemovedMember.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.RemovedMember();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.userUuid = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -5761,7 +5489,7 @@ export const notification = $root.notification = (() => {
         return RemovedMember;
     })();
 
-    notification.UpdateMemberRole = (function () {
+    notification.UpdateMemberRole = (function() {
 
         /**
          * Properties of an UpdateMemberRole.
@@ -5868,28 +5596,30 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        UpdateMemberRole.decode = function decode(reader, length) {
+        UpdateMemberRole.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.UpdateMemberRole();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.userUuid = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.email = reader.string();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.role = reader.int32();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -6011,7 +5741,7 @@ export const notification = $root.notification = (() => {
         return UpdateMemberRole;
     })();
 
-    notification.PageMention = (function () {
+    notification.PageMention = (function() {
 
         /**
          * Properties of a PageMention.
@@ -6059,7 +5789,7 @@ export const notification = $root.notification = (() => {
          * @memberof notification.PageMention
          * @instance
          */
-        PageMention.prototype.mentionedAt = $util.Long ? $util.Long.fromBits(0, 0, false) : 0;
+        PageMention.prototype.mentionedAt = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
 
         /**
          * Creates a new PageMention instance using the specified properties.
@@ -6118,28 +5848,30 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        PageMention.decode = function decode(reader, length) {
+        PageMention.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.PageMention();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.userUuid = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.viewId = reader.string();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.mentionedAt = reader.int64();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -6275,7 +6007,7 @@ export const notification = $root.notification = (() => {
         return PageMention;
     })();
 
-    notification.ShareViewsChanged = (function () {
+    notification.ShareViewsChanged = (function() {
 
         /**
          * Properties of a ShareViewsChanged.
@@ -6373,26 +6105,28 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        ShareViewsChanged.decode = function decode(reader, length) {
+        ShareViewsChanged.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.ShareViewsChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.viewId = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         if (!(message.emails && message.emails.length))
                             message.emails = [];
                         message.emails.push(reader.string());
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -6518,7 +6252,7 @@ export const notification = $root.notification = (() => {
         return ShareViewsChanged;
     })();
 
-    notification.ServerLimit = (function () {
+    notification.ServerLimit = (function() {
 
         /**
          * Properties of a ServerLimit.
@@ -6559,7 +6293,7 @@ export const notification = $root.notification = (() => {
          * @memberof notification.ServerLimit
          * @instance
          */
-        ServerLimit.prototype.maxUsers = $util.Long ? $util.Long.fromBits(0, 0, true) : 0;
+        ServerLimit.prototype.maxUsers = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
         /**
          * ServerLimit maxGuests.
@@ -6567,7 +6301,7 @@ export const notification = $root.notification = (() => {
          * @memberof notification.ServerLimit
          * @instance
          */
-        ServerLimit.prototype.maxGuests = $util.Long ? $util.Long.fromBits(0, 0, true) : 0;
+        ServerLimit.prototype.maxGuests = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
         /**
          * Creates a new ServerLimit instance using the specified properties.
@@ -6630,14 +6364,16 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        ServerLimit.decode = function decode(reader, length) {
+        ServerLimit.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.ServerLimit();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         if (!(message.features && message.features.length))
                             message.features = [];
                         if ((tag & 7) === 2) {
@@ -6648,17 +6384,17 @@ export const notification = $root.notification = (() => {
                             message.features.push(reader.int32());
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.maxUsers = reader.uint64();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.maxGuests = reader.uint64();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -6821,7 +6557,7 @@ export const notification = $root.notification = (() => {
         return ServerLimit;
     })();
 
-    notification.WorkspaceMemberProfileChanged = (function () {
+    notification.WorkspaceMemberProfileChanged = (function() {
 
         /**
          * Properties of a WorkspaceMemberProfileChanged.
@@ -6901,25 +6637,45 @@ export const notification = $root.notification = (() => {
         // OneOf field names bound to virtual getters and setters
         let $oneOfFields;
 
-        // Virtual OneOf for proto3 optional field
+        /**
+         * WorkspaceMemberProfileChanged _avatarUrl.
+         * @member {"avatarUrl"|undefined} _avatarUrl
+         * @memberof notification.WorkspaceMemberProfileChanged
+         * @instance
+         */
         Object.defineProperty(WorkspaceMemberProfileChanged.prototype, "_avatarUrl", {
             get: $util.oneOfGetter($oneOfFields = ["avatarUrl"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
-        // Virtual OneOf for proto3 optional field
+        /**
+         * WorkspaceMemberProfileChanged _coverImageUrl.
+         * @member {"coverImageUrl"|undefined} _coverImageUrl
+         * @memberof notification.WorkspaceMemberProfileChanged
+         * @instance
+         */
         Object.defineProperty(WorkspaceMemberProfileChanged.prototype, "_coverImageUrl", {
             get: $util.oneOfGetter($oneOfFields = ["coverImageUrl"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
-        // Virtual OneOf for proto3 optional field
+        /**
+         * WorkspaceMemberProfileChanged _customImageUrl.
+         * @member {"customImageUrl"|undefined} _customImageUrl
+         * @memberof notification.WorkspaceMemberProfileChanged
+         * @instance
+         */
         Object.defineProperty(WorkspaceMemberProfileChanged.prototype, "_customImageUrl", {
             get: $util.oneOfGetter($oneOfFields = ["customImageUrl"]),
             set: $util.oneOfSetter($oneOfFields)
         });
 
-        // Virtual OneOf for proto3 optional field
+        /**
+         * WorkspaceMemberProfileChanged _description.
+         * @member {"description"|undefined} _description
+         * @memberof notification.WorkspaceMemberProfileChanged
+         * @instance
+         */
         Object.defineProperty(WorkspaceMemberProfileChanged.prototype, "_description", {
             get: $util.oneOfGetter($oneOfFields = ["description"]),
             set: $util.oneOfSetter($oneOfFields)
@@ -6988,40 +6744,42 @@ export const notification = $root.notification = (() => {
          * @throws {Error} If the payload is not a reader or valid buffer
          * @throws {$protobuf.util.ProtocolError} If required fields are missing
          */
-        WorkspaceMemberProfileChanged.decode = function decode(reader, length) {
+        WorkspaceMemberProfileChanged.decode = function decode(reader, length, error) {
             if (!(reader instanceof $Reader))
                 reader = $Reader.create(reader);
             let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.WorkspaceMemberProfileChanged();
             while (reader.pos < end) {
                 let tag = reader.uint32();
+                if (tag === error)
+                    break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.userUuid = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.name = reader.string();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.avatarUrl = reader.string();
                         break;
                     }
-                    case 4: {
+                case 4: {
                         message.coverImageUrl = reader.string();
                         break;
                     }
-                    case 5: {
+                case 5: {
                         message.customImageUrl = reader.string();
                         break;
                     }
-                    case 6: {
+                case 6: {
                         message.description = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -7184,7 +6942,7 @@ export const notification = $root.notification = (() => {
         return WorkspaceMemberProfileChanged;
     })();
 
-    notification.FolderChanged = (function () {
+    notification.FolderChanged = (function() {
 
         /**
          * Properties of a FolderChanged.
@@ -7303,17 +7061,17 @@ export const notification = $root.notification = (() => {
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.outlineDiffJson = reader.string();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.folderRid = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -7431,7 +7189,7 @@ export const notification = $root.notification = (() => {
         return FolderChanged;
     })();
 
-    notification.FolderViewChanged = (function () {
+    notification.FolderViewChanged = (function() {
 
         /**
          * Properties of a FolderViewChanged.
@@ -7618,35 +7376,35 @@ export const notification = $root.notification = (() => {
                 if (tag === error)
                     break;
                 switch (tag >>> 3) {
-                    case 1: {
+                case 1: {
                         message.changeType = reader.uint32();
                         break;
                     }
-                    case 2: {
+                case 2: {
                         message.viewId = reader.string();
                         break;
                     }
-                    case 3: {
+                case 3: {
                         message.viewJson = reader.string();
                         break;
                     }
-                    case 4: {
+                case 4: {
                         message.parentViewId = reader.string();
                         break;
                     }
-                    case 5: {
+                case 5: {
                         if (!(message.childViewIds && message.childViewIds.length))
                             message.childViewIds = [];
                         message.childViewIds.push(reader.string());
                         break;
                     }
-                    case 6: {
+                case 6: {
                         message.folderRid = reader.string();
                         break;
                     }
-                    default:
-                        reader.skipType(tag & 7);
-                        break;
+                default:
+                    reader.skipType(tag & 7);
+                    break;
                 }
             }
             return message;
@@ -7816,6 +7574,385 @@ export const notification = $root.notification = (() => {
         };
 
         return FolderViewChanged;
+    })();
+
+    notification.InboxNotification = (function() {
+
+        /**
+         * Properties of an InboxNotification.
+         * @memberof notification
+         * @interface IInboxNotification
+         * @property {string|null} [id] InboxNotification id
+         * @property {string|null} [type] InboxNotification type
+         * @property {string|null} [viewId] InboxNotification viewId
+         * @property {number|Long|null} [actorUid] InboxNotification actorUid
+         * @property {string|null} [metadataJson] InboxNotification metadataJson
+         * @property {number|Long|null} [createdAt] InboxNotification createdAt
+         */
+
+        /**
+         * Constructs a new InboxNotification.
+         * @memberof notification
+         * @classdesc Represents an InboxNotification.
+         * @implements IInboxNotification
+         * @constructor
+         * @param {notification.IInboxNotification=} [properties] Properties to set
+         */
+        function InboxNotification(properties) {
+            if (properties)
+                for (let keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                    if (properties[keys[i]] != null)
+                        this[keys[i]] = properties[keys[i]];
+        }
+
+        /**
+         * InboxNotification id.
+         * @member {string} id
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.id = "";
+
+        /**
+         * InboxNotification type.
+         * @member {string} type
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.type = "";
+
+        /**
+         * InboxNotification viewId.
+         * @member {string|null|undefined} viewId
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.viewId = null;
+
+        /**
+         * InboxNotification actorUid.
+         * @member {number|Long|null|undefined} actorUid
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.actorUid = null;
+
+        /**
+         * InboxNotification metadataJson.
+         * @member {string} metadataJson
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.metadataJson = "";
+
+        /**
+         * InboxNotification createdAt.
+         * @member {number|Long} createdAt
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        InboxNotification.prototype.createdAt = $util.Long ? $util.Long.fromBits(0,0,false) : 0;
+
+        // OneOf field names bound to virtual getters and setters
+        let $oneOfFields;
+
+        /**
+         * InboxNotification _viewId.
+         * @member {"viewId"|undefined} _viewId
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        Object.defineProperty(InboxNotification.prototype, "_viewId", {
+            get: $util.oneOfGetter($oneOfFields = ["viewId"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * InboxNotification _actorUid.
+         * @member {"actorUid"|undefined} _actorUid
+         * @memberof notification.InboxNotification
+         * @instance
+         */
+        Object.defineProperty(InboxNotification.prototype, "_actorUid", {
+            get: $util.oneOfGetter($oneOfFields = ["actorUid"]),
+            set: $util.oneOfSetter($oneOfFields)
+        });
+
+        /**
+         * Creates a new InboxNotification instance using the specified properties.
+         * @function create
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {notification.IInboxNotification=} [properties] Properties to set
+         * @returns {notification.InboxNotification} InboxNotification instance
+         */
+        InboxNotification.create = function create(properties) {
+            return new InboxNotification(properties);
+        };
+
+        /**
+         * Encodes the specified InboxNotification message. Does not implicitly {@link notification.InboxNotification.verify|verify} messages.
+         * @function encode
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {notification.IInboxNotification} message InboxNotification message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        InboxNotification.encode = function encode(message, writer) {
+            if (!writer)
+                writer = $Writer.create();
+            if (message.id != null && Object.hasOwnProperty.call(message, "id"))
+                writer.uint32(/* id 1, wireType 2 =*/10).string(message.id);
+            if (message.type != null && Object.hasOwnProperty.call(message, "type"))
+                writer.uint32(/* id 2, wireType 2 =*/18).string(message.type);
+            if (message.viewId != null && Object.hasOwnProperty.call(message, "viewId"))
+                writer.uint32(/* id 3, wireType 2 =*/26).string(message.viewId);
+            if (message.actorUid != null && Object.hasOwnProperty.call(message, "actorUid"))
+                writer.uint32(/* id 4, wireType 0 =*/32).int64(message.actorUid);
+            if (message.metadataJson != null && Object.hasOwnProperty.call(message, "metadataJson"))
+                writer.uint32(/* id 5, wireType 2 =*/42).string(message.metadataJson);
+            if (message.createdAt != null && Object.hasOwnProperty.call(message, "createdAt"))
+                writer.uint32(/* id 6, wireType 0 =*/48).int64(message.createdAt);
+            return writer;
+        };
+
+        /**
+         * Encodes the specified InboxNotification message, length delimited. Does not implicitly {@link notification.InboxNotification.verify|verify} messages.
+         * @function encodeDelimited
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {notification.IInboxNotification} message InboxNotification message or plain object to encode
+         * @param {$protobuf.Writer} [writer] Writer to encode to
+         * @returns {$protobuf.Writer} Writer
+         */
+        InboxNotification.encodeDelimited = function encodeDelimited(message, writer) {
+            return this.encode(message, writer).ldelim();
+        };
+
+        /**
+         * Decodes an InboxNotification message from the specified reader or buffer.
+         * @function decode
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @param {number} [length] Message length if known beforehand
+         * @returns {notification.InboxNotification} InboxNotification
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        InboxNotification.decode = function decode(reader, length, error) {
+            if (!(reader instanceof $Reader))
+                reader = $Reader.create(reader);
+            let end = length === undefined ? reader.len : reader.pos + length, message = new $root.notification.InboxNotification();
+            while (reader.pos < end) {
+                let tag = reader.uint32();
+                if (tag === error)
+                    break;
+                switch (tag >>> 3) {
+                case 1: {
+                        message.id = reader.string();
+                        break;
+                    }
+                case 2: {
+                        message.type = reader.string();
+                        break;
+                    }
+                case 3: {
+                        message.viewId = reader.string();
+                        break;
+                    }
+                case 4: {
+                        message.actorUid = reader.int64();
+                        break;
+                    }
+                case 5: {
+                        message.metadataJson = reader.string();
+                        break;
+                    }
+                case 6: {
+                        message.createdAt = reader.int64();
+                        break;
+                    }
+                default:
+                    reader.skipType(tag & 7);
+                    break;
+                }
+            }
+            return message;
+        };
+
+        /**
+         * Decodes an InboxNotification message from the specified reader or buffer, length delimited.
+         * @function decodeDelimited
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+         * @returns {notification.InboxNotification} InboxNotification
+         * @throws {Error} If the payload is not a reader or valid buffer
+         * @throws {$protobuf.util.ProtocolError} If required fields are missing
+         */
+        InboxNotification.decodeDelimited = function decodeDelimited(reader) {
+            if (!(reader instanceof $Reader))
+                reader = new $Reader(reader);
+            return this.decode(reader, reader.uint32());
+        };
+
+        /**
+         * Verifies an InboxNotification message.
+         * @function verify
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {Object.<string,*>} message Plain object to verify
+         * @returns {string|null} `null` if valid, otherwise the reason why it is not
+         */
+        InboxNotification.verify = function verify(message) {
+            if (typeof message !== "object" || message === null)
+                return "object expected";
+            let properties = {};
+            if (message.id != null && message.hasOwnProperty("id"))
+                if (!$util.isString(message.id))
+                    return "id: string expected";
+            if (message.type != null && message.hasOwnProperty("type"))
+                if (!$util.isString(message.type))
+                    return "type: string expected";
+            if (message.viewId != null && message.hasOwnProperty("viewId")) {
+                properties._viewId = 1;
+                if (!$util.isString(message.viewId))
+                    return "viewId: string expected";
+            }
+            if (message.actorUid != null && message.hasOwnProperty("actorUid")) {
+                properties._actorUid = 1;
+                if (!$util.isInteger(message.actorUid) && !(message.actorUid && $util.isInteger(message.actorUid.low) && $util.isInteger(message.actorUid.high)))
+                    return "actorUid: integer|Long expected";
+            }
+            if (message.metadataJson != null && message.hasOwnProperty("metadataJson"))
+                if (!$util.isString(message.metadataJson))
+                    return "metadataJson: string expected";
+            if (message.createdAt != null && message.hasOwnProperty("createdAt"))
+                if (!$util.isInteger(message.createdAt) && !(message.createdAt && $util.isInteger(message.createdAt.low) && $util.isInteger(message.createdAt.high)))
+                    return "createdAt: integer|Long expected";
+            return null;
+        };
+
+        /**
+         * Creates an InboxNotification message from a plain object. Also converts values to their respective internal types.
+         * @function fromObject
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {Object.<string,*>} object Plain object
+         * @returns {notification.InboxNotification} InboxNotification
+         */
+        InboxNotification.fromObject = function fromObject(object) {
+            if (object instanceof $root.notification.InboxNotification)
+                return object;
+            let message = new $root.notification.InboxNotification();
+            if (object.id != null)
+                message.id = String(object.id);
+            if (object.type != null)
+                message.type = String(object.type);
+            if (object.viewId != null)
+                message.viewId = String(object.viewId);
+            if (object.actorUid != null)
+                if ($util.Long)
+                    (message.actorUid = $util.Long.fromValue(object.actorUid)).unsigned = false;
+                else if (typeof object.actorUid === "string")
+                    message.actorUid = parseInt(object.actorUid, 10);
+                else if (typeof object.actorUid === "number")
+                    message.actorUid = object.actorUid;
+                else if (typeof object.actorUid === "object")
+                    message.actorUid = new $util.LongBits(object.actorUid.low >>> 0, object.actorUid.high >>> 0).toNumber();
+            if (object.metadataJson != null)
+                message.metadataJson = String(object.metadataJson);
+            if (object.createdAt != null)
+                if ($util.Long)
+                    (message.createdAt = $util.Long.fromValue(object.createdAt)).unsigned = false;
+                else if (typeof object.createdAt === "string")
+                    message.createdAt = parseInt(object.createdAt, 10);
+                else if (typeof object.createdAt === "number")
+                    message.createdAt = object.createdAt;
+                else if (typeof object.createdAt === "object")
+                    message.createdAt = new $util.LongBits(object.createdAt.low >>> 0, object.createdAt.high >>> 0).toNumber();
+            return message;
+        };
+
+        /**
+         * Creates a plain object from an InboxNotification message. Also converts values to other types if specified.
+         * @function toObject
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {notification.InboxNotification} message InboxNotification
+         * @param {$protobuf.IConversionOptions} [options] Conversion options
+         * @returns {Object.<string,*>} Plain object
+         */
+        InboxNotification.toObject = function toObject(message, options) {
+            if (!options)
+                options = {};
+            let object = {};
+            if (options.defaults) {
+                object.id = "";
+                object.type = "";
+                object.metadataJson = "";
+                if ($util.Long) {
+                    let long = new $util.Long(0, 0, false);
+                    object.createdAt = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                } else
+                    object.createdAt = options.longs === String ? "0" : 0;
+            }
+            if (message.id != null && message.hasOwnProperty("id"))
+                object.id = message.id;
+            if (message.type != null && message.hasOwnProperty("type"))
+                object.type = message.type;
+            if (message.viewId != null && message.hasOwnProperty("viewId")) {
+                object.viewId = message.viewId;
+                if (options.oneofs)
+                    object._viewId = "viewId";
+            }
+            if (message.actorUid != null && message.hasOwnProperty("actorUid")) {
+                if (typeof message.actorUid === "number")
+                    object.actorUid = options.longs === String ? String(message.actorUid) : message.actorUid;
+                else
+                    object.actorUid = options.longs === String ? $util.Long.prototype.toString.call(message.actorUid) : options.longs === Number ? new $util.LongBits(message.actorUid.low >>> 0, message.actorUid.high >>> 0).toNumber() : message.actorUid;
+                if (options.oneofs)
+                    object._actorUid = "actorUid";
+            }
+            if (message.metadataJson != null && message.hasOwnProperty("metadataJson"))
+                object.metadataJson = message.metadataJson;
+            if (message.createdAt != null && message.hasOwnProperty("createdAt"))
+                if (typeof message.createdAt === "number")
+                    object.createdAt = options.longs === String ? String(message.createdAt) : message.createdAt;
+                else
+                    object.createdAt = options.longs === String ? $util.Long.prototype.toString.call(message.createdAt) : options.longs === Number ? new $util.LongBits(message.createdAt.low >>> 0, message.createdAt.high >>> 0).toNumber() : message.createdAt;
+            return object;
+        };
+
+        /**
+         * Converts this InboxNotification to JSON.
+         * @function toJSON
+         * @memberof notification.InboxNotification
+         * @instance
+         * @returns {Object.<string,*>} JSON object
+         */
+        InboxNotification.prototype.toJSON = function toJSON() {
+            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+        };
+
+        /**
+         * Gets the default type url for InboxNotification
+         * @function getTypeUrl
+         * @memberof notification.InboxNotification
+         * @static
+         * @param {string} [typeUrlPrefix] your custom typeUrlPrefix(default "type.googleapis.com")
+         * @returns {string} The default type url
+         */
+        InboxNotification.getTypeUrl = function getTypeUrl(typeUrlPrefix) {
+            if (typeUrlPrefix === undefined) {
+                typeUrlPrefix = "type.googleapis.com";
+            }
+            return typeUrlPrefix + "/notification.InboxNotification";
+        };
+
+        return InboxNotification;
     })();
 
     return notification;

@@ -1,12 +1,26 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
+import { APP_EVENTS } from '@/application/constants';
 import { NotificationService } from '@/application/services/domains';
+import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 
 import { mergeNotifications, toNotification } from './helpers';
 import { Notification } from './types';
 
 const PAGE_SIZE = 200;
-const REFRESH_INTERVAL = 30_000;
+
+export const INITIAL_NOTIFICATION_REFRESH_DELAY = 30_000;
+export const NOTIFICATION_REFRESH_INTERVAL = 10 * 60_000;
+export const NOTIFICATION_REFRESH_JITTER = 2 * 60_000;
+
+export function getNextNotificationRefreshDelay(random = Math.random): number {
+  const minDelay = NOTIFICATION_REFRESH_INTERVAL - NOTIFICATION_REFRESH_JITTER;
+  const maxDelay = NOTIFICATION_REFRESH_INTERVAL + NOTIFICATION_REFRESH_JITTER;
+
+  return minDelay + Math.round(random() * (maxDelay - minDelay));
+}
+
+type RefreshSource = 'manual' | 'event' | 'timer';
 
 export interface UseNotificationsReturn {
   notifications: Notification[];
@@ -14,6 +28,7 @@ export interface UseNotificationsReturn {
   unreadNotifications: Notification[];
   archivedNotifications: Notification[];
   unreadCount: number;
+  hasLoaded: boolean;
   isLoading: boolean;
   isLoadingMore: boolean;
   hasMoreInbox: boolean;
@@ -27,8 +42,10 @@ export interface UseNotificationsReturn {
 }
 
 export function useNotifications(workspaceId: string | undefined): UseNotificationsReturn {
+  const eventEmitter = useContext(AppEventEmitterContext);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMoreInbox, setHasMoreInbox] = useState(true);
@@ -37,36 +54,149 @@ export function useNotifications(workspaceId: string | undefined): UseNotificati
   const inboxOffsetRef = useRef(0);
   const archiveOffsetRef = useRef(0);
   const mountedRef = useRef(true);
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
+  const pendingRefreshRef = useRef<RefreshSource | null>(null);
+  const refreshSessionRef = useRef(0);
+  const activeWorkspaceIdRef = useRef<string | undefined>(workspaceId);
+  const hasDeferredInitialRefreshRef = useRef(false);
+  const scheduledRefreshRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const refreshRef = useRef<(source: RefreshSource) => Promise<void>>(async () => undefined);
 
-  const refresh = useCallback(async () => {
-    if (!workspaceId) return;
-
-    setIsLoading(true);
-    try {
-      const [inboxRes, archiveRes, countRes] = await Promise.all([
-        NotificationService.list(workspaceId, { archived: false, offset: 0, limit: PAGE_SIZE }),
-        NotificationService.list(workspaceId, { archived: true, offset: 0, limit: PAGE_SIZE }),
-        NotificationService.getUnreadCount(workspaceId),
-      ]);
-
-      if (!mountedRef.current) return;
-
-      const inboxItems = inboxRes.notifications.map(toNotification);
-      const archiveItems = archiveRes.notifications.map(toNotification);
-      const merged = mergeNotifications([...inboxItems, ...archiveItems]);
-
-      setNotifications(merged);
-      setUnreadCount(countRes.unread_count);
-      setHasMoreInbox(inboxRes.has_more);
-      setHasMoreArchive(archiveRes.has_more);
-      inboxOffsetRef.current = inboxItems.length;
-      archiveOffsetRef.current = archiveItems.length;
-    } catch (e) {
-      console.error('[useNotifications] refresh failed', e);
-    } finally {
-      if (mountedRef.current) setIsLoading(false);
+  const clearScheduledRefresh = useCallback(() => {
+    if (scheduledRefreshRef.current) {
+      clearTimeout(scheduledRefreshRef.current);
+      scheduledRefreshRef.current = null;
     }
-  }, [workspaceId]);
+  }, []);
+
+  const scheduleNextRefresh = useCallback(
+    (delay: number) => {
+      clearScheduledRefresh();
+
+      const refreshSession = refreshSessionRef.current;
+      const currentWorkspaceId = activeWorkspaceIdRef.current;
+
+      if (!currentWorkspaceId) return;
+
+      scheduledRefreshRef.current = setTimeout(() => {
+        scheduledRefreshRef.current = null;
+
+        if (
+          !mountedRef.current ||
+          refreshSessionRef.current !== refreshSession ||
+          activeWorkspaceIdRef.current !== currentWorkspaceId
+        ) {
+          return;
+        }
+
+        void refreshRef.current('timer');
+      }, delay);
+    },
+    [clearScheduledRefresh]
+  );
+
+  const resetNotificationState = useCallback(() => {
+    setNotifications([]);
+    setUnreadCount(0);
+    setHasLoaded(false);
+    setHasMoreInbox(true);
+    setHasMoreArchive(true);
+    setIsLoading(false);
+    setIsLoadingMore(false);
+    inboxOffsetRef.current = 0;
+    archiveOffsetRef.current = 0;
+  }, []);
+
+  const refreshWithSource = useCallback(async (source: RefreshSource) => {
+    const currentWorkspaceId = activeWorkspaceIdRef.current;
+
+    if (!currentWorkspaceId) return;
+
+    if (source !== 'timer') {
+      clearScheduledRefresh();
+    }
+
+    if (refreshInFlightRef.current) {
+      pendingRefreshRef.current = source;
+      return refreshInFlightRef.current;
+    }
+
+    const refreshSession = refreshSessionRef.current;
+
+    const runRefresh = async () => {
+      setIsLoading(true);
+      try {
+        const [inboxRes, archiveRes, countRes] = await Promise.all([
+          NotificationService.list(currentWorkspaceId, { archived: false, offset: 0, limit: PAGE_SIZE }),
+          NotificationService.list(currentWorkspaceId, { archived: true, offset: 0, limit: PAGE_SIZE }),
+          NotificationService.getUnreadCount(currentWorkspaceId),
+        ]);
+
+        if (
+          !mountedRef.current ||
+          refreshSessionRef.current !== refreshSession ||
+          activeWorkspaceIdRef.current !== currentWorkspaceId
+        ) {
+          return;
+        }
+
+        const inboxItems = inboxRes.notifications.map(toNotification);
+        const archiveItems = archiveRes.notifications.map(toNotification);
+        const merged = mergeNotifications([...inboxItems, ...archiveItems]);
+
+        setHasLoaded(true);
+        setNotifications(merged);
+        setUnreadCount(countRes.unread_count);
+        setHasMoreInbox(inboxRes.has_more);
+        setHasMoreArchive(archiveRes.has_more);
+        inboxOffsetRef.current = inboxItems.length;
+        archiveOffsetRef.current = archiveItems.length;
+      } catch (e) {
+        console.error('[useNotifications] refresh failed', e);
+      } finally {
+        if (
+          mountedRef.current &&
+          refreshSessionRef.current === refreshSession &&
+          activeWorkspaceIdRef.current === currentWorkspaceId
+        ) {
+          setIsLoading(false);
+        }
+      }
+    };
+
+    const refreshPromise = runRefresh().finally(() => {
+      if (refreshInFlightRef.current === refreshPromise) {
+        refreshInFlightRef.current = null;
+      }
+
+      if (
+        !mountedRef.current ||
+        refreshSessionRef.current !== refreshSession ||
+        activeWorkspaceIdRef.current !== currentWorkspaceId
+      ) {
+        pendingRefreshRef.current = null;
+        return;
+      }
+
+      if (pendingRefreshRef.current) {
+        const pendingSource = pendingRefreshRef.current;
+
+        pendingRefreshRef.current = null;
+        void refreshRef.current(pendingSource);
+        return;
+      }
+
+      scheduleNextRefresh(getNextNotificationRefreshDelay());
+    });
+
+    refreshInFlightRef.current = refreshPromise;
+
+    return refreshPromise;
+  }, [clearScheduledRefresh, scheduleNextRefresh]);
+
+  refreshRef.current = refreshWithSource;
+
+  const refresh = useCallback(() => refreshWithSource('manual'), [refreshWithSource]);
 
   const loadingMoreRef = useRef(false);
 
@@ -76,17 +206,26 @@ export function useNotifications(workspaceId: string | undefined): UseNotificati
       if (loadingMoreRef.current) return;
       if (archived ? !hasMoreArchive : !hasMoreInbox) return;
 
+      const loadMoreSession = refreshSessionRef.current;
+      const currentWorkspaceId = workspaceId;
+
       loadingMoreRef.current = true;
       setIsLoadingMore(true);
       try {
         const offset = archived ? archiveOffsetRef.current : inboxOffsetRef.current;
-        const res = await NotificationService.list(workspaceId, {
+        const res = await NotificationService.list(currentWorkspaceId, {
           archived,
           offset,
           limit: PAGE_SIZE,
         });
 
-        if (!mountedRef.current) return;
+        if (
+          !mountedRef.current ||
+          refreshSessionRef.current !== loadMoreSession ||
+          activeWorkspaceIdRef.current !== currentWorkspaceId
+        ) {
+          return;
+        }
 
         const newItems = res.notifications.map(toNotification);
 
@@ -103,7 +242,13 @@ export function useNotifications(workspaceId: string | undefined): UseNotificati
         console.error('[useNotifications] loadMore failed', e);
       } finally {
         loadingMoreRef.current = false;
-        if (mountedRef.current) setIsLoadingMore(false);
+        if (
+          mountedRef.current &&
+          refreshSessionRef.current === loadMoreSession &&
+          activeWorkspaceIdRef.current === currentWorkspaceId
+        ) {
+          setIsLoadingMore(false);
+        }
       }
     },
     [workspaceId, hasMoreArchive, hasMoreInbox]
@@ -187,31 +332,47 @@ export function useNotifications(workspaceId: string | undefined): UseNotificati
     }
   }, [workspaceId, refresh]);
 
-  // Use a ref so the polling effect doesn't re-fire when `refresh` identity changes
-  const refreshRef = useRef(refresh);
-
-  refreshRef.current = refresh;
-
-  // Initial load + polling
+  // Refresh immediately when the server pushes a new inbox notification over workspace WS.
   useEffect(() => {
-    mountedRef.current = true;
+    if (!workspaceId || !eventEmitter) return;
+
+    const handleInboxNotification = () => {
+      void refreshRef.current('event');
+    };
+
+    eventEmitter.on(APP_EVENTS.INBOX_NOTIFICATION, handleInboxNotification);
+
+    return () => {
+      eventEmitter.off(APP_EVENTS.INBOX_NOTIFICATION, handleInboxNotification);
+    };
+  }, [workspaceId, eventEmitter]);
+
+  useEffect(() => {
+    activeWorkspaceIdRef.current = workspaceId;
+    refreshSessionRef.current += 1;
+    refreshInFlightRef.current = null;
+    pendingRefreshRef.current = null;
+    clearScheduledRefresh();
+    resetNotificationState();
+
     if (!workspaceId) {
-      setNotifications([]);
-      setUnreadCount(0);
       return;
     }
 
-    void refreshRef.current();
+    const initialDelay = hasDeferredInitialRefreshRef.current ? 0 : INITIAL_NOTIFICATION_REFRESH_DELAY;
 
-    const interval = setInterval(() => {
-      void refreshRef.current();
-    }, REFRESH_INTERVAL);
+    hasDeferredInitialRefreshRef.current = true;
+    scheduleNextRefresh(initialDelay);
+  }, [workspaceId, clearScheduledRefresh, resetNotificationState, scheduleNextRefresh]);
+
+  useEffect(() => {
+    mountedRef.current = true;
 
     return () => {
       mountedRef.current = false;
-      clearInterval(interval);
+      clearScheduledRefresh();
     };
-  }, [workspaceId]);
+  }, [clearScheduledRefresh]);
 
   // Derived lists
   const inboxNotifications = useMemo(() => notifications.filter((n) => !n.isArchived), [notifications]);
@@ -224,6 +385,7 @@ export function useNotifications(workspaceId: string | undefined): UseNotificati
     unreadNotifications,
     archivedNotifications,
     unreadCount,
+    hasLoaded,
     isLoading,
     isLoadingMore,
     hasMoreInbox,

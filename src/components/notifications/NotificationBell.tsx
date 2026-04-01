@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as BellIcon } from '@/assets/icons/mention_send_notification.svg';
-import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
+import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -11,13 +11,26 @@ import { useNotifications } from './useNotifications';
 
 function NotificationBell() {
   const { t } = useTranslation();
-  const workspaceId = useCurrentWorkspaceId();
+  const workspaceId = useCurrentWorkspaceIdOptional();
   const hook = useNotifications(workspaceId);
+  const { hasLoaded, isLoading, refresh, unreadCount } = hook;
   const [open, setOpen] = useState(false);
   const handleClose = useCallback(() => setOpen(false), []);
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      setOpen(nextOpen);
+
+      if (nextOpen && !hasLoaded && !isLoading) {
+        void refresh();
+      }
+    },
+    [hasLoaded, isLoading, refresh]
+  );
+
+  if (!workspaceId) return null;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={open} onOpenChange={handleOpenChange}>
       <Tooltip>
         <TooltipTrigger asChild>
           <PopoverTrigger asChild>
@@ -29,7 +42,7 @@ function NotificationBell() {
               }
             >
               <BellIcon className={'h-5 w-5 opacity-70'} />
-              {hook.unreadCount > 0 && (
+              {unreadCount > 0 && (
                 <span
                   className={
                     'absolute right-0 top-0 h-2 w-2 rounded-full bg-fill-error-thick'

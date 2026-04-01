@@ -13,6 +13,7 @@ message WorkspaceNotification {
         WorkspaceMemberProfileChanged workspace_member_profile_changed = 7;
         FolderChanged folder_changed = 8;
         FolderViewChanged folder_view_changed = 9;
+        InboxNotification inbox_notification = 10;
     }
 }
 
@@ -98,4 +99,17 @@ message FolderViewChanged {
     repeated string child_view_ids = 5;
     // Dedup token
     optional string folder_rid = 6;
+}
+
+message InboxNotification {
+    // UUID of af_notification.id.
+    string id = 1;
+    // snake_case AFNotificationType string (mention, page_shared, ...).
+    string type = 2;
+    optional string view_id = 3;
+    optional int64 actor_uid = 4;
+    // JSON-serialized metadata payload.
+    string metadata_json = 5;
+    // Unix timestamp seconds.
+    int64 created_at = 6;
 }

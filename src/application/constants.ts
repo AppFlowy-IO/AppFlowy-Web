@@ -72,5 +72,6 @@ export const APP_EVENTS = {
   WORKSPACE_MEMBER_PROFILE_CHANGED: 'workspace-member-profile-changed', // Workspace member profile updated
   FOLDER_OUTLINE_CHANGED: 'folder-outline-changed',       // Workspace folder outline diff (sidebar refresh)
   FOLDER_VIEW_CHANGED: 'folder-view-changed',             // Granular folder view change (sidebar update)
+  INBOX_NOTIFICATION: 'inbox-notification',               // Inbox notification push for notification center refresh
   COLLAB_DOC_RESET: 'collab-doc-reset',                   // Collab version reset replaced active Y.Doc instance
 };

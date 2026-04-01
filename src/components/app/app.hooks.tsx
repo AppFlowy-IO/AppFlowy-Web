@@ -1,5 +1,6 @@
-import React, { useContext, useMemo } from 'react';
+import { useContext, useMemo, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
+
 import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import {
@@ -7,6 +8,7 @@ import {
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
+import { AppEventEmitterContext } from './contexts/AppEventEmitterContext';
 import { AppNavigationContext } from './contexts/AppNavigationContext';
 import { AppOperationsContext } from './contexts/AppOperationsContext';
 import { AppOutlineContext } from './contexts/AppOutlineContext';
@@ -17,7 +19,7 @@ import { AppBusinessLayer } from './layers/AppBusinessLayer';
 import { AppSyncLayer } from './layers/AppSyncLayer';
 
 // Internal component to conditionally render sync and business layers only when workspace ID exists
-const ConditionalWorkspaceLayers = ({ children }: { children: React.ReactNode }) => {
+const ConditionalWorkspaceLayers = ({ children }: { children: ReactNode }) => {
   const authContext = useContext(AuthInternalContext);
   const { userWorkspaceInfo } = authContext || {};
 
@@ -39,7 +41,7 @@ const ConditionalWorkspaceLayers = ({ children }: { children: React.ReactNode })
 
 // Refactored AppProvider using layered architecture
 // External API remains identical - all changes are internal
-export const AppProvider = ({ children }: { children: React.ReactNode }) => {
+export const AppProvider = ({ children }: { children: ReactNode }) => {
   return (
     <AppAuthLayer>
       <ConditionalWorkspaceLayers>{children}</ConditionalWorkspaceLayers>
@@ -463,13 +465,13 @@ export function useAppSyncContext() {
 
 /** App-wide event bus for cross-component communication. */
 export function useEventEmitter() {
-  const context = useContext(AppSyncContext);
+  const context = useContext(AppEventEmitterContext);
 
   if (!context) {
     throw new Error('useEventEmitter must be used within an AppProvider');
   }
 
-  return context.eventEmitter;
+  return context;
 }
 
 /** Schedule deferred cleanup of a sync object (e.g. Yjs doc) after a delay. */
@@ -509,4 +511,3 @@ export function useSidebarSelectedViewId() {
     [outline, routeViewId, tabViewId]
   );
 }
-
