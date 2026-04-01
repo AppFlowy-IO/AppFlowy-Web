@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type FC, type ReactNode } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { validate as uuidValidate } from 'uuid';
 
 import { ViewService } from '@/application/services/domains';
 import { TextCount, View } from '@/application/types';
 import { findAncestors, findView } from '@/components/_shared/outline/utils';
+import { AppEventEmitterContext } from '@/components/app/contexts/AppEventEmitterContext';
 import { AppNavigationContext, AppNavigationContextType } from '@/components/app/contexts/AppNavigationContext';
 import { AppOperationsContext, AppOperationsContextType } from '@/components/app/contexts/AppOperationsContext';
 import { AppOutlineContext, AppOutlineContextType } from '@/components/app/contexts/AppOutlineContext';
@@ -21,7 +22,7 @@ import { useViewOperations } from '../hooks/useViewOperations';
 import { useWorkspaceData } from '../hooks/useWorkspaceData';
 
 interface AppBusinessLayerProps {
-  children: React.ReactNode;
+  children: ReactNode;
 }
 
 const ROUTE_VIEW_EXISTS_CACHE_MAX = 200;
@@ -60,7 +61,7 @@ function isRouteNotFoundError(error: unknown): boolean {
 // Third layer: Business logic operations
 // Handles all business operations like outline management, page operations, database operations
 // Depends on workspace ID and sync context from previous layers
-export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) => {
+export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const authContext = useAuthInternal();
   const { currentWorkspaceId } = authContext;
   const syncContext = useSyncInternal();
@@ -546,26 +547,27 @@ export const AppBusinessLayer: React.FC<AppBusinessLayerProps> = ({ children }) 
   // Sync / realtime state — MUTABLE change frequency (awarenessMap changes per document)
   const syncValue: AppSyncContextType = useMemo(
     () => ({
-      eventEmitter: syncContext.eventEmitter,
       awarenessMap,
       scheduleDeferredCleanup: syncContext.scheduleDeferredCleanup,
     }),
-    [syncContext.eventEmitter, awarenessMap, syncContext.scheduleDeferredCleanup]
+    [awarenessMap, syncContext.scheduleDeferredCleanup]
   );
 
   return (
     <AppNavigationContext.Provider value={navigationValue}>
       <AppOutlineContext.Provider value={outlineValue}>
         <AppOperationsContext.Provider value={operationsValue}>
-          <AppSyncContext.Provider value={syncValue}>
-            <AppContextConsumer
-              requestAccessError={requestAccessError}
-              openModalViewId={openModalViewId}
-              setOpenModalViewId={setOpenModalViewId}
-            >
-              {children}
-            </AppContextConsumer>
-          </AppSyncContext.Provider>
+          <AppEventEmitterContext.Provider value={syncContext.eventEmitter}>
+            <AppSyncContext.Provider value={syncValue}>
+              <AppContextConsumer
+                requestAccessError={requestAccessError}
+                openModalViewId={openModalViewId}
+                setOpenModalViewId={setOpenModalViewId}
+              >
+                {children}
+              </AppContextConsumer>
+            </AppSyncContext.Provider>
+          </AppEventEmitterContext.Provider>
         </AppOperationsContext.Provider>
       </AppOutlineContext.Provider>
     </AppNavigationContext.Provider>

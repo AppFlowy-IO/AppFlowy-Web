@@ -1,7 +1,6 @@
+import { CircularProgress } from '@mui/material';
 import { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-
-import { CircularProgress } from '@mui/material';
 
 import { isToday } from './helpers';
 import NotificationEmpty from './NotificationEmpty';
@@ -11,6 +10,7 @@ import { Notification, NotificationTabType } from './types';
 interface NotificationTabProps {
   items: Notification[];
   tab: NotificationTabType;
+  isInitialLoading: boolean;
   isLoadingMore: boolean;
   hasMore: boolean;
   onLoadMore: () => void;
@@ -22,6 +22,7 @@ interface NotificationTabProps {
 function NotificationTab({
   items,
   tab,
+  isInitialLoading,
   isLoadingMore,
   hasMore,
   onLoadMore,
@@ -48,6 +49,14 @@ function NotificationTab({
   // Group by Today / Older — must be before early return to satisfy Rules of Hooks
   const todayItems = useMemo(() => items.filter((n) => isToday(n.createdAt)), [items]);
   const olderItems = useMemo(() => items.filter((n) => !isToday(n.createdAt)), [items]);
+
+  if (isInitialLoading) {
+    return (
+      <div className={'flex h-[420px] items-center justify-center'}>
+        <CircularProgress size={24} sx={{ strokeWidth: 2 }} />
+      </div>
+    );
+  }
 
   if (items.length === 0) {
     return (

@@ -28,8 +28,9 @@ function NotificationPanel({ hook, onClose }: NotificationPanelProps) {
   const {
     markAllRead, archiveAll, markRead, archive, loadMore,
     inboxNotifications, unreadNotifications, archivedNotifications,
-    isLoadingMore, hasMoreInbox, hasMoreArchive,
+    hasLoaded, isLoading, isLoadingMore, hasMoreInbox, hasMoreArchive,
   } = hook;
+  const isInitialLoading = !hasLoaded && isLoading;
 
   const handleMarkAllRead = useCallback(async () => {
     await markAllRead();
@@ -111,6 +112,7 @@ function NotificationPanel({ hook, onClose }: NotificationPanelProps) {
             <NotificationTab
               items={inboxNotifications}
               tab={NotificationTabType.Inbox}
+              isInitialLoading={isInitialLoading}
               isLoadingMore={isLoadingMore}
               hasMore={hasMoreInbox}
               onLoadMore={handleLoadMoreInbox}
@@ -124,6 +126,7 @@ function NotificationPanel({ hook, onClose }: NotificationPanelProps) {
             <NotificationTab
               items={unreadNotifications}
               tab={NotificationTabType.Unread}
+              isInitialLoading={isInitialLoading}
               isLoadingMore={false}
               hasMore={false}
               onLoadMore={handleLoadMoreInbox}
@@ -137,6 +140,7 @@ function NotificationPanel({ hook, onClose }: NotificationPanelProps) {
             <NotificationTab
               items={archivedNotifications}
               tab={NotificationTabType.Archived}
+              isInitialLoading={isInitialLoading}
               isLoadingMore={isLoadingMore}
               hasMore={hasMoreArchive}
               onLoadMore={handleLoadMoreArchive}

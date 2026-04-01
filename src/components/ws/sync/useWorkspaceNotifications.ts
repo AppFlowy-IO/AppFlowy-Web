@@ -47,6 +47,10 @@ function dispatchNotifications(
   if (n.folderViewChanged) {
     eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, n.folderViewChanged);
   }
+
+  if (n.inboxNotification) {
+    eventEmitter.emit(APP_EVENTS.INBOX_NOTIFICATION, n.inboxNotification);
+  }
 }
 
 export function useWorkspaceNotifications(
