@@ -10,6 +10,7 @@ import { invalidToken } from '@/application/session/token';
 import { DatabaseRelations, MentionablePerson, UIVariant, View, ViewLayout } from '@/application/types';
 import {
   addViewToOutline,
+  deduplicateOutlineChildren,
   mergeChildrenIntoOutline,
   removeViewFromOutline,
   reorderChildrenInOutline,
@@ -676,6 +677,13 @@ export function useWorkspaceData() {
       }
 
       if (!patchedOutline) return;
+
+      // Deduplicate children that may have been inserted twice.
+      // FOLDER_VIEW_CHANGED (VIEW_ADDED) and FOLDER_OUTLINE_CHANGED arrive as
+      // separate notifications (protobuf oneof).  If VIEW_ADDED was processed
+      // first, the local outline already contains the new view; the incremental
+      // JSON-patch (computed against the old server state) then inserts it again.
+      patchedOutline = deduplicateOutlineChildren(patchedOutline);
 
       const existingShareWithMe = stableOutlineRef.current.find(
         (view) => view.extra?.is_hidden_space

@@ -182,6 +182,12 @@ export function useDatabaseIdentity({
         return databaseIdViewIdMapRef.current.get(databaseId) || null;
       }
 
+      // Lazy-load workspace database doc if not yet registered (e.g. after page refresh).
+      // This mirrors the logic in getDatabaseIdForViewId.
+      if (databaseStorageId && !workspaceDatabaseDocMapRef.current.has(currentWorkspaceId)) {
+        await registerWorkspaceDatabaseDoc(currentWorkspaceId, databaseStorageId);
+      }
+
       const workspaceDatabaseDoc = workspaceDatabaseDocMapRef.current.get(currentWorkspaceId);
 
       if (!workspaceDatabaseDoc) {
@@ -189,16 +195,79 @@ export function useDatabaseIdentity({
       }
 
       const sharedRoot = workspaceDatabaseDoc.getMap(YjsEditorKey.data_section);
-      const databases = sharedRoot?.toJSON()?.databases;
-      const database = databases?.find((db: { database_id: string; views: string[] }) => db.database_id === databaseId);
 
-      if (database) {
-        databaseIdViewIdMapRef.current.set(databaseId, database.views[0]);
+      const tryResolve = (): string | null => {
+        const databases = sharedRoot?.toJSON()?.databases;
+        const database = databases?.find((db: { database_id: string; views: string[] }) => db.database_id === databaseId);
+
+        if (database) {
+          databaseIdViewIdMapRef.current.set(databaseId, database.views[0]);
+          return database.views[0];
+        }
+
+        return null;
+      };
+
+      // Try synchronous lookup first
+      const immediate = tryResolve();
+
+      if (immediate) {
+        return immediate;
       }
 
-      return databaseIdViewIdMapRef.current.get(databaseId) || null;
+      // Wait for the workspace database doc to sync, with timeout
+      return new Promise<string | null>((resolve) => {
+        let resolved = false;
+        let observerRegistered = false;
+        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+        const cleanup = () => {
+          if (timeoutId) {
+            clearTimeout(timeoutId);
+            timeoutId = null;
+          }
+
+          if (observerRegistered && sharedRoot) {
+            try {
+              sharedRoot.unobserveDeep(observeEvent);
+            } catch {
+              // Ignore if already unobserved
+            }
+
+            observerRegistered = false;
+          }
+        };
+
+        const observeEvent = () => {
+          if (resolved) return;
+
+          const result = tryResolve();
+
+          if (result) {
+            resolved = true;
+            cleanup();
+            resolve(result);
+          }
+        };
+
+        if (sharedRoot) {
+          sharedRoot.observeDeep(observeEvent);
+          observerRegistered = true;
+        } else {
+          resolve(null);
+          return;
+        }
+
+        timeoutId = setTimeout(() => {
+          if (!resolved) {
+            resolved = true;
+            cleanup();
+            resolve(null);
+          }
+        }, 10000);
+      });
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, databaseStorageId, registerWorkspaceDatabaseDoc]
   );
 
   const resolveCollabObjectId = useCallback(
