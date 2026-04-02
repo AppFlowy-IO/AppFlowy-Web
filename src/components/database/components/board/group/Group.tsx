@@ -1,5 +1,5 @@
 import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { PADDING_END, useDatabaseContext, useReadOnly, useRowOrdersSelector, useRowsByGroup } from '@/application/database-yjs';
@@ -262,6 +262,34 @@ export const Group = ({ groupId }: GroupProps) => {
 
     return cleanup;
   }, [verticalScrollContainer, readOnly, contextValue.instanceId]);
+
+  // Compute initial sticky-header visibility before first paint to prevent
+  // either a flash of duplicate headers (not scrolled) or a missing header
+  // (already scrolled past threshold, e.g. scroll restoration).
+  useLayoutEffect(() => {
+    const stickyHeader = stickyHeaderRef.current;
+
+    if (!stickyHeader) return;
+
+    const inner = innerRef.current;
+    const columnsEl = ref.current;
+
+    if (inner && columnsEl) {
+      const scrollMarginTop = inner.getBoundingClientRect().top ?? 0;
+      const bottom = columnsEl.getBoundingClientRect().bottom ?? 0;
+
+      if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
+        stickyHeader.style.opacity = '1';
+        stickyHeader.style.pointerEvents = 'auto';
+        return;
+      }
+    }
+
+    stickyHeader.style.opacity = '0';
+    stickyHeader.style.pointerEvents = 'none';
+    // fieldId gates whether the full JSX (including the portal sticky header) renders.
+    // Re-run when it transitions from null to ensure we set opacity before first paint.
+  }, [ref, fieldId]);
 
   // Sticky header scroll listener
   useEffect(() => {

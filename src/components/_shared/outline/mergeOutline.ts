@@ -268,6 +268,64 @@ export function setHasChildrenInOutline(
   return changed ? next : outline;
 }
 
+/**
+ * Recursively deduplicate children by view_id at every level of the tree.
+ *
+ * This is needed because FOLDER_VIEW_CHANGED (VIEW_ADDED) and
+ * FOLDER_OUTLINE_CHANGED are delivered as separate WebSocket notifications
+ * (protobuf oneof).  When VIEW_ADDED is processed first, it inserts the new
+ * view into the local outline.  The subsequent FOLDER_OUTLINE_CHANGED carries
+ * an incremental JSON-patch computed against the *old* server state (before
+ * the view existed), so applying it to the already-updated local outline
+ * inserts the view a second time.
+ */
+export function deduplicateOutlineChildren(views: View[]): View[] {
+  let changed = false;
+
+  const next = views.map((view) => {
+    let v = view;
+
+    if (v.children && v.children.length > 1) {
+      const seen = new Set<string>();
+      let hasDup = false;
+
+      for (const child of v.children) {
+        if (seen.has(child.view_id)) {
+          hasDup = true;
+          break;
+        }
+
+        seen.add(child.view_id);
+      }
+
+      if (hasDup) {
+        seen.clear();
+        const unique = v.children.filter((child) => {
+          if (seen.has(child.view_id)) return false;
+          seen.add(child.view_id);
+          return true;
+        });
+
+        v = { ...v, children: unique };
+        changed = true;
+      }
+    }
+
+    if (v.children && v.children.length > 0) {
+      const deduped = deduplicateOutlineChildren(v.children);
+
+      if (deduped !== v.children) {
+        v = { ...v, children: deduped };
+        changed = true;
+      }
+    }
+
+    return v;
+  });
+
+  return changed ? next : views;
+}
+
 function applyMerges(views: View[], mergeMap: Map<string, View[]>): View[] {
   let changed = false;
 
