@@ -141,7 +141,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     movePage, deleteTrash, restorePage, createSpace, updateSpace,
     createDatabaseView, uploadFile, getSubscriptions, publish, unpublish,
     createOrphanedView,
-  } = usePageOperations({ outlineRef: stableOutlineRef, loadOutline });
+  } = usePageOperations({ outlineRef: stableOutlineRef, loadOutline, flushAllSync: syncContext.flushAllSync });
 
   // Check if current view has been deleted
   const viewHasBeenDeleted = useMemo(() => {

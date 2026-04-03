@@ -13,6 +13,105 @@ import {
 
 import { APIError, APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios, handleAPIError } from './core';
 
+// --- Types for the binary publish endpoint (matches server's PublishCollabMetadata) ---
+
+export interface PublishViewInfo {
+  view_id: string;
+  name: string;
+  icon: { ty: number; value: string } | null;
+  layout: number; // ViewLayout numeric value (0=Document, 1=Grid, 2=Board, 3=Calendar)
+  extra: string | null;
+  created_by: number | null;
+  last_edited_by: number | null;
+  last_edited_time: number; // unix timestamp in seconds
+  created_at: number; // unix timestamp in seconds
+  child_views: null;
+}
+
+export interface PublishCollabViewMetaData {
+  view: PublishViewInfo;
+  child_views: PublishViewInfo[];
+  ancestor_views: PublishViewInfo[];
+}
+
+export interface PublishCollabMetadata {
+  view_id: string; // UUID string
+  publish_name: string;
+  metadata: PublishCollabViewMetaData;
+}
+
+export interface PublishCollabItem {
+  meta: PublishCollabMetadata;
+  data: Uint8Array;
+}
+
+/**
+ * Encode publish items into the binary wire format expected by POST /{workspace_id}/publish.
+ *
+ * Format per item: [u32_le meta_len][meta JSON bytes][u32_le data_len][data bytes]
+ * Terminated by: [u32_le 0x00000000]
+ */
+function encodePublishStream(items: PublishCollabItem[]): Uint8Array {
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+
+  for (const item of items) {
+    const metaBytes = encoder.encode(JSON.stringify(item.meta));
+
+    // meta length (4 bytes LE)
+    const metaLen = new ArrayBuffer(4);
+
+    new DataView(metaLen).setUint32(0, metaBytes.length, true);
+    chunks.push(new Uint8Array(metaLen));
+    chunks.push(metaBytes);
+
+    // data length (4 bytes LE)
+    const dataLen = new ArrayBuffer(4);
+
+    new DataView(dataLen).setUint32(0, item.data.length, true);
+    chunks.push(new Uint8Array(dataLen));
+    chunks.push(item.data);
+  }
+
+  // Terminator: 4 zero bytes
+  chunks.push(new Uint8Array(4));
+
+  // Concatenate all chunks
+  const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
+  const result = new Uint8Array(totalLen);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    result.set(chunk, offset);
+    offset += chunk.length;
+  }
+
+  return result;
+}
+
+/**
+ * Publish collabs using the binary streaming endpoint (same as desktop client).
+ * Sends gathered collab data directly, bypassing server-side data gathering.
+ */
+export async function publishCollabs(workspaceId: string, items: PublishCollabItem[]) {
+  const url = `/api/workspace/${workspaceId}/publish`;
+  const body = encodePublishStream(items);
+  const axios = getAxios();
+
+  if (!axios) {
+    throw new Error('HTTP client not initialized');
+  }
+
+  const response = await axios.post<APIResponse>(url, body, {
+    // Prevent axios from JSON-serializing the binary body
+    transformRequest: [(data: Uint8Array) => data],
+  });
+
+  if (response.data?.code !== 0) {
+    throw new Error(response.data?.message ?? 'Publish failed');
+  }
+}
+
 export async function publishView(workspaceId: string, viewId: string, payload?: PublishViewPayload) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/publish`;
 

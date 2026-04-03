@@ -397,6 +397,10 @@ export async function publishViewClearingCache(workspaceId: string, viewId: stri
   return publishViewAPI(workspaceId, viewId, payload);
 }
 
+export function clearPublishViewInfoCache(viewId: string) {
+  publishViewInfo.delete(viewId);
+}
+
 export async function unpublishViewClearingCache(workspaceId: string, viewId: string) {
   if (publishViewInfo.has(viewId)) {
     publishViewInfo.delete(viewId);

@@ -12,7 +12,9 @@ import {
   User,
   ViewId,
   ViewInfo,
+  YDatabase,
   YDoc,
+  YjsDatabaseKey,
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
@@ -298,16 +300,17 @@ export async function getPageDoc<
   return doc;
 }
 
-async function updateRows(collab: YDoc, rows: Record<RowId, number[]>) {
+async function updateRows(collab: YDoc, rows: Record<RowId, number[]>, databaseId?: string) {
+  const rowKeyPrefix = databaseId || collab.guid;
   const bulkData = [];
 
   for (const [key, value] of Object.entries(rows)) {
-    const rowKey = getRowKey(collab.guid, key);
+    const rowKey = getRowKey(rowKeyPrefix, key);
     const doc = await createRow(rowKey);
 
-    const dbRow = await db.rows.get(key);
-
     applyYDoc(doc, new Uint8Array(value));
+
+    const dbRow = await db.rows.get(key);
 
     bulkData.push({
       row_id: key,
@@ -393,8 +396,18 @@ export async function revalidatePublishView<
     name
   );
 
+  // Apply database collab data BEFORE processing rows so we can extract the
+  // real database ID.  The Database component uses this ID (via getDatabaseId)
+  // to build row keys.  If we store rows under `collab.guid` (the publish name)
+  // instead, the component will never find them — the root cause of #8464.
+  applyYDoc(collab, data);
+
+  // Extract the database ID that the Database component will use at render time.
+  const database = collab.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase | undefined;
+  const databaseId = database?.get(YjsDatabaseKey.id);
+
   if (rows) {
-    await updateRows(collab, rows);
+    await updateRows(collab, rows, databaseId);
   }
 
   if (subDocuments) {
@@ -405,11 +418,10 @@ export async function revalidatePublishView<
     }
   }
 
-  applyYDoc(collab, data);
-
   await migrateDatabaseFieldTypes(collab, {
     loadRow: createRow,
     rowIds: rows ? Object.keys(rows) : undefined,
+    databaseId,
   });
 }
 

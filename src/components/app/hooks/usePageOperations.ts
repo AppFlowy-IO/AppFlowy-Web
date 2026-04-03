@@ -3,6 +3,12 @@ import { toast } from 'sonner';
 
 import { BillingService, FileService, PageService, PublishService, ViewService } from '@/application/services/domains';
 import { deleteView as clearViewCache } from '@/application/services/js-services/cache';
+import { clearPublishViewInfoCache } from '@/application/services/js-services/cached-api';
+import { gatherDatabasePublishData } from '@/application/services/js-services/publish-database-data';
+import {
+  publishCollabs,
+  PublishCollabMetadata,
+} from '@/application/services/js-services/http/publish-api';
 import {
   CreateDatabaseViewPayload,
   CreatePagePayload,
@@ -12,7 +18,9 @@ import {
   UpdateSpacePayload,
   View,
   ViewIconType,
+  ViewLayout,
 } from '@/application/types';
+import { Log } from '@/utils/log';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -21,9 +29,11 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 export function usePageOperations({
   outlineRef,
   loadOutline,
+  flushAllSync,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
+  flushAllSync?: () => void;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
@@ -310,14 +320,65 @@ export function usePageOperations({
     async (view: View, publishName?: string, visibleViewIds?: string[]) => {
       if (!currentWorkspaceId) return;
       const viewId = view.view_id;
+      const isDatabaseLayout =
+        view.layout === ViewLayout.Grid ||
+        view.layout === ViewLayout.Board ||
+        view.layout === ViewLayout.Calendar;
 
-      await PublishService.publish(currentWorkspaceId, viewId, {
-        publish_name: publishName,
-        visible_database_view_ids: visibleViewIds,
-      });
+      if (isDatabaseLayout) {
+        // Database views: gather data client-side and send via binary publish endpoint
+        // (same approach as the desktop client — fixes #8464)
+        flushAllSync?.();
+
+        const slug = view.name.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'untitled';
+
+        const name = publishName || `${slug}-${viewId.slice(0, 8)}`;
+
+        Log.debug('[publish] gathering database data client-side', { viewId, name });
+
+        const data = await gatherDatabasePublishData(viewId, visibleViewIds);
+
+        const toTimestamp = (s?: string) => {
+          if (!s) return 0;
+          const t = new Date(s).getTime();
+
+          return isNaN(t) ? 0 : Math.floor(t / 1000);
+        };
+
+        const meta: PublishCollabMetadata = {
+          view_id: viewId,
+          publish_name: name,
+          metadata: {
+            view: {
+              view_id: viewId,
+              name: view.name,
+              icon: view.icon,
+              layout: view.layout,
+              extra: view.extra ? (typeof view.extra === 'string' ? view.extra : JSON.stringify(view.extra)) : null,
+              created_by: null,
+              last_edited_by: null,
+              last_edited_time: toTimestamp(view.last_edited_time),
+              created_at: toTimestamp(view.created_at),
+              child_views: null,
+            },
+            child_views: [],
+            ancestor_views: [],
+          },
+        };
+
+        await publishCollabs(currentWorkspaceId, [{ meta, data }]);
+        clearPublishViewInfoCache(viewId);
+      } else {
+        // Document views: use existing server-side gathering
+        await PublishService.publish(currentWorkspaceId, viewId, {
+          publish_name: publishName,
+          visible_database_view_ids: visibleViewIds,
+        });
+      }
+
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline]
+    [currentWorkspaceId, loadOutline, flushAllSync]
   );
 
   // Unpublish view

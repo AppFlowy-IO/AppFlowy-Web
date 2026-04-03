@@ -137,6 +137,7 @@ export async function migrateDatabaseFieldTypes(
     loadRow?: RowLoader;
     rowIds?: RowId[];
     commitVersion?: boolean;
+    databaseId?: string;
   }
 ): Promise<boolean> {
   const root = doc.getMap(YjsEditorKey.data_section);
@@ -163,10 +164,11 @@ export async function migrateDatabaseFieldTypes(
 
   const rowIds = options?.rowIds ?? collectRowIds(database);
   const loadRow = options?.loadRow;
+  const rowKeyPrefix = options?.databaseId || doc.guid;
 
   if (loadRow && rowIds.length > 0) {
     for (const rowId of rowIds) {
-      const rowKey = getRowKey(doc.guid, rowId);
+      const rowKey = getRowKey(rowKeyPrefix, rowId);
       const rowDoc = await loadRow(rowKey);
 
       await migrateRowCells(rowDoc, fieldTypeById);
