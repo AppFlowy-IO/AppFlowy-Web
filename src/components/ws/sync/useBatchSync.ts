@@ -1,13 +1,18 @@
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
+import { withRetry } from '@/application/services/js-services/http/core';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
 import { SyncRefs } from './syncRefs';
+
+// 30s base delay for batch sync retries (rate-limited / server-busy).
+// withRetry adds jitter and honours server Retry-After when present.
+const BATCH_SYNC_DELAYS = [30_000, 30_000, 30_000];
 
 /**
  * Collect all unique row IDs from every view in a database Y.Doc.
@@ -43,6 +48,8 @@ function collectAllRowIds(databaseDoc: Y.Doc): string[] {
 }
 
 export function useBatchSync(refs: SyncRefs) {
+  const batchSyncAbortRef = useRef<AbortController | null>(null);
+
   /**
    * Flush all pending updates for all registered sync contexts.
    * This ensures all local changes are sent to the server via WebSocket.
@@ -179,10 +186,20 @@ export function useBatchSync(refs: SyncRefs) {
       return;
     }
 
-    // Send all collabs in a single batch request (same as desktop's collab_full_sync_batch)
+    // Send all collabs in a single batch request (same as desktop's collab_full_sync_batch).
+    // Retry on 429/503 with server-driven Retry-After + full jitter, matching the Rust
+    // client-api pause_for_busy pattern. Uses 30s base delays for rate-limited retries.
+    // Cancel any in-flight sync and create a new abort controller
+    batchSyncAbortRef.current?.abort();
+    const controller = new AbortController();
+
+    batchSyncAbortRef.current = controller;
+
     try {
-      Log.debug('Sending batch sync request', { itemCount: items.length });
-      await collabFullSyncBatch(workspaceId, items);
+      await withRetry(() => collabFullSyncBatch(workspaceId, items), {
+        delays: BATCH_SYNC_DELAYS,
+        signal: controller.signal,
+      });
       Log.debug('Batch sync completed successfully');
     } catch (error) {
       Log.warn('Failed to batch sync collabs to server', { error });
@@ -190,13 +207,15 @@ export function useBatchSync(refs: SyncRefs) {
     }
   }, [refs, flushAllSync]);
 
-  // Cancel all pending deferred cleanup timers on unmount
+  // Cancel all pending deferred cleanup timers and in-flight batch sync on unmount
   useEffect(() => {
     const timers = refs.pendingCleanups.current;
+    const abortRef = batchSyncAbortRef;
 
     return () => {
       timers.forEach((timer) => clearTimeout(timer));
       timers.clear();
+      abortRef.current?.abort();
     };
   }, [refs]);
 
