@@ -25,6 +25,58 @@ import { Element } from './components/element';
 
 const EditorOverlay = lazy(() => import('@/components/editor/EditorOverlay'));
 
+/**
+ * Custom scrollSelectionIntoView that prevents scroll-to-top jumps.
+ *
+ * The default slate-react implementation delegates to scroll-into-view-if-needed
+ * without specifying `block`, which defaults to centering behavior. When the
+ * bounding rect is transiently invalid during re-renders (e.g. code-block syntax
+ * highlighting changes the leaf DOM structure), centering can jump the page to
+ * the top. This replacement checks visibility manually and only scrolls when the
+ * cursor is actually out of view, using `block: 'nearest'` for minimal movement.
+ */
+function scrollSelectionIntoView(_editor: ReactEditor, domRange: globalThis.Range) {
+  if (
+    !domRange.getBoundingClientRect ||
+    !_editor.selection ||
+    !Range.isCollapsed(_editor.selection)
+  ) {
+    return;
+  }
+
+  const rangeRect = domRange.getBoundingClientRect();
+
+  // Guard against invalid/zero bounding rects that can occur during re-renders
+  if (rangeRect.height === 0 && rangeRect.width === 0 && rangeRect.top === 0 && rangeRect.left === 0) {
+    return;
+  }
+
+  // Check if the cursor is already visible in the nearest scroll container
+  const leafEl = domRange.startContainer.parentElement;
+
+  if (!leafEl) return;
+
+  const scrollContainer = leafEl.closest('.appflowy-scroll-container') as HTMLElement | null;
+
+  if (scrollContainer) {
+    const containerRect = scrollContainer.getBoundingClientRect();
+
+    if (
+      rangeRect.top >= containerRect.top &&
+      rangeRect.bottom <= containerRect.bottom
+    ) {
+      // Cursor is already visible — no scroll needed
+      return;
+    }
+  }
+
+  // Cursor is out of view — scroll minimally
+  leafEl.getBoundingClientRect = domRange.getBoundingClientRect.bind(domRange);
+  leafEl.scrollIntoView({ block: 'nearest' });
+  // @ts-expect-error restoring original prototype method
+  delete leafEl.getBoundingClientRect;
+}
+
 const EditorEditable = () => {
   const { readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
   const { decorateState } = useEditorLocalState();
@@ -164,6 +216,7 @@ const EditorEditable = () => {
               spellCheck={false}
               autoCorrect={'off'}
               autoComplete={'off'}
+              scrollSelectionIntoView={scrollSelectionIntoView}
               onCompositionStart={onCompositionStart}
               onKeyDown={onKeyDown}
               onMouseDown={handleMouseDown}
