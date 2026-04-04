@@ -28,11 +28,31 @@ export interface APIResponse<T = unknown> {
 export interface APIError {
   code: number;
   message: string;
+  /** Server-suggested retry delay parsed from the HTTP Retry-After header (seconds). */
+  retryAfterSecs?: number;
 }
 
 /**
- * Safely handles axios errors and returns a consistent error format
- * This ensures all API errors have a code property, even for network errors
+ * Parse the `Retry-After` header (integer seconds) from an HTTP response.
+ * Returns undefined when the header is absent or not a valid integer.
+ */
+export function parseRetryAfterSecs(headers: Record<string, unknown> | undefined): number | undefined {
+  if (!headers) return undefined;
+  const raw = headers['retry-after'];
+
+  if (typeof raw === 'string') {
+    const parsed = parseInt(raw.trim(), 10);
+
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined;
+  }
+
+  return undefined;
+}
+
+/**
+ * Safely handles axios errors and returns a consistent error format.
+ * This ensures all API errors have a code property, even for network errors.
+ * For 429/503 responses, extracts the Retry-After header into retryAfterSecs.
  */
 export function handleAPIError(error: unknown): APIError {
   if (axios.isAxiosError(error)) {
@@ -46,10 +66,12 @@ export function handleAPIError(error: unknown): APIError {
 
     // Server responded with error status
     const errorData = error.response.data as { code?: number; message?: string } | undefined;
+    const retryAfterSecs = parseRetryAfterSecs(error.response.headers);
 
     return {
       code: errorData?.code ?? error.response.status,
       message: errorData?.message || error.message || 'Request failed',
+      retryAfterSecs,
     };
   }
 
@@ -60,11 +82,12 @@ export function handleAPIError(error: unknown): APIError {
     'code' in error &&
     typeof (error as { code: unknown }).code === 'number'
   ) {
-    const apiError = error as { code: number; message?: string };
+    const apiError = error as APIError;
 
     return {
       code: apiError.code,
       message: apiError.message || 'Request failed',
+      retryAfterSecs: apiError.retryAfterSecs,
     };
   }
 
@@ -194,7 +217,9 @@ export async function executeAPIVoidRequest(
  * Retry wrapper for non-GET API calls that are safe to retry
  * (e.g. idempotent POSTs used as reads, or upsert-style writes).
  * Uses fixed backoff delays: 1s, 4s, 8s.
- * Only retries on network errors or 5xx server errors.
+ * Retries on network errors, 5xx server errors, and 429 (rate-limited).
+ * When the server provides a Retry-After header, that value (plus jitter)
+ * is used instead of the hardcoded delay — matching the Rust client-api pattern.
  *
  * Pass an AbortSignal to cancel pending retries (e.g. on component unmount).
  */
@@ -223,14 +248,25 @@ export async function withRetry<T>(
       // handleAPIError handles AxiosError (string codes like "ERR_NETWORK"),
       // raw Error, and unknown shapes — always returns { code, message }.
       const normalized = handleAPIError(error);
-      const isRetryable = normalized.code === -1 || normalized.code >= 500;
+      const isRetryable = normalized.code === -1 || normalized.code >= 500 || normalized.code === 429;
 
       if (!isRetryable) break;
 
-      // Add random jitter (100%-200% of base delay) to avoid thundering herd
-      const delay = Math.round(delays[attempt] * (1.0 + Math.random()));
+      // Prefer server-provided Retry-After (converted to ms) with full jitter,
+      // otherwise fall back to the hardcoded delay table with jitter.
+      let delay: number;
 
-      Log.debug(`[withRetry] Attempt ${attempt + 1}/${delays.length} failed, retrying in ${delay}ms`);
+      if (normalized.retryAfterSecs !== undefined && normalized.retryAfterSecs > 0) {
+        const baseMs = normalized.retryAfterSecs * 1000;
+
+        // Full jitter: base + random(0, base) — spreads retries across a 2x window
+        delay = baseMs + Math.round(Math.random() * baseMs);
+      } else {
+        // Add random jitter (100%-200% of base delay) to avoid thundering herd
+        delay = Math.round(delays[attempt] * (1.0 + Math.random()));
+      }
+
+      Log.debug(`[withRetry] Attempt ${attempt + 1}/${delays.length} failed (code=${normalized.code}, retryAfter=${normalized.retryAfterSecs ?? 'none'}), retrying in ${delay}ms`);
 
       // Wait for backoff, but abort early if signal fires
       await new Promise<void>((resolve) => {
@@ -432,16 +468,27 @@ export function initAPIService(config: AFCloudConfig) {
 
     if (isCanceled) return Promise.reject(error);
 
-    // Retry on network errors (no response) or 5xx server errors
+    // Retry on network errors (no response), 5xx server errors, or 429 (rate-limited)
     const status = error.response?.status;
-    const isRetryable = !error.response || (status !== undefined && status >= 500);
+    const isRetryable = !error.response || (status !== undefined && (status >= 500 || status === 429));
 
     if (!isRetryable) return Promise.reject(error);
 
     const nextRetry = retryCount + 1;
 
     config.__afRetryCount = nextRetry;
-    const delay = RETRY_BASE_DELAY * Math.pow(2, retryCount);
+
+    // Prefer server-provided Retry-After header (with full jitter), else exponential backoff
+    const retryAfter = parseRetryAfterSecs(error.response?.headers);
+    let delay: number;
+
+    if (retryAfter !== undefined && retryAfter > 0) {
+      const baseMs = retryAfter * 1000;
+
+      delay = baseMs + Math.round(Math.random() * baseMs);
+    } else {
+      delay = RETRY_BASE_DELAY * Math.pow(2, retryCount);
+    }
 
     const waitForBackoff = (ms: number, signal?: AbortSignal) =>
       new Promise<'elapsed' | 'aborted'>((resolve) => {

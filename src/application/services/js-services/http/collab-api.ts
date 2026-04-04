@@ -10,7 +10,7 @@ import {
 import { database_blob } from '@/proto/database_blob';
 import { Log } from '@/utils/log';
 
-import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
+import { APIResponse, APIError, executeAPIRequest, executeAPIVoidRequest, getAxios, parseRetryAfterSecs } from './core';
 
 export async function updateCollab(
   workspaceId: string,
@@ -84,7 +84,9 @@ export async function collabFullSyncBatch(
   const deviceId = getOrCreateDeviceId();
   const axiosInstance = getAxios();
 
-  // Send the request with protobuf content type
+  // Send the request with protobuf content type.
+  // Use validateStatus to prevent axios from throwing on 429/503 so we can
+  // extract the Retry-After header and surface it to callers.
   const response = await axiosInstance?.post(url, encoded, {
     headers: {
       'Content-Type': 'application/octet-stream',
@@ -92,10 +94,22 @@ export async function collabFullSyncBatch(
       'device-id': deviceId,
     },
     responseType: 'arraybuffer',
+    validateStatus: (status) => status === 200 || status === 429 || status === 503,
   });
 
-  if (!response || response.status !== 200) {
-    throw new Error(`Failed to sync collabs: ${response?.status}`);
+  if (!response) {
+    const err = new Error('No response received from server');
+
+    Object.assign(err, { code: -1 } satisfies Partial<APIError>);
+    throw err;
+  }
+
+  if (response.status === 429 || response.status === 503) {
+    const retryAfterSecs = parseRetryAfterSecs(response.headers);
+    const err = new Error(`Batch sync rate-limited (${response.status})`);
+
+    Object.assign(err, { code: response.status, retryAfterSecs } satisfies Partial<APIError>);
+    throw err;
   }
 
   // Decode and check the response for errors
