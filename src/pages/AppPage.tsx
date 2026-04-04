@@ -126,6 +126,19 @@ function AppPage() {
   }, [rendered, view]);
   const [doc, setDoc] = React.useState<YDoc | undefined>(undefined);
   const [error, setError] = React.useState<AppError | null>(null);
+
+  // Clear stale error when navigating to a different view so a failed load
+  // for the previous page doesn't show "Page not found" for the new one.
+  const prevErrorViewIdRef = useRef(viewId);
+
+  if (viewId !== prevErrorViewIdRef.current) {
+    prevErrorViewIdRef.current = viewId;
+
+    if (error) {
+      setError(null);
+    }
+  }
+
   // Track whether sync has been bound for the current doc
   const [syncBound, setSyncBound] = useState(false);
   // Track viewIds that were externally reverted (by another device); show dialog when user opens them
