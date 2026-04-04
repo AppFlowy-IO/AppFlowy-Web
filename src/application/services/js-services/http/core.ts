@@ -256,7 +256,7 @@ export async function withRetry<T>(
       // otherwise fall back to the hardcoded delay table with jitter.
       let delay: number;
 
-      if (normalized.retryAfterSecs != null && normalized.retryAfterSecs > 0) {
+      if (normalized.retryAfterSecs !== undefined && normalized.retryAfterSecs > 0) {
         const baseMs = normalized.retryAfterSecs * 1000;
 
         // Full jitter: base + random(0, base) — spreads retries across a 2x window
@@ -482,7 +482,7 @@ export function initAPIService(config: AFCloudConfig) {
     const retryAfter = parseRetryAfterSecs(error.response?.headers);
     let delay: number;
 
-    if (retryAfter != null && retryAfter > 0) {
+    if (retryAfter !== undefined && retryAfter > 0) {
       const baseMs = retryAfter * 1000;
 
       delay = baseMs + Math.round(Math.random() * baseMs);

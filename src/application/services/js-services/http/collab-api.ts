@@ -98,17 +98,18 @@ export async function collabFullSyncBatch(
   });
 
   if (!response) {
-    throw { code: -1, message: 'No response received from server' } as APIError;
+    const err = new Error('No response received from server');
+
+    Object.assign(err, { code: -1 } satisfies Partial<APIError>);
+    throw err;
   }
 
   if (response.status === 429 || response.status === 503) {
     const retryAfterSecs = parseRetryAfterSecs(response.headers);
+    const err = new Error(`Batch sync rate-limited (${response.status})`);
 
-    throw {
-      code: response.status,
-      message: `Batch sync rate-limited (${response.status})`,
-      retryAfterSecs,
-    } as APIError;
+    Object.assign(err, { code: response.status, retryAfterSecs } satisfies Partial<APIError>);
+    throw err;
   }
 
   // Decode and check the response for errors

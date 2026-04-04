@@ -744,7 +744,7 @@ describe('useSync public API', () => {
   });
 
   it('syncAllToServer tolerates batch API errors', async () => {
-    mockedCollabFullSyncBatch.mockRejectedValueOnce(new Error('network failure'));
+    mockedCollabFullSyncBatch.mockRejectedValueOnce({ code: 400, message: 'bad request' });
     const ws = createWs();
     const bc = createBroadcastChannel();
     const doc = createDoc('eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee');
