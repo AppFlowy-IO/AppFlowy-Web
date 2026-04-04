@@ -151,6 +151,18 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   const [routeViewExists, setRouteViewExists] = useState<boolean | null>(null);
 
+  // Reset when viewId changes so stale false from a previous page
+  // doesn't flash "Page not found" for the new page.
+  const prevViewIdRef = useRef(viewId);
+
+  if (viewId !== prevViewIdRef.current) {
+    prevViewIdRef.current = viewId;
+
+    if (routeViewExists === false) {
+      setRouteViewExists(null);
+    }
+  }
+
   const setRouteViewExistsCache = useCallback((key: string, exists: boolean) => {
     const cache = routeViewExistsCacheRef.current;
 
@@ -198,17 +210,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       ? Date.now() - cached.checkedAt >= ROUTE_VIEW_EXISTS_REVALIDATE_MS
       : true;
 
-    // Cache policy:
-    // - false can be trusted (confirmed not-found)
-    // - true is reused, but periodically revalidated while route view is
-    //   outside the currently loaded shallow tree to avoid stale positives.
-    if (cached?.exists === false) {
-      setRouteViewExists(false);
-      return;
-    }
-
-    if (cached?.exists === true && !cacheExpired) {
-      setRouteViewExists(true);
+    // Cache policy: both true and false are periodically revalidated.
+    // A false entry may be stale if the view was created or synced after
+    // the original check (e.g. sync lag, eventual consistency).
+    if (cached && !cacheExpired) {
+      setRouteViewExists(cached.exists);
       return;
     }
 

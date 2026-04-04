@@ -25,6 +25,42 @@ import { Element } from './components/element';
 
 const EditorOverlay = lazy(() => import('@/components/editor/EditorOverlay'));
 
+/**
+ * Custom scrollSelectionIntoView that prevents scroll-to-top jumps.
+ *
+ * The default slate-react implementation delegates to scroll-into-view-if-needed
+ * without specifying `block`, which defaults to centering behavior. When the
+ * bounding rect is transiently invalid during re-renders (e.g. code-block syntax
+ * highlighting changes the leaf DOM structure), the library receives a zero-rect
+ * and centers on {0,0} — jumping the page to the top.
+ *
+ * This replacement guards against that zero-rect case and uses native
+ * scrollIntoView with `block/inline: 'nearest'` for minimal, correct scrolling
+ * on both axes (vertical page scroll + horizontal code-block scroll).
+ */
+function scrollSelectionIntoView(_editor: ReactEditor, domRange: globalThis.Range) {
+  if (
+    !domRange.getBoundingClientRect ||
+    !_editor.selection ||
+    !Range.isCollapsed(_editor.selection)
+  ) {
+    return;
+  }
+
+  // Guard against invalid/zero bounding rects that can occur during re-renders
+  const rangeRect = domRange.getBoundingClientRect();
+
+  if (rangeRect.height === 0 && rangeRect.width === 0 && rangeRect.top === 0 && rangeRect.left === 0) {
+    return;
+  }
+
+  const leafEl = domRange.startContainer.parentElement;
+
+  if (!leafEl) return;
+
+  leafEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+}
+
 const EditorEditable = () => {
   const { readOnly, viewId, workspaceId, fullWidth } = useEditorContext();
   const { decorateState } = useEditorLocalState();
@@ -164,6 +200,7 @@ const EditorEditable = () => {
               spellCheck={false}
               autoCorrect={'off'}
               autoComplete={'off'}
+              scrollSelectionIntoView={scrollSelectionIntoView}
               onCompositionStart={onCompositionStart}
               onKeyDown={onKeyDown}
               onMouseDown={handleMouseDown}

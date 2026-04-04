@@ -3,6 +3,7 @@ import { ReactEditor } from 'slate-react';
 import isURL from 'validator/lib/isURL';
 
 import { YjsEditor } from '@/application/slate-yjs';
+import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import { getBlockEntry, getSharedRoot } from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
@@ -29,6 +30,23 @@ export const withPasted = (editor: ReactEditor) => {
    * Main paste handler - processes clipboard data
    */
   editor.insertTextData = (data: DataTransfer) => {
+    // Code blocks (and other soft-break types) accept only plain text.
+    // Insert directly so the content goes inside the block, not below it.
+    const entry = getBlockEntry(editor as YjsEditor);
+
+    if (entry) {
+      const [node] = entry;
+
+      if (SOFT_BREAK_TYPES.includes(node.type as BlockType)) {
+        const text = data.getData('text/plain');
+
+        if (text) {
+          editor.insertText(text);
+          return true;
+        }
+      }
+    }
+
     const html = data.getData('text/html');
     const text = data.getData('text/plain');
 

@@ -3,6 +3,7 @@ import { BaseRange, Editor, Element, Point } from 'slate';
 import { TextInsertTextOptions } from 'slate/dist/interfaces/transforms/text';
 import { ReactEditor } from 'slate-react';
 
+import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockType } from '@/application/types';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
@@ -106,16 +107,17 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
         if (!panelType) return;
 
         if (panelType === PanelType.Slash && selection) {
-          const inTranscript = Editor.above(editor, {
+          const inNonPanelBlock = Editor.above(editor, {
             at: selection,
             match: (n) =>
               !Editor.isEditor(n) &&
               Element.isElement(n) &&
-              (n.type === BlockType.AIMeetingTranscriptionBlock ||
+              (SOFT_BREAK_TYPES.includes(n.type as BlockType) ||
+                n.type === BlockType.AIMeetingTranscriptionBlock ||
                 n.type === BlockType.AIMeetingSpeakerBlock),
           });
 
-          if (inTranscript) return;
+          if (inNonPanelBlock) return;
         }
 
         openPanel(panelType, { top: position.top, left: position.left });
