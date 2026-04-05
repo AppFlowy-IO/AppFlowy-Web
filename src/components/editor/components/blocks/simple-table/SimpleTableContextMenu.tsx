@@ -5,9 +5,24 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { TableAlignType } from '@/application/types';
 import Popover from '@/components/_shared/popover/Popover';
+import { renderColor } from '@/utils/color';
 
 import { MIN_WIDTH } from './const';
 import { useSimpleTableContext } from './SimpleTableContext';
+
+// Background color palette matching desktop Flutter (free tier)
+const TABLE_BG_COLORS = [
+  { id: '', label: 'Default' },
+  { id: 'bg-color-14', label: 'Purple' },
+  { id: 'bg-color-16', label: 'Violet' },
+  { id: 'bg-color-18', label: 'Pink' },
+  { id: 'bg-color-2', label: 'Orange' },
+  { id: 'bg-color-4', label: 'Yellow' },
+  { id: 'bg-color-6', label: 'Olive' },
+  { id: 'bg-color-8', label: 'Green' },
+  { id: 'bg-color-10', label: 'Teal' },
+  { id: 'bg-color-12', label: 'Blue' },
+];
 
 // ============================================================================
 // SVG Icons matching the desktop Flutter UI
@@ -121,6 +136,12 @@ interface MenuAction {
   onClick: () => void;
   disabled?: boolean;
   divider?: boolean;
+  colorPicker?: boolean;
+  onSelectColor?: (colorId: string) => void;
+  selectedColor?: string;
+  alignPicker?: boolean;
+  onSelectAlign?: (align: TableAlignType) => void;
+  selectedAlign?: TableAlignType;
 }
 
 function MenuDivider() {
@@ -128,6 +149,14 @@ function MenuDivider() {
 }
 
 function MenuItem({ action }: { action: MenuAction }) {
+  if (action.colorPicker) {
+    return <ColorMenuItem action={action} />;
+  }
+
+  if (action.alignPicker) {
+    return <AlignMenuItem action={action} />;
+  }
+
   return (
     <button
       className="simple-table-menu-item"
@@ -137,6 +166,136 @@ function MenuItem({ action }: { action: MenuAction }) {
       {action.icon && <span className="simple-table-menu-item-icon">{action.icon}</span>}
       <span>{action.label}</span>
     </button>
+  );
+}
+
+function ColorMenuItem({ action }: { action: MenuAction }) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const ref = useRef<HTMLButtonElement>(null);
+  const isOpen = Boolean(anchorEl);
+
+  return (
+    <>
+      <button
+        ref={ref}
+        className="simple-table-menu-item"
+        onClick={() => setAnchorEl(ref.current)}
+      >
+        {action.icon && <span className="simple-table-menu-item-icon">{action.icon}</span>}
+        <span>{action.label}</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="ml-auto text-text-caption">
+          <path d="M4.5 2.5l3.5 3.5-3.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <Popover
+        open={isOpen}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        slotProps={{ paper: { className: 'simple-table-context-menu' } }}
+      >
+        <div className="simple-table-color-picker">
+          <div className="simple-table-color-picker-title">Background color</div>
+          <div className="simple-table-color-picker-grid">
+            {TABLE_BG_COLORS.map((color) => {
+              const bgValue = color.id ? renderColor(color.id) : 'transparent';
+              const isSelected = action.selectedColor === color.id ||
+                (!action.selectedColor && !color.id);
+
+              return (
+                <button
+                  key={color.id || 'default'}
+                  className={`simple-table-color-swatch ${isSelected ? 'selected' : ''}`}
+                  title={color.label}
+                  style={{ backgroundColor: bgValue }}
+                  onClick={() => {
+                    action.onSelectColor?.(color.id);
+                    setAnchorEl(null);
+                  }}
+                />
+              );
+            })}
+          </div>
+        </div>
+      </Popover>
+    </>
+  );
+}
+
+function AlignLeftIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+      <path d="M3 4h10M3 8h6M3 12h8" />
+    </svg>
+  );
+}
+
+function AlignCenterIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+      <path d="M3 4h10M5 8h6M4 12h8" />
+    </svg>
+  );
+}
+
+function AlignRightIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round">
+      <path d="M3 4h10M7 8h6M5 12h8" />
+    </svg>
+  );
+}
+
+function AlignMenuItem({ action }: { action: MenuAction }) {
+  const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const ref = useRef<HTMLButtonElement>(null);
+  const isOpen = Boolean(anchorEl);
+
+  const alignOptions = [
+    { value: TableAlignType.Left, label: 'Left', icon: <AlignLeftIcon /> },
+    { value: TableAlignType.Center, label: 'Center', icon: <AlignCenterIcon /> },
+    { value: TableAlignType.Right, label: 'Right', icon: <AlignRightIcon /> },
+  ];
+
+  return (
+    <>
+      <button
+        ref={ref}
+        className="simple-table-menu-item"
+        onClick={() => setAnchorEl(ref.current)}
+      >
+        {action.icon && <span className="simple-table-menu-item-icon">{action.icon}</span>}
+        <span>{action.label}</span>
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className="ml-auto text-text-caption">
+          <path d="M4.5 2.5l3.5 3.5-3.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </button>
+      <Popover
+        open={isOpen}
+        anchorEl={anchorEl}
+        onClose={() => setAnchorEl(null)}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+        transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+        slotProps={{ paper: { className: 'simple-table-context-menu' } }}
+      >
+        <div className="simple-table-menu-list" style={{ minWidth: '140px' }}>
+          {alignOptions.map((opt) => (
+            <button
+              key={opt.value}
+              className={`simple-table-menu-item ${action.selectedAlign === opt.value ? 'active' : ''}`}
+              onClick={() => {
+                action.onSelectAlign?.(opt.value);
+                setAnchorEl(null);
+              }}
+            >
+              <span className="simple-table-menu-item-icon">{opt.icon}</span>
+              <span>{opt.label}</span>
+            </button>
+          ))}
+        </div>
+      </Popover>
+    </>
   );
 }
 
@@ -150,7 +309,10 @@ function useHighlight(type: 'row' | 'column', index: number, isOpen: boolean) {
   useEffect(() => {
     if (!isOpen || !context) return;
 
-    const tableEl = document.querySelector(`[data-block-id="${context.tableNode.blockId}"]`);
+    // Find the table by walking up from any element with the blockId,
+    // or by finding the closest .simple-table ancestor
+    const blockEl = document.querySelector(`[data-block-id="${context.tableNode.blockId}"]`);
+    const tableEl = blockEl?.closest('.simple-table') || blockEl?.querySelector('.simple-table') || blockEl;
 
     if (!tableEl) return;
 
@@ -236,11 +398,15 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
     e.preventDefault();
     e.stopPropagation();
     setAnchorEl(buttonRef.current);
-  }, []);
+    context?.setIsMenuOpen(true);
+  }, [context]);
 
   const handleClose = useCallback(() => {
     setAnchorEl(null);
-  }, []);
+    context?.setIsMenuOpen(false);
+    // Clear hover state so overlay recalculates on next hover
+    context?.setHoveringCell(null);
+  }, [context]);
 
   const tableBlockId = context?.tableNode.blockId ?? '';
   const rowCount = (context?.tableNode.children?.length ?? 0);
@@ -265,45 +431,50 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
           handleClose();
         },
       },
-      { label: '', divider: true, onClick: () => {} },
+      { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Color',
         icon: <ColorIcon />,
-        onClick: () => {
-          // TODO: open color sub-menu
+        colorPicker: true,
+        selectedColor: (context?.tableNode.data.row_colors?.[rowIndex] as string) || '',
+        onSelectColor: (colorId: string) => {
+          const rowColors = { ...(context?.tableNode.data.row_colors || {}) };
+
+          if (colorId) {
+            rowColors[rowIndex] = colorId;
+          } else {
+            delete rowColors[rowIndex];
+          }
+
+          CustomEditor.updateTableData(editor, tableBlockId, { row_colors: rowColors });
           handleClose();
         },
+        onClick: () => undefined,
       },
       {
         label: 'Align',
         icon: <AlignIcon />,
-        onClick: () => {
-          // Cycle alignment: Left -> Center -> Right -> Left
-          const currentAlign = context?.tableNode.data.row_aligns?.[rowIndex];
+        alignPicker: true,
+        selectedAlign: context?.tableNode.data.row_aligns?.[rowIndex],
+        onSelectAlign: (align: TableAlignType) => {
           const rowAligns = { ...(context?.tableNode.data.row_aligns || {}) };
-          let nextAlign: TableAlignType;
 
-          if (!currentAlign || currentAlign === TableAlignType.Right) {
-            nextAlign = TableAlignType.Left;
-          } else if (currentAlign === TableAlignType.Left) {
-            nextAlign = TableAlignType.Center;
-          } else {
-            nextAlign = TableAlignType.Right;
-          }
-
-          rowAligns[rowIndex] = nextAlign;
+          rowAligns[rowIndex] = align;
           CustomEditor.updateTableData(editor, tableBlockId, { row_aligns: rowAligns });
           handleClose();
         },
+        onClick: () => undefined,
       },
-      { label: '', divider: true, onClick: () => {} },
+      { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Set to page width',
         icon: <SetToPageWidthIcon />,
         onClick: () => {
-          const tableEl = document.querySelector(`[data-block-id="${tableBlockId}"]`)?.querySelector('table');
-          const containerEl = tableEl?.closest('.simple-table-wrapper')?.parentElement;
-          const containerWidth = containerEl?.clientWidth;
+          // Find the scroll container that holds this table
+          const firstCellOfTable = context?.tableNode?.children?.[0];
+          const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
+          const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
+          const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
 
           if (containerWidth && colCount > 0) {
             const existingWidths = context?.tableNode.data.column_widths || {};
@@ -328,9 +499,11 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
         label: 'Distribute columns evenly',
         icon: <DistributeIcon />,
         onClick: () => {
-          const tableEl = document.querySelector(`[data-block-id="${tableBlockId}"]`)?.querySelector('table');
-          const containerEl = tableEl?.closest('.simple-table-wrapper')?.parentElement;
-          const containerWidth = containerEl?.clientWidth;
+          // Find the scroll container that holds this table
+          const firstCellOfTable = context?.tableNode?.children?.[0];
+          const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
+          const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
+          const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
 
           if (containerWidth && colCount > 0) {
             const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
@@ -346,7 +519,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
           handleClose();
         },
       },
-      { label: '', divider: true, onClick: () => {} },
+      { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Duplicate',
         icon: <DuplicateIcon />,
@@ -422,11 +595,14 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
     e.preventDefault();
     e.stopPropagation();
     setAnchorEl(buttonRef.current);
-  }, []);
+    context?.setIsMenuOpen(true);
+  }, [context]);
 
   const handleClose = useCallback(() => {
     setAnchorEl(null);
-  }, []);
+    context?.setIsMenuOpen(false);
+    context?.setHoveringCell(null);
+  }, [context]);
 
   const tableBlockId = context?.tableNode.blockId ?? '';
   const firstRow = context?.tableNode.children?.[0];
@@ -450,44 +626,50 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
           handleClose();
         },
       },
-      { label: '', divider: true, onClick: () => {} },
+      { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Color',
         icon: <ColorIcon />,
-        onClick: () => {
-          // TODO: open color sub-menu
+        colorPicker: true,
+        selectedColor: (context?.tableNode.data.column_colors?.[colIndex] as string) || '',
+        onSelectColor: (colorId: string) => {
+          const colColors = { ...(context?.tableNode.data.column_colors || {}) };
+
+          if (colorId) {
+            colColors[colIndex] = colorId;
+          } else {
+            delete colColors[colIndex];
+          }
+
+          CustomEditor.updateTableData(editor, tableBlockId, { column_colors: colColors });
           handleClose();
         },
+        onClick: () => undefined,
       },
       {
         label: 'Align',
         icon: <AlignIcon />,
-        onClick: () => {
-          const currentAlign = context?.tableNode.data.column_aligns?.[colIndex];
+        alignPicker: true,
+        selectedAlign: context?.tableNode.data.column_aligns?.[colIndex],
+        onSelectAlign: (align: TableAlignType) => {
           const colAligns = { ...(context?.tableNode.data.column_aligns || {}) };
-          let nextAlign: TableAlignType;
 
-          if (!currentAlign || currentAlign === TableAlignType.Right) {
-            nextAlign = TableAlignType.Left;
-          } else if (currentAlign === TableAlignType.Left) {
-            nextAlign = TableAlignType.Center;
-          } else {
-            nextAlign = TableAlignType.Right;
-          }
-
-          colAligns[colIndex] = nextAlign;
+          colAligns[colIndex] = align;
           CustomEditor.updateTableData(editor, tableBlockId, { column_aligns: colAligns });
           handleClose();
         },
+        onClick: () => undefined,
       },
-      { label: '', divider: true, onClick: () => {} },
+      { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Set to page width',
         icon: <SetToPageWidthIcon />,
         onClick: () => {
-          const tableEl = document.querySelector(`[data-block-id="${tableBlockId}"]`)?.querySelector('table');
-          const containerEl = tableEl?.closest('.simple-table-wrapper')?.parentElement;
-          const containerWidth = containerEl?.clientWidth;
+          // Find the scroll container that holds this table
+          const firstCellOfTable = context?.tableNode?.children?.[0];
+          const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
+          const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
+          const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
 
           if (containerWidth && colCount > 0) {
             const existingWidths = context?.tableNode.data.column_widths || {};
@@ -512,9 +694,11 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
         label: 'Distribute columns evenly',
         icon: <DistributeIcon />,
         onClick: () => {
-          const tableEl = document.querySelector(`[data-block-id="${tableBlockId}"]`)?.querySelector('table');
-          const containerEl = tableEl?.closest('.simple-table-wrapper')?.parentElement;
-          const containerWidth = containerEl?.clientWidth;
+          // Find the scroll container that holds this table
+          const firstCellOfTable = context?.tableNode?.children?.[0];
+          const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
+          const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
+          const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
 
           if (containerWidth && colCount > 0) {
             const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
@@ -530,7 +714,7 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
           handleClose();
         },
       },
-      { label: '', divider: true, onClick: () => {} },
+      { label: '', divider: true, onClick: () => undefined },
       {
         label: 'Duplicate',
         icon: <DuplicateIcon />,

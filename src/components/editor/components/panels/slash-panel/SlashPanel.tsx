@@ -9,6 +9,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
 import { findSlateEntryByBlockId, getBlockEntry } from '@/application/slate-yjs/utils/editor';
+import { getBlockIndex, getParent } from '@/application/slate-yjs/utils/yjs';
 import {
   AlignType,
   BlockData,
@@ -21,6 +22,7 @@ import {
   VideoBlockData,
   View,
   ViewLayout,
+  YjsEditorKey,
 } from '@/application/types';
 // import { ReactComponent as AIWriterIcon } from '@/assets/slash_menu_icon_ai_writer.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
@@ -1092,37 +1094,37 @@ export function SlashPanel({
           const blockId = block[0].blockId as string;
           const isEmpty = !CustomEditor.getBlockTextContent(block[0], 2);
 
+          // Find the parent block and insertion index BEFORE deleting
+          const sharedRoot = editor.sharedRoot;
+          const parentBlock = getParent(blockId, sharedRoot);
+
+          if (!parentBlock) return;
+
+          const parentBlockId = parentBlock.get(YjsEditorKey.block_id);
+          const blockIndex = getBlockIndex(blockId, sharedRoot);
+
           if (isEmpty) {
-            // Replace the empty block with a table
-            CustomEditor.deleteBlock(editor as YjsEditor, blockId);
+            CustomEditor.deleteBlock(editor, blockId);
           }
 
-          // Create a 2x2 table. The parent is resolved from the deleted/current block's context.
-          const parentEntry = Editor.above(editor, {
-            match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined && n.type === BlockType.Page,
-          });
+          const insertIndex = isEmpty ? blockIndex : blockIndex + 1;
+          const tableId = CustomEditor.createSimpleTable(editor, parentBlockId, 2, 2, insertIndex);
 
-          if (parentEntry) {
-            const parentBlockId = (parentEntry[0] as Element & { blockId: string }).blockId;
-            const tableId = CustomEditor.createSimpleTable(editor as YjsEditor, parentBlockId, 2, 2);
+          if (tableId) {
+            setTimeout(() => {
+              try {
+                const entry = findSlateEntryByBlockId(editor, tableId);
 
-            if (tableId) {
-              // Move cursor into the first cell
-              setTimeout(() => {
-                try {
-                  const entry = findSlateEntryByBlockId(editor as YjsEditor, tableId);
+                if (entry) {
+                  const point = Editor.start(editor, entry[1]);
 
-                  if (entry) {
-                    const point = Editor.start(editor, entry[1]);
-
-                    Transforms.select(editor, point);
-                    ReactEditor.focus(editor);
-                  }
-                } catch {
-                  // ignore
+                  Transforms.select(editor, point);
+                  ReactEditor.focus(editor);
                 }
-              }, 100);
-            }
+              } catch {
+                // ignore
+              }
+            }, 200);
           }
         },
       },

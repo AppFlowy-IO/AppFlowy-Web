@@ -100,7 +100,7 @@ export function getCellAt(editor: Editor, tableEntry: NodeEntry<Element>, rowInd
     const node = Node.get(editor, cellPath);
 
     if (Element.isElement(node) && node.type === BlockType.SimpleTableCellBlock) {
-      return [node as Element, cellPath];
+      return [node, cellPath];
     }
   } catch {
     return null;
@@ -277,11 +277,7 @@ export function handleArrowUp(editor: Editor): boolean {
 
   if (!selection || !Range.isCollapsed(selection)) return false;
 
-  // Only intercept if cursor is on the first line of the cell.
-  // We check if the cursor is at the start, or if there's no content above in the cell.
-  const [, cellPath] = cellEntry;
-  const cellStart = Editor.start(editor, cellPath);
-
+  // Only intercept if cursor is on the first block of the cell.
   // Check if we're on the first block/line of the cell
   const blockEntry = Editor.above(editor, {
     at: selection,
@@ -332,7 +328,7 @@ export function handleArrowDown(editor: Editor): boolean {
 
   if (!selection || !Range.isCollapsed(selection)) return false;
 
-  const [cellNode, cellPath] = cellEntry;
+  const [cellNode] = cellEntry;
 
   // Check if we're in the last block of the cell
   const blockEntry = Editor.above(editor, {

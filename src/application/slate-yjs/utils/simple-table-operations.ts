@@ -12,9 +12,9 @@ import { DEFAULT_COLUMN_WIDTH } from '@/components/editor/components/blocks/simp
 import { YjsEditor } from '../plugins/withYjs';
 import { remapColumnAttributes, remapRowAttributes } from './simple-table-attributes';
 import {
+  copyBlockText,
   createBlock,
   dataStringTOJson,
-  deepCopyBlock,
   deleteBlock,
   executeOperations,
   generateBlockId,
@@ -84,6 +84,58 @@ function createContainerBlock(sharedRoot: ReturnType<typeof getSharedRoot>, ty: 
   childrenMap.set(id, new Y.Array());
 
   return block as YBlock;
+}
+
+const TABLE_CONTAINER_TYPES = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
+
+/**
+ * Deep copy a table block, using createContainerBlock for table/row/cell blocks
+ * to avoid creating unwanted text nodes that shift child indices.
+ * Content blocks (paragraphs, etc.) inside cells are copied normally with text nodes.
+ */
+function deepCopyTableBlock(sharedRoot: ReturnType<typeof getSharedRoot>, sourceBlock: YBlock): string | null {
+  try {
+    const blockType = sourceBlock.get(YjsEditorKey.block_type);
+    const data = dataStringTOJson(sourceBlock.get(YjsEditorKey.block_data));
+
+    // Use container block (no text) for table structure, normal createBlock for content
+    const newBlock = TABLE_CONTAINER_TYPES.includes(blockType)
+      ? createContainerBlock(sharedRoot, blockType, data)
+      : createBlock(sharedRoot, { ty: blockType, data });
+
+    // Copy text content only for non-container blocks
+    if (!TABLE_CONTAINER_TYPES.includes(blockType)) {
+      copyBlockText(sharedRoot, sourceBlock, newBlock);
+    }
+
+    // Recursively copy children
+    const sourceChildren = getChildrenArray(sourceBlock.get(YjsEditorKey.block_children), sharedRoot);
+    const targetChildren = getChildrenArray(newBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+    if (sourceChildren && targetChildren) {
+      for (let i = 0; i < sourceChildren.length; i++) {
+        const childId = sourceChildren.get(i);
+        const childBlock = getBlock(childId, sharedRoot);
+
+        if (!childBlock) continue;
+
+        const newChildId = deepCopyTableBlock(sharedRoot, childBlock);
+
+        if (!newChildId) continue;
+
+        const newChild = getBlock(newChildId, sharedRoot);
+
+        if (!newChild) continue;
+
+        updateBlockParent(sharedRoot, newChild, newBlock, i);
+      }
+    }
+
+    return newBlock.get(YjsEditorKey.block_id);
+  } catch (error) {
+    console.error('Error in deepCopyTableBlock:', error);
+    return null;
+  }
 }
 
 /**
@@ -228,7 +280,7 @@ export function duplicateRow(editor: YjsEditor, tableBlockId: string, rowIndex: 
 
     if (!sourceRow) return;
 
-    const newRowId = deepCopyBlock(sharedRoot, sourceRow);
+    const newRowId = deepCopyTableBlock(sharedRoot, sourceRow);
 
     if (!newRowId) return;
 
@@ -416,7 +468,7 @@ export function duplicateColumn(editor: YjsEditor, tableBlockId: string, colInde
 
       if (!sourceCell) continue;
 
-      const newCellId = deepCopyBlock(sharedRoot, sourceCell);
+      const newCellId = deepCopyTableBlock(sharedRoot, sourceCell);
 
       if (!newCellId) continue;
 
@@ -594,7 +646,7 @@ export function reorderRow(editor: YjsEditor, tableBlockId: string, fromIndex: n
     if (!sourceRow) return;
 
     // Deep copy, delete original, insert copy at target
-    const newRowId = deepCopyBlock(sharedRoot, sourceRow);
+    const newRowId = deepCopyTableBlock(sharedRoot, sourceRow);
 
     if (!newRowId) return;
 
@@ -652,7 +704,7 @@ export function reorderColumn(editor: YjsEditor, tableBlockId: string, fromIndex
 
       if (!sourceCell) continue;
 
-      const newCellId = deepCopyBlock(sharedRoot, sourceCell);
+      const newCellId = deepCopyTableBlock(sharedRoot, sourceCell);
 
       if (!newCellId) continue;
 

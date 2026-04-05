@@ -24,6 +24,7 @@ const SimpleTable = memo(
 
     const [isHoveringTable, setIsHoveringTable] = useState(false);
     const [hoveringCell, setHoveringCell] = useState<{ row: number; col: number } | null>(null);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const columnCount = useMemo(() => {
       const firstRow = rows[0] as SimpleTableRowNode;
@@ -81,9 +82,10 @@ const SimpleTable = memo(
     }, []);
 
     const handleMouseLeave = useCallback(() => {
+      if (isMenuOpen) return; // Don't clear hover state while context menu is open
       setIsHoveringTable(false);
       setHoveringCell(null);
-    }, []);
+    }, [isMenuOpen]);
 
     const contextValue = useMemo<SimpleTableContextValue>(() => ({
       tableNode: node,
@@ -91,7 +93,9 @@ const SimpleTable = memo(
       hoveringCell,
       readOnly,
       setHoveringCell,
-    }), [node, isHoveringTable, hoveringCell, readOnly]);
+      isMenuOpen,
+      setIsMenuOpen,
+    }), [node, isHoveringTable, hoveringCell, readOnly, isMenuOpen]);
 
     return (
       <div

@@ -5,7 +5,7 @@ import isURL from 'validator/lib/isURL';
 import { YjsEditor } from '@/application/slate-yjs';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
-import { getBlockEntry, getSharedRoot } from '@/application/slate-yjs/utils/editor';
+import { getBlockEntry, getSharedRoot, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, VideoType, YjsEditorKey } from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
@@ -365,6 +365,12 @@ function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
 /**
  * Inserts parsed blocks into the editor using YJS
  */
+/**
+ * Block types that should not be nested inside table cells.
+ * When pasting these inside a cell, they are inserted after the parent table instead.
+ */
+const TABLE_BLOCK_TYPES = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
+
 function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean {
   if (blocks.length === 0) return false;
 
@@ -384,6 +390,65 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
 
     const sharedRoot = getSharedRoot(editor as YjsEditor);
     const block = getBlock(blockId, sharedRoot);
+
+    // Check if we're pasting inside a table cell
+    const insideTable = isInsideSimpleTableCell(editor as YjsEditor, blockId);
+
+    if (insideTable) {
+      // Split blocks: text-like blocks go inside the cell, table blocks go after the parent table
+      const cellBlocks = blocks.filter(b => !TABLE_BLOCK_TYPES.includes(b.type));
+      const tableBlocks = blocks.filter(b => TABLE_BLOCK_TYPES.includes(b.type));
+
+      // Insert text blocks inside the cell
+      if (cellBlocks.length > 0) {
+        const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
+        const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
+        const index = parentChildren.toArray().findIndex((id) => id === blockId);
+        const doc = assertDocExists(sharedRoot);
+        const slateNodes = cellBlocks.map(parsedBlockToSlateElement);
+
+        doc.transact(() => {
+          slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+        });
+      }
+
+      // Insert table blocks after the parent SimpleTable
+      if (tableBlocks.length > 0) {
+        // Walk up to find the SimpleTableBlock ancestor
+        let currentId: string | undefined = blockId;
+        let tableAncestorId: string | undefined;
+
+        while (currentId) {
+          const currentBlock = getBlock(currentId, sharedRoot);
+
+          if (!currentBlock) break;
+
+          if (currentBlock.get(YjsEditorKey.block_type) === BlockType.SimpleTableBlock) {
+            tableAncestorId = currentId;
+            break;
+          }
+
+          currentId = currentBlock.get(YjsEditorKey.block_parent);
+        }
+
+        if (tableAncestorId) {
+          const tableBlock = getBlock(tableAncestorId, sharedRoot);
+          const tableParent = getBlock(tableBlock.get(YjsEditorKey.block_parent), sharedRoot);
+          const tableParentChildren = getChildrenArray(tableParent.get(YjsEditorKey.block_children), sharedRoot);
+          const tableIndex = tableParentChildren.toArray().findIndex((id) => id === tableAncestorId);
+          const doc = assertDocExists(sharedRoot);
+          const slateNodes = tableBlocks.map(parsedBlockToSlateElement);
+
+          doc.transact(() => {
+            slateContentInsertToYData(tableBlock.get(YjsEditorKey.block_parent), tableIndex + 1, slateNodes, doc);
+          });
+        }
+      }
+
+      return true;
+    }
+
+    // Normal paste (not inside table cell)
     const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
     const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
     const index = parentChildren.toArray().findIndex((id) => id === blockId);

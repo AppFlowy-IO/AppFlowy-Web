@@ -125,7 +125,22 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
     }
   }, [block, editor, node, t]);
 
+  const isInsideTableCell = useMemo(() => {
+    try {
+      const path = ReactEditor.findPath(editor, node);
+
+      return !!Editor.above(editor, {
+        at: path,
+        match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableCellBlock,
+      });
+    } catch {
+      return false;
+    }
+  }, [editor, node]);
+
   const selectedPlaceholder = useMemo(() => {
+    // Don't show slash placeholder inside table cells
+    if (isInsideTableCell) return '';
 
     if(block?.type === BlockType.ToggleListBlock && (block?.data as ToggleListBlockData).level) {
       return unSelectedPlaceholder;
@@ -145,7 +160,7 @@ function Placeholder({ node, ...attributes }: { node: Element; className?: strin
       default:
         return '';
     }
-  }, [block?.data, block?.type, t, unSelectedPlaceholder]);
+  }, [block?.data, block?.type, isInsideTableCell, t, unSelectedPlaceholder]);
 
   useEffect(() => {
     if(!selected) return;

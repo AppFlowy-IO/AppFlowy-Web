@@ -14,53 +14,69 @@ function PlusIcon({ className }: { className?: string }) {
   );
 }
 
+interface TableLayout {
+  // Scroll container (visible area) position relative to root wrapper
+  scrollLeft: number;
+  scrollTop: number;
+  scrollWidth: number;  // visible width
+  scrollHeight: number; // visible height (= table height since overflow-y is visible)
+  // Table actual dimensions
+  tableHeight: number;
+}
+
 /**
- * Renders add row/column/corner buttons positioned dynamically
- * based on the actual table element's dimensions.
- * This is necessary because TableContainer may change the table's
- * position/width independently of the root wrapper.
+ * Renders add row/column/corner buttons.
+ * Positioned relative to the root-wrapper, using the scroll container's
+ * visible area for horizontal positioning (so buttons stay visible).
  */
 export function SimpleTableActionButtons() {
   const context = useSimpleTableContext();
   const editor = useSlateStatic() as YjsEditor;
   const containerRef = useRef<HTMLDivElement>(null);
-  const [tableRect, setTableRect] = useState<{ width: number; height: number; offsetLeft: number; offsetTop: number } | null>(null);
+  const [layout, setLayout] = useState<TableLayout | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
 
     if (!container) return;
 
-    const rootWrapper = container.parentElement;
+    const rootWrapper = container.closest('.simple-table-root-wrapper');
 
     if (!rootWrapper) return;
 
-    const updateRect = () => {
+    const updateLayout = () => {
+      const scrollContainer = rootWrapper.querySelector('.simple-table-scroll-container');
       const table = rootWrapper.querySelector('table');
 
-      if (!table) return;
+      if (!scrollContainer || !table) return;
 
       const rootRect = rootWrapper.getBoundingClientRect();
-      const tRect = table.getBoundingClientRect();
+      const scrollRect = scrollContainer.getBoundingClientRect();
+      const tableRect = table.getBoundingClientRect();
 
-      setTableRect({
-        width: tRect.width,
-        height: tRect.height,
-        offsetLeft: tRect.left - rootRect.left,
-        offsetTop: tRect.top - rootRect.top,
+      setLayout({
+        scrollLeft: scrollRect.left - rootRect.left,
+        scrollTop: scrollRect.top - rootRect.top,
+        scrollWidth: scrollRect.width,
+        scrollHeight: scrollRect.height,
+        tableHeight: tableRect.height,
       });
     };
 
-    updateRect();
+    updateLayout();
 
-    const observer = new MutationObserver(updateRect);
+    const observer = new MutationObserver(() => {
+      requestAnimationFrame(updateLayout);
+    });
 
     observer.observe(rootWrapper, { childList: true, subtree: true, attributes: true });
 
-    const resizeObserver = new ResizeObserver(updateRect);
-    const table = rootWrapper.querySelector('table');
+    const resizeObserver = new ResizeObserver(updateLayout);
 
-    if (table) resizeObserver.observe(table);
+    resizeObserver.observe(rootWrapper);
+    const scrollContainer = rootWrapper.querySelector('.simple-table-scroll-container');
+
+    if (scrollContainer) resizeObserver.observe(scrollContainer);
 
     return () => {
       observer.disconnect();
@@ -71,69 +87,79 @@ export function SimpleTableActionButtons() {
   const handleAddRow = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
     if (!context) return;
     CustomEditor.addTableRow(editor, context.tableNode.blockId);
   }, [editor, context]);
 
+  const scrollToRight = useCallback(() => {
+    const container = containerRef.current;
+    const scrollContainer = container?.closest('.simple-table-root-wrapper')?.querySelector('.simple-table-scroll-container');
+
+    if (scrollContainer) {
+      requestAnimationFrame(() => {
+        scrollContainer.scrollTo({ left: scrollContainer.scrollWidth, behavior: 'smooth' });
+      });
+    }
+  }, []);
+
   const handleAddCol = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
     if (!context) return;
     CustomEditor.addTableColumn(editor, context.tableNode.blockId);
-  }, [editor, context]);
+    scrollToRight();
+  }, [editor, context, scrollToRight]);
 
   const handleAddBoth = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-
     if (!context) return;
     CustomEditor.addTableRowAndColumn(editor, context.tableNode.blockId);
-  }, [editor, context]);
+    scrollToRight();
+  }, [editor, context, scrollToRight]);
 
   if (!context || context.readOnly) return null;
 
   return (
     <div ref={containerRef} className="simple-table-action-buttons-container" contentEditable={false}>
-      {tableRect && (
+      {layout && (
         <>
-          {/* Add Row — horizontal bar at bottom of table */}
+          {/* Add Row — horizontal bar below table, spans visible width */}
           <div
             className="simple-table-add-row-btn"
             onClick={handleAddRow}
             title="Click to add a new row"
             style={{
-              left: tableRect.offsetLeft,
-              width: tableRect.width - 22, // leave room for corner
-              top: tableRect.offsetTop + tableRect.height + 2,
+              left: layout.scrollLeft,
+              width: layout.scrollWidth - 8,
+              top: layout.scrollTop + layout.tableHeight,
             }}
           >
             <PlusIcon className="text-text-caption" />
           </div>
 
-          {/* Add Column — vertical bar at right of table */}
+          {/* Add Column — vertical bar at right of visible area */}
           <div
             className="simple-table-add-col-btn"
             onClick={handleAddCol}
             title="Click to add a new column"
             style={{
-              left: tableRect.offsetLeft + tableRect.width + 2,
-              top: tableRect.offsetTop,
-              height: tableRect.height - 22, // leave room for corner
+              left: layout.scrollLeft + layout.scrollWidth,
+              top: layout.scrollTop,
+              height: layout.tableHeight - 8,
             }}
           >
             <PlusIcon className="text-text-caption" />
           </div>
 
-          {/* Add Corner — small square at bottom-right */}
+          {/* Add Corner — bottom-right of visible area */}
           <div
             className="simple-table-add-corner-btn"
             onClick={handleAddBoth}
             title="Click to add a new row and column"
             style={{
-              left: tableRect.offsetLeft + tableRect.width + 2,
-              top: tableRect.offsetTop + tableRect.height + 2,
+              left: layout.scrollLeft + layout.scrollWidth,
+              top: layout.scrollTop + layout.tableHeight,
             }}
           >
             <PlusIcon className="text-text-caption" />
