@@ -106,4 +106,230 @@
     }
 
   }
+
+  // ========================================================================
+  // Table inner wrapper — shrink-wraps to table width so buttons align
+  // ========================================================================
+
+  .simple-table-root-wrapper {
+    @apply relative;
+    overflow: visible;
+    padding-bottom: 22px; // room for add-row button below table
+  }
+
+  .simple-table-scroll-container {
+    @apply w-full;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .simple-table-inner-wrapper {
+    @apply relative inline-block;
+  }
+
+  // ========================================================================
+  // Add row / column / corner hover buttons
+  // Matches the desktop Flutter UI: thick bars with rounded caps
+  // ========================================================================
+
+  .simple-table-action-buttons-container {
+    @apply absolute inset-0 pointer-events-none;
+    overflow: visible;
+  }
+
+  .simple-table-add-row-btn {
+    @apply absolute flex items-center justify-center cursor-pointer pointer-events-auto;
+    height: 16px;
+    border-radius: 8px;
+    background-color: var(--bg-base);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &:hover {
+      background-color: var(--fill-list-hover);
+    }
+  }
+
+  .simple-table-add-col-btn {
+    @apply absolute flex items-center justify-center cursor-pointer pointer-events-auto;
+    width: 16px;
+    border-radius: 8px;
+    background-color: var(--bg-base);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &:hover {
+      background-color: var(--fill-list-hover);
+    }
+  }
+
+  .simple-table-add-corner-btn {
+    @apply absolute flex items-center justify-center cursor-pointer pointer-events-auto;
+    width: 18px;
+    height: 18px;
+    border-radius: 6px;
+    background-color: var(--bg-base);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &:hover {
+      background-color: var(--fill-list-hover);
+    }
+  }
+
+  &:hover {
+    .simple-table-add-row-btn,
+    .simple-table-add-col-btn,
+    .simple-table-add-corner-btn {
+      opacity: 1;
+    }
+  }
+
+  // ========================================================================
+  // Row / Column action trigger buttons (circular grip icons)
+  // ========================================================================
+
+  .simple-table-action-btn {
+    @apply flex items-center justify-center cursor-pointer;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--line-divider);
+    background-color: var(--bg-body);
+    color: var(--text-caption);
+    transition: background-color 0.15s ease;
+    user-select: none;
+
+    &:hover,
+    &.active {
+      background-color: var(--fill-list-hover);
+      color: var(--fill-default);
+    }
+  }
+
+  // ========================================================================
+  // Action overlay — positioned at wrapper level, not inside <td>
+  // ========================================================================
+
+  .simple-table-action-overlay {
+    @apply absolute pointer-events-none;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    overflow: visible;
+  }
+
+  .simple-table-row-trigger-container {
+    @apply absolute pointer-events-auto;
+    // left is set inline from JS based on table's left edge
+    transform: translateX(-50%); // center button ON the left table border
+    width: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .simple-table-col-trigger-container {
+    @apply absolute pointer-events-auto;
+    // top is set inline from JS based on table's top edge
+    transform: translateY(-50%); // center button ON the top table border
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // ========================================================================
+  // Row / Column selection highlight (cyan border when menu is open)
+  // ========================================================================
+
+  tr.simple-table-highlight {
+    > td {
+      outline: 2px solid var(--fill-default);
+      outline-offset: -1px;
+    }
+  }
+
+  td.simple-table-highlight {
+    outline: 2px solid var(--fill-default);
+    outline-offset: -1px;
+  }
+
+  // ========================================================================
+  // Column resize handle
+  // ========================================================================
+
+  .simple-table-col-resize-handle {
+    @apply absolute top-0 bottom-0 cursor-col-resize;
+    right: -2px;
+    z-index: 2;
+    background: transparent;
+    transition: background-color 0.15s ease;
+
+    &:hover,
+    &.dragging {
+      background-color: var(--fill-default);
+    }
+  }
+}
+
+// ============================================================================
+// Context menu popover styling
+// ============================================================================
+
+.simple-table-context-menu {
+  border-radius: 10px !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2) !important;
+  margin-top: 4px !important;
+}
+
+.simple-table-menu-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  min-width: 220px;
+}
+
+.simple-table-menu-divider {
+  height: 1px;
+  margin: 4px 12px;
+  background-color: var(--line-divider);
+}
+
+.simple-table-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 14px;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  color: var(--text-title);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background-color 0.1s ease;
+
+  &:hover {
+    background-color: var(--fill-list-hover);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.simple-table-menu-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-caption);
 }

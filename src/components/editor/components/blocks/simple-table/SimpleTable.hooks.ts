@@ -5,6 +5,15 @@ import { ReactEditor, useSlateStatic } from 'slate-react';
 import { SimpleTableNode } from '@/components/editor/editor.type';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
+import {
+  handleArrowDown,
+  handleArrowLeft,
+  handleArrowRight,
+  handleArrowUp,
+  handleShiftTab,
+  handleTab,
+} from './SimpleTable.keyboard';
+
 export function useSimpleTable(node: SimpleTableNode) {
   const editor = useSlateStatic();
   const [inCurrentTable, setInCurrentTable] = useState(false);
@@ -40,12 +49,61 @@ export function useSimpleTable(node: SimpleTableNode) {
 
       switch (true) {
         case createHotkey(HOT_KEY_NAME.UP)(event): {
-          event.stopPropagation();
-          event.preventDefault();
+          if (handleArrowUp(editor)) {
+            event.stopPropagation();
+            event.preventDefault();
+          }
+
+          break;
         }
 
-      }
+        case createHotkey(HOT_KEY_NAME.DOWN)(event): {
+          if (handleArrowDown(editor)) {
+            event.stopPropagation();
+            event.preventDefault();
+          }
 
+          break;
+        }
+
+        case createHotkey(HOT_KEY_NAME.LEFT)(event): {
+          if (handleArrowLeft(editor)) {
+            event.stopPropagation();
+            event.preventDefault();
+          }
+
+          break;
+        }
+
+        case createHotkey(HOT_KEY_NAME.RIGHT)(event): {
+          if (handleArrowRight(editor)) {
+            event.stopPropagation();
+            event.preventDefault();
+          }
+
+          break;
+        }
+
+        case createHotkey(HOT_KEY_NAME.INDENT_BLOCK)(event): {
+          // Tab: move to next cell
+          if (handleTab(editor)) {
+            event.stopPropagation();
+            event.preventDefault();
+          }
+
+          break;
+        }
+
+        case createHotkey(HOT_KEY_NAME.OUTDENT_BLOCK)(event): {
+          // Shift+Tab: move to previous cell
+          if (handleShiftTab(editor)) {
+            event.stopPropagation();
+            event.preventDefault();
+          }
+
+          break;
+        }
+      }
     };
 
     editorDom.addEventListener('keydown', handleKeydown);

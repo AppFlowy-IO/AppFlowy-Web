@@ -36,6 +36,7 @@ import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
 import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
+import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
 import { ReactComponent as Heading2Icon } from '@/assets/icons/h2.svg';
 import { ReactComponent as Heading3Icon } from '@/assets/icons/h3.svg';
@@ -1076,6 +1077,53 @@ export function SlashPanel({
         keywords: ['linked', 'calendar', 'date', 'database'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Calendar, 'linkedCalendar');
+        },
+      },
+      {
+        label: 'Table',
+        key: 'simpleTable',
+        icon: <SimpleTableIcon />,
+        keywords: ['table', 'simple table'],
+        onClick: () => {
+          const block = getBlockEntry(editor);
+
+          if (!block) return;
+
+          const blockId = block[0].blockId as string;
+          const isEmpty = !CustomEditor.getBlockTextContent(block[0], 2);
+
+          if (isEmpty) {
+            // Replace the empty block with a table
+            CustomEditor.deleteBlock(editor as YjsEditor, blockId);
+          }
+
+          // Create a 2x2 table. The parent is resolved from the deleted/current block's context.
+          const parentEntry = Editor.above(editor, {
+            match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined && n.type === BlockType.Page,
+          });
+
+          if (parentEntry) {
+            const parentBlockId = (parentEntry[0] as Element & { blockId: string }).blockId;
+            const tableId = CustomEditor.createSimpleTable(editor as YjsEditor, parentBlockId, 2, 2);
+
+            if (tableId) {
+              // Move cursor into the first cell
+              setTimeout(() => {
+                try {
+                  const entry = findSlateEntryByBlockId(editor as YjsEditor, tableId);
+
+                  if (entry) {
+                    const point = Editor.start(editor, entry[1]);
+
+                    Transforms.select(editor, point);
+                    ReactEditor.focus(editor);
+                  }
+                } catch {
+                  // ignore
+                }
+              }, 100);
+            }
+          }
         },
       },
       {

@@ -21,10 +21,28 @@ import {
   handleMergeBlockForwardWithTxn,
   handleNonParagraphBlockBackspaceAndEnterWithTxn,
   handleRangeBreak,
+  isInsideSimpleTableCell,
   preventIndentNode,
   preventLiftNode,
   removeRangeWithTxn,
 } from '@/application/slate-yjs/utils/editor';
+import {
+  addColumnToTable,
+  addRowAndColumnToTable,
+  addRowToTable,
+  clearColumnContent,
+  clearRowContent,
+  createSimpleTable,
+  deleteColumn,
+  deleteRow,
+  duplicateColumn,
+  duplicateRow,
+  insertColumnAtIndex,
+  insertRowAtIndex,
+  reorderColumn,
+  reorderRow,
+  updateTableData,
+} from '@/application/slate-yjs/utils/simple-table-operations';
 import { findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import {
   dataStringTOJson,
@@ -171,6 +189,18 @@ export const CustomEditor = {
       const block = getBlock(node.blockId as string, sharedRoot);
       const blockType = block.get(YjsEditorKey.block_type);
       const parent = getParent(node.blockId as string, sharedRoot);
+
+      // Inside a table cell: convert non-paragraph to paragraph, but never lift or merge across cells
+      if (isInsideSimpleTableCell(editor, node.blockId as string)) {
+        if (blockType !== BlockType.Paragraph) {
+          handleNonParagraphBlockBackspaceAndEnterWithTxn(editor, sharedRoot, block, point);
+        } else {
+          // For paragraph blocks, delegate to merge handler which has its own cross-cell guard
+          handleMergeBlockBackwardWithTxn(editor, node, point);
+        }
+
+        return;
+      }
 
       if (
         blockType !== BlockType.Paragraph &&
@@ -930,5 +960,69 @@ export const CustomEditor = {
         });
       }
     });
+  },
+
+  // ========================================================================
+  // SimpleTable Operations
+  // ========================================================================
+
+  addTableRow(editor: YjsEditor, tableBlockId: string) {
+    addRowToTable(editor, tableBlockId);
+  },
+
+  addTableColumn(editor: YjsEditor, tableBlockId: string) {
+    addColumnToTable(editor, tableBlockId);
+  },
+
+  addTableRowAndColumn(editor: YjsEditor, tableBlockId: string) {
+    addRowAndColumnToTable(editor, tableBlockId);
+  },
+
+  insertTableRow(editor: YjsEditor, tableBlockId: string, rowIndex: number) {
+    insertRowAtIndex(editor, tableBlockId, rowIndex);
+  },
+
+  insertTableColumn(editor: YjsEditor, tableBlockId: string, colIndex: number) {
+    insertColumnAtIndex(editor, tableBlockId, colIndex);
+  },
+
+  deleteTableRow(editor: YjsEditor, tableBlockId: string, rowIndex: number) {
+    deleteRow(editor, tableBlockId, rowIndex);
+  },
+
+  deleteTableColumn(editor: YjsEditor, tableBlockId: string, colIndex: number) {
+    deleteColumn(editor, tableBlockId, colIndex);
+  },
+
+  duplicateTableRow(editor: YjsEditor, tableBlockId: string, rowIndex: number) {
+    duplicateRow(editor, tableBlockId, rowIndex);
+  },
+
+  duplicateTableColumn(editor: YjsEditor, tableBlockId: string, colIndex: number) {
+    duplicateColumn(editor, tableBlockId, colIndex);
+  },
+
+  clearTableRowContent(editor: YjsEditor, tableBlockId: string, rowIndex: number) {
+    clearRowContent(editor, tableBlockId, rowIndex);
+  },
+
+  clearTableColumnContent(editor: YjsEditor, tableBlockId: string, colIndex: number) {
+    clearColumnContent(editor, tableBlockId, colIndex);
+  },
+
+  reorderTableRow(editor: YjsEditor, tableBlockId: string, fromIndex: number, toIndex: number) {
+    reorderRow(editor, tableBlockId, fromIndex, toIndex);
+  },
+
+  reorderTableColumn(editor: YjsEditor, tableBlockId: string, fromIndex: number, toIndex: number) {
+    reorderColumn(editor, tableBlockId, fromIndex, toIndex);
+  },
+
+  updateTableData(editor: YjsEditor, tableBlockId: string, updates: Record<string, unknown>) {
+    updateTableData(editor, tableBlockId, updates);
+  },
+
+  createSimpleTable(editor: YjsEditor, parentBlockId: string, rows: number, cols: number, insertIndex?: number) {
+    return createSimpleTable(editor, parentBlockId, rows, cols, insertIndex);
   },
 };

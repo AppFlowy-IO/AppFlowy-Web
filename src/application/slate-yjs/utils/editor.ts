@@ -150,6 +150,29 @@ export function handleCollapsedBreakWithTxn(editor: YjsEditor, sharedRoot: YShar
     const parentType = parent?.get(YjsEditorKey.block_type);
     const index = getBlockIndex(blockId, sharedRoot);
 
+    // Inside a table cell: add a new paragraph within the cell, never lift out
+    if (isInsideSimpleTableCell(editor, blockId)) {
+      if (blockType !== BlockType.Paragraph) {
+        handleNonParagraphBlockBackspaceAndEnterWithTxn(editor, sharedRoot, block, point);
+        return;
+      }
+
+      if (parent) {
+        addBlock(
+          editor,
+          {
+            ty: BlockType.Paragraph,
+            data: {},
+          },
+          parent,
+          index + 1
+        );
+        moveToNextLine(editor, block, at, blockId);
+      }
+
+      return;
+    }
+
     if (SOFT_BREAK_TYPES.includes(blockType) && parent) {
       addBlock(
         editor,
@@ -599,6 +622,44 @@ export function handleMergeBlockBackwardWithTxn(editor: YjsEditor, node: Element
   const operations: (() => void)[] = [];
   const sharedRoot = getSharedRoot(editor);
 
+  // Prevent merging across table cell boundaries
+  const currentBlockId = (node as Element & { blockId?: string }).blockId;
+
+  if (currentBlockId) {
+    const currentCellId = getParentSimpleTableCellBlockId(editor, currentBlockId);
+
+    if (currentCellId) {
+      // Find the previous text node
+      const prevText = Editor.previous(editor, {
+        at: point,
+        match: (n) => {
+          return !Editor.isEditor(n) && Element.isElement(n) && n.textId !== undefined;
+        },
+        voids: true,
+      });
+
+      if (!prevText) return;
+
+      const prevBlock = editor.above({
+        at: Editor.end(editor, (prevText as NodeEntry<Element>)[1]),
+        match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined,
+      });
+
+      if (!prevBlock) return;
+
+      const prevBlockId = (prevBlock[0] as Element & { blockId?: string }).blockId;
+
+      if (prevBlockId) {
+        const prevCellId = getParentSimpleTableCellBlockId(editor, prevBlockId);
+
+        // Different cells — do not merge
+        if (prevCellId !== currentCellId) {
+          return;
+        }
+      }
+    }
+  }
+
   try {
     const prevText = Editor.previous(editor, {
       at: point,
@@ -646,6 +707,36 @@ export function handleMergeBlockBackwardWithTxn(editor: YjsEditor, node: Element
 export function handleMergeBlockForwardWithTxn(editor: YjsEditor, node: Element, point: Point) {
   const operations: (() => void)[] = [];
   const sharedRoot = getSharedRoot(editor);
+
+  // Prevent merging across table cell boundaries
+  const currentBlockId = (node as Element & { blockId?: string }).blockId;
+
+  if (currentBlockId) {
+    const currentCellId = getParentSimpleTableCellBlockId(editor, currentBlockId);
+
+    if (currentCellId) {
+      const nextPoint = Editor.after(editor, point);
+
+      if (!nextPoint) return;
+
+      const nextBlock = editor.above({
+        at: nextPoint,
+        match: (n) => !Editor.isEditor(n) && Element.isElement(n) && n.blockId !== undefined,
+      });
+
+      if (!nextBlock) return;
+
+      const nextBlockId = (nextBlock[0] as Element & { blockId?: string }).blockId;
+
+      if (nextBlockId) {
+        const nextCellId = getParentSimpleTableCellBlockId(editor, nextBlockId);
+
+        if (nextCellId !== currentCellId) {
+          return;
+        }
+      }
+    }
+  }
 
   try {
     const nextPoint = Editor.after(editor, point);
@@ -839,6 +930,48 @@ export function sortNodesByDepth(editor: Editor, selectedPaths: Path[]) {
   });
 }
 
+export function isInsideSimpleTableCell(editor: YjsEditor, blockId: string): boolean {
+  const sharedRoot = getSharedRoot(editor);
+  let currentId: string | undefined = blockId;
+
+  while (currentId) {
+    const parent = getParent(currentId, sharedRoot);
+
+    if (!parent) break;
+
+    const parentType = parent.get(YjsEditorKey.block_type);
+
+    if (parentType === BlockType.SimpleTableCellBlock) {
+      return true;
+    }
+
+    currentId = parent.get(YjsEditorKey.block_id);
+  }
+
+  return false;
+}
+
+export function getParentSimpleTableCellBlockId(editor: YjsEditor, blockId: string): string | undefined {
+  const sharedRoot = getSharedRoot(editor);
+  let currentId: string | undefined = blockId;
+
+  while (currentId) {
+    const parent = getParent(currentId, sharedRoot);
+
+    if (!parent) break;
+
+    const parentType = parent.get(YjsEditorKey.block_type);
+
+    if (parentType === BlockType.SimpleTableCellBlock) {
+      return parent.get(YjsEditorKey.block_id);
+    }
+
+    currentId = parent.get(YjsEditorKey.block_id);
+  }
+
+  return undefined;
+}
+
 export function preventLiftNode(editor: YjsEditor, blockId: string) {
   const entry = findSlateEntryByBlockId(editor, blockId);
 
@@ -853,7 +986,7 @@ export function preventLiftNode(editor: YjsEditor, blockId: string) {
 
   if (
     level < 2 ||
-    (parent && [BlockType.ColumnsBlock, BlockType.ColumnBlock].includes(parent.get(YjsEditorKey.block_type)))
+    (parent && [BlockType.ColumnsBlock, BlockType.ColumnBlock, BlockType.SimpleTableCellBlock].includes(parent.get(YjsEditorKey.block_type)))
   ) {
     return true;
   }
