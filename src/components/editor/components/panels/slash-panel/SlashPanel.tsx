@@ -9,6 +9,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { isEmbedBlockTypes } from '@/application/slate-yjs/command/const';
 import { findSlateEntryByBlockId, getBlockEntry } from '@/application/slate-yjs/utils/editor';
+import { getBlockIndex, getParent } from '@/application/slate-yjs/utils/yjs';
 import {
   AlignType,
   BlockData,
@@ -21,6 +22,7 @@ import {
   VideoBlockData,
   View,
   ViewLayout,
+  YjsEditorKey,
 } from '@/application/types';
 // import { ReactComponent as AIWriterIcon } from '@/assets/slash_menu_icon_ai_writer.svg';
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
@@ -36,6 +38,7 @@ import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
 import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
+import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
 import { ReactComponent as Heading2Icon } from '@/assets/icons/h2.svg';
 import { ReactComponent as Heading3Icon } from '@/assets/icons/h3.svg';
@@ -1076,6 +1079,53 @@ export function SlashPanel({
         keywords: ['linked', 'calendar', 'date', 'database'],
         onClick: () => {
           void handleOpenLinkedDatabasePicker(ViewLayout.Calendar, 'linkedCalendar');
+        },
+      },
+      {
+        label: 'Table',
+        key: 'simpleTable',
+        icon: <SimpleTableIcon />,
+        keywords: ['table', 'simple table'],
+        onClick: () => {
+          const block = getBlockEntry(editor);
+
+          if (!block) return;
+
+          const blockId = block[0].blockId as string;
+          const isEmpty = !CustomEditor.getBlockTextContent(block[0], 2);
+
+          // Find the parent block and insertion index BEFORE deleting
+          const sharedRoot = editor.sharedRoot;
+          const parentBlock = getParent(blockId, sharedRoot);
+
+          if (!parentBlock) return;
+
+          const parentBlockId = parentBlock.get(YjsEditorKey.block_id);
+          const blockIndex = getBlockIndex(blockId, sharedRoot);
+
+          if (isEmpty) {
+            CustomEditor.deleteBlock(editor, blockId);
+          }
+
+          const insertIndex = isEmpty ? blockIndex : blockIndex + 1;
+          const tableId = CustomEditor.createSimpleTable(editor, parentBlockId, 2, 2, insertIndex);
+
+          if (tableId) {
+            setTimeout(() => {
+              try {
+                const entry = findSlateEntryByBlockId(editor, tableId);
+
+                if (entry) {
+                  const point = Editor.start(editor, entry[1]);
+
+                  Transforms.select(editor, point);
+                  ReactEditor.focus(editor);
+                }
+              } catch {
+                // ignore
+              }
+            }, 200);
+          }
         },
       },
       {

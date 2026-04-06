@@ -1,11 +1,12 @@
-import { forwardRef, useMemo } from 'react';
-import { Editor, Element, NodeEntry } from 'slate';
+import { forwardRef, useCallback } from 'react';
 import { ReactEditor, useSlate } from 'slate-react';
 
-import { BlockType } from '@/application/types';
-import { MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
-import { EditorElementProps, SimpleTableCellBlockNode, SimpleTableNode } from '@/components/editor/editor.type';
+import { DEFAULT_COLUMN_WIDTH, MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
+import { EditorElementProps, SimpleTableCellBlockNode } from '@/components/editor/editor.type';
 import { renderColor } from '@/utils/color';
+
+import { SimpleTableColumnResizer } from './SimpleTableColumnResizer';
+import { useSimpleTableContext } from './SimpleTableContext';
 
 const SimpleTableCell =
   forwardRef<HTMLTableCellElement, EditorElementProps<SimpleTableCellBlockNode>>(({
@@ -15,78 +16,55 @@ const SimpleTableCell =
     }, ref) => {
       const { blockId } = node;
       const editor = useSlate();
-      const path = ReactEditor.findPath(editor, node);
+      const context = useSimpleTableContext();
+      const readOnly = context?.readOnly ?? true;
 
-      const table = useMemo(() => {
-        const match = Editor.above(editor, {
-          match: (n) => {
-            return !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableBlock;
-          },
-          at: path,
-        });
+      // Use ReactEditor.findPath directly — always returns current path
+      let rowIndex = 0;
+      let colIndex = 0;
 
-        if (!match) return null;
+      try {
+        const path = ReactEditor.findPath(editor as ReactEditor, node);
 
-        return match as NodeEntry<Element>;
-      }, [editor, path]);
+        // Path structure: [..., tableIndex, rowIndex, cellIndex]
+        if (path.length >= 2) {
+          colIndex = path[path.length - 1];
+          rowIndex = path[path.length - 2];
+        }
+      } catch {
+        // fallback to 0,0
+      }
 
-      const row = useMemo(() => {
-        const match = Editor.above(editor, {
-          match: (n) => {
-            return !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableRowBlock;
-          },
-          at: path,
-        });
+      // Read styling from context (always up-to-date)
+      const tableData = context?.tableNode?.data;
 
-        if (!match) return null;
+      const horizontalAlign = tableData?.column_aligns?.[colIndex];
+      const bgColor = tableData?.column_colors?.[colIndex];
+      const width = tableData?.column_widths?.[colIndex] || DEFAULT_COLUMN_WIDTH;
 
-        return match as NodeEntry<Element>;
-      }, [editor, path]);
-
-      const colIndex = useMemo(() => {
-        if (!row) return 0;
-
-        const [parentElement] = row;
-
-        return (parentElement.children as Element[]).findIndex((n) => n.blockId === node.blockId);
-      }, [node, row]);
-
-      const { horizontalAlign, bgColor, width } = useMemo(() => {
-        if (!table || !row) return {
-          bgColor: undefined,
-          horizontalAlign: undefined,
-          width: undefined,
-        };
-
-        const [parentElement] = table;
-
-        const horizontalAlign = (parentElement as SimpleTableNode).data.column_aligns?.[colIndex];
-        const bgColor = (parentElement as SimpleTableNode).data.column_colors?.[colIndex];
-
-        const width = (parentElement as SimpleTableNode).data.column_widths?.[colIndex] || MIN_WIDTH;
-
-        return {
-          horizontalAlign,
-          bgColor,
-          width,
-        };
-      }, [colIndex, row, table]);
+      // Report hover state to parent context
+      const handleMouseEnter = useCallback(() => {
+        context?.setHoveringCell({ row: rowIndex, col: colIndex });
+      }, [context, rowIndex, colIndex]);
 
       return (
         <td
           data-block-type={node.type}
           data-block-cell={blockId}
           data-cell-index={colIndex}
+          data-row-index={rowIndex}
           ref={ref}
           {...attributes}
           rowSpan={1}
           colSpan={1}
           data-table-cell-horizontal-align={horizontalAlign?.toLowerCase()}
+          onMouseEnter={handleMouseEnter}
           style={{
             ...attributes.style,
             backgroundColor: bgColor ? renderColor(bgColor) : undefined,
             minWidth: width ? `${width}px` : undefined,
             width: width ? `${width}px` : undefined,
+            position: 'relative',
           }}
         >
           <div
@@ -94,6 +72,12 @@ const SimpleTableCell =
           >
             {children}
           </div>
+          {!readOnly && (
+            <SimpleTableColumnResizer
+              colIndex={colIndex}
+              initialWidth={width || MIN_WIDTH}
+            />
+          )}
         </td>
       );
     },

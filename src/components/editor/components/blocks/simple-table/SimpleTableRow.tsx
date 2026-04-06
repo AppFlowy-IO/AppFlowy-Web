@@ -1,10 +1,10 @@
-import { forwardRef, useMemo } from 'react';
-import { Editor, Element, NodeEntry } from 'slate';
+import { forwardRef } from 'react';
 import { ReactEditor, useSlate } from 'slate-react';
 
-import { BlockType } from '@/application/types';
-import { EditorElementProps, SimpleTableNode, SimpleTableRowNode } from '@/components/editor/editor.type';
+import { EditorElementProps, SimpleTableRowNode } from '@/components/editor/editor.type';
 import { renderColor } from '@/utils/color';
+
+import { useSimpleTableContext } from './SimpleTableContext';
 
 const SimpleTableRow =
   forwardRef<HTMLTableRowElement, EditorElementProps<SimpleTableRowNode>>(({
@@ -13,43 +13,16 @@ const SimpleTableRow =
       ...attributes
     }, ref) => {
       const { blockId } = node;
+      const context = useSimpleTableContext();
       const editor = useSlate();
       const path = ReactEditor.findPath(editor, node);
 
-      const parent = useMemo(() => {
-        const match = Editor.above(editor, {
-          match: (n) => {
-            return !Editor.isEditor(n) && Element.isElement(n) && n.type === BlockType.SimpleTableBlock;
-          },
-          at: path,
-        });
+      // Use the Slate path's last element as the row index — always current
+      const index = path[path.length - 1];
 
-        if (!match) return null;
-
-        return match as NodeEntry<Element>;
-      }, [editor, path]);
-
-      const index = useMemo(() => {
-        if (!parent) return 0;
-
-        const [parentElement] = parent;
-
-        return (parentElement.children as Element[]).findIndex((n) => n.blockId === node.blockId);
-      }, [node, parent]);
-
-      const { align, bgColor } = useMemo(() => {
-        if (!parent) return {
-          align: undefined,
-          bgColor: undefined,
-        };
-
-        const [parentElement] = parent;
-
-        return {
-          align: (parentElement as SimpleTableNode).data.row_aligns?.[index],
-          bgColor: (parentElement as SimpleTableNode).data.row_colors?.[index],
-        };
-      }, [index, parent]);
+      const tableData = context?.tableNode?.data;
+      const align = tableData?.row_aligns?.[index];
+      const bgColor = tableData?.row_colors?.[index];
 
       return (
         <tr

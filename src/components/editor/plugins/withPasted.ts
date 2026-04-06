@@ -5,8 +5,8 @@ import isURL from 'validator/lib/isURL';
 import { YjsEditor } from '@/application/slate-yjs';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
-import { getBlockEntry, getSharedRoot } from '@/application/slate-yjs/utils/editor';
-import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
+import { getBlockEntry, getSharedRoot, getParentSimpleTableCellBlockId, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
+import { assertDocExists, getBlock, getChildrenArray, getText } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, VideoType, YjsEditorKey } from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
@@ -50,6 +50,32 @@ export const withPasted = (editor: ReactEditor) => {
     const html = data.getData('text/html');
     const text = data.getData('text/plain');
 
+    // Priority 0: If pasting tabular content (TSV/multi-cell) inside a table cell,
+    // fill adjacent cells instead of inserting as blocks
+    if (entry) {
+      const blockId = (entry[0] as { blockId?: string }).blockId;
+
+      if (blockId && isInsideSimpleTableCell(editor as YjsEditor, blockId)) {
+        const plainText = text?.trim();
+
+        // Check for tab-separated content (copied table cells / spreadsheet data)
+        if (plainText && plainText.includes('\t')) {
+          return handlePasteIntoTableCells(editor as YjsEditor, blockId, plainText);
+        }
+
+        // Check for HTML table content — extract cell texts and fill adjacent cells
+        if (html && (html.includes('<table') || html.includes('<tr'))) {
+          const cellTexts = extractCellTextsFromHTML(html);
+
+          if (cellTexts.length > 0) {
+            const tsvText = cellTexts.map(row => row.join('\t')).join('\n');
+
+            return handlePasteIntoTableCells(editor as YjsEditor, blockId, tsvText);
+          }
+        }
+      }
+    }
+
     // Priority 1: HTML (if available)
     if (html && html.trim().length > 0) {
       console.log('[AppFlowy] Handling HTML paste', html);
@@ -67,6 +93,168 @@ export const withPasted = (editor: ReactEditor) => {
 
   return editor;
 };
+
+/**
+ * Extracts cell text values from an HTML table fragment.
+ * Returns a 2D array of strings (rows × columns).
+ */
+function extractCellTextsFromHTML(html: string): string[][] {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    const rows = doc.querySelectorAll('tr');
+
+    if (rows.length === 0) return [];
+
+    const result: string[][] = [];
+
+    rows.forEach(row => {
+      const cells = row.querySelectorAll('td, th');
+      const rowTexts: string[] = [];
+
+      cells.forEach(cell => {
+        rowTexts.push(cell.textContent?.trim() ?? '');
+      });
+
+      if (rowTexts.length > 0) {
+        result.push(rowTexts);
+      }
+    });
+
+    return result;
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Handles pasting tab-separated content into table cells.
+ * Distributes each tab-separated value into adjacent cells of the same row.
+ */
+function handlePasteIntoTableCells(editor: YjsEditor, blockId: string, text: string): boolean {
+  try {
+    const sharedRoot = getSharedRoot(editor);
+
+    // Find which cell we're in
+    const cellBlockId = getParentSimpleTableCellBlockId(editor, blockId);
+
+    if (!cellBlockId) return false;
+
+    const cellBlock = getBlock(cellBlockId, sharedRoot);
+
+    if (!cellBlock) return false;
+
+    // Find the row
+    const rowId = cellBlock.get(YjsEditorKey.block_parent);
+    const rowBlock = getBlock(rowId, sharedRoot);
+
+    if (!rowBlock) return false;
+
+    const rowChildren = getChildrenArray(rowBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+    if (!rowChildren) return false;
+
+    // Find current cell's index in the row
+    const cellIds = rowChildren.toArray();
+    const cellIndex = cellIds.indexOf(cellBlockId);
+
+    if (cellIndex === -1) return false;
+
+    // Parse TSV: split by tabs for columns, newlines for rows
+    const rows = text.split('\n').filter(line => line.length > 0);
+
+    if (rows.length === 0) return false;
+
+    // For each row of pasted data
+    const doc = assertDocExists(sharedRoot);
+
+    doc.transact(() => {
+      for (let rowOffset = 0; rowOffset < rows.length; rowOffset++) {
+        const values = rows[rowOffset].split('\t');
+
+        // Find the target row (current row + offset)
+        const tableId = rowBlock.get(YjsEditorKey.block_parent);
+        const tableBlock = getBlock(tableId, sharedRoot);
+
+        if (!tableBlock) continue;
+
+        const tableChildren = getChildrenArray(tableBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+        if (!tableChildren) continue;
+
+        const rowIds = tableChildren.toArray();
+        const currentRowIndex = rowIds.indexOf(rowId);
+        const targetRowIndex = currentRowIndex + rowOffset;
+
+        if (targetRowIndex >= rowIds.length) continue;
+
+        const targetRowBlock = getBlock(rowIds[targetRowIndex], sharedRoot);
+
+        if (!targetRowBlock) continue;
+
+        const targetRowCells = getChildrenArray(targetRowBlock.get(YjsEditorKey.block_children), sharedRoot);
+
+        if (!targetRowCells) continue;
+
+        // Fill each value into the corresponding cell
+        for (let colOffset = 0; colOffset < values.length; colOffset++) {
+          const targetCellIndex = cellIndex + colOffset;
+
+          if (targetCellIndex >= targetRowCells.length) continue;
+
+          const targetCellId = targetRowCells.get(targetCellIndex);
+          const targetCell = getBlock(targetCellId, sharedRoot);
+
+          if (!targetCell) continue;
+
+          // Get the first paragraph in the cell
+          const cellChildren = getChildrenArray(targetCell.get(YjsEditorKey.block_children), sharedRoot);
+
+          if (!cellChildren || cellChildren.length === 0) continue;
+
+          const paragraphId = cellChildren.get(0);
+          const paragraph = getBlock(paragraphId, sharedRoot);
+
+          if (!paragraph) continue;
+
+          const textId = paragraph.get(YjsEditorKey.block_external_id);
+
+          if (!textId) continue;
+
+          const yText = getText(textId, sharedRoot);
+
+          if (!yText) continue;
+
+          // Only fill if it's the first cell (where cursor is) and first row — insert text there
+          // For other cells, clear and set the value
+          if (rowOffset === 0 && colOffset === 0) {
+            // First cell: insert at cursor position (handled by Slate default)
+            continue;
+          }
+
+          // Clear existing text and insert new value
+          if (yText.length > 0) {
+            yText.delete(0, yText.length);
+          }
+
+          yText.insert(0, values[colOffset].trim());
+        }
+      }
+    });
+
+    // For the first cell (cursor position), insert text normally via Slate
+    const firstRowValues = rows[0].split('\t');
+
+    if (firstRowValues.length > 0) {
+      editor.insertText(firstRowValues[0].trim());
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error pasting into table cells:', error);
+    return false;
+  }
+}
 
 /**
  * Handles HTML paste using AST-based parsing
@@ -365,6 +553,12 @@ function parsedBlockToTextNodes(block: ParsedBlock): Text[] {
 /**
  * Inserts parsed blocks into the editor using YJS
  */
+/**
+ * Block types that should not be nested inside table cells.
+ * When pasting these inside a cell, they are inserted after the parent table instead.
+ */
+const TABLE_BLOCK_TYPES = [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock];
+
 function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean {
   if (blocks.length === 0) return false;
 
@@ -384,6 +578,65 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
 
     const sharedRoot = getSharedRoot(editor as YjsEditor);
     const block = getBlock(blockId, sharedRoot);
+
+    // Check if we're pasting inside a table cell
+    const insideTable = isInsideSimpleTableCell(editor as YjsEditor, blockId);
+
+    if (insideTable) {
+      // Split blocks: text-like blocks go inside the cell, table blocks go after the parent table
+      const cellBlocks = blocks.filter(b => !TABLE_BLOCK_TYPES.includes(b.type));
+      const tableBlocks = blocks.filter(b => TABLE_BLOCK_TYPES.includes(b.type));
+
+      // Insert text blocks inside the cell
+      if (cellBlocks.length > 0) {
+        const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
+        const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
+        const index = parentChildren.toArray().findIndex((id) => id === blockId);
+        const doc = assertDocExists(sharedRoot);
+        const slateNodes = cellBlocks.map(parsedBlockToSlateElement);
+
+        doc.transact(() => {
+          slateContentInsertToYData(block.get(YjsEditorKey.block_parent), index + 1, slateNodes, doc);
+        });
+      }
+
+      // Insert table blocks after the parent SimpleTable
+      if (tableBlocks.length > 0) {
+        // Walk up to find the SimpleTableBlock ancestor
+        let currentId: string | undefined = blockId;
+        let tableAncestorId: string | undefined;
+
+        while (currentId) {
+          const currentBlock = getBlock(currentId, sharedRoot);
+
+          if (!currentBlock) break;
+
+          if (currentBlock.get(YjsEditorKey.block_type) === BlockType.SimpleTableBlock) {
+            tableAncestorId = currentId;
+            break;
+          }
+
+          currentId = currentBlock.get(YjsEditorKey.block_parent);
+        }
+
+        if (tableAncestorId) {
+          const tableBlock = getBlock(tableAncestorId, sharedRoot);
+          const tableParent = getBlock(tableBlock.get(YjsEditorKey.block_parent), sharedRoot);
+          const tableParentChildren = getChildrenArray(tableParent.get(YjsEditorKey.block_children), sharedRoot);
+          const tableIndex = tableParentChildren.toArray().findIndex((id) => id === tableAncestorId);
+          const doc = assertDocExists(sharedRoot);
+          const slateNodes = tableBlocks.map(parsedBlockToSlateElement);
+
+          doc.transact(() => {
+            slateContentInsertToYData(tableBlock.get(YjsEditorKey.block_parent), tableIndex + 1, slateNodes, doc);
+          });
+        }
+      }
+
+      return true;
+    }
+
+    // Normal paste (not inside table cell)
     const parent = getBlock(block.get(YjsEditorKey.block_parent), sharedRoot);
     const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
     const index = parentChildren.toArray().findIndex((id) => id === blockId);

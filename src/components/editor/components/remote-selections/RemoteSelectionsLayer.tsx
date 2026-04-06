@@ -92,6 +92,25 @@ export const RemoteSelectionsLayer: React.FC<RemoteSelectionsLayerProps> = ({ ed
           height: anchorRect.height,
         };
 
+        // Check if cursor is inside a scroll container (e.g., table) and
+        // skip if it's scrolled out of the visible area
+        const anchorDomNode = anchorDomPoint[0].parentElement;
+        const scrollParent = anchorDomNode?.closest('.simple-table-scroll-container');
+
+        if (scrollParent) {
+          const scrollRect = scrollParent.getBoundingClientRect();
+
+          // If the cursor is outside the scroll container's visible bounds, skip it
+          if (
+            anchorRect.left < scrollRect.left - 10 ||
+            anchorRect.right > scrollRect.right + 10 ||
+            anchorRect.top < scrollRect.top - 10 ||
+            anchorRect.bottom > scrollRect.bottom + 10
+          ) {
+            continue;
+          }
+        }
+
         // Get the background rectangles of the selection (only needed when not collapsed)
         let selectionRects: SelectionRect[] = [];
 

@@ -8,7 +8,8 @@ import { withInsertData } from '@/components/editor/plugins/withInsertData';
 import { withInsertText } from '@/components/editor/plugins/withInsertText';
 import { withMarkdown } from '@/components/editor/plugins/withMarkdown';
 import { withPasted } from '@/components/editor/plugins/withPasted';
+import { withSimpleTable } from '@/components/editor/plugins/withSimpleTable';
 
 export function withPlugins(editor: ReactEditor) {
-  return withInsertData(withPasted(withCopy(withMarkdown(withInsertBreak(withDelete(withInsertText(withElement(editor))))))));
+  return withSimpleTable(withInsertData(withPasted(withCopy(withMarkdown(withInsertBreak(withDelete(withInsertText(withElement(editor)))))))));
 }

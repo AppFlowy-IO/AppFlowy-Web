@@ -15,16 +15,24 @@
     vertical-align: top;
   }
 
-  tr [data-block-type="simple_table_cell"]:first-child {
-    @apply border-l border-t border-border-primary;
-  }
-
-  tr:first-child > [data-block-type="simple_table_cell"] {
-    @apply border-t border-border-primary;
+  table {
+    border-collapse: separate;
+    border-spacing: 0;
   }
 
   td[data-block-type="simple_table_cell"] {
-    @apply border-r border-b border-border-primary overflow-hidden whitespace-pre-wrap;
+    @apply border-r border-b border-border-primary whitespace-pre-wrap;
+    overflow: hidden;
+  }
+
+  // Left border on first column cells
+  tr td[data-block-type="simple_table_cell"]:first-child {
+    @apply border-l;
+  }
+
+  // Top border on first row cells
+  tr:first-child > td[data-block-type="simple_table_cell"] {
+    @apply border-t;
     .cell-children {
       .block-element {
         margin: 0 !important;
@@ -90,14 +98,20 @@
 
   td .cell-children {
     @apply leading-[1.5em] tracking-wide;
-    > div {
-      margin-top: 4px !important;
-      margin-bottom: 4px !important;
+
+    .block-element {
+      margin: 0 !important;
+    }
+
+    .text-element {
+      margin-top: 0 !important;
+      margin-bottom: 0 !important;
     }
   }
 
   td {
-    @apply px-2 py-0.5;
+    // Match desktop: horizontal 9px, vertical 4px
+    padding: 4px 9px;
   }
 
   &.selected {
@@ -105,5 +119,297 @@
       @apply bg-fill-theme-select border border-fill-default;
     }
 
+  }
+
+  // ========================================================================
+  // Table inner wrapper — shrink-wraps to table width so buttons align
+  // ========================================================================
+
+  .simple-table-root-wrapper {
+    @apply relative;
+    overflow: visible;
+  }
+
+  .simple-table-scroll-container {
+    @apply w-full;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .simple-table-inner-wrapper {
+    @apply relative inline-block;
+  }
+
+  // ========================================================================
+  // Add row / column / corner hover buttons
+  // Matches the desktop Flutter UI: thick bars with rounded caps
+  // ========================================================================
+
+  .simple-table-action-buttons-container {
+    @apply absolute inset-0 pointer-events-none;
+    overflow: visible;
+  }
+
+  .simple-table-add-row-btn {
+    @apply absolute flex items-center justify-center cursor-pointer pointer-events-auto;
+    height: 16px;
+    border-radius: 4px;
+    background-color: #2D3036;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &:hover {
+      background-color: var(--fill-list-hover);
+    }
+  }
+
+  .simple-table-add-col-btn {
+    @apply absolute flex items-center justify-center cursor-pointer pointer-events-auto;
+    width: 16px;
+    border-radius: 4px;
+    background-color: #2D3036;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &:hover {
+      background-color: var(--fill-list-hover);
+    }
+  }
+
+  .simple-table-add-corner-btn {
+    @apply absolute flex items-center justify-center cursor-pointer pointer-events-auto;
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    background-color: #2D3036;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+
+    &:hover {
+      background-color: var(--fill-list-hover);
+    }
+  }
+
+  &:hover {
+    .simple-table-add-row-btn,
+    .simple-table-add-col-btn,
+    .simple-table-add-corner-btn {
+      opacity: 1;
+    }
+  }
+
+  // ========================================================================
+  // Row / Column action trigger buttons (circular grip icons)
+  // ========================================================================
+
+  .simple-table-action-btn {
+    @apply flex items-center justify-center cursor-pointer;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 1px solid var(--line-divider);
+    background-color: var(--bg-body);
+    color: var(--text-caption);
+    transition: background-color 0.15s ease;
+    user-select: none;
+
+    &:hover,
+    &.active {
+      background-color: var(--fill-list-hover);
+      color: var(--fill-default);
+    }
+  }
+
+  // ========================================================================
+  // Action overlay — positioned at wrapper level, not inside <td>
+  // ========================================================================
+
+  .simple-table-action-overlay {
+    @apply absolute pointer-events-none;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 10;
+    overflow: visible;
+  }
+
+  .simple-table-row-trigger-container {
+    @apply absolute pointer-events-auto;
+    // left is set inline from JS based on table's left edge
+    transform: translateX(-50%); // center button ON the left table border
+    width: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .simple-table-col-trigger-container {
+    @apply absolute pointer-events-auto;
+    // top is set inline from JS based on table's top edge
+    transform: translateY(-50%); // center button ON the top table border
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  // ========================================================================
+  // Row / Column selection highlight (cyan border when menu is open)
+  // ========================================================================
+
+  tr.simple-table-highlight {
+    > td {
+      outline: 2px solid var(--fill-default);
+      outline-offset: -1px;
+    }
+  }
+
+  td.simple-table-highlight {
+    outline: 2px solid var(--fill-default);
+    outline-offset: -1px;
+  }
+
+  // Cell selection highlight — merged rectangle border matching desktop
+  // Uses pseudo-elements to draw borders without affecting layout
+  td.simple-table-cell-selected {
+    position: relative;
+
+    &::after {
+      content: '';
+      position: absolute;
+      top: -1px;
+      left: -1px;
+      right: -1px;
+      bottom: -1px;
+      pointer-events: none;
+      z-index: 1;
+      border: 0 solid #528bff;
+    }
+
+    &.sel-top::after { border-top-width: 2px; }
+    &.sel-bottom::after { border-bottom-width: 2px; }
+    &.sel-left::after { border-left-width: 2px; }
+    &.sel-right::after { border-right-width: 2px; }
+  }
+
+  // Active cell highlight — single cell editing shows full border
+  td[data-block-type="simple_table_cell"]:focus-within {
+    box-shadow: inset 0 0 0 2px #528bff;
+  }
+
+  // ========================================================================
+  // Column resize handle
+  // ========================================================================
+
+  .simple-table-col-resize-handle {
+    @apply absolute top-0 bottom-0 cursor-col-resize;
+    right: -2px;
+    z-index: 2;
+    background: transparent;
+
+    &:hover {
+      background-color: var(--fill-default);
+    }
+  }
+}
+
+// ============================================================================
+// Context menu popover styling
+// ============================================================================
+
+.simple-table-context-menu {
+  border-radius: 10px !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.2) !important;
+  margin-top: 4px !important;
+}
+
+.simple-table-menu-list {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  min-width: 220px;
+}
+
+.simple-table-menu-divider {
+  height: 1px;
+  margin: 4px 12px;
+  background-color: var(--line-divider);
+}
+
+.simple-table-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 14px;
+  font-size: 14px;
+  line-height: 20px;
+  text-align: left;
+  color: var(--text-title);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: 0;
+  transition: background-color 0.1s ease;
+
+  &:hover {
+    background-color: var(--fill-list-hover);
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+}
+
+.simple-table-menu-item-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-caption);
+}
+
+// Color picker sub-menu
+.simple-table-color-picker {
+  padding: 8px 12px;
+  min-width: 200px;
+}
+
+.simple-table-color-picker-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-caption);
+  margin-bottom: 8px;
+}
+
+.simple-table-color-picker-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.simple-table-color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+
+  &:hover {
+    border-color: var(--fill-default);
+  }
+
+  &.selected {
+    border-color: var(--fill-default);
+  }
+
+  // Default (transparent) swatch shows a border
+  &[style*="transparent"] {
+    border-color: var(--line-divider);
   }
 }
