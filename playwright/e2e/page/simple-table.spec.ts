@@ -405,39 +405,29 @@ test.describe('SimpleTable', () => {
   // Flutter Test 8-9: Set column width to page width
   // ==========================================================================
 
-  test('set to page width should scale columns to fit viewport (column menu)', async ({ page }) => {
+  test('set to page width should divide page width equally among columns (column menu)', async ({ page }) => {
     await insertTableViaSlashCommand(page);
 
-    // Add extra columns to make the table narrower than the viewport
-    // (2 cols * 160px = 320px << viewport ~760px)
-    const beforeWidth = await getTableWidth(page);
     const scrollWidth = await page.evaluate(() =>
       document.querySelector('.simple-table-scroll-container')?.clientWidth ?? 0
     );
 
-    // The table should be narrower than the viewport
-    expect(beforeWidth).toBeLessThan(scrollWidth);
-
     await openColumnContextMenu(page, 0);
     await clickContextMenuItem(page, 'Set to page width');
 
-    const afterWidth = await getTableWidth(page);
+    const col0After = await getCell(page, 0, 0).evaluate(el => el.getBoundingClientRect().width);
+    const col1After = await getCell(page, 0, 1).evaluate(el => el.getBoundingClientRect().width);
 
-    // After set to page width, columns should scale up to fill the viewport
-    expect(afterWidth).toBeGreaterThan(beforeWidth);
-    // Should be close to the scroll container width (within some margin for borders)
-    expect(afterWidth).toBeGreaterThanOrEqual(scrollWidth - 10);
+    // Both columns should be equal (page width / 2)
+    expect(Math.abs(col0After - col1After)).toBeLessThan(2);
+    // Each column should be approximately half the viewport
+    const expectedWidth = Math.floor(scrollWidth / 2);
+
+    expect(Math.abs(col0After - expectedWidth)).toBeLessThan(5);
   });
 
-  test('set to page width should scale columns proportionally (row menu)', async ({ page }) => {
+  test('set to page width should divide page width equally among columns (row menu)', async ({ page }) => {
     await insertTableViaSlashCommand(page);
-
-    // Get original column widths
-    const col0Before = await getCell(page, 0, 0).evaluate(el => el.getBoundingClientRect().width);
-    const col1Before = await getCell(page, 0, 1).evaluate(el => el.getBoundingClientRect().width);
-
-    // Both columns should be equal initially
-    expect(Math.abs(col0Before - col1Before)).toBeLessThan(2);
 
     await openRowContextMenu(page, 0);
     await clickContextMenuItem(page, 'Set to page width');
@@ -445,10 +435,10 @@ test.describe('SimpleTable', () => {
     const col0After = await getCell(page, 0, 0).evaluate(el => el.getBoundingClientRect().width);
     const col1After = await getCell(page, 0, 1).evaluate(el => el.getBoundingClientRect().width);
 
-    // Columns should still be equal (proportional scaling)
+    // Both columns should be equal
     expect(Math.abs(col0After - col1After)).toBeLessThan(2);
-    // And each column should be wider than before
-    expect(col0After).toBeGreaterThan(col0Before);
+    // Each should be wider than the default 160px
+    expect(col0After).toBeGreaterThan(160);
   });
 
   // ==========================================================================
@@ -1206,4 +1196,257 @@ test.describe('SimpleTable', () => {
     await expect(getCell(page, 1, 0)).toContainText('Col0R1');
     await expect(getCell(page, 1, 1)).toContainText('Col0R1');
   });
+
+  // ==========================================================================
+  // Copy/Paste within table cells
+  // ==========================================================================
+
+  test('copy from table cells should produce tab-separated text', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+    await page.waitForTimeout(300);
+
+    // Type in row 0 cells
+    await getCell(page, 0, 0).click();
+    await page.keyboard.type('AAA');
+    await page.keyboard.press('Tab');
+    await page.keyboard.type('BBB');
+    await page.waitForTimeout(300);
+
+    // Use Slate editor API to select both cells and check the fragment/clipboard
+    const clipboardText = await page.evaluate(() => {
+      const editorEl = document.querySelector('[data-slate-editor]');
+      const fiberKey = Object.keys(editorEl || {}).find(k => k.startsWith('__reactFiber'));
+
+      if (!editorEl || !fiberKey) return null;
+
+      let fiber = (editorEl as Record<string, unknown>)[fiberKey] as { memoizedProps?: { editor?: Record<string, unknown> }; return?: unknown };
+
+      for (let i = 0; i < 50 && fiber; i++) {
+        if (fiber.memoizedProps?.editor) {
+          const editor = fiber.memoizedProps.editor as {
+            children: Array<{ type?: string; children?: unknown[] }>;
+            selection: unknown;
+            getFragment: () => unknown[];
+            setFragmentData: (data: DataTransfer) => void;
+          };
+
+          // Find the table
+          const tableIdx = editor.children.findIndex(c => c.type === 'simple_table');
+
+          if (tableIdx === -1) return 'no table found';
+
+          // Set selection spanning row 0, cell 0 to cell 1
+          const table = editor.children[tableIdx];
+          const row0 = (table.children as Array<{ children?: Array<{ children?: Array<{ children?: Array<{ children?: Array<{ text?: string }> }> }> }> }>)?.[0];
+          const cell0Leaf = row0?.children?.[0]?.children?.[0]?.children?.[0]?.children?.[0];
+          const cell1Leaf = row0?.children?.[1]?.children?.[0]?.children?.[0]?.children?.[0];
+
+          if (!cell0Leaf || !cell1Leaf) return 'cells not found';
+
+          editor.selection = {
+            anchor: { path: [tableIdx, 0, 0, 0, 0, 0], offset: 0 },
+            focus: { path: [tableIdx, 0, 1, 0, 0, 0], offset: cell1Leaf.text?.length || 0 },
+          };
+
+          // Call setFragmentData to populate clipboard
+          const dt = new DataTransfer();
+
+          editor.setFragmentData(dt);
+
+          return dt.getData('text/plain');
+        }
+
+        fiber = fiber.return as typeof fiber;
+      }
+
+      return 'editor not found';
+    });
+
+    // The clipboard should contain tab-separated text
+    expect(clipboardText).toBe('AAA\tBBB');
+  });
+
+  test('paste TSV into table cell should fill adjacent cells', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+    await clickAddColumnButton(page);
+    await clickAddRowButton(page);
+    await page.waitForTimeout(300);
+
+    // Click into row 2, col 0
+    await getCell(page, 2, 0).click();
+    await page.waitForTimeout(300);
+
+    // Use Slate editor API to paste TSV via insertTextData
+    await page.evaluate(() => {
+      const editorEl = document.querySelector('[data-slate-editor]');
+      const fiberKey = Object.keys(editorEl || {}).find(k => k.startsWith('__reactFiber'));
+
+      if (!editorEl || !fiberKey) return;
+
+      let fiber = (editorEl as Record<string, unknown>)[fiberKey] as { memoizedProps?: { editor?: Record<string, unknown> }; return?: unknown };
+
+      for (let i = 0; i < 50 && fiber; i++) {
+        if (fiber.memoizedProps?.editor) {
+          const editor = fiber.memoizedProps.editor as {
+            insertTextData: (data: DataTransfer) => boolean;
+          };
+
+          const dt = new DataTransfer();
+
+          dt.setData('text/plain', 'Hello\tWorld');
+          editor.insertTextData(dt);
+          return;
+        }
+
+        fiber = fiber.return as typeof fiber;
+      }
+    });
+    await page.waitForTimeout(500);
+
+    // "Hello" should be in col 0, "World" in col 1
+    await expect(getCell(page, 2, 0)).toContainText('Hello');
+    await expect(getCell(page, 2, 1)).toContainText('World');
+    // Col 2 should remain empty
+    const col2Text = await getCell(page, 2, 2).innerText();
+
+    expect(col2Text.trim()).toBe('');
+  });
+
+  test('copy cells and paste into another row should fill correctly', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+    await clickAddRowButton(page);
+    await page.waitForTimeout(300);
+
+    // Type in row 0 cells
+    await getCell(page, 0, 0).click();
+    await page.keyboard.type('1');
+    await page.keyboard.press('Tab');
+    await page.keyboard.type('2');
+    await page.waitForTimeout(300);
+
+    // Use Slate API to: select row 0 cells, copy, move to row 2, paste
+    const result = await page.evaluate(() => {
+      const editorEl = document.querySelector('[data-slate-editor]');
+      const fiberKey = Object.keys(editorEl || {}).find(k => k.startsWith('__reactFiber'));
+
+      if (!editorEl || !fiberKey) return 'no editor';
+
+      let fiber = (editorEl as Record<string, unknown>)[fiberKey] as { memoizedProps?: { editor?: Record<string, unknown> }; return?: unknown };
+
+      for (let i = 0; i < 50 && fiber; i++) {
+        if (fiber.memoizedProps?.editor) {
+          const editor = fiber.memoizedProps.editor as {
+            children: Array<{ type?: string; children?: unknown[] }>;
+            selection: unknown;
+            setFragmentData: (data: DataTransfer) => void;
+            insertTextData: (data: DataTransfer) => boolean;
+            insertData: (data: DataTransfer) => void;
+          };
+
+          const tableIdx = editor.children.findIndex(c => c.type === 'simple_table');
+
+          if (tableIdx === -1) return 'no table';
+
+          const table = editor.children[tableIdx];
+          const row0 = (table.children as Array<{ children?: Array<{ children?: Array<{ children?: Array<{ children?: Array<{ text?: string }> }> }> }> }>)?.[0];
+          const cell1Leaf = row0?.children?.[1]?.children?.[0]?.children?.[0]?.children?.[0];
+
+          // Step 1: Select cells in row 0
+          editor.selection = {
+            anchor: { path: [tableIdx, 0, 0, 0, 0, 0], offset: 0 },
+            focus: { path: [tableIdx, 0, 1, 0, 0, 0], offset: cell1Leaf?.text?.length || 0 },
+          };
+
+          // Step 2: Copy
+          const copyDt = new DataTransfer();
+
+          editor.setFragmentData(copyDt);
+          const copiedText = copyDt.getData('text/plain');
+
+          // Step 3: Move cursor to row 2, col 0
+          editor.selection = {
+            anchor: { path: [tableIdx, 2, 0, 0, 0, 0], offset: 0 },
+            focus: { path: [tableIdx, 2, 0, 0, 0, 0], offset: 0 },
+          };
+
+          // Step 4: Paste using insertData (goes through withInsertData)
+          const pasteDt = new DataTransfer();
+
+          pasteDt.setData('text/plain', copiedText);
+          // Also set the slate fragment from the copy
+          const slateFragment = copyDt.getData('application/x-slate-fragment');
+
+          if (slateFragment) {
+            pasteDt.setData('application/x-slate-fragment', slateFragment);
+          }
+
+          editor.insertData(pasteDt);
+
+          return { copiedText, hasFragment: !!slateFragment };
+        }
+
+        fiber = fiber.return as typeof fiber;
+      }
+
+      return 'not found';
+    });
+    await page.waitForTimeout(500);
+
+    // Verify the copy produced TSV
+    expect(result).toHaveProperty('copiedText', '1\t2');
+
+    // Verify paste filled cells correctly
+    await expect(getCell(page, 2, 0)).toContainText('1');
+    await expect(getCell(page, 2, 1)).toContainText('2');
+  });
+
+  test('paste multi-row TSV into table should fill multiple rows', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+    await clickAddColumnButton(page);
+    await clickAddRowButton(page);
+    await page.waitForTimeout(300);
+
+    // Click into row 1, col 0
+    await getCell(page, 1, 0).click();
+    await page.waitForTimeout(300);
+
+    // Paste multi-row TSV via Slate API
+    await page.evaluate(() => {
+      const editorEl = document.querySelector('[data-slate-editor]');
+      const fiberKey = Object.keys(editorEl || {}).find(k => k.startsWith('__reactFiber'));
+
+      if (!editorEl || !fiberKey) return;
+
+      let fiber = (editorEl as Record<string, unknown>)[fiberKey] as { memoizedProps?: { editor?: Record<string, unknown> }; return?: unknown };
+
+      for (let i = 0; i < 50 && fiber; i++) {
+        if (fiber.memoizedProps?.editor) {
+          const editor = fiber.memoizedProps.editor as {
+            insertTextData: (data: DataTransfer) => boolean;
+          };
+
+          const dt = new DataTransfer();
+
+          dt.setData('text/plain', 'A1\tB1\nA2\tB2');
+          editor.insertTextData(dt);
+          return;
+        }
+
+        fiber = fiber.return as typeof fiber;
+      }
+    });
+    await page.waitForTimeout(500);
+
+    // Row 1 should have A1, B1
+    await expect(getCell(page, 1, 0)).toContainText('A1');
+    await expect(getCell(page, 1, 1)).toContainText('B1');
+    // Row 2 should have A2, B2
+    await expect(getCell(page, 2, 0)).toContainText('A2');
+    await expect(getCell(page, 2, 1)).toContainText('B2');
+  });
+
+  // ==========================================================================
+  // Cell selection highlight (CSS :focus-within)
+  // Note: :focus-within is tested visually — headless browsers don't apply it reliably
+  // ==========================================================================
 });

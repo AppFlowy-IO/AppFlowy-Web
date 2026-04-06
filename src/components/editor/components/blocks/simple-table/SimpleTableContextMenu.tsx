@@ -477,16 +477,12 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
           const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
 
           if (containerWidth && colCount > 0) {
-            const existingWidths = context?.tableNode.data.column_widths || {};
-            const totalCurrentWidth = Array.from({ length: colCount }, (_, i) =>
-              Number(existingWidths[i]) || MIN_WIDTH
-            ).reduce((a, b) => a + b, 0);
-
-            const ratio = containerWidth / totalCurrentWidth;
+            // Set to page width: divide page width equally among all columns
+            const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
             const newWidths: Record<string, number> = {};
 
             for (let i = 0; i < colCount; i++) {
-              newWidths[i] = Math.max(MIN_WIDTH, Math.floor((Number(existingWidths[i]) || MIN_WIDTH) * ratio));
+              newWidths[i] = evenWidth;
             }
 
             CustomEditor.updateTableData(editor, tableBlockId, { column_widths: newWidths });
@@ -499,7 +495,7 @@ export function RowActionTrigger({ rowIndex }: { rowIndex: number }) {
         label: 'Distribute columns evenly',
         icon: <DistributeIcon />,
         onClick: () => {
-          // Find the scroll container that holds this table
+          // Distribute evenly: same as set to page width — equal width columns
           const firstCellOfTable = context?.tableNode?.children?.[0];
           const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
           const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
@@ -672,16 +668,11 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
           const containerWidth = (cellEl?.closest('.simple-table-scroll-container') ?? cellEl?.closest('.simple-table'))?.clientWidth;
 
           if (containerWidth && colCount > 0) {
-            const existingWidths = context?.tableNode.data.column_widths || {};
-            const totalCurrentWidth = Array.from({ length: colCount }, (_, i) =>
-              Number(existingWidths[i]) || MIN_WIDTH
-            ).reduce((a, b) => a + b, 0);
-
-            const ratio = containerWidth / totalCurrentWidth;
+            const evenWidth = Math.max(MIN_WIDTH, Math.floor(containerWidth / colCount));
             const newWidths: Record<string, number> = {};
 
             for (let i = 0; i < colCount; i++) {
-              newWidths[i] = Math.max(MIN_WIDTH, Math.floor((Number(existingWidths[i]) || MIN_WIDTH) * ratio));
+              newWidths[i] = evenWidth;
             }
 
             CustomEditor.updateTableData(editor, tableBlockId, { column_widths: newWidths });
@@ -694,7 +685,6 @@ export function ColumnActionTrigger({ colIndex }: { colIndex: number }) {
         label: 'Distribute columns evenly',
         icon: <DistributeIcon />,
         onClick: () => {
-          // Find the scroll container that holds this table
           const firstCellOfTable = context?.tableNode?.children?.[0];
           const firstCellBlockId = firstCellOfTable ? (firstCellOfTable as { children?: Array<{ blockId?: string }> }).children?.[0]?.blockId : null;
           const cellEl = firstCellBlockId ? document.querySelector(`[data-block-cell="${firstCellBlockId}"]`) : null;
