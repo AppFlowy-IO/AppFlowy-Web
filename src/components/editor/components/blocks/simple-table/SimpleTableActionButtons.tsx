@@ -54,10 +54,14 @@ export function SimpleTableActionButtons() {
       const scrollRect = scrollContainer.getBoundingClientRect();
       const tableRect = table.getBoundingClientRect();
 
+      // Use the smaller of scroll container width and actual table width
+      // so buttons stick to the table edge when the table is narrow
+      const effectiveWidth = Math.min(scrollRect.width, tableRect.width);
+
       setLayout({
         scrollLeft: scrollRect.left - rootRect.left,
         scrollTop: scrollRect.top - rootRect.top,
-        scrollWidth: scrollRect.width,
+        scrollWidth: effectiveWidth,
         scrollHeight: scrollRect.height,
         tableHeight: tableRect.height,
       });

@@ -154,7 +154,7 @@
     @apply absolute flex items-center justify-center cursor-pointer pointer-events-auto;
     height: 16px;
     border-radius: 4px;
-    background-color: #2D3036;
+    background-color: var(--fill-list-active);
     opacity: 0;
     transition: opacity 0.15s ease;
 
@@ -167,7 +167,7 @@
     @apply absolute flex items-center justify-center cursor-pointer pointer-events-auto;
     width: 16px;
     border-radius: 4px;
-    background-color: #2D3036;
+    background-color: var(--fill-list-active);
     opacity: 0;
     transition: opacity 0.15s ease;
 
@@ -181,7 +181,7 @@
     width: 18px;
     height: 18px;
     border-radius: 4px;
-    background-color: #2D3036;
+    background-color: var(--fill-list-active);
     opacity: 0;
     transition: opacity 0.15s ease;
 
