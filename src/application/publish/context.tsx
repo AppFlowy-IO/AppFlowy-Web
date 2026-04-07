@@ -303,7 +303,14 @@ export const PublishProvider = ({
         });
         return;
       } catch (e) {
-        return Promise.reject(e);
+        // For unpublished sibling database views, switch the tab via URL parameter
+        // instead of navigating to a non-existent published page.
+        const currentParams = new URLSearchParams(window.location.search);
+
+        currentParams.set('v', viewId);
+        navigate(`${window.location.pathname}?${currentParams.toString()}`, {
+          replace: true,
+        });
       }
     },
     [loadViewMeta, isTemplate, navigate]

@@ -7,6 +7,7 @@ import {
   CreateRow,
   LoadView,
   LoadViewMeta,
+  View,
   ViewLayout,
   ViewMetaProps,
   YDatabase,
@@ -19,6 +20,7 @@ import DocumentSkeleton from '@/components/_shared/skeleton/DocumentSkeleton';
 import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { Database } from '@/components/database';
+import { findParentView } from '@/components/_shared/outline/utils';
 
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
@@ -44,6 +46,34 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
   const visibleViewIds = useMemo(() => viewMeta.visibleViewIds || [], [viewMeta]);
 
   const isTemplateThumb = usePublishContext()?.isTemplateThumb;
+  const outline = usePublishContext()?.outline;
+
+  // Build a loadViewMeta that returns the database container from the outline
+  // with correct folder names for all sibling views (used by DatabaseTabs).
+  const publishLoadViewMeta: LoadViewMeta | undefined = useMemo(() => {
+    if (!outline || !props.loadViewMeta) return props.loadViewMeta;
+
+    const originalLoadViewMeta = props.loadViewMeta;
+
+    return async (viewId: string, callback?: (meta: View) => void) => {
+      // Try to find the container in the outline for this database view
+      const parent = findParentView(outline, viewId);
+
+      if (parent?.extra?.is_database_container && parent.children?.length > 0) {
+        const containerView: View = {
+          ...parent,
+          is_published: false,
+          is_private: false,
+        };
+
+        callback?.(containerView);
+        return containerView;
+      }
+
+      // Fall back to original loadViewMeta
+      return originalLoadViewMeta(viewId, callback);
+    };
+  }, [outline, props.loadViewMeta]);
 
   /**
    * The database's page ID in the folder/outline structure.
@@ -67,6 +97,20 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
       });
     },
     [setSearch]
+  );
+
+  // Wrap navigateToView to handle sibling database views as tab switches
+  // instead of navigating to a new page.
+  const publishNavigateToView = useCallback(
+    async (viewId: string, blockId?: string) => {
+      if (visibleViewIds.includes(viewId)) {
+        handleChangeView(viewId);
+        return;
+      }
+
+      return props.navigateToView?.(viewId, blockId);
+    },
+    [visibleViewIds, handleChangeView, props.navigateToView]
   );
 
   const handleNavigateToRow = useCallback(
@@ -117,6 +161,8 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
           databaseName={viewMeta.name || ''}
           databasePageId={databasePageId || ''}
           {...props}
+          loadViewMeta={publishLoadViewMeta}
+          navigateToView={publishNavigateToView}
           activeViewId={activeViewId}
           rowId={rowId}
           visibleViewIds={visibleViewIds}

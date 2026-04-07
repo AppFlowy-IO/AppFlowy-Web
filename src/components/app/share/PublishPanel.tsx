@@ -196,7 +196,9 @@ function PublishPanel({
   const layout = view?.layout;
   const isDatabase =
     layout !== undefined ? [ViewLayout.Grid, ViewLayout.Board, ViewLayout.Calendar].includes(layout) : false;
-  const serverPublishedState = Boolean(view?.is_published || scopedPublishInfo);
+  // Use the publish API (scopedPublishInfo) as the authoritative source.
+  // view.is_published from the outline can be stale after unpublish.
+  const serverPublishedState = Boolean(scopedPublishInfo);
   // Reconcile local override with fetched/server state:
   // - local override is authoritative for immediate UI feedback
   // - fallback to server-derived state when no local override exists

@@ -31,6 +31,17 @@ export function AdvancedFiltersBadge({ count }: AdvancedFiltersBadgeProps) {
         align='start'
         className='w-auto min-w-[500px] bg-surface-layer-02 p-0'
         onCloseAutoFocus={(e) => e.preventDefault()}
+        onPointerDownOutside={(e) => {
+          // Prevent closing when clicking inside nested floating elements
+          // (select option picker, condition dropdown, field selector).
+          // These render in portals outside this popover's DOM tree, so Radix
+          // sees the click as "outside" and tries to dismiss.
+          const target = e.target as HTMLElement | null;
+
+          if (target?.closest('[data-radix-popper-content-wrapper]')) {
+            e.preventDefault();
+          }
+        }}
       >
         <AdvancedFilterPanel />
       </PopoverContent>

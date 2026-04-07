@@ -757,10 +757,14 @@ function findFilterNodeRecursive(node: YDatabaseFilter, targetId: string): YData
  * Lightweight in-place filter updater.
  * Searches the entire nested tree (not just root children) to find the target filter.
  * Use this for content-only changes (text, number values) that don't affect tree structure.
+ *
+ * Falls back to flatten-and-rebuild when the filter node is a plain object (from desktop
+ * sync) rather than a Yjs Map, since plain objects can't be modified in-place.
  */
 export function useUpdateAdvancedFilter() {
   const view = useDatabaseView();
   const sharedRoot = useSharedRoot();
+  const fields = useDatabaseFields();
 
   return useCallback(
     (params: UpdateFilterParams) => {
@@ -793,30 +797,55 @@ export function useUpdateAdvancedFilter() {
               if (filter) break;
             }
 
-            if (!filter) {
-              Log.warn('[useUpdateAdvancedFilter] Filter not found in tree', { filterId });
+            if (filter) {
+              // Fast path: filter is a Yjs Map — update in-place
+              if (fieldId) {
+                filter.set(YjsDatabaseKey.field_id, fieldId);
+              }
+
+              if (condition !== undefined) {
+                filter.set(YjsDatabaseKey.condition, condition);
+              }
+
+              if (content !== undefined) {
+                filter.set(YjsDatabaseKey.content, content);
+              }
+
+              Log.debug('[useUpdateAdvancedFilter] Updated filter in tree', { filterId });
               return;
             }
 
-            if (fieldId) {
-              filter.set(YjsDatabaseKey.field_id, fieldId);
+            // Slow path: filter node is a plain object (from desktop sync).
+            // Flatten the tree, update the matching draft, and rebuild.
+            const currentDrafts = flattenFilterTree(filtersArray, fields);
+            const idx = currentDrafts.findIndex((d) => d.id === filterId);
+
+            if (idx === -1) {
+              Log.warn('[useUpdateAdvancedFilter] Filter not found in tree or drafts', { filterId });
+              return;
             }
 
-            if (condition !== undefined) {
-              filter.set(YjsDatabaseKey.condition, condition);
-            }
+            const draft = { ...currentDrafts[idx] };
 
-            if (content !== undefined) {
-              filter.set(YjsDatabaseKey.content, content);
-            }
+            if (fieldId) draft.fieldId = fieldId;
+            if (condition !== undefined) draft.condition = condition;
+            if (content !== undefined) draft.content = content;
 
-            Log.debug('[useUpdateAdvancedFilter] Updated filter in tree', { filterId });
+            currentDrafts[idx] = draft;
+
+            filtersArray.delete(0, filtersArray.length);
+
+            const rootNode = buildFilterTreeFromDrafts(currentDrafts);
+
+            filtersArray.push([rootNode]);
+
+            Log.debug('[useUpdateAdvancedFilter] Rebuilt tree for plain-object filter', { filterId });
           },
         ],
         'updateAdvancedFilter'
       );
     },
-    [view, sharedRoot]
+    [view, sharedRoot, fields]
   );
 }
 

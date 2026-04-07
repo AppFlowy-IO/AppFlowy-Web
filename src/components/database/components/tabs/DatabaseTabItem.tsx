@@ -63,7 +63,8 @@ export const DatabaseTabItem = memo(
     const defaultName = getDefaultNameByLayout();
     const yjsName = rawName?.trim();
     const override = nameOverride?.trim();
-    const name = yjsName || override || defaultName;
+    // Prefer folder/outline name when available (fixes published page tab names)
+    const name = override || yjsName || defaultName;
 
     // Compute the layout for PageIcon (icon is based on layout type)
     const computedLayout =

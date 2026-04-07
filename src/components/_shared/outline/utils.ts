@@ -145,6 +145,24 @@ export function findView (data: View[], targetId: string): View | null {
   return null;
 }
 
+export function findParentView (data: View[], targetId: string): View | null {
+  for (const item of data) {
+    if (item.children?.some(c => c.view_id === targetId)) {
+      return item;
+    }
+
+    if (item.children && item.children.length > 0) {
+      const result = findParentView(item.children, targetId);
+
+      if (result) {
+        return result;
+      }
+    }
+  }
+
+  return null;
+}
+
 export function flattenViews (views: View[]): View[] {
   const result: View[] = [];
 

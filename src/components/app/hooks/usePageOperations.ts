@@ -21,7 +21,7 @@ import {
   ViewLayout,
 } from '@/application/types';
 import { Log } from '@/utils/log';
-import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
+import { findParentView, findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 
@@ -336,7 +336,19 @@ export function usePageOperations({
 
         Log.debug('[publish] gathering database data client-side', { viewId, name });
 
-        const data = await gatherDatabasePublishData(viewId, visibleViewIds);
+        // Always resolve all sibling views from the database container so every
+        // tab (Grid, Board, Calendar, etc.) appears on the published page.
+        let resolvedVisibleViewIds = visibleViewIds;
+
+        if (outlineRef.current) {
+          const parentView = findParentView(outlineRef.current, viewId);
+
+          if (parentView?.extra?.is_database_container && parentView.children?.length > 0) {
+            resolvedVisibleViewIds = parentView.children.map(c => c.view_id);
+          }
+        }
+
+        const data = await gatherDatabasePublishData(viewId, resolvedVisibleViewIds);
 
         const toTimestamp = (s?: string) => {
           if (!s) return 0;
