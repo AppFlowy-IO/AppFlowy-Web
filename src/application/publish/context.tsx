@@ -305,12 +305,19 @@ export const PublishProvider = ({
       } catch (e) {
         // For unpublished sibling database views, switch the tab via URL parameter
         // instead of navigating to a non-existent published page.
+        // Only apply this fallback when a ?v= param is already present (indicating
+        // we're on a database page with tabs). Otherwise, re-throw so callers
+        // (e.g., relation pills, @-mentions) can handle the error.
         const currentParams = new URLSearchParams(window.location.search);
 
-        currentParams.set('v', viewId);
-        navigate(`${window.location.pathname}?${currentParams.toString()}`, {
-          replace: true,
-        });
+        if (currentParams.has('v')) {
+          currentParams.set('v', viewId);
+          navigate(`${window.location.pathname}?${currentParams.toString()}`, {
+            replace: true,
+          });
+        } else {
+          return Promise.reject(e);
+        }
       }
     },
     [loadViewMeta, isTemplate, navigate]

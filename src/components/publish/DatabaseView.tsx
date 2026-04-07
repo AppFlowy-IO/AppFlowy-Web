@@ -41,7 +41,7 @@ export interface DatabaseProps {
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 }
 
-function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
+function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
   const [search, setSearch] = useSearchParams();
   const visibleViewIds = useMemo(() => viewMeta.visibleViewIds || [], [viewMeta]);
 
@@ -55,7 +55,7 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
 
     const originalLoadViewMeta = props.loadViewMeta;
 
-    return async (viewId: string, callback?: (meta: View) => void) => {
+    return async (viewId: string, callback?: (meta: View | null) => void) => {
       // Try to find the container in the outline for this database view
       const parent = findParentView(outline, viewId);
 
@@ -104,13 +104,23 @@ function DatabaseView({ viewMeta, ...props }: DatabaseProps) {
   const publishNavigateToView = useCallback(
     async (viewId: string, blockId?: string) => {
       if (visibleViewIds.includes(viewId)) {
-        handleChangeView(viewId);
+        // Set both v and r params in a single setSearch call to avoid a
+        // React Router race where back-to-back setSearch calls overwrite
+        // each other's params.
+        setSearch((prev) => {
+          prev.set('v', viewId);
+          if (blockId) {
+            prev.set('r', blockId);
+          }
+
+          return prev;
+        });
         return;
       }
 
-      return props.navigateToView?.(viewId, blockId);
+      return navigateToView?.(viewId, blockId);
     },
-    [visibleViewIds, handleChangeView, props.navigateToView]
+    [visibleViewIds, navigateToView, setSearch]
   );
 
   const handleNavigateToRow = useCallback(

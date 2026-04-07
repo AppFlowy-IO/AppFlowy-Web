@@ -390,7 +390,7 @@ export function usePageOperations({
 
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline, flushAllSync]
+    [currentWorkspaceId, loadOutline, flushAllSync, outlineRef]
   );
 
   // Unpublish view
