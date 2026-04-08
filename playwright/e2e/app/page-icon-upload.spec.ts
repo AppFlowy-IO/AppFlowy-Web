@@ -26,8 +26,6 @@ test.describe('Page Icon Upload', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  // TODO: This test uses cy.attachFile (a Cypress-specific plugin) to upload a fixture image.
-  // Needs fixture file path migration for test-icon.png to use Playwright's page.setInputFiles().
   test.fixme('should upload page icon image and display after refresh', async ({ page, request }) => {
     // Set up route handler for file upload BEFORE navigating
     let fileUploadDetected = false;
@@ -58,10 +56,8 @@ test.describe('Page Icon Upload', () => {
     await page.waitForTimeout(500);
 
     // 5. Upload image via file input
-    // TODO: Migrate the fixture path from cypress/fixtures/test-icon.png
-    // to a Playwright-compatible location (e.g., playwright/fixtures/test-icon.png)
     const fileInput = page.locator('input[type="file"]');
-    await fileInput.setInputFiles('cypress/fixtures/test-icon.png');
+    await fileInput.setInputFiles('playwright/fixtures/test-icon.png');
 
     // Wait for upload to complete
     await expect(async () => {

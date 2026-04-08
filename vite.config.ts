@@ -143,10 +143,9 @@ export default defineConfig({
     // Enable istanbul for code coverage (active if isTest is true)
     isTest
       ? istanbul({
-        cypress: true,
         requireEnv: false,
         include: ['src/**/*'],
-        exclude: ['**/__tests__/**/*', 'cypress/**/*', 'node_modules/**/*'],
+        exclude: ['**/__tests__/**/*', 'node_modules/**/*'],
       })
       : undefined,
     process.env.ANALYZE_MODE
@@ -236,7 +235,6 @@ export default defineConfig({
     alias: [
       { find: 'src/', replacement: `${__dirname}/src/` },
       { find: '@/', replacement: `${__dirname}/src/` },
-      { find: 'cypress/support', replacement: `${__dirname}/cypress/support` },
     ],
   },
 
