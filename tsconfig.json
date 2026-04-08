@@ -23,10 +23,8 @@
     "noEmit": true,
     "jsx": "react-jsx",
     "types": [
-      "cypress",
       "node",
-      "jest",
-      "cypress-real-events"
+      "jest"
     ],
     "typeRoots": [
       "./node_modules/@fullcalendar"
@@ -51,8 +49,6 @@
     "src",
     ".storybook",
     "vite.config.ts",
-    "cypress.config.ts",
-    "cypress",
     "deploy/**/*.ts"
   ],
   "exclude": [
