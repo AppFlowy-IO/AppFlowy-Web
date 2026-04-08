@@ -25,7 +25,7 @@ export const Group = ({ groupId }: GroupProps) => {
   const { columns, groupResult, fieldId, notFound } = useRowsByGroup(groupId);
   const { t } = useTranslation();
   const context = useDatabaseContext();
-  const { paddingStart, paddingEnd, navigateToRow, ensureRow, populateRowFromCache, blobPrefetchComplete } =
+  const { paddingStart, paddingEnd, navigateToRow, ensureRow, loadRowFromSeed, blobPrefetchComplete } =
     context;
   const rowOrders = useRowOrdersSelector();
 
@@ -37,12 +37,12 @@ export const Group = ({ groupId }: GroupProps) => {
 
   // Store callbacks in refs to avoid triggering effect re-runs (advanced-use-latest pattern)
   const ensureRowRef = useRef(ensureRow);
-  const populateRowFromCacheRef = useRef(populateRowFromCache);
+  const loadRowFromSeedRef = useRef(loadRowFromSeed);
   const loadedRowsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     ensureRowRef.current = ensureRow;
-    populateRowFromCacheRef.current = populateRowFromCache;
+    loadRowFromSeedRef.current = loadRowFromSeed;
   });
 
   // Set up intersection observer for lazy loading
@@ -98,10 +98,10 @@ export const Group = ({ groupId }: GroupProps) => {
 
     const loadRows = async () => {
       try {
-        if (blobPrefetchComplete && populateRowFromCacheRef.current) {
+        if (blobPrefetchComplete && loadRowFromSeedRef.current) {
           // Load all rows from cache in parallel
           const results = await Promise.all(
-            rowsToLoad.map((row) => populateRowFromCacheRef.current!(row.id))
+            rowsToLoad.map((row) => loadRowFromSeedRef.current!(row.id))
           );
 
           // Mark rows as loaded

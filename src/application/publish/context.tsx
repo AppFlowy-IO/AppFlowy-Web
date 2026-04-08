@@ -310,14 +310,10 @@ export const PublishProvider = ({
         // (e.g., relation pills, @-mentions) can handle the error.
         const currentParams = new URLSearchParams(window.location.search);
 
-        if (currentParams.has('v')) {
-          currentParams.set('v', viewId);
-          navigate(`${window.location.pathname}?${currentParams.toString()}`, {
-            replace: true,
-          });
-        } else {
-          return Promise.reject(e);
-        }
+        currentParams.set('v', viewId);
+        navigate(`${window.location.pathname}?${currentParams.toString()}`, {
+          replace: true,
+        });
       }
     },
     [loadViewMeta, isTemplate, navigate]

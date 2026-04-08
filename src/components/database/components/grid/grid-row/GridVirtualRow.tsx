@@ -57,6 +57,7 @@ function GridVirtualRow({
   const dragHandleRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<ItemState>(idleState);
   const sorts = useSortsSelector();
+
   const [openClearSortsConfirmed, setOpenClearSortsConfirmed] = useState(false);
 
   const hasSorted = sorts.length > 0;

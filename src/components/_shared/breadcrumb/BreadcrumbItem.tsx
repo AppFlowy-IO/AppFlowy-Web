@@ -71,7 +71,7 @@ function BreadcrumbItem({
           {name || t('menuAppHeader.defaultNewPageName')}
         </span>
       </Tooltip>
-      <PublishIcon variant={variant} view={crumb} />
+      {!(extra?.database_id && !extra?.is_database_container) && <PublishIcon variant={variant} view={crumb} />}
     </div>
   );
 }
