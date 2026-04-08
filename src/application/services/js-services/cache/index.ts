@@ -529,7 +529,7 @@ export async function createRow(rowKey: string) {
   return entry.doc;
 }
 
-export async function createRowFast(
+export async function openRowDoc(
   rowKey: string,
   seed?: { bytes: Uint8Array; encoderVersion: number }
 ) {

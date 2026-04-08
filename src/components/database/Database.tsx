@@ -8,7 +8,7 @@ import {
   takeDatabaseRowDocSeed,
 } from '@/application/database-blob';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { createRowFast } from '@/application/services/js-services/cache';
+import { openRowDoc } from '@/application/services/js-services/cache';
 import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
@@ -236,7 +236,7 @@ function Database(props: Database2Props) {
     [createRow, getDatabaseId, registerRowSync]
   );
 
-  const populateRowFromCache = useCallback(
+  const loadRowFromSeed = useCallback(
     async (rowId: string): Promise<YDoc | undefined> => {
       if (!rowId) return undefined;
       const existing = rowMapRef.current[rowId];
@@ -254,7 +254,7 @@ function Database(props: Database2Props) {
       if (!seed) return undefined;
 
       const promise = (async () => {
-        const rowDoc = await createRowFast(rowKey, seed);
+        const rowDoc = await openRowDoc(rowKey, seed);
 
         return rowDoc;
       })();
@@ -315,7 +315,7 @@ function Database(props: Database2Props) {
     Promise.all(
       rowsWithSeeds.map(async ({ rowId, rowKey, seed }) => {
         try {
-          const rowDoc = await createRowFast(rowKey, seed ?? undefined);
+          const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
 
           return { rowId, rowKey, rowDoc };
         } catch {
@@ -479,7 +479,7 @@ function Database(props: Database2Props) {
         const seed = takeDatabaseRowDocSeed(rowKey);
 
         try {
-          const rowDoc = await createRowFast(rowKey, seed ?? undefined);
+          const rowDoc = await openRowDoc(rowKey, seed ?? undefined);
 
           // Bind sync for this row - only visible rows call ensureRow
           // Non-visible rows rely on blob diff cached data
@@ -519,7 +519,7 @@ function Database(props: Database2Props) {
       }
     },
     // Omitted deps are stable: setRowMap (useState setter), refs (rowMapRef, pendingRowDocsRef,
-    // localCachePrimedRef), and module-level imports (createRowFast, takeDatabaseRowDocSeed, getRowKey).
+    // localCachePrimedRef), and module-level imports (openRowDoc, takeDatabaseRowDocSeed, getRowKey).
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [createRow, getDatabaseId, ensureBlobPrefetch, registerRowSync]
   );
@@ -659,7 +659,7 @@ function Database(props: Database2Props) {
     () => ({
       readOnly,
       ensureRow,
-      populateRowFromCache,
+      loadRowFromSeed,
       bindRowSync,
       blobPrefetchComplete,
       paddingStart: props.paddingStart,
@@ -692,7 +692,7 @@ function Database(props: Database2Props) {
     [
       readOnly,
       ensureRow,
-      populateRowFromCache,
+      loadRowFromSeed,
       bindRowSync,
       blobPrefetchComplete,
       props.paddingStart,

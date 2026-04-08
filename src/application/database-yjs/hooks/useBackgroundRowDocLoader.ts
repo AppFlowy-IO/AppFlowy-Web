@@ -12,7 +12,7 @@ const BACKGROUND_CONCURRENCY = 12;
  * Hook that handles background loading of row documents for sorting/filtering.
  * When sorts or filters are active, row docs need to be loaded to apply conditions.
  *
- * Uses blob diff seeds (via populateRowFromCache) when available for fast loading,
+ * Uses blob diff seeds (via loadRowFromSeed) when available for fast loading,
  * falling back to IndexedDB for rows without seeds.
  *
  * @param hasConditions - Whether there are active sorts or filters
@@ -21,7 +21,7 @@ const BACKGROUND_CONCURRENCY = 12;
 export function useBackgroundRowDocLoader(hasConditions: boolean) {
   const rows = useRowMap();
   const view = useDatabaseView();
-  const { databaseDoc, populateRowFromCache, blobPrefetchComplete } = useDatabaseContext();
+  const { databaseDoc, loadRowFromSeed, blobPrefetchComplete } = useDatabaseContext();
 
   const [cachedRowDocs, setCachedRowDocs] = useState<Record<string, YDoc>>({});
   const cachedRowDocsRef = useRef<Record<string, YDoc>>({});
@@ -76,7 +76,7 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
 
   // Background loading of row docs for sorting/filtering.
   // Waits for blob prefetch to complete so seeds are available, then uses
-  // populateRowFromCache (fast, in-memory seed application) for each row.
+  // loadRowFromSeed (fast, in-memory seed application) for each row.
   // Falls back to IndexedDB for rows without seeds.
   useEffect(() => {
     if (!hasConditions || !blobPrefetchComplete) return;
@@ -128,10 +128,10 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
                 return;
               }
 
-              // Try fast path: use blob diff seeds via populateRowFromCache.
+              // Try fast path: use blob diff seeds via loadRowFromSeed.
               // This adds the doc directly to the main rowMap (no separate cache needed).
-              if (populateRowFromCache) {
-                const pending = populateRowFromCache(rowId);
+              if (loadRowFromSeed) {
+                const pending = loadRowFromSeed(rowId);
 
                 cachedRowDocPendingRef.current.set(rowId, pending);
 
@@ -197,7 +197,7 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
       queueRef.clear();
       backgroundLoadingRef.current = false;
     };
-  }, [databaseDoc.guid, hasConditions, blobPrefetchComplete, rows, view, populateRowFromCache]);
+  }, [databaseDoc.guid, hasConditions, blobPrefetchComplete, rows, view, loadRowFromSeed]);
 
   return {
     cachedRowDocs,
