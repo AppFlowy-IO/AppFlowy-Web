@@ -21,6 +21,8 @@ type RowDocSeed = {
 
 type PrefetchOptions = {
   priorityRowIds?: string[];
+  /** Called immediately after seeds are cached (before IndexedDB persist). */
+  onSeedsReady?: () => void;
 };
 
 const RID_CACHE_PREFIX = 'af_database_blob_rid:';
@@ -616,6 +618,9 @@ export async function prefetchDatabaseBlobDiff(
     seedCount: rowDocSeedCache.size,
     lookupCount: rowDocSeedLookup.size,
   });
+
+  // Signal that seeds are available before the slow IndexedDB persist
+  options?.onSeedsReady?.();
 
   const applyStartedAt = Date.now();
 

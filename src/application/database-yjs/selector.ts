@@ -1086,6 +1086,9 @@ export function useRowOrdersSelector() {
 
   const [rowOrders, setRowOrders] = useState<Row[]>();
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
+  // Once filters have been applied successfully, don't revert to unfiltered
+  // when rowDocsForConditions temporarily changes (e.g. new rows being added to rowMap).
+  const filtersAppliedRef = useRef(false);
 
   // Check if there are active conditions
   const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
@@ -1174,35 +1177,43 @@ export function useRowOrdersSelector() {
     const currentHasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
 
     if (!currentHasConditions) {
+      filtersAppliedRef.current = false;
       setRowOrders(originalRowOrders);
       return;
     }
 
-    const rowDocCount = Object.keys(rowDocsForConditions).length;
-    const isRowDataComplete = rowDocCount >= originalRowOrders.length;
+    // Apply filters/sorts progressively: only include rows whose docs are loaded.
+    // Rows without docs are excluded until their data arrives, at which point
+    // this callback re-runs and they get included if they match.
+    const rowsWithDocs = originalRowOrders.filter((row: Row) => rowDocsForConditions[row.id]);
 
-    if (!isRowDataComplete) {
-      setRowOrders(originalRowOrders);
+    if (rowsWithDocs.length === 0) {
+      // No docs loaded yet — keep current state (or show empty if first run)
+      if (!filtersAppliedRef.current) {
+        setRowOrders(originalRowOrders);
+      }
+
       return;
     }
 
     let computedRowOrders: Row[] | undefined;
 
     if (sorts?.length) {
-      computedRowOrders = sortBy(originalRowOrders, sorts, fields, rowDocsForConditions, {
+      computedRowOrders = sortBy(rowsWithDocs, sorts, fields, rowDocsForConditions, {
         getRelationCellText: relationTextGetter,
         getRollupCellValue: rollupValueGetter,
       });
     }
 
     if (filters?.length) {
-      computedRowOrders = filterBy(computedRowOrders ?? originalRowOrders, filters, fields, rowDocsForConditions, {
+      computedRowOrders = filterBy(computedRowOrders ?? rowsWithDocs, filters, fields, rowDocsForConditions, {
         getRelationCellText: relationTextGetter,
         getRollupCellText: rollupTextGetter,
       });
     }
 
-    setRowOrders(computedRowOrders ?? originalRowOrders);
+    filtersAppliedRef.current = true;
+    setRowOrders(computedRowOrders ?? rowsWithDocs);
   }, [
     fields,
     filters,

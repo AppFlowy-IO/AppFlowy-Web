@@ -24,12 +24,12 @@ function OutlineItemContent({
   const { name, view_id, extra } = item;
   const [hovered, setHovered] = React.useState(false);
   const isSpace = extra?.is_space;
+  const isDatabaseView = extra?.database_id && !extra?.is_database_container;
   const { t } = useTranslation();
 
   return (
     <div
       onClick={async() => {
-        const isDatabaseView = item.extra?.database_id && !item.extra?.is_database_container;
 
         if(isSpace || (!item.is_published && variant === 'publish' && !isDatabaseView)) {
           setIsExpanded(prev => !prev);
@@ -68,7 +68,7 @@ function OutlineItemContent({
       >
         <div data-testid={isSpace ? 'space-name' : 'page-name'} className={'flex-1 truncate'}>{name || t('menuAppHeader.defaultNewPageName')}</div>
       </Tooltip>
-      {hovered && variant === UIVariant.Publish && <PublishIcon
+      {hovered && variant === UIVariant.Publish && !isDatabaseView && <PublishIcon
         variant={variant}
         view={item}
       />}

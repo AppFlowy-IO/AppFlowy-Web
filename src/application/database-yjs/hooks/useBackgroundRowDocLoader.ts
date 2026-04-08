@@ -11,7 +11,9 @@ const BACKGROUND_CONCURRENCY = 12;
 /**
  * Hook that handles background loading of row documents for sorting/filtering.
  * When sorts or filters are active, row docs need to be loaded to apply conditions.
- * This hook manages a background queue to load missing row docs efficiently.
+ *
+ * Uses blob diff seeds (via populateRowFromCache) when available for fast loading,
+ * falling back to IndexedDB for rows without seeds.
  *
  * @param hasConditions - Whether there are active sorts or filters
  * @returns Object containing cached row docs and merged row docs for conditions
@@ -19,7 +21,7 @@ const BACKGROUND_CONCURRENCY = 12;
 export function useBackgroundRowDocLoader(hasConditions: boolean) {
   const rows = useRowMap();
   const view = useDatabaseView();
-  const { databaseDoc } = useDatabaseContext();
+  const { databaseDoc, populateRowFromCache, blobPrefetchComplete } = useDatabaseContext();
 
   const [cachedRowDocs, setCachedRowDocs] = useState<Record<string, YDoc>>({});
   const cachedRowDocsRef = useRef<Record<string, YDoc>>({});
@@ -72,9 +74,12 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
     };
   }, [databaseDoc.guid]);
 
-  // Background loading of row docs for sorting/filtering
+  // Background loading of row docs for sorting/filtering.
+  // Waits for blob prefetch to complete so seeds are available, then uses
+  // populateRowFromCache (fast, in-memory seed application) for each row.
+  // Falls back to IndexedDB for rows without seeds.
   useEffect(() => {
-    if (!hasConditions) return;
+    if (!hasConditions || !blobPrefetchComplete) return;
 
     const rowOrdersData = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string }[] | undefined;
 
@@ -123,6 +128,23 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
                 return;
               }
 
+              // Try fast path: use blob diff seeds via populateRowFromCache.
+              // This adds the doc directly to the main rowMap (no separate cache needed).
+              if (populateRowFromCache) {
+                const pending = populateRowFromCache(rowId);
+
+                cachedRowDocPendingRef.current.set(rowId, pending);
+
+                try {
+                  const doc = await pending;
+
+                  if (doc) return; // Success — doc is now in main rowMap
+                } finally {
+                  cachedRowDocPendingRef.current.delete(rowId);
+                }
+              }
+
+              // Fallback: open from IndexedDB for rows without seeds
               const rowKey = getRowKey(databaseDoc.guid, rowId);
               const pending = (async () => {
                 const { doc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
@@ -175,7 +197,7 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
       queueRef.clear();
       backgroundLoadingRef.current = false;
     };
-  }, [databaseDoc.guid, hasConditions, rows, view]);
+  }, [databaseDoc.guid, hasConditions, blobPrefetchComplete, rows, view, populateRowFromCache]);
 
   return {
     cachedRowDocs,
