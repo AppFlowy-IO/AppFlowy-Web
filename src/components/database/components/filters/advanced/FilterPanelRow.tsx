@@ -11,6 +11,7 @@ import {
   Filter,
   NumberFilter,
   NumberFilterCondition,
+  parseSelectOptionTypeOptions,
   PersonFilter,
   PersonFilterCondition,
   SelectOptionFilter,
@@ -30,6 +31,8 @@ import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
+import { Tag } from '@/components/_shared/tag';
+import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { FieldDisplay } from '@/components/database/components/field';
@@ -476,10 +479,13 @@ function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: b
   );
 }
 
-// Select Option Value Input — uses lightweight in-place updater (content-only change)
+// Select Option Value Input — shows selected options as inline tags (matching desktop UI).
+// Uses Popover for the option list. The outer AdvancedFiltersBadge Popover has
+// onPointerDownOutside to prevent dismissal when clicking inside this nested popover.
 function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilter; disabled?: boolean }) {
   const { t } = useTranslation();
   const updateFilter = useUpdateAdvancedFilter();
+  const { field } = useFieldSelector(filter.fieldId);
   const [open, setOpen] = useState(false);
 
   // Don't show input for isEmpty/isNotEmpty conditions
@@ -489,30 +495,42 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
     );
   }, [filter.condition]);
 
+  const typeOption = useMemo(() => {
+    if (!field) return null;
+    return parseSelectOptionTypeOptions(field);
+  }, [field]);
+
+  const selectedIds = useMemo(() => {
+    return filter.optionIds?.filter((id) => id !== '') || [];
+  }, [filter.optionIds]);
+
+  const selectedOptions = useMemo(() => {
+    if (!typeOption) return [];
+    return typeOption.options.filter((opt) => selectedIds.includes(opt.id));
+  }, [typeOption, selectedIds]);
+
   const handleToggleOption = useCallback(
     (optionId: string) => {
-      const selectedIds = filter.optionIds || [];
-      const newSelectedIds = selectedIds.slice();
-      const index = newSelectedIds.indexOf(optionId);
+      const currentIds = filter.optionIds || [];
+      const newIds = currentIds.slice();
+      const index = newIds.indexOf(optionId);
 
       if (index > -1) {
-        newSelectedIds.splice(index, 1);
+        newIds.splice(index, 1);
       } else {
-        newSelectedIds.push(optionId);
+        newIds.push(optionId);
       }
 
       updateFilter({
         filterId: filter.id,
         fieldId: filter.fieldId,
-        content: newSelectedIds.filter((id) => id !== '').join(','),
+        content: newIds.filter((id) => id !== '').join(','),
       });
     },
     [filter, updateFilter]
   );
 
   if (!showInput) return <div className='min-w-0 flex-[3]' />;
-
-  const selectedCount = filter.optionIds?.filter((id) => id !== '').length || 0;
 
   return (
     <div className='min-w-0 flex-[3]'>
@@ -523,9 +541,20 @@ function SelectOptionValueInput({ filter, disabled }: { filter: SelectOptionFilt
             disabled={disabled}
             data-testid='advanced-filter-select-input'
           >
-            <span className='truncate text-xs text-text-primary'>
-              {selectedCount > 0 ? `${selectedCount} selected` : t('grid.settings.typeAValue')}
-            </span>
+            <div className='flex min-w-0 flex-1 items-center gap-1 overflow-hidden'>
+              {selectedOptions.length > 0 ? (
+                selectedOptions.map((opt) => (
+                  <Tag
+                    key={opt.id}
+                    label={opt.name}
+                    textColor={SelectOptionFgColorMap[opt.color]}
+                    bgColor={SelectOptionColorMap[opt.color]}
+                  />
+                ))
+              ) : (
+                <span className='truncate text-xs text-text-caption'>{t('grid.settings.typeAValue')}</span>
+              )}
+            </div>
             <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
           </button>
         </PopoverTrigger>

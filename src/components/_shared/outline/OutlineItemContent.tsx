@@ -29,7 +29,9 @@ function OutlineItemContent({
   return (
     <div
       onClick={async() => {
-        if(isSpace || (!item.is_published && variant === 'publish')) {
+        const isDatabaseView = item.extra?.database_id && !item.extra?.is_database_container;
+
+        if(isSpace || (!item.is_published && variant === 'publish' && !isDatabaseView)) {
           setIsExpanded(prev => !prev);
           return;
         }
