@@ -826,7 +826,7 @@ export function SlashPanel({
         icon: <GridIcon />,
         keywords: ['grid', 'table', 'database'],
         onClick: async () => {
-          if (!documentId || !addPage || !openPageModal) return;
+          if (!documentId || !addPage) return;
 
           let scrollContainer: HTMLElement | null = null;
 
@@ -861,7 +861,7 @@ export function SlashPanel({
               databaseId: response.database_id,
             }));
 
-            openPageModal(response.view_id);
+            openPageModal?.(response.view_id);
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
@@ -913,7 +913,7 @@ export function SlashPanel({
         icon: <BoardIcon />,
         keywords: ['board', 'kanban', 'database'],
         onClick: async () => {
-          if (!documentId || !addPage || !openPageModal) return;
+          if (!documentId || !addPage) return;
 
           let scrollContainer: HTMLElement | null = null;
 
@@ -948,7 +948,7 @@ export function SlashPanel({
               databaseId: response.database_id,
             }));
 
-            openPageModal(response.view_id);
+            openPageModal?.(response.view_id);
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {
@@ -1000,7 +1000,7 @@ export function SlashPanel({
         icon: <CalendarIcon />,
         keywords: ['calendar', 'date', 'database'],
         onClick: async () => {
-          if (!documentId || !addPage || !openPageModal) return;
+          if (!documentId || !addPage) return;
 
           let scrollContainer: HTMLElement | null = null;
 
@@ -1035,7 +1035,7 @@ export function SlashPanel({
               databaseId: response.database_id,
             }));
 
-            openPageModal(response.view_id);
+            openPageModal?.(response.view_id);
 
             if (savedScrollTop !== undefined) {
               const restoreScroll = () => {

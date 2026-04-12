@@ -1331,6 +1331,7 @@ export interface ViewComponentProps {
    * Only available in app mode - not provided in publish mode.
    */
   createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;

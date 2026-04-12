@@ -16,6 +16,7 @@ import { fetchPageCollab } from '@/application/services/js-services/fetch';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
+import * as Y from 'yjs';
 
 // ============================================================================
 // Types
@@ -225,8 +226,27 @@ export async function openRowSubDocument(
   // Use cached doc to preserve sync state across reopens
   const doc = await getOrCreateRowSubDoc(documentId);
 
-  // Check cache
-  const fromCache = hasCollabCache(doc);
+  // Check cache — but also verify the cached doc has real content.
+  // During row duplication the local doc may be created as an empty shell
+  // (by openLocalDocument → initializeDocumentStructure). In that case
+  // we must fetch from the server to get the worker-created content.
+  let fromCache = hasCollabCache(doc);
+
+  if (fromCache) {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+    const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+    const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
+    const blockCount = blocks?.size ?? 0;
+
+    // A document with only the root page block (or fewer) is effectively empty
+    if (blockCount <= 1) {
+      Log.debug('[ViewLoader] rowSubDoc cache is empty shell, will fetch from server', {
+        documentId,
+        blockCount,
+      });
+      fromCache = false;
+    }
+  }
 
   Log.debug('[ViewLoader] rowSubDoc cache check', {
     documentId,
@@ -234,9 +254,35 @@ export async function openRowSubDocument(
     durationMs: Date.now() - startedAt,
   });
 
-  // Fetch from server if not cached
+  // Fetch from server if not cached or cache is empty.
+  // Retry with backoff — the server-side worker may need a moment to create
+  // the document after a row duplication.
   if (!fromCache) {
-    await fetchAndApply(workspaceId, documentId, doc);
+    const MAX_RETRIES = 3;
+    let fetched = false;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await fetchAndApply(workspaceId, documentId, doc);
+        fetched = true;
+        break;
+      } catch (e) {
+        Log.debug('[ViewLoader] rowSubDoc fetch failed', {
+          documentId,
+          attempt,
+          maxRetries: MAX_RETRIES,
+          error: e instanceof Error ? e.message : String(e),
+        });
+
+        if (attempt < MAX_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        }
+      }
+    }
+
+    if (!fetched) {
+      Log.warn('[ViewLoader] rowSubDoc fetch exhausted retries, using local doc', { documentId });
+    }
   }
 
   Log.debug('[ViewLoader] openRowSubDocument complete', {

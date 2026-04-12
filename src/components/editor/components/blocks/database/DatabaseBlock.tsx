@@ -25,6 +25,7 @@ export const DatabaseBlock = memo(
     const allowedViewIds = Array.isArray(node.data?.view_ids) ? node.data.view_ids : undefined;
     const context = useEditorContext();
     const workspaceId = context.workspaceId;
+
     const navigateToView = context?.navigateToView;
     const loadView = context?.loadView;
     const createRow = context?.createRow;

@@ -27,6 +27,8 @@ import {
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
+import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
+import { Log } from '@/utils/log';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { dateFilterFillData, filterFillData } from '@/application/database-yjs/filter';
@@ -455,6 +457,7 @@ export function useDuplicateRowDispatch() {
   const createRow = useCreateRow();
   const guid = useDocGuid();
   const rowMap = useRowMap();
+  const { duplicateRowDocument } = useDatabaseContext();
 
   return useCallback(
     async (referenceRowId: string) => {
@@ -477,10 +480,8 @@ export function useDuplicateRowDispatch() {
 
       const icon = referenceMeta.icon;
       const cover = referenceMeta.cover;
-      const hasDocument = referenceMeta.isEmptyDocument === false;
-
       const newMeta = generateRowMeta(rowId, {
-        [RowMetaKey.IsDocumentEmpty]: !hasDocument,
+        [RowMetaKey.IsDocumentEmpty]: false,
         [RowMetaKey.IconId]: icon,
         [RowMetaKey.CoverId]: cover ? JSON.stringify(cover) : null,
       });
@@ -500,7 +501,7 @@ export function useDuplicateRowDispatch() {
         Object.keys(newMeta).forEach((key) => {
           const value = newMeta[key];
 
-          if (value) {
+          if (value !== undefined && value !== null) {
             meta.set(key, value);
           }
         });
@@ -557,9 +558,47 @@ export function useDuplicateRowDispatch() {
         'duplicateRowDispatch'
       );
 
+      // Ask the server to duplicate the row document with inline database
+      // deep copy. Send the client's current doc state so the worker has
+      // the latest content even if WebSocket sync hasn't persisted yet.
+      if (duplicateRowDocument) {
+        const databaseId = database.get(YjsDatabaseKey.id);
+        const sourceDocId = referenceMeta.documentId;
+
+        try {
+          let clientDocStateB64: string | undefined;
+
+          if (sourceDocId) {
+            const cachedDoc = getCachedRowSubDoc(sourceDocId);
+
+            if (cachedDoc) {
+              const docState = Y.encodeStateAsUpdate(cachedDoc);
+              // Convert to base64 for the server (chunked to avoid stack overflow on large docs)
+              const CHUNK = 8192;
+              const chunks: string[] = [];
+
+              for (let i = 0; i < docState.length; i += CHUNK) {
+                chunks.push(String.fromCharCode(...docState.subarray(i, i + CHUNK)));
+              }
+
+              clientDocStateB64 = btoa(chunks.join(''));
+            }
+          }
+
+          await duplicateRowDocument(
+            databaseId,
+            referenceRowId,
+            rowId,
+            clientDocStateB64
+          );
+        } catch (err) {
+          Log.error('[duplicateRowDocument] failed:', err);
+        }
+      }
+
       return rowId;
     },
-    [createRow, database, guid, rowMap, sharedRoot]
+    [createRow, database, guid, rowMap, sharedRoot, duplicateRowDocument]
   );
 }
 

@@ -970,9 +970,11 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
   if (!document || !doc || !documentId || !row || !workspaceId || !context) return null;
 
+  const { openPageModal: _openPageModal, ...editorContext } = context;
+
   return (
     <Editor
-      {...context}
+      {...editorContext}
       fullWidth
       workspaceId={workspaceId}
       viewId={documentId}

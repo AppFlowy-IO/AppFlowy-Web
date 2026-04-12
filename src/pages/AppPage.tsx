@@ -512,6 +512,7 @@ function AppPage() {
           checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
           loadRowDocument={operations.loadRowDocument}
           createRowDocument={operations.createRowDocument}
+          duplicateRowDocument={operations.duplicateRowDocument}
           updatePageIcon={operations.updatePageIcon}
           updatePageName={operations.updatePageName}
           generateAISummaryForRow={operations.generateAISummaryForRow}
@@ -555,6 +556,7 @@ function AppPage() {
         checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
         loadRowDocument={operations.loadRowDocument}
         createRowDocument={operations.createRowDocument}
+        duplicateRowDocument={operations.duplicateRowDocument}
         updatePageIcon={operations.updatePageIcon}
         updatePageName={operations.updatePageName}
         generateAISummaryForRow={operations.generateAISummaryForRow}

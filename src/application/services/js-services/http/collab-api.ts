@@ -152,6 +152,7 @@ export async function getCollab(workspaceId: string, objectId: string, collabTyp
 
 export async function getPageCollab(workspaceId: string, viewId: string) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}`;
+
   const response = await executeAPIRequest<{
     view: View;
     data: {
@@ -180,6 +181,22 @@ export async function getPageCollab(workspaceId: string, viewId: string) {
     owner,
     lastEditor: last_editor,
   };
+}
+
+export async function duplicateRowDocument(
+  workspaceId: string,
+  databaseId: string,
+  sourceRowId: string,
+  newRowId: string,
+  clientDocStateB64?: string,
+): Promise<void> {
+  const url = `/api/workspace/${workspaceId}/database/${databaseId}/row/${sourceRowId}/duplicate-document`;
+  await executeAPIVoidRequest(() =>
+    getAxios()?.post<APIResponse>(url, {
+      new_row_id: newRowId,
+      client_doc_state_b64: clientDocStateB64,
+    })
+  );
 }
 
 export async function databaseBlobDiff(

@@ -452,7 +452,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const {
     generateAISummaryForRow, generateAITranslateForRow,
     loadDatabasePrompts, testDatabasePromptConfig,
-    checkIfRowDocumentExists, loadRowDocument, createRowDocument,
+    checkIfRowDocumentExists, loadRowDocument, createRowDocument, duplicateRowDocument,
   } = useDatabaseOperations(enhancedLoadView, createRow);
 
   // ── Focused context values ──────────────────────────────────────────────────
@@ -531,9 +531,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       generateAITranslateForRow,
       loadDatabasePrompts,
       testDatabasePromptConfig,
+      openPageModal,
       checkIfRowDocumentExists,
       loadRowDocument,
       createRowDocument,
+      duplicateRowDocument,
       getViewIdFromDatabaseId,
       getWordCount,
       setWordCount,
@@ -549,7 +551,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       createDatabaseView, uploadFile, getSubscriptions, publish, unpublish, createOrphanedView,
       generateAISummaryForRow, generateAITranslateForRow,
       loadDatabasePrompts, testDatabasePromptConfig,
-      checkIfRowDocumentExists, loadRowDocument, createRowDocument,
+      openPageModal,
+      checkIfRowDocumentExists, loadRowDocument, createRowDocument, duplicateRowDocument,
       getViewIdFromDatabaseId, getWordCount, setWordCount,
       getCollabHistory, previewCollabVersion, revertCollabVersion,
       authContext.onChangeWorkspace,

@@ -13,6 +13,8 @@ import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  CreatePagePayload,
+  CreatePageResponse,
   CreateRow,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
@@ -62,6 +64,7 @@ export interface Database2Props {
    * Only available in app mode - not provided in publish mode.
    */
   createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   /**
@@ -104,6 +107,8 @@ export interface Database2Props {
    * Update a page/view (name, icon, etc.) in the folder structure.
    * This is used by database tab rename to sync with the sidebar.
    */
+  addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
+  openPageModal?: (viewId: string) => void;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   /**
    * Delete a page/view (move to trash).
@@ -146,12 +151,15 @@ function Database(props: Database2Props) {
     checkIfRowDocumentExists,
     loadRowDocument,
     createRowDocument,
+    duplicateRowDocument,
     navigateToView,
     modalRowId,
     isDocumentBlock: _isDocumentBlock,
     embeddedHeight,
     onViewIdsChanged,
     workspaceId,
+    addPage,
+    openPageModal,
     generateAISummaryForRow,
     generateAITranslateForRow,
   } = props;
@@ -672,11 +680,14 @@ function Database(props: Database2Props) {
       checkIfRowDocumentExists,
       loadRowDocument,
       createRowDocument,
+      duplicateRowDocument,
       loadViewMeta: props.loadViewMeta,
       navigateToView,
       onRendered: props.onRendered,
       showActions: props.showActions,
       workspaceId,
+      addPage,
+      openPageModal,
       createDatabaseView: props.createDatabaseView,
       updatePage: props.updatePage,
       deletePage: props.deletePage,
@@ -705,11 +716,14 @@ function Database(props: Database2Props) {
       checkIfRowDocumentExists,
       loadRowDocument,
       createRowDocument,
+      duplicateRowDocument,
       props.loadViewMeta,
       navigateToView,
       props.onRendered,
       props.showActions,
       workspaceId,
+      addPage,
+      openPageModal,
       props.createDatabaseView,
       props.updatePage,
       props.deletePage,

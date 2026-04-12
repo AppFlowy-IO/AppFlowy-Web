@@ -339,6 +339,21 @@ export function useDatabaseOperations(
     [currentWorkspaceId]
   );
 
+  const duplicateRowDocument = useCallback(
+    async (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => {
+      if (!currentWorkspaceId) return;
+      try {
+        const { duplicateRowDocument: duplicateAPI } = await import(
+          '@/application/services/js-services/http/collab-api'
+        );
+        await duplicateAPI(currentWorkspaceId, databaseId, sourceRowId, newRowId, clientDocStateB64);
+      } catch (e) {
+        Log.error('[duplicateRowDocument] failed', e);
+      }
+    },
+    [currentWorkspaceId]
+  );
+
   return {
     generateAISummaryForRow,
     generateAITranslateForRow,
@@ -347,5 +362,6 @@ export function useDatabaseOperations(
     checkIfRowDocumentExists,
     loadRowDocument,
     createRowDocument,
+    duplicateRowDocument,
   };
 }
