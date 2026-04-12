@@ -354,6 +354,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
+        duplicatePage={operations.duplicatePage}
         openPageModal={openPageModal}
         loadViews={loadViews}
         onWordCountChange={setWordCount}
@@ -392,12 +393,12 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     updatePage,
     addPage,
     deletePage,
+    operations,
     openPageModal,
     loadViews,
     setWordCount,
     handleUploadFile,
     scheduleDeferredCleanup,
-    operations,
     getMentionUser,
     eventEmitter,
     loadDatabaseRelations,

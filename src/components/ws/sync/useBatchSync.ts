@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
 import { getRowKey } from '@/application/database-yjs/row_meta';
+import { getMetaJSON } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
+import { getCachedRowSubDoc, getCachedRowSubDocIds } from '@/application/services/js-services/cache';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
 import { withRetry } from '@/application/services/js-services/http/core';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -72,140 +74,203 @@ export function useBatchSync(refs: SyncRefs) {
    * IndexedDB and includes them in the batch. This ensures that all rows are
    * synced before operations like duplicate, not just the ones currently visible.
    */
-  const syncAllToServer = useCallback(async (workspaceId: string) => {
-    // First flush any pending WebSocket updates
-    flushAllSync();
+  const syncAllToServer = useCallback(
+    async (workspaceId: string) => {
+      // First flush any pending WebSocket updates
+      flushAllSync();
 
-    // Collect all registered contexts into a batch
-    const items: Array<{
-      objectId: string;
-      collabType: Types;
-      stateVector: Uint8Array;
-      docState: Uint8Array;
-    }> = [];
+      // Collect all registered contexts into a batch
+      const items: Array<{
+        objectId: string;
+        collabType: Types;
+        stateVector: Uint8Array;
+        docState: Uint8Array;
+      }> = [];
 
-    const registeredObjectIds = new Set<string>();
+      const registeredObjectIds = new Set<string>();
 
-    refs.registeredContexts.current.forEach((context) => {
-      const { doc, collabType } = context;
+      refs.registeredContexts.current.forEach((context) => {
+        const { doc, collabType } = context;
 
-      if (!doc || collabType === undefined) return;
+        if (!doc || collabType === undefined) return;
 
-      registeredObjectIds.add(doc.guid);
+        registeredObjectIds.add(doc.guid);
 
-      // Encode the document state and state vector
-      const docState = Y.encodeStateAsUpdate(doc);
-      const stateVector = Y.encodeStateVector(doc);
+        // Encode the document state and state vector
+        const docState = Y.encodeStateAsUpdate(doc);
+        const stateVector = Y.encodeStateVector(doc);
 
-      Log.debug('Adding collab to batch sync', {
-        objectId: doc.guid,
-        collabType,
-        docStateSize: docState.length,
+        Log.debug('Adding collab to batch sync', {
+          objectId: doc.guid,
+          collabType,
+          docStateSize: docState.length,
+        });
+
+        items.push({
+          objectId: doc.guid,
+          collabType,
+          stateVector,
+          docState,
+        });
       });
 
-      items.push({
-        objectId: doc.guid,
-        collabType,
-        stateVector,
-        docState,
+      // For each registered database, find all row IDs and load any that are
+      // not already registered (i.e. rows that were never scrolled into view).
+      // Process in batches to avoid overwhelming IndexedDB with too many
+      // concurrent opens (matches BACKGROUND_CONCURRENCY in useBackgroundRowDocLoader).
+      const ROW_SYNC_CONCURRENCY = 12;
+
+      const unregisteredRows: { rowId: string; rowKey: string }[] = [];
+      const unregisteredRowDocumentIds = new Set<string>();
+
+      refs.registeredContexts.current.forEach((context) => {
+        if (context.collabType !== Types.Database || !context.doc) return;
+
+        const databaseId =
+          context.doc.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database)?.get(YjsDatabaseKey.id) ||
+          context.doc.guid;
+        const allRowIds = collectAllRowIds(context.doc);
+        const unregisteredRowIds = allRowIds.filter((id) => !registeredObjectIds.has(id));
+
+        if (unregisteredRowIds.length === 0) return;
+
+        Log.debug('Loading unregistered database rows for batch sync', {
+          databaseId,
+          totalRows: allRowIds.length,
+          unregisteredRows: unregisteredRowIds.length,
+        });
+
+        for (const rowId of unregisteredRowIds) {
+          unregisteredRows.push({ rowId, rowKey: getRowKey(databaseId, rowId) });
+        }
       });
-    });
 
-    // For each registered database, find all row IDs and load any that are
-    // not already registered (i.e. rows that were never scrolled into view).
-    // Process in batches to avoid overwhelming IndexedDB with too many
-    // concurrent opens (matches BACKGROUND_CONCURRENCY in useBackgroundRowDocLoader).
-    const ROW_SYNC_CONCURRENCY = 12;
+      for (let i = 0; i < unregisteredRows.length; i += ROW_SYNC_CONCURRENCY) {
+        const slice = unregisteredRows.slice(i, i + ROW_SYNC_CONCURRENCY);
 
-    const unregisteredRows: { rowId: string; rowKey: string }[] = [];
+        await Promise.all(
+          slice.map(async ({ rowId, rowKey }) => {
+            try {
+              // Use skipCache to avoid permanently pinning every row doc in memory.
+              // Destroy the provider immediately after reading — we only need the
+              // encoded state for the batch request.
+              const { doc: rowDoc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
 
-    refs.registeredContexts.current.forEach((context) => {
-      if (context.collabType !== Types.Database || !context.doc) return;
+              await provider.destroy();
 
-      const databaseId = context.doc.getMap(YjsEditorKey.data_section)
-        ?.get(YjsEditorKey.database)?.get(YjsDatabaseKey.id) || context.doc.guid;
-      const allRowIds = collectAllRowIds(context.doc);
-      const unregisteredRowIds = allRowIds.filter((id) => !registeredObjectIds.has(id));
+              // If the row was never cached locally, the doc will be empty.
+              // Skip it — uploading an empty state would overwrite the server's
+              // real data during duplicate.
+              const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+              const rowMeta = rowSharedRoot.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
 
-      if (unregisteredRowIds.length === 0) return;
+              if (!rowSharedRoot.has(YjsEditorKey.database_row)) {
+                rowDoc.destroy();
+                return;
+              }
 
-      Log.debug('Loading unregistered database rows for batch sync', {
-        databaseId,
-        totalRows: allRowIds.length,
-        unregisteredRows: unregisteredRowIds.length,
-      });
+              const rowDocumentId = rowMeta ? getMetaJSON(rowId, rowMeta).documentId : '';
+              if (rowDocumentId && !registeredObjectIds.has(rowDocumentId)) {
+                unregisteredRowDocumentIds.add(rowDocumentId);
+              }
 
-      for (const rowId of unregisteredRowIds) {
-        unregisteredRows.push({ rowId, rowKey: getRowKey(databaseId, rowId) });
-      }
-    });
+              const docState = Y.encodeStateAsUpdate(rowDoc);
+              const stateVector = Y.encodeStateVector(rowDoc);
 
-    for (let i = 0; i < unregisteredRows.length; i += ROW_SYNC_CONCURRENCY) {
-      const slice = unregisteredRows.slice(i, i + ROW_SYNC_CONCURRENCY);
-
-      await Promise.all(
-        slice.map(async ({ rowId, rowKey }) => {
-          try {
-            // Use skipCache to avoid permanently pinning every row doc in memory.
-            // Destroy the provider immediately after reading — we only need the
-            // encoded state for the batch request.
-            const { doc: rowDoc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
-
-            await provider.destroy();
-
-            // If the row was never cached locally, the doc will be empty.
-            // Skip it — uploading an empty state would overwrite the server's
-            // real data during duplicate.
-            const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
-
-            if (!rowSharedRoot.has(YjsEditorKey.database_row)) {
               rowDoc.destroy();
-              return;
+
+              items.push({
+                objectId: rowId,
+                collabType: Types.DatabaseRow,
+                stateVector,
+                docState,
+              });
+            } catch (e) {
+              Log.warn('Failed to load unregistered row doc for sync', { rowKey, error: e });
             }
+          })
+        );
+      }
 
-            const docState = Y.encodeStateAsUpdate(rowDoc);
-            const stateVector = Y.encodeStateVector(rowDoc);
+      for (const documentId of getCachedRowSubDocIds()) {
+        if (!registeredObjectIds.has(documentId)) {
+          unregisteredRowDocumentIds.add(documentId);
+        }
+      }
 
-            rowDoc.destroy();
+      // Closed row-detail editors are not registered sync contexts, but their
+      // document collabs still need to be pushed before duplicate so the server
+      // copies the latest row-document content.
+      for (const documentId of unregisteredRowDocumentIds) {
+        try {
+          const cachedRowDocument = getCachedRowSubDoc(documentId);
+          let rowDocument = cachedRowDocument;
+          let provider: { destroy: () => Promise<void> } | null = null;
 
-            items.push({
-              objectId: rowId,
-              collabType: Types.DatabaseRow,
-              stateVector,
-              docState,
-            });
-          } catch (e) {
-            Log.warn('Failed to load unregistered row doc for sync', { rowKey, error: e });
+          if (!rowDocument) {
+            const opened = await openCollabDBWithProvider(documentId, { skipCache: true });
+            rowDocument = opened.doc;
+            provider = opened.provider;
           }
-        })
-      );
-    }
 
-    if (items.length === 0) {
-      Log.debug('No collabs to sync');
-      return;
-    }
+          const documentSharedRoot = rowDocument.getMap(YjsEditorKey.data_section);
 
-    // Send all collabs in a single batch request (same as desktop's collab_full_sync_batch).
-    // Retry on 429/503 with server-driven Retry-After + full jitter, matching the Rust
-    // client-api pause_for_busy pattern. Uses 30s base delays for rate-limited retries.
-    // Cancel any in-flight sync and create a new abort controller
-    batchSyncAbortRef.current?.abort();
-    const controller = new AbortController();
+          if (!documentSharedRoot.has(YjsEditorKey.document)) {
+            if (provider) {
+              await provider.destroy();
+              rowDocument.destroy();
+            }
+            continue;
+          }
 
-    batchSyncAbortRef.current = controller;
+          const docState = Y.encodeStateAsUpdate(rowDocument);
+          const stateVector = Y.encodeStateVector(rowDocument);
 
-    try {
-      await withRetry(() => collabFullSyncBatch(workspaceId, items), {
-        delays: BATCH_SYNC_DELAYS,
-        signal: controller.signal,
-      });
-      Log.debug('Batch sync completed successfully');
-    } catch (error) {
-      Log.warn('Failed to batch sync collabs to server', { error });
-      // Don't throw - we still want to attempt the duplicate
-    }
-  }, [refs, flushAllSync]);
+          rowDocument.destroy();
+
+          items.push({
+            objectId: documentId,
+            collabType: Types.Document,
+            stateVector,
+            docState,
+          });
+
+          if (provider) {
+            await provider.destroy();
+            rowDocument.destroy();
+          }
+        } catch (e) {
+          Log.warn('Failed to load unregistered row document for sync', { documentId, error: e });
+        }
+      }
+
+      if (items.length === 0) {
+        Log.debug('No collabs to sync');
+        return;
+      }
+
+      // Send all collabs in a single batch request (same as desktop's collab_full_sync_batch).
+      // Retry on 429/503 with server-driven Retry-After + full jitter, matching the Rust
+      // client-api pause_for_busy pattern. Uses 30s base delays for rate-limited retries.
+      // Cancel any in-flight sync and create a new abort controller
+      batchSyncAbortRef.current?.abort();
+      const controller = new AbortController();
+
+      batchSyncAbortRef.current = controller;
+
+      try {
+        await withRetry(() => collabFullSyncBatch(workspaceId, items), {
+          delays: BATCH_SYNC_DELAYS,
+          signal: controller.signal,
+        });
+        Log.debug('Batch sync completed successfully');
+      } catch (error) {
+        Log.warn('Failed to batch sync collabs to server', { error });
+        // Don't throw - we still want to attempt the duplicate
+      }
+    },
+    [refs, flushAllSync]
+  );
 
   // Cancel all pending deferred cleanup timers and in-flight batch sync on unmount
   useEffect(() => {

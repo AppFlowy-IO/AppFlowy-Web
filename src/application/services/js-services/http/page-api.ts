@@ -3,6 +3,7 @@ import { omit } from 'lodash-es';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  DuplicatePageOptions,
   CreatePagePayload,
   CreatePageResponse,
   CreateSpacePayload,
@@ -14,7 +15,11 @@ import { Log } from '@/utils/log';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
-export async function addAppPage(workspaceId: string, parentViewId: string, { layout, name, prev_view_id }: CreatePagePayload) {
+export async function addAppPage(
+  workspaceId: string,
+  parentViewId: string,
+  { layout, name, prev_view_id }: CreatePagePayload
+) {
   const url = `/api/workspace/${workspaceId}/page-view`;
 
   Log.debug('[addAppPage] request', { url, workspaceId, parentViewId, layout, name, prev_view_id });
@@ -36,9 +41,7 @@ export async function addAppPage(workspaceId: string, parentViewId: string, { la
 export async function updatePage(workspaceId: string, viewId: string, data: UpdatePagePayload) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.patch<APIResponse>(url, data)
-  );
+  return executeAPIVoidRequest(() => getAxios()?.patch<APIResponse>(url, data));
 }
 
 export async function updatePageIcon(
@@ -51,40 +54,37 @@ export async function updatePageIcon(
 ): Promise<void> {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/update-icon`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, { icon })
-  );
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, { icon }));
 }
 
 export async function updatePageName(workspaceId: string, viewId: string, name: string): Promise<void> {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/update-name`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, { name })
-  );
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, { name }));
 }
 
-export async function duplicatePage(workspaceId: string, viewId: string) {
+export async function duplicatePage(workspaceId: string, viewId: string, options: DuplicatePageOptions = {}) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/duplicate`;
+  const payload: Record<string, unknown> = {};
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, {})
-  );
+  if (options.openAfterDuplicate !== undefined) payload.open_after_duplicate = options.openAfterDuplicate;
+  if (options.includeChildren !== undefined) payload.include_children = options.includeChildren;
+  if (options.parentViewId) payload.parent_view_id = options.parentViewId;
+  if (options.suffix) payload.suffix = options.suffix;
+  if (options.source !== undefined) payload.source = options.source;
+
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, payload));
 }
 
 export async function deleteTrash(workspaceId: string, viewId?: string) {
   if (viewId) {
     const url = `/api/workspace/${workspaceId}/trash/${viewId}`;
 
-    return executeAPIVoidRequest(() =>
-      getAxios()?.delete<APIResponse>(url)
-    );
+    return executeAPIVoidRequest(() => getAxios()?.delete<APIResponse>(url));
   } else {
     const url = `/api/workspace/${workspaceId}/delete-all-pages-from-trash`;
 
-    return executeAPIVoidRequest(() =>
-      getAxios()?.post<APIResponse>(url)
-    );
+    return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url));
   }
 }
 
@@ -125,16 +125,10 @@ export async function updateSpace(workspaceId: string, payload: UpdateSpacePaylo
   const url = `/api/workspace/${workspaceId}/space/${payload.view_id}`;
   const data = omit(payload, ['view_id']);
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.patch<APIResponse>(url, data)
-  );
+  return executeAPIVoidRequest(() => getAxios()?.patch<APIResponse>(url, data));
 }
 
-export async function createDatabaseView(
-  workspaceId: string,
-  viewId: string,
-  payload: CreateDatabaseViewPayload
-) {
+export async function createDatabaseView(workspaceId: string, viewId: string, payload: CreateDatabaseViewPayload) {
   const url = `/api/workspace/${workspaceId}/page-view/${viewId}/database-view`;
 
   Log.debug('[createDatabaseView]', { url, workspaceId, viewId, payload });

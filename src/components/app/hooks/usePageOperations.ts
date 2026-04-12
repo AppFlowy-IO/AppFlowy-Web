@@ -11,6 +11,7 @@ import {
 } from '@/application/services/js-services/http/publish-api';
 import {
   CreateDatabaseViewPayload,
+  DuplicatePageOptions,
   CreatePagePayload,
   CreateSpacePayload,
   Role,
@@ -30,10 +31,12 @@ export function usePageOperations({
   outlineRef,
   loadOutline,
   flushAllSync,
+  loadViewChildren,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
   flushAllSync?: () => void;
+  loadViewChildren?: (viewId: string) => Promise<View[]>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
@@ -142,6 +145,28 @@ export function usePageOperations({
       }
     },
     [currentWorkspaceId]
+  );
+
+  const duplicatePage = useCallback(
+    async (viewId: string, options: DuplicatePageOptions = {}) => {
+      if (!currentWorkspaceId) {
+        throw new Error('No workspace or service found');
+      }
+
+      try {
+        flushAllSync?.();
+        await PageService.duplicate(currentWorkspaceId, viewId, options);
+        await loadOutline?.(currentWorkspaceId, false);
+
+        if (options.parentViewId) {
+          ViewService.invalidateCache(currentWorkspaceId, options.parentViewId);
+          await loadViewChildren?.(options.parentViewId);
+        }
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    [currentWorkspaceId, flushAllSync, loadOutline, loadViewChildren]
   );
 
   // Move page
@@ -424,6 +449,7 @@ export function usePageOperations({
   return {
     addPage,
     deletePage,
+    duplicatePage,
     updatePage,
     updatePageIcon,
     updatePageName,

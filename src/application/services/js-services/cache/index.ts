@@ -500,23 +500,23 @@ async function _createRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   const whenSynced = provider.synced
     ? Promise.resolve()
     : new Promise<void>((resolve) => {
-      provider.on('synced', () => {
-        if (rowSyncLogCount < ROW_SYNC_LOG_LIMIT) {
-          rowSyncLogCount += 1;
-          const rowSharedRoot = doc.getMap(YjsEditorKey.data_section);
-          const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
+        provider.on('synced', () => {
+          if (rowSyncLogCount < ROW_SYNC_LOG_LIMIT) {
+            rowSyncLogCount += 1;
+            const rowSharedRoot = doc.getMap(YjsEditorKey.data_section);
+            const hasRowData = rowSharedRoot.has(YjsEditorKey.database_row);
 
-          Log.debug('[Database] row doc IndexedDB synced', {
-            rowKey,
-            durationMs: Date.now() - startedAt,
-            hasRowDataAfterSync: hasRowData,
-            hadRowDataBeforeSync: initialHasRowData,
-          });
-        }
+            Log.debug('[Database] row doc IndexedDB synced', {
+              rowKey,
+              durationMs: Date.now() - startedAt,
+              hasRowDataAfterSync: hasRowData,
+              hadRowDataBeforeSync: initialHasRowData,
+            });
+          }
 
-        resolve();
+          resolve();
+        });
       });
-    });
 
   return { doc, whenSynced };
 }
@@ -529,10 +529,7 @@ export async function createRow(rowKey: string) {
   return entry.doc;
 }
 
-export async function openRowDoc(
-  rowKey: string,
-  seed?: { bytes: Uint8Array; encoderVersion: number }
-) {
+export async function openRowDoc(rowKey: string, seed?: { bytes: Uint8Array; encoderVersion: number }) {
   Log.debug('[Database] createRowDocFast start', {
     rowKey,
     hasSeed: Boolean(seed),
@@ -676,23 +673,23 @@ export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
   const whenSynced = provider.synced
     ? Promise.resolve()
     : new Promise<void>((resolve) => {
-      provider.on('synced', () => {
-        const syncedSharedRoot = doc.getMap(YjsEditorKey.data_section);
-        const hasDocAfterSync = syncedSharedRoot.has(YjsEditorKey.document);
-        const textAfterSync = getDocTextSummary(doc);
+        provider.on('synced', () => {
+          const syncedSharedRoot = doc.getMap(YjsEditorKey.data_section);
+          const hasDocAfterSync = syncedSharedRoot.has(YjsEditorKey.document);
+          const textAfterSync = getDocTextSummary(doc);
 
-        Log.debug('[RowSubDoc] IndexedDB synced', {
-          documentId,
-          durationMs: Date.now() - startedAt,
-          hasDocumentAfterSync: hasDocAfterSync,
-          hadDocumentBeforeSync: hasDocument,
-          textBefore: textBeforeSync,
-          textAfter: textAfterSync,
+          Log.debug('[RowSubDoc] IndexedDB synced', {
+            documentId,
+            durationMs: Date.now() - startedAt,
+            hasDocumentAfterSync: hasDocAfterSync,
+            hadDocumentBeforeSync: hasDocument,
+            textBefore: textBeforeSync,
+            textAfter: textAfterSync,
+          });
+
+          resolve();
         });
-
-        resolve();
       });
-    });
 
   const entry = { doc, whenSynced };
 
@@ -725,6 +722,10 @@ export async function getOrCreateRowSubDoc(documentId: string): Promise<YDoc> {
  */
 export function getCachedRowSubDoc(documentId: string): YDoc | undefined {
   return rowSubDocs.get(documentId)?.doc;
+}
+
+export function getCachedRowSubDocIds(): string[] {
+  return Array.from(rowSubDocs.keys());
 }
 
 /**

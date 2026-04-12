@@ -59,7 +59,11 @@ export class AuthTestUtils {
   /**
    * Generate a sign-in action link for a specific email
    */
-  async generateSignInActionLink(request: APIRequestContext, email: string): Promise<string> {
+  async generateActionLink(
+    request: APIRequestContext,
+    email: string,
+    type: 'magiclink' | 'signup' = 'magiclink'
+  ): Promise<string> {
     const adminToken = await this.signInAsAdmin(request);
 
     const response = await request.post(`${this.config.gotrueUrl}/admin/generate_link`, {
@@ -69,7 +73,7 @@ export class AuthTestUtils {
       },
       data: {
         email,
-        type: 'magiclink',
+        type,
         redirect_to: TestConfig.baseUrl,
       },
     });
@@ -151,7 +155,7 @@ export class AuthTestUtils {
    * Generate a complete sign-in URL for a user email
    */
   async generateSignInUrl(request: APIRequestContext, email: string): Promise<string> {
-    const actionLink = await this.generateSignInActionLink(request, email);
+    const actionLink = await this.generateActionLink(request, email);
     return this.extractSignInUrl(request, actionLink);
   }
 
@@ -273,4 +277,33 @@ export async function createUserAccount(
     failOnStatusCode: false,
     timeout: 30000,
   });
+}
+
+export async function createConfirmedPasswordUser(
+  request: APIRequestContext,
+  email: string,
+  password: string
+): Promise<void> {
+  const response = await request.post(`${TestConfig.gotrueUrl}/signup`, {
+    data: {
+      email,
+      password,
+    },
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    failOnStatusCode: false,
+  });
+
+  if (!response.ok()) {
+    throw new Error(`Failed to sign up password user: ${response.status()} - ${await response.text()}`);
+  }
+
+  const body = await response.json();
+
+  if (body?.confirmation_sent_at && !body?.access_token) {
+    const authUtils = new AuthTestUtils();
+    const actionLink = await authUtils.generateActionLink(request, email, 'signup');
+    await authUtils.extractSignInUrl(request, actionLink);
+  }
 }

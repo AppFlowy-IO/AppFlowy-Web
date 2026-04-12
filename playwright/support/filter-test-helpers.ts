@@ -5,11 +5,7 @@
  * Provides utilities for creating, managing, and verifying filters
  */
 import { Page, APIRequestContext, expect, Locator } from '@playwright/test';
-import {
-  AddPageSelectors,
-  DatabaseFilterSelectors,
-  DatabaseGridSelectors,
-} from './selectors';
+import { AddPageSelectors, DatabaseFilterSelectors, DatabaseGridSelectors } from './selectors';
 import { generateRandomEmail, setupPageErrorHandling } from './test-config';
 import { signInAndWaitForApp } from './auth-flow-helpers';
 import { waitForGridReady, createDatabaseView } from './database-ui-helpers';
@@ -76,11 +72,7 @@ export function setupFilterTest(page: Page): void {
 /**
  * Login and create a new grid for filter testing
  */
-export async function loginAndCreateGrid(
-  page: Page,
-  request: APIRequestContext,
-  email: string
-): Promise<void> {
+export async function loginAndCreateGrid(page: Page, request: APIRequestContext, email: string): Promise<void> {
   await signInAndWaitForApp(page, request, email);
   await expect(page).toHaveURL(/\/app/, { timeout: 30000 });
   await page.waitForTimeout(2000);
@@ -95,12 +87,7 @@ export async function loginAndCreateGrid(
  * NOTE: Uses Enter to save the value, not Escape.
  * This is important because NumberCell only saves on Enter/blur, not on Escape.
  */
-export async function typeTextIntoCell(
-  page: Page,
-  fieldId: string,
-  cellIndex: number,
-  text: string
-): Promise<void> {
+export async function typeTextIntoCell(page: Page, fieldId: string, cellIndex: number, text: string): Promise<void> {
   // Click to enter edit mode (double-click)
   const cell = DatabaseGridSelectors.dataRowCellsForField(page, fieldId).nth(cellIndex);
   await cell.scrollIntoViewIfNeeded();
@@ -132,7 +119,7 @@ export async function typeTextIntoCell(
 export async function openFilterMenu(page: Page): Promise<void> {
   const filterBtn = DatabaseFilterSelectors.filterButton(page);
   await filterBtn.waitFor({ state: 'attached', timeout: 10000 });
-  await filterBtn.evaluate(el => (el as HTMLElement).click());
+  await filterBtn.evaluate((el) => (el as HTMLElement).click());
   await page.waitForTimeout(500);
 }
 
@@ -162,7 +149,7 @@ export async function addFilterByFieldName(page: Page, fieldName: string): Promi
   // Click add filter button if visible, otherwise the filter button opens a popover
   const addFilterButton = DatabaseFilterSelectors.addFilterButton(page);
   if (await addFilterButton.isVisible().catch(() => false)) {
-    await addFilterButton.evaluate(el => (el as HTMLElement).click());
+    await addFilterButton.evaluate((el) => (el as HTMLElement).click());
   } else {
     // Use JS click to match Cypress force:true behavior.
     // Playwright's force:true dispatches a pointer event at coordinates which may
@@ -170,15 +157,14 @@ export async function addFilterByFieldName(page: Page, fieldName: string): Promi
     // the event directly on the element like Cypress does.
     const filterBtn = DatabaseFilterSelectors.filterButton(page);
     await filterBtn.waitFor({ state: 'attached', timeout: 10000 });
-    await filterBtn.evaluate(el => (el as HTMLElement).click());
+    await filterBtn.evaluate((el) => (el as HTMLElement).click());
   }
 
   // Wait for the property list popover to appear with [data-item-id] elements
   await expect(page.locator('[data-item-id]').first()).toBeVisible({ timeout: 10000 });
 
   // Search for the field and click it using JS click
-  await DatabaseFilterSelectors.propertyItemByName(page, fieldName)
-    .evaluate(el => (el as HTMLElement).click());
+  await DatabaseFilterSelectors.propertyItemByName(page, fieldName).evaluate((el) => (el as HTMLElement).click());
   await page.waitForTimeout(1000);
 
   // Wait for the filter panel to be visible
@@ -215,10 +201,7 @@ export async function changeFilterCondition(page: Page, conditionValue: number):
     '<',
   ];
 
-  const popoverButtons = page
-    .locator('[data-radix-popper-content-wrapper]')
-    .last()
-    .locator('button');
+  const popoverButtons = page.locator('[data-radix-popper-content-wrapper]').last().locator('button');
 
   const buttonCount = await popoverButtons.count();
   for (let i = 0; i < buttonCount; i++) {
@@ -231,23 +214,15 @@ export async function changeFilterCondition(page: Page, conditionValue: number):
   await page.waitForTimeout(500);
 
   // Select the condition option
-  await page
-    .getByTestId(`filter-condition-${conditionValue}`)
-    .click({ force: true });
+  await page.getByTestId(`filter-condition-${conditionValue}`).click({ force: true });
   await page.waitForTimeout(500);
 }
 
 /**
  * Change the checkbox filter condition ("Is checked" / "Is unchecked")
  */
-export async function changeCheckboxFilterCondition(
-  page: Page,
-  condition: CheckboxFilterCondition
-): Promise<void> {
-  const popoverButtons = page
-    .locator('[data-radix-popper-content-wrapper]')
-    .last()
-    .locator('button');
+export async function changeCheckboxFilterCondition(page: Page, condition: CheckboxFilterCondition): Promise<void> {
+  const popoverButtons = page.locator('[data-radix-popper-content-wrapper]').last().locator('button');
 
   const buttonCount = await popoverButtons.count();
   for (let i = 0; i < buttonCount; i++) {
@@ -259,9 +234,7 @@ export async function changeCheckboxFilterCondition(
   }
   await page.waitForTimeout(500);
 
-  await page
-    .getByTestId(`filter-condition-${condition}`)
-    .click({ force: true });
+  await page.getByTestId(`filter-condition-${condition}`).click({ force: true });
   await page.waitForTimeout(500);
 }
 
@@ -293,8 +266,7 @@ export async function deleteFilter(page: Page): Promise<void> {
     await page.waitForTimeout(500);
   } else {
     // Normal mode
-    const hasFilterPopover =
-      (await page.locator('[data-radix-popper-content-wrapper]').count()) > 0;
+    const hasFilterPopover = (await page.locator('[data-radix-popper-content-wrapper]').count()) > 0;
 
     if (!hasFilterPopover) {
       await DatabaseFilterSelectors.filterCondition(page).first().click({ force: true });
@@ -303,7 +275,10 @@ export async function deleteFilter(page: Page): Promise<void> {
 
     const hasDirectDeleteButton =
       (await page.getByTestId('delete-filter-button').count()) > 0 &&
-      (await page.getByTestId('delete-filter-button').isVisible().catch(() => false));
+      (await page
+        .getByTestId('delete-filter-button')
+        .isVisible()
+        .catch(() => false));
 
     if (hasDirectDeleteButton) {
       await DatabaseFilterSelectors.deleteFilterButton(page).click({ force: true });
@@ -328,10 +303,7 @@ export async function assertRowCount(page: Page, expectedCount: number): Promise
  * Get the primary field ID (first column, Name field)
  */
 export async function getPrimaryFieldId(page: Page): Promise<string> {
-  const testId = await page
-    .locator('[data-testid^="grid-field-header-"]')
-    .first()
-    .getAttribute('data-testid');
+  const testId = await page.locator('[data-testid^="grid-field-header-"]').first().getAttribute('data-testid');
   return testId?.replace('grid-field-header-', '') || '';
 }
 
@@ -339,9 +311,7 @@ export async function getPrimaryFieldId(page: Page): Promise<string> {
  * Get field ID by header name
  */
 export async function getFieldIdByName(page: Page, fieldName: string): Promise<string> {
-  const header = page
-    .locator('[data-testid^="grid-field-header-"]')
-    .filter({ hasText: fieldName });
+  const header = page.locator('[data-testid^="grid-field-header-"]').filter({ hasText: fieldName }).first();
   const testId = await header.getAttribute('data-testid');
   return testId?.replace('grid-field-header-', '') || '';
 }
@@ -350,11 +320,7 @@ export async function getFieldIdByName(page: Page, fieldName: string): Promise<s
  * Create a select option in the current cell/popover
  */
 export async function createSelectOption(page: Page, optionName: string): Promise<void> {
-  const input = page
-    .locator('[data-radix-popper-content-wrapper]')
-    .last()
-    .locator('input')
-    .first();
+  const input = page.locator('[data-radix-popper-content-wrapper]').last().locator('input').first();
   await input.clear();
   await input.fill(optionName);
   await page.keyboard.press('Enter');
@@ -364,11 +330,7 @@ export async function createSelectOption(page: Page, optionName: string): Promis
 /**
  * Click on a select cell to open the options popover
  */
-export async function clickSelectCell(
-  page: Page,
-  fieldId: string,
-  rowIndex: number
-): Promise<void> {
+export async function clickSelectCell(page: Page, fieldId: string, rowIndex: number): Promise<void> {
   // Use dispatchEvent to fire a full click event on the cell.
   // element.click() only fires 'click', but Radix Popover may need the full
   // pointer event chain. dispatchEvent with {bubbles: true} ensures React
@@ -412,14 +374,8 @@ export async function selectFilterOption(page: Page, optionName: string): Promis
 /**
  * Change the select filter condition
  */
-export async function changeSelectFilterCondition(
-  page: Page,
-  condition: SelectFilterCondition
-): Promise<void> {
-  const popoverButtons = page
-    .locator('[data-radix-popper-content-wrapper]')
-    .last()
-    .locator('button');
+export async function changeSelectFilterCondition(page: Page, condition: SelectFilterCondition): Promise<void> {
+  const popoverButtons = page.locator('[data-radix-popper-content-wrapper]').last().locator('button');
 
   const buttonCount = await popoverButtons.count();
   for (let i = 0; i < buttonCount; i++) {
@@ -431,9 +387,7 @@ export async function changeSelectFilterCondition(
   }
   await page.waitForTimeout(500);
 
-  await page
-    .getByTestId(`filter-condition-${condition}`)
-    .click({ force: true });
+  await page.getByTestId(`filter-condition-${condition}`).click({ force: true });
   await page.waitForTimeout(500);
 }
 

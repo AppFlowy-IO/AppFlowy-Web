@@ -1337,6 +1337,7 @@ export interface ViewComponentProps {
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   variant?: UIVariant;
   isTemplateThumb?: boolean;
@@ -1376,6 +1377,14 @@ export interface CreatePagePayload {
 export interface CreatePageResponse {
   view_id: string;
   database_id?: string;
+}
+
+export interface DuplicatePageOptions {
+  parentViewId?: string;
+  openAfterDuplicate?: boolean;
+  includeChildren?: boolean;
+  suffix?: string;
+  source?: number;
 }
 
 export interface CreateDatabaseViewPayload {

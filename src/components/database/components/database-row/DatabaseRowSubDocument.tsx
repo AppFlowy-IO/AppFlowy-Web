@@ -26,7 +26,7 @@ import {
   YDoc,
   YDocWithMeta,
   YjsDatabaseKey,
-  YjsEditorKey
+  YjsEditorKey,
 } from '@/application/types';
 import { EditorSkeleton } from '@/components/_shared/skeleton/EditorSkeleton';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
@@ -130,7 +130,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   // undefined = meta hasn't loaded from Yjs yet (wait)
   // true = meta loaded, document is empty (open locally)
   // false = meta loaded, document has content (load from server)
-  const isDocumentEmptyResolved = meta === null || meta === undefined ? undefined : (meta.isEmptyDocument ?? true);
+  const isDocumentEmptyResolved = meta === null || meta === undefined ? undefined : meta.isEmptyDocument ?? true;
 
   const isDocumentEmpty = useCallback(
     (editor: YjsEditor) => {
@@ -293,7 +293,9 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         rowDocEnsuredRef.current = true; // Document exists on server since we loaded it successfully
         return true;
       } catch (e) {
-        Log.debug('[DatabaseRowSubDocument] loadRowDocument failed', { message: e instanceof Error ? e.message : String(e) });
+        Log.debug('[DatabaseRowSubDocument] loadRowDocument failed', {
+          message: e instanceof Error ? e.message : String(e),
+        });
         return false;
       } finally {
         setLoading(false);
@@ -444,7 +446,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           try {
             Log.debug('[DatabaseRowSubDocument] calling createRowDocument', { documentId });
             docState = await createRowDocument(documentId);
-            Log.debug('[DatabaseRowSubDocument] createRowDocument success', { documentId, docStateSize: docState?.length ?? 0 });
+            Log.debug('[DatabaseRowSubDocument] createRowDocument success', {
+              documentId,
+              docStateSize: docState?.length ?? 0,
+            });
           } catch (e) {
             Log.error('[DatabaseRowSubDocument] createRowDocument failed', e);
             setLoading(false); // Clear loading on error
@@ -454,7 +459,10 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           try {
             Log.debug('[DatabaseRowSubDocument] calling createRowDocument (non-blocking)', { documentId });
             docState = await createRowDocument(documentId);
-            Log.debug('[DatabaseRowSubDocument] createRowDocument success (non-blocking)', { documentId, docStateSize: docState?.length ?? 0 });
+            Log.debug('[DatabaseRowSubDocument] createRowDocument success (non-blocking)', {
+              documentId,
+              docStateSize: docState?.length ?? 0,
+            });
           } catch (e) {
             Log.warn('[DatabaseRowSubDocument] createRowDocument failed (continuing)', e);
             // Continue to local document if server create fails.
@@ -496,9 +504,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
       ensureDocRetryTimerRef.current = null;
 
       try {
-        const exists = checkIfRowDocumentExists
-          ? await checkIfRowDocumentExists(documentId)
-          : false;
+        const exists = checkIfRowDocumentExists ? await checkIfRowDocumentExists(documentId) : false;
 
         Log.debug('[DatabaseRowSubDocument] ensureRowDocumentExists retry', {
           rowId,
@@ -908,20 +914,19 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         }
 
         void (async () => {
-          const ensured = await ensureRowDocumentExists();
-
           lastIsEmptyRef.current = isEmpty;
           pendingNonEmptyRef.current = false;
           Log.debug('[DatabaseRowSubDocument] row document edited', {
             rowId,
             documentId,
           });
-          Log.debug('[DatabaseRowSubDocument] row document non-empty -> update meta', {
+          Log.debug('[DatabaseRowSubDocument] row document non-empty -> update meta immediately', {
             rowId,
             documentId,
-            ensured,
           });
           updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
+
+          const ensured = await ensureRowDocumentExists();
 
           if (!ensured) {
             scheduleEnsureRowDocumentExists();

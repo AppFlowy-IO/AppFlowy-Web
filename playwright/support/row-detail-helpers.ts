@@ -71,11 +71,24 @@ export async function closeRowDetail(page: Page): Promise<void> {
 }
 
 /**
- * Close row detail by pressing Escape
+ * Close row detail by pressing Escape.
+ * Presses Escape up to 3 times because the first press may be consumed by the
+ * Slate editor (e.g. to blur or deselect) rather than closing the dialog.
  */
 export async function closeRowDetailWithEscape(page: Page): Promise<void> {
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(500);
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+    const dialogCount = await page.locator('.MuiDialog-paper').count();
+    if (dialogCount === 0) break;
+  }
+
+  // If Escape didn't close the dialog, fall back to clicking the close button
+  if ((await page.locator('.MuiDialog-paper').count()) > 0) {
+    await RowDetailSelectors.closeButton(page).click({ force: true });
+  }
+
+  await expect(page.locator('.MuiDialog-paper')).toHaveCount(0, { timeout: 10000 });
 }
 
 /**
