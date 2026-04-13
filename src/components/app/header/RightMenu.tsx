@@ -24,7 +24,8 @@ function RightMenu() {
     }
 
     const parentView = findView(outline || [], routeView.parent_view_id);
-    return isDatabaseContainer(parentView) ? parentView.view_id : routeViewId;
+
+    return parentView && isDatabaseContainer(parentView) ? parentView.view_id : routeViewId;
   }, [outline, routeView?.parent_view_id, routeViewId]);
 
   return (

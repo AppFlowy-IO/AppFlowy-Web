@@ -38,7 +38,7 @@ import { createSelectOptionCell } from '@/application/database-yjs/fields/select
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { dateFilterFillData, filterFillData, getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { getOptionsFromRow, initialDatabaseRow } from '@/application/database-yjs/row';
-import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
+import { generateRowMeta, getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useDatabaseViewLayout, useFieldSelector, useFieldType } from '@/application/database-yjs/selector';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {

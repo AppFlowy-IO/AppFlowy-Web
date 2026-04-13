@@ -238,13 +238,21 @@ export async function openRowSubDocument(
     const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
     const blockCount = blocks?.size ?? 0;
 
-    // A document with only the root page block (or fewer) is effectively empty
-    if (blockCount <= 1) {
-      Log.debug('[ViewLoader] rowSubDoc cache is empty shell, will fetch from server', {
-        documentId,
-        blockCount,
-      });
-      fromCache = false;
+    // initializeDocumentStructure creates exactly 2 blocks (page + empty paragraph).
+    // Treat the cache as an empty shell only when block count is minimal AND
+    // there is no real text content — this avoids re-fetching valid docs that
+    // happen to have just one paragraph of text.
+    if (blockCount <= 2) {
+      const textMap = document?.get(YjsEditorKey.text_map) as Y.Map<unknown> | undefined;
+      const hasTextContent = textMap ? Array.from(textMap.values()).some((v) => typeof v === 'string' && v.length > 0) : false;
+
+      if (!hasTextContent) {
+        Log.debug('[ViewLoader] rowSubDoc cache is empty shell, will fetch from server', {
+          documentId,
+          blockCount,
+        });
+        fromCache = false;
+      }
     }
   }
 

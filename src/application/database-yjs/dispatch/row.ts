@@ -480,8 +480,9 @@ export function useDuplicateRowDispatch() {
 
       const icon = referenceMeta.icon;
       const cover = referenceMeta.cover;
+      const hasDocument = referenceMeta.isEmptyDocument === false;
       const newMeta = generateRowMeta(rowId, {
-        [RowMetaKey.IsDocumentEmpty]: false,
+        [RowMetaKey.IsDocumentEmpty]: !hasDocument,
         [RowMetaKey.IconId]: icon,
         [RowMetaKey.CoverId]: cover ? JSON.stringify(cover) : null,
       });

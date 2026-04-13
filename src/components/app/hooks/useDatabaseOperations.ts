@@ -346,6 +346,7 @@ export function useDatabaseOperations(
         const { duplicateRowDocument: duplicateAPI } = await import(
           '@/application/services/js-services/http/collab-api'
         );
+
         await duplicateAPI(currentWorkspaceId, databaseId, sourceRowId, newRowId, clientDocStateB64);
       } catch (e) {
         Log.error('[duplicateRowDocument] failed', e);

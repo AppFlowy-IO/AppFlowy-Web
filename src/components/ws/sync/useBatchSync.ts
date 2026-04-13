@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { getRowKey } from '@/application/database-yjs/row_meta';
-import { getMetaJSON } from '@/application/database-yjs/row_meta';
+import { getRowKey , getMetaJSON } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
 import { getCachedRowSubDoc, getCachedRowSubDocIds } from '@/application/services/js-services/cache';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
@@ -170,6 +169,7 @@ export function useBatchSync(refs: SyncRefs) {
               }
 
               const rowDocumentId = rowMeta ? getMetaJSON(rowId, rowMeta).documentId : '';
+
               if (rowDocumentId && !registeredObjectIds.has(rowDocumentId)) {
                 unregisteredRowDocumentIds.add(rowDocumentId);
               }
@@ -209,6 +209,7 @@ export function useBatchSync(refs: SyncRefs) {
 
           if (!rowDocument) {
             const opened = await openCollabDBWithProvider(documentId, { skipCache: true });
+
             rowDocument = opened.doc;
             provider = opened.provider;
           }
@@ -220,13 +221,12 @@ export function useBatchSync(refs: SyncRefs) {
               await provider.destroy();
               rowDocument.destroy();
             }
+
             continue;
           }
 
           const docState = Y.encodeStateAsUpdate(rowDocument);
           const stateVector = Y.encodeStateVector(rowDocument);
-
-          rowDocument.destroy();
 
           items.push({
             objectId: documentId,
@@ -235,6 +235,8 @@ export function useBatchSync(refs: SyncRefs) {
             docState,
           });
 
+          // Only destroy docs we opened ourselves (skipCache: true).
+          // Cached docs are owned by the cache and must not be destroyed here.
           if (provider) {
             await provider.destroy();
             rowDocument.destroy();

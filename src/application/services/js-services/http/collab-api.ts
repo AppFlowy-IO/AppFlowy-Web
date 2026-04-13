@@ -191,6 +191,7 @@ export async function duplicateRowDocument(
   clientDocStateB64?: string,
 ): Promise<void> {
   const url = `/api/workspace/${workspaceId}/database/${databaseId}/row/${sourceRowId}/duplicate-document`;
+
   await executeAPIVoidRequest(() =>
     getAxios()?.post<APIResponse>(url, {
       new_row_id: newRowId,
