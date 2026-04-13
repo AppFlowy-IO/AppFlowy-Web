@@ -92,6 +92,18 @@ async function pasteContent(page: Page, html: string, plainText: string) {
   await page.waitForTimeout(1500);
 }
 
+/**
+ * Move cursor to end of document and create a new empty paragraph.
+ * Call this between sequential pastes so each paste starts in its own block.
+ */
+async function moveCursorToEnd(page: Page) {
+  const isMac = process.platform === 'darwin';
+  await page.keyboard.press(isMac ? 'Meta+ArrowDown' : 'Control+End');
+  await page.waitForTimeout(200);
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+}
+
 const testEmail = generateRandomEmail();
 
 /**
@@ -169,6 +181,8 @@ test.describe('Paste Table Tests', () => {
       testLog.info('✓ HTML table pasted successfully');
     }
 
+    await moveCursorToEnd(page);
+
     // When: pasting an HTML table with bold and italic formatting in cells
     {
       testLog.info('=== Pasting HTML Table with Formatting ===');
@@ -214,6 +228,8 @@ test.describe('Paste Table Tests', () => {
       testLog.info('✓ HTML table with formatting pasted successfully');
     }
 
+    await moveCursorToEnd(page);
+
     // When: pasting a markdown table with product data
     {
       testLog.info('=== Pasting Markdown Table ===');
@@ -239,6 +255,8 @@ test.describe('Paste Table Tests', () => {
       testLog.info('✓ Markdown table pasted successfully');
     }
 
+    await moveCursorToEnd(page);
+
     // When: pasting a markdown table with column alignment specifiers
     {
       testLog.info('=== Pasting Markdown Table with Alignment ===');
@@ -259,6 +277,8 @@ test.describe('Paste Table Tests', () => {
       ).toBeVisible();
       testLog.info('✓ Markdown table with alignment pasted successfully');
     }
+
+    await moveCursorToEnd(page);
 
     // When: pasting a markdown table with inline formatting (bold, italic, code, strikethrough)
     {
@@ -290,6 +310,8 @@ test.describe('Paste Table Tests', () => {
       }
       testLog.info('✓ Markdown table with inline formatting pasted successfully');
     }
+
+    await moveCursorToEnd(page);
 
     // When: pasting tab-separated values (TSV) data
     {

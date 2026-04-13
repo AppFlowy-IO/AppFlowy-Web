@@ -71,7 +71,7 @@ describe('row metadata tests', () => {
     expect(meta[map.get(RowMetaKey.IsDocumentEmpty) ?? '']).toBe(true);
   });
 
-  it('skips empty meta values', () => {
+  it('skips empty meta values but preserves false for IsDocumentEmpty', () => {
     const rowId = 'row-meta-2';
     const meta = generateRowMeta(rowId, {
       [RowMetaKey.IconId]: '',
@@ -79,6 +79,11 @@ describe('row metadata tests', () => {
       [RowMetaKey.IsDocumentEmpty]: false,
     });
 
-    expect(Object.keys(meta)).toHaveLength(0);
+    // Empty strings for icon/cover are skipped, but false is a valid value
+    // for IsDocumentEmpty (means "document is NOT empty")
+    const map = getMetaIdMap(rowId);
+
+    expect(Object.keys(meta)).toHaveLength(1);
+    expect(meta[map.get(RowMetaKey.IsDocumentEmpty) ?? '']).toBe(false);
   });
 });
