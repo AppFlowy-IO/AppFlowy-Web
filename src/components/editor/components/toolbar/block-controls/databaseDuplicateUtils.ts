@@ -33,16 +33,6 @@ export function findDuplicatedContainerChild(params: {
     (child) => child.view_id !== params.sourceContainerId
   );
 
-  if (params.duplicatedName) {
-    const exactNameMatch = allAfterChildren.find(
-      (child) => child.name === params.duplicatedName
-    );
-
-    if (exactNameMatch) {
-      return exactNameMatch;
-    }
-  }
-
   const beforeIds = new Set((params.beforeChildren ?? []).map((child) => child.view_id));
   const addedChildren = allAfterChildren.filter((child) => !beforeIds.has(child.view_id));
 

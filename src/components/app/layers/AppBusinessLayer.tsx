@@ -145,6 +145,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     outlineRef: stableOutlineRef,
     loadOutline,
     flushAllSync: syncContext.flushAllSync,
+    syncAllToServer: syncContext.syncAllToServer,
     loadViewChildren,
   });
 

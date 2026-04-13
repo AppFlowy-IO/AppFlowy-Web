@@ -66,4 +66,31 @@ describe('databaseDuplicateUtils', () => {
       })
     ).toEqual(duplicatedChild);
   });
+
+  it('returns the newly added child even when a pre-existing sibling has the same name', () => {
+    const previousDuplicate = makeView({
+      view_id: 'old-duplicate',
+      name: 'Source (Copy)',
+      layout: ViewLayout.Grid,
+    });
+    const beforeChildren = [
+      makeView({ view_id: 'source-container', name: 'Source', layout: ViewLayout.Grid }),
+      previousDuplicate,
+    ];
+    const newDuplicate = makeView({
+      view_id: 'new-duplicate',
+      name: 'Source (Copy)',
+      layout: ViewLayout.Grid,
+    });
+    const afterChildren = [...beforeChildren, newDuplicate];
+
+    expect(
+      findDuplicatedContainerChild({
+        beforeChildren,
+        afterChildren,
+        sourceContainerId: 'source-container',
+        duplicatedName: 'Source (Copy)',
+      })
+    ).toEqual(newDuplicate);
+  });
 });

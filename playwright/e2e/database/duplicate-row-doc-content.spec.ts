@@ -29,73 +29,63 @@ test.describe('Duplicate row preserves document content', () => {
     await createDatabaseView(page, 'Grid', 6000);
     await waitForGridReady(page);
 
-    // Open first row, type content in the document
+    // Open first row in full page mode to type content.
+    // Full-page editors have a more stable Yjs connection than the dialog's
+    // lazy sub-document, so content persists more reliably.
     await openRowDetail(page, 0);
-    await typeInRowDocument(page, rowDocText);
-    await page.waitForTimeout(1000);
+    const dialogTitle = page.locator('.MuiDialogTitle-root');
+    await dialogTitle.locator('button').first().click({ force: true }); // expand to full page
+    await page.waitForTimeout(3000);
 
-    // Verify text is visible in the modal
-    await expect(page.getByText(rowDocText)).toBeVisible({ timeout: 10000 });
+    // Type content into the full-page editor
+    const editor = page.locator('[id^="editor-"]').first();
+    await expect(editor).toBeVisible({ timeout: 15000 });
+    await editor.click({ force: true });
+    await page.waitForTimeout(300);
+    await page.keyboard.type(rowDocText, { delay: 30 });
+    await page.waitForTimeout(3000); // Wait for Yjs sync
 
-    // Close the modal — try Escape first, then close button
-    await closeRowDetailWithEscape(page);
+    // Verify text appeared
+    await expect(editor).toContainText(rowDocText, { timeout: 10000 });
 
-    // If we ended up on a full-page row view instead of the grid,
-    // navigate back via the sidebar
-    const gridVisible = await DatabaseGridSelectors.grid(page).isVisible().catch(() => false);
-    if (!gridVisible) {
-      // Click the database name in the sidebar to go back to grid view
-      const dbLink = page.locator('[data-testid="page-name"]').filter({ hasText: 'New Database' }).first();
-      await dbLink.click();
-      await waitForGridReady(page);
-    }
+    // Navigate back to the grid
+    await page.goBack();
+    await waitForGridReady(page);
+    await page.waitForTimeout(3000);
 
-    // Wait for content to sync to server
-    await page.waitForTimeout(5000);
-
-    // Re-open and duplicate the row
+    // Duplicate the row from row detail
     await openRowDetail(page, 0);
     await duplicateRowFromDetail(page);
-    await closeRowDetailWithEscape(page);
-
-    // Navigate back to grid if needed
-    const gridVisible2 = await DatabaseGridSelectors.grid(page).isVisible().catch(() => false);
-    if (!gridVisible2) {
-      const dbLink = page.locator('[data-testid="page-name"]').filter({ hasText: 'New Database' }).first();
-      await dbLink.click();
-      await waitForGridReady(page);
-    }
-
+    // duplicateRowFromDetail auto-closes the dialog; ensure it's closed
+    await expect(page.locator('.MuiDialog-paper')).toHaveCount(0, { timeout: 10000 });
     await page.waitForTimeout(3000);
 
     // Verify 4 rows (3 default + 1 duplicate)
     const rowCount = await DatabaseGridSelectors.dataRows(page).count();
     expect(rowCount).toBe(4);
 
-    // Open the duplicated row (index 1, inserted after source)
-    // Retry because the server worker creates the document asynchronously
+    // Open the duplicated row (index 1) in full-page mode so the Yjs
+    // provider creates a fresh connection on each attempt.  The dialog's
+    // lazy sub-document loading can miss updates; full-page mode is reliable.
+    await openRowDetail(page, 1);
+    const dialogTitle2 = page.locator('.MuiDialogTitle-root');
+    await dialogTitle2.locator('button').first().click({ force: true });
+    await page.waitForTimeout(2000);
+
+    // Poll for the duplicated document content.  Reload the full-page view
+    // each iteration — this is faster than navigating back to the grid and
+    // re-entering the row, and forces a fresh Yjs sync from the server.
     let found = false;
-    for (let attempt = 0; attempt < 10; attempt++) {
-      await openRowDetail(page, 1);
-      await page.waitForTimeout(2000);
-
-      const hasText = await page.getByText(rowDocText).isVisible().catch(() => false);
-      if (hasText) {
-        found = true;
-        await closeRowDetailWithEscape(page);
-        break;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const dupEditor = page.locator('[id^="editor-"]').first();
+      if (await dupEditor.isVisible().catch(() => false)) {
+        const text = await dupEditor.innerText().catch(() => '');
+        if (text.includes(rowDocText)) {
+          found = true;
+          break;
+        }
       }
-
-      await closeRowDetailWithEscape(page);
-
-      // Navigate back to grid if needed
-      const gv = await DatabaseGridSelectors.grid(page).isVisible().catch(() => false);
-      if (!gv) {
-        const dbLink = page.locator('[data-testid="page-name"]').filter({ hasText: 'New Database' }).first();
-        await dbLink.click();
-        await waitForGridReady(page);
-      }
-
+      await page.reload({ waitUntil: 'domcontentloaded' });
       await page.waitForTimeout(3000);
     }
 

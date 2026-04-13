@@ -81,7 +81,7 @@ function ControlsMenu({
   }, [selectedBlockIds, editor]);
 
   const { t } = useTranslation();
-  const duplicateCopySuffix = ` (${t('menuAppHeader.pageNameSuffix')})`;
+  const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
 
   const duplicateDatabaseBlock = useCallback(
     async (sourceNode: DatabaseNode, duplicatedBlockId: string) => {
@@ -243,12 +243,22 @@ function ControlsMenu({
         throw new Error(t('document.plugins.subPage.errors.failedDuplicatePage'));
       }
 
-      // Preserve only the same number of views as the source block exposed,
-      // so hidden/removed tabs are not resurrected in the duplicate.
+      // Map source view IDs to their index positions within the source container,
+      // then select the same positions from the duplicated container. This preserves
+      // the block's tab subset (e.g., if the block only shows tabs B and C out of
+      // A, B, C, the duplicate will also show only B' and C').
       const duplicatedChildIds = duplicatedContainer.children?.map((c) => c.view_id) ?? [];
-      const allDuplicatedViewIds = duplicatedChildIds.length > 0
-        ? duplicatedChildIds.slice(0, sourceViewIds.length)
-        : [newPrimaryViewId];
+      const sourceContainerChildIds = sourceContainerView.children?.map((c) => c.view_id) ?? [];
+      const mappedViewIds = sourceViewIds
+        .map((id) => sourceContainerChildIds.indexOf(id))
+        .filter((i) => i >= 0 && i < duplicatedChildIds.length)
+        .map((i) => duplicatedChildIds[i]);
+
+      const allDuplicatedViewIds = mappedViewIds.length > 0
+        ? mappedViewIds
+        : duplicatedChildIds.length > 0
+          ? duplicatedChildIds.slice(0, sourceViewIds.length)
+          : [newPrimaryViewId];
 
       replaceDuplicatedBlockData(
         createDatabaseNodeData({

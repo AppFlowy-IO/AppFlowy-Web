@@ -168,23 +168,26 @@ test.describe('Row Document Test', () => {
     const longText =
       'This is a test sentence that should be typed without losing focus even after several seconds of typing';
     await page.keyboard.type(longText, { delay: 50 });
+    await page.waitForTimeout(5000); // Wait for Yjs sync before closing
 
     // Then: the full text should appear in the dialog (focus was maintained)
     await expect(page.locator('[role="dialog"]')).toContainText(longText);
 
     // When: closing and reopening the modal
-    const dialog = page.locator('[role="dialog"]');
-    await dialog
-      .locator('.MuiDialogTitle-root, [data-testid="row-detail-header"]')
-      .first()
-      .click({ force: true });
-    await page.waitForTimeout(500);
+    // (closeRowDetailWithEscape defocuses the editor before pressing Escape)
     await closeRowDetailWithEscape(page);
-    await page.waitForTimeout(2000);
+    await page.waitForTimeout(3000);
 
     // And: reopening the same card
     await openCard(page, cardName);
     await page.waitForTimeout(3000);
+
+    // Scroll down to ensure the editor content area is visible
+    const scrollContainer = page.locator('[role="dialog"]').locator('.appflowy-scroll-container');
+    if ((await scrollContainer.count()) > 0) {
+      await scrollContainer.evaluate(el => el.scrollTo(0, 9999));
+      await page.waitForTimeout(1000);
+    }
 
     // Then: the content should have persisted
     await expect(page.locator('[role="dialog"]')).toContainText(longText);
@@ -206,11 +209,16 @@ test.describe('Row Document Test', () => {
     await openCard(page, cardName);
     await clickIntoEditor(page);
     await page.keyboard.type(docText, { delay: 30 });
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000); // Wait for Yjs sync and meta update
 
-    // And: closing the modal
+    // And: closing the modal — defocus editor first so Escape reaches MUI Dialog
+    const dialog = page.locator('[role="dialog"]');
+    await dialog
+      .locator('.MuiDialogTitle-root')
+      .click({ force: true });
+    await page.waitForTimeout(500);
     await closeRowDetailWithEscape(page);
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(2000);
 
     // Then: the document indicator icon should appear on the card
     await expect(

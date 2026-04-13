@@ -51,7 +51,7 @@ function MoreActionsContent({
   const refreshOutline = useRefreshOutline();
   const loadViewChildren = useLoadViewChildren();
   const { syncAllToServer } = useSyncInternal();
-  const duplicateCopySuffix = ` (${t('menuAppHeader.pageNameSuffix')})`;
+  const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId) return;
     itemClicked?.();
