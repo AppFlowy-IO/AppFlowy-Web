@@ -28,6 +28,7 @@ import {
 } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
+import { getCachedProviderDoc } from '@/application/db';
 import { Log } from '@/utils/log';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
@@ -570,7 +571,9 @@ export function useDuplicateRowDispatch() {
           let clientDocStateB64: string | undefined;
 
           if (sourceDocId) {
-            const cachedDoc = getCachedRowSubDoc(sourceDocId);
+            // Check the dialog sub-doc cache first, then fall back to the
+            // IndexedDB provider cache (used by full-page row editors).
+            const cachedDoc = getCachedRowSubDoc(sourceDocId) ?? getCachedProviderDoc(sourceDocId);
 
             if (cachedDoc) {
               const docState = Y.encodeStateAsUpdate(cachedDoc);

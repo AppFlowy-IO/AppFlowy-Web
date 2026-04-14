@@ -21,7 +21,9 @@ export default defineConfig({
   workers: process.env.CI ? 1 : undefined,
 
   /* Reporter to use */
-  reporter: process.env.CI ? [['list'], ['html'], ['github']] : 'list',
+  reporter: process.env.CI
+    ? [['list'], ['html'], ['github'], ['json', { outputFile: 'playwright-report/report.json' }]]
+    : 'list',
 
   /* Global test timeout – E2E tests involve login + DB creation + interactions */
   timeout: 120000,
