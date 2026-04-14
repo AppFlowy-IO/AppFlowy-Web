@@ -154,12 +154,29 @@ export async function typeInRowDocument(page: Page, text: string): Promise<void>
     await page.waitForTimeout(1000);
   }
 
+  // Click the placeholder text directly inside the editor.  Clicking the
+  // [data-testid="editor-content"] container only sets DOM focus on the div
+  // but doesn't set Slate's internal selection — so keyboard.type goes to
+  // whichever element last had Slate focus (often the title).  Clicking
+  // visible text/placeholder inside the editor sets both DOM focus AND
+  // Slate selection reliably.
+  const placeholder = page
+    .locator('[role="dialog"]')
+    .getByText('Enter a / to insert a block, or start typing');
   const editor = page
     .locator('[role="dialog"]')
     .locator('[data-testid="editor-content"]')
     .first();
+
   await expect(editor).toBeVisible({ timeout: 15000 });
-  await editor.click({ force: true });
+
+  if ((await placeholder.count()) > 0 && (await placeholder.isVisible())) {
+    await placeholder.click();
+  } else {
+    // Editor already has content — click inside the editor content area
+    await editor.click();
+  }
+
   await page.waitForTimeout(300);
   await page.keyboard.type(text, { delay: 30 });
   await page.waitForTimeout(500);

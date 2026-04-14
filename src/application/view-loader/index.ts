@@ -243,8 +243,15 @@ export async function openRowSubDocument(
     // there is no real text content — this avoids re-fetching valid docs that
     // happen to have just one paragraph of text.
     if (blockCount <= 2) {
-      const textMap = document?.get(YjsEditorKey.text_map) as Y.Map<unknown> | undefined;
-      const hasTextContent = textMap ? Array.from(textMap.values()).some((v) => typeof v === 'string' && v.length > 0) : false;
+      const meta = document?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+      const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
+      const hasTextContent = textMap
+        ? Array.from(textMap.values()).some((v) => {
+            if (v instanceof Y.Text) return v.toJSON().length > 0;
+            if (typeof v === 'string') return v.length > 0;
+            return false;
+          })
+        : false;
 
       if (!hasTextContent) {
         Log.debug('[ViewLoader] rowSubDoc cache is empty shell, will fetch from server', {

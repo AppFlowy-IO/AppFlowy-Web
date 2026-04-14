@@ -313,7 +313,11 @@ function ControlsMenu({
       try {
         await duplicateDatabaseBlock(selectedNode as DatabaseNode, newBlockId);
       } catch (error) {
-        CustomEditor.deleteBlock(editor, newBlockId);
+        // Roll back ALL previously duplicated blocks, not just the current one
+        for (const id of newBlockIds) {
+          CustomEditor.deleteBlock(editor, id);
+        }
+
         throw error;
       }
     }
