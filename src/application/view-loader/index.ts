@@ -154,8 +154,35 @@ export async function openView(
   // Step 1: Open from IndexedDB
   const doc = await openCollabDB(viewId);
 
-  // Step 2: Check cache
-  const fromCache = hasCollabCache(doc);
+  // Step 2: Check cache — also detect empty-shell documents that were cached
+  // during a previous load when the server hadn't finished duplication yet.
+  let fromCache = hasCollabCache(doc);
+
+  if (fromCache) {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+    const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+    const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
+    const blockCount = blocks?.size ?? 0;
+
+    // If the cached document is an empty shell (≤2 blocks = page + empty paragraph),
+    // treat it as uncached so we re-fetch from the server.
+    if (document && blockCount <= 2) {
+      const meta = document.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+      const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
+      const hasTextContent = textMap
+        ? Array.from(textMap.values()).some((v) => {
+            if (v instanceof Y.Text) return v.toJSON().length > 0;
+            if (typeof v === 'string') return v.length > 0;
+            return false;
+          })
+        : false;
+
+      if (!hasTextContent) {
+        Log.debug('[ViewLoader] cached document is empty shell, re-fetching', { viewId, blockCount });
+        fromCache = false;
+      }
+    }
+  }
 
   Log.debug('[ViewLoader] cache check', {
     viewId,
@@ -163,9 +190,27 @@ export async function openView(
     durationMs: Date.now() - startedAt,
   });
 
-  // Step 3: Fetch from server if not cached
+  // Step 3: Fetch from server if not cached (or cache was an empty shell).
+  // Retry with backoff — after page duplication the server worker may need
+  // a moment to persist all row documents.
   if (!fromCache) {
-    await fetchAndApply(workspaceId, viewId, doc);
+    const MAX_RETRIES = 3;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await fetchAndApply(workspaceId, viewId, doc);
+        break;
+      } catch (e) {
+        if (attempt === MAX_RETRIES) throw e;
+        Log.debug('[ViewLoader] openView fetch retry', {
+          viewId,
+          attempt,
+          maxRetries: MAX_RETRIES,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      }
+    }
   }
 
   // Step 4: Detect collab type
@@ -273,7 +318,7 @@ export async function openRowSubDocument(
   // Retry with backoff — the server-side worker may need a moment to create
   // the document after a row duplication.
   if (!fromCache) {
-    const MAX_RETRIES = 3;
+    const MAX_RETRIES = 6;
     let fetched = false;
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
@@ -290,7 +335,7 @@ export async function openRowSubDocument(
         });
 
         if (attempt < MAX_RETRIES) {
-          await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
         }
       }
     }

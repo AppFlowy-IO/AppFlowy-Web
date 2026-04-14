@@ -481,7 +481,12 @@ export function useDuplicateRowDispatch() {
 
       const icon = referenceMeta.icon;
       const cover = referenceMeta.cover;
-      const hasDocument = referenceMeta.isEmptyDocument === false;
+      // Treat undefined (never set) the same as false — if the source row
+      // was opened and content was added, isEmptyDocument is explicitly false.
+      // If it was never opened, isEmptyDocument is undefined; in that case we
+      // still want to ask the server to duplicate the document (the server
+      // will check whether there is actual content).
+      const hasDocument = referenceMeta.isEmptyDocument !== true;
       const newMeta = generateRowMeta(rowId, {
         [RowMetaKey.IsDocumentEmpty]: !hasDocument,
         [RowMetaKey.IconId]: icon,
@@ -586,6 +591,21 @@ export function useDuplicateRowDispatch() {
               }
 
               clientDocStateB64 = btoa(chunks.join(''));
+
+              // If we found a cached doc with content, ensure the duplicated
+              // row's meta marks the document as non-empty so the client
+              // fetches from the server when the row is opened.
+              if (!hasDocument) {
+                rowDoc.transact(() => {
+                  const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+                  const meta = rowSharedRoot.get(YjsEditorKey.meta);
+                  const isEmptyKey = getMetaIdMap(rowId).get(RowMetaKey.IsDocumentEmpty) ?? '';
+
+                  if (isEmptyKey) {
+                    meta.set(isEmptyKey, false);
+                  }
+                });
+              }
             }
           }
 
