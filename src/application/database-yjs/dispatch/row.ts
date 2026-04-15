@@ -578,7 +578,24 @@ export function useDuplicateRowDispatch() {
           if (sourceDocId) {
             // Check the dialog sub-doc cache first, then fall back to the
             // IndexedDB provider cache (used by full-page row editors).
-            const cachedDoc = getCachedRowSubDoc(sourceDocId) ?? getCachedProviderDoc(sourceDocId);
+            // Important: the dialog sub-doc may be an empty shell if the user
+            // typed content in full-page mode — in that case prefer the
+            // provider doc which has the actual content.
+            let cachedDoc = getCachedRowSubDoc(sourceDocId);
+
+            if (cachedDoc) {
+              // Verify the sub-doc has real document content, not just empty structure
+              const subDocRoot = cachedDoc.getMap(YjsEditorKey.data_section);
+              const subDocDocument = subDocRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+              const subDocBlocks = subDocDocument?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
+
+              if (!subDocBlocks || subDocBlocks.size <= 2) {
+                // Dialog sub-doc is empty — try the provider doc instead
+                cachedDoc = getCachedProviderDoc(sourceDocId) ?? cachedDoc;
+              }
+            } else {
+              cachedDoc = getCachedProviderDoc(sourceDocId) ?? null;
+            }
 
             if (cachedDoc) {
               const docState = Y.encodeStateAsUpdate(cachedDoc);
