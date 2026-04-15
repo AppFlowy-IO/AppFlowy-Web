@@ -60,22 +60,63 @@ export async function openRowDetailViaCell(
 }
 
 /**
- * Close row detail modal
+ * Close row detail modal by clicking the MUI backdrop.
+ *
+ * Note: The row-detail dialog has NO close button — only an expand button and
+ * a more-actions dropdown in the title bar.  RowDetailSelectors.closeButton
+ * actually matches the expand button, so we must NOT use it to close the dialog
+ * (it would navigate to the full row page instead of closing).
  */
 export async function closeRowDetail(page: Page): Promise<void> {
   const modalCount = await page.locator('.MuiDialog-paper').count();
   if (modalCount > 0) {
-    await RowDetailSelectors.closeButton(page).click({ force: true });
+    // Click the MUI backdrop (overlay behind the dialog) to trigger onClose
+    const backdrop = page.locator('.MuiBackdrop-root');
+    if ((await backdrop.count()) > 0) {
+      await backdrop.click({ force: true });
+    } else {
+      await page.keyboard.press('Escape');
+    }
   }
   await page.waitForTimeout(500);
 }
 
 /**
- * Close row detail by pressing Escape
+ * Close row detail by pressing Escape.
+ *
+ * First defocuses any active Slate editor by clicking the dialog title bar,
+ * then presses Escape (which MUI Dialog handles to call onClose).
+ * Falls back to clicking the MUI backdrop if Escape doesn't work.
  */
 export async function closeRowDetailWithEscape(page: Page): Promise<void> {
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(500);
+  // Defocus any active Slate editor by clicking the left side of the title bar
+  // (away from the expand/more-actions buttons on the right).
+  const dialogTitle = page.locator('.MuiDialogTitle-root');
+  if ((await dialogTitle.count()) > 0) {
+    await dialogTitle.click({ force: true, position: { x: 5, y: 5 } });
+    await page.waitForTimeout(300);
+  }
+
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+    const dialogCount = await page.locator('.MuiDialog-paper').count();
+    if (dialogCount === 0) break;
+  }
+
+  // If Escape didn't close the dialog, click the backdrop instead.
+  // NEVER click a title-bar button — the first button is expand-to-page.
+  if ((await page.locator('.MuiDialog-paper').count()) > 0) {
+    const backdrop = page.locator('.MuiBackdrop-root');
+    if ((await backdrop.count()) > 0) {
+      await backdrop.click({ force: true });
+    } else {
+      await page.mouse.click(10, 10);
+    }
+    await page.waitForTimeout(500);
+  }
+
+  await expect(page.locator('.MuiDialog-paper')).toHaveCount(0, { timeout: 10000 });
 }
 
 /**
@@ -93,16 +134,51 @@ export async function assertRowDetailClosed(page: Page): Promise<void> {
 }
 
 /**
- * Type text into the row document
+ * Type text into the row document.
+ *
+ * Scrolls the dialog to the bottom first so the sub-document editor (which
+ * sits below properties and comments) is visible and focusable.  Uses the
+ * specific `data-testid="editor-content"` selector to avoid hitting the title
+ * input or comment reply areas.
+ *
+ * Uses `page.keyboard.type()` instead of `locator.pressSequentially()` because
+ * Slate contenteditable editors handle focus/input differently from native
+ * inputs — `keyboard.type` dispatches events to whatever is focused, which
+ * works reliably after a real click.
  */
 export async function typeInRowDocument(page: Page, text: string): Promise<void> {
-  const editor = RowDetailSelectors.documentArea(page)
-    .locator(
-      '[data-testid="editor-content"], [role="textbox"][contenteditable="true"], [contenteditable="true"]'
-    )
+  // Scroll the dialog scroll-container to the bottom so the editor is visible
+  const scrollContainer = page.locator('.MuiDialog-paper .appflowy-scroll-container');
+  if ((await scrollContainer.count()) > 0) {
+    await scrollContainer.evaluate(el => el.scrollTo(0, 9999));
+    await page.waitForTimeout(1000);
+  }
+
+  // Click the placeholder text directly inside the editor.  Clicking the
+  // [data-testid="editor-content"] container only sets DOM focus on the div
+  // but doesn't set Slate's internal selection — so keyboard.type goes to
+  // whichever element last had Slate focus (often the title).  Clicking
+  // visible text/placeholder inside the editor sets both DOM focus AND
+  // Slate selection reliably.
+  const placeholder = page
+    .locator('[role="dialog"]')
+    .getByText('Enter a / to insert a block, or start typing');
+  const editor = page
+    .locator('[role="dialog"]')
+    .locator('[data-testid="editor-content"]')
     .first();
-  await editor.click({ force: true });
-  await editor.pressSequentially(text, { delay: 30 });
+
+  await expect(editor).toBeVisible({ timeout: 15000 });
+
+  if ((await placeholder.count()) > 0 && (await placeholder.isVisible())) {
+    await placeholder.click();
+  } else {
+    // Editor already has content — click inside the editor content area
+    await editor.click();
+  }
+
+  await page.waitForTimeout(300);
+  await page.keyboard.type(text, { delay: 30 });
   await page.waitForTimeout(500);
 }
 

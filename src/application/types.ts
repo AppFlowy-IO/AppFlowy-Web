@@ -1331,12 +1331,14 @@ export interface ViewComponentProps {
    * Only available in app mode - not provided in publish mode.
    */
   createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   viewMeta: ViewMetaProps;
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   variant?: UIVariant;
   isTemplateThumb?: boolean;
@@ -1376,6 +1378,14 @@ export interface CreatePagePayload {
 export interface CreatePageResponse {
   view_id: string;
   database_id?: string;
+}
+
+export interface DuplicatePageOptions {
+  parentViewId?: string;
+  openAfterDuplicate?: boolean;
+  includeChildren?: boolean;
+  suffix?: string;
+  source?: number;
 }
 
 export interface CreateDatabaseViewPayload {

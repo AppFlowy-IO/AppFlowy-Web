@@ -17,6 +17,7 @@ import {
   CreatePageResponse,
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  DuplicatePageOptions,
   TextCount,
   LoadDatabasePrompts,
   TestDatabasePromptConfig,
@@ -83,6 +84,7 @@ export interface EditorContextState {
   onRendered?: () => void;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
@@ -126,6 +128,7 @@ export const EditorContextProvider = ({
   onRendered,
   addPage,
   deletePage,
+  duplicatePage,
   openPageModal,
   loadViews,
   createDatabaseView,
@@ -207,6 +210,7 @@ export const EditorContextProvider = ({
       onRendered,
       addPage,
       deletePage,
+      duplicatePage,
       openPageModal,
       loadViews,
       createDatabaseView,
@@ -245,6 +249,7 @@ export const EditorContextProvider = ({
       onRendered,
       addPage,
       deletePage,
+      duplicatePage,
       openPageModal,
       loadViews,
       createDatabaseView,

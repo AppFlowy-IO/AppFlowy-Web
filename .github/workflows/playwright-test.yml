@@ -226,6 +226,50 @@ jobs:
           CI: true
           BASE_URL: http://localhost:3000
 
+      - name: Test summary
+        if: always()
+        run: |
+          if [ ! -f playwright-report/report.json ]; then
+            echo "## ${{ matrix.test-group.name }} — no report generated" >> $GITHUB_STEP_SUMMARY
+            exit 0
+          fi
+          node -e "
+            const r = require('./playwright-report/report.json');
+            const s = r.stats || {};
+            const passed = s.expected || 0;
+            const failed = s.unexpected || 0;
+            const flaky  = s.flaky || 0;
+            const skipped = s.skipped || 0;
+            const dur = ((s.duration || 0) / 1000).toFixed(1);
+            const icon = failed > 0 ? '❌' : '✅';
+
+            const lines = [];
+            lines.push('## ' + icon + ' ${{ matrix.test-group.name }} — ' + passed + ' passed, ' + failed + ' failed' + (flaky ? ', ' + flaky + ' flaky' : '') + ' (' + dur + 's)');
+            lines.push('');
+
+            // collect failures from nested suites
+            const failures = [];
+            function walk(suites, path) {
+              for (const s of suites) {
+                const p = path ? path + ' > ' + s.title : s.title;
+                for (const spec of s.specs || []) {
+                  if (!spec.ok) failures.push({ suite: p, title: spec.title, file: spec.file });
+                }
+                walk(s.suites || [], p);
+              }
+            }
+            walk(r.suites || [], '');
+
+            if (failures.length) {
+              lines.push('### Failed Tests');
+              lines.push('');
+              for (const f of failures) {
+                lines.push('- **' + f.title + '** — _' + f.suite + '_');
+              }
+            }
+            process.stdout.write(lines.join('\n') + '\n');
+          " >> $GITHUB_STEP_SUMMARY
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4

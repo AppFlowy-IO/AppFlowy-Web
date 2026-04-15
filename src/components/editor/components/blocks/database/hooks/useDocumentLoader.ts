@@ -35,14 +35,28 @@ export function useDocumentLoader({
 
   const loadWithRetry = useCallback(
     async (viewIdToLoad: string, retries = 3): Promise<YDoc | null> => {
-      if (!loadView) return null;
+      if (!loadView) {
+        Log.error('[useDocumentLoader] loadView not available', { viewIdToLoad });
+        return null;
+      }
 
       for (let attempt = 1; attempt <= retries; attempt++) {
         try {
+          Log.debug('[useDocumentLoader] attempt', { viewIdToLoad, attempt, retries });
           const result = await loadView(viewIdToLoad);
 
-          if (result) return result;
+          if (result) {
+            Log.debug('[useDocumentLoader] loadView returned doc', { viewIdToLoad, attempt });
+            return result;
+          }
+
+          Log.debug('[useDocumentLoader] loadView returned null', { viewIdToLoad, attempt });
         } catch (error) {
+          Log.error('[useDocumentLoader] loadView error', {
+            viewIdToLoad,
+            attempt,
+            error: error instanceof Error ? error.message : String(error),
+          });
           if (attempt === retries) {
             throw error;
           }
@@ -62,14 +76,18 @@ export function useDocumentLoader({
 
     const loadDocument = async () => {
       try {
+        Log.debug('[useDocumentLoader] loading doc for viewId', { viewId });
         const loadedDoc = await loadWithRetry(viewId);
 
-        Log.debug('[useDocumentLoader] loaded doc', { viewId });
+        Log.debug('[useDocumentLoader] loaded doc', { viewId, hasDoc: !!loadedDoc });
         setDoc(loadedDoc);
         setNotFound(false);
         setSyncBound(false);
       } catch (error) {
-        console.error('[useDocumentLoader] failed to load doc', { viewId, error });
+        Log.error('[useDocumentLoader] failed to load doc', {
+          viewId,
+          error: error instanceof Error ? error.message : String(error),
+        });
         setNotFound(true);
       }
     };

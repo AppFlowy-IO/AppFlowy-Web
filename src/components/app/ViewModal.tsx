@@ -354,6 +354,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         updatePage={updatePage}
         addPage={addPage}
         deletePage={deletePage}
+        duplicatePage={operations.duplicatePage}
         openPageModal={openPageModal}
         loadViews={loadViews}
         onWordCountChange={setWordCount}
@@ -371,6 +372,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
         checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
         loadRowDocument={operations.loadRowDocument}
         createRowDocument={operations.createRowDocument}
+        duplicateRowDocument={operations.duplicateRowDocument}
         updatePageIcon={operations.updatePageIcon}
         updatePageName={operations.updatePageName}
         generateAISummaryForRow={operations.generateAISummaryForRow}
@@ -392,12 +394,12 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     updatePage,
     addPage,
     deletePage,
+    operations,
     openPageModal,
     loadViews,
     setWordCount,
     handleUploadFile,
     scheduleDeferredCleanup,
-    operations,
     getMentionUser,
     eventEmitter,
     loadDatabaseRelations,

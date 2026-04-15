@@ -137,11 +137,17 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
 
   // Initialize page operations
   const {
-    addPage, deletePage: rawDeletePage, updatePage, updatePageIcon, updatePageName,
+    addPage, deletePage: rawDeletePage, duplicatePage, updatePage, updatePageIcon, updatePageName,
     movePage, deleteTrash, restorePage, createSpace, updateSpace,
     createDatabaseView, uploadFile, getSubscriptions, publish, unpublish,
     createOrphanedView,
-  } = usePageOperations({ outlineRef: stableOutlineRef, loadOutline, flushAllSync: syncContext.flushAllSync });
+  } = usePageOperations({
+    outlineRef: stableOutlineRef,
+    loadOutline,
+    flushAllSync: syncContext.flushAllSync,
+    syncAllToServer: syncContext.syncAllToServer,
+    loadViewChildren,
+  });
 
   // Check if current view has been deleted
   const viewHasBeenDeleted = useMemo(() => {
@@ -447,7 +453,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const {
     generateAISummaryForRow, generateAITranslateForRow,
     loadDatabasePrompts, testDatabasePromptConfig,
-    checkIfRowDocumentExists, loadRowDocument, createRowDocument,
+    checkIfRowDocumentExists, loadRowDocument, createRowDocument, duplicateRowDocument,
   } = useDatabaseOperations(enhancedLoadView, createRow);
 
   // ── Focused context values ──────────────────────────────────────────────────
@@ -507,6 +513,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       bindViewSync,
       addPage,
       deletePage: enhancedDeletePage,
+      duplicatePage,
       updatePage,
       updatePageIcon,
       updatePageName,
@@ -525,9 +532,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       generateAITranslateForRow,
       loadDatabasePrompts,
       testDatabasePromptConfig,
+      openPageModal,
       checkIfRowDocumentExists,
       loadRowDocument,
       createRowDocument,
+      duplicateRowDocument,
       getViewIdFromDatabaseId,
       getWordCount,
       setWordCount,
@@ -538,12 +547,13 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     }),
     [
       enhancedToView, loadViewMeta, enhancedLoadView, createRow, bindViewSync,
-      addPage, enhancedDeletePage, updatePage, updatePageIcon, updatePageName,
+      addPage, enhancedDeletePage, duplicatePage, updatePage, updatePageIcon, updatePageName,
       movePage, deleteTrash, restorePage, createSpace, updateSpace,
       createDatabaseView, uploadFile, getSubscriptions, publish, unpublish, createOrphanedView,
       generateAISummaryForRow, generateAITranslateForRow,
       loadDatabasePrompts, testDatabasePromptConfig,
-      checkIfRowDocumentExists, loadRowDocument, createRowDocument,
+      openPageModal,
+      checkIfRowDocumentExists, loadRowDocument, createRowDocument, duplicateRowDocument,
       getViewIdFromDatabaseId, getWordCount, setWordCount,
       getCollabHistory, previewCollabVersion, revertCollabVersion,
       authContext.onChangeWorkspace,

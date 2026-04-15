@@ -495,6 +495,7 @@ function AppPage() {
           updatePage={updatePage}
           addPage={addPage}
           deletePage={deletePage}
+          duplicatePage={operations.duplicatePage}
           openPageModal={openPageModal}
           loadViews={loadViews}
           onWordCountChange={setWordCount}
@@ -511,6 +512,7 @@ function AppPage() {
           checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
           loadRowDocument={operations.loadRowDocument}
           createRowDocument={operations.createRowDocument}
+          duplicateRowDocument={operations.duplicateRowDocument}
           updatePageIcon={operations.updatePageIcon}
           updatePageName={operations.updatePageName}
           generateAISummaryForRow={operations.generateAISummaryForRow}
@@ -554,6 +556,7 @@ function AppPage() {
         checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
         loadRowDocument={operations.loadRowDocument}
         createRowDocument={operations.createRowDocument}
+        duplicateRowDocument={operations.duplicateRowDocument}
         updatePageIcon={operations.updatePageIcon}
         updatePageName={operations.updatePageName}
         generateAISummaryForRow={operations.generateAISummaryForRow}

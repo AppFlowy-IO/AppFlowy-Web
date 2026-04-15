@@ -431,8 +431,11 @@ export const AddPageSelectors = {
  * Block selectors
  */
 export const BlockSelectors = {
+  addButton: (page: Page) => page.getByTestId('add-block'),
   dragHandle: (page: Page) => page.getByTestId('drag-block'),
   hoverControls: (page: Page) => page.getByTestId('hover-controls'),
+  controlsMenu: (page: Page) => page.getByTestId('controls-menu'),
+  controlsMenuAction: (page: Page, action: string) => page.getByTestId('controls-menu').getByTestId(action),
   slashMenuGrid: (page: Page) => page.getByTestId('slash-menu-grid'),
   blockByType: (page: Page, type: string) => page.locator(`[data-block-type="${type}"]`),
   /** Returns a CSS selector string for use with `.locator()` */

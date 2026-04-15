@@ -16,6 +16,7 @@ import { fetchPageCollab } from '@/application/services/js-services/fetch';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
+import * as Y from 'yjs';
 
 // ============================================================================
 // Types
@@ -153,8 +154,35 @@ export async function openView(
   // Step 1: Open from IndexedDB
   const doc = await openCollabDB(viewId);
 
-  // Step 2: Check cache
-  const fromCache = hasCollabCache(doc);
+  // Step 2: Check cache — also detect empty-shell documents that were cached
+  // during a previous load when the server hadn't finished duplication yet.
+  let fromCache = hasCollabCache(doc);
+
+  if (fromCache) {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+    const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+    const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
+    const blockCount = blocks?.size ?? 0;
+
+    // If the cached document is an empty shell (≤2 blocks = page + empty paragraph),
+    // treat it as uncached so we re-fetch from the server.
+    if (document && blockCount <= 2) {
+      const meta = document.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+      const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
+      const hasTextContent = textMap
+        ? Array.from(textMap.values()).some((v) => {
+            if (v instanceof Y.Text) return v.toJSON().length > 0;
+            if (typeof v === 'string') return v.length > 0;
+            return false;
+          })
+        : false;
+
+      if (!hasTextContent) {
+        Log.debug('[ViewLoader] cached document is empty shell, re-fetching', { viewId, blockCount });
+        fromCache = false;
+      }
+    }
+  }
 
   Log.debug('[ViewLoader] cache check', {
     viewId,
@@ -162,9 +190,27 @@ export async function openView(
     durationMs: Date.now() - startedAt,
   });
 
-  // Step 3: Fetch from server if not cached
+  // Step 3: Fetch from server if not cached (or cache was an empty shell).
+  // Retry with backoff — after page duplication the server worker may need
+  // a moment to persist all row documents.
   if (!fromCache) {
-    await fetchAndApply(workspaceId, viewId, doc);
+    const MAX_RETRIES = 3;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await fetchAndApply(workspaceId, viewId, doc);
+        break;
+      } catch (e) {
+        if (attempt === MAX_RETRIES) throw e;
+        Log.debug('[ViewLoader] openView fetch retry', {
+          viewId,
+          attempt,
+          maxRetries: MAX_RETRIES,
+          error: e instanceof Error ? e.message : String(e),
+        });
+        await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      }
+    }
   }
 
   // Step 4: Detect collab type
@@ -225,8 +271,42 @@ export async function openRowSubDocument(
   // Use cached doc to preserve sync state across reopens
   const doc = await getOrCreateRowSubDoc(documentId);
 
-  // Check cache
-  const fromCache = hasCollabCache(doc);
+  // Check cache — but also verify the cached doc has real content.
+  // During row duplication the local doc may be created as an empty shell
+  // (by openLocalDocument → initializeDocumentStructure). In that case
+  // we must fetch from the server to get the worker-created content.
+  let fromCache = hasCollabCache(doc);
+
+  if (fromCache) {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+    const document = sharedRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+    const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
+    const blockCount = blocks?.size ?? 0;
+
+    // initializeDocumentStructure creates exactly 2 blocks (page + empty paragraph).
+    // Treat the cache as an empty shell only when block count is minimal AND
+    // there is no real text content — this avoids re-fetching valid docs that
+    // happen to have just one paragraph of text.
+    if (blockCount <= 2) {
+      const meta = document?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+      const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
+      const hasTextContent = textMap
+        ? Array.from(textMap.values()).some((v) => {
+            if (v instanceof Y.Text) return v.toJSON().length > 0;
+            if (typeof v === 'string') return v.length > 0;
+            return false;
+          })
+        : false;
+
+      if (!hasTextContent) {
+        Log.debug('[ViewLoader] rowSubDoc cache is empty shell, will fetch from server', {
+          documentId,
+          blockCount,
+        });
+        fromCache = false;
+      }
+    }
+  }
 
   Log.debug('[ViewLoader] rowSubDoc cache check', {
     documentId,
@@ -234,9 +314,35 @@ export async function openRowSubDocument(
     durationMs: Date.now() - startedAt,
   });
 
-  // Fetch from server if not cached
+  // Fetch from server if not cached or cache is empty.
+  // Retry with backoff — the server-side worker may need a moment to create
+  // the document after a row duplication.
   if (!fromCache) {
-    await fetchAndApply(workspaceId, documentId, doc);
+    const MAX_RETRIES = 6;
+    let fetched = false;
+
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        await fetchAndApply(workspaceId, documentId, doc);
+        fetched = true;
+        break;
+      } catch (e) {
+        Log.debug('[ViewLoader] rowSubDoc fetch failed', {
+          documentId,
+          attempt,
+          maxRetries: MAX_RETRIES,
+          error: e instanceof Error ? e.message : String(e),
+        });
+
+        if (attempt < MAX_RETRIES) {
+          await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+        }
+      }
+    }
+
+    if (!fetched) {
+      Log.warn('[ViewLoader] rowSubDoc fetch exhausted retries, using local doc', { documentId });
+    }
   }
 
   Log.debug('[ViewLoader] openRowSubDocument complete', {

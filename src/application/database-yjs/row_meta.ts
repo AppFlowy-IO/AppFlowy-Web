@@ -18,7 +18,7 @@ export function generateRowMeta(rowId: string, data: Record<string, string | boo
     [key: string]: string | boolean | null;
   } = {};
 
-  if (isEmptyDocument) {
+  if (isEmptyDocument !== undefined && isEmptyDocument !== null) {
     Object.assign(result, { [isEmptyDocumentKey]: isEmptyDocument });
   }
 

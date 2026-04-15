@@ -11,10 +11,18 @@ import { ReactComponent as TimeIcon } from '@/assets/icons/time.svg';
 import { ViewService, PageService } from '@/application/services/domains';
 import { findView } from '@/components/_shared/outline/utils';
 import { useAppOverlayContext } from '@/components/app/app-overlay/AppOverlayContext';
-import { useRefreshOutline, useAppOutline, useAppView, useCurrentWorkspaceId, useLoadViewChildren } from '@/components/app/app.hooks';
+import {
+  useRefreshOutline,
+  useAppOutline,
+  useAppView,
+  useCurrentWorkspaceId,
+  useLoadViewChildren,
+} from '@/components/app/app.hooks';
 import { useSyncInternal } from '@/components/app/contexts/SyncInternalContext';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
+
+const DUPLICATE_PRE_SYNC_TIMEOUT_MS = 8000;
 
 function MoreActionsContent({
   itemClicked,
@@ -27,11 +35,7 @@ function MoreActionsContent({
   onOpenHistory?: () => void;
 }) {
   const { t } = useTranslation();
-  const {
-    openDeleteModal,
-    showBlockingLoader,
-    hideBlockingLoader,
-  } = useAppOverlayContext();
+  const { openDeleteModal, showBlockingLoader, hideBlockingLoader } = useAppOverlayContext();
   const workspaceId = useCurrentWorkspaceId();
   const view = useAppView(viewId);
   const layout = view?.layout;
@@ -47,6 +51,7 @@ function MoreActionsContent({
   const refreshOutline = useRefreshOutline();
   const loadViewChildren = useLoadViewChildren();
   const { syncAllToServer } = useSyncInternal();
+  const duplicateCopySuffix = useMemo(() => ` (${t('menuAppHeader.pageNameSuffix')})`, [t]);
   const handleDuplicateClick = useCallback(async () => {
     if (!workspaceId) return;
     itemClicked?.();
@@ -57,8 +62,18 @@ function MoreActionsContent({
       // Sync all collab documents to the server via HTTP API before duplicating
       // This is similar to desktop's collab_full_sync_batch - ensures the server
       // has the latest data before the duplicate operation
-      await syncAllToServer(workspaceId);
-      await PageService.duplicate(workspaceId, viewId);
+      await Promise.race([
+        syncAllToServer(workspaceId),
+        new Promise<void>((resolve) => {
+          window.setTimeout(resolve, DUPLICATE_PRE_SYNC_TIMEOUT_MS);
+        }),
+      ]);
+      await PageService.duplicate(workspaceId, viewId, {
+        openAfterDuplicate: true,
+        includeChildren: true,
+        suffix: duplicateCopySuffix,
+        source: 0,
+      });
       void refreshOutline?.();
       // The shallow outline (depth=2) doesn't include children beyond space level.
       // Reload the parent view's children so the new duplicate appears in the sidebar.
@@ -74,7 +89,19 @@ function MoreActionsContent({
     } finally {
       hideBlockingLoader();
     }
-  }, [workspaceId, viewId, refreshOutline, loadViewChildren, parentViewId, itemClicked, t, syncAllToServer, showBlockingLoader, hideBlockingLoader]);
+  }, [
+    workspaceId,
+    viewId,
+    refreshOutline,
+    loadViewChildren,
+    parentViewId,
+    itemClicked,
+    t,
+    syncAllToServer,
+    showBlockingLoader,
+    hideBlockingLoader,
+    duplicateCopySuffix,
+  ]);
 
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const containerRef = useCallback((el: HTMLElement | null) => {
@@ -84,8 +111,7 @@ function MoreActionsContent({
   const isDocument = layout === ViewLayout.Document;
 
   return (
-    <DropdownMenuGroup
-    >
+    <DropdownMenuGroup>
       <div ref={containerRef} />
       <DropdownMenuItem
         data-testid={'more-page-duplicate'}
@@ -95,30 +121,31 @@ function MoreActionsContent({
         <DuplicateIcon />
         {t('button.duplicate')}
       </DropdownMenuItem>
-      {container && <MovePagePopover
-        viewId={viewId}
-        onMoved={itemClicked}
-        popoverContentProps={{
-          side: 'right',
-          align: 'start',
-          container,
-        }}
-      >
-        <DropdownMenuItem
-          data-testid={'more-page-move-to'}
-          onSelect={(e) => {
-            e.preventDefault();
+      {container && (
+        <MovePagePopover
+          viewId={viewId}
+          onMoved={itemClicked}
+          popoverContentProps={{
+            side: 'right',
+            align: 'start',
+            container,
           }}
-          disabled={!canBeMoved(view, parentView)}
         >
-          <MoveToIcon />
-          {t('disclosureAction.moveTo')}
-        </DropdownMenuItem>
-      </MovePagePopover>
-      }
+          <DropdownMenuItem
+            data-testid={'more-page-move-to'}
+            onSelect={(e) => {
+              e.preventDefault();
+            }}
+            disabled={!canBeMoved(view, parentView)}
+          >
+            <MoveToIcon />
+            {t('disclosureAction.moveTo')}
+          </DropdownMenuItem>
+        </MovePagePopover>
+      )}
 
       <DropdownMenuItem
-        data-testid="view-action-delete"
+        data-testid='view-action-delete'
         variant={'destructive'}
         onSelect={() => {
           openDeleteModal(viewId);
@@ -130,7 +157,7 @@ function MoreActionsContent({
 
       {isDocument && onOpenHistory && (
         <DropdownMenuItem
-          data-testid="more-page-version-history"
+          data-testid='more-page-version-history'
           onSelect={(event) => {
             event.preventDefault();
             onOpenHistory();
@@ -141,7 +168,6 @@ function MoreActionsContent({
           {t('versionHistory.versionHistory')}
         </DropdownMenuItem>
       )}
-
     </DropdownMenuGroup>
   );
 }

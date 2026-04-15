@@ -5,6 +5,7 @@ import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
+  DuplicatePageOptions,
   CreatePagePayload,
   CreatePageResponse,
   CreateRow,
@@ -63,8 +64,12 @@ export interface AppOperationsContextType {
   // ── Page CRUD ──────────────────────────────────────────────────────
   /** Create a new page under the given parent. */
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
+  /** Open a view in a modal overlay (used by inline database creation). */
+  openPageModal?: (viewId: string) => void;
   /** Soft-delete a page (move to trash). */
   deletePage?: (viewId: string) => Promise<void>;
+  /** Duplicate a page, optionally refreshing its parent children in the outline. */
+  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
   /** Update page properties (name, cover, etc.). */
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   /** Update just the page icon. */
@@ -119,6 +124,8 @@ export interface AppOperationsContextType {
   loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
   /** Create a new row document (returns encoded initial state). */
   createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
+  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   /** Resolve a database ID to its primary view ID. */
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
 

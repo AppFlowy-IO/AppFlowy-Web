@@ -38,7 +38,7 @@ import { createSelectOptionCell } from '@/application/database-yjs/fields/select
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { dateFilterFillData, filterFillData, getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { getOptionsFromRow, initialDatabaseRow } from '@/application/database-yjs/row';
-import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
+import { generateRowMeta, getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useDatabaseViewLayout, useFieldSelector, useFieldType } from '@/application/database-yjs/selector';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
@@ -1469,119 +1469,8 @@ function cloneCell(fieldType: FieldType, referenceCell?: YDatabaseCell) {
   return cell;
 }
 
-export function useDuplicateRowDispatch() {
-  const database = useDatabase();
-  const sharedRoot = useSharedRoot();
-  const createRow = useCreateRow();
-  const guid = useDocGuid();
-  const rowMap = useRowMap();
-
-  return useCallback(
-    async (referenceRowId: string) => {
-      const referenceRowDoc = rowMap?.[referenceRowId];
-
-      if (!referenceRowDoc) {
-        throw new Error(`Row not found`);
-      }
-
-      if (!createRow) {
-        throw new Error('No createRow function');
-      }
-
-      const referenceRowSharedRoot = referenceRowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-      const referenceRow = referenceRowSharedRoot.get(YjsEditorKey.database_row);
-      const referenceCells = referenceRow.get(YjsDatabaseKey.cells);
-      const referenceMeta = getMetaJSON(referenceRowId, referenceRowSharedRoot.get(YjsEditorKey.meta));
-
-      const rowId = uuidv4();
-
-      const icon = referenceMeta.icon;
-      const cover = referenceMeta.cover;
-      const hasDocument = referenceMeta.isEmptyDocument === false;
-
-      const newMeta = generateRowMeta(rowId, {
-        [RowMetaKey.IsDocumentEmpty]: !hasDocument,
-        [RowMetaKey.IconId]: icon,
-        [RowMetaKey.CoverId]: cover ? JSON.stringify(cover) : null,
-      });
-
-      const rowKey = getRowKey(guid, rowId);
-      const rowDoc = await createRow(rowKey);
-
-      rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
-
-        const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-
-        const row = rowSharedRoot.get(YjsEditorKey.database_row);
-
-        const meta = rowSharedRoot.get(YjsEditorKey.meta);
-
-        Object.keys(newMeta).forEach((key) => {
-          const value = newMeta[key];
-
-          if (value) {
-            meta.set(key, value);
-          }
-        });
-
-        const cells = row.get(YjsDatabaseKey.cells);
-        const fields = database.get(YjsDatabaseKey.fields);
-
-        Object.keys(referenceCells.toJSON()).forEach((fieldId) => {
-          try {
-            const referenceCell = referenceCells.get(fieldId);
-
-            if (!referenceCell) {
-              throw new Error(`Cell not found`);
-            }
-
-            const fieldType = Number(fields.get(fieldId)?.get(YjsDatabaseKey.type));
-
-            const cell = cloneCell(fieldType, referenceCell);
-
-            cells.set(fieldId, cell);
-          } catch (e) {
-            console.error(e);
-          }
-        });
-
-        row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-      });
-
-      executeOperationWithAllViews(
-        sharedRoot,
-        database,
-        (view) => {
-          const rowOrders = view.get(YjsDatabaseKey.row_orders);
-
-          if (!rowOrders) {
-            throw new Error(`Row orders not found`);
-          }
-
-          const row = {
-            id: rowId,
-            height: 36,
-          };
-
-          const referenceIndex = rowOrders.toArray().findIndex((row) => row.id === referenceRowId);
-          const targetIndex = referenceIndex + 1;
-
-          if (targetIndex >= rowOrders.length) {
-            rowOrders.push([row]);
-            return;
-          }
-
-          rowOrders.insert(targetIndex, [row]);
-        },
-        'duplicateRowDispatch'
-      );
-
-      return rowId;
-    },
-    [createRow, database, guid, rowMap, sharedRoot]
-  );
-}
+// Re-export from the extracted dispatch module
+export { useDuplicateRowDispatch } from './dispatch/row';
 
 export function useClearSortingDispatch() {
   const sharedRoot = useSharedRoot();

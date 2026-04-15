@@ -75,12 +75,16 @@ export interface DatabaseContextState {
    * Returns the doc_state (Y.js update) to initialize the local document.
    */
   createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
+  /** Fire-and-forget: ask the server to duplicate the row document with inline DB deep copy. */
+  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   onRendered?: () => void;
   showActions?: boolean;
   workspaceId: string;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
+  addPage?: (parentId: string, payload: import('@/application/types').CreatePagePayload) => Promise<import('@/application/types').CreatePageResponse>;
+  openPageModal?: (viewId: string) => void;
   deletePage?: (viewId: string) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;

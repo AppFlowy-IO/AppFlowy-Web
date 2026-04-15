@@ -11,6 +11,7 @@ import {
 } from '@/application/services/js-services/http/publish-api';
 import {
   CreateDatabaseViewPayload,
+  DuplicatePageOptions,
   CreatePagePayload,
   CreateSpacePayload,
   Role,
@@ -26,14 +27,20 @@ import { findParentView, findView, findViewInShareWithMe } from '@/components/_s
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 
 // Hook for managing page and space operations
+const DUPLICATE_PRE_SYNC_TIMEOUT_MS = 8000;
+
 export function usePageOperations({
   outlineRef,
   loadOutline,
   flushAllSync,
+  syncAllToServer,
+  loadViewChildren,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
   flushAllSync?: () => void;
+  syncAllToServer?: (workspaceId: string) => Promise<void>;
+  loadViewChildren?: (viewId: string) => Promise<View[]>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
@@ -142,6 +149,41 @@ export function usePageOperations({
       }
     },
     [currentWorkspaceId]
+  );
+
+  const duplicatePage = useCallback(
+    async (viewId: string, options: DuplicatePageOptions = {}) => {
+      if (!currentWorkspaceId) {
+        throw new Error('No workspace or service found');
+      }
+
+      try {
+        // Sync all collab documents to the server via HTTP API before duplicating.
+        // This ensures the server has the latest data (including unregistered row
+        // documents) before the duplicate operation, matching MoreActionsContent behavior.
+        if (syncAllToServer) {
+          await Promise.race([
+            syncAllToServer(currentWorkspaceId),
+            new Promise<void>((resolve) => {
+              window.setTimeout(resolve, DUPLICATE_PRE_SYNC_TIMEOUT_MS);
+            }),
+          ]);
+        } else {
+          flushAllSync?.();
+        }
+
+        await PageService.duplicate(currentWorkspaceId, viewId, options);
+        await loadOutline?.(currentWorkspaceId, false);
+
+        if (options.parentViewId) {
+          ViewService.invalidateCache(currentWorkspaceId, options.parentViewId);
+          await loadViewChildren?.(options.parentViewId);
+        }
+      } catch (e) {
+        return Promise.reject(e);
+      }
+    },
+    [currentWorkspaceId, syncAllToServer, flushAllSync, loadOutline, loadViewChildren]
   );
 
   // Move page
@@ -424,6 +466,7 @@ export function usePageOperations({
   return {
     addPage,
     deletePage,
+    duplicatePage,
     updatePage,
     updatePageIcon,
     updatePageName,
