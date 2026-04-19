@@ -59,6 +59,8 @@ export interface AppOutlineContextType {
   refreshOutline?: () => Promise<void>;
   /** Load cross-database relation metadata for the workspace. */
   loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  /** Synchronous reverse lookup: viewId → databaseId. */
+  getDatabaseIdForViewId?: (viewId: string) => string | undefined;
   /** Resolve a user UUID to their mentionable-person profile. */
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   /** Load all mentionable users (workspace members) for @-mention autocomplete. */

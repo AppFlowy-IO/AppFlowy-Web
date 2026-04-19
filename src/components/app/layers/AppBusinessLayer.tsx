@@ -98,6 +98,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     loadRecentViews,
     loadTrash,
     loadDatabaseRelations,
+    getCachedDatabaseRelations,
+    getDatabaseIdForViewId,
     loadViews,
     getMentionUser,
     loadMentionableUsers,
@@ -117,7 +119,11 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
-  const { loadView, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory, previewCollabVersion } = useViewOperations();
+  const { loadView, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory, previewCollabVersion } = useViewOperations({
+    getDatabaseIdForViewId,
+    getCachedDatabaseRelations,
+    loadDatabaseRelations,
+  });
 
   // Initialize row operations
   const { createRow } = useRowOperations();
@@ -492,6 +498,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       loadViews,
       refreshOutline,
       loadDatabaseRelations,
+      getDatabaseIdForViewId,
       getMentionUser,
       loadMentionableUsers,
     }),
@@ -499,7 +506,8 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       outline, favoriteViews, recentViews, trashList, loadedViewIds,
       loadViewChildren, loadViewChildrenBatch, markViewChildrenStale,
       loadFavoriteViews, loadRecentViews, loadTrash, loadViews,
-      refreshOutline, loadDatabaseRelations, getMentionUser, loadMentionableUsers,
+      refreshOutline, loadDatabaseRelations, getDatabaseIdForViewId,
+      getMentionUser, loadMentionableUsers,
     ]
   );
 
