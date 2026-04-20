@@ -1,5 +1,5 @@
 import { AppOutlineResponse } from '@/application/services/services.type';
-import { View } from '@/application/types';
+import { AFDatabaseListPage, View } from '@/application/types';
 
 import { APIResponse, executeAPIRequest, getAxios } from './core';
 
@@ -74,6 +74,42 @@ export async function createOrphanedView(workspaceId: string, payload: { documen
   }
 
   return new Uint8Array(docStateArray);
+}
+
+export async function getDatabaseViews(workspaceId: string): Promise<AFDatabaseListPage> {
+  // Server caps `limit` at 200 (LIST_DATABASE_MAX_LIMIT). Walk offsets until
+  // has_more is false so workspaces with >200 databases don't silently drop
+  // entries from the cache consumed by useWorkspaceData.
+  const PAGE_SIZE = 200;
+  const aggregated: AFDatabaseListPage['databases'] = [];
+  let offset = 0;
+
+  // Hard cap to guarantee termination if the server ever fails to unset
+  // `has_more` (defensive against a buggy or misbehaving backend).
+  const MAX_PAGES = 100;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const url = `/api/workspace/${workspaceId}/database?offset=${offset}&limit=${PAGE_SIZE}`;
+    const resp = await executeAPIRequest<AFDatabaseListPage>(() =>
+      getAxios()?.get<APIResponse<AFDatabaseListPage>>(url)
+    );
+
+    if (resp?.databases?.length) {
+      aggregated.push(...resp.databases);
+    }
+
+    if (!resp?.has_more) {
+      return { databases: aggregated, has_more: false };
+    }
+
+    offset += PAGE_SIZE;
+  }
+
+  console.warn(
+    `[getDatabaseViews] Reached pagination hard cap (${MAX_PAGES} pages, ${aggregated.length} databases). ` +
+    'Some databases may be missing from the cache.'
+  );
+  return { databases: aggregated, has_more: false };
 }
 
 export async function checkIfCollabExists(workspaceId: string, objectId: string) {

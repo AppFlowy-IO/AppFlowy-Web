@@ -594,7 +594,7 @@ export function useDuplicateRowDispatch() {
                 cachedDoc = getCachedProviderDoc(sourceDocId) ?? cachedDoc;
               }
             } else {
-              cachedDoc = getCachedProviderDoc(sourceDocId) ?? null;
+              cachedDoc = getCachedProviderDoc(sourceDocId) ?? undefined;
             }
 
             if (cachedDoc) {

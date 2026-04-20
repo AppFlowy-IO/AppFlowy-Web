@@ -58,7 +58,6 @@ export type { RegisterSyncContext, UpdateCollabInfo, SyncContextType } from './s
  * **Called by:**
  *   - `useViewOperations.bindViewSync()` — after a document/database view loads
  *   - `useViewOperations.createRow()` — immediately after creating a new database row
- *   - `useDatabaseIdentity.registerWorkspaceDatabaseDoc()` — lazily on first database view
  *   - `useBindViewSync` — simplified binding used by the Database component
  *   - `rebuildCollabDoc()` — internally during version-reset or revert to re-register
  *     the rebuilt doc

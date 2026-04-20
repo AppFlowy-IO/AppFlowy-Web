@@ -18,7 +18,7 @@ import {
 } from '@/components/_shared/outline/mergeOutline';
 import { findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import { notification } from '@/proto/messages';
-import { createDeduplicatedNoArgsRequest } from '@/utils/deduplicateRequest';
+import { createDeduplicatedNoArgsRequest, createDeduplicatedRequest } from '@/utils/deduplicateRequest';
 import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -168,6 +168,8 @@ export function useWorkspaceData() {
   const [trashList, setTrashList] = useState<View[]>();
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
+  // Reverse map: viewId → databaseId (built from the same endpoint response)
+  const viewToDatabaseRef = useRef<Record<string, string> | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
@@ -894,36 +896,61 @@ export function useWorkspaceData() {
     return workspaceDatabasesRef.current;
   }, []);
 
+  // Get database_id for a given view_id (synchronous, from cached reverse map)
+  const getDatabaseIdForViewId = useCallback((viewId: string): string | undefined => {
+    return viewToDatabaseRef.current?.[viewId];
+  }, []);
+
   // Internal helper to fetch and update database relations
   const fetchAndUpdateDatabaseRelations = useCallback(async (silent = false) => {
     if (!currentWorkspaceId) {
       return;
     }
 
-    const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
-
-    if (!selectedWorkspace) return;
-
     try {
-      const res = await ViewService.getDatabaseRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
+      const resp = await ViewService.getDatabaseViews(currentWorkspaceId);
 
-      if (res) {
-        workspaceDatabasesRef.current = res;
-        setWorkspaceDatabases(res);
+      if (resp) {
+        // Flatten into DatabaseRelations: { database_id → primary view_id }
+        const relations: DatabaseRelations = {};
+        // Build reverse map: { view_id → database_id }
+        const viewToDb: Record<string, string> = {};
+
+        for (const db of resp.databases) {
+          // Pick the best "primary" view: prefer container + non-embedded, then non-embedded, then first.
+          const primary =
+            db.views.find((v) => v.is_container && !v.embedded) ??
+            db.views.find((v) => !v.embedded) ??
+            db.views[0];
+
+          if (primary) {
+            relations[db.database_id] = primary.view_id;
+          }
+
+          // Map every view in this database to the database_id
+          for (const v of db.views) {
+            viewToDb[v.view_id] = db.database_id;
+          }
+        }
+
+        workspaceDatabasesRef.current = relations;
+        viewToDatabaseRef.current = viewToDb;
+        setWorkspaceDatabases(relations);
+        return relations;
       }
-
-      return res;
     } catch (e) {
       if (!silent) {
         console.error(e);
       }
     }
-  }, [currentWorkspaceId, userWorkspaceInfo?.selectedWorkspace]);
+  }, [currentWorkspaceId]);
 
-  // Load database relations (returns cached if available, fetches otherwise)
-  const loadDatabaseRelations = useCallback(async () => {
-    // Return cached data if already loaded to avoid unnecessary re-renders
-    if (workspaceDatabasesRef.current) {
+  // Load database relations (returns cached if available, fetches otherwise).
+  // Pass `forceRefresh=true` to bypass the cache — required after a new database
+  // is created mid-session, since the HTTP snapshot has no push-notification path
+  // and callers looking up a just-created id would otherwise see stale data.
+  const loadDatabaseRelations = useCallback(async (forceRefresh = false) => {
+    if (!forceRefresh && workspaceDatabasesRef.current) {
       return workspaceDatabasesRef.current;
     }
 
@@ -937,7 +964,11 @@ export function useWorkspaceData() {
   }, [fetchAndUpdateDatabaseRelations]);
 
   const enhancedLoadDatabaseRelations = useMemo(() => {
-    return createDeduplicatedNoArgsRequest(loadDatabaseRelations);
+    // Dedupe concurrent calls, keying on `forceRefresh` so a pending cached-read
+    // doesn't absorb a later force-refresh request.
+    return createDeduplicatedRequest(loadDatabaseRelations, (forceRefresh) =>
+      forceRefresh ? 'force' : 'cached'
+    );
   }, [loadDatabaseRelations]);
 
   // Load views based on variant
@@ -1023,6 +1054,7 @@ export function useWorkspaceData() {
     // Clear database relations cache when switching workspaces to prevent
     // cross-workspace data contamination
     workspaceDatabasesRef.current = undefined;
+    viewToDatabaseRef.current = undefined;
     setWorkspaceDatabases(undefined);
     void loadOutline(currentWorkspaceId, true);
     void (async () => {
@@ -1054,6 +1086,7 @@ export function useWorkspaceData() {
     loadTrash,
     loadDatabaseRelations: enhancedLoadDatabaseRelations,
     getCachedDatabaseRelations,
+    getDatabaseIdForViewId,
     refreshDatabaseRelationsInBackground,
     loadViews,
     getMentionUser,

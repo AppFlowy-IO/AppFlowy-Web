@@ -66,6 +66,7 @@ export {
   getAppTrash,
   createOrphanedView,
   checkIfCollabExists,
+  getDatabaseViews,
 } from './view-api';
 
 // Page

@@ -4,8 +4,6 @@
  * Module-level state replaces the singleton class instance state.
  */
 import * as random from 'lib0/random';
-import * as Y from 'yjs';
-
 import { openCollabDB } from '@/application/db';
 import { Log } from '@/utils/log';
 import {
@@ -39,7 +37,6 @@ import {
   unpublishView as unpublishViewAPI,
   updatePublishConfig as updatePublishConfigAPI,
   updatePublishNamespace as updatePublishNamespaceAPI,
-  getCollab,
   getCurrentUser as getCurrentUserAPI,
   getUserWorkspaceInfo as getUserWorkspaceInfoAPI,
   duplicatePublishView as duplicatePublishViewAPI,
@@ -48,17 +45,13 @@ import { emit, EventType } from '@/application/session';
 import { afterAuth, AUTH_CALLBACK_URL, saveRedirectTo } from '@/application/session/sign_in';
 import { getTokenParsed } from '@/application/session/token';
 import {
-  DatabaseRelations,
   DuplicatePublishView,
   DuplicatePublishViewResponse,
   PublishViewPayload,
-  Types,
   UpdatePublishConfigPayload,
   UploadPublishNamespacePayload,
   UserWorkspaceInfo,
-  YjsEditorKey,
 } from '@/application/types';
-import { applyYDoc } from '@/application/ydoc/apply';
 import { registerUpload, unregisterUpload } from '@/utils/upload-tracker';
 
 // ============================================================================
@@ -339,21 +332,6 @@ export async function duplicatePublishViewTransformed(params: DuplicatePublishVi
     viewId: response.view_id,
     databaseMappings: response.database_mappings || {},
   };
-}
-
-export async function getAppDatabaseViewRelationsFromCollab(workspaceId: string, databaseStorageId: string) {
-  const res = await getCollab(workspaceId, databaseStorageId, Types.WorkspaceDatabase);
-  const doc = new Y.Doc();
-
-  applyYDoc(doc, res.data);
-
-  const { databases } = doc.getMap(YjsEditorKey.data_section).toJSON();
-  const result: DatabaseRelations = {};
-
-  databases.forEach((database: { database_id: string; views: string[] }) => {
-    result[database.database_id] = database.views[0];
-  });
-  return result;
 }
 
 export async function uploadFileWithTracking(workspaceId: string, viewId: string, file: File, onProgress?: (progress: number) => void) {

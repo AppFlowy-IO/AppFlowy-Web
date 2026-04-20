@@ -44,12 +44,24 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
   return false;
 }
 
+interface UseViewOperationsParams {
+  /** Synchronous lookup: viewId → databaseId (from cached reverse map). */
+  getDatabaseIdForViewId?: (viewId: string) => string | undefined;
+  /** Synchronous lookup: returns the cached DatabaseRelations map. */
+  getCachedDatabaseRelations?: () => import('@/application/types').DatabaseRelations | undefined;
+  /** Async loader: ensures database relations are fetched, returns the map. */
+  loadDatabaseRelations?: (forceRefresh?: boolean) => Promise<import('@/application/types').DatabaseRelations | undefined>;
+}
+
 // Hook for managing view-related operations
-export function useViewOperations() {
-  const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
+export function useViewOperations({
+  getDatabaseIdForViewId,
+  getCachedDatabaseRelations,
+  loadDatabaseRelations,
+}: UseViewOperationsParams = {}) {
+  const { currentWorkspaceId } = useAuthInternal();
   const { registerSyncContext, eventEmitter } = useSyncInternal();
   const navigate = useNavigate();
-  const databaseStorageId = userWorkspaceInfo?.selectedWorkspace?.databaseStorageId;
 
   const [awarenessMap, setAwarenessMap] = useState<Record<string, Awareness>>({});
   // Ref for stable access to awarenessMap in callbacks (prevents bindViewSync recreation)
@@ -83,8 +95,9 @@ export function useViewOperations() {
 
   const { resolveCollabObjectId, getViewIdFromDatabaseId } = useDatabaseIdentity({
     currentWorkspaceId,
-    databaseStorageId,
-    registerSyncContext,
+    getDatabaseIdForViewId,
+    getCachedDatabaseRelations,
+    loadDatabaseRelations,
   });
 
   // Check if view should be readonly based on access permissions

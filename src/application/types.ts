@@ -962,6 +962,28 @@ export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => vo
 
 export type DatabaseRelations = Record<DatabaseId, ViewId>;
 
+/** A single view that belongs to a database (from server endpoint). */
+export interface AFDatabaseViewItem {
+  view_id: string;
+  layout: number;
+  is_container: boolean;
+  embedded: boolean;
+  name: string;
+  parent_view_id: string | null;
+}
+
+/** A database and all the views that belong to it (from server endpoint). */
+export interface AFDatabaseWithViews {
+  database_id: string;
+  views: AFDatabaseViewItem[];
+}
+
+/** Response shape of GET /api/workspace/{id}/database?offset=&limit= */
+export interface AFDatabaseListPage {
+  databases: AFDatabaseWithViews[];
+  has_more: boolean;
+}
+
 export interface Workspace {
   icon: string;
   id: string;

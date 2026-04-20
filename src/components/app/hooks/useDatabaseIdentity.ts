@@ -1,15 +1,23 @@
 import { useCallback, useRef } from 'react';
 
-import { openCollabDB } from '@/application/db';
-import { DatabaseId, Types, ViewId, YDoc, YjsEditorKey } from '@/application/types';
+import { DatabaseId, DatabaseRelations, Types, ViewId, YDoc } from '@/application/types';
 import { getDatabaseIdFromDoc } from '@/application/view-loader';
-import type { SyncContextType } from '@/components/ws/useSync';
 import { Log } from '@/utils/log';
 
 type UseDatabaseIdentityParams = {
   currentWorkspaceId?: string;
-  databaseStorageId?: string;
-  registerSyncContext: SyncContextType['registerSyncContext'];
+  /** Synchronous lookup: viewId → databaseId (from the cached reverse map). */
+  getDatabaseIdForViewId?: (viewId: string) => string | undefined;
+  /** Synchronous lookup: returns the cached DatabaseRelations map. */
+  getCachedDatabaseRelations?: () => DatabaseRelations | undefined;
+  /**
+   * Async loader: ensures the database relations are fetched, returns the map.
+   * Pass `forceRefresh=true` to bypass the workspace-level cache, which is
+   * required when retrying a lookup after a cache miss — the cached snapshot
+   * could have been warmed before a newly-created database existed, and the
+   * HTTP endpoint has no push-update channel to invalidate it.
+   */
+  loadDatabaseRelations?: (forceRefresh?: boolean) => Promise<DatabaseRelations | undefined>;
 };
 
 /**
@@ -22,54 +30,35 @@ type UseDatabaseIdentityParams = {
  * For database layouts those two differ:
  * - `viewId` = database-view id (grid/board/calendar layout)
  * - `objectId` = shared database id
+ *
+ * The mapping data comes from the server `GET /database-views` endpoint,
+ * cached in `useWorkspaceData`.
  */
 export function useDatabaseIdentity({
   currentWorkspaceId,
-  databaseStorageId,
-  registerSyncContext,
+  getDatabaseIdForViewId,
+  getCachedDatabaseRelations,
+  loadDatabaseRelations,
 }: UseDatabaseIdentityParams) {
-  const workspaceDatabaseDocMapRef = useRef<Map<string, YDoc>>(new Map());
   const databaseIdViewIdMapRef = useRef<Map<DatabaseId, ViewId>>(new Map());
 
-  const registerWorkspaceDatabaseDoc = useCallback(
-    async (workspaceId: string, workspaceDatabaseStorageId: string) => {
-      const doc = await openCollabDB(workspaceDatabaseStorageId);
+  const resolveDatabaseIdForView = useCallback(
+    async (viewId: string): Promise<string | null> => {
+      if (!currentWorkspaceId) return null;
 
-      // Workspace-database sync is keyed by `databaseStorageId` (not workspaceId).
-      // Keep guid aligned with the collab object id used by providers and sync routing.
-      doc.guid = workspaceDatabaseStorageId;
-      const { doc: workspaceDatabaseDoc } = registerSyncContext({
-        doc,
-        collabType: Types.WorkspaceDatabase,
-      });
-
-      workspaceDatabaseDocMapRef.current.clear();
-      workspaceDatabaseDocMapRef.current.set(workspaceId, workspaceDatabaseDoc);
-    },
-    [registerSyncContext]
-  );
-
-  const getDatabaseIdForViewId = useCallback(
-    async (viewId: string) => {
-      if (!currentWorkspaceId) return;
-
-      // First check URL params for database mappings (passed from template duplication)
-      // This allows immediate lookup without waiting for workspace database sync
+      // 1. Check URL params for database mappings (passed from template duplication)
       try {
         const urlParams = new URLSearchParams(window.location.search);
         const dbMappingsParam = urlParams.get('db_mappings');
 
         if (dbMappingsParam) {
           const dbMappings: Record<string, string[]> = JSON.parse(decodeURIComponent(dbMappingsParam));
-          // Store in localStorage for persistence across page refreshes
           const storageKey = `db_mappings_${currentWorkspaceId}`;
           const existingMappings = JSON.parse(localStorage.getItem(storageKey) || '{}');
           const mergedMappings = { ...existingMappings, ...dbMappings };
 
           localStorage.setItem(storageKey, JSON.stringify(mergedMappings));
-          Log.debug('[useDatabaseIdentity] stored db_mappings to localStorage', mergedMappings);
 
-          // Find the database ID that contains this view
           for (const [databaseId, viewIds] of Object.entries(dbMappings)) {
             if (viewIds.includes(viewId)) {
               Log.debug('[useDatabaseIdentity] found databaseId from URL params', { viewId, databaseId });
@@ -81,7 +70,7 @@ export function useDatabaseIdentity({
         console.warn('[useDatabaseIdentity] failed to parse db_mappings from URL', e);
       }
 
-      // Check localStorage for cached database mappings (persists across page refreshes)
+      // 2. Check localStorage for cached database mappings
       try {
         const storageKey = `db_mappings_${currentWorkspaceId}`;
         const cachedMappings = localStorage.getItem(storageKey);
@@ -100,174 +89,84 @@ export function useDatabaseIdentity({
         console.warn('[useDatabaseIdentity] failed to read db_mappings from localStorage', e);
       }
 
-      if (databaseStorageId && !workspaceDatabaseDocMapRef.current.has(currentWorkspaceId)) {
-        await registerWorkspaceDatabaseDoc(currentWorkspaceId, databaseStorageId);
+      // 3. Primary: use cached reverse map from the /database-views endpoint
+      const cachedId = getDatabaseIdForViewId?.(viewId);
+
+      if (cachedId) {
+        Log.debug('[useDatabaseIdentity] found databaseId from cached map', { viewId, databaseId: cachedId });
+        return cachedId;
       }
 
-      return new Promise<string | null>((resolve) => {
-        const sharedRoot = workspaceDatabaseDocMapRef.current.get(currentWorkspaceId)?.getMap(YjsEditorKey.data_section);
-        let resolved = false;
-        let warningLogged = false;
-        let observerRegistered = false;
-        let timeoutId: ReturnType<typeof setTimeout> | null = null;
+      // 4. Cache miss: force a fresh fetch with retry.  The server populates
+      // `af_folder_view.extra.database_id` via an event-driven backfill, so a
+      // just-created database may not appear in the HTTP response immediately.
+      // Retry up to 3 times with backoff (matching the old Yjs observer's
+      // tolerance for propagation delay).
+      if (loadDatabaseRelations) {
+        const RETRY_DELAYS = [0, 2000, 3000, 5000]; // ~10s total, matching old Yjs observer timeout
 
-        const cleanup = () => {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-            timeoutId = null;
+        for (const delay of RETRY_DELAYS) {
+          if (delay > 0) {
+            await new Promise((r) => setTimeout(r, delay));
           }
 
-          if (observerRegistered && sharedRoot) {
-            try {
-              sharedRoot.unobserveDeep(observeEvent);
-            } catch {
-              // Ignore if already unobserved
-            }
+          await loadDatabaseRelations(true);
+          const freshId = getDatabaseIdForViewId?.(viewId);
 
-            observerRegistered = false;
+          if (freshId) {
+            Log.debug('[useDatabaseIdentity] found databaseId after loading relations', { viewId, databaseId: freshId });
+            return freshId;
           }
-        };
-
-        const observeEvent = () => {
-          if (resolved) return;
-
-          const databases = sharedRoot?.toJSON()?.databases;
-
-          const databaseId = databases?.find((database: { database_id: string; views: string[] }) =>
-            database.views.find((view) => view === viewId)
-          )?.database_id;
-
-          if (databaseId) {
-            resolved = true;
-            Log.debug('[useDatabaseIdentity] mapped view to database', { viewId, databaseId });
-            cleanup();
-            resolve(databaseId);
-            return;
-          }
-
-          // Only log warning once, not on every observe event
-          if (!warningLogged) {
-            warningLogged = true;
-            Log.debug('[useDatabaseIdentity] databaseId not found for view yet, waiting for sync', { viewId });
-          }
-        };
-
-        observeEvent();
-        if (sharedRoot && !resolved) {
-          sharedRoot.observeDeep(observeEvent);
-          observerRegistered = true;
         }
+      }
 
-        // Add timeout to prevent hanging forever
-        timeoutId = setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            cleanup();
-            console.warn('[useDatabaseIdentity] databaseId lookup timed out for view', { viewId });
-            resolve(null);
-          }
-        }, 10000); // 10 second timeout
-      });
+      console.warn('[useDatabaseIdentity] databaseId not found for view', { viewId });
+      return null;
     },
-    [currentWorkspaceId, databaseStorageId, registerWorkspaceDatabaseDoc]
+    [currentWorkspaceId, getDatabaseIdForViewId, loadDatabaseRelations]
   );
 
   const getViewIdFromDatabaseId = useCallback(
-    async (databaseId: string) => {
+    async (databaseId: string): Promise<string | null> => {
       if (!currentWorkspaceId) {
         return null;
       }
 
+      // Check local cache first
       if (databaseIdViewIdMapRef.current.has(databaseId)) {
         return databaseIdViewIdMapRef.current.get(databaseId) || null;
       }
 
-      // Lazy-load workspace database doc if not yet registered (e.g. after page refresh).
-      // This mirrors the logic in getDatabaseIdForViewId.
-      if (databaseStorageId && !workspaceDatabaseDocMapRef.current.has(currentWorkspaceId)) {
-        await registerWorkspaceDatabaseDoc(currentWorkspaceId, databaseStorageId);
+      // Try the cached relations map (database_id → primary view_id)
+      const cached = getCachedDatabaseRelations?.();
+
+      if (cached?.[databaseId]) {
+        databaseIdViewIdMapRef.current.set(databaseId, cached[databaseId]);
+        return cached[databaseId];
       }
 
-      const workspaceDatabaseDoc = workspaceDatabaseDocMapRef.current.get(currentWorkspaceId);
+      // Cache miss: force-refresh with retry to tolerate the event-driven
+      // backfill propagation delay on the server.
+      if (loadDatabaseRelations) {
+        const RETRY_DELAYS = [0, 1500, 3000];
 
-      if (!workspaceDatabaseDoc) {
-        return null;
-      }
+        for (const delay of RETRY_DELAYS) {
+          if (delay > 0) {
+            await new Promise((r) => setTimeout(r, delay));
+          }
 
-      const sharedRoot = workspaceDatabaseDoc.getMap(YjsEditorKey.data_section);
+          const fresh = await loadDatabaseRelations(true);
 
-      const tryResolve = (): string | null => {
-        const databases = sharedRoot?.toJSON()?.databases;
-        const database = databases?.find((db: { database_id: string; views: string[] }) => db.database_id === databaseId);
-
-        if (database) {
-          databaseIdViewIdMapRef.current.set(databaseId, database.views[0]);
-          return database.views[0];
+          if (fresh?.[databaseId]) {
+            databaseIdViewIdMapRef.current.set(databaseId, fresh[databaseId]);
+            return fresh[databaseId];
+          }
         }
-
-        return null;
-      };
-
-      // Try synchronous lookup first
-      const immediate = tryResolve();
-
-      if (immediate) {
-        return immediate;
       }
 
-      // Wait for the workspace database doc to sync, with timeout
-      return new Promise<string | null>((resolve) => {
-        let resolved = false;
-        let observerRegistered = false;
-        let timeoutId: ReturnType<typeof setTimeout> | null = null;
-
-        const cleanup = () => {
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-            timeoutId = null;
-          }
-
-          if (observerRegistered && sharedRoot) {
-            try {
-              sharedRoot.unobserveDeep(observeEvent);
-            } catch {
-              // Ignore if already unobserved
-            }
-
-            observerRegistered = false;
-          }
-        };
-
-        const observeEvent = () => {
-          if (resolved) return;
-
-          const result = tryResolve();
-
-          if (result) {
-            resolved = true;
-            cleanup();
-            resolve(result);
-          }
-        };
-
-        if (sharedRoot) {
-          sharedRoot.observeDeep(observeEvent);
-          observerRegistered = true;
-        } else {
-          resolve(null);
-          return;
-        }
-
-        timeoutId = setTimeout(() => {
-          if (!resolved) {
-            resolved = true;
-            cleanup();
-            resolve(null);
-          }
-        }, 10000);
-      });
+      return null;
     },
-    [currentWorkspaceId, databaseStorageId, registerWorkspaceDatabaseDoc]
+    [currentWorkspaceId, getCachedDatabaseRelations, loadDatabaseRelations]
   );
 
   const resolveCollabObjectId = useCallback(
@@ -277,7 +176,6 @@ export function useDatabaseIdentity({
       }
 
       // First try getting databaseId directly from the doc (fast, synchronous).
-      // This works for newly created embedded databases where the doc already has the ID.
       let databaseId = getDatabaseIdFromDoc(doc);
 
       if (databaseId) {
@@ -286,8 +184,8 @@ export function useDatabaseIdentity({
           databaseId,
         });
       } else {
-        // Fallback to workspace database mapping lookup (async, may timeout).
-        databaseId = (await getDatabaseIdForViewId(viewId)) ?? null;
+        // Fallback to server-side mapping lookup.
+        databaseId = await resolveDatabaseIdForView(viewId);
       }
 
       if (!databaseId) {
@@ -301,7 +199,7 @@ export function useDatabaseIdentity({
       doc.guid = databaseId;
       return databaseId;
     },
-    [getDatabaseIdForViewId]
+    [resolveDatabaseIdForView]
   );
 
   return {
