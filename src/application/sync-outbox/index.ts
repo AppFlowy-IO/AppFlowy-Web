@@ -177,6 +177,14 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
         return;
       }
 
+      // A purge (logout) or version-reset discard started while the IDB write
+      // was in flight. The synchronous guard at enqueue time passed, but the
+      // state has since changed — drop the fallback to honour the boundary.
+      if (isPurging || suppressedObjects.has(record.objectId)) {
+        Log.debug('[outbox] fallback skipped: purge/discard in progress', { objectId: record.objectId });
+        return;
+      }
+
       const directMessage: messages.IMessage = {
         collabMessage: {
           objectId: record.objectId,

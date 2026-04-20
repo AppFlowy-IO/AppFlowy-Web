@@ -96,6 +96,7 @@ const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): 
     // iteration aborts before sending.
     void ctx.discardPendingUpdates?.();
     ctx.flush = undefined;
+    ctx.discardPendingUpdates = undefined;
     ctx.doc.destroy();
   }
 };

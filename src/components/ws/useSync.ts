@@ -94,7 +94,7 @@ export type { RegisterSyncContext, UpdateCollabInfo, SyncContextType } from './s
  *   - `DocumentHistoryModal.handleRestore()` — when the user clicks "Restore" in
  *     the version history dialog
  *
- * ### `flushAllSync(): Promise<void>`
+ * ### `flushAllSync(): Promise<boolean>`
  *
  * Awaits the persistent sync_outbox drain for every registered sync context.
  * Local Y.js updates are enqueued to IndexedDB synchronously as they happen;
