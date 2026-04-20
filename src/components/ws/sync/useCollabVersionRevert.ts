@@ -54,11 +54,17 @@ export function useCollabVersionRevert(deps: CollabVersionRevertDeps) {
       const objectId = previousDoc.guid;
 
       // Drop stale pending edits and pause active sync before restore/open.
-      context.discardPendingUpdates?.();
-      unregisterSyncContext(objectId, { flushPending: false });
+      // Mark the objectId as "resetting" *before* awaiting so that any
+      // concurrent incoming message handler observes the guard and queues
+      // instead of applying. Keep the discard/unregister inside the outer
+      // try so a failing IDB delete still runs the `finally` that clears
+      // `resettingObjectIds` (otherwise remote messages would queue forever).
       refs.resettingObjectIds.current.add(objectId);
 
       try {
+        await context.discardPendingUpdates?.();
+        unregisterSyncContext(objectId, { flushPending: false });
+
         const { docState, version: serverVersion } = await http.revertCollabVersion(
           workspaceId,
           viewId,

@@ -1,7 +1,11 @@
-import { debounce } from 'lodash-es';
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
+import {
+  deleteOutboxByObjectId,
+  enqueueOutboxUpdate,
+  waitForDrain,
+} from '@/application/sync-outbox';
 import { Types, YDoc } from '@/application/types';
 import { collab, messages } from '@/proto/messages';
 import { Log } from '@/utils/log';
@@ -22,16 +26,19 @@ export interface SyncContext {
    */
   emit: (reply: messages.IMessage) => void;
   /**
-   * Flush function to immediately send any pending updates.
-   * This is used before operations like duplicate to ensure all local changes
-   * are synced to the server.
+   * Wait until all locally-queued updates for this doc have drained to the
+   * WebSocket. Backed by the persistent sync_outbox — the returned promise
+   * resolves `true` once there are no pending records, or `false` on timeout
+   * (e.g. the WebSocket is closed). Callers that need hard delivery guarantees
+   * should combine this with a full-state HTTP send; Yjs handshake recovery
+   * will still reconcile any records left in the outbox.
    */
-  flush?: () => void;
+  flush?: () => Promise<boolean>;
   /**
    * Drop queued local updates without sending them.
    * Used by version reset flows where pending updates are stale and must be discarded.
    */
-  discardPendingUpdates?: () => void;
+  discardPendingUpdates?: () => Promise<void>;
   /**
    * Cleanup function to remove update/awareness observers and cancel debounced sends.
    * Set by initSync, called during deferred sync context cleanup.
@@ -80,6 +87,15 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
 const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): void => {
   if (message.canRead === false) {
     //FIXME: we should not only destroy the doc, but also remove it from the persistent storage.
+    // Access revoked: drop any queued outbox rows so we do not replay local
+    // edits against a doc the user no longer has permission on. The discard
+    // runs async — to prevent the destroy handler's subsequent unregister
+    // from firing a flush that races with the delete, synchronously null
+    // out ctx.flush first. The drain also gates on `suppressedObjects`
+    // (set synchronously by discardPendingUpdates), so any new drain
+    // iteration aborts before sending.
+    void ctx.discardPendingUpdates?.();
+    ctx.flush = undefined;
     ctx.doc.destroy();
   }
 };
@@ -152,54 +168,34 @@ export const initSync = (ctx: SyncContext) => {
   }
 
   let onAwarenessChange: ((event: AwarenessEvent, origin: string) => void) | undefined;
-  const updates: Uint8Array[] = [];
-  const debounced = debounce(() => {
-    if (updates.length === 0) return; // Skip if no pending updates
-    const mergedUpdates = Y.mergeUpdates(updates);
 
-    updates.length = 0; // Clear the updates array without GC overhead
-    Log.debug('[sync] sending local update to server', {
-      objectId: doc.guid,
-      collabType,
-      version: doc.version,
-      bytes: mergedUpdates.byteLength,
-    });
-    emit({
-      collabMessage: {
-        objectId: doc.guid,
-        collabType,
-        update: {
-          flags: UpdateFlags.Lib0v1,
-          payload: mergedUpdates,
-          version: doc.version,
-        },
-      },
-    });
-  }, 250);
+  // Persist every local update synchronously to the sync_outbox, then let the
+  // background drain loop push it over the WebSocket. Survives refresh, tab
+  // crash, and modal-unmount races because IndexedDB is the source of truth.
+  ctx.flush = () => waitForDrain([doc.guid]);
 
-  // Store flush function in context for external access
-  ctx.flush = () => {
-    debounced.flush();
-  };
-
-  ctx.discardPendingUpdates = () => {
-    debounced.cancel();
-    updates.length = 0;
-  };
+  ctx.discardPendingUpdates = () => deleteOutboxByObjectId(doc.guid);
 
   const onUpdate = (update: Uint8Array, origin: string) => {
     if (origin === 'remote') {
       return; // Ignore remote updates
     }
 
-    updates.push(update);
-    debounced();
+    enqueueOutboxUpdate({
+      objectId: doc.guid,
+      collabType,
+      version: doc.version ?? null,
+      payload: update,
+    });
   };
 
   const onDestroy = () => {
     // when switching versions, we destroy previous instance of the document
-    // at this point all stashed updates are no longer valid
-    ctx.discardPendingUpdates?.();
+    // at this point all stashed updates are no longer valid. Fire-and-forget
+    // is acceptable here: the unregister path that sets `skipFlushOnDestroy`
+    // will also trigger its own discard, and callers that need to observe
+    // completion go through the await path in useCollab{Message,Version}Revert.
+    void ctx.discardPendingUpdates?.();
   };
 
   doc.on('update', onUpdate);
@@ -251,9 +247,11 @@ export const initSync = (ctx: SyncContext) => {
     });
   }
 
-  // Build a single cleanup function that tears down all observers
+  // Build a single cleanup function that tears down all observers.
+  // Note: we deliberately do NOT delete outbox records here — cleanup only
+  // detaches listeners. Outbox deletion is caller-driven via
+  // discardPendingUpdates() (version reset/revert paths only).
   const cleanup = () => {
-    ctx.discardPendingUpdates?.();
     doc.off('update', onUpdate);
     doc.off('destroy', onDestroy);
     if (awareness && onAwarenessChange) {

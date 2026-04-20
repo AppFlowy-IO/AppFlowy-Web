@@ -49,11 +49,17 @@ export function useCollabMessageHandler(
 
       let context = refs.registeredContexts.current.get(objectId);
 
-      if (!context && refs.resettingObjectIds.current.has(objectId)) {
+      // While a reset is in progress for this objectId, queue incoming
+      // messages for later replay. This covers both the "context already
+      // unregistered" path and the narrow window where the reset has been
+      // flagged but the context hasn't been torn down yet (e.g. while an
+      // `await discardPendingUpdates` is pending).
+      if (refs.resettingObjectIds.current.has(objectId)) {
         const queued = refs.queuedMessagesDuringReset.current.get(objectId) ?? [];
 
         queued.push(message);
         refs.queuedMessagesDuringReset.current.set(objectId, queued);
+        return;
       }
 
       Log.debug(`[Version] context lookup: objectId=${objectId}, hasContext=${!!context}, docVersion=${JSON.stringify(context?.doc?.version)}, isCollabVersionId(docVersion)=${context ? isCollabVersionId(context.doc.version) : 'N/A'}`);
@@ -138,13 +144,22 @@ export function useCollabMessageHandler(
 
             // Tear down the currently active doc first to stop stale edits from being
             // persisted while expectedVersion cache replacement is in progress.
+            // Await the outbox deletion so the drain cannot race ahead and send
+            // pre-reset rows onto the newly-rebuilt doc.
             previousDoc.emit('reset', [context, newVersion]);
-            context.discardPendingUpdates?.();
             refs.skipFlushOnDestroy.current.add(previousDoc.guid);
             refs.resettingObjectIds.current.add(objectId);
-            previousDoc.destroy();
 
             try {
+              // Discard and destroy live inside the try so a rejection
+              // (e.g. IDB blocked/closing) still runs the finally that
+              // clears `resettingObjectIds`. Without this, a failed discard
+              // would leave the object permanently flagged as resetting —
+              // `applyCollabMessage` would queue every subsequent message
+              // and the doc would stay stuck until reload.
+              await context.discardPendingUpdates?.();
+              previousDoc.destroy();
+
               const localContext = context;
 
               context = await rebuildCollabDoc({
@@ -206,6 +221,10 @@ export function useCollabMessageHandler(
                 },
               });
             } finally {
+              // If discard threw before destroy fired, the doc.on('destroy')
+              // handler never consumed this flag — clean it up defensively so
+              // a later unrelated destroy doesn't accidentally suppress flush.
+              refs.skipFlushOnDestroy.current.delete(previousDoc.guid);
               refs.resettingObjectIds.current.delete(objectId);
               await replayQueuedMessages(objectId, refs.queuedMessagesDuringReset.current, applyCollabMessage, options?.user);
             }

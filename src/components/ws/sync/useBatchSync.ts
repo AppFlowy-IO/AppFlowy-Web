@@ -6,6 +6,7 @@ import { openCollabDBWithProvider } from '@/application/db';
 import { getCachedRowSubDoc, getCachedRowSubDocIds } from '@/application/services/js-services/cache';
 import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
 import { withRetry } from '@/application/services/js-services/http/core';
+import { waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -52,16 +53,23 @@ export function useBatchSync(refs: SyncRefs) {
   const batchSyncAbortRef = useRef<AbortController | null>(null);
 
   /**
-   * Flush all pending updates for all registered sync contexts.
-   * This ensures all local changes are sent to the server via WebSocket.
+   * Wait until the persistent sync_outbox has drained for every registered
+   * sync context. Returns `true` when fully drained, `false` on timeout
+   * (e.g. the WebSocket stayed closed). Callers that need hard delivery
+   * should follow up with the HTTP batch path — the Yjs handshake recovers
+   * anything left behind.
    */
-  const flushAllSync = useCallback(() => {
-    Log.debug('Flushing all sync contexts');
-    refs.registeredContexts.current.forEach((context) => {
-      if (context.flush) {
-        context.flush();
-      }
-    });
+  const flushAllSync = useCallback(async () => {
+    Log.debug('Flushing all sync contexts (awaiting outbox drain)');
+    const objectIds = Array.from(refs.registeredContexts.current.keys());
+
+    const drained = await waitForDrain(objectIds);
+
+    if (!drained) {
+      Log.warn('[sync] flushAllSync returned with pending outbox records (WS likely closed)');
+    }
+
+    return drained;
   }, [refs]);
 
   /**
@@ -75,8 +83,13 @@ export function useBatchSync(refs: SyncRefs) {
    */
   const syncAllToServer = useCallback(
     async (workspaceId: string) => {
-      // First flush any pending WebSocket updates
-      flushAllSync();
+      // Kick the WS outbox drain in the background but do NOT block on it —
+      // the HTTP batch below encodes the current doc state (which already
+      // includes every local edit), so we don't need WS quiescence before
+      // proceeding. Awaiting here could consume the caller's duplicate
+      // timeout budget (Promise.race in `duplicatePage`) when the socket
+      // is reconnecting; any WS sends that fire later are idempotent.
+      void flushAllSync();
 
       // Collect all registered contexts into a batch
       const items: Array<{
