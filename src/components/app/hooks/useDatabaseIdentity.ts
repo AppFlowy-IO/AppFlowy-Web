@@ -97,17 +97,26 @@ export function useDatabaseIdentity({
         return cachedId;
       }
 
-      // 4. Cache miss: force a fresh fetch.  A plain `loadDatabaseRelations()`
-      // would short-circuit on the existing warmed snapshot (which is why we
-      // missed in the first place), so we must bypass the cache explicitly to
-      // pick up databases created after the snapshot was warmed.
+      // 4. Cache miss: force a fresh fetch with retry.  The server populates
+      // `af_folder_view.extra.database_id` via an event-driven backfill, so a
+      // just-created database may not appear in the HTTP response immediately.
+      // Retry up to 3 times with backoff (matching the old Yjs observer's
+      // tolerance for propagation delay).
       if (loadDatabaseRelations) {
-        await loadDatabaseRelations(true);
-        const freshId = getDatabaseIdForViewId?.(viewId);
+        const RETRY_DELAYS = [0, 2000, 3000, 5000]; // ~10s total, matching old Yjs observer timeout
 
-        if (freshId) {
-          Log.debug('[useDatabaseIdentity] found databaseId after loading relations', { viewId, databaseId: freshId });
-          return freshId;
+        for (const delay of RETRY_DELAYS) {
+          if (delay > 0) {
+            await new Promise((r) => setTimeout(r, delay));
+          }
+
+          await loadDatabaseRelations(true);
+          const freshId = getDatabaseIdForViewId?.(viewId);
+
+          if (freshId) {
+            Log.debug('[useDatabaseIdentity] found databaseId after loading relations', { viewId, databaseId: freshId });
+            return freshId;
+          }
         }
       }
 
@@ -136,15 +145,22 @@ export function useDatabaseIdentity({
         return cached[databaseId];
       }
 
-      // Cache miss: force-refresh to pick up databases created after the
-      // workspace-level snapshot was warmed.  Without `forceRefresh=true`,
-      // `loadDatabaseRelations` would just re-return the stale cached map.
+      // Cache miss: force-refresh with retry to tolerate the event-driven
+      // backfill propagation delay on the server.
       if (loadDatabaseRelations) {
-        const fresh = await loadDatabaseRelations(true);
+        const RETRY_DELAYS = [0, 1500, 3000];
 
-        if (fresh?.[databaseId]) {
-          databaseIdViewIdMapRef.current.set(databaseId, fresh[databaseId]);
-          return fresh[databaseId];
+        for (const delay of RETRY_DELAYS) {
+          if (delay > 0) {
+            await new Promise((r) => setTimeout(r, delay));
+          }
+
+          const fresh = await loadDatabaseRelations(true);
+
+          if (fresh?.[databaseId]) {
+            databaseIdViewIdMapRef.current.set(databaseId, fresh[databaseId]);
+            return fresh[databaseId];
+          }
         }
       }
 

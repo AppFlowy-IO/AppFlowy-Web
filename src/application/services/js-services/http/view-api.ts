@@ -105,6 +105,10 @@ export async function getDatabaseViews(workspaceId: string): Promise<AFDatabaseL
     offset += PAGE_SIZE;
   }
 
+  console.warn(
+    `[getDatabaseViews] Reached pagination hard cap (${MAX_PAGES} pages, ${aggregated.length} databases). ` +
+    'Some databases may be missing from the cache.'
+  );
   return { databases: aggregated, has_more: false };
 }
 
