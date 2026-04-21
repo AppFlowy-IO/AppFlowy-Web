@@ -22,7 +22,7 @@ export interface SyncInternalContextType {
    * Flush all pending updates for all registered sync contexts.
    * This ensures all local changes are sent to the server before operations like duplicate.
    */
-  flushAllSync: () => void;
+  flushAllSync: () => Promise<boolean>;
   /**
    * Sync all registered collab documents to the server via HTTP API.
    * This is similar to desktop's collab_full_sync_batch - it sends the full doc state

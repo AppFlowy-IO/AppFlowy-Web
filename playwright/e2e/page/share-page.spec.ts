@@ -61,7 +61,9 @@ async function clickInviteButton(page: Page) {
  */
 async function openAccessDropdownForUser(page: Page, email: string) {
   const popover = ShareSelectors.sharePopover(page);
-  await expect(popover.getByText(email).first()).toBeVisible();
+  // Use a generous timeout — the share popover list reflects the backend's
+  // shared-user state which may take time to propagate after an invite.
+  await expect(popover.getByText(email).first()).toBeVisible({ timeout: 20000 });
 
   // Find the PersonItem .group container that contains this email
   const groupContainer = popover.locator('.group').filter({ hasText: email }).first();
@@ -70,7 +72,7 @@ async function openAccessDropdownForUser(page: Page, email: string) {
   const accessButton = groupContainer.locator('button').filter({
     hasText: /view|edit|read/i,
   }).first();
-  await expect(accessButton).toBeVisible();
+  await expect(accessButton).toBeVisible({ timeout: 10000 });
   await accessButton.click({ force: true });
   await page.waitForTimeout(500);
 }
@@ -406,12 +408,13 @@ test.describe('Share Page Test', () => {
     }
 
     await clickInviteButton(page);
-    await page.waitForTimeout(3000);
 
     // Then: both users appear in the share list
+    // The invite triggers an async chain: sharePageTo API → refreshPeople → loadMentionableData → loadPeople (getShareDetail API).
+    // Use a generous timeout instead of a static wait to handle backend propagation delay.
     const popover = ShareSelectors.sharePopover(page);
-    await expect(popover.getByText(userBEmail).first()).toBeVisible({ timeout: 10000 });
-    await expect(popover.getByText(userCEmail).first()).toBeVisible({ timeout: 10000 });
+    await expect(popover.getByText(userBEmail).first()).toBeVisible({ timeout: 20000 });
+    await expect(popover.getByText(userCEmail).first()).toBeVisible({ timeout: 20000 });
     testLog.info('Both users added successfully');
 
     // When: removing user B's access

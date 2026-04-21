@@ -77,12 +77,16 @@ export function useSyncContextLifecycle(
 
     if (!ctx) return;
 
-    if (options?.flushPending === false) {
-      // Version reset/revert path: drop stale updates instead of replaying them.
-      ctx.discardPendingUpdates?.();
-    } else if (ctx.flush) {
-      // Standard path: flush pending local updates before removing observers.
-      ctx.flush();
+    // Version reset/revert path: callers (useCollabMessageHandler and
+    // useCollabVersionRevert) are responsible for `await`-ing the outbox
+    // discard BEFORE invoking this unregister. We deliberately do NOT fire a
+    // second async discard here: a late-landing purge could otherwise race
+    // with the rebuilt doc and wipe fresh post-reset edits.
+    //
+    // Standard path: pending records are already persisted in the outbox and
+    // will drain in the background. No synchronous wait needed.
+    if (options?.flushPending !== false && ctx.flush) {
+      void ctx.flush();
     }
 
     // Remove update/awareness observers

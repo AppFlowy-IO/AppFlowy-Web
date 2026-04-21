@@ -4,6 +4,7 @@ import * as Y from 'yjs';
 
 import { databasePrefix } from '@/application/constants';
 import { rowSchema, rowTable } from '@/application/db/tables/rows';
+import { syncOutboxSchema, SyncOutboxTable } from '@/application/db/tables/sync_outbox';
 import { userSchema, UserTable } from '@/application/db/tables/users';
 import { versionSchema, VersionsTable } from '@/application/db/tables/versions';
 import { viewMetasSchema, ViewMetasTable } from '@/application/db/tables/view_metas';
@@ -14,12 +15,12 @@ import {
 import { YDoc } from '@/application/types';
 import { Log } from '@/utils/log';
 
-type DexieTables = ViewMetasTable & UserTable & rowTable & WorkspaceMemberProfileTable & VersionsTable;
+type DexieTables = ViewMetasTable & UserTable & rowTable & WorkspaceMemberProfileTable & VersionsTable & SyncOutboxTable;
 
 export type Dexie<T = DexieTables> = BaseDexie & T;
 
 export const db = new BaseDexie(`${databasePrefix}_cache`) as Dexie;
-const _schema = Object.assign({}, { ...viewMetasSchema, ...userSchema, ...rowSchema, ...versionSchema });
+const _schema = Object.assign({}, { ...viewMetasSchema, ...userSchema, ...rowSchema, ...versionSchema, ...syncOutboxSchema });
 
 // Version 1: Initial schema with view_metas, users, and rows
 db.version(1).stores({
@@ -61,6 +62,60 @@ db.version(3)
       await transaction.table('collab_versions').count();
     } catch (error) {
       console.error('Failed to initialize collab_versions store during upgrade:', error);
+      throw error;
+    }
+  });
+
+// Version 4: Initial sync_outbox table (superseded by v5 — kept for upgrade path)
+db.version(4).stores({
+  ...viewMetasSchema,
+  ...userSchema,
+  ...rowSchema,
+  ...workspaceMemberProfileSchema,
+  ...versionSchema,
+  sync_outbox: '++id, objectId, [objectId+id]',
+});
+
+// Version 5: Add workspaceId scoping to sync_outbox so records enqueued in
+// one workspace cannot be drained against another workspace's WebSocket.
+// Records from v4 (without workspaceId) are discarded on upgrade — they would
+// otherwise be orphaned since we cannot infer their originating workspace.
+db.version(5)
+  .stores({
+    ...viewMetasSchema,
+    ...userSchema,
+    ...rowSchema,
+    ...workspaceMemberProfileSchema,
+    ...versionSchema,
+    sync_outbox: '++id, workspaceId, objectId, [workspaceId+objectId], [workspaceId+objectId+id]',
+  })
+  .upgrade(async (transaction) => {
+    try {
+      await transaction.table('sync_outbox').clear();
+    } catch (error) {
+      console.error('Failed to clear sync_outbox on v5 upgrade:', error);
+      throw error;
+    }
+  });
+
+// Version 6: Add userId scoping to sync_outbox. Without userId, a tab crash
+// with pending rows for user A could drain those rows over user B's
+// WebSocket after re-authentication on the same browser. Drop any v5 records
+// on upgrade — their originating userId is unknowable.
+db.version(6)
+  .stores({
+    ...viewMetasSchema,
+    ...userSchema,
+    ...rowSchema,
+    ...workspaceMemberProfileSchema,
+    ...versionSchema,
+    ...syncOutboxSchema,
+  })
+  .upgrade(async (transaction) => {
+    try {
+      await transaction.table('sync_outbox').clear();
+    } catch (error) {
+      console.error('Failed to clear sync_outbox on v6 upgrade:', error);
       throw error;
     }
   });

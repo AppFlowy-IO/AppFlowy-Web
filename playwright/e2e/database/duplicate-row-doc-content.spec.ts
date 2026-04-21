@@ -43,7 +43,10 @@ test.describe('Duplicate row preserves document content', () => {
     await editor.click({ force: true });
     await page.waitForTimeout(300);
     await page.keyboard.type(rowDocText, { delay: 30 });
-    await page.waitForTimeout(3000); // Wait for Yjs sync
+    // Wait for: (1) Yjs update → outbox enqueue → drain to server,
+    // (2) ensureRowDocumentExists (createOrphaned API) which fires on first edit
+    //     and must complete so the server-side collab exists before duplicate.
+    await page.waitForTimeout(8000);
 
     // Verify text appeared
     await expect(editor).toContainText(rowDocText, { timeout: 10000 });

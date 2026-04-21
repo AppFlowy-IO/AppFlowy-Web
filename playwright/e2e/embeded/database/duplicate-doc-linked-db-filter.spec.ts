@@ -40,6 +40,9 @@ test.describe('Duplicate Document Linked Database Filter', () => {
     // The linked database picker searches by container name ("New Database"),
     // not the renamed view name. Each test workspace has only one database.
     await insertLinkedGridViaSlash(page, docViewId, 'New Database', 0);
+    // Wait for the first linked grid to fully render and for any background
+    // IndexedDB sync activity to settle before opening the slash menu again.
+    await page.waitForTimeout(3000);
     await insertLinkedGridViaSlash(page, docViewId, 'New Database', 1);
 
     await expect(databaseBlocks(editor)).toHaveCount(2, { timeout: 30000 });

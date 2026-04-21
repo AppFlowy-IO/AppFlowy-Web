@@ -106,8 +106,11 @@ export class AuthTestUtils {
         // e.g. gotrueUrl = http://localhost:3000/gotrue => prefix = /gotrue
         // action link = http://localhost:9999/verify?token=...
         // normalized  = http://localhost:3000/gotrue/verify?token=...
+        // If GoTrue already included the prefix in the path (e.g. /gotrue/verify),
+        // don't duplicate it.
         const proxyPrefix = gotrueUrlObj.pathname.replace(/\/+$/, ''); // e.g. "/gotrue"
-        normalizedLink = gotrueUrlObj.origin + proxyPrefix + actionUrl.pathname + actionUrl.search;
+        const pathAlreadyPrefixed = proxyPrefix && actionUrl.pathname.startsWith(proxyPrefix);
+        normalizedLink = gotrueUrlObj.origin + (pathAlreadyPrefixed ? '' : proxyPrefix) + actionUrl.pathname + actionUrl.search;
       }
     } catch {
       // If URL parsing fails, use as-is

@@ -38,7 +38,7 @@ export function usePageOperations({
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
-  flushAllSync?: () => void;
+  flushAllSync?: () => Promise<boolean>;
   syncAllToServer?: (workspaceId: string) => Promise<void>;
   loadViewChildren?: (viewId: string) => Promise<View[]>;
 }) {
@@ -169,7 +169,7 @@ export function usePageOperations({
             }),
           ]);
         } else {
-          flushAllSync?.();
+          await flushAllSync?.();
         }
 
         await PageService.duplicate(currentWorkspaceId, viewId, options);
@@ -369,8 +369,12 @@ export function usePageOperations({
 
       if (isDatabaseLayout) {
         // Database views: gather data client-side and send via binary publish endpoint
-        // (same approach as the desktop client — fixes #8464)
-        flushAllSync?.();
+        // (same approach as the desktop client — fixes #8464). Kick the WS
+        // drain in the background — the binary publish below carries the
+        // authoritative local state, so we don't need to block the publish
+        // on WS quiescence (which can stall up to 5s if the socket is
+        // reconnecting).
+        void flushAllSync?.();
 
         const slug = view.name.replace(/[^a-zA-Z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'untitled';
 

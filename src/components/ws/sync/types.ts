@@ -51,10 +51,11 @@ export type SyncContextType = {
   registerSyncContext: (context: RegisterSyncContext) => SyncContext;
   lastUpdatedCollab: UpdateCollabInfo | null;
   /**
-   * Flush all pending updates for all registered sync contexts.
-   * This ensures all local changes are sent to the server via WebSocket.
+   * Wait until all pending updates for every registered sync context have
+   * been drained to the WebSocket from the persistent sync_outbox. Resolves
+   * `true` when fully drained, `false` on timeout (e.g. WS remained closed).
    */
-  flushAllSync: () => void;
+  flushAllSync: () => Promise<boolean>;
   /**
    * Sync all registered collab documents to the server via HTTP API.
    * This is similar to desktop's collab_full_sync_batch - it sends the full doc state

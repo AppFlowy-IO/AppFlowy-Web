@@ -3,9 +3,10 @@ import * as Y from 'yjs';
 
 import { getRowKey , getMetaJSON } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
-import { getCachedRowSubDoc, getCachedRowSubDocIds } from '@/application/services/js-services/cache';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
+import { getCachedRowSubDoc, getCachedRowSubDocIds, awaitPendingRowDocEnsures } from '@/application/services/js-services/cache';
+import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
 import { withRetry } from '@/application/services/js-services/http/core';
+import { waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 
@@ -52,16 +53,23 @@ export function useBatchSync(refs: SyncRefs) {
   const batchSyncAbortRef = useRef<AbortController | null>(null);
 
   /**
-   * Flush all pending updates for all registered sync contexts.
-   * This ensures all local changes are sent to the server via WebSocket.
+   * Wait until the persistent sync_outbox has drained for every registered
+   * sync context. Returns `true` when fully drained, `false` on timeout
+   * (e.g. the WebSocket stayed closed). Callers that need hard delivery
+   * should follow up with the HTTP batch path — the Yjs handshake recovers
+   * anything left behind.
    */
-  const flushAllSync = useCallback(() => {
-    Log.debug('Flushing all sync contexts');
-    refs.registeredContexts.current.forEach((context) => {
-      if (context.flush) {
-        context.flush();
-      }
-    });
+  const flushAllSync = useCallback(async () => {
+    Log.debug('Flushing all sync contexts (awaiting outbox drain)');
+    const objectIds = Array.from(refs.registeredContexts.current.keys());
+
+    const drained = await waitForDrain(objectIds);
+
+    if (!drained) {
+      Log.warn('[sync] flushAllSync returned with pending outbox records (WS likely closed)');
+    }
+
+    return drained;
   }, [refs]);
 
   /**
@@ -75,8 +83,13 @@ export function useBatchSync(refs: SyncRefs) {
    */
   const syncAllToServer = useCallback(
     async (workspaceId: string) => {
-      // First flush any pending WebSocket updates
-      flushAllSync();
+      // Kick the WS outbox drain in the background but do NOT block on it —
+      // the HTTP batch below encodes the current doc state (which already
+      // includes every local edit), so we don't need WS quiescence before
+      // proceeding. Awaiting here could consume the caller's duplicate
+      // timeout budget (Promise.race in `duplicatePage`) when the socket
+      // is reconnecting; any WS sends that fire later are idempotent.
+      void flushAllSync();
 
       // Collect all registered contexts into a batch
       const items: Array<{
@@ -249,6 +262,46 @@ export function useBatchSync(refs: SyncRefs) {
       if (items.length === 0) {
         Log.debug('No collabs to sync');
         return;
+      }
+
+      // Ensure server-side collabs exist for all row sub-documents before batch
+      // sync. Row sub-documents are created on the server lazily via
+      // `ensureRowDocumentExists` (fire-and-forget) when the user first types in
+      // them. Two-phase approach:
+      //   1. Await any in-flight creations tracked by `trackRowDocEnsure` — this
+      //      covers the common case where the dialog's ensureRowDocumentExists is
+      //      still running.
+      //   2. As a fallback, check existence and create if missing — this covers
+      //      edge cases where the creation never fired (e.g., dialog closed
+      //      before the first edit's debounce).
+      const rowDocItemIds = items
+        .filter((item) => item.collabType === Types.Document && unregisteredRowDocumentIds.has(item.objectId))
+        .map((item) => item.objectId);
+
+      if (rowDocItemIds.length > 0) {
+        // Phase 1: Wait for any in-flight ensureRowDocumentExists calls
+        await awaitPendingRowDocEnsures(rowDocItemIds);
+
+        // Phase 2: Verify existence and create if still missing
+        await Promise.all(
+          rowDocItemIds.map(async (documentId) => {
+            try {
+              const exists = await checkIfCollabExists(workspaceId, documentId);
+
+              if (!exists) {
+                Log.debug('[sync] creating orphaned view for row document before batch sync', {
+                  documentId,
+                });
+                await createOrphanedView(workspaceId, { document_id: documentId });
+              }
+            } catch (e) {
+              Log.warn('[sync] failed to ensure row document collab exists', {
+                documentId,
+                error: e,
+              });
+            }
+          })
+        );
       }
 
       // Send all collabs in a single batch request (same as desktop's collab_full_sync_batch).

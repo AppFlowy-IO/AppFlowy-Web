@@ -96,18 +96,21 @@ async function getUserProfile(request: APIRequestContext, authToken: string) {
   return (await resp.json()).data;
 }
 
-/** Wait for editor content with retry-on-reload for flaky workspace init */
+/** Wait for editor content with retry-on-reload for flaky workspace init.
+ *  Cross-workspace navigation requires auto-switch (WorkspaceService.open) →
+ *  outline reload → fallback view fetch → document load. The retry budget
+ *  must stay under the 120s test timeout: 3 attempts × ~30s each = ~90s. */
 async function waitForEditorContent(page: Page, maxAttempts = 3): Promise<void> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
       await expect(
         page.locator('[data-testid="editor-content"], [data-testid="page-title-input"]').first()
-      ).toBeVisible({ timeout: 15000 });
+      ).toBeVisible({ timeout: 25000 });
       return;
     } catch {
       testLog.info(`Content not visible yet, reloading (attempt ${attempt + 1}/${maxAttempts})`);
       await page.reload();
-      await page.waitForTimeout(3000);
+      await page.waitForTimeout(2000);
     }
   }
   throw new Error('Editor content never became visible after retries');
@@ -206,10 +209,18 @@ test.describe('Shared View Cross-Workspace Routing', () => {
     await waitForEditorContent(guestPage);
     testLog.info('Shared page loaded successfully');
 
+    // Wait for the workspace auto-switch to fully settle. The app detects the
+    // URL workspace differs from the selected workspace and calls
+    // WorkspaceService.open() + loadUserWorkspaceInfo(), which can re-render
+    // the page. Wait for the sidebar to show the correct workspace name as a
+    // signal that the switch is complete.
+    await expect(guestPage.locator('text=Annie Workspace B').first()).toBeVisible({ timeout: 30000 });
+    testLog.info('Workspace switch settled');
+
     // And: Nathan can edit the document in Annie's workspace
     const contentText = guestPage.locator('text=This page is shared across workspaces');
     await expect(contentText.first()).toBeVisible({ timeout: 10000 });
-    await contentText.first().click();
+    await contentText.first().click({ timeout: 30000 });
     await guestPage.keyboard.press('End');
     await guestPage.keyboard.press('Enter');
     await guestPage.keyboard.press('Enter');

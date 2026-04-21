@@ -13,7 +13,7 @@ import {
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { openCollabDB } from '@/application/db';
-import { getCachedRowSubDoc, getOrCreateRowSubDoc } from '@/application/services/js-services/cache';
+import { getCachedRowSubDoc, getOrCreateRowSubDoc, trackRowDocEnsure } from '@/application/services/js-services/cache';
 import { YjsEditor } from '@/application/slate-yjs';
 import { initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
 import {
@@ -926,7 +926,17 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           });
           updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
 
-          const ensured = await ensureRowDocumentExists();
+          const ensurePromise = ensureRowDocumentExists();
+
+          // Track the in-flight creation so syncAllToServer can await it
+          // before batch-syncing. Without this, a page duplicate that runs
+          // before the server-side collab is created will silently lose the
+          // row sub-document content.
+          if (documentId) {
+            trackRowDocEnsure(documentId, ensurePromise);
+          }
+
+          const ensured = await ensurePromise;
 
           if (!ensured) {
             scheduleEnsureRowDocumentExists();

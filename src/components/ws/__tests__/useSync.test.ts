@@ -41,6 +41,79 @@ jest.mock('@/application/services/js-services/sync-protocol', () => {
   };
 });
 
+// Mock the persistent outbox with a synchronous in-memory surrogate so tests
+// can assert send behaviour without awaiting Dexie/IndexedDB in jsdom.
+// Enqueues go straight to the drain config's send function when configured,
+// matching the real module's contract (IDB → drain → WebSocket).
+jest.mock('@/application/sync-outbox', () => {
+  type DrainConfig = {
+    workspaceId?: string;
+    send: (message: unknown) => void;
+    broadcast?: (message: unknown) => void;
+    isReady: () => boolean;
+  };
+  const ctx: { config: DrainConfig | null; pending: Map<string, unknown[]> } = {
+    config: null,
+    pending: new Map(),
+  };
+
+  const drain = (objectId: string) => {
+    if (!ctx.config || !ctx.config.isReady()) return;
+    const queued = ctx.pending.get(objectId);
+
+    if (!queued || queued.length === 0) return;
+    for (const message of queued) {
+      ctx.config.send(message);
+    }
+
+    ctx.pending.delete(objectId);
+  };
+
+  return {
+    enqueueOutboxUpdate: jest.fn((record: { objectId: string; collabType: number; version?: string | null; payload: Uint8Array }) => {
+      const queued = ctx.pending.get(record.objectId) ?? [];
+
+      queued.push({
+        collabMessage: {
+          objectId: record.objectId,
+          collabType: record.collabType,
+          update: {
+            flags: 0,
+            payload: record.payload,
+            version: record.version ?? undefined,
+          },
+        },
+      });
+      ctx.pending.set(record.objectId, queued);
+      drain(record.objectId);
+    }),
+    deleteOutboxByObjectId: jest.fn(async (objectId: string) => {
+      ctx.pending.delete(objectId);
+    }),
+    waitForDrain: jest.fn(async (objectIds?: string[]) => {
+      const ids = objectIds ?? Array.from(ctx.pending.keys());
+
+      for (const id of ids) drain(id);
+      return true;
+    }),
+    configureDrain: jest.fn((config: DrainConfig) => {
+      ctx.config = config;
+      for (const id of Array.from(ctx.pending.keys())) drain(id);
+    }),
+    clearDrainConfig: jest.fn(() => {
+      ctx.config = null;
+    }),
+    startDrainAll: jest.fn(() => {
+      for (const id of Array.from(ctx.pending.keys())) drain(id);
+    }),
+    setCurrentSession: jest.fn(),
+    __reset: () => {
+      ctx.config = null;
+      ctx.pending.clear();
+    },
+  };
+});
+
 jest.mock('@/components/main/app.hooks', () => {
   const actual = jest.requireActual('@/components/main/app.hooks');
 
@@ -192,12 +265,22 @@ describe('useSync deferred cleanup', () => {
     doc.destroy();
   });
 
-  it('flushes pending local updates immediately when doc is destroyed', () => {
+  it('enqueues local updates to the outbox and drains to sendMessage', () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+
+    outboxMock.__reset();
+
     const ws = createWs();
     const bc = createBroadcastChannel();
     const doc = createDoc('33333333-3333-4333-8333-333333333333');
     const { result, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
     const sendMessage = ws.sendMessage as jest.Mock;
+
+    // Wire the mocked outbox drain to this test's ws, mirroring AppSyncLayer.
+    outboxMock.configureDrain({
+      send: (message: unknown) => sendMessage(message),
+      isReady: () => true,
+    });
 
     act(() => {
       result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
@@ -222,12 +305,7 @@ describe('useSync deferred cleanup', () => {
       }),
     );
 
-    act(() => {
-      jest.advanceTimersByTime(300);
-    });
-
-    expect(sendMessage).toHaveBeenCalledTimes(1);
-
+    outboxMock.clearDrainConfig();
     unmount();
   });
 });
@@ -684,8 +762,10 @@ describe('useSync public API', () => {
     expect(mockedHandleMessage.mock.calls[0]?.[0]?.doc).toBe(docB);
   });
 
-  it('flushAllSync flushes pending updates for all registered contexts', () => {
-    jest.useFakeTimers();
+  it('flushAllSync drains pending outbox updates for all registered contexts', async () => {
+    const outboxMock = jest.requireMock('@/application/sync-outbox');
+
+    outboxMock.__reset();
 
     const ws = createWs();
     const bc = createBroadcastChannel();
@@ -693,6 +773,11 @@ describe('useSync public API', () => {
     const docB = createDoc('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
     const sendMessage = ws.sendMessage as jest.Mock;
     const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    outboxMock.configureDrain({
+      send: (message: unknown) => sendMessage(message),
+      isReady: () => true,
+    });
 
     act(() => {
       result.current.registerSyncContext({ doc: docA, collabType: Types.Document });
@@ -705,15 +790,16 @@ describe('useSync public API', () => {
       docB.getMap('root').set('b', 2);
     });
 
-    act(() => {
-      result.current.flushAllSync();
+    await act(async () => {
+      await result.current.flushAllSync();
     });
 
     const updateCalls = sendMessage.mock.calls.filter((call) => call[0]?.collabMessage?.update);
+
     expect(updateCalls).toHaveLength(2);
     expect(updateCalls.map((call) => call[0].collabMessage.objectId).sort()).toEqual([docA.guid, docB.guid].sort());
 
-    jest.useRealTimers();
+    outboxMock.clearDrainConfig();
   });
 
   it('syncAllToServer sends one batch for all registered contexts', async () => {
