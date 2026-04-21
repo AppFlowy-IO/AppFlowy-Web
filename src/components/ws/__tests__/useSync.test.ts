@@ -94,6 +94,7 @@ jest.mock('@/application/sync-outbox', () => {
       const ids = objectIds ?? Array.from(ctx.pending.keys());
 
       for (const id of ids) drain(id);
+      return true;
     }),
     configureDrain: jest.fn((config: DrainConfig) => {
       ctx.config = config;

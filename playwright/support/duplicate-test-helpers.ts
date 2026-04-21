@@ -341,19 +341,36 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
 export async function insertInlineGridViaSlash(page: Page, docViewId: string, line: number = 0): Promise<void> {
   const editor = editorForView(page, docViewId);
   await expect(editor).toBeVisible({ timeout: 15000 });
-  await openSlashMenuInEditor(page, editor, line);
-  await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
 
-  const dialog = page.locator('[role="dialog"]');
-  if (await dialog.isVisible().catch(() => false)) {
-    await page.keyboard.press('Escape');
-    await expect(dialog)
-      .not.toBeVisible({ timeout: 5000 })
-      .catch(() => undefined);
+  // Retry the slash-menu → grid-block chain on slow CI: the click may not
+  // always produce a grid block (re-render race, focus issue, dialog intercept).
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      await openSlashMenuInEditor(page, editor, line);
+      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
+
+      const dialog = page.locator('[role="dialog"]');
+      if (await dialog.isVisible().catch(() => false)) {
+        await page.keyboard.press('Escape');
+        await expect(dialog)
+          .not.toBeVisible({ timeout: 5000 })
+          .catch(() => undefined);
+      }
+
+      await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 10000 });
+      await page.waitForTimeout(1500);
+      return;
+    } catch (e) {
+      if (attempt === 2) throw e;
+      // Clean up leftover "/" text and retry
+      await page.keyboard.press('Escape').catch(() => undefined);
+      await page.waitForTimeout(500);
+      await page.keyboard.press('Home').catch(() => undefined);
+      await page.keyboard.press('Shift+End').catch(() => undefined);
+      await page.keyboard.press('Backspace').catch(() => undefined);
+      await page.waitForTimeout(2000);
+    }
   }
-
-  await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 15000 });
-  await page.waitForTimeout(1500);
 }
 
 export async function insertLinkedGridViaSlash(
@@ -367,46 +384,50 @@ export async function insertLinkedGridViaSlash(
 
   // The database picker loads its list from the cached outline at open time.
   // If the outline hasn't propagated the renamed database yet, the picker will
-  // show "No databases found".  We retry the entire slash-command flow
-  // (close picker -> reopen -> search) to give the outline time to update.
+  // show "No databases found". We also retry if the picker itself fails to
+  // appear — on slow CI the slash-menu click → picker-open chain is racy.
   for (let attempt = 0; attempt < 3; attempt++) {
-    await openSlashMenuInEditor(page, editor, line);
-    await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedGrid')).first().click({ force: true });
-    await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
+    try {
+      await openSlashMenuInEditor(page, editor, line);
+      await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('linkedGrid')).first().click({ force: true });
+      await expect(page.getByText('Link to an existing database')).toBeVisible({ timeout: 10000 });
 
-    const loadingText = page.getByText('Loading...');
-    if ((await loadingText.count()) > 0) {
-      await expect(loadingText).not.toBeVisible({ timeout: 15000 });
+      const loadingText = page.getByText('Loading...');
+      if ((await loadingText.count()) > 0) {
+        await expect(loadingText).not.toBeVisible({ timeout: 15000 });
+      }
+
+      const popover = page.locator('.MuiPopover-paper').last();
+      await expect(popover).toBeVisible({ timeout: 10000 });
+
+      const searchInput = popover.locator('input[placeholder*="Search"]');
+      if ((await searchInput.count()) > 0) {
+        await searchInput.clear();
+        await searchInput.fill(databaseName);
+        await page.waitForTimeout(1500);
+      }
+
+      const matchCount = await popover.getByText(databaseName, { exact: false }).count();
+      if (matchCount > 0) {
+        await popover.getByText(databaseName, { exact: false }).first().click({ force: true });
+        await page.waitForTimeout(2000);
+        return;
+      }
+    } catch (e) {
+      if (attempt === 2) throw e;
+      // Fall through to cleanup + retry below
     }
 
-    const popover = page.locator('.MuiPopover-paper').last();
-    await expect(popover).toBeVisible({ timeout: 10000 });
-
-    const searchInput = popover.locator('input[placeholder*="Search"]');
-    if ((await searchInput.count()) > 0) {
-      await searchInput.clear();
-      await searchInput.fill(databaseName);
-      await page.waitForTimeout(1500);
-    }
-
-    const matchCount = await popover.getByText(databaseName, { exact: false }).count();
-    if (matchCount > 0) {
-      await popover.getByText(databaseName, { exact: false }).first().click({ force: true });
-      await page.waitForTimeout(2000);
-      return;
-    }
-
-    // Database not found — close the picker and clean up the current line
-    // before retrying. Escape closes the popover, then we select-all and
-    // delete the leftover "/" text to start fresh.
-    await page.keyboard.press('Escape');
+    // Picker didn't appear or database not found — close any open popovers and
+    // clean up the current line before retrying. Escape closes popovers,
+    // then select-all + delete removes any leftover "/" text.
+    await page.keyboard.press('Escape').catch(() => undefined);
     await page.waitForTimeout(500);
-    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape').catch(() => undefined);
     await page.waitForTimeout(500);
-    // Delete leftover slash text on the current line
-    await page.keyboard.press('Home');
-    await page.keyboard.press('Shift+End');
-    await page.keyboard.press('Backspace');
+    await page.keyboard.press('Home').catch(() => undefined);
+    await page.keyboard.press('Shift+End').catch(() => undefined);
+    await page.keyboard.press('Backspace').catch(() => undefined);
     await page.waitForTimeout(3000);
   }
 

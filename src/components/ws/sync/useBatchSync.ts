@@ -3,8 +3,8 @@ import * as Y from 'yjs';
 
 import { getRowKey , getMetaJSON } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
-import { getCachedRowSubDoc, getCachedRowSubDocIds } from '@/application/services/js-services/cache';
-import { collabFullSyncBatch } from '@/application/services/js-services/http/http_api';
+import { getCachedRowSubDoc, getCachedRowSubDocIds, awaitPendingRowDocEnsures } from '@/application/services/js-services/cache';
+import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
 import { withRetry } from '@/application/services/js-services/http/core';
 import { waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
@@ -262,6 +262,46 @@ export function useBatchSync(refs: SyncRefs) {
       if (items.length === 0) {
         Log.debug('No collabs to sync');
         return;
+      }
+
+      // Ensure server-side collabs exist for all row sub-documents before batch
+      // sync. Row sub-documents are created on the server lazily via
+      // `ensureRowDocumentExists` (fire-and-forget) when the user first types in
+      // them. Two-phase approach:
+      //   1. Await any in-flight creations tracked by `trackRowDocEnsure` — this
+      //      covers the common case where the dialog's ensureRowDocumentExists is
+      //      still running.
+      //   2. As a fallback, check existence and create if missing — this covers
+      //      edge cases where the creation never fired (e.g., dialog closed
+      //      before the first edit's debounce).
+      const rowDocItemIds = items
+        .filter((item) => item.collabType === Types.Document && unregisteredRowDocumentIds.has(item.objectId))
+        .map((item) => item.objectId);
+
+      if (rowDocItemIds.length > 0) {
+        // Phase 1: Wait for any in-flight ensureRowDocumentExists calls
+        await awaitPendingRowDocEnsures(rowDocItemIds);
+
+        // Phase 2: Verify existence and create if still missing
+        await Promise.all(
+          rowDocItemIds.map(async (documentId) => {
+            try {
+              const exists = await checkIfCollabExists(workspaceId, documentId);
+
+              if (!exists) {
+                Log.debug('[sync] creating orphaned view for row document before batch sync', {
+                  documentId,
+                });
+                await createOrphanedView(workspaceId, { document_id: documentId });
+              }
+            } catch (e) {
+              Log.warn('[sync] failed to ensure row document collab exists', {
+                documentId,
+                error: e,
+              });
+            }
+          })
+        );
       }
 
       // Send all collabs in a single batch request (same as desktop's collab_full_sync_batch).

@@ -564,7 +564,7 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
       return;
     }
 
-    const ids = records.map((r) => r.id!).filter((id) => id !== undefined);
+    const ids = records.map((r) => r.id).filter((id): id is number => id !== undefined);
 
     try {
       await db.sync_outbox.bulkDelete(ids);

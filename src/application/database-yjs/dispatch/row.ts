@@ -28,7 +28,7 @@ import {
 } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
-import { getCachedProviderDoc } from '@/application/db';
+import { getCachedProviderDoc, openCollabDB } from '@/application/db';
 import { Log } from '@/utils/log';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
@@ -44,6 +44,7 @@ import {
   YDatabaseCell,
   YDatabaseRow,
   YDatabaseView,
+  YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
   YSharedRoot,
@@ -576,25 +577,37 @@ export function useDuplicateRowDispatch() {
           let clientDocStateB64: string | undefined;
 
           if (sourceDocId) {
-            // Check the dialog sub-doc cache first, then fall back to the
-            // IndexedDB provider cache (used by full-page row editors).
-            // Important: the dialog sub-doc may be an empty shell if the user
-            // typed content in full-page mode — in that case prefer the
-            // provider doc which has the actual content.
-            let cachedDoc = getCachedRowSubDoc(sourceDocId);
+            // Find a Y.Doc with actual content. Check in priority order:
+            //   1. Dialog sub-doc cache (rowSubDocs) — populated when user
+            //      opens the row in dialog mode.
+            //   2. Provider cache (providerCache) — populated when user opens
+            //      the row in full-page mode.
+            //   3. IndexedDB — durable y-indexeddb store. Survives cache
+            //      eviction and deferred cleanup.
+            // Any of these may be an empty shell (doc structure but no
+            // content) if the user typed in a different mode, so we validate
+            // content at each step and fall through if empty.
+            const hasMeaningfulContent = (doc: YDoc | undefined): boolean => {
+              if (!doc) return false;
+              const root = doc.getMap(YjsEditorKey.data_section);
+              const document = root?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+              const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
 
-            if (cachedDoc) {
-              // Verify the sub-doc has real document content, not just empty structure
-              const subDocRoot = cachedDoc.getMap(YjsEditorKey.data_section);
-              const subDocDocument = subDocRoot?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
-              const subDocBlocks = subDocDocument?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
+              return !!blocks && blocks.size > 2;
+            };
 
-              if (!subDocBlocks || subDocBlocks.size <= 2) {
-                // Dialog sub-doc is empty — try the provider doc instead
-                cachedDoc = getCachedProviderDoc(sourceDocId) ?? cachedDoc;
-              }
-            } else {
+            let cachedDoc: YDoc | undefined = getCachedRowSubDoc(sourceDocId);
+
+            if (!hasMeaningfulContent(cachedDoc)) {
               cachedDoc = getCachedProviderDoc(sourceDocId);
+            }
+
+            if (!hasMeaningfulContent(cachedDoc)) {
+              try {
+                cachedDoc = await openCollabDB(sourceDocId);
+              } catch (e) {
+                Log.warn('[duplicateRowDocument] openCollabDB fallback failed', { sourceDocId, error: e });
+              }
             }
 
             if (cachedDoc) {

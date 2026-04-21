@@ -1035,6 +1035,30 @@ export function useWorkspaceData() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentWorkspaceId]);
 
+  // Reload the outline after the server-side selected workspace catches up
+  // to the URL workspace (post auto-switch). This matters for guests opening
+  // a shared direct link: the initial outline call may return limited data
+  // because the server hadn't yet recognised the user as operating on this
+  // workspace. Once WorkspaceService.open() resolves and userWorkspaceInfo
+  // refreshes, refetch so the sidebar populates. Skip on initial render
+  // (`undefined → defined`) — that's already handled by the effect above.
+  const selectedWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
+  const prevSelectedWorkspaceIdRef = useRef<string | undefined>(selectedWorkspaceId);
+
+  useEffect(() => {
+    const prev = prevSelectedWorkspaceIdRef.current;
+
+    prevSelectedWorkspaceIdRef.current = selectedWorkspaceId;
+
+    // Only reload when transitioning between two defined values (an actual
+    // workspace switch), not on the initial load where prev was undefined.
+    if (!prev || !selectedWorkspaceId || prev === selectedWorkspaceId) return;
+    if (!currentWorkspaceId) return;
+
+    void loadOutline(currentWorkspaceId, false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedWorkspaceId, currentWorkspaceId]);
+
   // Load database relations
   useEffect(() => {
     void enhancedLoadDatabaseRelations();

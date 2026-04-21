@@ -137,19 +137,14 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
       // Server send — gated on WS being OPEN via isReady(). `keep=false` so
       // a transient close does not silently buffer the message into
       // react-use-websocket's in-memory retry queue (which would be lost on
-      // refresh). If the readyState changes between our check and the actual
-      // send, re-read it from the ref and throw — the drain catches and
-      // leaves outbox records in place for retry.
+      // refresh). The drain catches send failures and leaves outbox records
+      // in place for retry.
       send: (message) => {
         if (wsReadyStateRef.current !== WS_READY_STATE_OPEN) {
           throw new Error('[outbox] WS not OPEN at send time');
         }
 
         wsSendMessage(message, false);
-
-        if (wsReadyStateRef.current !== WS_READY_STATE_OPEN) {
-          throw new Error('[outbox] WS closed during send');
-        }
       },
       // Sibling-tab fan-out — runs synchronously on every enqueue, regardless
       // of WS readiness, so local edits propagate across tabs even during a

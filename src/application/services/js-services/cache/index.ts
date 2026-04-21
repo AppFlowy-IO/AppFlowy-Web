@@ -728,6 +728,41 @@ export function getCachedRowSubDocIds(): string[] {
   return Array.from(rowSubDocs.keys());
 }
 
+// Tracks in-flight `ensureRowDocumentExists` promises per documentId.
+// `syncAllToServer` awaits these before batch-syncing so the server-side
+// collab is guaranteed to exist when `collabFullSyncBatch` runs.
+const pendingRowDocEnsures = new Map<string, Promise<boolean>>();
+
+/**
+ * Register an in-flight `ensureRowDocumentExists` promise so that
+ * `awaitPendingRowDocEnsures` can wait for it before batch sync.
+ */
+export function trackRowDocEnsure(documentId: string, promise: Promise<boolean>) {
+  pendingRowDocEnsures.set(documentId, promise);
+  void promise.finally(() => {
+    // Only delete if it's still the same promise (not replaced by a retry)
+    if (pendingRowDocEnsures.get(documentId) === promise) {
+      pendingRowDocEnsures.delete(documentId);
+    }
+  });
+}
+
+/**
+ * Wait for all in-flight `ensureRowDocumentExists` calls to settle.
+ * Called by `syncAllToServer` before `collabFullSyncBatch` to ensure
+ * server-side collabs exist for all row sub-documents.
+ */
+export async function awaitPendingRowDocEnsures(documentIds?: string[]): Promise<void> {
+  const ids = documentIds ?? Array.from(pendingRowDocEnsures.keys());
+  const promises = ids
+    .map((id) => pendingRowDocEnsures.get(id))
+    .filter((p): p is Promise<boolean> => p !== undefined);
+
+  if (promises.length > 0) {
+    await Promise.allSettled(promises);
+  }
+}
+
 /**
  * Remove a row sub-document from the cache.
  * Call this when the document is no longer needed (e.g., row deleted).

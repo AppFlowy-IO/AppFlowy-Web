@@ -34,7 +34,7 @@ jest.mock('@/application/sync-outbox', () => {
       peers.forEach((peer) => peer.emit(message));
     }),
     deleteOutboxByObjectId: jest.fn(async () => undefined),
-    waitForDrain: jest.fn(async () => undefined),
+    waitForDrain: jest.fn(async () => true),
     configureDrain: jest.fn(),
     clearDrainConfig: jest.fn(),
     startDrainAll: jest.fn(),
