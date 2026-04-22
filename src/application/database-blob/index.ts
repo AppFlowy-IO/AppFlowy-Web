@@ -1,5 +1,8 @@
 import { stringify as uuidStringify } from 'uuid';
 
+import * as Y from 'yjs';
+
+import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedProviderDoc, openCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
@@ -25,15 +28,67 @@ type PrefetchOptions = {
   onSeedsReady?: () => void;
 };
 
+type SharedPrefetchEntry = {
+  priorityRowIds: Set<string>;
+  onSeedsReadyCallbacks: Set<() => void>;
+  seedsReady: boolean;
+  settled?: boolean;
+  clearWhenSettled?: boolean;
+  promise?: Promise<database_blob.DatabaseBlobDiffResponse>;
+};
+
 const RID_CACHE_PREFIX = 'af_database_blob_rid:';
 const APPLY_CONCURRENCY = 6;
 const MAX_ROW_DOC_SEEDS = 2000;
 const MAX_ROW_DOC_SEEDS_LOOKUP = 10000;
 
 const readyStatus = database_blob.DiffStatus.READY;
+const sharedPrefetchEntries = new Map<string, SharedPrefetchEntry>();
 
 function ridCacheKey(databaseId: string) {
   return `${RID_CACHE_PREFIX}${databaseId}`;
+}
+
+function sharedPrefetchKey(workspaceId: string, databaseId: string) {
+  return `${workspaceId}:${databaseId}`;
+}
+
+function applyPrefetchOptions(entry: SharedPrefetchEntry, options?: PrefetchOptions) {
+  options?.priorityRowIds?.forEach((rowId) => entry.priorityRowIds.add(rowId));
+
+  if (!options?.onSeedsReady) return;
+
+  if (entry.seedsReady) {
+    void Promise.resolve().then(options.onSeedsReady);
+    return;
+  }
+
+  entry.onSeedsReadyCallbacks.add(options.onSeedsReady);
+}
+
+function notifySeedsReady(entry: SharedPrefetchEntry) {
+  entry.seedsReady = true;
+  const callbacks = Array.from(entry.onSeedsReadyCallbacks);
+
+  entry.onSeedsReadyCallbacks.clear();
+  callbacks.forEach((callback) => callback());
+}
+
+function clearSharedPrefetchEntryAfterSettle(
+  databaseId: string,
+  sharedKey: string,
+  entry: SharedPrefetchEntry
+) {
+  if (entry.clearWhenSettled) return;
+  entry.clearWhenSettled = true;
+
+  entry.promise?.finally(() => {
+    entry.clearWhenSettled = false;
+
+    if ((rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) === 0 && sharedPrefetchEntries.get(sharedKey) === entry) {
+      clearDatabaseRowDocSeedCache(databaseId);
+    }
+  }).catch(() => undefined);
 }
 
 function parseRid(rid?: database_blob.IDatabaseBlobRowRid | null): DatabaseBlobRowRid | null {
@@ -81,6 +136,22 @@ function compareRid(a: DatabaseBlobRowRid, b: DatabaseBlobRowRid) {
 
 const rowDocSeedCache = new Map<string, RowDocSeed>();
 const rowDocSeedLookup = new Map<string, RowDocSeed>();
+const rowDocSeedDocCache = new Map<string, YDoc>();
+const rowDocSeedCacheRetainCounts = new Map<string, number>();
+
+function applySeedToSharedRowDoc(rowKey: string, seed: RowDocSeed) {
+  const doc = rowDocSeedDocCache.get(rowKey);
+
+  if (!doc) return;
+
+  try {
+    applyYDoc(doc, seed.bytes, seed.encoderVersion);
+    invalidateRowConditionCache(doc);
+  } catch {
+    doc.destroy();
+    rowDocSeedDocCache.delete(rowKey);
+  }
+}
 
 function trimRowDocSeedLookup() {
   while (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
@@ -92,12 +163,15 @@ function trimRowDocSeedLookup() {
 }
 
 function cacheRowDocSeed(rowKey: string, docState?: database_blob.ICollabDocState | null) {
-  if (getCachedRowDoc(rowKey)) return;
+  const cachedDoc = getCachedRowDoc(rowKey);
+
+  if (hasRowConditionData(cachedDoc)) return;
 
   const seed = getDocState(docState);
 
   if (!seed) return;
 
+  applySeedToSharedRowDoc(rowKey, seed);
   rowDocSeedCache.set(rowKey, seed);
 
   while (rowDocSeedCache.size > MAX_ROW_DOC_SEEDS) {
@@ -144,8 +218,74 @@ export function takeDatabaseRowDocSeed(rowKey: string): RowDocSeed | null {
   return seed;
 }
 
+/**
+ * Non-destructive read of a row doc seed. Multiple database views may need
+ * the same row seed at the same time: one to build an in-memory doc for
+ * filter/sort, another to open the IndexedDB-backed row doc for rendering.
+ */
+export function peekDatabaseRowDocSeed(rowKey: string): RowDocSeed | null {
+  return rowDocSeedCache.get(rowKey) ?? rowDocSeedLookup.get(rowKey) ?? null;
+}
+
+/**
+ * Shared read-only row doc for filter/sort. Reuses an existing live row doc
+ * when one is already cached; otherwise builds one shared in-memory doc from
+ * seed bytes so multiple views of the same database can reuse cell values.
+ */
+export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
+  const liveDoc = getCachedRowDoc(rowKey);
+
+  if (hasRowConditionData(liveDoc)) return liveDoc;
+
+  const cachedDoc = rowDocSeedDocCache.get(rowKey);
+
+  if (cachedDoc) {
+    if (hasRowConditionData(cachedDoc)) return cachedDoc;
+    cachedDoc.destroy();
+    rowDocSeedDocCache.delete(rowKey);
+  }
+
+  const seed = peekDatabaseRowDocSeed(rowKey);
+
+  if (!seed) return null;
+
+  const doc = new Y.Doc({ guid: rowKey }) as YDoc;
+
+  try {
+    applyYDoc(doc, seed.bytes, seed.encoderVersion);
+  } catch {
+    doc.destroy();
+    return null;
+  }
+
+  const dataSection = doc.getMap(YjsEditorKey.data_section);
+
+  if (!dataSection.has(YjsEditorKey.database_row)) {
+    doc.destroy();
+    return null;
+  }
+
+  rowDocSeedDocCache.set(rowKey, doc);
+  return doc;
+}
+
 export function clearDatabaseRowDocSeedCache(databaseId: string) {
   const prefix = `${databaseId}_rows_`;
+  const sharedPrefetchSuffix = `:${databaseId}`;
+  let hasUnsettledPrefetch = false;
+
+  for (const [key, entry] of sharedPrefetchEntries.entries()) {
+    if (key.endsWith(sharedPrefetchSuffix)) {
+      entry.onSeedsReadyCallbacks.clear();
+
+      if (entry.promise && !entry.settled) {
+        clearSharedPrefetchEntryAfterSettle(databaseId, key, entry);
+        hasUnsettledPrefetch = true;
+      }
+    }
+  }
+
+  if (hasUnsettledPrefetch) return;
 
   for (const key of rowDocSeedCache.keys()) {
     if (key.startsWith(prefix)) {
@@ -158,6 +298,36 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
       rowDocSeedLookup.delete(key);
     }
   }
+
+  for (const [key, doc] of rowDocSeedDocCache.entries()) {
+    if (key.startsWith(prefix)) {
+      doc.destroy();
+      rowDocSeedDocCache.delete(key);
+    }
+  }
+
+  for (const [key, entry] of sharedPrefetchEntries.entries()) {
+    if (key.endsWith(sharedPrefetchSuffix)) {
+      entry.onSeedsReadyCallbacks.clear();
+      sharedPrefetchEntries.delete(key);
+    }
+  }
+}
+
+export function retainDatabaseRowDocSeedCache(databaseId: string) {
+  rowDocSeedCacheRetainCounts.set(databaseId, (rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) + 1);
+}
+
+export function releaseDatabaseRowDocSeedCache(databaseId: string) {
+  const count = rowDocSeedCacheRetainCounts.get(databaseId) ?? 0;
+
+  if (count > 1) {
+    rowDocSeedCacheRetainCounts.set(databaseId, count - 1);
+    return;
+  }
+
+  rowDocSeedCacheRetainCounts.delete(databaseId);
+  clearDatabaseRowDocSeedCache(databaseId);
 }
 
 function maxRidFromDiff(diff: database_blob.DatabaseBlobDiffResponse): DatabaseBlobRowRid | null {
@@ -231,6 +401,7 @@ function applySeedToCachedDoc(rowKey: string, seed: RowDocSeed) {
   if (!cachedDoc) return false;
 
   applyYDoc(cachedDoc, seed.bytes, seed.encoderVersion);
+  invalidateRowConditionCache(cachedDoc);
   return true;
 }
 
@@ -259,6 +430,7 @@ function seedRowDocCacheFromDiff(databaseId: string, diff: database_blob.Databas
 
     if (!seed) return;
 
+    applySeedToSharedRowDoc(rowKey, seed);
     rowDocSeedLookup.set(rowKey, seed);
     if (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
       trimRowDocSeedLookup();
@@ -299,6 +471,7 @@ function seedRowDocCacheFromDiff(databaseId: string, diff: database_blob.Databas
 
     if (!seed) return;
 
+    applySeedToSharedRowDoc(rowKey, seed);
     rowDocSeedLookup.set(rowKey, seed);
     if (rowDocSeedLookup.size > MAX_ROW_DOC_SEEDS_LOOKUP) {
       trimRowDocSeedLookup();
@@ -381,6 +554,7 @@ async function applyCollabUpdate(objectId: string, docState: database_blob.IColl
       ...beforeState,
     });
     applyYDoc(cachedDoc, state.bytes, state.encoderVersion);
+    invalidateRowConditionCache(cachedDoc);
 
     const afterState = inspectDocRowData(cachedDoc, objectId);
 
@@ -609,41 +783,84 @@ export async function prefetchDatabaseBlobDiff(
   databaseId: string,
   options?: PrefetchOptions
 ) {
-  const diff = await fetchReadyDiff(workspaceId, databaseId);
-  const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, options);
+  const sharedKey = sharedPrefetchKey(workspaceId, databaseId);
+  const existingEntry = sharedPrefetchEntries.get(sharedKey);
 
-  Log.debug('[Database] blob seed cache prepared', {
-    databaseId,
-    ...seedSummary,
-    seedCount: rowDocSeedCache.size,
-    lookupCount: rowDocSeedLookup.size,
-  });
-
-  // Signal that seeds are available before the slow IndexedDB persist
-  options?.onSeedsReady?.();
-
-  const applyStartedAt = Date.now();
-
-  try {
-    await applyDiff(databaseId, diff, { seedCache: false });
-    Log.debug('[Database] blob diff persisted to IndexedDB', {
-      databaseId,
-      durationMs: Date.now() - applyStartedAt,
-      ...summarizeDiff(diff),
-    });
-
-    const maxRid = maxRidFromDiff(diff);
-
-    if (maxRid) {
-      writeCachedRid(databaseId, maxRid);
-      Log.debug('[Database] blob updated rid cache', { databaseId, maxRid });
-    }
-  } catch (error) {
-    Log.warn('[Database] blob diff persist failed', {
-      databaseId,
-      error,
-    });
+  if (existingEntry?.promise && !existingEntry.settled) {
+    applyPrefetchOptions(existingEntry, options);
+    return existingEntry.promise;
   }
 
-  return diff;
+  if (existingEntry) {
+    existingEntry.onSeedsReadyCallbacks.clear();
+    sharedPrefetchEntries.delete(sharedKey);
+  }
+
+  const entry: SharedPrefetchEntry = {
+    priorityRowIds: new Set(),
+    onSeedsReadyCallbacks: new Set(),
+    seedsReady: false,
+  };
+
+  applyPrefetchOptions(entry, options);
+
+  const promise = (async () => {
+    const diff = await fetchReadyDiff(workspaceId, databaseId);
+    const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, {
+      priorityRowIds: Array.from(entry.priorityRowIds),
+    });
+
+    Log.debug('[Database] blob seed cache prepared', {
+      databaseId,
+      ...seedSummary,
+      seedCount: rowDocSeedCache.size,
+      lookupCount: rowDocSeedLookup.size,
+    });
+
+    // Signal that seeds are available before the slow IndexedDB persist.
+    notifySeedsReady(entry);
+
+    const applyStartedAt = Date.now();
+
+    try {
+      await applyDiff(databaseId, diff, { seedCache: false });
+      Log.debug('[Database] blob diff persisted to IndexedDB', {
+        databaseId,
+        durationMs: Date.now() - applyStartedAt,
+        ...summarizeDiff(diff),
+      });
+
+      const maxRid = maxRidFromDiff(diff);
+
+      if (maxRid) {
+        writeCachedRid(databaseId, maxRid);
+        Log.debug('[Database] blob updated rid cache', { databaseId, maxRid });
+      }
+    } catch (error) {
+      Log.warn('[Database] blob diff persist failed', {
+        databaseId,
+        error,
+      });
+    }
+
+    return diff;
+  })().finally(() => {
+    entry.settled = true;
+  });
+
+  entry.promise = promise;
+  sharedPrefetchEntries.set(sharedKey, entry);
+
+  try {
+    return await promise;
+  } catch (error) {
+    const currentEntry = sharedPrefetchEntries.get(sharedKey);
+
+    if (currentEntry === entry) {
+      sharedPrefetchEntries.delete(sharedKey);
+    }
+
+    entry.onSeedsReadyCallbacks.clear();
+    throw error;
+  }
 }

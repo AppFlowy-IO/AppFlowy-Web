@@ -51,8 +51,16 @@ export interface DatabaseContextState {
   rowMap: Record<RowId, YDoc> | null;
   ensureRow?: (rowId: string) => Promise<YDoc | undefined> | void;
   loadRowFromSeed?: (rowId: string) => Promise<YDoc | undefined>;
+  /**
+   * Synchronous shared read-only doc for filter/sort. Reuses an existing
+   * row doc when cached; otherwise builds one shared in-memory Y.Doc from
+   * seed bytes without touching IndexedDB or consuming the seed.
+   */
+  peekRowDocFromSeed?: (rowId: string) => YDoc | null;
   bindRowSync?: (rowId: string) => void;
   blobPrefetchComplete?: boolean;
+  /** True as soon as row seeds are cached (before IndexedDB persist completes). */
+  seedsReady?: boolean;
   isDatabaseRowPage?: boolean;
   paddingStart?: number;
   paddingEnd?: number;
