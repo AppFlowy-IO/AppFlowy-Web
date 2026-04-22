@@ -1,19 +1,180 @@
-import { useEffect, useRef, useState } from 'react';
+import { startTransition, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
 
-import { useDatabaseContext, useDatabaseView, useRowMap } from '@/application/database-yjs/context';
+import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
+import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { openCollabDBWithProvider } from '@/application/db';
 import { YDoc, YjsDatabaseKey } from '@/application/types';
 
 const BACKGROUND_BATCH_SIZE = 24;
 const BACKGROUND_CONCURRENCY = 12;
+const SEED_HYDRATE_BATCH_SIZE = 32;
+
+type RowDocMap = Record<string, YDoc>;
+
+const pendingEphemeralRowDocs = new Map<string, Promise<YDoc>>();
+const retainedEphemeralRowDocs = new WeakMap<YDoc, number>();
+
+function openEphemeralRowDoc(rowKey: string) {
+  const pending = pendingEphemeralRowDocs.get(rowKey);
+
+  if (pending) return pending;
+
+  const promise = (async () => {
+    const { doc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
+
+    await provider.destroy();
+    return doc;
+  })();
+
+  pendingEphemeralRowDocs.set(rowKey, promise);
+  promise.finally(() => {
+    if (pendingEphemeralRowDocs.get(rowKey) === promise) {
+      pendingEphemeralRowDocs.delete(rowKey);
+    }
+  }).catch(() => undefined);
+
+  return promise;
+}
+
+function retainEphemeralRowDoc(doc: YDoc) {
+  retainedEphemeralRowDocs.set(doc, (retainedEphemeralRowDocs.get(doc) ?? 0) + 1);
+}
+
+function releaseOwnedRowDoc(doc: YDoc) {
+  const retainCount = retainedEphemeralRowDocs.get(doc) ?? 0;
+
+  if (retainCount > 1) {
+    retainedEphemeralRowDocs.set(doc, retainCount - 1);
+    return;
+  }
+
+  if (retainCount === 1) {
+    retainedEphemeralRowDocs.delete(doc);
+  }
+
+  doc.destroy();
+}
+
+type LoaderStore = {
+  key: string;
+  refCount: number;
+  cachedRowDocs: RowDocMap;
+  subscribers: Set<() => void>;
+  sharedCachedRowDocIds: Set<string>;
+  cachedRowDocPending: Map<string, Promise<YDoc | undefined>>;
+  backgroundQueue: Set<string>;
+  backgroundLoading: boolean;
+  backgroundCancelled: boolean;
+  backgroundRun: number;
+  pendingDocs: RowDocMap;
+  flushHandle: number | null;
+  seedHydrateFrame: number | null;
+  seedHydrateRun: number;
+  seedHydrateActive: boolean;
+  rows: RowDocMap | null | undefined;
+};
+
+const loaderStores = new Map<string, LoaderStore>();
+
+function createLoaderStore(key: string): LoaderStore {
+  return {
+    key,
+    refCount: 0,
+    cachedRowDocs: {},
+    subscribers: new Set(),
+    sharedCachedRowDocIds: new Set(),
+    cachedRowDocPending: new Map(),
+    backgroundQueue: new Set(),
+    backgroundLoading: false,
+    backgroundCancelled: false,
+    backgroundRun: 0,
+    pendingDocs: {},
+    flushHandle: null,
+    seedHydrateFrame: null,
+    seedHydrateRun: 0,
+    seedHydrateActive: false,
+    rows: undefined,
+  };
+}
+
+function getLoaderStore(key: string) {
+  let store = loaderStores.get(key);
+
+  if (!store) {
+    store = createLoaderStore(key);
+    loaderStores.set(key, store);
+  }
+
+  return store;
+}
+
+function notifyStore(store: LoaderStore) {
+  store.subscribers.forEach((callback) => callback());
+}
+
+function disposeStoreDoc(store: LoaderStore, rowId: string, doc: YDoc) {
+  if (store.sharedCachedRowDocIds.has(rowId) && store.cachedRowDocs[rowId] === doc) return;
+  releaseOwnedRowDoc(doc);
+}
+
+function setStoreCachedRowDocs(store: LoaderStore, updater: (prev: RowDocMap) => RowDocMap) {
+  const next = updater(store.cachedRowDocs);
+
+  if (next === store.cachedRowDocs) return;
+  store.cachedRowDocs = next;
+  notifyStore(store);
+}
+
+function clearPendingFlush(store: LoaderStore) {
+  if (store.flushHandle !== null) {
+    cancelAnimationFrame(store.flushHandle);
+    store.flushHandle = null;
+  }
+
+  Object.entries(store.pendingDocs).forEach(([rowId, doc]) => {
+    disposeStoreDoc(store, rowId, doc);
+  });
+  store.pendingDocs = {};
+}
+
+function cancelBackgroundRun(store: LoaderStore, runId?: number) {
+  if (runId !== undefined && store.backgroundRun !== runId) return;
+
+  store.backgroundRun += 1;
+  store.backgroundCancelled = true;
+  store.backgroundQueue.clear();
+  store.backgroundLoading = false;
+  clearPendingFlush(store);
+}
+
+function destroyStore(store: LoaderStore) {
+  cancelBackgroundRun(store);
+
+  Object.entries(store.cachedRowDocs).forEach(([rowId, doc]) => {
+    disposeStoreDoc(store, rowId, doc);
+  });
+
+  store.seedHydrateRun += 1;
+  if (store.seedHydrateFrame !== null) {
+    cancelAnimationFrame(store.seedHydrateFrame);
+  }
+
+  store.cachedRowDocs = {};
+  store.sharedCachedRowDocIds.clear();
+  store.cachedRowDocPending.clear();
+  store.seedHydrateFrame = null;
+  store.seedHydrateActive = false;
+  loaderStores.delete(store.key);
+}
 
 /**
  * Hook that handles background loading of row documents for sorting/filtering.
  * When sorts or filters are active, row docs need to be loaded to apply conditions.
  *
- * Uses blob diff seeds (via loadRowFromSeed) when available for fast loading,
- * falling back to IndexedDB for rows without seeds.
+ * The loader state is shared per database view because useRowOrdersSelector is
+ * consumed by several grid subcomponents. Without this store, each consumer
+ * starts its own row hydration pass.
  *
  * @param hasConditions - Whether there are active sorts or filters
  * @returns Object containing cached row docs and merged row docs for conditions
@@ -21,36 +182,84 @@ const BACKGROUND_CONCURRENCY = 12;
 export function useBackgroundRowDocLoader(hasConditions: boolean) {
   const rows = useRowMap();
   const view = useDatabaseView();
-  const { databaseDoc, loadRowFromSeed, blobPrefetchComplete } = useDatabaseContext();
+  const viewId = useDatabaseViewId();
+  const { databaseDoc, loadRowFromSeed, peekRowDocFromSeed, blobPrefetchComplete, seedsReady } = useDatabaseContext();
+  const storeKey = `${databaseDoc.guid}:${viewId ?? 'unknown'}`;
+  const store = useMemo(() => getLoaderStore(storeKey), [storeKey]);
 
-  const [cachedRowDocs, setCachedRowDocs] = useState<Record<string, YDoc>>({});
-  const cachedRowDocsRef = useRef<Record<string, YDoc>>({});
-  const cachedRowDocPendingRef = useRef<Map<string, Promise<YDoc | undefined>>>(new Map());
-  const backgroundQueueRef = useRef<Set<string>>(new Set());
-  const backgroundLoadingRef = useRef(false);
-  const backgroundCancelledRef = useRef(false);
+  store.rows = rows;
 
-  // Keep ref in sync with state
+  const cachedRowDocs = useSyncExternalStore(
+    useCallback(
+      (onStoreChange) => {
+        store.subscribers.add(onStoreChange);
+        return () => {
+          store.subscribers.delete(onStoreChange);
+        };
+      },
+      [store]
+    ),
+    useCallback(() => store.cachedRowDocs, [store]),
+    useCallback(() => store.cachedRowDocs, [store])
+  );
+
+  const scheduleFlush = useCallback(() => {
+    if (store.flushHandle !== null) return;
+    store.flushHandle = requestAnimationFrame(() => {
+      store.flushHandle = null;
+      const pending = store.pendingDocs;
+
+      if (Object.keys(pending).length === 0) return;
+      store.pendingDocs = {};
+
+      startTransition(() => {
+        setStoreCachedRowDocs(store, (prev) => {
+          let changed = false;
+          const next = { ...prev };
+          const currentRows = store.rows;
+
+          Object.entries(pending).forEach(([rowId, doc]) => {
+            if (
+              !hasRowConditionData(doc) ||
+              hasRowConditionData(next[rowId]) ||
+              hasRowConditionData(currentRows?.[rowId])
+            ) {
+              releaseOwnedRowDoc(doc);
+              return;
+            }
+
+            next[rowId] = doc;
+            store.sharedCachedRowDocIds.delete(rowId);
+            changed = true;
+          });
+          return changed ? next : prev;
+        });
+      });
+    });
+  }, [store]);
+
   useEffect(() => {
-    cachedRowDocsRef.current = cachedRowDocs;
-  }, [cachedRowDocs]);
+    store.refCount += 1;
 
-  // Cancel background loading on unmount
-  useEffect(() => {
     return () => {
-      backgroundCancelledRef.current = true;
-    };
-  }, []);
+      store.refCount -= 1;
 
-  // Clean up cached docs that are now in the main rowMap
+      if (store.refCount <= 0) {
+        destroyStore(store);
+      }
+    };
+  }, [store]);
+
+  // Clean up cached docs that are now in the main rowMap.
   useEffect(() => {
-    const cached = cachedRowDocsRef.current;
+    const cached = store.cachedRowDocs;
     let changed = false;
-    const next: Record<string, YDoc> = {};
+    const next: RowDocMap = {};
 
     Object.entries(cached).forEach(([rowId, doc]) => {
-      if (rows?.[rowId]) {
-        doc.destroy();
+      if (hasRowConditionData(rows?.[rowId])) {
+        disposeStoreDoc(store, rowId, doc);
+        store.sharedCachedRowDocIds.delete(rowId);
         changed = true;
         return;
       }
@@ -59,20 +268,105 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
     });
 
     if (changed) {
-      setCachedRowDocs(next);
+      setStoreCachedRowDocs(store, () => next);
     }
-  }, [rows]);
+  }, [rows, store]);
 
-  // Clean up all cached docs when database changes
+  // Fast path: as soon as seeds are cached in memory, read shared in-memory
+  // row docs without IndexedDB. Hydrate in frame-sized chunks so large filtered
+  // databases do not spend one long task resolving every row.
   useEffect(() => {
-    const pendingRef = cachedRowDocPendingRef.current;
+    if (!hasConditions || !seedsReady || !peekRowDocFromSeed || store.seedHydrateActive) return;
+
+    const rowOrdersData = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as { id: string }[] | undefined;
+
+    if (!rowOrdersData) return;
+
+    const runId = store.seedHydrateRun + 1;
+    let index = 0;
+    let cancelled = false;
+
+    store.seedHydrateRun = runId;
+    store.seedHydrateActive = true;
+
+    const processBatch = () => {
+      if (cancelled || store.seedHydrateRun !== runId) return;
+
+      const additions: RowDocMap = {};
+      let processed = 0;
+
+      while (index < rowOrdersData.length && processed < SEED_HYDRATE_BATCH_SIZE) {
+        const rowId = rowOrdersData[index]?.id;
+
+        index += 1;
+        processed += 1;
+
+        if (
+          !rowId ||
+          additions[rowId] ||
+          hasRowConditionData(store.rows?.[rowId]) ||
+          hasRowConditionData(store.cachedRowDocs[rowId]) ||
+          hasRowConditionData(store.pendingDocs[rowId])
+        ) {
+          continue;
+        }
+
+        const doc = peekRowDocFromSeed(rowId);
+
+        if (doc) additions[rowId] = doc;
+      }
+
+      if (Object.keys(additions).length > 0) {
+        startTransition(() => {
+          setStoreCachedRowDocs(store, (prev) => {
+            let changed = false;
+            const next = { ...prev };
+            const currentRows = store.rows;
+
+            Object.entries(additions).forEach(([rowId, doc]) => {
+              if (
+                hasRowConditionData(next[rowId]) ||
+                hasRowConditionData(currentRows?.[rowId]) ||
+                hasRowConditionData(store.pendingDocs[rowId])
+              ) {
+                return;
+              }
+
+              next[rowId] = doc;
+              store.sharedCachedRowDocIds.add(rowId);
+              changed = true;
+            });
+            return changed ? next : prev;
+          });
+        });
+      }
+
+      if (index < rowOrdersData.length) {
+        store.seedHydrateFrame = requestAnimationFrame(processBatch);
+      } else {
+        store.seedHydrateFrame = null;
+        store.seedHydrateActive = false;
+      }
+    };
+
+    store.seedHydrateFrame = requestAnimationFrame(processBatch);
 
     return () => {
-      Object.values(cachedRowDocsRef.current).forEach((doc) => doc.destroy());
-      cachedRowDocsRef.current = {};
-      pendingRef.clear();
+      cancelled = true;
+      store.seedHydrateRun += 1;
+      store.seedHydrateActive = false;
+
+      if (store.seedHydrateFrame !== null) {
+        cancelAnimationFrame(store.seedHydrateFrame);
+        store.seedHydrateFrame = null;
+      }
     };
-  }, [databaseDoc.guid]);
+  }, [hasConditions, seedsReady, peekRowDocFromSeed, store, view, viewId]);
+
+  useEffect(() => {
+    if (hasConditions) return;
+    cancelBackgroundRun(store);
+  }, [hasConditions, store]);
 
   // Background loading of row docs for sorting/filtering.
   // Waits for blob prefetch to complete so seeds are available, then uses
@@ -85,46 +379,50 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
 
     if (!rowOrdersData) return;
 
-    const rowDocsForConditions = { ...cachedRowDocsRef.current, ...(rows || {}) };
+    const hasReadyRowDoc = (rowId: string) => {
+      return hasRowConditionData(store.cachedRowDocs[rowId]) || hasRowConditionData(store.rows?.[rowId]);
+    };
 
     rowOrdersData.forEach(({ id }) => {
-      if (!rowDocsForConditions[id]) {
-        backgroundQueueRef.current.add(id);
+      if (!hasReadyRowDoc(id)) {
+        store.backgroundQueue.add(id);
       }
     });
 
-    if (backgroundQueueRef.current.size === 0 || backgroundLoadingRef.current) return;
+    if (store.backgroundQueue.size === 0 || store.backgroundLoading) return;
 
-    backgroundLoadingRef.current = true;
-    backgroundCancelledRef.current = false;
+    const runId = store.backgroundRun + 1;
+    const isRunActive = () => store.backgroundRun === runId && !store.backgroundCancelled;
+
+    store.backgroundRun = runId;
+    store.backgroundLoading = true;
+    store.backgroundCancelled = false;
 
     const drainQueue = async () => {
-      while (!backgroundCancelledRef.current) {
-        if (backgroundQueueRef.current.size === 0) {
+      while (isRunActive()) {
+        if (store.backgroundQueue.size === 0) {
           await new Promise((resolve) => setTimeout(resolve, 0));
-          if (backgroundQueueRef.current.size === 0 || backgroundCancelledRef.current) {
+          if (store.backgroundQueue.size === 0 || !isRunActive()) {
             break;
           }
         }
 
-        const batch = Array.from(backgroundQueueRef.current).slice(0, BACKGROUND_BATCH_SIZE);
+        const batch = Array.from(store.backgroundQueue).slice(0, BACKGROUND_BATCH_SIZE);
 
         batch.forEach((rowId) => {
-          backgroundQueueRef.current.delete(rowId);
+          store.backgroundQueue.delete(rowId);
         });
 
         for (let i = 0; i < batch.length; i += BACKGROUND_CONCURRENCY) {
-          if (backgroundCancelledRef.current) break;
+          if (!isRunActive()) break;
           const slice = batch.slice(i, i + BACKGROUND_CONCURRENCY);
 
           await Promise.all(
             slice.map(async (rowId) => {
-              const currentRowDocs = { ...cachedRowDocsRef.current, ...(rows || {}) };
+              if (!isRunActive() || hasReadyRowDoc(rowId)) return;
 
-              if (currentRowDocs[rowId]) return;
-
-              if (cachedRowDocPendingRef.current.has(rowId)) {
-                await cachedRowDocPendingRef.current.get(rowId);
+              if (store.cachedRowDocPending.has(rowId)) {
+                await store.cachedRowDocPending.get(rowId);
                 return;
               }
 
@@ -133,71 +431,75 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
               if (loadRowFromSeed) {
                 const pending = loadRowFromSeed(rowId);
 
-                cachedRowDocPendingRef.current.set(rowId, pending);
+                store.cachedRowDocPending.set(rowId, pending);
 
                 try {
                   const doc = await pending;
 
-                  if (doc) return; // Success — doc is now in main rowMap
+                  if (!isRunActive()) return;
+                  if (hasRowConditionData(doc)) return;
                 } finally {
-                  cachedRowDocPendingRef.current.delete(rowId);
+                  store.cachedRowDocPending.delete(rowId);
                 }
               }
 
-              // Fallback: open from IndexedDB for rows without seeds
+              if (!isRunActive()) return;
+
+              // Fallback: open from IndexedDB for rows without seeds. The
+              // module-level pending map dedupes concurrent opens across views
+              // without retaining the doc in the process-wide row cache.
               const rowKey = getRowKey(databaseDoc.guid, rowId);
-              const pending = (async () => {
-                const { doc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
+              const pending = openEphemeralRowDoc(rowKey);
 
-                await provider.destroy();
-                return doc;
-              })();
-
-              cachedRowDocPendingRef.current.set(rowId, pending);
+              store.cachedRowDocPending.set(rowId, pending);
 
               try {
                 const doc = await pending;
 
-                if (backgroundCancelledRef.current) {
-                  doc.destroy();
+                retainEphemeralRowDoc(doc);
+
+                if (!isRunActive()) {
+                  releaseOwnedRowDoc(doc);
                   return;
                 }
 
-                if (rows?.[rowId]) {
-                  doc.destroy();
+                if (!hasRowConditionData(doc)) {
+                  releaseOwnedRowDoc(doc);
                   return;
                 }
 
-                setCachedRowDocs((prev) => {
-                  if (prev[rowId] || rows?.[rowId]) return prev;
-                  return { ...prev, [rowId]: doc };
-                });
+                if (hasReadyRowDoc(rowId) || hasRowConditionData(store.pendingDocs[rowId])) {
+                  releaseOwnedRowDoc(doc);
+                  return;
+                }
+
+                store.pendingDocs[rowId] = doc;
+                scheduleFlush();
               } finally {
-                cachedRowDocPendingRef.current.delete(rowId);
+                store.cachedRowDocPending.delete(rowId);
               }
             })
           );
         }
 
-        if (backgroundCancelledRef.current) break;
+        if (!isRunActive()) break;
 
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
 
-      backgroundLoadingRef.current = false;
+      if (store.backgroundRun === runId) {
+        store.backgroundLoading = false;
+      }
     };
 
     void drainQueue();
 
-    // Capture ref values for cleanup (react-hooks/exhaustive-deps)
-    const queueRef = backgroundQueueRef.current;
-
     return () => {
-      backgroundCancelledRef.current = true;
-      queueRef.clear();
-      backgroundLoadingRef.current = false;
+      if (store.refCount <= 0) {
+        cancelBackgroundRun(store, runId);
+      }
     };
-  }, [databaseDoc.guid, hasConditions, blobPrefetchComplete, rows, view, loadRowFromSeed]);
+  }, [databaseDoc.guid, hasConditions, blobPrefetchComplete, rows, view, viewId, loadRowFromSeed, scheduleFlush, store]);
 
   return {
     cachedRowDocs,

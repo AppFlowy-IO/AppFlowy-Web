@@ -593,17 +593,17 @@ function AppPage() {
     loadDatabaseRelations,
   ]);
 
-  // Keep previous view content visible during transitions to prevent
-  // the old Document from unmounting (which triggers clearAwareness/disconnect).
-  const viewDomRef = useRef<React.ReactNode>(null);
+  // Keep current view content visible during same-view transitions, but do not
+  // show stale content after navigating to a different view.
+  const viewDomRef = useRef<{ viewId: string; node: React.ReactNode } | null>(null);
 
   // Cache the latest non-null viewDom in an effect (not during render)
   // to keep the render function pure per React concurrent mode rules.
   useEffect(() => {
-    if (viewDom !== null) {
-      viewDomRef.current = viewDom;
+    if (viewDom !== null && viewId) {
+      viewDomRef.current = { viewId, node: viewDom };
     }
-  }, [viewDom]);
+  }, [viewDom, viewId]);
 
   // Clear stale content when an error occurs so the error UI shows immediately
   useEffect(() => {
@@ -614,7 +614,9 @@ function AppPage() {
 
   // Show current content, or keep previous content visible during transition.
   // The ref was set by a prior committed effect, so reading it here is safe.
-  const displayDom = viewDom ?? viewDomRef.current;
+  const cachedEntry = viewDomRef.current;
+  const cachedViewDom = cachedEntry && cachedEntry.viewId === viewId ? cachedEntry.node : null;
+  const displayDom = viewDom ?? cachedViewDom;
   const isTransitioning = viewDom === null && displayDom !== null;
 
   useEffect(() => {

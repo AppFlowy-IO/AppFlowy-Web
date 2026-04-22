@@ -1,9 +1,10 @@
 import dayjs from 'dayjs';
 import { debounce } from 'lodash-es';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
+import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
   useDatabase,
@@ -1096,11 +1097,27 @@ export function useRowOrdersSelector() {
   // Background loading of row docs for sorting/filtering
   const { cachedRowDocs } = useBackgroundRowDocLoader(hasConditions);
 
-  // Merge cached docs with main rowMap
-  const rowDocsForConditions = useMemo(
-    () => ({ ...cachedRowDocs, ...(rows || {}) }),
-    [cachedRowDocs, rows]
-  );
+  // Merge cached docs with main rowMap.
+  // useDeferredValue lets React treat the filter/sort recompute as low-priority
+  // so a burst of cache updates coalesces into fewer renders — React will
+  // abandon in-progress filter work when a newer snapshot arrives.
+  const rowDocsForConditionsRaw = useMemo(() => {
+    const next = { ...cachedRowDocs };
+
+    Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
+      if (hasRowConditionData(rowDoc) || !next[rowId]) {
+        next[rowId] = rowDoc;
+      }
+    });
+
+    return next;
+  }, [cachedRowDocs, rows]);
+  const rowDocsForConditions = useDeferredValue(rowDocsForConditionsRaw);
+  const rowDocsForConditionsRef = useRef(rowDocsForConditions);
+
+  useEffect(() => {
+    rowDocsForConditionsRef.current = rowDocsForConditions;
+  }, [rowDocsForConditions]);
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -1182,15 +1199,15 @@ export function useRowOrdersSelector() {
       return;
     }
 
-    // Apply filters/sorts progressively: only include rows whose docs are loaded.
-    // Rows without docs are excluded until their data arrives, at which point
-    // this callback re-runs and they get included if they match.
-    const rowsWithDocs = originalRowOrders.filter((row: Row) => rowDocsForConditions[row.id]);
+    // Apply filters/sorts progressively to the subset whose row docs are ready.
+    // This never renders raw unfiltered rows, but it allows matching rows to
+    // appear as soon as their cells can be evaluated instead of waiting for the
+    // entire database to finish loading.
+    const rowsWithDocs = originalRowOrders.filter((row: Row) => hasRowConditionData(rowDocsForConditions[row.id]));
 
     if (rowsWithDocs.length === 0) {
-      // No docs loaded yet — keep current state (or show empty if first run)
       if (!filtersAppliedRef.current) {
-        setRowOrders(originalRowOrders);
+        setRowOrders(undefined);
       }
 
       return;
@@ -1281,6 +1298,10 @@ export function useRowOrdersSelector() {
     const handleFieldChange = () => {
       refreshConditionFieldIds();
 
+      Object.values(rowDocsForConditionsRef.current).forEach((rowDoc) => {
+        invalidateRowConditionCache(rowDoc);
+      });
+
       if (rows) {
         Object.keys(rows).forEach((rowId) => {
           for (const fieldId of rollupFieldIds) {
@@ -1301,6 +1322,8 @@ export function useRowOrdersSelector() {
 
     Object.entries(rows || {}).forEach(([rowId, rowDoc]) => {
       const observerRowsEvent = () => {
+        invalidateRowConditionCache(rowDoc);
+
         // Only invalidate relation/rollup fields (O(relation+rollup) instead of O(allFields)).
         for (const fieldId of relationFieldIds) {
           invalidateRelationCell(`${rowId}:${fieldId}`);

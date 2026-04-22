@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 
+import { invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { closeCollabDB, db, evictProviderCache, openCollabDB, openCollabDBWithProvider } from '@/application/db';
@@ -460,6 +461,23 @@ let rowSyncLogCount = 0;
 let rowFastLogCount = 0;
 
 const rowDocs = new Map<string, RowDocEntry>();
+const pendingRowDocEntries = new Map<string, Promise<RowDocEntry>>();
+const appliedSeedBytesByDoc = new WeakMap<YDoc, WeakSet<Uint8Array>>();
+
+function hasAppliedSeed(doc: YDoc, seedBytes: Uint8Array) {
+  return appliedSeedBytesByDoc.get(doc)?.has(seedBytes) ?? false;
+}
+
+function markSeedApplied(doc: YDoc, seedBytes: Uint8Array) {
+  let appliedSeeds = appliedSeedBytesByDoc.get(doc);
+
+  if (!appliedSeeds) {
+    appliedSeeds = new WeakSet();
+    appliedSeedBytesByDoc.set(doc, appliedSeeds);
+  }
+
+  appliedSeeds.add(seedBytes);
+}
 
 async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
   const existing = rowDocs.get(rowKey);
@@ -468,18 +486,38 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
     return existing;
   }
 
-  // providerCache in openCollabDBWithProvider handles concurrent dedup
-  const entry = await _createRowDocEntry(rowKey);
+  const pending = pendingRowDocEntries.get(rowKey);
 
-  // Post-await race check: another caller may have populated rowDocs
-  const raceWinner = rowDocs.get(rowKey);
-
-  if (raceWinner) {
-    return raceWinner;
+  if (pending) {
+    return pending;
   }
 
-  rowDocs.set(rowKey, entry);
-  return entry;
+  const promise = (async () => {
+    // providerCache in openCollabDBWithProvider handles provider-level dedup;
+    // this map prevents duplicate row doc entry creation while the first open
+    // is still awaiting IndexedDB/provider setup.
+    const entry = await _createRowDocEntry(rowKey);
+
+    // Post-await race check: another caller may have populated rowDocs.
+    const raceWinner = rowDocs.get(rowKey);
+
+    if (raceWinner) {
+      return raceWinner;
+    }
+
+    rowDocs.set(rowKey, entry);
+    return entry;
+  })();
+
+  pendingRowDocEntries.set(rowKey, promise);
+
+  try {
+    return await promise;
+  } finally {
+    if (pendingRowDocEntries.get(rowKey) === promise) {
+      pendingRowDocEntries.delete(rowKey);
+    }
+  }
 }
 
 async function _createRowDocEntry(rowKey: string): Promise<RowDocEntry> {
@@ -542,7 +580,7 @@ export async function openRowDoc(rowKey: string, seed?: { bytes: Uint8Array; enc
   const rowSharedRootBefore = entry.doc.getMap(YjsEditorKey.data_section);
   const hasRowDataBefore = rowSharedRootBefore.has(YjsEditorKey.database_row);
 
-  if (seed) {
+  if (seed && !hasAppliedSeed(entry.doc, seed.bytes)) {
     Log.debug('[Database] createRowDocFast applying seed', {
       rowKey,
       seedBytes: seed.bytes.length,
@@ -551,6 +589,8 @@ export async function openRowDoc(rowKey: string, seed?: { bytes: Uint8Array; enc
     });
 
     applyYDoc(entry.doc, seed.bytes, seed.encoderVersion);
+    markSeedApplied(entry.doc, seed.bytes);
+    invalidateRowConditionCache(entry.doc);
   }
 
   const rowSharedRoot = entry.doc.getMap(YjsEditorKey.data_section);

@@ -1,19 +1,21 @@
 import { FieldType, RollupDisplayMode, SortCondition } from '@/application/database-yjs/database.type';
-import { decodeCellForSort } from '@/application/database-yjs/decode';
+import {
+  ConditionSortValue,
+  getConditionSortValue,
+  getRowConditionSnapshot,
+} from '@/application/database-yjs/condition-value-cache';
 import { parseRollupTypeOption } from '@/application/database-yjs/fields';
 import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
 import {
   RowId,
   YDatabaseFields,
-  YDatabaseRow,
   YDatabaseSorts,
   YDoc,
   YjsDatabaseKey,
-  YjsEditorKey,
 } from '@/application/types';
 
-type SortableValue = string | number | object | boolean | undefined;
+type SortableValue = ConditionSortValue;
 
 type SortOptions = {
   getRelationCellText?: (rowId: string, fieldId: string) => string;
@@ -82,22 +84,19 @@ export function sortBy(
 
       const rowId = row.id;
       const rowMeta = rowMetas[rowId];
-      const meta = rowMeta?.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+      const snapshot = getRowConditionSnapshot(rowMeta);
 
       const defaultData = defaultValueForSort(fieldType, Number(sort.get(YjsDatabaseKey.condition)), isRollupNumeric);
 
-      if (!meta) return defaultData;
+      if (!snapshot) return defaultData;
 
       if (fieldType === FieldType.LastEditedTime) {
-        return meta.get(YjsDatabaseKey.last_modified);
+        return snapshot.row.get(YjsDatabaseKey.last_modified);
       }
 
       if (fieldType === FieldType.CreatedTime) {
-        return meta.get(YjsDatabaseKey.created_at);
+        return snapshot.row.get(YjsDatabaseKey.created_at);
       }
-
-      const cells = meta.get(YjsDatabaseKey.cells);
-      const cell = cells.get(fieldId);
 
       if (fieldType === FieldType.Relation && options?.getRelationCellText) {
         const relationText = options.getRelationCellText(rowId, fieldId);
@@ -130,8 +129,7 @@ export function sortBy(
         return rollupValue?.value || defaultData;
       }
 
-      if (!cell) return defaultData;
-      const decoded = decodeCellForSort(cell, field);
+      const decoded = getConditionSortValue(snapshot, fieldId, field);
 
       if (decoded === undefined || decoded === null || decoded === '') {
         return defaultData;

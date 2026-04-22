@@ -1,10 +1,14 @@
 import dayjs from 'dayjs';
 import { every, filter, some } from 'lodash-es';
 
-import { parseYDatabaseDateTimeCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell } from '@/application/database-yjs/cell.type';
+import {
+  getConditionCellData,
+  getConditionCellText,
+  getConditionDateCell,
+  getRowConditionSnapshot,
+} from '@/application/database-yjs/condition-value-cache';
 import { FieldType, FilterType } from '@/application/database-yjs/database.type';
-import { decodeCellToText } from '@/application/database-yjs/decode';
 import {
   CheckboxFilter,
   CheckboxFilterCondition,
@@ -32,10 +36,8 @@ import {
   YDatabaseFields,
   YDatabaseFilter,
   YDatabaseFilters,
-  YDatabaseRow,
   YDoc,
   YjsDatabaseKey,
-  YjsEditorKey,
 } from '@/application/types';
 import { isAfterOneDay, isTimestampBefore, isTimestampBetweenRange, isTimestampInSameDay } from '@/utils/time';
 
@@ -462,13 +464,11 @@ export function filterBy(
     if (!rowMeta) return false;
 
     const filterValue = parseFilter(fieldType, node);
-    const meta = rowMeta.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as YDatabaseRow;
+    const snapshot = getRowConditionSnapshot(rowMeta);
 
-    if (!meta) return false;
+    if (!snapshot) return false;
 
-    const cells = meta.get(YjsDatabaseKey.cells);
-    const cell = cells.get(fieldId);
-    const cellData = cell?.get(YjsDatabaseKey.data);
+    const cellData = getConditionCellData(snapshot, fieldId);
 
     const condition = Number(filterValue.condition);
     const rawContent = filterValue.content;
@@ -479,9 +479,7 @@ export function filterBy(
         ? options?.getRelationCellText?.(rowId, fieldId) ?? ''
         : fieldType === FieldType.Rollup
           ? options?.getRollupCellText?.(rowId, fieldId) ?? ''
-          : cell
-            ? decodeCellToText(cell, field)
-            : '';
+          : getConditionCellText(snapshot, fieldId, field);
 
     if (fieldType === FieldType.Relation) {
       const relationRowIds = parseRelationFilterIds(content);
@@ -509,15 +507,15 @@ export function filterBy(
       case FieldType.Checklist:
         return checklistFilterCheck(cellData as string, content, condition);
       case FieldType.DateTime:
-        return dateFilterCheck(cell ? parseYDatabaseDateTimeCellToCell(cell) : null, filterValue as DateFilter);
+        return dateFilterCheck(getConditionDateCell(snapshot, fieldId), filterValue as DateFilter);
       case FieldType.CreatedTime: {
-        const data = meta.get(YjsDatabaseKey.created_at);
+        const data = snapshot.row.get(YjsDatabaseKey.created_at);
 
         return rowTimeFilterCheck(data, filterValue as DateFilter);
       }
 
       case FieldType.LastEditedTime: {
-        const data = meta.get(YjsDatabaseKey.last_modified);
+        const data = snapshot.row.get(YjsDatabaseKey.last_modified);
 
         return rowTimeFilterCheck(data, filterValue as DateFilter);
       }
