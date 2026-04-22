@@ -3630,7 +3630,7 @@
       "title": "Join <workspace /> on AppFlowy",
       "description": "You've been invited by <who />\nto join the workspace using this email:\n<email/>\nIf this isn't correct, please ask your collaborators to resend the invite.",
       "joinWorkspace": "Join workspace",
-      "invalid": "The invitation link has expired",
+      "invalid": "Unable to open invitation",
       "invalidMessage": "Please contact the workspace owner to resend the invitation",
       "hasJoined": "You've joined to\n<workspace />"
     },
