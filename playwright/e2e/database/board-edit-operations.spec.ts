@@ -157,7 +157,7 @@ test.describe('Board Operations', () => {
       await page.waitForTimeout(1500);
 
       // Then: the modal should show the original title
-      const dialog = page.locator('[role="dialog"]');
+      const dialog = page.locator('.MuiDialog-paper').filter({ has: page.getByTestId('row-title-input') }).first();
       await expect(dialog).toBeVisible({ timeout: 10000 });
       await expect(dialog.getByTestId('row-title-input')).toHaveValue(originalName, { timeout: 10000 });
 
@@ -316,7 +316,7 @@ test.describe('Board Operations', () => {
       await BoardSelectors.boardContainer(page).getByText(cardName).click({ force: true });
       await page.waitForTimeout(1500);
 
-      const dialog = page.locator('[role="dialog"]');
+      const dialog = page.locator('.MuiDialog-paper').filter({ has: page.getByTestId('row-title-input') }).first();
       await expect(dialog).toBeVisible({ timeout: 10000 });
 
       await dialog.locator('[data-block-type]').first().click({ force: true });

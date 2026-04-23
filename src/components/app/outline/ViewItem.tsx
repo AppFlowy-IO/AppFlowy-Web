@@ -12,7 +12,7 @@ import {
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppOperations, useSidebarSelectedViewId } from '@/components/app/app.hooks';
+import { useAppOperations, useSidebarHighlightedViewIds, useSidebarSelectedViewId } from '@/components/app/app.hooks';
 
 function ViewItem({
   view,
@@ -39,9 +39,10 @@ function ViewItem({
 }) {
   const { t } = useTranslation();
   const selectedViewId = useSidebarSelectedViewId();
+  const highlightedViewIds = useSidebarHighlightedViewIds();
   const viewId = view.view_id;
   const selected =
-    selectedViewId === viewId ||
+    highlightedViewIds.includes(viewId) ||
     (isDatabaseContainer(view) && Boolean(view.children?.some((child) => child.view_id === selectedViewId)));
   const { updatePage, uploadFile } = useAppOperations();
 

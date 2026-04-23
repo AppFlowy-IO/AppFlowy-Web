@@ -6,6 +6,8 @@ import ViewItem from '@/components/app/outline/ViewItem';
 declare global {
   // eslint-disable-next-line no-var
   var __selectedViewId: string | undefined;
+  // eslint-disable-next-line no-var
+  var __highlightedViewIds: string[] | undefined;
 }
 
 jest.mock('react-i18next', () => ({
@@ -14,6 +16,7 @@ jest.mock('react-i18next', () => ({
 
 jest.mock('@/components/app/app.hooks', () => ({
   useSidebarSelectedViewId: () => global.__selectedViewId,
+  useSidebarHighlightedViewIds: () => global.__highlightedViewIds || [],
   useAppOperations: () => ({
     updatePage: jest.fn(),
     uploadFile: jest.fn(),
@@ -30,6 +33,7 @@ jest.mock('@/components/_shared/view-icon/PageIcon', () => () => null);
 describe('ViewItem database container', () => {
   beforeEach(() => {
     global.__selectedViewId = undefined;
+    global.__highlightedViewIds = undefined;
   });
 
   it('clicking a container opens its first child', () => {
@@ -111,5 +115,46 @@ describe('ViewItem database container', () => {
     const el = screen.getByTestId(`page-${containerView.view_id}`);
 
     expect(el.getAttribute('data-selected')).toBe('true');
+  });
+
+  it('marks both the database container and active child view as selected', () => {
+    const childView: View = {
+      view_id: 'child-view-id',
+      name: 'Grid',
+      icon: null,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false },
+      children: [],
+      is_published: false,
+      is_private: false,
+      parent_view_id: 'container-view-id',
+    };
+
+    const containerView: View = {
+      view_id: 'container-view-id',
+      name: 'New database',
+      icon: null,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, is_database_container: true },
+      children: [childView],
+      is_published: false,
+      is_private: false,
+    };
+
+    global.__selectedViewId = childView.view_id;
+    global.__highlightedViewIds = [childView.view_id, containerView.view_id];
+
+    render(
+      <ViewItem
+        view={containerView}
+        width={240}
+        expandIds={[containerView.view_id]}
+        toggleExpand={jest.fn()}
+        onClickView={jest.fn()}
+      />
+    );
+
+    expect(screen.getByTestId(`page-${containerView.view_id}`).getAttribute('data-selected')).toBe('true');
+    expect(screen.getByTestId(`page-${childView.view_id}`).getAttribute('data-selected')).toBe('true');
   });
 });

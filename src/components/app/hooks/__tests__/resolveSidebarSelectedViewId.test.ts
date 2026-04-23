@@ -1,5 +1,8 @@
 import { View, ViewLayout } from '@/application/types';
-import { resolveSidebarSelectedViewId } from '@/components/app/hooks/resolveSidebarSelectedViewId';
+import {
+  resolveSidebarHighlightedViewIds,
+  resolveSidebarSelectedViewId,
+} from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
 describe('resolveSidebarSelectedViewId', () => {
   const containerViewId = 'container-view-id';
@@ -120,5 +123,61 @@ describe('resolveSidebarSelectedViewId', () => {
       gridViewId
     );
   });
-});
 
+  describe('resolveSidebarHighlightedViewIds', () => {
+    it('highlights the active child and database container when the active route view is a loaded child', () => {
+      expect(resolveSidebarHighlightedViewIds({ routeViewId: gridViewId, tabViewId: null, outline })).toEqual([
+        gridViewId,
+        containerViewId,
+      ]);
+    });
+
+    it('highlights the active child and database container from breadcrumbs when the outline is shallow', () => {
+      const shallowContainer: View = {
+        ...containerView,
+        children: [],
+        has_children: true,
+      };
+
+      const shallowOutline: View[] = [
+        {
+          ...outline[0],
+          children: [shallowContainer, documentView],
+        },
+      ];
+
+      expect(
+        resolveSidebarHighlightedViewIds({
+          routeViewId: gridViewId,
+          tabViewId: null,
+          outline: shallowOutline,
+          breadcrumbs: [outline[0], shallowContainer, gridView],
+        })
+      ).toEqual([gridViewId, containerViewId]);
+    });
+
+    it('highlights the selected tab view and database container', () => {
+      expect(resolveSidebarHighlightedViewIds({ routeViewId: gridViewId, tabViewId: boardViewId, outline })).toEqual([
+        boardViewId,
+        containerViewId,
+      ]);
+    });
+
+    it('keeps non-database child views selected normally', () => {
+      const childDocument: View = {
+        ...documentView,
+        view_id: 'child-doc-id',
+        parent_view_id: 'space',
+      };
+
+      expect(
+        resolveSidebarHighlightedViewIds({
+          routeViewId: childDocument.view_id,
+          tabViewId: null,
+          outline: [{ ...outline[0], children: [childDocument] }],
+          breadcrumbs: [outline[0], childDocument],
+        })
+      ).toEqual([childDocument.view_id]);
+    });
+  });
+});

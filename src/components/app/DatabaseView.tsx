@@ -37,7 +37,13 @@ function DatabaseView(props: DatabaseViewProps) {
   }, [outline, databasePageId]);
 
   // Use hook to determine container view and visible view IDs
-  const { containerView, visibleViewIds } = useContainerVisibleViewIds({ view, outline });
+  const { containerView, visibleViewIds } = useContainerVisibleViewIds({
+    view,
+    outline,
+    parentViewId: viewMeta.parentViewId,
+    databaseId: viewMeta.extra?.database_id,
+    embedded: viewMeta.extra?.embedded,
+  });
 
   // Use container view (if present) as the "page meta" view for naming/icon operations.
   const pageView = containerView || view;

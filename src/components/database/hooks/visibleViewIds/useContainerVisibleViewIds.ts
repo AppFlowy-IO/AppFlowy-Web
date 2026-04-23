@@ -13,6 +13,21 @@ interface UseContainerVisibleViewIdsProps {
    * The full outline tree
    */
   outline: View[] | null | undefined;
+  /**
+   * Parent id from the active view metadata. Used when the outline is shallow
+   * and does not currently include the active database child view.
+   */
+  parentViewId?: string;
+  /**
+   * Database id from the active view metadata. Used as a fallback for
+   * container lookup when parent metadata is not enough.
+   */
+  databaseId?: string;
+  /**
+   * Embedded database views should not resolve to another database's sidebar
+   * container just because they share the same database id.
+   */
+  embedded?: boolean;
 }
 
 interface UseContainerVisibleViewIdsResult {
@@ -53,30 +68,52 @@ interface UseContainerVisibleViewIdsResult {
 export function useContainerVisibleViewIds({
   view,
   outline,
+  parentViewId,
+  databaseId,
+  embedded,
 }: UseContainerVisibleViewIdsProps): UseContainerVisibleViewIdsResult {
   const containerView = useMemo((): View | undefined => {
-    if (!outline || !view) return undefined;
+    if (!outline) return undefined;
 
     // Check if current view is a container
-    if (isDatabaseContainer(view)) {
+    if (view && isDatabaseContainer(view)) {
       return view;
     }
 
     // Check if parent is a container
-    const parentId = view.parent_view_id;
+    const parentId = view?.parent_view_id || parentViewId;
 
-    if (!parentId) {
+    if (parentId) {
+      const parent = findView(outline, parentId);
+
+      if (parent && isDatabaseContainer(parent)) {
+        return parent;
+      }
+    }
+
+    if (!databaseId || embedded) {
       return undefined;
     }
 
-    const parent = findView(outline, parentId);
+    const stack = [...outline];
 
-    // Return parent if it's a container, otherwise undefined
-    return parent && isDatabaseContainer(parent) ? parent : undefined;
-  }, [outline, view]);
+    while (stack.length > 0) {
+      const current = stack.shift();
+
+      if (!current) continue;
+      if (isDatabaseContainer(current) && current.extra?.database_id === databaseId) {
+        return current;
+      }
+
+      stack.push(...(current.children || []));
+    }
+
+    return undefined;
+  }, [databaseId, embedded, outline, parentViewId, view]);
 
   const visibleViewIds = useMemo(() => {
     if (!containerView) return undefined;
+    if (containerView.children.length === 0) return undefined;
     return containerView.children.map((child) => child.view_id);
   }, [containerView]);
 
