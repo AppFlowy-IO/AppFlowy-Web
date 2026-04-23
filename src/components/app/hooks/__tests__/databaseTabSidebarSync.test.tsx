@@ -21,13 +21,19 @@ declare global {
 }
 
 jest.mock('@/components/app/app.hooks', () => {
-  const { resolveSidebarSelectedViewId } = jest.requireActual(
+  const { resolveSidebarSelectedViewId, resolveSidebarHighlightedViewIds } = jest.requireActual(
     '@/components/app/hooks/resolveSidebarSelectedViewId'
   );
 
   return {
     useSidebarSelectedViewId: () =>
       resolveSidebarSelectedViewId({
+        routeViewId: global.__routeViewId,
+        tabViewId: global.__tabViewId,
+        outline: global.__outline,
+      }),
+    useSidebarHighlightedViewIds: () =>
+      resolveSidebarHighlightedViewIds({
         routeViewId: global.__routeViewId,
         tabViewId: global.__tabViewId,
         outline: global.__outline,

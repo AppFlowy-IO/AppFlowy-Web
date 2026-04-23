@@ -3,9 +3,9 @@ import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-
 import { signUpAndLoginWithPasswordViaUi } from '../../support/auth-flow-helpers';
 import {
   openRowDetail,
-  closeRowDetailWithEscape,
-  typeInRowDocument,
   duplicateRowFromDetail,
+  getVisibleDataRowIds,
+  openRowDetailByRowId,
 } from '../../support/row-detail-helpers';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 import { DatabaseGridSelectors } from '../../support/selectors';
@@ -57,6 +57,8 @@ test.describe('Duplicate row preserves document content', () => {
     await page.waitForTimeout(3000);
 
     // Duplicate the row from row detail
+    const rowIdsBeforeDuplicate = await getVisibleDataRowIds(page);
+
     await openRowDetail(page, 0);
     await duplicateRowFromDetail(page);
     // duplicateRowFromDetail auto-closes the dialog; ensure it's closed
@@ -65,12 +67,16 @@ test.describe('Duplicate row preserves document content', () => {
 
     // Verify 4 rows (3 default + 1 duplicate)
     const rowCount = await DatabaseGridSelectors.dataRows(page).count();
-    expect(rowCount).toBe(4);
+    expect(rowCount).toBe(rowIdsBeforeDuplicate.length + 1);
 
-    // Open the duplicated row (index 1) in full-page mode so the Yjs
+    const rowIdsAfterDuplicate = await getVisibleDataRowIds(page);
+    const duplicatedRowId = rowIdsAfterDuplicate.find((rowId) => !rowIdsBeforeDuplicate.includes(rowId));
+    expect(duplicatedRowId).toBeTruthy();
+
+    // Open the duplicated row in full-page mode so the Yjs
     // provider creates a fresh connection on each attempt.  The dialog's
     // lazy sub-document loading can miss updates; full-page mode is reliable.
-    await openRowDetail(page, 1);
+    await openRowDetailByRowId(page, duplicatedRowId!);
     const dialogTitle2 = page.locator('.MuiDialogTitle-root');
     await dialogTitle2.locator('button').first().click({ force: true });
     await page.waitForTimeout(2000);

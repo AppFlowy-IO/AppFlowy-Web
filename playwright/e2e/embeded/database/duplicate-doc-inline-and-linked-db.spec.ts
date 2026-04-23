@@ -39,9 +39,9 @@ test.describe('Duplicate Document Inline And Linked Database', () => {
 
     const docViewId = await createNamedDocumentPage(page, docName);
     const editor = editorForView(page, docViewId);
-    // The linked database picker searches by container name ("New Database"),
-    // not the renamed view name.
-    await insertLinkedGridViaSlash(page, docViewId, 'New Database', 0);
+    // The linked database picker lists databases by the container name.
+    // `createNamedGridPage` renames the container itself, so search by sourceDbName.
+    await insertLinkedGridViaSlash(page, docViewId, sourceDbName, 0);
 
     await expect(databaseBlocks(editor)).toHaveCount(1, { timeout: 30000 });
     await expectNoActiveFilters(databaseBlocks(editor).nth(0));

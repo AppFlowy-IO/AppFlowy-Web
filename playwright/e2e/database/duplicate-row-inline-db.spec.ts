@@ -5,6 +5,8 @@ import {
   openRowDetail,
   closeRowDetailWithEscape,
   duplicateRowFromDetail,
+  getVisibleDataRowIds,
+  openRowDetailByRowId,
 } from '../../support/row-detail-helpers';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
 import {
@@ -70,6 +72,8 @@ test.describe('Duplicate row with inline database', () => {
     await page.waitForTimeout(1000);
 
     // Duplicate the row from row detail
+    const rowIdsBeforeDuplicate = await getVisibleDataRowIds(page);
+
     await openRowDetail(page, 0);
     await duplicateRowFromDetail(page);
     await closeRowDetailWithEscape(page);
@@ -85,10 +89,14 @@ test.describe('Duplicate row with inline database', () => {
     await page.waitForTimeout(2000);
 
     // Verify the grid now has 4 rows (3 default + 1 duplicate)
-    expect(await getGridRowCount(page)).toBe(4);
+    expect(await getGridRowCount(page)).toBe(rowIdsBeforeDuplicate.length + 1);
 
-    // Open the duplicated row (index 1) in full page mode to verify
-    await openRowDetail(page, 1);
+    const rowIdsAfterDuplicate = await getVisibleDataRowIds(page);
+    const duplicatedRowId = rowIdsAfterDuplicate.find((rowId) => !rowIdsBeforeDuplicate.includes(rowId));
+    expect(duplicatedRowId).toBeTruthy();
+
+    // Open the duplicated row in full page mode to verify
+    await openRowDetailByRowId(page, duplicatedRowId!);
     const dialogTitle2 = page.locator('.MuiDialogTitle-root');
     await dialogTitle2.locator('button').first().click({ force: true });
     await page.waitForTimeout(2000);
@@ -108,7 +116,7 @@ test.describe('Duplicate row with inline database', () => {
       await page.goBack();
       await page.waitForTimeout(3000);
       await waitForGridReady(page);
-      await openRowDetail(page, 1);
+      await openRowDetailByRowId(page, duplicatedRowId!);
       const dt = page.locator('.MuiDialogTitle-root');
       await dt.locator('button').first().click({ force: true });
       await page.waitForTimeout(2000);

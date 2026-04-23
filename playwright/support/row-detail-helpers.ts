@@ -43,6 +43,37 @@ export async function openRowDetail(page: Page, rowIndex: number = 0): Promise<v
 }
 
 /**
+ * Return visible data-row ids in DOM order.
+ */
+export async function getVisibleDataRowIds(page: Page): Promise<string[]> {
+  const testIds = await DatabaseGridSelectors.dataRows(page).evaluateAll((rows) =>
+    rows
+      .map((row) => row.getAttribute('data-testid') || '')
+      .filter(Boolean)
+  );
+
+  return testIds.map((testId) => testId.replace('grid-row-', ''));
+}
+
+/**
+ * Open a specific row detail modal by row id.
+ */
+export async function openRowDetailByRowId(page: Page, rowId: string): Promise<void> {
+  const row = DatabaseGridSelectors.rowById(page, rowId);
+  await expect(row).toBeVisible({ timeout: 10000 });
+  await row.scrollIntoViewIfNeeded();
+  await row.hover();
+  await page.waitForTimeout(500);
+
+  const expandButton = page.getByTestId('row-expand-button').first();
+  await expect(expandButton).toBeVisible({ timeout: 5000 });
+  await expandButton.click({ force: true });
+  await page.waitForTimeout(1000);
+
+  await expect(RowDetailSelectors.modal(page)).toBeVisible();
+}
+
+/**
  * Open row detail by hovering over a cell to reveal the expand button
  */
 export async function openRowDetailViaCell(
