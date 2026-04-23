@@ -32,3 +32,33 @@ export function resolveSidebarSelectedViewId(params: {
   return tabView.parent_view_id === containerId || tabView.view_id === containerId ? tabViewId : routeViewId;
 }
 
+export function resolveSidebarHighlightedViewIds(params: {
+  routeViewId?: string;
+  tabViewId?: string | null;
+  outline?: View[];
+  breadcrumbs?: View[];
+}): string[] {
+  const selectedViewId = resolveSidebarSelectedViewId(params);
+
+  if (!selectedViewId) return [];
+
+  const highlightedViewIds = new Set<string>([selectedViewId]);
+
+  const { outline, breadcrumbs } = params;
+  const selectedIndex = breadcrumbs?.findIndex((view) => view.view_id === selectedViewId) ?? -1;
+  const breadcrumbParent = selectedIndex > 0 ? breadcrumbs?.[selectedIndex - 1] : undefined;
+
+  if (breadcrumbParent && isDatabaseContainer(breadcrumbParent)) {
+    highlightedViewIds.add(breadcrumbParent.view_id);
+    return Array.from(highlightedViewIds);
+  }
+
+  const selectedView = outline ? findView(outline, selectedViewId) : undefined;
+  const outlineParent = selectedView?.parent_view_id && outline ? findView(outline, selectedView.parent_view_id) : undefined;
+
+  if (outlineParent && isDatabaseContainer(outlineParent)) {
+    highlightedViewIds.add(outlineParent.view_id);
+  }
+
+  return Array.from(highlightedViewIds);
+}

@@ -153,4 +153,64 @@ describe('DatabaseView database container', () => {
     expect(metaProps?.viewId).toBe(containerId);
     expect(metaProps?.name).toBe('New Database');
   });
+
+  it('uses parent container metadata when the active child is missing from a shallow outline', () => {
+    const containerId = 'container-id';
+    const gridViewId = 'grid-view-id';
+
+    const containerView: View = {
+      view_id: containerId,
+      name: 'New Database',
+      icon: null,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, is_database_container: true, database_id: 'db-1' },
+      children: [],
+      has_children: true,
+      is_published: false,
+      is_private: false,
+    };
+
+    global.__databaseViewTestState = { outline: [containerView] };
+
+    const viewMeta: ViewMetaProps = {
+      viewId: gridViewId,
+      parentViewId: containerId,
+      name: 'Grid',
+      layout: ViewLayout.Grid,
+      icon: undefined,
+      extra: { is_space: false, database_id: 'db-1' },
+      workspaceId: 'workspace-id',
+      visibleViewIds: [],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/app/workspace-id/grid-view-id']}>
+        <DatabaseView
+          doc={createDatabaseDoc('db-1', [gridViewId])}
+          workspaceId={'workspace-id'}
+          readOnly={false}
+          viewMeta={viewMeta}
+          updatePage={jest.fn()}
+          updatePageIcon={jest.fn()}
+          updatePageName={jest.fn()}
+          onRendered={jest.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    const databaseProps = global.__databaseViewTestState?.capturedDatabaseProps as
+      | { visibleViewIds?: string[]; databaseName: string }
+      | undefined;
+    const metaProps = global.__databaseViewTestState?.capturedViewMetaProps as
+      | { viewId?: string; name?: string }
+      | undefined;
+
+    expect(databaseProps).toBeDefined();
+    expect(metaProps).toBeDefined();
+
+    expect(databaseProps?.visibleViewIds).toBeUndefined();
+    expect(databaseProps?.databaseName).toBe('New Database');
+    expect(metaProps?.viewId).toBe(containerId);
+    expect(metaProps?.name).toBe('New Database');
+  });
 });

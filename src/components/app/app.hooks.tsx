@@ -5,6 +5,7 @@ import LoadingDots from '@/components/_shared/LoadingDots';
 import { findView } from '@/components/_shared/outline/utils';
 import {
   DATABASE_TAB_VIEW_ID_QUERY_PARAM,
+  resolveSidebarHighlightedViewIds,
   resolveSidebarSelectedViewId,
 } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 
@@ -509,5 +510,24 @@ export function useSidebarSelectedViewId() {
         outline,
       }),
     [outline, routeViewId, tabViewId]
+  );
+}
+
+export function useSidebarHighlightedViewIds() {
+  const routeViewId = useAppViewId();
+  const outline = useAppOutline();
+  const breadcrumbs = useBreadcrumb();
+  const [searchParams] = useSearchParams();
+  const tabViewId = searchParams.get(DATABASE_TAB_VIEW_ID_QUERY_PARAM);
+
+  return useMemo(
+    () =>
+      resolveSidebarHighlightedViewIds({
+        routeViewId,
+        tabViewId,
+        outline,
+        breadcrumbs,
+      }),
+    [breadcrumbs, outline, routeViewId, tabViewId]
   );
 }

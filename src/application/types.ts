@@ -1290,6 +1290,7 @@ export interface ViewMetaProps {
   cover?: ViewMetaCover;
   name?: string;
   viewId?: string;
+  parentViewId?: string;
   workspaceId?: string;
   layout?: ViewLayout;
   visibleViewIds?: string[];

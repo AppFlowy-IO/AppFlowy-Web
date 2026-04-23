@@ -430,6 +430,7 @@ function AppPage() {
         layout: view.layout,
         visibleViewIds: [],
         viewId: view.view_id,
+        parentViewId: view.parent_view_id,
         extra: view.extra,
         workspaceId,
       };
