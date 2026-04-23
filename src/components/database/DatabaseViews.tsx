@@ -1,4 +1,5 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 
 import { useDatabase, useDatabaseViewsSelector } from '@/application/database-yjs';
@@ -11,6 +12,14 @@ import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
+import {
+  insertViewIdAfter,
+  readStoredViewOrder,
+  reconcileOrderedViewIds,
+  selectHydratingViewOrder,
+  selectStableViewOrder,
+  writeStoredViewOrder,
+} from '@/utils/database-view-order';
 
 import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
 
@@ -24,7 +33,6 @@ function DatabaseViews({
   fixedHeight,
   onViewIdsChanged,
 }: {
-  // Debug logging will be added inside the component
   onChangeView: (viewId: string) => void;
   /**
    * Called when a new view is added via the + button.
@@ -52,18 +60,96 @@ function DatabaseViews({
 }) {
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
   const database = useDatabase();
+  const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const views = database?.get(YjsDatabaseKey.views);
+  const [orderedViewIds, setOrderedViewIds] = useState<string[]>([]);
+  const orderedViewIdsRef = useRef<string[]>([]);
+  const orderedDatabaseIdRef = useRef<string | undefined>();
+  const pendingViewCreationRef = useRef(false);
+  const pendingExpectedViewIdsRef = useRef<string[] | null>(null);
+  const pendingViewInsertionRef = useRef<{ anchorViewId: string; baseViewIds: string[] } | null>(null);
 
   const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
   // Track the previous valid layout to prevent flash when switching to a new view
   const prevLayoutRef = useRef<DatabaseViewLayout | null>(null);
 
-  const value = useMemo(() => {
-    return Math.max(
-      0,
-      viewIds.findIndex((id) => id === activeViewId)
-    );
-  }, [activeViewId, viewIds]);
+  const fallbackViewIds = useMemo(() => {
+    if (!visibleViewIds || visibleViewIds.length === 0) {
+      return viewIds;
+    }
+
+    const getCreatedAtSortValue = (viewId: string): number => {
+      const createdAt = views?.get(viewId)?.get(YjsDatabaseKey.created_at);
+
+      if (!createdAt) {
+        return Number.POSITIVE_INFINITY;
+      }
+
+      const numericValue = Number(createdAt);
+
+      if (Number.isFinite(numericValue)) {
+        return numericValue;
+      }
+
+      const timestampValue = Date.parse(createdAt);
+
+      return Number.isFinite(timestampValue) ? timestampValue : Number.POSITIVE_INFINITY;
+    };
+
+    return [...viewIds].sort((left, right) => getCreatedAtSortValue(left) - getCreatedAtSortValue(right));
+  }, [viewIds, views, visibleViewIds]);
+
+  useEffect(() => {
+    const isNewDatabase = orderedDatabaseIdRef.current !== databaseId;
+    const storedViewIds = readStoredViewOrder(databaseId);
+    const previousViewIds = orderedViewIdsRef.current;
+
+    orderedDatabaseIdRef.current = databaseId;
+
+    const hydratingViewIds = selectHydratingViewOrder({
+      incomingViewIds: viewIds,
+      previousViewIds,
+      storedViewIds,
+      isNewDatabase,
+    });
+
+    if (hydratingViewIds) {
+      orderedViewIdsRef.current = hydratingViewIds;
+      setOrderedViewIds(hydratingViewIds);
+      return;
+    }
+
+    const pendingExpectedViewIds = pendingExpectedViewIdsRef.current;
+
+    if (pendingViewCreationRef.current) {
+      return;
+    }
+
+    const baseViewIds =
+      pendingExpectedViewIds && pendingExpectedViewIds.every((viewId) => viewIds.includes(viewId))
+        ? pendingExpectedViewIds
+        : storedViewIds && storedViewIds.length > 0
+        ? storedViewIds
+        : isNewDatabase
+        ? fallbackViewIds
+        : previousViewIds.length > 0
+        ? previousViewIds
+        : fallbackViewIds;
+
+    if (pendingExpectedViewIds && pendingExpectedViewIds.some((viewId) => !viewIds.includes(viewId))) {
+      return;
+    }
+
+    const nextViewIds = reconcileOrderedViewIds(baseViewIds, viewIds);
+
+    if (pendingExpectedViewIds && pendingExpectedViewIds.every((viewId) => nextViewIds.includes(viewId))) {
+      pendingExpectedViewIdsRef.current = null;
+    }
+
+    orderedViewIdsRef.current = nextViewIds;
+    writeStoredViewOrder(databaseId, nextViewIds);
+    setOrderedViewIds(nextViewIds);
+  }, [databaseId, fallbackViewIds, viewIds]);
 
   const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(false);
   const toggleExpanded = useCallback(() => {
@@ -118,14 +204,19 @@ function DatabaseViews({
   // Get active view from selector state, or directly from Yjs if not yet in state
   // This handles the race condition when a new view is created but selector hasn't updated yet
   const activeView = useMemo(() => {
-    const fromSelector = childViews[value];
+    const fromYjs = views?.get(activeViewId);
+
+    if (fromYjs) return fromYjs;
+
+    const selectorIndex = viewIds.indexOf(activeViewId);
+    const fromSelector = selectorIndex === -1 ? undefined : childViews[selectorIndex];
 
     if (fromSelector) return fromSelector;
 
     // Fallback: try to get view directly from Yjs map
     // This handles newly created views before useDatabaseViewsSelector updates
     return views?.get(activeViewId);
-  }, [childViews, value, views, activeViewId]);
+  }, [activeViewId, childViews, viewIds, views]);
 
   // Update layout when active view changes
   useEffect(() => {
@@ -152,6 +243,55 @@ function DatabaseViews({
     },
     [onChangeView]
   );
+
+  const handleBeforeViewAddedToDatabase = useCallback(() => {
+    const storedViewIds = readStoredViewOrder(databaseId);
+    const baseViewIds =
+      orderedViewIdsRef.current.length > 0
+        ? orderedViewIdsRef.current
+        : storedViewIds && storedViewIds.length > 0
+        ? storedViewIds
+        : fallbackViewIds;
+
+    pendingViewCreationRef.current = true;
+    pendingViewInsertionRef.current = {
+      anchorViewId: activeViewId,
+      baseViewIds,
+    };
+  }, [activeViewId, databaseId, fallbackViewIds]);
+
+  const handleAfterViewAddedToDatabase = useCallback(() => {
+    pendingViewCreationRef.current = false;
+    pendingViewInsertionRef.current = null;
+  }, []);
+
+  const handleViewAddedToDatabase = useCallback(
+    (newViewId: string) => {
+      const storedViewIds = readStoredViewOrder(databaseId);
+      const pendingViewInsertion = pendingViewInsertionRef.current;
+      const baseViewIds =
+        pendingViewInsertion?.baseViewIds ??
+        selectStableViewOrder({
+          previousViewIds: orderedViewIdsRef.current,
+          storedViewIds,
+          fallbackViewIds,
+          pendingViewId: newViewId,
+        });
+      const anchorViewId = pendingViewInsertion?.anchorViewId ?? activeViewId;
+      const nextViewIds = insertViewIdAfter(baseViewIds, anchorViewId, newViewId);
+
+      pendingExpectedViewIdsRef.current = nextViewIds;
+      orderedViewIdsRef.current = nextViewIds;
+      writeStoredViewOrder(databaseId, nextViewIds);
+      flushSync(() => {
+        setOrderedViewIds(nextViewIds);
+      });
+      onViewAdded?.(newViewId);
+    },
+    [activeViewId, databaseId, fallbackViewIds, onViewAdded]
+  );
+
+  const displayedViewIds = orderedViewIds.length > 0 ? orderedViewIds : viewIds;
 
   // Render the appropriate view component based on layout
   // Use previous layout as fallback to prevent flash during view transitions
@@ -202,8 +342,10 @@ function DatabaseViews({
           databasePageId={databasePageId}
           selectedViewId={activeViewId}
           setSelectedViewId={handleViewChange}
-          viewIds={viewIds}
-          onViewAddedToDatabase={onViewAdded}
+          viewIds={displayedViewIds}
+          onViewAddedToDatabase={handleViewAddedToDatabase}
+          onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
+          onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
           onViewIdsChanged={onViewIdsChanged}
         />
 

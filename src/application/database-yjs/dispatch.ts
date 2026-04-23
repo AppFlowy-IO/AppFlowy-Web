@@ -2220,10 +2220,19 @@ export function useAddDatabaseView() {
       const viewLayout = layoutToViewLayout[layout];
       const name = layoutToName[layout];
 
-      const tabsParentViewId = await (async (): Promise<string> => {
+      const getLastChildViewId = (view: View | null | undefined): string | undefined => {
+        const children = view?.children ?? [];
+
+        return children.length > 0 ? children[children.length - 1].view_id : undefined;
+      };
+
+      const { tabsParentViewId, prevViewId } = await (async (): Promise<{
+        tabsParentViewId: string;
+        prevViewId?: string;
+      }> => {
         // Best-effort: fall back to previous behavior if meta lookup isn't available.
         if (!loadViewMeta) {
-          return databasePageId;
+          return { tabsParentViewId: databasePageId };
         }
 
         const safeLoadViewMeta = async (viewId: string): Promise<View | null> => {
@@ -2238,34 +2247,47 @@ export function useAddDatabaseView() {
 
         // If the current view itself is a container, attach under it.
         if (currentMeta && isDatabaseContainer(currentMeta)) {
-          return currentMeta.view_id;
+          return {
+            tabsParentViewId: currentMeta.view_id,
+            prevViewId: getLastChildViewId(currentMeta),
+          };
         }
 
         const parentId = currentMeta?.parent_view_id;
 
         if (!parentId) {
-          return databasePageId;
+          return { tabsParentViewId: databasePageId };
         }
 
         // If parent is a database container, attach under the container (Scenario 4).
         const parentMeta = await safeLoadViewMeta(parentId);
 
         if (isDatabaseContainer(parentMeta)) {
-          return parentId;
+          return {
+            tabsParentViewId: parentId,
+            prevViewId: currentMeta?.view_id,
+          };
         }
 
         // Embedded databases without a container attach under the document (Scenario 3).
         if (isDocumentBlock) {
-          return parentId;
+          return {
+            tabsParentViewId: parentId,
+            prevViewId: currentMeta?.view_id,
+          };
         }
 
         // Backward-compatible fallback: attach under the current database view.
-        return databasePageId;
+        return {
+          tabsParentViewId: databasePageId,
+          prevViewId: getLastChildViewId(currentMeta),
+        };
       })();
 
       // Create new view as a child of the database container (or document for embedded linked views).
       const response = await createDatabaseView(requestViewId, {
         parent_view_id: tabsParentViewId,
+        prev_view_id: prevViewId,
         database_id: databaseId,
         layout: viewLayout,
         name: nameOverride ?? name,

@@ -27,6 +27,8 @@ export interface DatabaseTabBarProps {
    * Used by embedded databases to update state immediately before Yjs sync.
    */
   onViewAddedToDatabase?: (viewId: string) => void;
+  onBeforeViewAddedToDatabase?: () => void;
+  onAfterViewAddedToDatabase?: () => void;
   /**
    * Callback when view IDs change (views added or removed).
    * Used to update the block data in embedded database blocks.
@@ -36,7 +38,17 @@ export interface DatabaseTabBarProps {
 
 export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
   (
-    { viewIds, databasePageId, selectedViewId, setSelectedViewId, viewName: _viewName, onViewAddedToDatabase, onViewIdsChanged },
+    {
+      viewIds,
+      databasePageId,
+      selectedViewId,
+      setSelectedViewId,
+      viewName: _viewName,
+      onViewAddedToDatabase,
+      onBeforeViewAddedToDatabase,
+      onAfterViewAddedToDatabase,
+      onViewIdsChanged,
+    },
     ref
   ) => {
     const views = useDatabase()?.get(YjsDatabaseKey.views);
@@ -233,6 +245,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
             setRenameViewId={setRenameViewId}
             pendingScrollToViewId={pendingScrollToViewId}
             setPendingScrollToViewId={setPendingScrollToViewId}
+            onBeforeViewAdded={onBeforeViewAddedToDatabase}
+            onAfterViewAdded={onAfterViewAddedToDatabase}
             onViewAdded={(viewId) => {
               // For embedded databases, notify parent immediately
               if (onViewAddedToDatabase) {

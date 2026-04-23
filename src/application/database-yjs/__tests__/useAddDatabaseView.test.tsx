@@ -92,6 +92,7 @@ describe('useAddDatabaseView', () => {
       activeViewId,
       expect.objectContaining({
         parent_view_id: containerId,
+        prev_view_id: activeViewId,
         database_id: databaseId,
         layout: ViewLayout.Calendar,
         name: 'Calendar',
@@ -154,6 +155,7 @@ describe('useAddDatabaseView', () => {
       baseViewId,
       expect.objectContaining({
         parent_view_id: documentId,
+        prev_view_id: baseViewId,
         database_id: databaseId,
         layout: ViewLayout.Board,
         name: 'Board',
@@ -218,6 +220,70 @@ describe('useAddDatabaseView', () => {
         database_id: databaseId,
         layout: ViewLayout.Grid,
         name: 'Grid',
+        embedded: false,
+      })
+    );
+
+    const [, payload] = createDatabaseView.mock.calls[0];
+
+    expect(payload.prev_view_id).toBeUndefined();
+  });
+
+  it('uses the container last child as prev_view_id when the current route is the container itself', async () => {
+    const databaseId = 'db-1';
+    const containerId = 'container-view-id';
+    const firstChildId = 'grid-view-id';
+    const secondChildId = 'board-view-id';
+
+    const createDatabaseView = jest.fn().mockResolvedValue({
+      view_id: 'new-view-id',
+      database_id: databaseId,
+    });
+
+    const loadViewMeta = jest.fn(async (viewId: string) => {
+      if (viewId === containerId) {
+        return createView({
+          view_id: containerId,
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, is_database_container: true },
+          children: [
+            createView({ view_id: firstChildId, layout: ViewLayout.Grid, parent_view_id: containerId }),
+            createView({ view_id: secondChildId, layout: ViewLayout.Board, parent_view_id: containerId }),
+          ],
+        });
+      }
+
+      return null;
+    });
+
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc: createDatabaseDoc(databaseId),
+      databasePageId: containerId,
+      activeViewId: containerId,
+      rowDocMap: {},
+      workspaceId: 'workspace-id',
+      createDatabaseView,
+      loadViewMeta,
+      isDocumentBlock: false,
+    };
+
+    const { result } = renderHook(() => useAddDatabaseView(), {
+      wrapper: ({ children }) => <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>,
+    });
+
+    await act(async () => {
+      await result.current(DatabaseViewLayout.Calendar, 'Calendar');
+    });
+
+    expect(createDatabaseView).toHaveBeenCalledWith(
+      containerId,
+      expect.objectContaining({
+        parent_view_id: containerId,
+        prev_view_id: secondChildId,
+        database_id: databaseId,
+        layout: ViewLayout.Calendar,
+        name: 'Calendar',
         embedded: false,
       })
     );
