@@ -10,16 +10,21 @@ jest.mock('@/utils/runtime-config', () => ({
   getConfigValue: (_key: string, fallback: string) => fallback,
 }));
 
-function createDatabaseDocWithViews(viewIdsInInsertionOrder: string[]): YDoc {
+function createDatabaseDocWithViews(
+  viewIdsInInsertionOrder: Array<string | { viewId: string; createdAt?: string }>
+): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
   const database = new Y.Map();
   const views = new Y.Map();
 
-  viewIdsInInsertionOrder.forEach((viewId) => {
+  viewIdsInInsertionOrder.forEach((input, index) => {
+    const viewId = typeof input === 'string' ? input : input.viewId;
+    const createdAt =
+      typeof input === 'string' ? new Date(Date.UTC(2024, 0, index + 1)).toISOString() : input.createdAt;
     const view = new Y.Map();
 
-    view.set('created_at', new Date().toISOString());
+    view.set(YjsDatabaseKey.created_at, createdAt);
     views.set(viewId, view);
   });
 
@@ -29,6 +34,40 @@ function createDatabaseDocWithViews(viewIdsInInsertionOrder: string[]): YDoc {
 }
 
 describe('useDatabaseViewsSelector', () => {
+  it('sorts standalone database views by created_at instead of raw Yjs insertion order', () => {
+    const gridId = 'grid-id';
+    const boardId = 'board-id';
+    const calendarId = 'calendar-id';
+
+    const databaseDoc = createDatabaseDocWithViews([
+      { viewId: boardId, createdAt: '2024-01-02T00:00:00.000Z' },
+      { viewId: gridId, createdAt: '2024-01-01T00:00:00.000Z' },
+      { viewId: calendarId, createdAt: '2024-01-03T00:00:00.000Z' },
+    ]);
+
+    const contextValue: DatabaseContextState = {
+      readOnly: true,
+      databaseDoc,
+      databasePageId: gridId,
+      activeViewId: gridId,
+      rowDocMap: null,
+      workspaceId: 'workspace-id',
+    };
+
+    const { result } = renderHook(
+      () => useDatabaseViewsSelector(gridId),
+      {
+        wrapper: ({ children }) => (
+          <DatabaseContext.Provider value={contextValue}>
+            {children}
+          </DatabaseContext.Provider>
+        ),
+      }
+    );
+
+    expect(result.current.viewIds).toEqual([gridId, boardId, calendarId]);
+  });
+
   it('preserves visibleViewIds ordering (folder/outline order)', () => {
     const gridId = 'grid-id';
     const boardId = 'board-id';

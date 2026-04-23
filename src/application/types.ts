@@ -1391,6 +1391,8 @@ export interface DuplicatePageOptions {
 
 export interface CreateDatabaseViewPayload {
   parent_view_id: string;
+  /** Insert the new database view after this sibling. When omitted the backend prepends. */
+  prev_view_id?: string;
   database_id: string;
   layout: ViewLayout;
   name?: string;

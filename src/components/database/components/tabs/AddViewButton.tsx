@@ -17,15 +17,18 @@ import { Progress } from '@/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 interface AddViewButtonProps {
+  onBeforeAddView?: () => void;
+  onAfterAddView?: () => void;
   onViewAdded: (viewId: string) => void;
 }
 
-export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
+export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: AddViewButtonProps) {
   const { t } = useTranslation();
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
 
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
+    onBeforeAddView?.();
     setAddLoading(true);
     const startTime = Date.now();
     const MIN_LOADING_TIME = 300; // Minimum time to show spinner for smooth UX
@@ -38,6 +41,7 @@ export function AddViewButton({ onViewAdded }: AddViewButtonProps) {
       console.error('[AddViewButton] Error adding view:', e);
       toast.error(e instanceof Error ? e.message : 'Failed to add view');
     } finally {
+      onAfterAddView?.();
       // Ensure minimum loading time to prevent jarring UI flicker
       const elapsed = Date.now() - startTime;
       const remaining = MIN_LOADING_TIME - elapsed;

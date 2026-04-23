@@ -136,6 +136,7 @@ export async function createDatabaseView(workspaceId: string, viewId: string, pa
   return executeAPIRequest<CreateDatabaseViewResponse>(() =>
     getAxios()?.post<APIResponse<CreateDatabaseViewResponse>>(url, {
       parent_view_id: payload.parent_view_id,
+      prev_view_id: payload.prev_view_id,
       database_id: payload.database_id,
       layout: payload.layout,
       name: payload.name,

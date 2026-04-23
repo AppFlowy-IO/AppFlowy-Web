@@ -107,6 +107,26 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
         }
       >;
 
+      const insertionOrder = new Map<string, number>();
+
+      const getCreatedAtSortValue = (viewId: string): number => {
+        const createdAt = views.get(viewId)?.get(YjsDatabaseKey.created_at);
+
+        if (!createdAt) {
+          return Number.POSITIVE_INFINITY;
+        }
+
+        const numericValue = Number(createdAt);
+
+        if (Number.isFinite(numericValue)) {
+          return numericValue;
+        }
+
+        const timestampValue = Date.parse(createdAt);
+
+        return Number.isFinite(timestampValue) ? timestampValue : Number.POSITIVE_INFINITY;
+      };
+
       // Step 1: Get all non-inline views from Yjs (don't filter by embedded yet)
       // See: flowy-database2/src/services/database/database_editor.rs:get_database_view_ids()
       let allViewIds = Object.keys(viewsObj).filter((viewId) => {
@@ -117,6 +137,10 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
         const isInline = view.get(YjsDatabaseKey.is_inline);
 
         return !isInline;
+      });
+
+      allViewIds.forEach((viewId, index) => {
+        insertionOrder.set(viewId, index);
       });
 
       // Step 2: Apply context-specific filtering (separate concerns)
@@ -135,6 +159,16 @@ export function useDatabaseViewsSelector(databasePageId: string, visibleViewIds?
           const isEmbedded = view?.get(YjsDatabaseKey.embedded) === true;
 
           return !isEmbedded;
+        });
+
+        allViewIds.sort((left, right) => {
+          const createdAtDiff = getCreatedAtSortValue(left) - getCreatedAtSortValue(right);
+
+          if (createdAtDiff !== 0) {
+            return createdAtDiff;
+          }
+
+          return (insertionOrder.get(left) ?? 0) - (insertionOrder.get(right) ?? 0);
         });
       }
 

@@ -32,6 +32,8 @@ export interface DatabaseViewTabsProps {
   setRenameViewId: (id: string | null) => void;
   pendingScrollToViewId?: string | null;
   setPendingScrollToViewId?: (id: string | null) => void;
+  onBeforeViewAdded?: () => void;
+  onAfterViewAdded?: () => void;
   onViewAdded?: (viewId: string) => void;
 }
 
@@ -50,6 +52,8 @@ export function DatabaseViewTabs({
   setRenameViewId,
   pendingScrollToViewId,
   setPendingScrollToViewId,
+  onBeforeViewAdded,
+  onAfterViewAdded,
   onViewAdded
 }: DatabaseViewTabsProps) {
   const [tabsWidth, setTabsWidth] = useState<number | null>(null);
@@ -225,7 +229,11 @@ export function DatabaseViewTabs({
       </AFScroller>
 
       {!readOnly && onViewAdded && (
-        <AddViewButton onViewAdded={onViewAdded} />
+        <AddViewButton
+          onBeforeAddView={onBeforeViewAdded}
+          onAfterAddView={onAfterViewAdded}
+          onViewAdded={onViewAdded}
+        />
       )}
     </div>
   );
