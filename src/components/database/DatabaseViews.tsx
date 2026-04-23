@@ -208,14 +208,15 @@ function DatabaseViews({
 
     if (fromYjs) return fromYjs;
 
-    const fromSelector = childViews.find((view) => view?.get(YjsDatabaseKey.id) === activeViewId);
+    const selectorIndex = viewIds.indexOf(activeViewId);
+    const fromSelector = selectorIndex === -1 ? undefined : childViews[selectorIndex];
 
     if (fromSelector) return fromSelector;
 
     // Fallback: try to get view directly from Yjs map
     // This handles newly created views before useDatabaseViewsSelector updates
     return views?.get(activeViewId);
-  }, [activeViewId, childViews, views]);
+  }, [activeViewId, childViews, viewIds, views]);
 
   // Update layout when active view changes
   useEffect(() => {
