@@ -39,6 +39,7 @@ import { useDatabaseViewLayout, useCalendarLayoutSetting } from '@/application/d
 import { executeOperationWithAllViews } from './utils';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
+  BlockType,
   DatabaseViewLayout,
   FieldId,
   YDatabaseCell,
@@ -591,9 +592,34 @@ export function useDuplicateRowDispatch() {
               if (!doc) return false;
               const root = doc.getMap(YjsEditorKey.data_section);
               const document = root?.get(YjsEditorKey.document) as Y.Map<unknown> | undefined;
+              const meta = document?.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+              const textMap = meta?.get(YjsEditorKey.text_map) as Y.Map<Y.Text> | undefined;
+
+              if (textMap) {
+                for (const text of textMap.values()) {
+                  if (text?.toString().length) {
+                    return true;
+                  }
+                }
+              }
+
               const blocks = document?.get(YjsEditorKey.blocks) as Y.Map<unknown> | undefined;
 
-              return !!blocks && blocks.size > 2;
+              if (!blocks) return false;
+
+              for (const block of blocks.values()) {
+                if (!(block instanceof Y.Map)) {
+                  return true;
+                }
+
+                const blockType = block.get(YjsEditorKey.block_type);
+
+                if (blockType && blockType !== BlockType.Page && blockType !== BlockType.Paragraph) {
+                  return true;
+                }
+              }
+
+              return false;
             };
 
             let cachedDoc: YDoc | undefined = getCachedRowSubDoc(sourceDocId);
