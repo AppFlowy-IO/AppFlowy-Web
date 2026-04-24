@@ -22,10 +22,13 @@ import { PromptDatabaseConfiguration } from '@/components/chat';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
 
+const DUPLICATE_ROW_DOCUMENT_PRE_SYNC_TIMEOUT_MS = 15000;
+
 // Hook for managing database-related operations
 export function useDatabaseOperations(
   loadView?: (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc | null>,
-  createRow?: (rowKey: string) => Promise<YDoc>
+  createRow?: (rowKey: string) => Promise<YDoc>,
+  syncAllToServer?: (workspaceId: string) => Promise<void>
 ) {
   const { currentWorkspaceId } = useAuthInternal();
 
@@ -343,6 +346,15 @@ export function useDatabaseOperations(
     async (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => {
       if (!currentWorkspaceId) return;
       try {
+        if (syncAllToServer) {
+          await Promise.race([
+            syncAllToServer(currentWorkspaceId),
+            new Promise<void>((resolve) => {
+              window.setTimeout(resolve, DUPLICATE_ROW_DOCUMENT_PRE_SYNC_TIMEOUT_MS);
+            }),
+          ]);
+        }
+
         const { duplicateRowDocument: duplicateAPI } = await import(
           '@/application/services/js-services/http/collab-api'
         );
@@ -352,7 +364,7 @@ export function useDatabaseOperations(
         Log.error('[duplicateRowDocument] failed', e);
       }
     },
-    [currentWorkspaceId]
+    [currentWorkspaceId, syncAllToServer]
   );
 
   return {

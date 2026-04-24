@@ -454,7 +454,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     generateAISummaryForRow, generateAITranslateForRow,
     loadDatabasePrompts, testDatabasePromptConfig,
     checkIfRowDocumentExists, loadRowDocument, createRowDocument, duplicateRowDocument,
-  } = useDatabaseOperations(enhancedLoadView, createRow);
+  } = useDatabaseOperations(enhancedLoadView, createRow, syncContext.syncAllToServer);
 
   // ── Focused context values ──────────────────────────────────────────────────
   // Each useMemo has only its own deps, so unrelated changes don't propagate.

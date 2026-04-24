@@ -12,7 +12,6 @@ import {
   DatabaseGridSelectors,
   ModalSelectors,
   PageSelectors,
-  SlashCommandSelectors,
   ViewActionSelectors,
 } from '../../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../../support/test-config';
@@ -23,7 +22,7 @@ import {
   expandSpaceByName,
   insertLinkedDatabaseViaSlash,
 } from '../../../support/page-utils';
-import { getSlashMenuItemName } from '../../../support/i18n-constants';
+import { insertInlineGridViaSlash } from '../../../support/duplicate-test-helpers';
 
 const spaceName = 'General';
 const sourceDatabaseName = 'Block Database';
@@ -134,16 +133,6 @@ function directChildPageItems(page: Page, parentViewId: string): Locator {
   return PageSelectors.itemByViewId(page, parentViewId).locator(':scope > div:nth-child(2) > [data-testid="page-item"]');
 }
 
-async function closeViewModal(page: Page): Promise<void> {
-  const dialog = page.locator('[role="dialog"]');
-  const isVisible = await dialog.isVisible().catch(() => false);
-  if (!isVisible) {
-    return;
-  }
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(1000);
-}
-
 async function renamePageByName(page: Page, currentName: string, newName: string): Promise<void> {
   const pageItem = PageSelectors.itemByName(page, currentName);
   await expect(pageItem).toBeVisible({ timeout: 30000 });
@@ -170,18 +159,6 @@ async function createStandaloneGridDatabase(page: Page, name: string): Promise<v
   await page.waitForTimeout(2000);
 }
 
-async function insertInlineGridViaSlash(page: Page, docViewId: string): Promise<void> {
-  const editor = editorForView(page, docViewId);
-  await expect(editor).toBeVisible({ timeout: 15000 });
-  await editor.click({ position: { x: 200, y: 100 }, force: true });
-  await editor.pressSequentially('/', { delay: 50 });
-  await expect(SlashCommandSelectors.slashPanel(page)).toBeVisible({ timeout: 10000 });
-  await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
-  await closeViewModal(page);
-  await expect(databaseBlocks(editor).first()).toBeVisible({ timeout: 15000 });
-  await page.waitForTimeout(2000);
-}
-
 async function focusAndReplaceCellText(page: Page, gridBlock: Locator, text: string): Promise<void> {
   const firstCell = gridBlock.locator('[data-testid^="grid-cell-"]').first();
   await expect(firstCell).toBeVisible({ timeout: 15000 });
@@ -199,15 +176,31 @@ async function firstCellText(gridBlock: Locator): Promise<string> {
 
 async function hoverDatabaseBlock(page: Page, gridBlock: Locator): Promise<void> {
   await gridBlock.scrollIntoViewIfNeeded();
-  const box = await gridBlock.boundingBox();
+  await expect
+    .poll(
+      async () => {
+        const box = await gridBlock.boundingBox();
 
-  if (!box) {
-    throw new Error('Failed to determine grid block position');
-  }
+        if (!box) {
+          return false;
+        }
 
-  await gridBlock.hover({ position: { x: 6, y: 6 }, force: true });
-  await page.waitForTimeout(400);
-  await page.mouse.move(box.x + 6, box.y + 6);
+        await page.mouse.move(
+          box.x + Math.min(Math.max(box.width / 2, 16), box.width - 1),
+          box.y + Math.min(Math.max(box.height / 2, 16), box.height - 1)
+        );
+        await page.waitForTimeout(250);
+
+        return (
+          (await BlockSelectors.hoverControls(page).isVisible().catch(() => false)) &&
+          (await BlockSelectors.addButton(page).isVisible().catch(() => false)) &&
+          (await BlockSelectors.dragHandle(page).isVisible().catch(() => false))
+        );
+      },
+      { timeout: 10000, message: 'Expected database block hover controls to become visible' }
+    )
+    .toBe(true);
+
   await expect(BlockSelectors.hoverControls(page)).toBeVisible({ timeout: 5000 });
   await expect(BlockSelectors.addButton(page)).toBeVisible({ timeout: 5000 });
   await expect(BlockSelectors.dragHandle(page)).toBeVisible({ timeout: 5000 });
