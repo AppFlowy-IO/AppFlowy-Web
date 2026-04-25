@@ -191,7 +191,7 @@ export default defineConfig({
               id.includes('/y-indexeddb@') ||
               id.includes('/dexie') ||
               id.includes('/redux') ||
-              id.includes('/react-custom-scrollbars') ||
+              id.includes('/react-custom-scrollbars-2') ||
               id.includes('/dayjs') ||
               id.includes('/smooth-scroll-into-view-if-needed') ||
               id.includes('/react-virtualized-auto-sizer') ||
@@ -220,7 +220,6 @@ export default defineConfig({
       'react-dom',
       'react-katex',
       '@appflowyinc/editor',
-      '@appflowyinc/ai-chat',
       'react-colorful',
       'i18next',
       'i18next-browser-languagedetector',
