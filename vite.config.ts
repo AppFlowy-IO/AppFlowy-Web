@@ -2,8 +2,6 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { defineConfig } from 'vite';
-import { viteExternalsPlugin } from 'vite-plugin-externals';
-import { createHtmlPlugin } from 'vite-plugin-html';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
@@ -82,28 +80,6 @@ export default defineConfig({
     isDev ? namespaceRedirectPlugin() : undefined,
     // Strip data-testid attributes in production builds
     isProd ? stripTestIdPlugin() : undefined,
-    createHtmlPlugin({
-      inject: {
-        data: {
-          injectCdn: isProd,
-          cdnLinks: isProd
-            ? `
-              <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
-              <link rel="preconnect" href="//cdn.jsdelivr.net">
-              
-              <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
-              <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-            `
-            : '',
-        },
-      },
-    }),
-    isProd
-      ? viteExternalsPlugin({
-        react: 'React',
-        'react-dom': 'ReactDOM',
-      })
-      : undefined,
     svgr({
       svgrOptions: {
         prettier: false,
@@ -215,7 +191,7 @@ export default defineConfig({
               id.includes('/y-indexeddb@') ||
               id.includes('/dexie') ||
               id.includes('/redux') ||
-              id.includes('/react-custom-scrollbars') ||
+              id.includes('/react-custom-scrollbars-2') ||
               id.includes('/dayjs') ||
               id.includes('/smooth-scroll-into-view-if-needed') ||
               id.includes('/react-virtualized-auto-sizer') ||
@@ -244,7 +220,6 @@ export default defineConfig({
       'react-dom',
       'react-katex',
       '@appflowyinc/editor',
-      '@appflowyinc/ai-chat',
       'react-colorful',
       'i18next',
       'i18next-browser-languagedetector',

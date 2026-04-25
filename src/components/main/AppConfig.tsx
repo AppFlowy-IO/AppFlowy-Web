@@ -18,11 +18,9 @@ import { useAppLanguage } from '@/components/main/useAppLanguage';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 import { Log } from '@/utils/log';
 
+initAPIService(defaultConfig);
+
 function AppConfig({ children }: { children: React.ReactNode }) {
-  // Initialize API service once on mount
-  useState(() => {
-    initAPIService(defaultConfig);
-  });
   const [isAuthenticated, setIsAuthenticated] = React.useState<boolean>(isTokenValid());
 
   const userId = useMemo(() => {

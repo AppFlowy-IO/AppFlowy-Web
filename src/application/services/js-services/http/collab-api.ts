@@ -8,6 +8,7 @@ import {
   View,
 } from '@/application/types';
 import { database_blob } from '@/proto/database_blob';
+import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
 import { APIResponse, APIError, executeAPIRequest, executeAPIVoidRequest, getAxios, parseRetryAfterSecs } from './core';
@@ -62,9 +63,6 @@ export async function collabFullSyncBatch(
   }>
 ): Promise<void> {
   const url = `/api/workspace/v1/${workspaceId}/collab/full-sync/batch`;
-
-  // Import the collab proto types
-  const { collab } = await import('@/proto/messages');
 
   // Build the protobuf request
   const request = collab.CollabBatchSyncRequest.create({

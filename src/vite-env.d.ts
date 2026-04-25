@@ -1,6 +1,5 @@
 /// <reference types="vite/client" />
 /// <reference types="vite-plugin-svgr/client" />
-/// <reference types="vite-plugin-terminal/client" />
 
 interface Window {
   refresh_token: (token: string) => void;

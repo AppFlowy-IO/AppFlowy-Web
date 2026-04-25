@@ -4,6 +4,7 @@ import { FieldType } from '@/application/database-yjs';
 import { getCellDataText } from '@/application/database-yjs/cell.parse';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { AIService, ViewService } from '@/application/services/domains';
+import { duplicateRowDocument as duplicateRowDocumentAPI } from '@/application/services/js-services/http/collab-api';
 import {
   DatabasePrompt,
   DatabasePromptField,
@@ -355,11 +356,7 @@ export function useDatabaseOperations(
           ]);
         }
 
-        const { duplicateRowDocument: duplicateAPI } = await import(
-          '@/application/services/js-services/http/collab-api'
-        );
-
-        await duplicateAPI(currentWorkspaceId, databaseId, sourceRowId, newRowId, clientDocStateB64);
+        await duplicateRowDocumentAPI(currentWorkspaceId, databaseId, sourceRowId, newRowId, clientDocStateB64);
       } catch (e) {
         Log.error('[duplicateRowDocument] failed', e);
       }

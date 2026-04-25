@@ -43,6 +43,17 @@ import {
   getCurrentUser as getCurrentUserAPI,
   getUserWorkspaceInfo as getUserWorkspaceInfoAPI,
   duplicatePublishView as duplicatePublishViewAPI,
+  changePassword,
+  forgotPassword,
+  signInApple,
+  signInDiscord,
+  signInGithub,
+  signInGoogle,
+  signInOTP,
+  signInSaml,
+  signInWithMagicLink,
+  signInWithPassword,
+  signUpWithPassword,
 } from '@/application/services/js-services/http';
 import { emit, EventType } from '@/application/session';
 import { afterAuth, AUTH_CALLBACK_URL, saveRedirectTo } from '@/application/session/sign_in';
@@ -451,67 +462,49 @@ export {
   signInGithub,
   signInDiscord,
   signInSaml,
-} from '@/application/services/js-services/http';
+};
 
 export async function signInGoogleWithRedirect(params: { redirectTo: string }) {
-  const { signInGoogle } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(params.redirectTo);
   return signInGoogle(AUTH_CALLBACK_URL);
 }
 
 export async function signInAppleWithRedirect(params: { redirectTo: string }) {
-  const { signInApple } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(params.redirectTo);
   return signInApple(AUTH_CALLBACK_URL);
 }
 
 export async function signInGithubWithRedirect(params: { redirectTo: string }) {
-  const { signInGithub } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(params.redirectTo);
   return signInGithub(AUTH_CALLBACK_URL);
 }
 
 export async function signInDiscordWithRedirect(params: { redirectTo: string }) {
-  const { signInDiscord } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(params.redirectTo);
   return signInDiscord(AUTH_CALLBACK_URL);
 }
 
 export async function signInSamlWithRedirect(params: { redirectTo: string; domain: string }): Promise<void> {
-  const { signInSaml } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(params.redirectTo);
   return signInSaml(AUTH_CALLBACK_URL, params.domain);
 }
 
 export async function signInWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
-  const { signInWithPassword } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(params.redirectTo);
   return signInWithPassword(params);
 }
 
 export async function signUpWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
-  const { signUpWithPassword } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(params.redirectTo);
   return signUpWithPassword(params);
 }
 
 export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email: string; redirectTo: string }) {
-  const { signInWithMagicLink } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(redirectTo);
   return signInWithMagicLink(email, AUTH_CALLBACK_URL);
 }
 
 export async function signInOTPWithRedirect(params: { email: string; code: string; redirectTo: string; type?: 'magiclink' | 'recovery' | 'signup' }) {
-  const { signInOTP } = await import('@/application/services/js-services/http');
-
   saveRedirectTo(params.redirectTo);
   return signInOTP(params);
 }

@@ -1,6 +1,6 @@
 const { compilerOptions } = require('./tsconfig.json');
 const { pathsToModuleNameMapper } = require('ts-jest');
-const esModules = ['lodash-es', 'nanoid', 'unified', 'rehype-parse', 'remark-parse', 'remark-gfm', 'hast-.*', 'mdast-.*', 'unist-.*', 'vfile', 'bail', 'is-plain-obj', 'trough', 'micromark', 'decode-named-character-reference', 'character-entities', 'mdast-util-.*', 'micromark-.*', 'ccount', 'escape-string-regexp', 'markdown-table', 'devlop', 'zwitch', 'longest-streak', 'trim-lines'].join('|');
+const esModules = ['lodash-es', 'nanoid', 'uuid', 'unified', 'rehype-parse', 'remark-parse', 'remark-gfm', 'hast-.*', 'mdast-.*', 'unist-.*', 'vfile', 'bail', 'is-plain-obj', 'trough', 'micromark', 'decode-named-character-reference', 'character-entities', 'mdast-util-.*', 'micromark-.*', 'ccount', 'escape-string-regexp', 'markdown-table', 'devlop', 'zwitch', 'longest-streak', 'trim-lines'].join('|');
 
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
