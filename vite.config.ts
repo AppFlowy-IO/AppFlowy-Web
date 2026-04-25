@@ -2,8 +2,6 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
 import { defineConfig } from 'vite';
-import { viteExternalsPlugin } from 'vite-plugin-externals';
-import { createHtmlPlugin } from 'vite-plugin-html';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
@@ -82,28 +80,6 @@ export default defineConfig({
     isDev ? namespaceRedirectPlugin() : undefined,
     // Strip data-testid attributes in production builds
     isProd ? stripTestIdPlugin() : undefined,
-    createHtmlPlugin({
-      inject: {
-        data: {
-          injectCdn: isProd,
-          cdnLinks: isProd
-            ? `
-              <link rel="dns-prefetch" href="//cdn.jsdelivr.net">
-              <link rel="preconnect" href="//cdn.jsdelivr.net">
-              
-              <script crossorigin src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.production.min.js"></script>
-              <script crossorigin src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.production.min.js"></script>
-            `
-            : '',
-        },
-      },
-    }),
-    isProd
-      ? viteExternalsPlugin({
-        react: 'React',
-        'react-dom': 'ReactDOM',
-      })
-      : undefined,
     svgr({
       svgrOptions: {
         prettier: false,

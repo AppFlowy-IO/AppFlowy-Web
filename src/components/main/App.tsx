@@ -2,7 +2,6 @@ import { AUTH_CALLBACK_PATH } from '@/application/session/sign_in';
 import NotFound from '@/components/error/NotFound';
 import LoginAuth from '@/components/login/LoginAuth';
 import withAppWrapper from '@/components/main/withAppWrapper';
-import PublishPage from '@/pages/PublishPage';
 
 import '@/styles/app.scss';
 import { lazy, Suspense } from 'react';
@@ -16,13 +15,18 @@ const AsTemplatePage = lazy(() => import('@/pages/AsTemplatePage'));
 const AcceptInvitationPage = lazy(() => import('@/pages/AcceptInvitationPage'));
 const AfterPaymentPage = lazy(() => import('@/pages/AfterPaymentPage'));
 const ImportPage = lazy(() => import('@/pages/ImportPage'));
+const PublishPage = lazy(() => import('@/pages/PublishPage'));
 
 const AppMain = withAppWrapper(() => {
   return (
     <Routes>
       <Route
         path={'/:namespace/:publishName'}
-        element={<PublishPage />}
+        element={
+          <Suspense>
+            <PublishPage />
+          </Suspense>
+        }
       />
       <Route
         path={'/login'}

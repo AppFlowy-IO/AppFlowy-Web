@@ -42,12 +42,19 @@ export function PublishView({ namespace, publishName }: PublishViewProps) {
   const isTemplateThumb = isTemplate && search.get('thumbnail') === 'true';
 
   useEffect(() => {
-    if(!isTemplateThumb) return;
+    if (!isTemplateThumb) {
+      document.documentElement.removeAttribute('thumbnail');
+      return;
+    }
 
     document.documentElement.setAttribute('thumbnail', 'true');
+
+    return () => {
+      document.documentElement.removeAttribute('thumbnail');
+    };
   }, [isTemplateThumb]);
 
-  if(notFound && !doc) {
+  if (notFound && !doc) {
     return <NotFound />;
   }
 

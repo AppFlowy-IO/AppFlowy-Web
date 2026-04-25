@@ -39,6 +39,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const rowsHeightRef = useRef<Map<string, number>>(new Map());
   const [isScrolling, setIsScrolling] = useState(false);
   const { setShowStickyHeader } = useGridContext();
+  const stickyHeaderVisibleRef = useRef<boolean | null>(null);
 
   const onResizeRow = useCallback(
     (id: string, maxCellHeight: number) => {
@@ -90,26 +91,30 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
     let timeout: NodeJS.Timeout;
 
     const onScroll = () => {
-      const scrollMarginTop = gridElement.getBoundingClientRect().top ?? 0;
-      const bottom = gridElement.getBoundingClientRect().bottom ?? 0;
+      const gridRect = gridElement.getBoundingClientRect();
+      const gridTop = gridRect.top ?? 0;
+      const bottom = gridRect.bottom ?? 0;
       const stickyHeader = stickyHeaderRef.current;
 
       if (!stickyHeader) return;
 
-      if (scrollMarginTop <= 48 && bottom - PADDING_END >= 48) {
-        stickyHeader.style.opacity = '1';
-        stickyHeader.style.pointerEvents = 'auto';
-        setShowStickyHeader(true);
-      } else {
-        stickyHeader.style.opacity = '0';
-        stickyHeader.style.pointerEvents = 'none';
-        setShowStickyHeader(false);
+      const shouldShowStickyHeader = gridTop <= 48 && bottom - PADDING_END >= 48;
+
+      if (stickyHeaderVisibleRef.current !== shouldShowStickyHeader) {
+        stickyHeaderVisibleRef.current = shouldShowStickyHeader;
+        stickyHeader.style.opacity = shouldShowStickyHeader ? '1' : '0';
+        stickyHeader.style.pointerEvents = shouldShowStickyHeader ? 'auto' : 'none';
+        setShowStickyHeader(shouldShowStickyHeader);
       }
 
-      setIsScrolling(true);
+      if (!isScrollingRef.current) {
+        isScrollingRef.current = true;
+        setIsScrolling(true);
+      }
 
       clearTimeout(timeout);
       timeout = setTimeout(() => {
+        isScrollingRef.current = false;
         setIsScrolling(false);
       }, 1000);
     };
