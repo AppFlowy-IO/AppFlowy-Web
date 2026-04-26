@@ -209,6 +209,7 @@ export default defineConfig({
   },
   resolve: {
     alias: [
+      { find: '@protobufjs/inquire', replacement: path.resolve(__dirname, 'src/shims/protobufjs-inquire.cjs') },
       { find: 'src/', replacement: `${__dirname}/src/` },
       { find: '@/', replacement: `${__dirname}/src/` },
     ],

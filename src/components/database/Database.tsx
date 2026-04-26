@@ -36,6 +36,8 @@ import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
 import { CalendarViewType } from '@/components/database/fullcalendar/types';
+import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
+import { cn } from '@/lib/utils';
 
 import { DatabaseContextProvider } from './DatabaseContext';
 
@@ -51,6 +53,7 @@ function createDeferredGate() {
 export interface Database2Props {
   workspaceId: string;
   doc: YDoc;
+  initialRowMap?: Record<RowId, YDoc>;
   readOnly?: boolean;
   createRow?: CreateRow;
   loadView?: LoadView;
@@ -166,8 +169,13 @@ function Database(props: Database2Props) {
     generateAISummaryForRow,
     generateAITranslateForRow,
   } = props;
+  const shouldUseFixedViewport = shouldUseFixedDatabaseViewport({
+    embeddedHeight,
+    isDocumentBlock: _isDocumentBlock,
+    variant: props.variant,
+  });
 
-  const [rowMap, setRowMap] = useState<Record<RowId, YDoc>>({});
+  const [rowMap, setRowMap] = useState<Record<RowId, YDoc>>(() => props.initialRowMap ?? {});
   const rowMapRef = useRef(rowMap);
   const pendingRowDocsRef = useRef<Map<RowId, Promise<YDoc | undefined>>>(new Map());
   const prefetchPromisesRef = useRef<Map<string, Promise<void>>>(new Map());
@@ -572,6 +580,8 @@ function Database(props: Database2Props) {
   );
 
   useEffect(() => {
+    const initialRowMap = props.initialRowMap ?? {};
+
     rowMapRef.current = {};
     pendingRowDocsRef.current.clear();
     blobPrefetchPromiseRef.current = null;
@@ -579,10 +589,11 @@ function Database(props: Database2Props) {
     syncedRowKeysRef.current.clear();
     batchPreloadDoneRef.current = false;
     seedsGateRef.current = createDeferredGate();
-    setRowMap({});
+    rowMapRef.current = initialRowMap;
+    setRowMap(initialRowMap);
     setBlobPrefetchComplete(false);
     setSeedsReady(false);
-  }, [doc.guid]);
+  }, [doc.guid, props.initialRowMap]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {
@@ -832,7 +843,12 @@ function Database(props: Database2Props) {
         {rowId ? (
           <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
         ) : (
-          <div className='appflowy-database relative flex w-full flex-1 select-text flex-col overflow-hidden'>
+          <div
+            className={cn(
+              'appflowy-database relative flex w-full select-text flex-col',
+              shouldUseFixedViewport ? 'flex-1 overflow-hidden' : 'overflow-visible'
+            )}
+          >
             <DatabaseViews
               visibleViewIds={visibleViewIds}
               databasePageId={databasePageId}
