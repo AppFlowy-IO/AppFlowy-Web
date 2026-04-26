@@ -1230,6 +1230,7 @@ export function useRowOrdersSelector() {
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
       setRowOrders(originalRowOrders);
+
       return;
     }
 

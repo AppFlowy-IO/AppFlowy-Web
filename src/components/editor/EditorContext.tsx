@@ -75,6 +75,7 @@ export interface EditorContextState {
   navigateToView?: (viewId: string, blockOrRowId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   loadView?: LoadView;
+  loadRowDocument?: (documentId: string) => Promise<YDoc | null>;
   createRow?: CreateRow;
   bindViewSync?: (doc: YDoc) => SyncContext | null;
   readSummary?: boolean;
@@ -119,6 +120,7 @@ export const EditorContextProvider = ({
   navigateToView,
   loadViewMeta,
   loadView,
+  loadRowDocument,
   createRow,
   bindViewSync,
   readSummary,
@@ -201,6 +203,7 @@ export const EditorContextProvider = ({
       navigateToView,
       loadViewMeta,
       loadView,
+      loadRowDocument,
       createRow,
       bindViewSync,
       readSummary,
@@ -240,6 +243,7 @@ export const EditorContextProvider = ({
       navigateToView,
       loadViewMeta,
       loadView,
+      loadRowDocument,
       createRow,
       bindViewSync,
       readSummary,

@@ -2,7 +2,7 @@ import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
 
-import { useDatabase, useDatabaseViewsSelector } from '@/application/database-yjs';
+import { useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { Board } from '@/components/database/board';
@@ -11,7 +11,9 @@ import { DatabaseTabs } from '@/components/database/components/tabs';
 import UnsupportedView from '@/components/database/components/UnsupportedView';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
+import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
+import { cn } from '@/lib/utils';
 import {
   insertViewIdAfter,
   readStoredViewOrder,
@@ -59,6 +61,7 @@ function DatabaseViews({
   onViewIdsChanged?: (viewIds: string[]) => void;
 }) {
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
+  const { isDocumentBlock, variant } = useDatabaseContext();
   const database = useDatabase();
   const databaseId = database?.get(YjsDatabaseKey.id) as string | undefined;
   const views = database?.get(YjsDatabaseKey.views);
@@ -313,6 +316,11 @@ function DatabaseViews({
         return null;
     }
   }, [effectiveLayout]);
+  const shouldUseFixedViewport = shouldUseFixedDatabaseViewport({
+    embeddedHeight: fixedHeight,
+    isDocumentBlock,
+    variant,
+  });
   const databaseConditionsValue = useMemo(
     () => ({
       expanded: conditionsExpanded,
@@ -352,7 +360,10 @@ function DatabaseViews({
         <DatabaseConditions />
 
         <div
-          className={'relative flex h-full w-full flex-1 flex-col overflow-hidden'}
+          className={cn(
+            'relative flex w-full flex-col',
+            shouldUseFixedViewport ? 'h-full flex-1 overflow-hidden' : 'overflow-visible'
+          )}
           style={
             fixedHeight !== undefined
               ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` }
@@ -360,7 +371,7 @@ function DatabaseViews({
           }
         >
           <div
-            className='h-full w-full'
+            className={cn('w-full', shouldUseFixedViewport && 'h-full')}
             style={
               fixedHeight !== undefined
                 ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` }
