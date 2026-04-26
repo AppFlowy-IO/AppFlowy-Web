@@ -201,10 +201,10 @@ const EditorEditable = () => {
               autoCorrect={'off'}
               autoComplete={'off'}
               scrollSelectionIntoView={scrollSelectionIntoView}
-              onCompositionStart={onCompositionStart}
-              onKeyDown={onKeyDown}
+              onCompositionStart={readOnly ? undefined : onCompositionStart}
+              onKeyDown={readOnly ? undefined : onKeyDown}
               onMouseDown={handleMouseDown}
-              onClick={handleClick}
+              onClick={readOnly ? undefined : handleClick}
             />
           </ErrorBoundary>
 
