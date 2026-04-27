@@ -7,6 +7,7 @@ import {
   FieldType,
   Filter,
   PersonFilterCondition,
+  RelationFilterCondition,
   SelectOptionFilter,
   useFieldSelector,
 } from '@/application/database-yjs';
@@ -26,9 +27,25 @@ export function FilterContentOverview({ filter }: { filter: Filter }) {
     switch (fieldType) {
       case FieldType.RichText:
       case FieldType.URL:
-      case FieldType.Relation:
       case FieldType.Rollup:
         return <TextFilterContentOverview filter={filter} />;
+      case FieldType.Relation:
+        return (
+          <>
+            :{' '}
+            {filter.condition === RelationFilterCondition.RelationContains
+              ? t('grid.personFilter.contains')
+              : filter.condition === RelationFilterCondition.RelationDoesNotContain
+              ? t('grid.personFilter.doesNotContain')
+              : filter.condition === RelationFilterCondition.RelationIsEmpty ||
+                filter.condition === RelationFilterCondition.RelationLegacyTextIsEmpty
+              ? t('grid.personFilter.isEmpty')
+              : filter.condition === RelationFilterCondition.RelationIsNotEmpty ||
+                filter.condition === RelationFilterCondition.RelationLegacyTextIsNotEmpty
+              ? t('grid.personFilter.isNotEmpty')
+              : ''}
+          </>
+        );
       case FieldType.Number:
         return <NumberFilterContentOverview filter={filter} />;
       case FieldType.DateTime:

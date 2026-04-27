@@ -54,6 +54,7 @@ export const Element = ({
   const {
     jumpBlockId,
     onJumpedBlockId,
+    readOnly,
   } = useEditorContext();
   const { selectedBlockIds } = useEditorLocalState();
 
@@ -82,14 +83,14 @@ export const Element = ({
   const highlightTimeoutRef = React.useRef<NodeJS.Timeout>();
   const [blockElement, setBlockElement] = React.useState<HTMLElement | null>(null);
   const allowBlockDrop = useMemo(() => {
-    if (type === YjsEditorKey.text) {
+    if (readOnly || type === YjsEditorKey.text) {
       return false;
     }
 
     const blockType = node.type as BlockType;
 
     return ![BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(blockType);
-  }, [node.type, type]);
+  }, [node.type, readOnly, type]);
 
   const scrollAndHighlight = useCallback(async (element: HTMLElement) => {
     element.scrollIntoView({ block: 'start' });

@@ -2,6 +2,7 @@ import CircularProgress from '@mui/material/CircularProgress';
 import { useTranslation } from 'react-i18next';
 
 import { DatabaseContextState } from '@/application/database-yjs';
+import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot/database-yjs-render-bridge';
 import { LoadView, LoadViewMeta, UIVariant, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
 
@@ -66,6 +67,7 @@ export const DatabaseContent = ({
 }: DatabaseContentProps) => {
   const { t } = useTranslation();
   const isPublishVariant = context?.variant === UIVariant.Publish;
+  const initialRowMap = isPublishVariant ? getPublishedDatabaseRenderRowMap(doc) : undefined;
 
   if (selectedViewId && doc && hasDatabase && !notFound && deletionStatus === 'none') {
     return (
@@ -76,29 +78,30 @@ export const DatabaseContent = ({
           width,
         }}
       >
-          <Database
-            {...context}
-            workspaceId={workspaceId}
-            doc={doc}
-            databasePageId={baseViewId}
-            activeViewId={selectedViewId}
-            createRow={createRow}
-            loadView={loadView}
-            navigateToView={navigateToView}
-            onOpenRowPage={onOpenRowPage}
-            loadViewMeta={loadViewMeta}
-            databaseName={databaseName}
-            visibleViewIds={visibleViewIds}
-            onChangeView={onChangeView}
-            onViewAdded={onViewAdded}
-            onViewIdsChanged={onViewIdsChanged}
-            showActions={true}
-            paddingStart={paddingStart}
-            paddingEnd={paddingEnd}
-            isDocumentBlock={true}
-            embeddedHeight={fixedHeight}
-            onRendered={onRendered}
-          />
+        <Database
+          {...context}
+          workspaceId={workspaceId}
+          doc={doc}
+          initialRowMap={initialRowMap}
+          databasePageId={baseViewId}
+          activeViewId={selectedViewId}
+          createRow={createRow}
+          loadView={loadView}
+          navigateToView={navigateToView}
+          onOpenRowPage={onOpenRowPage}
+          loadViewMeta={loadViewMeta}
+          databaseName={databaseName}
+          visibleViewIds={visibleViewIds}
+          onChangeView={onChangeView}
+          onViewAdded={onViewAdded}
+          onViewIdsChanged={onViewIdsChanged}
+          showActions={true}
+          paddingStart={paddingStart}
+          paddingEnd={paddingEnd}
+          isDocumentBlock={true}
+          embeddedHeight={fixedHeight}
+          onRendered={onRendered}
+        />
       </div>
     );
   }

@@ -8,7 +8,7 @@ import {
   useLoadReactions,
 } from '@/components/global-comment/GlobalComment.hooks';
 
-export function GlobalCommentProvider() {
+export function GlobalCommentProvider({ disableFixedAddComment }: { disableFixedAddComment?: boolean }) {
   const { comments, loading, reload } = useLoadComments();
   const { reactions, toggleReaction } = useLoadReactions();
   const [replyCommentId, setReplyCommentId] = useState<string | null>(null);
@@ -66,7 +66,7 @@ export function GlobalCommentProvider() {
 
   return (
     <GlobalCommentContext.Provider value={contextValue}>
-      <GlobalComment />
+      <GlobalComment disableFixedAddComment={disableFixedAddComment} />
     </GlobalCommentContext.Provider>
   );
 }

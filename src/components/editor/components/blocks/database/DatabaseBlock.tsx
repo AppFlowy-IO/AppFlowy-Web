@@ -5,7 +5,7 @@ import { ReactEditor, useReadOnly, useSlateStatic } from 'slate-react';
 import { APP_EVENTS } from '@/application/constants';
 import { DatabaseContextState } from '@/application/database-yjs';
 import { ViewService } from '@/application/services/domains';
-import { YjsEditorKey, YSharedRoot } from '@/application/types';
+import { UIVariant, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { useEmbeddedVisibleViewIds } from '@/components/database/hooks';
 import { DatabaseNode, EditorElementProps } from '@/components/editor/editor.type';
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -33,6 +33,8 @@ export const DatabaseBlock = memo(
 
     const [hasDatabase, setHasDatabase] = useState(false);
     const [deletionStatus, setDeletionStatus] = useState<'none' | 'inTrash' | 'deleted' | null>(null);
+    const effectiveDeletionStatus =
+      context.variant === UIVariant.Publish && deletionStatus === null ? 'none' : deletionStatus;
     const containerRef = useRef<HTMLDivElement | null>(null);
     const editor = useSlateStatic();
     const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
@@ -339,7 +341,7 @@ export const DatabaseBlock = memo(
             selectedViewId={selectedViewId}
             hasDatabase={hasDatabase}
             notFound={notFound}
-            deletionStatus={deletionStatus}
+            deletionStatus={effectiveDeletionStatus}
             paddingStart={paddingStart}
             paddingEnd={paddingEnd}
             width={width}

@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { PublishProvider } from '@/application/publish';
-import { PublishService } from '@/application/services/domains';
-import { YDoc } from '@/application/types';
+import { createPublishSnapshotDataSource } from '@/application/publish-snapshot/data-source';
+import type { PublishedPageSnapshot, PublishSnapshotDataSource } from '@/application/publish-snapshot/types';
 import NotFound from '@/components/error/NotFound';
 import PublishLayout from '@/components/publish/PublishLayout';
 import PublishMobileLayout from '@/components/publish/PublishMobileLayout';
@@ -15,26 +15,32 @@ export interface PublishViewProps {
 }
 
 export function PublishView({ namespace, publishName }: PublishViewProps) {
-  const [doc, setDoc] = useState<YDoc | undefined>();
+  const [snapshot, setSnapshot] = useState<PublishedPageSnapshot | undefined>();
   const [notFound, setNotFound] = useState<boolean>(false);
-  const openPublishView = useCallback(async() => {
-    let doc;
-
-    setNotFound(false);
-    setDoc(undefined);
-    try {
-      doc = await PublishService.getView(namespace, publishName);
-    } catch(e) {
-      setNotFound(true);
-      return;
-    }
-
-    setDoc(doc);
-  }, [namespace, publishName]);
+  const [dataSource] = useState<PublishSnapshotDataSource>(() => createPublishSnapshotDataSource());
 
   useEffect(() => {
-    void openPublishView();
-  }, [openPublishView]);
+    let cancelled = false;
+
+    setNotFound(false);
+    setSnapshot(undefined);
+
+    void dataSource.getPage(namespace, publishName)
+      .then((data) => {
+        if (cancelled) return;
+
+        setSnapshot(data);
+      })
+      .catch(() => {
+        if (cancelled) return;
+
+        setNotFound(true);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dataSource, namespace, publishName]);
 
   const [search] = useSearchParams();
 
@@ -54,7 +60,7 @@ export function PublishView({ namespace, publishName }: PublishViewProps) {
     };
   }, [isTemplateThumb]);
 
-  if (notFound && !doc) {
+  if (notFound && !snapshot) {
     return <NotFound />;
   }
 
@@ -64,11 +70,12 @@ export function PublishView({ namespace, publishName }: PublishViewProps) {
       isTemplate={isTemplate}
       namespace={namespace}
       publishName={publishName}
+      snapshot={snapshot}
     >
-      {getPlatform().isMobile ? <PublishMobileLayout doc={doc} /> : <PublishLayout
+      {getPlatform().isMobile ? <PublishMobileLayout snapshot={snapshot} /> : <PublishLayout
         isTemplateThumb={isTemplateThumb}
         isTemplate={isTemplate}
-        doc={doc}
+        snapshot={snapshot}
       />}
 
     </PublishProvider>

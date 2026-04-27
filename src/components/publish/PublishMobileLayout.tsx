@@ -1,15 +1,16 @@
 import React, { Suspense } from 'react';
 
-import { UIVariant, YDoc } from '@/application/types';
+import type { PublishedPageSnapshot } from '@/application/publish-snapshot/types';
+import { UIVariant } from '@/application/types';
 import { AFScroller } from '@/components/_shared/scroller';
 import PublishMain from '@/components/publish/PublishMain';
 
 const MobileTopBar = React.lazy(() => import('@/components/_shared/mobile-topbar/MobileTopBar'));
 
 function PublishMobileLayout ({
-  doc,
+  snapshot,
 }: {
-  doc?: YDoc;
+  snapshot?: PublishedPageSnapshot;
 }) {
   return (
     <div
@@ -26,7 +27,7 @@ function PublishMobileLayout ({
           <MobileTopBar variant={UIVariant.Publish} />
         </Suspense>
         <PublishMain
-          doc={doc}
+          snapshot={snapshot}
           isTemplate={false}
         />
       </AFScroller>

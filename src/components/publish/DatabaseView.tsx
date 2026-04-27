@@ -2,17 +2,17 @@ import { Suspense, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
 import { usePublishContext } from '@/application/publish';
-import {
+import { UIVariant, ViewLayout, YjsEditorKey } from '@/application/types';
+import type {
   AppendBreadcrumb,
   CreateRow,
   LoadView,
   LoadViewMeta,
+  RowId,
   View,
-  ViewLayout,
   ViewMetaProps,
   YDatabase,
   YDoc,
-  YjsEditorKey,
 } from '@/application/types';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
@@ -21,12 +21,14 @@ import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
 import { Database } from '@/components/database';
 import { findParentView } from '@/components/_shared/outline/utils';
+import { cn } from '@/lib/utils';
 
 import ViewMetaPreview from 'src/components/view-meta/ViewMetaPreview';
 
 export interface DatabaseProps {
   workspaceId: string;
   doc: YDoc;
+  initialRowMap?: Record<RowId, YDoc>;
   createRow?: CreateRow;
   loadView?: LoadView;
   /**
@@ -39,6 +41,7 @@ export interface DatabaseProps {
   appendBreadcrumb?: AppendBreadcrumb;
   onRendered?: () => void;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
+  variant?: UIVariant;
 }
 
 function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
@@ -136,6 +139,7 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
   const rowId = search.get('r') || undefined;
   const doc = props.doc;
   const database = doc?.getMap(YjsEditorKey.data_section)?.get(YjsEditorKey.database) as YDatabase;
+  const isPublishVariant = props.variant === UIVariant.Publish;
 
   const skeleton = useMemo(() => {
     if (rowId) {
@@ -162,7 +166,7 @@ function DatabaseView({ viewMeta, navigateToView, ...props }: DatabaseProps) {
         minHeight: 'calc(100vh - 48px)',
         maxWidth: isTemplateThumb ? '964px' : undefined,
       }}
-      className={'relative flex h-full w-full flex-col'}
+      className={cn('relative flex w-full flex-col', !isPublishVariant && 'h-full')}
     >
       {rowId ? null : <ViewMetaPreview {...viewMeta} readOnly={true} />}
 

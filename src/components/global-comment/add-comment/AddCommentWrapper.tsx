@@ -2,13 +2,18 @@ import { Portal } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 
 import { HEADER_HEIGHT } from '@/application/constants';
+import { usePublishContext } from '@/application/publish';
 import { useGlobalCommentContext } from '@/components/global-comment/GlobalComment.hooks';
 import { getScrollParent } from '@/components/global-comment/utils';
 
 import AddComment from './AddComment';
+import { shouldUseFixedGlobalCommentInput } from './layout';
 
-export function AddCommentWrapper() {
+export function AddCommentWrapper({ disableFixedAddComment }: { disableFixedAddComment?: boolean }) {
   const { replyCommentId } = useGlobalCommentContext();
+  const publishContext = usePublishContext();
+  const useFixedAddComment =
+    !disableFixedAddComment && shouldUseFixedGlobalCommentInput(publishContext?.viewMeta?.layout);
   const addCommentRef = useRef<HTMLDivElement>(null);
   const [showFixedAddComment, setShowFixedAddComment] = useState(false);
   const [offsetLeft, setOffsetLeft] = useState(0);
@@ -22,6 +27,11 @@ export function AddCommentWrapper() {
   }, [replyCommentId]);
 
   useEffect(() => {
+    if (!useFixedAddComment) {
+      setShowFixedAddComment(false);
+      return;
+    }
+
     const element = addCommentRef.current;
 
     if (!element) return;
@@ -45,7 +55,7 @@ export function AddCommentWrapper() {
     return () => {
       scrollContainer.removeEventListener('scroll', handleScroll);
     };
-  }, []);
+  }, [useFixedAddComment]);
 
   useEffect(() => {
     const element = addCommentRef.current;
@@ -72,7 +82,7 @@ export function AddCommentWrapper() {
           fixed={false}
         />
       </div>
-      {showFixedAddComment && (
+      {useFixedAddComment && showFixedAddComment && (
         <Portal container={document.body}>
           <div
             style={{

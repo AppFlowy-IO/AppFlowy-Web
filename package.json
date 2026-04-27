@@ -268,6 +268,8 @@
       "@remix-run/router": "^1.23.2",
       "@babel/runtime@<7.26.10": "7.28.4",
       "brace-expansion@<1.1.13": "1.1.13",
+      "browserslist": "4.28.1",
+      "caniuse-lite": "1.0.30001761",
       "diff@>=4.0.0 <4.0.4": "4.0.4",
       "dompurify@<3.4.0": "3.4.0",
       "follow-redirects@<=1.15.11": "1.16.0",
@@ -284,6 +286,7 @@
       "picomatch@<2.3.2": "2.3.2",
       "postcss@<8.5.10": "8.5.10",
       "rollup@>=4.0.0 <4.59.0": "4.59.0",
+      "update-browserslist-db": "1.2.3",
       "yaml@>=1.0.0 <1.10.3": "1.10.3",
       "yaml@>=2.0.0 <2.8.3": "2.8.3"
     }
