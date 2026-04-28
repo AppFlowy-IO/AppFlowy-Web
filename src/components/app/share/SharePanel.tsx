@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AccessLevel, IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
@@ -25,6 +25,7 @@ function SharePanel({ viewId }: { viewId: string }) {
   const [mentionable, setMentionable] = useState<MentionablePerson[]>([]);
   const [isLoadingMentionable, setIsLoadingMentionable] = useState(false);
   const [mentionableError, setMentionableError] = useState<string | null>(null);
+  const loadPeopleRequestSeq = useRef(0);
   const outline = useAppOutline();
   const hasFullAccess = useMemo(() => {
     return people.find((p) => p.email === currentUser?.email)?.access_level === AccessLevel.FullAccess;
@@ -45,18 +46,20 @@ function SharePanel({ viewId }: { viewId: string }) {
 
     const ancestorViewIds = findAncestors(outline || [], viewId)?.map((item) => item.view_id) || [];
 
+    const requestSeq = ++loadPeopleRequestSeq.current;
+
     setIsLoading(true);
     try {
       const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
 
-      if (signal?.aborted) return;
+      if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
       setPeople(detail.shared_with);
     } catch (error) {
-      if (signal?.aborted) return;
+      if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
       console.error(error);
       setPeople([]);
     } finally {
-      if (!signal?.aborted) {
+      if (!signal?.aborted && requestSeq === loadPeopleRequestSeq.current) {
         setIsLoading(false);
       }
     }
