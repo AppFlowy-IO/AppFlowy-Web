@@ -381,8 +381,9 @@ test.describe('Share Page Test', () => {
 
     const userCEmail = generateRandomEmail();
 
-    // Given: user B account exists and user A is signed in
+    // Given: user B and C accounts exist and user A is signed in
     await createUserAccount(request, userBEmail);
+    await createUserAccount(request, userCEmail);
     await signInAndWaitForApp(page, request, testEmail);
     testLog.info('User A signed in');
 

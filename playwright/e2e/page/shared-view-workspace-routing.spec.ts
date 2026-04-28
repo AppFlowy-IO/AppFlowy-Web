@@ -1,4 +1,4 @@
-import { test, expect, Page, APIRequestContext, Browser } from '@playwright/test';
+import { test, expect, Page, APIRequestContext, APIResponse, Browser } from '@playwright/test';
 import { PageSelectors, SidebarSelectors } from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling, TestConfig } from '../../support/test-config';
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
@@ -33,6 +33,82 @@ function workspaceIdFromUrl(url: string): string | null {
 
 async function getAuthToken(page: Page): Promise<string> {
   return page.evaluate(() => localStorage.getItem('af_auth_token') || '');
+}
+
+async function expectApiSuccess<T = unknown>(response: APIResponse, action: string): Promise<T> {
+  let body: { code?: number; data?: T; message?: string } | null = null;
+
+  try {
+    body = await response.json();
+  } catch {
+    const text = await response.text().catch(() => '');
+
+    throw new Error(`${action} failed: HTTP ${response.status()} ${text}`);
+  }
+
+  if (!response.ok() || body?.code !== 0) {
+    throw new Error(`${action} failed: HTTP ${response.status()} ${JSON.stringify(body)}`);
+  }
+
+  return body.data as T;
+}
+
+async function guestCanAccessSharedPage(
+  request: APIRequestContext,
+  guestAuthToken: string,
+  workspaceId: string,
+  viewId: string,
+): Promise<boolean> {
+  const response = await request.get(`${TestConfig.apiUrl}/api/workspace/${workspaceId}/page-view/${viewId}`, {
+    headers: { Authorization: `Bearer ${guestAuthToken}` },
+    failOnStatusCode: false,
+  });
+  const body = await response.json().catch(() => null) as { code?: number; data?: { view?: unknown } } | null;
+
+  return response.ok() && body?.code === 0 && Boolean(body?.data?.view);
+}
+
+async function joinSharedWorkspaceIfInviteCodeRequired(
+  request: APIRequestContext,
+  guestAuthToken: string,
+  workspaceId: string,
+  viewId: string,
+  guestEmail: string,
+) {
+  if (await guestCanAccessSharedPage(request, guestAuthToken, workspaceId, viewId)) {
+    return;
+  }
+
+  const codesResponse = await request.get(
+    `${TestConfig.apiUrl}/api/sharing/workspace/${workspaceId}/view/${viewId}/guest-invite-codes`,
+    { headers: { Authorization: `Bearer ${guestAuthToken}` } },
+  );
+  const codesData = await expectApiSuccess<{ codes: Array<{ code: string; email: string }> }>(
+    codesResponse,
+    'List guest invite codes',
+  );
+  const inviteCode = codesData.codes.find((item) => item.email.toLowerCase() === guestEmail.toLowerCase())?.code;
+
+  if (!inviteCode) {
+    throw new Error(`Guest cannot access shared page and no guest invite code was found for ${guestEmail}`);
+  }
+
+  const joinResponse = await request.post(
+    `${TestConfig.apiUrl}/api/sharing/workspace/${workspaceId}/join-by-guest-invite-code`,
+    {
+      headers: { Authorization: `Bearer ${guestAuthToken}`, 'Content-Type': 'application/json' },
+      data: { code: inviteCode },
+    },
+  );
+
+  await expectApiSuccess(joinResponse, 'Join shared workspace by guest invite code');
+
+  await expect
+    .poll(
+      () => guestCanAccessSharedPage(request, guestAuthToken, workspaceId, viewId),
+      { timeout: 30000, intervals: [1000, 2000, 3000] },
+    )
+    .toBe(true);
 }
 
 async function createPageWithContent(page: Page, title: string, content: string): Promise<string> {
@@ -86,7 +162,7 @@ async function shareViewWithGuest(
       data: { view_id: viewId, emails: [guestEmail], access_level: 50, auto_confirm: true },
     },
   );
-  if (!response.ok()) throw new Error(`Failed to share view: ${response.status()}`);
+  await expectApiSuccess(response, 'Share view with guest');
 }
 
 async function getUserProfile(request: APIRequestContext, authToken: string) {
@@ -119,7 +195,11 @@ async function waitForEditorContent(page: Page, maxAttempts = 3): Promise<void> 
 // ── Setup: Annie creates and shares a page ───────────────────────────
 
 async function annieCreatesAndSharesPage(
-  browser: Browser, request: APIRequestContext, ownerEmail: string, guestEmail: string,
+  browser: Browser,
+  request: APIRequestContext,
+  ownerEmail: string,
+  guestEmail: string,
+  guestAuthToken: string,
 ): Promise<{ ownerWorkspaceId: string; sharedViewId: string; directLink: string }> {
   const ownerContext = await browser.newContext();
   const ownerPage = await ownerContext.newPage();
@@ -147,6 +227,14 @@ async function annieCreatesAndSharesPage(
 
   await shareViewWithGuest(request, ownerToken, ownerWorkspaceId, sharedViewId, guestEmail);
   testLog.info(`Annie shared page with guest (auto_confirm=true)`);
+  await joinSharedWorkspaceIfInviteCodeRequired(
+    request,
+    guestAuthToken,
+    ownerWorkspaceId,
+    sharedViewId,
+    guestEmail,
+  );
+  testLog.info('Guest access to Annie workspace confirmed');
 
   const directLink = `/app/${ownerWorkspaceId}/${sharedViewId}`;
   await ownerContext.close();
@@ -191,7 +279,7 @@ test.describe('Shared View Cross-Workspace Routing', () => {
 
     // And: Annie creates a page in her workspace and shares it with Nathan
     const { ownerWorkspaceId, directLink } = await annieCreatesAndSharesPage(
-      browser, request, ownerEmail, guestEmail,
+      browser, request, ownerEmail, guestEmail, guestToken,
     );
     expect(ownerWorkspaceId).not.toBe(guestWorkspaceId);
     testLog.info(`Direct link to Annie's page: ${directLink}`);
@@ -257,7 +345,7 @@ test.describe('Shared View Cross-Workspace Routing', () => {
 
     // And: Annie creates a page and shares it with Nathan
     const { ownerWorkspaceId, directLink } = await annieCreatesAndSharesPage(
-      browser, request, ownerEmail, guestEmail,
+      browser, request, ownerEmail, guestEmail, guestToken,
     );
     expect(guestWorkspaceId).not.toBe(ownerWorkspaceId);
     testLog.info(`Annie's direct link: ${directLink}`);
@@ -301,7 +389,7 @@ test.describe('Shared View Cross-Workspace Routing', () => {
 
     // And: Annie creates a page and shares it with Nathan
     const { sharedViewId } = await annieCreatesAndSharesPage(
-      browser, request, ownerEmail, guestEmail,
+      browser, request, ownerEmail, guestEmail, guestToken,
     );
 
     // When: Nathan navigates using his OWN workspace ID with the shared view ID
