@@ -464,6 +464,10 @@ function AppPage() {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
     const docForCurrentView = doc && getDocViewId(doc) === viewId ? doc : undefined;
 
+    if (layout === ViewLayout.AIChat && !aiEnabled) {
+      return <div data-testid="ai-chat-disabled-view" className="h-full w-full" />;
+    }
+
     if (!docForCurrentView && layout === ViewLayout.AIChat && viewId) {
       return (
         <Suspense>

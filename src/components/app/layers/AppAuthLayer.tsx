@@ -46,7 +46,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
   const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
   const [enablePageHistory, setEnablePageHistory] = useState<boolean | undefined>(undefined);
-  const [aiEnabled, setAIEnabled] = useState<boolean | undefined>(undefined);
+  const [aiEnabled, setAIEnabled] = useState<boolean | undefined>(false);
 
   // Calculate current workspace ID from URL params or user info
   const currentWorkspaceId = useMemo(

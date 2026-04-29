@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 
 import {
   FieldVisibility,
+  isAIFieldType,
   RowMeta,
   useDatabaseContext,
   useFieldsSelector,
@@ -13,6 +14,7 @@ import ImageRender from '@/components/_shared/image-render/ImageRender';
 import { useBoardActions, useBoardSelection } from '@/components/database/board/BoardProvider';
 import CardToolbar from '@/components/database/components/board/card/CardToolbar';
 import CardField from '@/components/database/components/field/CardField';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { cn } from '@/lib/utils';
 import { renderColor } from '@/utils/color';
 import { coverOffsetToObjectPosition } from '@/utils/cover';
@@ -29,6 +31,7 @@ export interface CardProps {
 export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
   ({ groupFieldId, rowId, className, columnId }, ref) => {
     const fields = useFieldsSelector();
+    const aiEnabled = useAIEnabled();
     const meta = useRowMetaSelector(rowId);
     const { selectedCardIds, editingCardId } = useBoardSelection();
     const { setEditingCardId, setSelectedCardIds } = useBoardActions();
@@ -39,8 +42,12 @@ export const CardPrimitive = forwardRef<HTMLDivElement, CardProps>(
     const cover = meta?.cover;
     const showFields = useMemo(
       () =>
-        fields.filter((field) => field.fieldId !== groupFieldId && field.visibility !== FieldVisibility.AlwaysHidden),
-      [fields, groupFieldId]
+        fields.filter((field) =>
+          field.fieldId !== groupFieldId &&
+          field.visibility !== FieldVisibility.AlwaysHidden &&
+          (aiEnabled || !isAIFieldType(field.fieldType))
+        ),
+      [aiEnabled, fields, groupFieldId]
     );
     const readOnly = useReadOnly();
     const [hovered, setHovered] = useState(false);

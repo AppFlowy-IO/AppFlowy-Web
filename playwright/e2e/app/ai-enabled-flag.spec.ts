@@ -1,6 +1,5 @@
 import { test, expect, type Page } from '@playwright/test';
 
-import { ERROR_CODE } from '../../../src/application/constants';
 import {
   AddPageSelectors,
   ChatSelectors,
@@ -8,6 +7,7 @@ import {
   DropdownSelectors,
   EditorSelectors,
   FieldType,
+  GridFieldSelectors,
   HeaderSelectors,
   PageSelectors,
   PropertyMenuSelectors,
@@ -20,7 +20,7 @@ import { createDocumentPageAndNavigate } from '../../support/page-utils';
 import { expandSpace } from '../../support/page/flows';
 import { mockServerInfo } from '../../support/server-info-helpers';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
-import { loginAndCreateGrid, addNewProperty, getLastFieldId } from '../../support/field-type-test-helpers';
+import { loginAndCreateGrid, addNewProperty, editLastProperty, getLastFieldId } from '../../support/field-type-test-helpers';
 import { waitForGridReady } from '../../support/database-ui-helpers';
 import {
   AIMeetingSelectors,
@@ -49,12 +49,13 @@ test.describe('Server info ai_enabled flag', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  test('hides AI chat creation while existing AI chats rely on server-side unavailable errors', async ({
+  test('hides AI chat creation and existing AI chat pages when ai_enabled is false', async ({
     page,
     request,
   }) => {
     const serverInfo = await mockServerInfo(page, { ai_enabled: true });
     const testEmail = generateRandomEmail();
+    let aiChatViewId = '';
 
     await test.step('Given a signed-in user with AI enabled', async () => {
       await signInAndWaitForApp(page, request, testEmail);
@@ -67,34 +68,20 @@ test.describe('Server info ai_enabled flag', () => {
       await expect(AddPageSelectors.addAIChatButton(page)).toBeVisible({ timeout: 10000 });
       await AddPageSelectors.addAIChatButton(page).click();
       await expect(ChatSelectors.aiChatContainer(page)).toBeVisible({ timeout: 30000 });
+
+      aiChatViewId = new URL(page.url()).pathname.split('/').filter(Boolean).pop() || '';
+      expect(aiChatViewId).not.toBe('');
     });
 
     await test.step('When the server info response disables AI and the app reloads', async () => {
       serverInfo.setServerInfo({ ai_enabled: false });
       await page.reload({ waitUntil: 'domcontentloaded' });
-      await expect(ChatSelectors.aiChatContainer(page)).toBeVisible({ timeout: 30000 });
+      await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
     });
 
-    await test.step('Then sending a message in the existing chat surfaces the server unavailable error', async () => {
-      let unavailableRequestCount = 0;
-
-      await page.route('**/api/chat/*/*/message/question', async (route) => {
-        unavailableRequestCount += 1;
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            code: ERROR_CODE.AI_SERVICE_UNAVAILABLE,
-            message: 'AI service unavailable',
-          }),
-        });
-      });
-
-      await ChatSelectors.aiChatContainer(page).locator('textarea').first().fill('Can you summarize this?');
-      await expect(ChatSelectors.sendButton(page)).toBeEnabled();
-      await ChatSelectors.sendButton(page).click();
-      await expect(page.getByText('AI service unavailable')).toBeVisible({ timeout: 10000 });
-      expect(unavailableRequestCount).toBe(1);
+    await test.step('Then the existing AI chat page is hidden', async () => {
+      await expect(ChatSelectors.aiChatContainer(page)).toHaveCount(0);
+      await expect(page.getByTestId(`page-${aiChatViewId}`)).toHaveCount(0);
     });
 
     await test.step('And the Add Page menu no longer offers AI Chat', async () => {
@@ -103,12 +90,9 @@ test.describe('Server info ai_enabled flag', () => {
       await page.keyboard.press('Escape');
     });
 
-    await test.step('And AI chat actions are not shown in the page more-actions menu', async () => {
-      await expect(HeaderSelectors.moreActionsButton(page)).toBeVisible({ timeout: 10000 });
-      await HeaderSelectors.moreActionsButton(page).click({ force: true });
-      await expect(DropdownSelectors.content(page)).toBeVisible({ timeout: 10000 });
-      await expect(DropdownSelectors.content(page).getByText('Add messages to page')).toHaveCount(0);
-      await page.keyboard.press('Escape');
+    await test.step('And AI chat page actions are not available', async () => {
+      await expect(HeaderSelectors.moreActionsButton(page)).toHaveCount(0);
+      await expect(page.getByText('Add messages to page')).toHaveCount(0);
     });
 
     await test.step('And the workspace menu no longer offers AI Max', async () => {
@@ -179,28 +163,43 @@ test.describe('Server info ai_enabled flag', () => {
     });
   });
 
-  test('hides database AI field types and existing AI cell generation when ai_enabled is false', async ({
+  test('hides database AI field types and existing AI columns when ai_enabled is false', async ({
     page,
     request,
   }) => {
     const serverInfo = await mockServerInfo(page, { ai_enabled: true });
     const testEmail = generateRandomEmail();
-    let aiFieldId = '';
+    let aiSummaryFieldId = '';
+    let aiTranslateFieldId = '';
 
-    await test.step('Given a grid database with an existing AI Summary field', async () => {
+    await test.step('Given a grid database with existing AI Summary and AI Translate fields', async () => {
       await loginAndCreateGrid(page, request, testEmail);
       await DatabaseGridSelectors.firstCell(page).click({ force: true });
       await page.keyboard.type('content to summarize');
       await page.keyboard.press('Enter');
       await addNewProperty(page, FieldType.AISummaries);
-      aiFieldId = await getLastFieldId(page);
-      expect(aiFieldId).not.toBe('');
+      aiSummaryFieldId = await getLastFieldId(page);
+      expect(aiSummaryFieldId).not.toBe('');
 
-      const aiCell = DatabaseGridSelectors.dataRowCellsForField(page, aiFieldId).first();
+      const lastFieldIdBeforeAdd = await getLastFieldId(page);
+
+      await PropertyMenuSelectors.newPropertyButton(page).first().scrollIntoViewIfNeeded();
+      await page.evaluate(() => {
+        const el = document.querySelector('[data-testid="grid-new-property-button"]');
+
+        if (el) (el as HTMLElement).click();
+      });
+      await expect.poll(async () => getLastFieldId(page), { timeout: 10000 }).not.toBe(lastFieldIdBeforeAdd);
+      await page.keyboard.press('Escape');
+      await editLastProperty(page, FieldType.AITranslations);
+      aiTranslateFieldId = await getLastFieldId(page);
+      expect(aiTranslateFieldId).not.toBe('');
+
+      const aiCell = DatabaseGridSelectors.dataRowCellsForField(page, aiSummaryFieldId).first();
 
       await aiCell.scrollIntoViewIfNeeded();
       await aiCell.hover();
-      await expect(page.locator(`[data-testid^="ai-generate-button-"][data-testid$="-${aiFieldId}"]`).first())
+      await expect(page.locator(`[data-testid^="ai-generate-button-"][data-testid$="-${aiSummaryFieldId}"]`).first())
         .toBeVisible({ timeout: 10000 });
     });
 
@@ -230,12 +229,13 @@ test.describe('Server info ai_enabled flag', () => {
       await page.keyboard.press('Escape');
     });
 
-    await test.step('And existing AI cells do not show Generate actions', async () => {
-      const aiCell = DatabaseGridSelectors.dataRowCellsForField(page, aiFieldId).first();
-
-      await aiCell.scrollIntoViewIfNeeded();
-      await aiCell.hover();
-      await expect(page.locator(`[data-testid^="ai-generate-button-"][data-testid$="-${aiFieldId}"]`)).toHaveCount(0);
+    await test.step('And existing AI columns are hidden from the grid', async () => {
+      await expect(GridFieldSelectors.fieldHeader(page, aiSummaryFieldId)).toHaveCount(0);
+      await expect(GridFieldSelectors.fieldHeader(page, aiTranslateFieldId)).toHaveCount(0);
+      await expect(DatabaseGridSelectors.dataRowCellsForField(page, aiSummaryFieldId)).toHaveCount(0);
+      await expect(DatabaseGridSelectors.dataRowCellsForField(page, aiTranslateFieldId)).toHaveCount(0);
+      await expect(page.locator(`[data-testid^="ai-generate-button-"][data-testid$="-${aiSummaryFieldId}"]`)).toHaveCount(0);
+      await expect(page.locator(`[data-testid^="ai-generate-button-"][data-testid$="-${aiTranslateFieldId}"]`)).toHaveCount(0);
     });
   });
 });

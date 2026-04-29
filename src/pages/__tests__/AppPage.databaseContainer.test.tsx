@@ -19,6 +19,7 @@ declare global {
 jest.mock('@/components/app/app.hooks', () => {
   return {
     useAppViewId: () => global.__appPageTestState?.viewId,
+    useAIEnabled: () => true,
     useCurrentWorkspaceId: () => global.__appPageTestState?.workspaceId,
     useAppOutline: () => global.__appPageTestState?.outline,
     useAppOperations: () => global.__appPageTestState?.handlers ?? {},

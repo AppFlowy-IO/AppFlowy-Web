@@ -3,7 +3,7 @@ import { uniqBy } from 'lodash-es';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useFieldsSelector, useNavigateToRow, usePrimaryFieldId } from '@/application/database-yjs';
+import { FieldType, isAIFieldType, useFieldsSelector, useNavigateToRow, usePrimaryFieldId } from '@/application/database-yjs';
 import { Cell } from '@/application/database-yjs/cell.type';
 import { useReadOnly } from '@/application/database-yjs/context';
 import { useDuplicateRowDispatch } from '@/application/database-yjs/dispatch';
@@ -13,6 +13,7 @@ import { ReactComponent as DuplicateIcon } from '@/assets/icons/duplicate.svg';
 import { ReactComponent as ExpandMoreIcon } from '@/assets/icons/full_screen.svg';
 import DeleteRowConfirm from '@/components/database/components/database-row/DeleteRowConfirm';
 import RowPropertyPrimitive from '@/components/database/components/database-row/RowPropertyPrimitive';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { EventTitle } from '@/components/database/fullcalendar/event/EventTitle';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -41,12 +42,13 @@ function EventPopoverContent({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const fields = useFieldsSelector();
+  const aiEnabled = useAIEnabled();
   const filteredFields = useMemo(() => {
     return uniqBy(
-      fields.filter((column) => column.fieldId !== primaryFieldId),
+      fields.filter((column) => column.fieldId !== primaryFieldId && (aiEnabled || !isAIFieldType(column.fieldType))),
       'fieldId'
     );
-  }, [fields, primaryFieldId]);
+  }, [aiEnabled, fields, primaryFieldId]);
 
   // Handle delete action
   const handleDelete = useCallback(() => {

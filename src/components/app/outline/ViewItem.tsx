@@ -12,7 +12,7 @@ import {
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAppOperations, useSidebarHighlightedViewIds, useSidebarSelectedViewId } from '@/components/app/app.hooks';
+import { useAIEnabled, useAppOperations, useSidebarHighlightedViewIds, useSidebarSelectedViewId } from '@/components/app/app.hooks';
 
 function ViewItem({
   view,
@@ -40,6 +40,7 @@ function ViewItem({
   const { t } = useTranslation();
   const selectedViewId = useSidebarSelectedViewId();
   const highlightedViewIds = useSidebarHighlightedViewIds();
+  const aiEnabled = useAIEnabled();
   const viewId = view.view_id;
   const selected =
     highlightedViewIds.includes(viewId) ||
@@ -48,6 +49,10 @@ function ViewItem({
 
   const isExpanded = expandIds.includes(viewId);
   const [hovered, setHovered] = React.useState<boolean>(false);
+  const visibleChildren = useMemo(() => {
+    if (aiEnabled) return view.children;
+    return view.children?.filter((child) => child.layout !== ViewLayout.AIChat);
+  }, [aiEnabled, view.children]);
 
   const handleChangeIcon = useCallback(
     async (icon: { ty: ViewIconType; value: string }) => {
@@ -105,12 +110,13 @@ function ViewItem({
 
   const renderItem = useMemo(() => {
     if (!view) return null;
+    if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
 
     // Determine which left icon to show
     // Use the utility function which properly handles database containers
     const isRefDatabaseView = isRefDbView(view, parentView);
     const isLoaded = loadedViewIds?.has(view.view_id) ?? false;
-    const hasConfirmedChildren = Boolean(view.children?.length);
+    const hasConfirmedChildren = Boolean(visibleChildren?.length);
     // Use server-provided has_children when available; fall back to heuristic for old servers
     const hasChildren = hasConfirmedChildren || (view.has_children ?? (!isLoaded && view.layout === ViewLayout.Document));
 
@@ -198,7 +204,9 @@ function ViewItem({
       </div>
     );
   }, [
+    aiEnabled,
     view,
+    visibleChildren,
     selected,
     level,
     getIcon,
@@ -218,6 +226,8 @@ function ViewItem({
   const isLoadingChildren = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
 
   const renderChildren = useMemo(() => {
+    if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
+
     // Don't pass renderExtra (more button) to children when parent is a database layout
     // or when parent is a database container
     const parentIsDatabaseLayout = isDatabaseLayout(view.layout);
@@ -241,7 +251,7 @@ function ViewItem({
             ))}
           </div>
         ) : (
-          view?.children?.map((child) => (
+          visibleChildren?.map((child) => (
             <ViewItem
               level={level + 1}
               key={child.view_id}
@@ -259,7 +269,9 @@ function ViewItem({
         )}
       </div>
     );
-  }, [toggleExpand, onClickView, isExpanded, isLoadingChildren, expandIds, level, renderExtra, view, width, loadingViewIds, loadedViewIds]);
+  }, [aiEnabled, toggleExpand, onClickView, isExpanded, isLoadingChildren, expandIds, level, renderExtra, view, visibleChildren, width, loadingViewIds, loadedViewIds]);
+
+  if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
 
   return (
     <div

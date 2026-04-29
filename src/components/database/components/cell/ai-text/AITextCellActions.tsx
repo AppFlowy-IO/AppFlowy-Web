@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import {
   FieldType,
   getRowTimeString,
+  isAIFieldType,
   useDatabase,
   useDatabaseContext,
   useFieldSelector,
@@ -70,7 +71,7 @@ function AITextCellActions({
         return getRowTimeString(field, row.get(YjsDatabaseKey.created_at), currentUser) || '';
       } else if (type === FieldType.LastEditedTime) {
         return getRowTimeString(field, row.get(YjsDatabaseKey.last_modified), currentUser) || '';
-      } else if (cell && ![FieldType.AISummaries, FieldType.AITranslations].includes(type)) {
+      } else if (cell && !isAIFieldType(type)) {
         try {
           return getCellDataText(cell, field, currentUser);
         } catch (e) {
