@@ -7,6 +7,7 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { AIMeetingBlockData } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { WriterRequest } from '@/components/chat/request';
 import { AIAssistantType } from '@/components/chat/types';
 import { useEditorContext } from '@/components/editor/EditorContext';
@@ -46,6 +47,7 @@ export function useAIMeetingRegenerate({
   const editor = useSlateStatic() as YjsEditor;
   const readOnly = useReadOnly();
   const { workspaceId, viewId, requestInstance } = useEditorContext();
+  const isAIEnabled = useAIEnabled();
   const data = node.data ?? ({} as AIMeetingBlockData);
 
   const [summaryTemplateConfig, setSummaryTemplateConfig] = useState<SummaryRegenerateTemplateConfig>(
@@ -76,6 +78,8 @@ export function useAIMeetingRegenerate({
   );
 
   useEffect(() => {
+    if (!isAIEnabled) return;
+
     let cancelled = false;
 
     void (async () => {
@@ -88,14 +92,14 @@ export function useAIMeetingRegenerate({
     return () => {
       cancelled = true;
     };
-  }, [requestInstance]);
+  }, [isAIEnabled, requestInstance]);
 
   const handleRegenerateSummary = useCallback(async (overrides?: {
     templateId?: string;
     detailId?: string;
     languageCode?: string;
   }) => {
-    if (readOnly || isRegeneratingRef.current) return;
+    if (!isAIEnabled || readOnly || isRegeneratingRef.current) return;
 
     const summaryBlockId = (sectionNodes.summaryNode as (Node & { blockId?: string }) | undefined)?.blockId;
 
@@ -212,6 +216,7 @@ export function useAIMeetingRegenerate({
   }, [
     editor,
     handleRegenerateMenuClose,
+    isAIEnabled,
     readOnly,
     requestInstance,
     resolveSpeakerName,
@@ -289,5 +294,6 @@ export function useAIMeetingRegenerate({
     templateSections,
     detailOptions,
     getRegenerateOptionLabel,
+    isAIEnabled,
   };
 }

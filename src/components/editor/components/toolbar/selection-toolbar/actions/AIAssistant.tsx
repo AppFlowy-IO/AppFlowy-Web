@@ -7,6 +7,7 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ImproveWritingIcon } from '@/assets/icons/ai_improve_writing.svg';
 import { ReactComponent as TriangleDownIcon } from '@/assets/icons/triangle_down.svg';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { AIAssistantType, AIWriterMenu, useAIWriter } from '@/components/chat';
 import ActionButton from '@/components/editor/components/toolbar/selection-toolbar/actions/ActionButton';
 import { useSelectionToolbarContext } from '@/components/editor/components/toolbar/selection-toolbar/SelectionToolbar.hooks';
@@ -14,6 +15,7 @@ import { useEditorLocalState } from '@/components/editor/EditorContext';
 
 function AIAssistant() {
   const { t } = useTranslation();
+  const aiEnabled = useAIEnabled();
   const editor = useSlate() as YjsEditor;
 
   const [open, setOpen] = React.useState(false);
@@ -74,9 +76,12 @@ function AIAssistant() {
     }
   }, [toolbarVisible]);
 
+  if (!aiEnabled) return null;
+
   return (
     <>
       <ActionButton
+        data-testid='toolbar-improve-writing-button'
         className={'!hover:text-billing-primary !text-ai-primary'}
         onClick={onClickImproveWriting}
         tooltip={t('editor.improveWriting')}
@@ -85,6 +90,7 @@ function AIAssistant() {
       </ActionButton>
       <AIWriterMenu input={content} open={open} isFilterOut={isFilterOut} onItemClicked={onItemClicked}>
         <ActionButton
+          data-testid='toolbar-ask-ai-button'
           onClick={(e) => {
             e.stopPropagation();
             setContent(CustomEditor.getSelectionContent(editor));

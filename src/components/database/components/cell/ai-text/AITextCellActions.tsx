@@ -17,6 +17,7 @@ import { languageTexts, parseAITranslateTypeOption } from '@/application/databas
 import { GenerateAITranslateRowPayload, YDatabaseCell, YDatabaseField, YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as AIIcon } from '@/assets/icons/ai_improve_writing.svg';
 import { ReactComponent as CopyIcon } from '@/assets/icons/copy.svg';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -37,6 +38,7 @@ function AITextCellActions({
   setLoading: (value: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const aiEnabled = useAIEnabled();
   const { field, clock } = useFieldSelector(fieldId);
 
   const language = useMemo(() => {
@@ -147,6 +149,7 @@ function AITextCellActions({
   const loadingRef = useRef(false);
 
   const handleGenerate = useCallback(async () => {
+    if (!aiEnabled) return;
     if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
@@ -163,7 +166,9 @@ function AITextCellActions({
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [setLoading, type, handleGenerateSummary, handleGenerateAITranslate]);
+  }, [aiEnabled, setLoading, type, handleGenerateSummary, handleGenerateAITranslate]);
+
+  if (!aiEnabled && !cell?.data) return null;
 
   return (
     <div
@@ -173,22 +178,24 @@ function AITextCellActions({
       }}
       className={'absolute right-1 top-1 flex items-center gap-1'}
     >
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            data-testid={`ai-generate-button-${rowId}-${fieldId}`}
-            variant={'outline'}
-            size={'icon'}
-            onClick={handleGenerate}
-            className={
-              'bg-surface-primary hover:border-border-featured-thick hover:bg-surface-primary-hover hover:text-text-featured'
-            }
-          >
-            {loading ? <Progress variant={'primary'} /> : <AIIcon className={'h-5 w-5'} />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{t('tooltip.aiGenerate')}</TooltipContent>
-      </Tooltip>
+      {aiEnabled && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              data-testid={`ai-generate-button-${rowId}-${fieldId}`}
+              variant={'outline'}
+              size={'icon'}
+              onClick={handleGenerate}
+              className={
+                'bg-surface-primary hover:border-border-featured-thick hover:bg-surface-primary-hover hover:text-text-featured'
+              }
+            >
+              {loading ? <Progress variant={'primary'} /> : <AIIcon className={'h-5 w-5'} />}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('tooltip.aiGenerate')}</TooltipContent>
+        </Tooltip>
+      )}
 
       {loading ? null : (
         <Tooltip>

@@ -346,7 +346,7 @@ export const AIMeetingBlock = memo(
                     })}
                   </div>
                   <div className="flex items-center gap-2">
-                    {showSummaryRegenerate && !readOnly && (
+                    {showSummaryRegenerate && regenerate.isAIEnabled && !readOnly && (
                       <RegenerateMenu
                         isRegenerating={regenerate.isRegeneratingSummary}
                         menuAnchor={regenerate.regenerateMenuAnchor}

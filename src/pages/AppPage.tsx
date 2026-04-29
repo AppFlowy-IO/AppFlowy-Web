@@ -16,6 +16,7 @@ import {
   useAppViewId,
   useAppendBreadcrumb,
   useCurrentWorkspaceId,
+  useAIEnabled,
   useEventEmitter,
   useGetMentionUser,
   useLoadDatabaseRelations,
@@ -41,6 +42,7 @@ function AppPage() {
   const outline = useAppOutline();
   const ref = React.useRef<HTMLDivElement>(null);
   const workspaceId = useCurrentWorkspaceId();
+  const aiEnabled = useAIEnabled();
   const operations = useAppOperations();
   const {
     toView,
@@ -508,16 +510,16 @@ function AppPage() {
           getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
           loadDatabaseRelations={loadDatabaseRelations}
           createDatabaseView={operations.createDatabaseView}
-          loadDatabasePrompts={operations.loadDatabasePrompts}
-          testDatabasePromptConfig={operations.testDatabasePromptConfig}
+          loadDatabasePrompts={aiEnabled ? operations.loadDatabasePrompts : undefined}
+          testDatabasePromptConfig={aiEnabled ? operations.testDatabasePromptConfig : undefined}
           checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
           loadRowDocument={operations.loadRowDocument}
           createRowDocument={operations.createRowDocument}
           duplicateRowDocument={operations.duplicateRowDocument}
           updatePageIcon={operations.updatePageIcon}
           updatePageName={operations.updatePageName}
-          generateAISummaryForRow={operations.generateAISummaryForRow}
-          generateAITranslateForRow={operations.generateAITranslateForRow}
+          generateAISummaryForRow={aiEnabled ? operations.generateAISummaryForRow : undefined}
+          generateAITranslateForRow={aiEnabled ? operations.generateAITranslateForRow : undefined}
         />
       );
     }
@@ -552,16 +554,16 @@ function AppPage() {
         getViewIdFromDatabaseId={operations.getViewIdFromDatabaseId}
         loadDatabaseRelations={loadDatabaseRelations}
         createDatabaseView={operations.createDatabaseView}
-        loadDatabasePrompts={operations.loadDatabasePrompts}
-        testDatabasePromptConfig={operations.testDatabasePromptConfig}
+        loadDatabasePrompts={aiEnabled ? operations.loadDatabasePrompts : undefined}
+        testDatabasePromptConfig={aiEnabled ? operations.testDatabasePromptConfig : undefined}
         checkIfRowDocumentExists={operations.checkIfRowDocumentExists}
         loadRowDocument={operations.loadRowDocument}
         createRowDocument={operations.createRowDocument}
         duplicateRowDocument={operations.duplicateRowDocument}
         updatePageIcon={operations.updatePageIcon}
         updatePageName={operations.updatePageName}
-        generateAISummaryForRow={operations.generateAISummaryForRow}
-        generateAITranslateForRow={operations.generateAITranslateForRow}
+        generateAISummaryForRow={aiEnabled ? operations.generateAISummaryForRow : undefined}
+        generateAITranslateForRow={aiEnabled ? operations.generateAITranslateForRow : undefined}
       />
     );
   }, [
@@ -588,6 +590,7 @@ function AppPage() {
     handleUploadFile,
     scheduleDeferredCleanup,
     getDocViewId,
+    aiEnabled,
     operations,
     getMentionUser,
     eventEmitter,
