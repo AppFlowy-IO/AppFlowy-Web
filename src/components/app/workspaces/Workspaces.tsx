@@ -16,7 +16,7 @@ import { ReactComponent as SettingsIcon } from '@/assets/icons/settings.svg';
 import { ReactComponent as UpgradeIcon } from '@/assets/icons/upgrade.svg';
 import Import from '@/components/_shared/more-actions/importer/Import';
 import { notify } from '@/components/_shared/notify';
-import { useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useAIEnabled, useAppOperations, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
@@ -48,6 +48,7 @@ export function Workspaces() {
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
+  const aiEnabled = useAIEnabled();
   const [openUpgradePlan, setOpenUpgradePlan] = useState(false);
   const [openUpgradeAIMax, setOpenUpgradeAIMax] = useState(false);
   const [open, setOpen] = useState(false);
@@ -247,15 +248,18 @@ export function Workspaces() {
                   <UpgradeIcon />
                   {t('subscribe.changePlan')}
                 </DropdownMenuItem>
-                <DropdownMenuItem
-                  onSelect={() => {
-                    setOpenUpgradeAIMax(true);
-                    setOpen(false);
-                  }}
-                >
-                  <UpgradeAIMaxIcon />
-                  {t('subscribe.getAIMax')}
-                </DropdownMenuItem>
+                {aiEnabled && (
+                  <DropdownMenuItem
+                    data-testid='upgrade-ai-max-button'
+                    onSelect={() => {
+                      setOpenUpgradeAIMax(true);
+                      setOpen(false);
+                    }}
+                  >
+                    <UpgradeAIMaxIcon />
+                    {t('subscribe.getAIMax')}
+                  </DropdownMenuItem>
+                )}
               </DropdownMenuGroup>
             )}
           </DropdownMenuContent>
@@ -271,13 +275,15 @@ export function Workspaces() {
             open={openUpgradePlan}
             onClose={() => setOpenUpgradePlan(false)}
           />
-          <UpgradeAIMax
-            onOpen={() => {
-              setOpenUpgradeAIMax(true);
-            }}
-            open={openUpgradeAIMax}
-            onClose={() => setOpenUpgradeAIMax(false)}
-          />
+          {aiEnabled && (
+            <UpgradeAIMax
+              onOpen={() => {
+                setOpenUpgradeAIMax(true);
+              }}
+              open={openUpgradeAIMax}
+              onClose={() => setOpenUpgradeAIMax(false)}
+            />
+          )}
         </>
       )}
 

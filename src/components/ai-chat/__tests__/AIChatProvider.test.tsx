@@ -6,6 +6,7 @@ import { AIChatProvider, useAIChatContext, useAIChatContextOptional } from '../A
 
 // Mock dependencies
 jest.mock('@/components/app/app.hooks', () => ({
+  useAIEnabled: jest.fn(() => true),
   useAppViewId: jest.fn(() => 'test-chat-id'),
 }));
 

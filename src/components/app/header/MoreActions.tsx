@@ -7,7 +7,7 @@ import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { useAIChatContext } from '@/components/ai-chat/AIChatProvider';
 import { AIService } from '@/application/services/domains';
-import { useAppOutline, useAppView, useCurrentWorkspaceId, usePageHistoryEnabled, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useAIEnabled, useAppOutline, useAppView, useCurrentWorkspaceId, usePageHistoryEnabled, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import DocumentInfo from '@/components/app/header/DocumentInfo';
 import { Button } from '@/components/ui/button';
 import {
@@ -36,6 +36,7 @@ function MoreActions({
   enableVersionHistory?: boolean;
 } & ComponentProps<typeof DropdownMenu>) {
   const workspaceId = useCurrentWorkspaceId();
+  const aiEnabled = useAIEnabled();
   const { selectionMode, onOpenSelectionMode } = useAIChatContext();
   const [hasMessages, setHasMessages] = useState(false);
   const [open, setOpen] = useState(false);
@@ -51,7 +52,7 @@ function MoreActions({
 
   const handleFetchChatMessages = useCallback(async () => {
     // Only fetch chat messages for AI Chat views
-    if (!workspaceId || view?.layout !== ViewLayout.AIChat) {
+    if (!aiEnabled || !workspaceId || view?.layout !== ViewLayout.AIChat) {
       return;
     }
 
@@ -62,7 +63,7 @@ function MoreActions({
     } catch {
       // do nothing
     }
-  }, [workspaceId, viewId, view?.layout]);
+  }, [aiEnabled, workspaceId, viewId, view?.layout]);
 
   useEffect(() => {
     void handleFetchChatMessages();
@@ -73,7 +74,7 @@ function MoreActions({
   const role = userWorkspaceInfo?.selectedWorkspace.role;
 
   const ChatOptions = useMemo(() => {
-    return view?.layout === ViewLayout.AIChat ? (
+    return aiEnabled && view?.layout === ViewLayout.AIChat ? (
       <>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -95,7 +96,7 @@ function MoreActions({
         <DropdownMenuSeparator />
       </>
     ) : null;
-  }, [view?.layout, hasMessages, t, onOpenSelectionMode, handleClose]);
+  }, [aiEnabled, view?.layout, hasMessages, t, onOpenSelectionMode, handleClose]);
 
   const handleOpenHistory = useCallback(() => {
     handleClose();
@@ -119,7 +120,7 @@ function MoreActions({
     return findViewInShareWithMe(outline || [], viewId);
   }, [outline, viewId]);
 
-  if (view?.layout === ViewLayout.AIChat && selectionMode) {
+  if (aiEnabled && view?.layout === ViewLayout.AIChat && selectionMode) {
     return null;
   }
 

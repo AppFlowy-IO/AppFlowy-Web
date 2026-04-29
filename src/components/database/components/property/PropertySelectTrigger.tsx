@@ -1,9 +1,10 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { FieldType, useFieldSelector } from '@/application/database-yjs';
+import { FieldType, isAIFieldType, useFieldSelector } from '@/application/database-yjs';
 import { useSwitchPropertyType } from '@/application/database-yjs/dispatch';
 import { YjsDatabaseKey } from '@/application/types';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { FieldTypeIcon } from '@/components/database/components/field';
 import FieldLabel from '@/components/database/components/field/FieldLabel';
 import {
@@ -44,9 +45,15 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
   const { t } = useTranslation();
   const switchType = useSwitchPropertyType();
+  const aiEnabled = useAIEnabled();
+  const selectableProperties = useMemo(
+    () => (aiEnabled ? properties : properties.filter((property) => !isAIFieldType(property))),
+    [aiEnabled]
+  );
 
   const handleSelect = (property: FieldType) => {
     if (disabled) return;
+    if (!aiEnabled && isAIFieldType(property)) return;
     switchType(fieldId, property);
   };
 
@@ -85,7 +92,7 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
         </DropdownMenuSubTrigger>
         <DropdownMenuPortal>
           <DropdownMenuSubContent className="appflowy-scroller max-h-[450px] overflow-y-auto">
-            {properties.map((property) => {
+            {selectableProperties.map((property) => {
               const isUnsupported = unsupportedFieldTypes.includes(property);
 
               return (

@@ -1,7 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
 
-import { usePrimaryFieldId, usePropertiesSelector, useReadOnly } from '@/application/database-yjs';
+import { isAIFieldType, usePrimaryFieldId, usePropertiesSelector, useReadOnly } from '@/application/database-yjs';
 import { useReorderColumnDispatch } from '@/application/database-yjs/dispatch';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import RowNewProperty from '@/components/database/components/database-row/RowNewProperty';
 import RowProperty from '@/components/database/components/database-row/RowProperty';
 import RowSwitchFieldsHidden from '@/components/database/components/database-row/RowSwitchFieldsHidden';
@@ -13,11 +14,15 @@ export function DatabaseRowProperties({ rowId }: { rowId: string }) {
   const primaryFieldId = usePrimaryFieldId();
   const [isFilterHidden, setIsFilterHidden] = useState(true);
   const [activePropertyId, setActivePropertyId] = useState<string | null>(null);
+  const aiEnabled = useAIEnabled();
 
   const { properties, hiddenProperties } = usePropertiesSelector(isFilterHidden);
   const fields = useMemo(() => {
-    return properties.filter((column) => column.id !== primaryFieldId);
-  }, [properties, primaryFieldId]);
+    return properties.filter((column) => column.id !== primaryFieldId && (aiEnabled || !isAIFieldType(column.type)));
+  }, [aiEnabled, properties, primaryFieldId]);
+  const visibleHiddenProperties = useMemo(() => {
+    return hiddenProperties.filter((column) => aiEnabled || !isAIFieldType(column.type));
+  }, [aiEnabled, hiddenProperties]);
   const readOnly = useReadOnly();
 
   const dragData = useMemo(() => {
@@ -89,7 +94,7 @@ export function DatabaseRowProperties({ rowId }: { rowId: string }) {
         {!readOnly && (
           <>
             <RowSwitchFieldsHidden
-              hideCount={hiddenProperties.length}
+              hideCount={visibleHiddenProperties.length}
               isFilterHidden={isFilterHidden}
               onToggleSwitchFieldsHidden={() => {
                 setIsFilterHidden((prev) => !prev);

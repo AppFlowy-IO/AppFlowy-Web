@@ -69,6 +69,7 @@ export interface Column {
   visibility: FieldVisibility;
   wrap?: boolean;
   isPrimary: boolean;
+  fieldType?: FieldType;
 }
 
 export interface Row {

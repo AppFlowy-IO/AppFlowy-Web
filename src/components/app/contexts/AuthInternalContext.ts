@@ -32,6 +32,8 @@ export interface AuthInternalContextType {
   isAuthenticated: boolean;
   /** Whether page history (version snapshots) is enabled for the current workspace plan. */
   enablePageHistory?: boolean;
+  /** Whether server-backed AI features are enabled for this deployment/workspace. */
+  aiEnabled?: boolean;
   /** Switch the active workspace. Triggers full data reload. */
   onChangeWorkspace: (workspaceId: string) => Promise<void>;
   /** Error from loading workspace info — allows consumers to show error/retry UI. */

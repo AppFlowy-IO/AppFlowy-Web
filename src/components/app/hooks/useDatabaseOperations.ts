@@ -31,7 +31,7 @@ export function useDatabaseOperations(
   createRow?: (rowKey: string) => Promise<YDoc>,
   syncAllToServer?: (workspaceId: string) => Promise<void>
 ) {
-  const { currentWorkspaceId } = useAuthInternal();
+  const { currentWorkspaceId, aiEnabled } = useAuthInternal();
 
   const rowDocsRef = useRef<Map<string, DatabasePromptRow>>(new Map());
 
@@ -42,6 +42,10 @@ export function useDatabaseOperations(
         throw new Error('No workspace or service found');
       }
 
+      if (aiEnabled === false) {
+        throw new Error('AI features are disabled');
+      }
+
       try {
         const res = await AIService.generateSummaryForRow(currentWorkspaceId, payload);
 
@@ -50,7 +54,7 @@ export function useDatabaseOperations(
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [aiEnabled, currentWorkspaceId]
   );
 
   // Generate AI translation for row
@@ -58,6 +62,10 @@ export function useDatabaseOperations(
     async (payload: GenerateAITranslateRowPayload) => {
       if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
+      }
+
+      if (aiEnabled === false) {
+        throw new Error('AI features are disabled');
       }
 
       try {
@@ -68,7 +76,7 @@ export function useDatabaseOperations(
         return Promise.reject(e);
       }
     },
-    [currentWorkspaceId]
+    [aiEnabled, currentWorkspaceId]
   );
 
   // Get rows from database view

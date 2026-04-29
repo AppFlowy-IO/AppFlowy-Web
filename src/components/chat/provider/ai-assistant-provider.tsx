@@ -33,6 +33,7 @@ export const AIAssistantProvider = ({
   onInsertBelow,
   onExit,
   scrollContainer,
+  enabled = true,
 }: {
   viewId: string;
   children: ReactNode;
@@ -42,6 +43,7 @@ export const AIAssistantProvider = ({
   onExit?: () => void;
   isGlobalDocument?: boolean;
   scrollContainer?: HTMLElement;
+  enabled?: boolean;
 }) => {
   const { t } = useTranslation();
   const completionHistoryRef = useRef<CompletionResult[]>([]);
@@ -72,6 +74,23 @@ export const AIAssistantProvider = ({
   );
 
   const { currentPromptId, updateCurrentPromptId, prompts } = usePromptModal();
+
+  useEffect(() => {
+    if (enabled) return;
+
+    cancelRef.current?.();
+    cancelRef.current = undefined;
+    completionHistoryRef.current = [];
+    lastAssistantTypeRef.current = undefined;
+    setAssistantType(undefined);
+    setFetching(false);
+    setApplyingState(ApplyingState.idle);
+    setPlaceholderContent('');
+    setComment('');
+    setEditorData(undefined);
+    setError(null);
+    setOpenDiscard(false);
+  }, [enabled]);
 
   useEffect(() => {
     if (!assistantType) {
@@ -128,6 +147,10 @@ export const AIAssistantProvider = ({
 
   const fetchRequest = useCallback(
     async (assistantType: AIAssistantType, content: string) => {
+      if (!enabled) {
+        return () => undefined;
+      }
+
       // Do not change assistant type if there is already an AI response
       if (
         !completionHistoryRef.current.some((item) => {
@@ -189,6 +212,7 @@ export const AIAssistantProvider = ({
       responseMode,
       selectedModelName,
       updateCurrentPromptId,
+      enabled,
     ]
   );
 
@@ -200,12 +224,14 @@ export const AIAssistantProvider = ({
   );
 
   const askAIAnything = useCallback((content: string) => {
+    if (!enabled) return;
+
     completionHistoryRef.current.push({
       role: CompletionRole.Human,
       content,
     });
     setAssistantType(AIAssistantType.AskAIAnything);
-  }, []);
+  }, [enabled]);
 
   const askAIAnythingWithRequest = useCallback(
     (content: string) => {
@@ -309,6 +335,8 @@ export const AIAssistantProvider = ({
   }, [editorData, onReplace, exit]);
 
   const rewrite = useCallback(() => {
+    if (!enabled) return;
+
     if (!assistantType) {
       toast.error(t('chat.writer.errors.noAssistantType'));
       return;
@@ -351,6 +379,7 @@ export const AIAssistantProvider = ({
     fixSpelling,
     makeLonger,
     makeShorter,
+    enabled,
   ]);
 
   useEffect(() => {

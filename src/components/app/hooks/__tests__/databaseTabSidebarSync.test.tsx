@@ -26,6 +26,7 @@ jest.mock('@/components/app/app.hooks', () => {
   );
 
   return {
+    useAIEnabled: () => true,
     useSidebarSelectedViewId: () =>
       resolveSidebarSelectedViewId({
         routeViewId: global.__routeViewId,

@@ -7,6 +7,7 @@ import { APIError, APIResponse, executeAPIRequest, getAxios } from './core';
 
 export interface ServerInfo {
   enable_page_history: boolean;
+  ai_enabled?: boolean;
 }
 
 export async function signInWithUrl(url: string) {
@@ -109,7 +110,7 @@ export async function getServerInfo(): Promise<ServerInfo> {
     );
   } catch (error) {
     console.warn('Server info API returned error:', (error as APIError)?.message);
-    return { enable_page_history: true };
+    return { enable_page_history: true, ai_enabled: true };
   }
 }
 

@@ -13,6 +13,7 @@ import { getBlock, getText } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, YjsEditorKey } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { insertDataAfterBlock } from '@/components/ai-chat/utils';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { AIAssistantProvider, ContextPlaceholder, PromptModalProvider, WriterRequest } from '@/components/chat';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
 import { getScrollParent } from '@/components/global-comment/utils';
@@ -24,6 +25,7 @@ import Toolbars from './components/toolbar';
 
 function EditorOverlay({ viewId, workspaceId }: { viewId: string; workspaceId: string }) {
   const { requestInstance, loadDatabasePrompts, testDatabasePromptConfig } = useEditorContext();
+  const aiEnabled = useAIEnabled();
   const editor = useSlate() as YjsEditor;
   const selection = editor.selection;
   const isRange = selection ? Range.isExpanded(selection) : false;
@@ -193,6 +195,7 @@ function EditorOverlay({ viewId, workspaceId }: { viewId: string; workspaceId: s
           viewId={viewId}
           onExit={handleExit}
           scrollContainer={scrollerContainer || undefined}
+          enabled={aiEnabled}
         >
           <Toolbars />
           <Panels />

@@ -15,6 +15,7 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/components/app/app.hooks', () => ({
+  useAIEnabled: () => true,
   useSidebarSelectedViewId: () => global.__selectedViewId,
   useSidebarHighlightedViewIds: () => global.__highlightedViewIds || [],
   useAppOperations: () => ({

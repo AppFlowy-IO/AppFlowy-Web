@@ -4,7 +4,7 @@ import { toast } from 'sonner';
 
 import { View, ViewLayout } from '@/application/types';
 import { ViewIcon } from '@/components/_shared/view-icon';
-import { useAppOperations, useOpenPageModal, useToView } from '@/components/app/app.hooks';
+import { useAIEnabled, useAppOperations, useOpenPageModal, useToView } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -13,10 +13,12 @@ function AddPageActions({ view }: { view: View }) {
   const { addPage } = useAppOperations();
   const openPageModal = useOpenPageModal();
   const toView = useToView();
+  const aiEnabled = useAIEnabled();
 
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
       if (!addPage) return;
+      if (layout === ViewLayout.AIChat && !aiEnabled) return;
       toast.loading(t('document.creating'));
       try {
         // Append after the last child so the new page appears at the bottom.
@@ -36,7 +38,7 @@ function AddPageActions({ view }: { view: View }) {
         toast.error(e.message);
       }
     },
-    [addPage, openPageModal, t, toView, view.view_id, view.children]
+    [addPage, aiEnabled, openPageModal, t, toView, view.view_id, view.children]
   );
 
   const actions: {
@@ -77,14 +79,16 @@ function AddPageActions({ view }: { view: View }) {
           void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
         },
       },
-      {
-        label: t('chat.newChat'),
-        icon: <ViewIcon layout={ViewLayout.AIChat} size={'small'} />,
-        testId: 'add-ai-chat-button',
-        onSelect: () => {
-          void handleAddPage(ViewLayout.AIChat, t('menuAppHeader.defaultNewPageName'));
+      ...(aiEnabled ? [
+        {
+          label: t('chat.newChat'),
+          icon: <ViewIcon layout={ViewLayout.AIChat} size={'small'} />,
+          testId: 'add-ai-chat-button',
+          onSelect: () => {
+            void handleAddPage(ViewLayout.AIChat, t('menuAppHeader.defaultNewPageName'));
+          },
         },
-      },
+      ] : []),
       {
         label: t('chart.menuName'),
         icon: <ViewIcon layout={ViewLayout.Chart} size={'small'} />,
@@ -110,7 +114,7 @@ function AddPageActions({ view }: { view: View }) {
         onSelect: () => {},
       },
     ],
-    [handleAddPage, t]
+    [aiEnabled, handleAddPage, t]
   );
 
   return (

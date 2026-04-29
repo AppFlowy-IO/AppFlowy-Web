@@ -58,6 +58,7 @@ import { ReactComponent as VideoIcon } from '@/assets/icons/video.svg';
 import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
+import { useAIEnabled } from '@/components/app/app.hooks';
 import { useAIWriter } from '@/components/chat';
 import { SearchInput } from '@/components/chat/components/ui/search-input';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
@@ -379,6 +380,7 @@ export function SlashPanel({
   const { openPanel } = usePanelContext();
 
   const { askAIAnything, continueWriting } = useAIWriter();
+  const aiEnabled = useAIEnabled();
 
   const loadDatabasesForPicker = useCallback(async () => {
     if (!loadViews) return false;
@@ -651,29 +653,31 @@ export function SlashPanel({
     const restrictDatabaseOptionsInAIMeeting = shouldRestrictAIMeetingDatabaseOptions();
 
     return [
-      {
-        label: t('document.slashMenu.name.askAIAnything'),
-        key: 'askAIAnything',
-        icon: <AskAIIcon />,
-        keywords: ['ai', 'writer', 'ask', 'anything', 'askAIAnything', 'askai'],
-        onClick: () => {
-          const content = getBeforeContent();
+      ...(aiEnabled ? [
+        {
+          label: t('document.slashMenu.name.askAIAnything'),
+          key: 'askAIAnything',
+          icon: <AskAIIcon />,
+          keywords: ['ai', 'writer', 'ask', 'anything', 'askAIAnything', 'askai'],
+          onClick: () => {
+            const content = getBeforeContent();
 
-          askAIAnything(content);
+            askAIAnything(content);
+          },
         },
-      },
-      {
-        label: t('document.slashMenu.name.continueWriting'),
-        key: 'continueWriting',
-        disabled: chars < 2,
-        icon: <ContinueWritingIcon />,
-        keywords: ['ai', 'writing', 'continue'],
-        onClick: () => {
-          const content = getBeforeContent();
+        {
+          label: t('document.slashMenu.name.continueWriting'),
+          key: 'continueWriting',
+          disabled: chars < 2,
+          icon: <ContinueWritingIcon />,
+          keywords: ['ai', 'writing', 'continue'],
+          onClick: () => {
+            const content = getBeforeContent();
 
-          void continueWriting(content);
+            void continueWriting(content);
+          },
         },
-      },
+      ] : []),
       {
         label: t('document.slashMenu.name.text'),
         key: 'text',
@@ -1251,6 +1255,7 @@ export function SlashPanel({
     t,
     chars,
     getBeforeContent,
+    aiEnabled,
     askAIAnything,
     continueWriting,
     turnInto,

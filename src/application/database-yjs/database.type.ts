@@ -26,6 +26,12 @@ export enum FieldType {
   Rollup = 16,
 }
 
+export const AI_FIELD_TYPES = [FieldType.AISummaries, FieldType.AITranslations] as const;
+
+export function isAIFieldType(fieldType: FieldType | undefined): boolean {
+  return fieldType !== undefined && AI_FIELD_TYPES.includes(fieldType as (typeof AI_FIELD_TYPES)[number]);
+}
+
 export enum CalculationType {
   Average = 0,
   Max = 1,

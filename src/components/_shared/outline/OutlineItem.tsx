@@ -1,10 +1,11 @@
 import React, { useCallback, useEffect, useMemo } from 'react';
 
-import { UIVariant, View } from '@/application/types';
+import { UIVariant, View, ViewLayout } from '@/application/types';
 import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import OutlineItemContent from '@/components/_shared/outline/OutlineItemContent';
 import { getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
+import { useAIEnabled } from '@/components/app/app.hooks';
 
 function OutlineItem({
   view,
@@ -22,6 +23,7 @@ function OutlineItem({
   variant?: UIVariant;
 }) {
   const selected = selectedViewId === view.view_id;
+  const aiEnabled = useAIEnabled();
   const [isExpanded, setIsExpanded] = React.useState(() => {
     return getOutlineExpands()[view.view_id] || false;
   });
@@ -74,7 +76,10 @@ function OutlineItem({
     [variant, width, selected, getIcon, navigateToView, level]
   );
 
-  const children = useMemo(() => view.children || [], [view.children]);
+  const children = useMemo(() => {
+    if (aiEnabled) return view.children || [];
+    return (view.children || []).filter((item) => item.layout !== ViewLayout.AIChat);
+  }, [aiEnabled, view.children]);
 
   const renderChildren = useMemo(() => {
     return (
@@ -98,6 +103,8 @@ function OutlineItem({
       </div>
     );
   }, [children, isExpanded, level, navigateToView, selectedViewId, width, variant]);
+
+  if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
 
   return (
     <div className={'flex h-fit w-full flex-col'}>

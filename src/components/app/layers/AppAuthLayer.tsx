@@ -46,6 +46,7 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
   const [userWorkspaceInfo, setUserWorkspaceInfo] = useState<UserWorkspaceInfo | undefined>(undefined);
   const [workspaceInfoError, setWorkspaceInfoError] = useState<Error | undefined>(undefined);
   const [enablePageHistory, setEnablePageHistory] = useState<boolean | undefined>(undefined);
+  const [aiEnabled, setAIEnabled] = useState<boolean | undefined>(false);
 
   // Calculate current workspace ID from URL params or user info
   const currentWorkspaceId = useMemo(
@@ -182,9 +183,11 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
 
     void AuthService.getServerInfo().then((info) => {
       setEnablePageHistory(info.enable_page_history);
+      setAIEnabled(info.ai_enabled ?? true);
     }).catch((e) => {
       console.error('[AppAuthLayer] Failed to load server info:', e);
       setEnablePageHistory(true);
+      setAIEnabled(true);
     });
   }, [loadUserWorkspaceInfo, isAuthenticated]);
 
@@ -225,11 +228,12 @@ export const AppAuthLayer: React.FC<AppAuthLayerProps> = ({ children }) => {
       currentWorkspaceId,
       isAuthenticated: !!isAuthenticated,
       enablePageHistory,
+      aiEnabled,
       onChangeWorkspace,
       workspaceInfoError,
       retryLoadWorkspaceInfo: loadUserWorkspaceInfo,
     }),
-    [userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, onChangeWorkspace, workspaceInfoError, loadUserWorkspaceInfo]
+    [userWorkspaceInfo, currentWorkspaceId, isAuthenticated, enablePageHistory, aiEnabled, onChangeWorkspace, workspaceInfoError, loadUserWorkspaceInfo]
   );
 
   return <AuthInternalContext.Provider value={authContextValue}>{children}</AuthInternalContext.Provider>;

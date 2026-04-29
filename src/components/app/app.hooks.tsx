@@ -94,6 +94,16 @@ export function usePageHistoryEnabled(): boolean {
   return context?.enablePageHistory ?? true;
 }
 
+/**
+ * Returns whether server-backed AI features are enabled.
+ * Fails open to match the desktop default when server info is unavailable.
+ */
+export function useAIEnabled(): boolean {
+  const context = useContext(AuthInternalContext);
+
+  return context?.aiEnabled ?? true;
+}
+
 // ─── Navigation-only hooks → AppNavigationContext ────────────────────────────
 // Provided by AppBusinessLayer. Available after workspace loads.
 
