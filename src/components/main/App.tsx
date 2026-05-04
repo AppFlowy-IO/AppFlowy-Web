@@ -16,6 +16,7 @@ const AcceptInvitationPage = lazy(() => import('@/pages/AcceptInvitationPage'));
 const AfterPaymentPage = lazy(() => import('@/pages/AfterPaymentPage'));
 const ImportPage = lazy(() => import('@/pages/ImportPage'));
 const PublishPage = lazy(() => import('@/pages/PublishPage'));
+const MCPAuthorizePage = lazy(() => import('@/pages/MCPAuthorizePage'));
 
 const AppMain = withAppWrapper(() => {
   return (
@@ -31,6 +32,10 @@ const AppMain = withAppWrapper(() => {
       <Route
         path={'/login'}
         element={<Suspense><LoginPage /></Suspense>}
+      />
+      <Route
+        path={'/oauth/mcp/authorize'}
+        element={<Suspense><MCPAuthorizePage /></Suspense>}
       />
       <Route
         path={AUTH_CALLBACK_PATH}
