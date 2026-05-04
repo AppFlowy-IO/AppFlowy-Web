@@ -1,5 +1,6 @@
 import { getTokenParsed } from '@/application/session/token';
 import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
+import { transcodeIfUnsupported } from '@/utils/image';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
@@ -43,7 +44,8 @@ export async function fetchAuthenticatedImage(url: string, token = getTokenParse
     }
 
     const blob = await response.blob();
-    const blobUrl = URL.createObjectURL(blob);
+    const renderableBlob = await transcodeIfUnsupported(blob, url);
+    const blobUrl = URL.createObjectURL(renderableBlob);
 
     return blobUrl;
   } catch (error) {
