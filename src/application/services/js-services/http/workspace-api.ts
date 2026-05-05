@@ -70,6 +70,7 @@ export async function createWorkspace(payload: CreateWorkspacePayload) {
 export async function getWorkspaces(): Promise<Workspace[]> {
   const query = new URLSearchParams({
     include_member_count: 'true',
+    include_role: 'true',
   });
 
   const url = `/api/workspace?${query.toString()}`;

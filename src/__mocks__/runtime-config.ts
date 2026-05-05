@@ -7,6 +7,7 @@ export function getConfigValue(key: string, defaultValue: string): string {
   const testDefaults: Record<string, string> = {
     APPFLOWY_BASE_URL: 'https://test.appflowy.cloud',
     APPFLOWY_GOTRUE_BASE_URL: 'https://test.appflowy.cloud/gotrue',
+    APPFLOWY_MCP_BASE_URL: 'https://test.appflowy.cloud',
   };
 
   return testDefaults[key] ?? defaultValue;

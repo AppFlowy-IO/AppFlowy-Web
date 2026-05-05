@@ -9,7 +9,7 @@ import { LOGIN_ACTION } from '@/components/login/const';
 import { EnterPassword } from '@/components/login/EnterPassword';
 import { ForgotPassword } from '@/components/login/ForgotPassword';
 import { SignUpPassword } from '@/components/login/SignUpPassword';
-import { isSafeRedirectUrl, safeDecodeRedirectParam } from '@/application/session/sign_in';
+import { resolveStoredRedirectUrl } from '@/application/session/sign_in';
 import { useIsAuthenticatedOptional } from '@/components/main/app.hooks';
 
 function LoginPage() {
@@ -26,9 +26,7 @@ function LoginPage() {
   useEffect(() => {
     if (!redirectTo) return;
 
-    const decodedRedirect = safeDecodeRedirectParam(redirectTo);
-
-    if (!decodedRedirect || !isSafeRedirectUrl(decodedRedirect)) {
+    if (!resolveStoredRedirectUrl(redirectTo)) {
       setSearch((prev) => {
         const next = new URLSearchParams(prev);
 
@@ -44,10 +42,10 @@ function LoginPage() {
     }
 
     if (isAuthenticated && redirectTo) {
-      const decodedRedirect = safeDecodeRedirectParam(redirectTo);
+      const resolvedRedirect = resolveStoredRedirectUrl(redirectTo);
 
-      if (decodedRedirect && isSafeRedirectUrl(decodedRedirect) && decodedRedirect !== window.location.href) {
-        window.location.href = decodedRedirect;
+      if (resolvedRedirect && resolvedRedirect !== window.location.href) {
+        window.location.href = resolvedRedirect;
       }
     }
   }, [action, force, isAuthenticated, redirectTo]);
