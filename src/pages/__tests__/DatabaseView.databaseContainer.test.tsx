@@ -11,6 +11,7 @@ declare global {
   var __databaseViewTestState:
     | {
         outline?: View[];
+        breadcrumbs?: View[];
         capturedDatabaseProps?: unknown;
         capturedViewMetaProps?: unknown;
       }
@@ -19,6 +20,7 @@ declare global {
 
 jest.mock('@/components/app/app.hooks', () => ({
   useAppOutline: () => global.__databaseViewTestState?.outline,
+  useBreadcrumb: () => global.__databaseViewTestState?.breadcrumbs,
 }));
 
 jest.mock('@/components/database', () => ({
@@ -209,6 +211,79 @@ describe('DatabaseView database container', () => {
     expect(metaProps).toBeDefined();
 
     expect(databaseProps?.visibleViewIds).toBeUndefined();
+    expect(databaseProps?.databaseName).toBe('New Database');
+    expect(metaProps?.viewId).toBe(containerId);
+    expect(metaProps?.name).toBe('New Database');
+  });
+
+  it('falls back to breadcrumb container when outline lookup fails', () => {
+    const containerId = 'container-id';
+    const gridViewId = 'grid-view-id';
+
+    // Outline does NOT contain the container (simulating a stale or shallow
+    // outline where the container hasn't been included yet — e.g. right after
+    // a hard refresh while loadOutline is still in flight).
+    const containerView: View = {
+      view_id: containerId,
+      name: 'New Database',
+      icon: null,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, is_database_container: true, database_id: 'db-1' },
+      children: [],
+      has_children: true,
+      is_published: false,
+      is_private: false,
+    };
+
+    global.__databaseViewTestState = {
+      outline: [],
+      breadcrumbs: [containerView, {
+        view_id: gridViewId,
+        name: 'Grid',
+        icon: null,
+        layout: ViewLayout.Grid,
+        extra: { is_space: false, database_id: 'db-1' },
+        children: [],
+        is_published: false,
+        is_private: false,
+        parent_view_id: containerId,
+      }],
+    };
+
+    // viewMeta lacks parentViewId and database_id (simulating a fallback view
+    // fetched from the server with minimal metadata).
+    const viewMeta: ViewMetaProps = {
+      viewId: gridViewId,
+      name: 'Grid',
+      layout: ViewLayout.Grid,
+      icon: undefined,
+      extra: { is_space: false },
+      workspaceId: 'workspace-id',
+      visibleViewIds: [],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/app/workspace-id/grid-view-id']}>
+        <DatabaseView
+          doc={createDatabaseDoc('db-1', [gridViewId])}
+          workspaceId={'workspace-id'}
+          readOnly={false}
+          viewMeta={viewMeta}
+          updatePage={jest.fn()}
+          updatePageIcon={jest.fn()}
+          updatePageName={jest.fn()}
+          onRendered={jest.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    const databaseProps = global.__databaseViewTestState?.capturedDatabaseProps as
+      | { databaseName: string }
+      | undefined;
+    const metaProps = global.__databaseViewTestState?.capturedViewMetaProps as
+      | { viewId?: string; name?: string }
+      | undefined;
+
     expect(databaseProps?.databaseName).toBe('New Database');
     expect(metaProps?.viewId).toBe(containerId);
     expect(metaProps?.name).toBe('New Database');
