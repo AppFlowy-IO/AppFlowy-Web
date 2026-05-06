@@ -9,6 +9,7 @@ import {
   DateFilterCondition,
   FieldType,
   Filter,
+  isRelativeDateCondition,
   NumberFilter,
   NumberFilterCondition,
   parseSelectOptionTypeOptions,
@@ -276,6 +277,12 @@ function useConditionsForFieldType(
         { value: DateFilterCondition.DateStartsOnOrBefore, text: t('grid.dateFilter.onOrBefore') },
         { value: DateFilterCondition.DateStartsOnOrAfter, text: t('grid.dateFilter.onOrAfter') },
         { value: DateFilterCondition.DateStartsBetween, text: t('grid.dateFilter.between') },
+        { value: DateFilterCondition.DateStartsToday, text: t('relativeDates.today') },
+        { value: DateFilterCondition.DateStartsYesterday, text: t('relativeDates.yesterday') },
+        { value: DateFilterCondition.DateStartsTomorrow, text: t('relativeDates.tomorrow') },
+        { value: DateFilterCondition.DateStartsThisWeek, text: t('relativeDates.thisWeek') },
+        { value: DateFilterCondition.DateStartsLastWeek, text: t('relativeDates.lastWeek') },
+        { value: DateFilterCondition.DateStartsNextWeek, text: t('relativeDates.nextWeek') },
         { value: DateFilterCondition.DateStartIsEmpty, text: t('grid.dateFilter.empty') },
         { value: DateFilterCondition.DateStartIsNotEmpty, text: t('grid.dateFilter.notEmpty') },
       ];
@@ -460,8 +467,10 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
 
 // Date Value Input - uses the existing DateTimeFilterDatePicker
 function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: boolean }) {
-  // Don't show input for isEmpty/isNotEmpty conditions
+  // Don't show input for isEmpty/isNotEmpty or relative date conditions (Today, This week, …)
   const showInput = useMemo(() => {
+    if (isRelativeDateCondition(filter.condition)) return false;
+
     return ![
       DateFilterCondition.DateStartIsEmpty,
       DateFilterCondition.DateStartIsNotEmpty,

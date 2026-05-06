@@ -328,64 +328,69 @@ export function useNewRowDispatch() {
       const rowId = uuidv4();
       const rowKey = getRowKey(guid, rowId);
       const rowDoc = await createRow(rowKey);
-      let shouldOpenRowModal = false;
+      // Snapshot the filter array once: Y.Array.toArray() allocates a fresh
+      // JS array on each call, and we read it twice (length check + forEach).
+      const filterArray = filters?.toArray() ?? [];
+      // Open the row detail page whenever filters are active so the user can
+      // see and complete the new row (its primary "Name" cell is always empty,
+      // and other cells get pre-filled from filters but still need user input).
+      let shouldOpenRowModal = filterArray.length > 0;
 
       rowDoc.transact(() => {
         initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
+        const meta = rowSharedRoot.get(YjsEditorKey.meta);
 
         const cells = row.get(YjsDatabaseKey.cells);
 
-        if (filters) {
-          filters.toArray().forEach((filter) => {
-            const cell = new Y.Map() as YDatabaseCell;
-            const fieldId = filter.get(YjsDatabaseKey.field_id);
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+        filterArray.forEach((filter) => {
+          const cell = new Y.Map() as YDatabaseCell;
+          const fieldId = filter.get(YjsDatabaseKey.field_id);
+          const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
-            if (!field) {
-              return;
-            }
+          if (!field) {
+            return;
+          }
 
-            if (isCalendar && calendarSetting?.fieldId === fieldId) {
-              shouldOpenRowModal = true;
-            }
+          if (isCalendar && calendarSetting?.fieldId === fieldId) {
+            shouldOpenRowModal = true;
+          }
 
-            const type = Number(field.get(YjsDatabaseKey.type));
+          const type = Number(field.get(YjsDatabaseKey.type));
 
-            if (type === FieldType.DateTime) {
-              const { data, endTimestamp, isRange } = dateFilterFillData(filter);
+          if (type === FieldType.DateTime) {
+            const { data, endTimestamp, isRange } = dateFilterFillData(filter);
 
-              if (data !== null) {
-                cell.set(YjsDatabaseKey.data, data);
-              }
-
-              if (endTimestamp) {
-                cell.set(YjsDatabaseKey.end_timestamp, endTimestamp);
-              }
-
-              if (isRange) {
-                cell.set(YjsDatabaseKey.is_range, isRange);
-              }
-            } else if ([FieldType.CreatedTime, FieldType.LastEditedTime].includes(type)) {
-              shouldOpenRowModal = true;
-              return;
-            } else {
-              const data = filterFillData(filter, field);
-
-              if (data === null) {
-                return;
-              }
-
+            if (data !== null) {
               cell.set(YjsDatabaseKey.data, data);
             }
 
-            cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-            cell.set(YjsDatabaseKey.field_type, type);
+            if (endTimestamp) {
+              cell.set(YjsDatabaseKey.end_timestamp, endTimestamp);
+            }
 
-            cells.set(fieldId, cell);
-          });
-        }
+            if (isRange) {
+              cell.set(YjsDatabaseKey.is_range, isRange);
+            }
+          } else if ([FieldType.CreatedTime, FieldType.LastEditedTime].includes(type)) {
+            shouldOpenRowModal = true;
+            return;
+          } else {
+            const data = filterFillData(filter, field);
+
+            if (data === null) {
+              return;
+            }
+
+            cell.set(YjsDatabaseKey.data, data);
+          }
+
+          cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
+          cell.set(YjsDatabaseKey.field_type, type);
+
+          cells.set(fieldId, cell);
+        });
 
         if (cellsData) {
           Object.entries(cellsData).forEach(([fieldId, data]) => {
@@ -412,6 +417,18 @@ export function useNewRowDispatch() {
         }
 
         row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+        const newMeta = generateRowMeta(rowId, {
+          [RowMetaKey.IsDocumentEmpty]: true,
+        });
+
+        Object.keys(newMeta).forEach((key) => {
+          const value = newMeta[key];
+
+          if (value) {
+            meta.set(key, value);
+          }
+        });
 
         if (shouldOpenRowModal) {
           navigateToRow?.(rowId);

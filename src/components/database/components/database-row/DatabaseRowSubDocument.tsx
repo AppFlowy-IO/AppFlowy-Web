@@ -875,6 +875,74 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
   useEffect(() => {
     if (!doc) return;
 
+    // Body of the debounced meta update. Extracted so the unmount cleanup can
+    // flush it synchronously instead of cancelling pending work — otherwise a
+    // paste-then-close-card sequence loses the just-pasted content because
+    // ensureRowDocumentExists() never registers the orphan collab on the
+    // server, and the local outbox update has no doc to drain into.
+    const flushPendingMetaUpdate = () => {
+      if (!pendingMetaUpdateRef.current) return;
+      clearTimeout(pendingMetaUpdateRef.current);
+      pendingMetaUpdateRef.current = null;
+
+      const editor = editorRef.current;
+
+      if (!editor) {
+        return;
+      }
+
+      const isEmpty = isDocumentEmpty(editor);
+
+      if (lastIsEmptyRef.current === isEmpty) {
+        return;
+      }
+
+      if (shouldSkipIsDocumentEmptyUpdate(isEmpty)) {
+        return;
+      }
+
+      if (isEmpty) {
+        lastIsEmptyRef.current = isEmpty;
+        pendingNonEmptyRef.current = false;
+        Log.debug('[DatabaseRowSubDocument] row document empty -> update meta', {
+          rowId,
+          documentId,
+        });
+        updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
+        return;
+      }
+
+      void (async () => {
+        lastIsEmptyRef.current = isEmpty;
+        pendingNonEmptyRef.current = false;
+        Log.debug('[DatabaseRowSubDocument] row document edited', {
+          rowId,
+          documentId,
+        });
+        Log.debug('[DatabaseRowSubDocument] row document non-empty -> update meta immediately', {
+          rowId,
+          documentId,
+        });
+        updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
+
+        const ensurePromise = ensureRowDocumentExists();
+
+        // Track the in-flight creation so syncAllToServer can await it
+        // before batch-syncing. Without this, a page duplicate that runs
+        // before the server-side collab is created will silently lose the
+        // row sub-document content.
+        if (documentId) {
+          trackRowDocEnsure(documentId, ensurePromise);
+        }
+
+        const ensured = await ensurePromise;
+
+        if (!ensured) {
+          scheduleEnsureRowDocumentExists();
+        }
+      })();
+    };
+
     const handleDocUpdate = (_update: Uint8Array, origin: unknown) => {
       if (origin !== CollabOrigin.Local && origin !== CollabOrigin.LocalManual) {
         return;
@@ -884,75 +952,16 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         clearTimeout(pendingMetaUpdateRef.current);
       }
 
-      pendingMetaUpdateRef.current = setTimeout(() => {
-        pendingMetaUpdateRef.current = null;
-        const editor = editorRef.current;
-
-        if (!editor) {
-          return;
-        }
-
-        const isEmpty = isDocumentEmpty(editor);
-
-        if (lastIsEmptyRef.current === isEmpty) {
-          return;
-        }
-
-        if (shouldSkipIsDocumentEmptyUpdate(isEmpty)) {
-          return;
-        }
-
-        if (isEmpty) {
-          lastIsEmptyRef.current = isEmpty;
-          pendingNonEmptyRef.current = false;
-          Log.debug('[DatabaseRowSubDocument] row document empty -> update meta', {
-            rowId,
-            documentId,
-          });
-          updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
-          return;
-        }
-
-        void (async () => {
-          lastIsEmptyRef.current = isEmpty;
-          pendingNonEmptyRef.current = false;
-          Log.debug('[DatabaseRowSubDocument] row document edited', {
-            rowId,
-            documentId,
-          });
-          Log.debug('[DatabaseRowSubDocument] row document non-empty -> update meta immediately', {
-            rowId,
-            documentId,
-          });
-          updateRowMeta(RowMetaKey.IsDocumentEmpty, isEmpty);
-
-          const ensurePromise = ensureRowDocumentExists();
-
-          // Track the in-flight creation so syncAllToServer can await it
-          // before batch-syncing. Without this, a page duplicate that runs
-          // before the server-side collab is created will silently lose the
-          // row sub-document content.
-          if (documentId) {
-            trackRowDocEnsure(documentId, ensurePromise);
-          }
-
-          const ensured = await ensurePromise;
-
-          if (!ensured) {
-            scheduleEnsureRowDocumentExists();
-          }
-        })();
-      }, 0);
+      pendingMetaUpdateRef.current = setTimeout(flushPendingMetaUpdate, 0);
     };
 
     doc.on('update', handleDocUpdate);
 
     return () => {
       doc.off('update', handleDocUpdate);
-      if (pendingMetaUpdateRef.current) {
-        clearTimeout(pendingMetaUpdateRef.current);
-        pendingMetaUpdateRef.current = null;
-      }
+      // Flush — not cancel — so a close-card immediately after paste still
+      // marks the row non-empty and registers the orphan collab on the server.
+      flushPendingMetaUpdate();
     };
   }, [
     doc,

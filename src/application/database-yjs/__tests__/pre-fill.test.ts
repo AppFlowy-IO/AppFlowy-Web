@@ -101,4 +101,38 @@ describe('pre-fill cell tests', () => {
 
     expect(dateFilterFillData(filter)).toEqual({ data: start, endTimestamp: end, isRange: true });
   });
+
+  it('pre-fills DateStartsToday with today midnight', () => {
+    const filter = createFilter(DateFilterCondition.DateStartsToday, '');
+    const today = dayjs().startOf('day').unix().toString();
+
+    expect(dateFilterFillData(filter)).toEqual({ data: today, isRange: false });
+  });
+
+  it('pre-fills DateStartsYesterday with yesterday midnight', () => {
+    const filter = createFilter(DateFilterCondition.DateStartsYesterday, '');
+    const yesterday = dayjs().startOf('day').subtract(1, 'day').unix().toString();
+
+    expect(dateFilterFillData(filter)).toEqual({ data: yesterday, isRange: false });
+  });
+
+  it('pre-fills DateStartsThisWeek with this Monday midnight', () => {
+    const filter = createFilter(DateFilterCondition.DateStartsThisWeek, '');
+    const today = dayjs().startOf('day');
+    const monBased = (today.day() + 6) % 7;
+    const monday = today.subtract(monBased, 'day').unix().toString();
+
+    expect(dateFilterFillData(filter)).toEqual({ data: monday, isRange: false });
+  });
+
+  it('pre-fills DateEndsToday with today midnight as a range', () => {
+    const filter = createFilter(DateFilterCondition.DateEndsToday, '');
+    const today = dayjs().startOf('day').unix().toString();
+
+    expect(dateFilterFillData(filter)).toEqual({
+      data: today,
+      endTimestamp: today,
+      isRange: true,
+    });
+  });
 });
