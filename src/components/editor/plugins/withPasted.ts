@@ -409,7 +409,6 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
     return insertBlock(editor, {
       type: BlockType.VideoBlock,
       data: { url: processUrl(url) || url, ...videoTypeData(VideoType.External) } as VideoBlockData,
-      children: [{ text: '' }],
     });
   }
 
@@ -417,7 +416,6 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
   return insertBlock(editor, {
     type: BlockType.LinkPreview,
     data: { url } as LinkPreviewBlockData,
-    children: [{ text: '' }],
   });
 }
 
@@ -439,17 +437,48 @@ function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean
 }
 
 /**
- * Helper to insert a single block (for URL handlers)
+ * Helper to insert a single block (for URL handlers).
+ *
+ * Writes directly to Yjs via slateContentInsertToYData rather than going
+ * through Transforms.insertNodes — Slate's applyInsertNode binding short-
+ * circuits for non-text nodes (see applyToYjs.ts), so embed blocks like
+ * LinkPreview/VideoBlock would render in Slate's local state but never
+ * persist to the Y.Doc. The block was lost as soon as the editor unmounted
+ * (e.g. closing a database row card right after pasting a URL).
  */
-function insertBlock(editor: ReactEditor, block: unknown): boolean {
-  const point = editor.selection?.anchor as BasePoint;
+function insertBlock(editor: ReactEditor, block: { type: BlockType; data: object }): boolean {
+  const point = editor.selection?.anchor;
 
   if (!point) return false;
 
   try {
-    Transforms.insertNodes(editor, block as import('slate').Node, {
-      at: point,
-      select: true,
+    const entry = getBlockEntry(editor as YjsEditor, point);
+
+    if (!entry) return false;
+
+    const [node] = entry;
+    const blockId = (node as { blockId?: string }).blockId;
+
+    if (!blockId) return false;
+
+    const sharedRoot = getSharedRoot(editor as YjsEditor);
+    const currentBlock = getBlock(blockId, sharedRoot);
+    const parentId = currentBlock.get(YjsEditorKey.block_parent);
+    const parent = getBlock(parentId, sharedRoot);
+    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
+    const index = parentChildren.toArray().findIndex((id) => id === blockId);
+    const doc = assertDocExists(sharedRoot);
+
+    // slateContentInsertToYData expects Slate Element shape; the data
+    // payload becomes the Yjs block's `data` field as-is.
+    const slateNode: Element = {
+      type: block.type,
+      data: block.data,
+      children: [{ text: '' }],
+    } as unknown as Element;
+
+    doc.transact(() => {
+      slateContentInsertToYData(parentId, index + 1, [slateNode], doc);
     });
 
     return true;
