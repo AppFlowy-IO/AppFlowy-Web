@@ -1,19 +1,16 @@
 import dayjs from 'dayjs';
 import { nanoid } from 'nanoid';
 import { useCallback, useMemo } from 'react';
-import { v4 as uuidv4 } from 'uuid';
 import * as Y from 'yjs';
 
 import { calculateFieldValue } from '@/application/database-yjs/calculation';
 import {
-  useCreateRow,
   useDatabase,
   useDatabaseContext,
   useDatabaseFields,
   useDatabaseView,
   useDatabaseViewId,
   useDefaultTimeSetting,
-  useDocGuid,
   useRowMap,
   useSharedRoot,
 } from '@/application/database-yjs/context';
@@ -30,16 +27,17 @@ import {
   RollupDisplayMode,
   SortCondition,
 } from '@/application/database-yjs/database.type';
+import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { getFieldName, NumberFormat, parseSelectOptionTypeOptions, SelectOption, SelectOptionColor, SelectTypeOption } from '@/application/database-yjs/fields';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
-import { dateFilterFillData, filterFillData, getDefaultFilterCondition } from '@/application/database-yjs/filter';
-import { getOptionsFromRow, initialDatabaseRow } from '@/application/database-yjs/row';
-import { generateRowMeta, getMetaIdMap, getRowKey } from '@/application/database-yjs/row_meta';
-import { useBoardLayoutSettings, useCalendarLayoutSetting, useDatabaseViewLayout, useFieldSelector, useFieldType } from '@/application/database-yjs/selector';
+import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
+import { getOptionsFromRow } from '@/application/database-yjs/row';
+import { getMetaIdMap } from '@/application/database-yjs/row_meta';
+import { useBoardLayoutSettings, useCalendarLayoutSetting, useFieldSelector, useFieldType } from '@/application/database-yjs/selector';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
   DatabaseViewLayout,
@@ -1193,189 +1191,6 @@ export function useDeletePropertyDispatch() {
   );
 }
 
-export function useNewRowDispatch() {
-  const database = useDatabase();
-  const sharedRoot = useSharedRoot();
-  const createRow = useCreateRow();
-  const guid = useDocGuid();
-  const viewId = useDatabaseViewId();
-  const currentView = useDatabaseView();
-  const layout = useDatabaseViewLayout();
-  const isCalendar = layout === DatabaseViewLayout.Calendar;
-  const calendarSetting = useCalendarLayoutSetting();
-  const filters = currentView?.get(YjsDatabaseKey.filters);
-  const { navigateToRow } = useDatabaseContext();
-
-  return useCallback(
-    async ({
-      beforeRowId,
-      cellsData,
-      tailing = false,
-    }: {
-      beforeRowId?: string;
-      cellsData?: Record<
-        FieldId,
-        | string
-        | {
-          data: string;
-          endTimestamp?: string;
-          isRange?: boolean;
-          includeTime?: boolean;
-          reminderId?: string;
-        }
-      >;
-      tailing?: boolean;
-    }) => {
-      if (!currentView) {
-        throw new Error('Current view not found');
-      }
-
-      if (!createRow) {
-        throw new Error('No createRow function');
-      }
-
-      const rowId = uuidv4();
-      const rowKey = getRowKey(guid, rowId);
-      const rowDoc = await createRow(rowKey);
-      let shouldOpenRowModal = false;
-
-      rowDoc.transact(() => {
-        initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
-        const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
-        const row = rowSharedRoot.get(YjsEditorKey.database_row);
-        const meta = rowSharedRoot.get(YjsEditorKey.meta);
-
-        const cells = row.get(YjsDatabaseKey.cells);
-
-        if (filters) {
-          filters.toArray().forEach((filter) => {
-            const cell = new Y.Map() as YDatabaseCell;
-            const fieldId = filter.get(YjsDatabaseKey.field_id);
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-
-            if (!field) {
-              return;
-            }
-
-            if (isCalendar && calendarSetting?.fieldId === fieldId) {
-              shouldOpenRowModal = true;
-            }
-
-            const type = Number(field.get(YjsDatabaseKey.type));
-
-            if (type === FieldType.DateTime) {
-              const { data, endTimestamp, isRange } = dateFilterFillData(filter);
-
-              if (data !== null) {
-                cell.set(YjsDatabaseKey.data, data);
-              }
-
-              if (endTimestamp) {
-                cell.set(YjsDatabaseKey.end_timestamp, endTimestamp);
-              }
-
-              if (isRange) {
-                cell.set(YjsDatabaseKey.is_range, isRange);
-              }
-            } else if ([FieldType.CreatedTime, FieldType.LastEditedTime].includes(type)) {
-              shouldOpenRowModal = true;
-              return;
-            } else {
-              const data = filterFillData(filter, field);
-
-              if (data === null) {
-                return;
-              }
-
-              cell.set(YjsDatabaseKey.data, data);
-            }
-
-            cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-            cell.set(YjsDatabaseKey.field_type, type);
-
-            cells.set(fieldId, cell);
-          });
-        }
-
-        if (cellsData) {
-          Object.entries(cellsData).forEach(([fieldId, data]) => {
-            const cell = new Y.Map() as YDatabaseCell;
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
-
-            const type = Number(field.get(YjsDatabaseKey.type));
-
-            cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-            cell.set(YjsDatabaseKey.field_type, type);
-
-            if (typeof data === 'object') {
-              cell.set(YjsDatabaseKey.data, data.data);
-              cell.set(YjsDatabaseKey.end_timestamp, data.endTimestamp);
-              cell.set(YjsDatabaseKey.is_range, data.isRange);
-              cell.set(YjsDatabaseKey.include_time, data.includeTime);
-              cell.set(YjsDatabaseKey.reminder_id, data.reminderId);
-            } else {
-              cell.set(YjsDatabaseKey.data, data);
-            }
-
-            cells.set(fieldId, cell);
-          });
-        }
-
-        row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-
-        const newMeta = generateRowMeta(rowId, {
-          [RowMetaKey.IsDocumentEmpty]: true,
-        });
-
-        Object.keys(newMeta).forEach((key) => {
-          const value = newMeta[key];
-
-          if (value) {
-            meta.set(key, value);
-          }
-        });
-
-        if (shouldOpenRowModal) {
-          navigateToRow?.(rowId);
-        }
-      });
-
-      executeOperationWithAllViews(
-        sharedRoot,
-        database,
-        (view, id) => {
-          const rowOrders = view.get(YjsDatabaseKey.row_orders);
-
-          if (!rowOrders) {
-            throw new Error(`Row orders not found`);
-          }
-
-          const row = {
-            id: rowId,
-            height: 36,
-          };
-
-          const index = beforeRowId ? rowOrders.toArray().findIndex((row) => row.id === beforeRowId) + 1 : 0;
-
-          if ((viewId !== id && index === -1) || tailing) {
-            rowOrders.push([row]);
-          } else {
-            rowOrders.insert(index, [row]);
-          }
-        },
-        'newRowDispatch'
-      );
-
-      if (isCalendar && shouldOpenRowModal) {
-        return null;
-      }
-
-      return rowId;
-    },
-    [calendarSetting, createRow, currentView, database, filters, guid, isCalendar, navigateToRow, sharedRoot, viewId]
-  );
-}
-
 export function useCreateCalendarEvent() {
   const newRowDispatch = useNewRowDispatch();
   const currentView = useDatabaseView();
@@ -1469,8 +1284,12 @@ function cloneCell(fieldType: FieldType, referenceCell?: YDatabaseCell) {
   return cell;
 }
 
-// Re-export from the extracted dispatch module
-export { useDuplicateRowDispatch } from './dispatch/row';
+// Re-export from the extracted dispatch module.
+// Note: re-exporting useNewRowDispatch is necessary because Vite's module
+// resolver picks this file (dispatch.ts) over dispatch/index.ts when both
+// exist as siblings, while TS picks the folder. Without this re-export the
+// two paths resolve to different implementations and silently drift.
+export { useDuplicateRowDispatch, useNewRowDispatch } from './dispatch/row';
 
 export function useClearSortingDispatch() {
   const sharedRoot = useSharedRoot();

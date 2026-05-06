@@ -1,7 +1,16 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { DateFilter, DateFilterCondition, FieldType, useFieldType } from '@/application/database-yjs';
+import {
+  DateFilter,
+  DateFilterCondition,
+  FieldType,
+  isRelativeDateCondition,
+  isStartDateCondition,
+  toEndDateCondition,
+  toStartDateCondition,
+  useFieldType,
+} from '@/application/database-yjs';
 import { useRemoveFilter, useUpdateFilter } from '@/application/database-yjs/dispatch';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import DateTimeFilterDatePicker from '@/components/database/components/filters/filter-menu/DateTimeFilterDatePicker';
@@ -16,84 +25,62 @@ function TextFilterMenu ({ filter }: { filter: DateFilter }) {
   const updateFilter = useUpdateFilter();
   const fieldType = useFieldType(filter.fieldId);
 
-  const [selectedStart, setSelectedStart] = useState<boolean>(() => {
-    return filter.condition < 8;
-  });
+  // Derived from filter.condition so it stays in sync if the condition is changed
+  // by Yjs sync (e.g., a collaborator editing the same filter).
+  const selectedStart = isStartDateCondition(filter.condition);
 
-  const conditions = useMemo(
-    () => [
-      {
-        value: selectedStart ? DateFilterCondition.DateStartsOn : DateFilterCondition.DateEndsOn,
-        text: t('grid.dateFilter.is'),
-      },
-      {
-        value: selectedStart ? DateFilterCondition.DateStartsBefore : DateFilterCondition.DateEndsAfter,
-        text: t('grid.dateFilter.before'),
-      },
-      {
-        value: selectedStart ? DateFilterCondition.DateStartsAfter : DateFilterCondition.DateEndsBefore,
-        text: t('grid.dateFilter.after'),
-      },
-      {
-        value: selectedStart ? DateFilterCondition.DateStartsOnOrBefore : DateFilterCondition.DateEndsOnOrAfter,
-        text: t('grid.dateFilter.onOrBefore'),
-      },
-      {
-        value: selectedStart ? DateFilterCondition.DateStartsOnOrAfter : DateFilterCondition.DateEndsOnOrBefore,
-        text: t('grid.dateFilter.onOrAfter'),
-      },
-      {
-        value: selectedStart ? DateFilterCondition.DateStartsBetween : DateFilterCondition.DateEndsBetween,
-        text: t('grid.dateFilter.between'),
-      },
-      ![
-        FieldType.CreatedTime,
-        FieldType.LastEditedTime,
-      ].includes(fieldType) && {
-        value: selectedStart ? DateFilterCondition.DateStartIsEmpty : DateFilterCondition.DateEndIsEmpty,
-        text: t('grid.dateFilter.empty'),
-      },
-      ![
-        FieldType.CreatedTime,
-        FieldType.LastEditedTime,
-      ].includes(fieldType) && {
-        value: selectedStart ? DateFilterCondition.DateStartIsNotEmpty : DateFilterCondition.DateEndIsNotEmpty,
-        text: t('grid.dateFilter.notEmpty'),
-      },
-    ].filter(Boolean) as {
-      value: DateFilterCondition;
-      text: string;
-    }[],
-    [fieldType, selectedStart, t],
-  );
+  const conditions = useMemo(() => {
+    const pick = (start: DateFilterCondition): DateFilterCondition =>
+      selectedStart ? start : toEndDateCondition(start);
+    const isRowTime = fieldType === FieldType.CreatedTime || fieldType === FieldType.LastEditedTime;
 
-  const displayTextField = useMemo(() => {
-    return ![
+    return [
+      { value: pick(DateFilterCondition.DateStartsOn), text: t('grid.dateFilter.is') },
+      { value: pick(DateFilterCondition.DateStartsBefore), text: t('grid.dateFilter.before') },
+      { value: pick(DateFilterCondition.DateStartsAfter), text: t('grid.dateFilter.after') },
+      { value: pick(DateFilterCondition.DateStartsOnOrBefore), text: t('grid.dateFilter.onOrBefore') },
+      { value: pick(DateFilterCondition.DateStartsOnOrAfter), text: t('grid.dateFilter.onOrAfter') },
+      { value: pick(DateFilterCondition.DateStartsBetween), text: t('grid.dateFilter.between') },
+      { value: pick(DateFilterCondition.DateStartsToday), text: t('relativeDates.today') },
+      { value: pick(DateFilterCondition.DateStartsYesterday), text: t('relativeDates.yesterday') },
+      { value: pick(DateFilterCondition.DateStartsTomorrow), text: t('relativeDates.tomorrow') },
+      { value: pick(DateFilterCondition.DateStartsThisWeek), text: t('relativeDates.thisWeek') },
+      { value: pick(DateFilterCondition.DateStartsLastWeek), text: t('relativeDates.lastWeek') },
+      { value: pick(DateFilterCondition.DateStartsNextWeek), text: t('relativeDates.nextWeek') },
+      !isRowTime && { value: pick(DateFilterCondition.DateStartIsEmpty), text: t('grid.dateFilter.empty') },
+      !isRowTime && { value: pick(DateFilterCondition.DateStartIsNotEmpty), text: t('grid.dateFilter.notEmpty') },
+    ].filter(Boolean) as { value: DateFilterCondition; text: string }[];
+  }, [fieldType, selectedStart, t]);
+
+  const displayTextField =
+    !isRelativeDateCondition(filter.condition) &&
+    ![
       DateFilterCondition.DateEndIsEmpty,
       DateFilterCondition.DateEndIsNotEmpty,
       DateFilterCondition.DateStartIsEmpty,
       DateFilterCondition.DateStartIsNotEmpty,
     ].includes(filter.condition);
-  }, [filter.condition]);
+
   const deleteFilter = useRemoveFilter();
 
-  const handleSelectStartOrEnd = useCallback((isStart: boolean) => {
-    setSelectedStart(isStart);
-    // Update the filter condition based on the selected start or end
-    // If the condition is already in the correct range, do nothing
-    if (isStart && filter.condition < 8) return;
-    if (!isStart && filter.condition >= 8) return;
+  const handleSelectStartOrEnd = useCallback(
+    (isStart: boolean) => {
+      if (isStart === isStartDateCondition(filter.condition)) return;
 
-    const newCondition = conditions.find((c) => c.value === filter.condition);
+      const newCondition = isStart
+        ? toStartDateCondition(filter.condition)
+        : toEndDateCondition(filter.condition);
 
-    if (newCondition) {
-      updateFilter({
-        filterId: filter.id,
-        fieldId: filter.fieldId,
-        condition: isStart ? newCondition.value - 8 : newCondition.value + 8,
-      });
-    }
-  }, [conditions, filter.condition, filter.id, filter.fieldId, updateFilter]);
+      if (newCondition !== filter.condition) {
+        updateFilter({
+          filterId: filter.id,
+          fieldId: filter.fieldId,
+          condition: newCondition,
+        });
+      }
+    },
+    [filter.condition, filter.id, filter.fieldId, updateFilter],
+  );
 
   return (
     <div

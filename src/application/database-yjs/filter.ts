@@ -16,12 +16,14 @@ import {
   ChecklistFilterCondition,
   DateFilter,
   DateFilterCondition,
+  isRelativeDateCondition,
   NumberFilter,
   NumberFilterCondition,
   parseChecklistFlexible,
   parseSelectOptionTypeOptions,
   PersonFilterCondition,
   RelationFilterCondition,
+  resolveRelativeDates,
   SelectOptionFilter,
   SelectOptionFilterCondition,
   TextFilter,
@@ -615,6 +617,10 @@ export function checklistFilterCheck(data: unknown, content: string, condition: 
 }
 
 export function rowTimeFilterCheck(data: string, filter: DateFilter) {
+  if (isRelativeDateCondition(filter.condition)) {
+    return relativeDateRangeMatches(data, filter);
+  }
+
   const { condition, end = '', start = '', timestamp = '' } = filter;
 
   switch (condition) {
@@ -644,10 +650,40 @@ export function rowTimeFilterCheck(data: string, filter: DateFilter) {
   }
 }
 
+// Resolves a relative-date filter to a concrete [start, end] range and tests whether
+// the cell's relevant timestamp (start for "DateStarts*", end for "DateEnds*") falls in it.
+function relativeDateRangeMatches(data: string, filter: DateFilter, endTimestamp?: string): boolean {
+  // Mirrors desktop: DateStarts* relatives match against cell.start; DateEnds* match against cell.end.
+  const isEndCondition = filter.condition >= DateFilterCondition.DateEndsToday;
+  const target = isEndCondition ? endTimestamp ?? '' : data;
+
+  if (!target) return false;
+
+  const resolved = resolveRelativeDates(filter);
+
+  // Single-day relatives (Today/Yesterday/Tomorrow) → same-day check.
+  if (resolved.timestamp !== undefined) {
+    return isTimestampInSameDay(target, resolved.timestamp.toString());
+  }
+
+  if (resolved.start !== undefined && resolved.end !== undefined) {
+    // resolved.end is local midnight of the last day; extend to end-of-day for inclusive matching.
+    const endInclusive = resolved.end + 24 * 60 * 60 - 1;
+
+    return isTimestampBetweenRange(target, resolved.start.toString(), endInclusive.toString());
+  }
+
+  return false;
+}
+
 export function dateFilterCheck(cell: DateTimeCell | null, filter: DateFilter) {
   const { condition, end = '', start = '', timestamp = '' } = filter;
 
   const { data = '', endTimestamp = '' } = cell || {};
+
+  if (isRelativeDateCondition(condition)) {
+    return relativeDateRangeMatches(data, filter, endTimestamp);
+  }
 
   switch (condition) {
     case DateFilterCondition.DateEndIsEmpty:
@@ -905,6 +941,22 @@ export function dateFilterFillData(filter: YDatabaseFilter): {
   const content = filter.get(YjsDatabaseKey.content);
   const condition = Number(filter.get(YjsDatabaseKey.condition));
   const today = dayjs().startOf('day').unix().toString();
+
+  // Relative-date conditions (Today / This week / etc.) ignore the stored
+  // timestamp and always pre-fill from the resolved range so the new row
+  // satisfies the filter.
+  if (isRelativeDateCondition(condition)) {
+    const resolved = resolveRelativeDates({
+      condition,
+      timestamp: undefined,
+      start: undefined,
+      end: undefined,
+    } as DateFilter);
+    const isEnd = condition >= DateFilterCondition.DateEndsToday;
+    const fill = (resolved.timestamp ?? resolved.start ?? Number(today)).toString();
+
+    return isEnd ? { data: fill, endTimestamp: fill, isRange: true } : { data: fill, isRange: false };
+  }
 
   try {
     const {

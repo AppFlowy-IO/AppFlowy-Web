@@ -2725,6 +2725,9 @@
     "yesterday": "Yesterday",
     "today": "Today",
     "tomorrow": "Tomorrow",
+    "thisWeek": "This week",
+    "lastWeek": "Last week",
+    "nextWeek": "Next week",
     "oneWeek": "1 week"
   },
   "notificationHub": {
