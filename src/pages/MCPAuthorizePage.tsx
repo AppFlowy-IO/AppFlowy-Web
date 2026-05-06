@@ -22,9 +22,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import { McpService } from '@/application/services/domains';
-import { getMcpBaseUrl } from '@/application/services/js-services/http/mcp-api';
+import type { McpClientInfo } from '@/application/services/domains/mcp';
 import { getWorkspaces } from '@/application/services/js-services/http/workspace-api';
-import { getTokenParsed } from '@/application/session/token';
 import { Role, Workspace } from '@/application/types';
 import { ReactComponent as Logo } from '@/assets/icons/logo.svg';
 import { useCurrentUserOptional, useIsAuthenticatedOptional } from '@/components/main/app.hooks';
@@ -53,9 +52,24 @@ function readParams(search: URLSearchParams): OAuthParams | { error: string } {
     if (!search.get(k)) return { error: `Missing required parameter: ${k}` };
   }
 
+  // Reject non-http(s) schemes up front so neither Allow nor Deny can be
+  // tricked into navigating to `javascript:`, `data:`, custom-scheme, or
+  // other unsafe URIs via a crafted query string.
+  const redirectUri = search.get('redirect_uri')!;
+
+  try {
+    const url = new URL(redirectUri);
+
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return { error: 'redirect_uri must use http or https' };
+    }
+  } catch {
+    return { error: 'redirect_uri is not a valid URL' };
+  }
+
   return {
     client_id: search.get('client_id')!,
-    redirect_uri: search.get('redirect_uri')!,
+    redirect_uri: redirectUri,
     response_type: search.get('response_type')!,
     code_challenge: search.get('code_challenge')!,
     code_challenge_method: search.get('code_challenge_method')!,
@@ -64,14 +78,30 @@ function readParams(search: URLSearchParams): OAuthParams | { error: string } {
   };
 }
 
-function getJwt(): string | null {
-  return getTokenParsed()?.access_token ?? null;
-}
-
 function isOwner(workspace: Workspace | undefined, userUid: string | undefined): boolean {
   if (!workspace || !userUid) return false;
 
   return workspace.role === Role.Owner || workspace.owner?.uid.toString() === userUid;
+}
+
+/**
+ * Returns the trimmed value only if it parses as an `http:` or `https:` URL.
+ * Used to defensively gate untrusted client metadata before rendering it as
+ * a clickable link or image source — `javascript:` / `data:` / custom-scheme
+ * URIs registered in client metadata must not become live links here.
+ */
+function safeHttpUrl(value: string | null | undefined): string | undefined {
+  if (!value) return undefined;
+  const trimmed = value.trim();
+
+  if (!trimmed) return undefined;
+  try {
+    const url = new URL(trimmed);
+
+    return url.protocol === 'http:' || url.protocol === 'https:' ? trimmed : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function MCPAuthorizePage() {
@@ -89,9 +119,7 @@ function MCPAuthorizePage() {
   const [submitting, setSubmitting] = useState(false);
   const [approvingClient, setApprovingClient] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [clientName, setClientName] = useState<string | null>(null);
-  const [clientUri, setClientUri] = useState<string | null>(null);
-  const [clientLogoUri, setClientLogoUri] = useState<string | null>(null);
+  const [clientInfo, setClientInfo] = useState<McpClientInfo>({});
   const [approvalNeeded, setApprovalNeeded] = useState(false);
 
   // 2. Not signed in → bounce through the existing login flow.
@@ -108,28 +136,16 @@ function MCPAuthorizePage() {
   // this before login completes since it doesn't depend on the user.
   useEffect(() => {
     if (!params) return;
-    const apiBase = getMcpBaseUrl();
     let cancelled = false;
 
-    fetch(`${apiBase}/api/mcp/clients/${encodeURIComponent(params.client_id)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (cancelled || !j) return;
-        if (typeof j.client_name === 'string' && j.client_name.length > 0) {
-          setClientName(j.client_name);
-        }
-
-        if (typeof j.client_uri === 'string' && j.client_uri.length > 0) {
-          setClientUri(j.client_uri);
-        }
-
-        if (typeof j.logo_uri === 'string' && j.logo_uri.length > 0) {
-          setClientLogoUri(j.logo_uri);
-        }
-      })
-      .catch(() => {
-        // Fall back to the truncated id below — not worth surfacing.
+    void McpService.getClientInfo(params.client_id).then((info) => {
+      if (cancelled || !info) return;
+      setClientInfo({
+        client_name: info.client_name?.trim() || undefined,
+        client_uri: safeHttpUrl(info.client_uri),
+        logo_uri: safeHttpUrl(info.logo_uri),
       });
+    });
     return () => {
       cancelled = true;
     };
@@ -156,11 +172,6 @@ function MCPAuthorizePage() {
     };
   }, [isAuthenticated, params, workspaces]);
 
-  useEffect(() => {
-    setApprovalNeeded(false);
-    setSubmitError(null);
-  }, [selectedWorkspace]);
-
   if (paramError) {
     return <ErrorPanel title='Invalid request' message={paramError} />;
   }
@@ -185,47 +196,18 @@ function MCPAuthorizePage() {
   const selectedWorkspaceInfo = workspaces.find((w) => w.id === selectedWorkspace);
   const canApproveSelectedWorkspace = isOwner(selectedWorkspaceInfo, currentUser?.uid);
 
-  const createAuthorizationCode = async () => {
+  const requestAuthorizationCode = () => {
     if (!params) throw new Error('Invalid authorization request.');
-    const token = getTokenParsed();
-    const jwt = getJwt();
 
-    if (!jwt) throw new Error('No access token available; please sign in again.');
-    const apiBase = getMcpBaseUrl();
-    const resp = await fetch(`${apiBase}/api/mcp/authorize/code`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${jwt}`,
-      },
-      body: JSON.stringify({
-        client_id: params.client_id,
-        redirect_uri: params.redirect_uri,
-        code_challenge: params.code_challenge,
-        code_challenge_method: params.code_challenge_method,
-        workspace_id: selectedWorkspace,
-        state: params.state,
-        scope: params.scope,
-        appflowy_refresh_token: token?.refresh_token,
-        appflowy_expires_at: token?.expires_at,
-      }),
+    return McpService.createAuthorizationCode({
+      client_id: params.client_id,
+      redirect_uri: params.redirect_uri,
+      code_challenge: params.code_challenge,
+      code_challenge_method: params.code_challenge_method,
+      workspace_id: selectedWorkspace,
+      state: params.state,
+      scope: params.scope,
     });
-    const body = await resp.json().catch(() => ({}));
-
-    if (!resp.ok) {
-      const error = new Error(body?.error_description ?? body?.error ?? `HTTP ${resp.status}`) as Error & {
-        oauthError?: string;
-      };
-
-      error.oauthError = typeof body?.error === 'string' ? body.error : undefined;
-      throw error;
-    }
-
-    if (typeof body?.redirect_url !== 'string') {
-      throw new Error('Authorization server did not return a redirect URL.');
-    }
-
-    return body.redirect_url;
   };
 
   const onAllow = async () => {
@@ -234,19 +216,19 @@ function MCPAuthorizePage() {
     setApprovalNeeded(false);
     setSubmitError(null);
     try {
-      const redirectUrl = await createAuthorizationCode();
+      const redirectUrl = await requestAuthorizationCode();
 
       // Hand off to the LLM client's local callback. This is the last
       // thing we do — the user is leaving AppFlowy now.
       window.location.href = redirectUrl;
     } catch (e: unknown) {
-      const err = e as Error & { oauthError?: string };
+      const oauthError = e instanceof McpService.McpOAuthError ? e.oauthError : undefined;
       const msg = e instanceof Error ? e.message : String(e);
 
-      if (err.oauthError === 'invalid_client' && canApproveSelectedWorkspace) {
+      if (oauthError === 'invalid_client' && canApproveSelectedWorkspace) {
         setApprovalNeeded(true);
         setSubmitError(`${msg} Approve this client for the selected workspace to continue.`);
-      } else if (err.oauthError === 'invalid_client') {
+      } else if (oauthError === 'invalid_client') {
         setSubmitError(`${msg} Ask a workspace owner to approve this MCP client.`);
       } else {
         setSubmitError(msg);
@@ -262,13 +244,19 @@ function MCPAuthorizePage() {
     setSubmitError(null);
     try {
       await McpService.approveClient(selectedWorkspace, params.client_id);
-      const redirectUrl = await createAuthorizationCode();
+      const redirectUrl = await requestAuthorizationCode();
 
       window.location.href = redirectUrl;
     } catch (e: unknown) {
       setSubmitError(e instanceof Error ? e.message : String(e));
       setApprovingClient(false);
     }
+  };
+
+  const onSelectWorkspace = (id: string) => {
+    setSelectedWorkspace(id);
+    setApprovalNeeded(false);
+    setSubmitError(null);
   };
 
   const onDeny = () => {
@@ -292,8 +280,8 @@ function MCPAuthorizePage() {
   return (
     <Shell>
       <div className='flex items-start gap-3'>
-        {clientLogoUri ? (
-          <img className='h-10 w-10 rounded-300 object-cover' src={clientLogoUri} alt='' />
+        {clientInfo.logo_uri ? (
+          <img className='h-10 w-10 rounded-300 object-cover' src={clientInfo.logo_uri} alt='' />
         ) : (
           <div className='flex h-10 w-10 items-center justify-center rounded-300 bg-fill-content'>
             <Logo className='h-5 w-5' />
@@ -302,20 +290,20 @@ function MCPAuthorizePage() {
         <div className='min-w-0 flex-1'>
           <h1 className='truncate text-2xl font-semibold text-text-primary'>
             Authorize{' '}
-            {clientName ? (
-              <span className='text-text-action'>{clientName}</span>
+            {clientInfo.client_name ? (
+              <span className='text-text-action'>{clientInfo.client_name}</span>
             ) : (
               <span className='font-mono text-text-secondary'>{params!.client_id.slice(0, 12)}…</span>
             )}
           </h1>
-          {clientUri && (
+          {clientInfo.client_uri && (
             <a
-              href={clientUri}
+              href={clientInfo.client_uri}
               rel='noreferrer'
               target='_blank'
               className='block truncate text-xs text-text-secondary hover:text-text-primary'
             >
-              {clientUri}
+              {clientInfo.client_uri}
             </a>
           )}
         </div>
@@ -348,7 +336,7 @@ function MCPAuthorizePage() {
                   name='workspace'
                   value={w.id}
                   checked={checked}
-                  onChange={() => setSelectedWorkspace(w.id)}
+                  onChange={() => onSelectWorkspace(w.id)}
                   className='accent-fill-theme-thick'
                 />
                 <span className='truncate'>{w.name || w.id}</span>

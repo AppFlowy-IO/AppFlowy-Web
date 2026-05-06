@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PlugZap } from 'lucide-react';
@@ -24,7 +24,6 @@ import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
 import InviteMember from '@/components/app/workspaces/InviteMember';
 import LeaveWorkspace from '@/components/app/workspaces/LeaveWorkspace';
 import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
-import MCPSettings from '@/components/app/workspaces/MCPSettings';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
 import UpgradeAIMax from '@/components/billing/UpgradeAIMax';
 import UpgradePlan from '@/components/billing/UpgradePlan';
@@ -44,6 +43,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { openUrl } from '@/utils/url';
 
 import { AccountSettings } from './AccountSettings';
+
+const MCPSettings = lazy(() => import('@/components/app/workspaces/MCPSettings'));
 
 export function Workspaces() {
   const { t } = useTranslation();
@@ -346,11 +347,16 @@ export function Workspaces() {
       )}
 
       <AccountSettings open={openAccountSettings} onClose={() => setOpenAccountSettings(false)} />
-      <MCPSettings
-        open={openMcpSettings}
-        onClose={() => setOpenMcpSettings(false)}
-        workspaceId={currentWorkspace?.id}
-      />
+      {openMcpSettings && currentWorkspace && (
+        <Suspense fallback={null}>
+          <MCPSettings
+            key={currentWorkspace.id}
+            open={openMcpSettings}
+            onClose={() => setOpenMcpSettings(false)}
+            workspaceId={currentWorkspace.id}
+          />
+        </Suspense>
+      )}
       <LogoutConfirm open={openLogoutConfirm} onClose={() => setOpenLogoutConfirm(false)} onConfirm={handleSignOut} />
     </>
   );

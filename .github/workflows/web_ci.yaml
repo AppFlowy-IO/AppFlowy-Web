@@ -94,6 +94,7 @@ jobs:
           docker run -d --rm --name appflowy-web-test -p 8080:80 \
             -e APPFLOWY_BASE_URL=https://ci-backend.example.com \
             -e APPFLOWY_GOTRUE_BASE_URL=https://ci-backend.example.com/gotrue \
+            -e APPFLOWY_MCP_BASE_URL=https://ci-backend.example.com \
             -e APPFLOWY_WS_BASE_URL=wss://ci-backend.example.com/ws/v2 \
             appflowy-web-test:ci
 
@@ -115,13 +116,16 @@ jobs:
           echo "✓ Found window.__APP_CONFIG__"
           
           echo "Verifying injected values..."
-          # Note: The config is injected as a single line with format: {APPFLOWY_BASE_URL:'value',APPFLOWY_GOTRUE_BASE_URL:'value',APPFLOWY_WS_BASE_URL:'value'}
+          # Note: The config is injected as a single line with format: {APPFLOWY_BASE_URL:'value',APPFLOWY_GOTRUE_BASE_URL:'value',APPFLOWY_MCP_BASE_URL:'value',APPFLOWY_WS_BASE_URL:'value'}
           echo "$HTML" | grep -q "APPFLOWY_BASE_URL:'https://ci-backend.example.com'" || (echo "ERROR: APPFLOWY_BASE_URL not correctly injected" && exit 1)
           echo "✓ APPFLOWY_BASE_URL correctly injected"
-          
+
           echo "$HTML" | grep -q "APPFLOWY_GOTRUE_BASE_URL:'https://ci-backend.example.com/gotrue'" || (echo "ERROR: APPFLOWY_GOTRUE_BASE_URL not correctly injected" && exit 1)
           echo "✓ APPFLOWY_GOTRUE_BASE_URL correctly injected"
-          
+
+          echo "$HTML" | grep -q "APPFLOWY_MCP_BASE_URL:'https://ci-backend.example.com'" || (echo "ERROR: APPFLOWY_MCP_BASE_URL not correctly injected" && exit 1)
+          echo "✓ APPFLOWY_MCP_BASE_URL correctly injected"
+
           echo "$HTML" | grep -q "APPFLOWY_WS_BASE_URL:'wss://ci-backend.example.com/ws/v2'" || (echo "ERROR: APPFLOWY_WS_BASE_URL not correctly injected" && exit 1)
           echo "✓ APPFLOWY_WS_BASE_URL correctly injected"
           
@@ -137,7 +141,7 @@ jobs:
           echo "Extracted config: $CONFIG"
           
           # Verify it's a valid JavaScript object format
-          echo "$CONFIG" | grep -q "window.__APP_CONFIG__={APPFLOWY_BASE_URL:'[^']*',APPFLOWY_GOTRUE_BASE_URL:'[^']*',APPFLOWY_WS_BASE_URL:'[^']*'}" || \
+          echo "$CONFIG" | grep -q "window.__APP_CONFIG__={APPFLOWY_BASE_URL:'[^']*',APPFLOWY_GOTRUE_BASE_URL:'[^']*',APPFLOWY_MCP_BASE_URL:'[^']*',APPFLOWY_WS_BASE_URL:'[^']*'}" || \
             (echo "ERROR: Config format is invalid" && exit 1)
           
           echo "✓ Configuration format and structure verified"

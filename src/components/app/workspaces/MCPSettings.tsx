@@ -167,7 +167,7 @@ export function MCPSettings({
     <NormalModal
       open={open}
       onClose={onClose}
-      title={<div style={{ textAlign: 'left' }}>{t('settings.mcp.title', { defaultValue: 'MCP connectors' })}</div>}
+      title={<div className='text-left'>{t('settings.mcp.title', { defaultValue: 'MCP connectors' })}</div>}
       classes={MODAL_CLASSES}
       disableAutoFocus
       disableEnforceFocus
@@ -180,7 +180,7 @@ export function MCPSettings({
           <div className='flex min-w-0 gap-3'>
             <ShieldCheck className='mt-0.5 h-5 w-5 shrink-0 text-icon-primary' />
             <div className='min-w-0'>
-              <div className='text-sm font-medium'>
+              <div id='mcp-block-unapproved-label' className='text-sm font-medium'>
                 {t('settings.mcp.blockUnapproved', { defaultValue: 'Block unapproved clients' })}
               </div>
               <div className='mt-1 text-xs leading-relaxed text-text-secondary'>
@@ -192,6 +192,7 @@ export function MCPSettings({
             </div>
           </div>
           <Switch
+            aria-labelledby='mcp-block-unapproved-label'
             checked={!settings?.allow_unapproved_clients}
             disabled={loading || saving || !settings}
             onCheckedChange={(checked) => void updatePolicy(!checked)}

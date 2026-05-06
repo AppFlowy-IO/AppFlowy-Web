@@ -1,3 +1,6 @@
+import axios from 'axios';
+
+import { getTokenParsed } from '@/application/session/token';
 import { getConfigValue } from '@/utils/runtime-config';
 
 import { getAxios } from './core';
@@ -32,6 +35,31 @@ export interface McpConnectionsResponse {
 
 export interface McpDisconnectResponse {
   disconnected: number;
+}
+
+export interface McpClientInfo {
+  client_name?: string | null;
+  client_uri?: string | null;
+  logo_uri?: string | null;
+}
+
+export interface CreateMcpAuthorizationCodeRequest {
+  client_id: string;
+  redirect_uri: string;
+  code_challenge: string;
+  code_challenge_method: string;
+  workspace_id: string;
+  state?: string;
+  scope?: string;
+}
+
+export class McpOAuthError extends Error {
+  oauthError?: string;
+  constructor(message: string, oauthError?: string) {
+    super(message);
+    this.name = 'McpOAuthError';
+    this.oauthError = oauthError;
+  }
 }
 
 export function getMcpBaseUrl(): string {
@@ -115,4 +143,68 @@ export async function disconnectMcpConnections(
   );
 
   return resp.data;
+}
+
+/**
+ * Public client metadata lookup. Uses raw `fetch` instead of the shared axios
+ * instance: this endpoint is public and best-effort, and we do not want a
+ * spurious 401 (or pre-emptive token refresh on an expired access token) to
+ * trigger the global auth interceptor and sign the user out before they've
+ * even seen the consent page. Returns null on any error — the consent UI
+ * falls back to the truncated client id.
+ */
+export async function getMcpClientInfo(clientId: string): Promise<McpClientInfo | null> {
+  try {
+    const resp = await fetch(mcpUrl(`/api/mcp/clients/${encodeURIComponent(clientId)}`));
+
+    if (!resp.ok) return null;
+
+    return (await resp.json()) as McpClientInfo;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * POST /api/mcp/authorize/code — exchanges the consent grant + AppFlowy JWT
+ * for an OAuth authorization code, returning the redirect URL the browser
+ * should hand off to. Throws {@link McpOAuthError} so callers can branch on
+ * `oauthError === 'invalid_client'` for the workspace-owner approval path.
+ */
+export async function createMcpAuthorizationCode(
+  req: CreateMcpAuthorizationCodeRequest
+): Promise<string> {
+  const token = getTokenParsed();
+
+  try {
+    const resp = await requireAxios().post<{ redirect_url?: string }>(
+      mcpUrl('/api/mcp/authorize/code'),
+      {
+        ...req,
+        appflowy_refresh_token: token?.refresh_token,
+        appflowy_expires_at: token?.expires_at,
+      }
+    );
+    const redirectUrl = resp.data?.redirect_url;
+
+    if (typeof redirectUrl !== 'string') {
+      throw new McpOAuthError('Authorization server did not return a redirect URL.');
+    }
+
+    return redirectUrl;
+  } catch (e) {
+    if (e instanceof McpOAuthError) throw e;
+    if (axios.isAxiosError(e)) {
+      const data = e.response?.data as { error?: unknown; error_description?: unknown } | undefined;
+      const oauthError = typeof data?.error === 'string' ? data.error : undefined;
+      const message =
+        (typeof data?.error_description === 'string' && data.error_description) ||
+        oauthError ||
+        (e.response ? `HTTP ${e.response.status}` : e.message);
+
+      throw new McpOAuthError(message, oauthError);
+    }
+
+    throw e;
+  }
 }
