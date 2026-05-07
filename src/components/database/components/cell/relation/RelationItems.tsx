@@ -66,21 +66,33 @@ function RelationItems({
       return;
     }
 
+    let cancelled = false;
+
     void (async () => {
       try {
         const viewId = await getViewIdFromDatabaseId?.(relatedDatabaseId);
 
+        if (cancelled) return;
+
         if (!viewId) {
           setRelatedViewId(null);
+          setNoAccess(true);
           return;
         }
 
+        setNoAccess(false);
         setRelatedViewId(viewId);
       } catch (e) {
+        if (cancelled) return;
         console.error(e);
         setRelatedViewId(null);
+        setNoAccess(true);
       }
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, [getViewIdFromDatabaseId, relatedDatabaseId]);
 
   useEffect(() => {
