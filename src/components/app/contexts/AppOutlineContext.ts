@@ -58,7 +58,7 @@ export interface AppOutlineContextType {
   /** Force-reload the entire outline tree from the server. */
   refreshOutline?: () => Promise<void>;
   /** Load cross-database relation metadata for the workspace. */
-  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
   /** Resolve a user UUID to their mentionable-person profile. */
   getMentionUser?: (uuid: string) => Promise<MentionablePerson | undefined>;
   /** Load all mentionable users (workspace members) for @-mention autocomplete. */

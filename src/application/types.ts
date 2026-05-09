@@ -1361,7 +1361,7 @@ export interface ViewComponentProps {
   updatePageName?: (viewId: string, name: string) => Promise<void>;
   currentUser?: User;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
-  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   getSubscriptions?: () => Promise<Subscription[]>;
   eventEmitter?: EventEmitter;

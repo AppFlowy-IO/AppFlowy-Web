@@ -27,9 +27,11 @@ import {
   RollupDisplayMode,
   SortCondition,
 } from '@/application/database-yjs/database.type';
+import { deleteReciprocalRelationField } from '@/application/database-yjs/dispatch/relation';
 import { useNewRowDispatch } from '@/application/database-yjs/dispatch/row';
 import { getFieldName, NumberFormat, parseSelectOptionTypeOptions, SelectOption, SelectOptionColor, SelectTypeOption } from '@/application/database-yjs/fields';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
+import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { createRelationField } from '@/application/database-yjs/fields/relation/utils';
 import { createRollupField } from '@/application/database-yjs/fields/rollup/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
@@ -1144,9 +1146,14 @@ function executeOperationWithAllViews(
 export function useDeletePropertyDispatch() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
+  const { databaseDoc, getViewIdFromDatabaseId, loadView, bindViewSync } = useDatabaseContext();
 
   return useCallback(
     (fieldId: string) => {
+      const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+      const fieldType = Number(field?.get(YjsDatabaseKey.type));
+      const relationOption = field && fieldType === FieldType.Relation ? parseRelationTypeOption(field) : null;
+
       executeOperationWithAllViews(
         sharedRoot,
         database,
@@ -1186,8 +1193,17 @@ export function useDeletePropertyDispatch() {
         },
         'deletePropertyDispatch'
       );
+
+      void deleteReciprocalRelationField({
+        sourceDatabase: database,
+        sourceDatabaseDoc: databaseDoc,
+        relationOption,
+        loadView,
+        getViewIdFromDatabaseId,
+        bindViewSync,
+      });
     },
-    [database, sharedRoot]
+    [bindViewSync, database, databaseDoc, getViewIdFromDatabaseId, loadView, sharedRoot]
   );
 }
 
@@ -1534,6 +1550,19 @@ export function useDuplicatePropertyDispatch() {
                 const newFieldTypeOption = new Y.Map() as YMapFieldTypeOption;
 
                 fieldTypeOption.forEach((value, key) => {
+                  // Reciprocal metadata is owned by the original field. Copying it
+                  // would let a deletion of the duplicate orphan or remove the
+                  // original's reciprocal in the related database, so the duplicate
+                  // starts as a plain one-way relation.
+                  if (
+                    fieldType === FieldType.Relation &&
+                    (key === YjsDatabaseKey.is_two_way ||
+                      key === YjsDatabaseKey.reciprocal_field_id ||
+                      key === YjsDatabaseKey.reciprocal_field_name)
+                  ) {
+                    return;
+                  }
+
                   // Because rust uses bigint for enum or some other values, so we need to convert it to string
                   // Yjs cannot set bigint value directly
                   if (typeof value === 'bigint') {
@@ -2270,6 +2299,7 @@ export function useSwitchPropertyType() {
   const database = useDatabase();
   const sharedRoot = useSharedRoot();
   const rowMap = useRowMap();
+  const { databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync } = useDatabaseContext();
 
   return useCallback(
     (fieldId: string, fieldType: FieldType) => {
@@ -2278,6 +2308,17 @@ export function useSwitchPropertyType() {
       }
 
       const rows = Object.keys(rowMap);
+
+      // Capture the relation option before the switch so we can clean up the
+      // reciprocal field in the related database when leaving Relation. After
+      // the switch, the type_option for Relation may be cleared/replaced and
+      // the reciprocal pointer is no longer reachable from this field.
+      const fieldBefore = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+      const oldFieldTypeBefore = fieldBefore ? Number(fieldBefore.get(YjsDatabaseKey.type)) : null;
+      const relationOptionToCleanUp =
+        fieldBefore && oldFieldTypeBefore === FieldType.Relation && fieldType !== FieldType.Relation
+          ? parseRelationTypeOption(fieldBefore)
+          : null;
 
       executeOperations(
         sharedRoot,
@@ -2416,6 +2457,22 @@ export function useSwitchPropertyType() {
               }
             }
 
+            // When leaving Relation, drop reciprocal metadata from the preserved
+            // Relation type_option entry. The reciprocal field in the related
+            // database is being deleted in the post-switch cleanup; without
+            // clearing this, a later switch back to Relation would skip
+            // reciprocal recreation (because reciprocal_field_id is already set)
+            // and silently break two-way sync.
+            if (oldFieldType === FieldType.Relation && fieldType !== FieldType.Relation) {
+              const relationTypeOption = typeOptionMap?.get(String(FieldType.Relation));
+
+              if (relationTypeOption) {
+                relationTypeOption.delete(YjsDatabaseKey.reciprocal_field_id);
+                relationTypeOption.delete(YjsDatabaseKey.reciprocal_field_name);
+                relationTypeOption.set(YjsDatabaseKey.is_two_way, false);
+              }
+            }
+
             field.set(YjsDatabaseKey.type, fieldType);
 
             const lastModified = field.get(YjsDatabaseKey.last_modified);
@@ -2467,8 +2524,19 @@ export function useSwitchPropertyType() {
         ],
         'switchPropertyType'
       );
+
+      if (relationOptionToCleanUp) {
+        void deleteReciprocalRelationField({
+          sourceDatabase: database,
+          sourceDatabaseDoc: databaseDoc,
+          relationOption: relationOptionToCleanUp,
+          loadView,
+          getViewIdFromDatabaseId,
+          bindViewSync,
+        });
+      }
     },
-    [database, sharedRoot, rowMap]
+    [bindViewSync, database, databaseDoc, getViewIdFromDatabaseId, loadView, sharedRoot, rowMap]
   );
 }
 

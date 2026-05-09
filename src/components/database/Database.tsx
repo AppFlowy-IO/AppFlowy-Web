@@ -12,6 +12,7 @@ import {
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
@@ -19,6 +20,7 @@ import {
   CreatePagePayload,
   CreatePageResponse,
   CreateRow,
+  DatabaseRelations,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadView,
@@ -26,12 +28,12 @@ import {
   RowId,
   UIVariant,
   UpdatePagePayload,
+  View,
   YDatabase,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
@@ -103,6 +105,8 @@ export interface Database2Props {
   showActions?: boolean;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+  loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   embeddedHeight?: number;
   /**
    * Callback when view IDs change (views added or removed).
@@ -166,6 +170,8 @@ function Database(props: Database2Props) {
     workspaceId,
     addPage,
     openPageModal,
+    loadDatabaseRelations,
+    loadViews,
     generateAISummaryForRow,
     generateAITranslateForRow,
   } = props;
@@ -713,6 +719,10 @@ function Database(props: Database2Props) {
     [handleCloseRowModal]
   );
 
+  const loadViewsForContext = useCallback(async () => {
+    return (await loadViews?.()) ?? [];
+  }, [loadViews]);
+
   // Shared context properties - extracted to reduce duplication between main and modal contexts
   const sharedContextProps = useMemo(
     () => ({
@@ -746,6 +756,8 @@ function Database(props: Database2Props) {
       deletePage: props.deletePage,
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
+      loadDatabaseRelations,
+      loadViews: loadViews ? loadViewsForContext : undefined,
       variant: props.variant,
       calendarViewTypeMap,
       setCalendarViewType,
@@ -784,6 +796,9 @@ function Database(props: Database2Props) {
       props.deletePage,
       props.eventEmitter,
       props.getViewIdFromDatabaseId,
+      loadDatabaseRelations,
+      loadViews,
+      loadViewsForContext,
       props.variant,
       calendarViewTypeMap,
       setCalendarViewType,

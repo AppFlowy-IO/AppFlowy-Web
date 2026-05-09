@@ -32,4 +32,5 @@ export * from './view';
 export * from './sort-filter';
 export * from './type-option';
 export * from './calculation';
+export * from './relation';
 export { executeOperationWithAllViews } from './utils';

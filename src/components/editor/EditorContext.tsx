@@ -102,7 +102,7 @@ export interface EditorContextState {
   getDeviceId?: () => string;
   databaseRelations?: DatabaseRelations;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
-  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
 }
 
 export const EditorContext = createContext<EditorContextState | undefined>(undefined);

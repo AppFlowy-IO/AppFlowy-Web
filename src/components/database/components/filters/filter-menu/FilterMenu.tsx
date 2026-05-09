@@ -9,6 +9,7 @@ import ChecklistFilterMenu from './ChecklistFilterMenu';
 import MultiSelectOptionFilterMenu from './MultiSelectOptionFilterMenu';
 import NumberFilterMenu from './NumberFilterMenu';
 import PersonFilterMenu from './PersonFilterMenu';
+import RelationFilterMenu from './RelationFilterMenu';
 import SingleSelectOptionFilterMenu from './SingleSelectOptionFilterMenu';
 import TextFilterMenu from './TextFilterMenu';
 
@@ -21,9 +22,10 @@ export function FilterMenu({ filter }: { filter: Filter }) {
     switch (fieldType) {
       case FieldType.RichText:
       case FieldType.URL:
-      case FieldType.Relation:
       case FieldType.Rollup:
         return <TextFilterMenu filter={filter} />;
+      case FieldType.Relation:
+        return <RelationFilterMenu filter={filter} />;
       case FieldType.Checkbox:
         return <CheckboxFilterMenu filter={filter} />;
       case FieldType.Checklist:

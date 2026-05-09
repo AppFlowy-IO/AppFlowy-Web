@@ -32,7 +32,10 @@ import { getCachedProviderDoc, openCollabDB } from '@/application/db';
 import { Log } from '@/utils/log';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
-import { dateFilterFillData, filterFillData } from '@/application/database-yjs/filter';
+import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { dateFilterFillData, filterFillData, relationFilterFillData } from '@/application/database-yjs/filter';
+import { applyRelationReciprocalInserts } from './relation';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { useDatabaseViewLayout, useCalendarLayoutSetting } from '@/application/database-yjs/selector';
@@ -295,7 +298,8 @@ export function useNewRowDispatch() {
   const isCalendar = layout === DatabaseViewLayout.Calendar;
   const calendarSetting = useCalendarLayoutSetting();
   const filters = currentView?.get(YjsDatabaseKey.filters);
-  const { navigateToRow } = useDatabaseContext();
+  const { navigateToRow, databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync } = useDatabaseContext();
+  const rowMap = useRowMap();
 
   return useCallback(
     async ({
@@ -335,6 +339,13 @@ export function useNewRowDispatch() {
       // see and complete the new row (its primary "Name" cell is always empty,
       // and other cells get pre-filled from filters but still need user input).
       let shouldOpenRowModal = filterArray.length > 0;
+      // Relation prefills are written synchronously in the transact below, but
+      // their reciprocal/back-link updates must run async after the row exists.
+      // Keyed by fieldId so multiple filters on the same relation field don't
+      // queue conflicting backfills — only the LAST filter's IDs survive in
+      // the cell (cells.set overwrites), and the reciprocal updates must
+      // mirror that final state, not every intermediate write.
+      const relationPrefills = new Map<FieldId, string[]>();
 
       rowDoc.transact(() => {
         initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
@@ -376,6 +387,38 @@ export function useNewRowDispatch() {
           } else if ([FieldType.CreatedTime, FieldType.LastEditedTime].includes(type)) {
             shouldOpenRowModal = true;
             return;
+          } else if (type === FieldType.Relation) {
+            const rowIds = relationFilterFillData(
+              String(filter.get(YjsDatabaseKey.content) ?? ''),
+              Number(filter.get(YjsDatabaseKey.condition))
+            );
+
+            if (!rowIds) {
+              return;
+            }
+
+            // Enforce source_limit synchronously so OneOnly relations don't
+            // silently end up with multiple linked rows when the filter has
+            // several values selected.
+            const typeOption = parseRelationTypeOption(field);
+            const limitedRowIds =
+              typeOption.source_limit === RelationLimit.OneOnly && rowIds.length > 1
+                ? [rowIds[rowIds.length - 1]]
+                : rowIds;
+
+            const data = new Y.Array<string>();
+
+            if (limitedRowIds.length > 0) {
+              data.push([...limitedRowIds]);
+              relationPrefills.set(fieldId, limitedRowIds);
+            } else {
+              // An earlier filter on this same field may have queued IDs;
+              // an empty later filter must clear that queue so the backfill
+              // doesn't write reciprocals to rows the source no longer links.
+              relationPrefills.delete(fieldId);
+            }
+
+            cell.set(YjsDatabaseKey.data, data);
           } else {
             const data = filterFillData(filter, field);
 
@@ -461,13 +504,49 @@ export function useNewRowDispatch() {
         'newRowDispatch'
       );
 
+      // Backfill reciprocal links for two-way relations seeded from filter prefills.
+      // Done after row creation so related row docs can be loaded asynchronously.
+      // Independent prefills on different fields are processed in parallel.
+      await Promise.all(
+        Array.from(relationPrefills, ([fieldId, rowIds]) =>
+          applyRelationReciprocalInserts({
+            sourceRowId: rowId,
+            sourceFieldId: fieldId,
+            insertedRowIds: rowIds,
+            database,
+            databaseDoc,
+            rowMap,
+            createRow,
+            loadView,
+            getViewIdFromDatabaseId,
+            bindViewSync,
+          })
+        )
+      );
+
       if (isCalendar && shouldOpenRowModal) {
         return null;
       }
 
       return rowId;
     },
-    [calendarSetting, createRow, currentView, database, filters, guid, isCalendar, navigateToRow, sharedRoot, viewId]
+    [
+      bindViewSync,
+      calendarSetting,
+      createRow,
+      currentView,
+      database,
+      databaseDoc,
+      filters,
+      getViewIdFromDatabaseId,
+      guid,
+      isCalendar,
+      loadView,
+      navigateToRow,
+      rowMap,
+      sharedRoot,
+      viewId,
+    ]
   );
 }
 
