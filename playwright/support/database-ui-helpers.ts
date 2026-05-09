@@ -3,6 +3,7 @@ import {
   AddPageSelectors,
   DatabaseGridSelectors,
   BoardSelectors,
+  FieldType,
   PageSelectors,
   PropertyMenuSelectors,
   GridFieldSelectors,
@@ -116,12 +117,28 @@ export async function addPropertyColumn(
   await trigger.click({ force: true });
   await page.waitForTimeout(1000);
   await PropertyMenuSelectors.propertyTypeOption(page, fieldType).click({ force: true });
-  await page.waitForTimeout(2000);
 
-  // Close menus
-  await page.keyboard.press('Escape');
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(1000);
+  if (fieldType === FieldType.Relation) {
+    // After commit ee602e8b, picking the Relation option opens
+    // RelationCreationDialog instead of switching directly. Auto-pick the
+    // first candidate database so this helper still produces a usable
+    // Relation column for tests that don't care which database it points to.
+    const dialog = page.getByTestId('relation-creation-dialog');
+
+    await expect(dialog).toBeVisible({ timeout: 15000 });
+    const firstCandidate = page.locator('[data-testid^="relation-candidate-"]').first();
+
+    await expect(firstCandidate).toBeVisible({ timeout: 15000 });
+    await firstCandidate.click({ force: true });
+    await page.getByTestId('modal-ok-button').last().click({ force: true });
+    await expect(dialog).toBeHidden({ timeout: 15000 });
+  } else {
+    await page.waitForTimeout(2000);
+    // Close menus
+    await page.keyboard.press('Escape');
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(1000);
+  }
 }
 
 /**

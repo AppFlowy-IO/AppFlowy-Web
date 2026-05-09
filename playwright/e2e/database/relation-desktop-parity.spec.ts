@@ -282,7 +282,10 @@ test.describe('Relation Desktop Parity BDD', () => {
 
     await test.step('Then the related database has the reciprocal field and backfilled link', async () => {
       await openGridDatabaseByPageId(page, ordersPageId);
-      await expectFieldHeaderContains(page, reciprocalFieldId, ordersName);
+      // The reciprocal field lives in orders db and points back to recipes,
+      // so its header renders "{fieldName}· {recipesName}" — checking for
+      // recipesName tells us the field exists and points the right direction.
+      await expectFieldHeaderContains(page, reciprocalFieldId, recipesName);
       await expectRelationCellText(page, reciprocalFieldId, 0, 'Pasta');
     });
   });
