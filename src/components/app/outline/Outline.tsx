@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
@@ -23,6 +23,9 @@ import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Log } from '@/utils/log';
+
+// Lazy: MUI Dialog + import-service (yjs / md parser) shouldn't sit in the Outline bundle.
+const ImportDialog = lazy(() => import('@/components/app/import/ImportDialog'));
 
 const AUTO_LOAD_RETRY_DELAY_MS = 15000;
 
@@ -64,6 +67,19 @@ export function Outline({ width }: { width: number }) {
       }
     | undefined
   >(undefined);
+  // Import dialog state lives here (not in ViewActionsPopover) because the
+  // popover is unmounted as soon as the dropdown closes — clicking the Import
+  // menu item closes the dropdown, which would otherwise tear down the dialog
+  // before it can render.
+  const [importTarget, setImportTarget] = useState<View | undefined>(undefined);
+  const handleImportClick = useCallback((view: View) => {
+    setImportTarget(view);
+  }, []);
+  const importLastChildId = importTarget?.children?.[importTarget.children.length - 1]?.view_id;
+  const handleImportOpenChange = useCallback((open: boolean) => {
+    if (!open) setImportTarget(undefined);
+  }, []);
+
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
   const autoLoadRetryAfterRef = useRef<Map<string, number>>(new Map());
   const validatingRestoreIdsRef = useRef<Set<string>>(new Set());
@@ -420,6 +436,7 @@ export function Outline({ width }: { width: number }) {
                 setMenuProps(undefined);
               }
             }}
+            onImportClick={handleImportClick}
           >
             <div
               style={{
@@ -435,6 +452,16 @@ export function Outline({ width }: { width: number }) {
           </ViewActionsPopover>,
           document.body
         )}
+      {importTarget && (
+        <Suspense fallback={null}>
+          <ImportDialog
+            open={Boolean(importTarget)}
+            parentViewId={importTarget.view_id}
+            prevViewId={importLastChildId}
+            onOpenChange={handleImportOpenChange}
+          />
+        </Suspense>
+      )}
     </>
   );
 }

@@ -425,6 +425,27 @@ export const AddPageSelectors = {
   addCalendarButton: (page: Page) => page.getByTestId('add-calendar-button'),
   addBoardButton: (page: Page) => page.getByTestId('add-board-button'),
   addAIChatButton: (page: Page) => page.getByTestId('add-ai-chat-button'),
+  addImportButton: (page: Page) => page.getByTestId('add-import-button'),
+};
+
+/**
+ * Export-As (PDF) selectors
+ */
+export const ExportSelectors = {
+  panel: (page: Page) => page.getByTestId('export-panel'),
+  pdfButton: (page: Page) => page.getByTestId('export-pdf-button'),
+  includeLinkedPagesSwitch: (page: Page) => page.getByTestId('export-include-linked-pages-switch'),
+};
+
+/**
+ * Import dialog selectors
+ */
+export const ImportSelectors = {
+  dialog: (page: Page) => page.getByTestId('import-dialog'),
+  markdownButton: (page: Page) => page.getByTestId('import-markdown'),
+  csvButton: (page: Page) => page.getByTestId('import-csv'),
+  markdownInput: (page: Page) => page.getByTestId('import-markdown-input'),
+  csvInput: (page: Page) => page.getByTestId('import-csv-input'),
 };
 
 /**
