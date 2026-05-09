@@ -15,6 +15,7 @@ import {
   parseSelectOptionTypeOptions,
   PersonFilter,
   PersonFilterCondition,
+  RelationFilterCondition,
   SelectOptionFilter,
   SelectOptionFilterCondition,
   TextFilter,
@@ -35,9 +36,11 @@ import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
+import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { FieldDisplay } from '@/components/database/components/field';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
+import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -239,7 +242,7 @@ function useConditionsForFieldType(
   return useMemo(() => {
     if (fieldType === null) return [];
 
-    const textTypes = [FieldType.RichText, FieldType.URL, FieldType.Relation, FieldType.Rollup];
+    const textTypes = [FieldType.RichText, FieldType.URL, FieldType.Rollup];
     const dateTypes = [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime];
     const selectTypes = [FieldType.SingleSelect, FieldType.MultiSelect];
 
@@ -253,6 +256,15 @@ function useConditionsForFieldType(
         { value: TextFilterCondition.TextIsNot, text: t('grid.textFilter.isNot') },
         { value: TextFilterCondition.TextIsEmpty, text: t('grid.textFilter.isEmpty') },
         { value: TextFilterCondition.TextIsNotEmpty, text: t('grid.textFilter.isNotEmpty') },
+      ];
+    }
+
+    if (fieldType === FieldType.Relation) {
+      return [
+        { value: RelationFilterCondition.RelationContains, text: t('grid.personFilter.contains') },
+        { value: RelationFilterCondition.RelationDoesNotContain, text: t('grid.personFilter.doesNotContain') },
+        { value: RelationFilterCondition.RelationIsEmpty, text: t('grid.personFilter.isEmpty') },
+        { value: RelationFilterCondition.RelationIsNotEmpty, text: t('grid.personFilter.isNotEmpty') },
       ];
     }
 
@@ -334,13 +346,17 @@ interface ValueInputProps {
 function ValueInput({ filter, fieldType, disabled }: ValueInputProps) {
   if (fieldType === null) return null;
 
-  const textTypes = [FieldType.RichText, FieldType.URL, FieldType.Relation, FieldType.Rollup];
+  const textTypes = [FieldType.RichText, FieldType.URL, FieldType.Rollup];
   const dateTypes = [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime];
   const selectTypes = [FieldType.SingleSelect, FieldType.MultiSelect];
 
   // Text/URL fields - editable text input
   if (textTypes.includes(fieldType)) {
     return <TextValueInput filter={filter as TextFilter} disabled={disabled} />;
+  }
+
+  if (fieldType === FieldType.Relation) {
+    return <RelationValueInput filter={filter} disabled={disabled} />;
   }
 
   // Number field - editable number input
@@ -416,6 +432,94 @@ function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: b
         disabled={disabled}
         data-testid='advanced-filter-text-input'
       />
+    </div>
+  );
+}
+
+function parseRelationFilterRowIds(content: string | undefined) {
+  if (!content) return [];
+
+  try {
+    const parsed = JSON.parse(content);
+
+    return Array.isArray(parsed) ? parsed.map((id) => String(id)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: boolean }) {
+  const { t } = useTranslation();
+  const updateFilter = useUpdateAdvancedFilter();
+  const [open, setOpen] = useState(false);
+  const showInput = useMemo(() => {
+    return [
+      RelationFilterCondition.RelationContains,
+      RelationFilterCondition.RelationDoesNotContain,
+    ].includes(filter.condition);
+  }, [filter.condition]);
+  const selectedRowIds = useMemo(() => parseRelationFilterRowIds(filter.content), [filter.content]);
+  const { loading, selectedView, relatedDatabaseId } = useRelationData(filter.fieldId, { enabled: showInput && open });
+
+  const updateSelectedRowIds = useCallback(
+    (rowIds: string[]) => {
+      updateFilter({
+        filterId: filter.id,
+        fieldId: filter.fieldId,
+        content: JSON.stringify(rowIds),
+      });
+    },
+    [filter.fieldId, filter.id, updateFilter]
+  );
+
+  const handleAddRelationRowId = useCallback(
+    (rowId: string) => {
+      if (selectedRowIds.includes(rowId)) return;
+      updateSelectedRowIds([...selectedRowIds, rowId]);
+    },
+    [selectedRowIds, updateSelectedRowIds]
+  );
+
+  const handleRemoveRelationRowId = useCallback(
+    (rowId: string) => {
+      updateSelectedRowIds(selectedRowIds.filter((id) => id !== rowId));
+    },
+    [selectedRowIds, updateSelectedRowIds]
+  );
+
+  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+
+  return (
+    <div className='min-w-0 flex-[3]'>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild disabled={disabled}>
+          <button
+            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            data-testid='advanced-filter-relation-input'
+          >
+            <span className={cn('truncate text-xs', selectedRowIds.length > 0 ? 'text-text-primary' : 'text-text-caption')}>
+              {selectedRowIds.length > 0 ? `${selectedRowIds.length} selected` : t('grid.settings.typeAValue')}
+            </span>
+            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align='start' className='w-[340px] p-1'>
+          {loading || !selectedView || !relatedDatabaseId ? (
+            <div className='flex min-h-[100px] items-center justify-center'>
+              {loading ? <Progress variant='primary' /> : t('grid.relation.inRelatedDatabase')}
+            </div>
+          ) : (
+            <RelationCellMenuContent
+              relationRowIds={selectedRowIds}
+              selectedView={selectedView}
+              relatedDatabaseId={relatedDatabaseId}
+              loading={loading}
+              onAddRelationRowId={handleAddRelationRowId}
+              onRemoveRelationRowId={handleRemoveRelationRowId}
+            />
+          )}
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }

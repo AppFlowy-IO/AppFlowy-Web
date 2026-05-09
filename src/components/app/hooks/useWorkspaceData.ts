@@ -18,7 +18,7 @@ import {
 } from '@/components/_shared/outline/mergeOutline';
 import { findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import { notification } from '@/proto/messages';
-import { createDeduplicatedNoArgsRequest } from '@/utils/deduplicateRequest';
+import { createDeduplicatedNoArgsRequest, createDeduplicatedRequest } from '@/utils/deduplicateRequest';
 import { Log } from '@/utils/log';
 
 import { useAuthInternal } from '../contexts/AuthInternalContext';
@@ -920,15 +920,20 @@ export function useWorkspaceData() {
     }
   }, [currentWorkspaceId, userWorkspaceInfo?.selectedWorkspace]);
 
-  // Load database relations (returns cached if available, fetches otherwise)
-  const loadDatabaseRelations = useCallback(async () => {
-    // Return cached data if already loaded to avoid unnecessary re-renders
-    if (workspaceDatabasesRef.current) {
-      return workspaceDatabasesRef.current;
-    }
+  // Load database relations (returns cached if available, fetches otherwise).
+  // Pass `{ refresh: true }` to bypass the cache — needed by flows like the
+  // relation creation dialog where a database created earlier in the session
+  // would otherwise be missing from the cached map.
+  const loadDatabaseRelations = useCallback(
+    async (options: { refresh?: boolean } = {}) => {
+      if (!options.refresh && workspaceDatabasesRef.current) {
+        return workspaceDatabasesRef.current;
+      }
 
-    return fetchAndUpdateDatabaseRelations(false);
-  }, [fetchAndUpdateDatabaseRelations]);
+      return fetchAndUpdateDatabaseRelations(false);
+    },
+    [fetchAndUpdateDatabaseRelations]
+  );
 
   // Refresh database relations in background (doesn't block, updates cache)
   const refreshDatabaseRelationsInBackground = useCallback(() => {
@@ -937,7 +942,9 @@ export function useWorkspaceData() {
   }, [fetchAndUpdateDatabaseRelations]);
 
   const enhancedLoadDatabaseRelations = useMemo(() => {
-    return createDeduplicatedNoArgsRequest(loadDatabaseRelations);
+    // `createDeduplicatedRequest` keys by argument JSON, so a `{ refresh: true }`
+    // call doesn't share a pending promise with cached `()` calls.
+    return createDeduplicatedRequest(loadDatabaseRelations);
   }, [loadDatabaseRelations]);
 
   // Load views based on variant

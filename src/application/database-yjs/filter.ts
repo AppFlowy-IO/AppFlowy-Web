@@ -174,6 +174,16 @@ function parseRelationFilterIds(content: string): string[] | null {
   return null;
 }
 
+export function relationFilterFillData(content: string, condition: number): RowId[] | null {
+  const normalized = normalizeRelationCondition(condition);
+
+  if (normalized !== RelationFilterCondition.RelationContains) {
+    return null;
+  }
+
+  return parseRelationFilterIds(content) ?? null;
+}
+
 function getRelationRowIds(cellData: unknown): string[] {
   if (!cellData) return [];
 
@@ -487,7 +497,22 @@ export function filterBy(
       const relationRowIds = parseRelationFilterIds(content);
 
       if (relationRowIds !== null) {
-        return relationFilterCheck(cellData, relationRowIds ?? [], condition);
+        return relationFilterCheck(cellData, relationRowIds, condition);
+      }
+
+      // Empty content on the new relation conditions (IsEmpty / IsNotEmpty /
+      // Contains / DoesNotContain) means "evaluate by relation row IDs";
+      // route to relationFilterCheck so it inspects cellRowIds. Falling
+      // through to textFilterCheck would either hide every row (DoesNotContain)
+      // or treat rows with relation IDs but blank/deleted titles as empty.
+      if (
+        !content.trim() &&
+        (condition === RelationFilterCondition.RelationIsEmpty ||
+          condition === RelationFilterCondition.RelationIsNotEmpty ||
+          condition === RelationFilterCondition.RelationContains ||
+          condition === RelationFilterCondition.RelationDoesNotContain)
+      ) {
+        return relationFilterCheck(cellData, [], condition);
       }
 
       return textFilterCheck(cellText, content, condition);
@@ -1114,10 +1139,14 @@ export function getDefaultFilterCondition(fieldType: FieldType) {
   switch (fieldType) {
     case FieldType.RichText:
     case FieldType.URL:
-    case FieldType.Relation:
     case FieldType.Rollup:
       return {
         condition: TextFilterCondition.TextContains,
+        content: '',
+      };
+    case FieldType.Relation:
+      return {
+        condition: RelationFilterCondition.RelationContains,
         content: '',
       };
     case FieldType.Checkbox:

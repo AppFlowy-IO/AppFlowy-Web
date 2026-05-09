@@ -40,7 +40,15 @@ const properties = [
 // Field types that are not yet supported on web
 const unsupportedFieldTypes = [FieldType.Rollup];
 
-export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; disabled?: boolean }) {
+export function PropertySelectTrigger({
+  fieldId,
+  disabled,
+  onRequestRelation,
+}: {
+  fieldId: string;
+  disabled?: boolean;
+  onRequestRelation?: () => void;
+}) {
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as unknown as FieldType;
   const { t } = useTranslation();
@@ -109,8 +117,15 @@ export function PropertySelectTrigger({ fieldId, disabled }: { fieldId: string; 
                       <DropdownMenuItem
                         data-testid={`property-type-option-${property}`}
                         onSelect={(e) => {
+                          if (property === FieldType.Relation) {
+                            e.preventDefault();
+                            setOpen(false);
+                            onRequestRelation?.();
+                            return;
+                          }
+
                           handleSelect(property);
-                          if ([FieldType.AITranslations, FieldType.Relation].includes(property)) {
+                          if ([FieldType.AITranslations].includes(property)) {
                             e.preventDefault();
                             setOpen(false);
                           }

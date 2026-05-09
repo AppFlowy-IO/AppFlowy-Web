@@ -96,7 +96,7 @@ export interface DatabaseContextState {
   deletePage?: (viewId: string) => Promise<void>;
   generateAISummaryForRow?: (payload: GenerateAISummaryRowPayload) => Promise<string>;
   generateAITranslateForRow?: (payload: GenerateAITranslateRowPayload) => Promise<string>;
-  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
   loadViews?: () => Promise<View[]>;
   uploadFile?: (file: File) => Promise<string>;
   loadDatabasePrompts?: LoadDatabasePrompts;
