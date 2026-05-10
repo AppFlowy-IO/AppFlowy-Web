@@ -452,6 +452,15 @@ const EMPTY_CHART_DATA: ChartDataItem[] = [];
 const EMPTY_ROW_ORDERS_GRACE_MS = 300;
 
 /**
+ * Cap on concurrent `ensureRow` calls. An unbounded `Promise.all` over a
+ * large database (5k+ rows) floods the WebSocket layer with messages, which
+ * surfaces a render-loop in `react-use-websocket`'s `setLastMessage` and
+ * stalls the main thread. A small worker pool keeps the pipeline saturated
+ * without the burst.
+ */
+const ROW_LOAD_CONCURRENCY = 16;
+
+/**
  * Hook for computing chart data from database rows. The transform is pure and
  * lives in `useMemo`, so React re-derives only when its inputs actually
  * change — no `useState` / `useEffect` / `setTimeout` round-trip.
@@ -513,16 +522,26 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
     const loadAll = async () => {
       // Only mark a row as loaded *after* `ensureRow` resolves — otherwise a
       // failed load would permanently skip the row on subsequent effect fires.
-      await Promise.all(
-        rowsToLoad.map(async (row) => {
+      let cursor = 0;
+      const worker = async () => {
+        while (!cancelled) {
+          const idx = cursor++;
+
+          if (idx >= rowsToLoad.length) return;
+          const row = rowsToLoad[idx];
+
           try {
             await ensureRow(row.id);
             loadedRowIdsRef.current.add(row.id);
           } catch (e) {
             console.error('chart: failed to load row', row.id, e);
           }
-        })
-      );
+        }
+      };
+
+      const workerCount = Math.min(ROW_LOAD_CONCURRENCY, rowsToLoad.length);
+
+      await Promise.all(Array.from({ length: workerCount }, worker));
 
       if (!cancelled) setRowsLoaded(true);
     };

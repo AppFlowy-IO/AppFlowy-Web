@@ -53,7 +53,7 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
   const broadcastChannel = useBroadcastChannel(`workspace:${currentWorkspaceId!}`);
 
   // Initialize sync context for collaborative editing
-  const { registerSyncContext, lastUpdatedCollab, flushAllSync, syncAllToServer, revertCollabVersion, scheduleDeferredCleanup } = useSync(
+  const { registerSyncContext, flushAllSync, syncAllToServer, revertCollabVersion, scheduleDeferredCleanup } = useSync(
     webSocket,
     broadcastChannel,
     eventEmitterRef.current,
@@ -387,12 +387,11 @@ export const AppSyncLayer: React.FC<AppSyncLayerProps> = ({ children }) => {
       revertCollabVersion,
       eventEmitter: eventEmitterRef.current,
       awarenessMap,
-      lastUpdatedCollab,
       flushAllSync,
       syncAllToServer,
       scheduleDeferredCleanup,
     }),
-    [webSocket, broadcastChannel, registerSyncContext, revertCollabVersion, awarenessMap, lastUpdatedCollab, flushAllSync, syncAllToServer, scheduleDeferredCleanup]
+    [webSocket, broadcastChannel, registerSyncContext, revertCollabVersion, awarenessMap, flushAllSync, syncAllToServer, scheduleDeferredCleanup]
   );
 
   return <SyncInternalContext.Provider value={syncContextValue}>{children}</SyncInternalContext.Provider>;

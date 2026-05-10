@@ -15,7 +15,7 @@ import { useWorkspaceNotifications } from './sync/useWorkspaceNotifications';
 import { SyncContextType } from './sync/types';
 
 // Re-export types so existing consumer import paths continue to work
-export type { RegisterSyncContext, UpdateCollabInfo, SyncContextType } from './sync/types';
+export type { RegisterSyncContext, SyncContextType } from './sync/types';
 
 /**
  * Central orchestrator hook for real-time collaborative editing.
@@ -116,13 +116,6 @@ export type { RegisterSyncContext, UpdateCollabInfo, SyncContextType } from './s
  *   - `MoreActionsContent.handleDuplicateClick()` — before duplicating a page, a
  *     blocking loader is shown while this runs
  *
- * ### `lastUpdatedCollab: UpdateCollabInfo | null`
- *
- * Reactive state that updates every time a collab message is applied — whether the
- * message arrived via WebSocket or BroadcastChannel. Contains `{ objectId,
- * collabType, publishedAt }`. Exposed through `SyncInternalContext` for consumers
- * that need to react when *any* collab document changes.
- *
  * ## Message flow (incoming)
  *
  * ```
@@ -210,7 +203,7 @@ export const useSync = (
   // Watches wsCollabMessage / bcCollabMessage and routes them through a per-objectId
   // sequential queue.  Handles version mismatch detection and triggers doc rebuild
   // (version-reset) when the server signals a new collab version.
-  const { lastUpdatedCollab, applyCollabMessage } = useCollabMessageHandler(
+  const { applyCollabMessage } = useCollabMessageHandler(
     refs,
     wsCollabMessage,
     bcCollabMessage,
@@ -238,5 +231,5 @@ export const useSync = (
     applyCollabMessage,
   });
 
-  return { registerSyncContext, lastUpdatedCollab, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
+  return { registerSyncContext, revertCollabVersion, flushAllSync, syncAllToServer, scheduleDeferredCleanup };
 };
