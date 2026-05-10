@@ -45,9 +45,7 @@ const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
 export function pageIdFromDocumentId(documentId: string): string {
   // If documentId is a valid UUID, use it directly as the namespace
   // Otherwise, generate a deterministic UUID from the string (same as document_id_from_any_string)
-  const docUuid = uuidValidate(documentId)
-    ? documentId
-    : uuidv5(documentId, UUID_NAMESPACE_OID);
+  const docUuid = uuidValidate(documentId) ? documentId : uuidv5(documentId, UUID_NAMESPACE_OID);
 
   // Generate page_id as UUID v5 with document_id as namespace and "page" as name
   const pageId = uuidv5('page', docUuid);
@@ -530,6 +528,23 @@ export function copyBlockText(sharedRoot: YSharedRoot, sourceBlock: YBlock, targ
   targetText.applyDelta(sourceText.toDelta());
 }
 
+function ensureTextForBlock(sharedRoot: YSharedRoot, block: YBlock) {
+  const blockId = block.get(YjsEditorKey.block_id);
+  let textId = block.get(YjsEditorKey.block_external_id);
+
+  if (!textId) {
+    textId = blockId;
+    block.set(YjsEditorKey.block_external_id, textId);
+    block.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
+  }
+
+  const textMap = getTextMap(sharedRoot);
+
+  if (!textMap.has(textId)) {
+    textMap.set(textId, new Y.Text());
+  }
+}
+
 export function prepareBreakOperation(sharedRoot: YSharedRoot, block: YBlock, offset: number) {
   const yText = getText(block.get(YjsEditorKey.block_external_id), sharedRoot);
   const ops = yText.toDelta() as Op[];
@@ -659,6 +674,18 @@ export function turnToBlock<T extends BlockData>(
   type: BlockType,
   data: T
 ) {
+  const sourceChildren = getChildrenArray(sourceBlock.get(YjsEditorKey.block_children), sharedRoot);
+  const canUpdateInPlace =
+    !isEmbedBlockTypes(type) && (CONTAINER_BLOCK_TYPES.includes(type) || !sourceChildren || sourceChildren.length === 0);
+
+  if (canUpdateInPlace) {
+    ensureTextForBlock(sharedRoot, sourceBlock);
+    sourceBlock.set(YjsEditorKey.block_type, type);
+    sourceBlock.set(YjsEditorKey.block_data, JSON.stringify(data));
+    extendNextSiblingsToToggleHeading(sharedRoot, sourceBlock);
+    return sourceBlock.get(YjsEditorKey.block_id);
+  }
+
   const newBlock = createBlock(sharedRoot, {
     ty: type,
     data,

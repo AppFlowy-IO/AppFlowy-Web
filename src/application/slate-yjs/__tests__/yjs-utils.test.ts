@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import * as Y from 'yjs';
 
-import {
-  pageIdFromDocumentId,
-  initializeDocumentStructure,
-  createEmptyDocument,
-} from '../utils/yjs';
+import { pageIdFromDocumentId, initializeDocumentStructure, createEmptyDocument, turnToBlock } from '../utils/yjs';
 import { YjsEditorKey, BlockType, YSharedRoot } from '@/application/types';
 
 describe('pageIdFromDocumentId', () => {
@@ -145,6 +141,36 @@ describe('initializeDocumentStructure', () => {
     const pageChildren = childrenMap.get(pageId);
     const paragraphId = pageChildren.get(0);
     expect(textMap.has(paragraphId)).toBe(true);
+  });
+
+  it('should turn text blocks in place without changing block or text ids', () => {
+    initializeDocumentStructure(doc, true);
+
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const document = sharedRoot.get(YjsEditorKey.document);
+    const pageId = document.get(YjsEditorKey.page_id);
+    const blocks = document.get(YjsEditorKey.blocks);
+    const meta = document.get(YjsEditorKey.meta);
+    const childrenMap = meta.get(YjsEditorKey.children_map);
+    const textMap = meta.get(YjsEditorKey.text_map);
+    const pageChildren = childrenMap.get(pageId);
+    const paragraphId = pageChildren.get(0);
+    const paragraphBlock = blocks.get(paragraphId);
+    const text = textMap.get(paragraphId);
+
+    text.applyDelta([{ insert: 'Hello AppFlowy' }]);
+
+    const newBlockId = turnToBlock(sharedRoot, paragraphBlock, BlockType.HeadingBlock, {
+      level: 2,
+    });
+
+    expect(newBlockId).toBe(paragraphId);
+    expect(blocks.get(paragraphId)).toBe(paragraphBlock);
+    expect(pageChildren.toArray()).toEqual([paragraphId]);
+    expect(paragraphBlock.get(YjsEditorKey.block_type)).toBe(BlockType.HeadingBlock);
+    expect(JSON.parse(paragraphBlock.get(YjsEditorKey.block_data))).toEqual({ level: 2 });
+    expect(paragraphBlock.get(YjsEditorKey.block_external_id)).toBe(paragraphId);
+    expect(textMap.get(paragraphId).toDelta()).toEqual([{ insert: 'Hello AppFlowy' }]);
   });
 });
 
