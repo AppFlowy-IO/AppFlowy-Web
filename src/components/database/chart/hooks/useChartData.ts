@@ -471,6 +471,20 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
   const rowMetas = useRowMap();
   const { ensureRow } = useDatabaseContext();
 
+  // Yjs mutates the `fields` Y.Map in place when fields are added, renamed,
+  // or have their type changed, so its reference identity is a stale
+  // dependency for downstream useMemos. Bump a clock on observed mutations
+  // to invalidate them.
+  const [fieldsClock, setFieldsClock] = useState(0);
+
+  useEffect(() => {
+    if (!fields) return;
+    const onChange = () => setFieldsClock((c) => c + 1);
+
+    fields.observeDeep(onChange);
+    return () => fields.unobserveDeep(onChange);
+  }, [fields]);
+
   // Stable string representation of the row order. Yjs often returns a fresh
   // array reference even when the contents are unchanged, so we depend on the
   // joined ids in effects instead of the array identity.
@@ -571,7 +585,8 @@ export function useChartData({ settings }: UseChartDataOptions): UseChartDataRet
       }
     });
     return result;
-  }, [fields]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fields, fieldsClock]);
 
   const hasGroupableFields = groupableFields.length > 0;
 
