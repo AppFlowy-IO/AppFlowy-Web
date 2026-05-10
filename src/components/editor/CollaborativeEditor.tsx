@@ -37,7 +37,12 @@ import { getTextCount } from '@/utils/word';
 }
 
 const defaultInitialValue: Descendant[] = [];
-const DATABASE_BLOCK_TYPES = new Set([BlockType.GridBlock, BlockType.BoardBlock, BlockType.CalendarBlock]);
+const DATABASE_BLOCK_TYPES = new Set([
+  BlockType.GridBlock,
+  BlockType.BoardBlock,
+  BlockType.CalendarBlock,
+  BlockType.ChartBlock,
+]);
 const DATABASE_VIEW_DELETION_GRACE_MS = 1500;
 
 type DatabaseBlockInfo = {

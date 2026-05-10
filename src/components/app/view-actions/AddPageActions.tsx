@@ -92,10 +92,10 @@ function AddPageActions({ view }: { view: View }) {
       {
         label: t('chart.menuName'),
         icon: <ViewIcon layout={ViewLayout.Chart} size={'small'} />,
-        disabled: true,
-        tooltip: t('common.desktopOnly'),
-        // eslint-disable-next-line @typescript-eslint/no-empty-function
-        onSelect: () => {},
+        testId: 'add-chart-button',
+        onSelect: () => {
+          void handleAddPage(ViewLayout.Chart, t('document.plugins.database.newDatabase'));
+        },
       },
       {
         label: t('list.menuName'),

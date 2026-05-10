@@ -5,6 +5,7 @@ const DATABASE_BLOCK_TYPES = new Set<string>([
   BlockType.GridBlock,
   BlockType.BoardBlock,
   BlockType.CalendarBlock,
+  BlockType.ChartBlock,
 ]);
 
 function nodeHasDatabaseBlock(node: unknown): boolean {
