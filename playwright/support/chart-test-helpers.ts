@@ -13,6 +13,44 @@ import {
 } from './selectors';
 
 /**
+ * Mock the billing endpoints so `useSubscriptionPlan` resolves `isPro = true`.
+ *
+ * Why: CI runs against a `localhost` backend, which is in `OFFICIAL_HOSTNAMES`
+ * (src/utils/subscription.ts), so `isAppFlowyHosted()` returns true and the
+ * real subscription fetch returns Free. That marks Line / Donut / Horizontal
+ * Bar as locked, replacing their accessible name with "<type> (Upgrade
+ * Required)" — which makes `getByRole('menuitem', { name: /^Line$/i })` miss.
+ * Mocking Pro keeps the chart-type rows clickable in tests.
+ */
+export async function mockProSubscription(page: Page): Promise<void> {
+  await page.route('**/billing/api/v1/active-subscription/**', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ code: 0, data: ['pro'], message: '' }),
+    });
+  });
+  await page.route('**/billing/api/v1/subscriptions', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        code: 0,
+        data: [
+          {
+            plan: 'pro',
+            currency: 'usd',
+            price_cents: 0,
+            recurring_interval: 'month',
+          },
+        ],
+        message: '',
+      }),
+    });
+  });
+}
+
+/**
  * Wait for the chart container and its inner Recharts SVG to be present.
  * Recharts renders an `.recharts-wrapper` once the chart sized.
  */

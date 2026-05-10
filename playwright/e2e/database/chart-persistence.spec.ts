@@ -11,6 +11,7 @@ import { expect, test } from '@playwright/test';
 
 import {
   addChartViewTab,
+  mockProSubscription,
   openChartSettings,
   selectAggregation,
   selectChartType,
@@ -35,6 +36,7 @@ test.describe('Chart settings — Persistence', () => {
     });
 
     await page.setViewportSize({ width: 1440, height: 900 });
+    await mockProSubscription(page);
   });
 
   test('chart type survives a page reload', async ({ page, request }) => {

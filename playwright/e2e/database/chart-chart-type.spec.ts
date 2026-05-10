@@ -18,6 +18,7 @@ import type { APIRequestContext, Page } from '@playwright/test';
 
 import {
   addChartViewTab,
+  mockProSubscription,
   openChartSettings,
   selectChartType,
   setSelectOptionOnRow,
@@ -54,6 +55,7 @@ test.describe('Chart settings — Chart type', () => {
     });
 
     await page.setViewportSize({ width: 1440, height: 900 });
+    await mockProSubscription(page);
   });
 
   test('defaults to Bar with the tick on Bar', async ({ page, request }) => {
