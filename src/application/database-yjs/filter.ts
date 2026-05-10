@@ -31,6 +31,7 @@ import {
 } from '@/application/database-yjs/fields';
 import { EnhancedBigStats } from '@/application/database-yjs/fields/number/EnhancedBigStats';
 import { parseCheckboxValue } from '@/application/database-yjs/fields/text/utils';
+import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
 import { Row } from '@/application/database-yjs/selector';
 import {
   RowId,
@@ -521,8 +522,13 @@ export function filterBy(
     switch (fieldType) {
       case FieldType.URL:
       case FieldType.RichText:
-      case FieldType.Rollup:
         return textFilterCheck(cellText, content, condition);
+      case FieldType.Rollup:
+        // Numeric rollups compare the calculated number; non-numeric rollups
+        // fall back to text matching against the joined-value rendering.
+        return isNumericRollupField(field)
+          ? numberFilterCheck(cellText, content, condition)
+          : textFilterCheck(cellText, content, condition);
       case FieldType.Time:
       case FieldType.Number:
         return numberFilterCheck(cellText, content, condition);
@@ -1135,15 +1141,21 @@ export function filterFillData(filter: YDatabaseFilter, field: YDatabaseField) {
   }
 }
 
-export function getDefaultFilterCondition(fieldType: FieldType) {
+export function getDefaultFilterCondition(fieldType: FieldType, field?: YDatabaseField) {
   switch (fieldType) {
     case FieldType.RichText:
     case FieldType.URL:
-    case FieldType.Rollup:
       return {
         condition: TextFilterCondition.TextContains,
         content: '',
       };
+    case FieldType.Rollup:
+      // Numeric rollups (Sum, Avg, Count, …) get number conditions; everything
+      // else falls back to text conditions because the rollup renders as a
+      // joined string of target values.
+      return isNumericRollupField(field)
+        ? { condition: NumberFilterCondition.Equal, content: '' }
+        : { condition: TextFilterCondition.TextContains, content: '' };
     case FieldType.Relation:
       return {
         condition: RelationFilterCondition.RelationContains,
@@ -1170,7 +1182,7 @@ export function getDefaultFilterCondition(fieldType: FieldType) {
     case FieldType.Number:
       return {
         condition: NumberFilterCondition.Equal,
-        value: '',
+        content: '',
       };
     case FieldType.Time:
       return {
