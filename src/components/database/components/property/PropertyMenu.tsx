@@ -141,9 +141,9 @@ function PropertyMenu({
         return <DataTimePropertyMenuContent {...props} enableInclusivitiesTime={true} />;
       case FieldType.Relation:
         return <RelationPropertyMenuContent {...props} />;
-      case FieldType.FileMedia:
+      case FieldType.Media:
         return <FileMediaPropertyMenuContent {...props} />;
-      case FieldType.AITranslations:
+      case FieldType.Translate:
         return <TranslatePropertyMenuContext {...props} />;
       case FieldType.Rollup:
         return <RollupPropertyMenuContent {...props} />;

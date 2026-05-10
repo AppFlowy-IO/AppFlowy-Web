@@ -52,7 +52,7 @@ export function parseYDatabaseCellToCell(cell: YDatabaseCell, field?: YDatabaseF
     }
   }
 
-  if (cellType === FieldType.FileMedia) {
+  if (cellType === FieldType.Media) {
     value = parseYDatabaseFileMediaCellToCell(cell);
   }
 
@@ -239,7 +239,7 @@ export function parseYDatabaseFileMediaCellToCell(cell: YDatabaseCell): FileMedi
     return {
       ...parseYDatabaseCommonCellToCell(cell),
       data: [],
-      fieldType: FieldType.FileMedia,
+      fieldType: FieldType.Media,
     } as FileMediaCell;
   }
 
@@ -249,7 +249,7 @@ export function parseYDatabaseFileMediaCellToCell(cell: YDatabaseCell): FileMedi
   return {
     ...parseYDatabaseCommonCellToCell(cell),
     data: dataJson,
-    fieldType: FieldType.FileMedia,
+    fieldType: FieldType.Media,
   };
 }
 

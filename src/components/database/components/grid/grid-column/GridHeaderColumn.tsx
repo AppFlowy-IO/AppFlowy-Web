@@ -31,7 +31,7 @@ export function GridHeaderColumn({
   const { isSticky } = useGridRowContext();
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
-  const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(type);
+  const isAIField = [FieldType.Summary, FieldType.Translate].includes(type);
   const isEditingDisabled = isFieldEditingDisabled(type);
   const isNewProperty = column.type === GridColumnType.NewProperty;
   const [menuOpen, setMenuOpen] = useState(false);

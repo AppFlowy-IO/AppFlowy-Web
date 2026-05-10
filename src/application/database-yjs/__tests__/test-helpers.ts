@@ -328,7 +328,7 @@ function safeJsonParse<T>(input: string): T | null {
 }
 
 function normalizeCellData(fieldType: FieldType, data: unknown): unknown {
-  if (fieldType === FieldType.FileMedia && Array.isArray(data)) {
+  if (fieldType === FieldType.Media && Array.isArray(data)) {
     const files = data.map((item) => (typeof item === 'string' ? item : JSON.stringify(item)));
     const yArray = new Y.Array<string>();
 
