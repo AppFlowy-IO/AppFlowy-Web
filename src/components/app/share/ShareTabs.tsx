@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as SuccessIcon } from '@/assets/icons/success.svg';
@@ -11,9 +11,13 @@ import { useCurrentUser } from '@/components/main/app.hooks';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
+// Lazy: only loaded when the user opens the Export tab.
+const ExportPanel = lazy(() => import('@/components/app/share/ExportPanel'));
+
 enum TabKey {
   SHARE = 'share',
   PUBLISH = 'publish',
+  EXPORT_AS = 'export_as',
   TEMPLATE = 'template',
 }
 
@@ -45,6 +49,11 @@ function ShareTabs({
         label: t('shareAction.publish'),
         icon: view?.is_published ? <SuccessIcon className={'mb-0 h-5 w-5 text-text-action'} /> : undefined,
         Panel: PublishPanel,
+      },
+      {
+        value: TabKey.EXPORT_AS,
+        label: t('shareAction.exportAsTab'),
+        Panel: ExportPanel,
       },
       currentUser?.email?.endsWith('appflowy.io') &&
         view?.is_published && {
@@ -93,12 +102,14 @@ function ShareTabs({
       <Separator className='my-0' />
       {options.map((option) => (
         <TabsContent key={option.value} value={option.value}>
-          <option.Panel
-            viewId={viewId}
-            onClose={onClose}
-            opened={opened}
-            onOpenPublishManage={onOpenPublishManage}
-          />
+          <Suspense fallback={null}>
+            <option.Panel
+              viewId={viewId}
+              onClose={onClose}
+              opened={opened}
+              onOpenPublishManage={onOpenPublishManage}
+            />
+          </Suspense>
         </TabsContent>
       ))}
     </Tabs>
