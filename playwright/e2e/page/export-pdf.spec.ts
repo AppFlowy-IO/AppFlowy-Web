@@ -77,13 +77,24 @@ test.describe('Feature: Export to PDF', () => {
   });
 
   test('Scenario: Clicking Export to PDF triggers a download', async ({ page, request }) => {
+    // The PDF endpoint is fully mocked here so the test doesn't depend on the
+    // CI backend having Typst/render configured. We assert the request shape
+    // (URL + query params) and that the client triggers a browser download
+    // from the response blob. Real PDF rendering is verified server-side.
     let exportRequestUrl: string | null = null;
+    const fakePdf = Buffer.from('%PDF-1.4\n%fake\n', 'utf-8');
 
-    await test.step('Given the request to /api/export/view/.../pdf is observable', async () => {
-      page.on('request', (req) => {
-        if (req.url().includes('/api/export/view/') && req.url().includes('/pdf')) {
-          exportRequestUrl = req.url();
-        }
+    await test.step('Given the PDF endpoint is mocked to return a tiny PDF with attachment headers', async () => {
+      await page.route(/\/api\/export\/view\/.*\/pdf(\?|$)/, (route) => {
+        exportRequestUrl = route.request().url();
+        route.fulfill({
+          status: 200,
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': 'attachment; filename="Getting started.pdf"',
+          },
+          body: fakePdf,
+        });
       });
     });
 
@@ -98,16 +109,15 @@ test.describe('Feature: Export to PDF', () => {
       await openSharePopover(page);
       await switchToExportAsTab(page);
 
-      const downloadPromise = page.waitForEvent('download', { timeout: 60000 });
+      const downloadPromise = page.waitForEvent('download', { timeout: 30000 });
 
       await ExportSelectors.pdfButton(page).click({ force: true });
       const download = await downloadPromise;
 
-      await test.step('Then the browser receives a non-empty PDF download', async () => {
+      await test.step('Then the browser receives a download with the server-suggested filename', async () => {
         const filename = download.suggestedFilename();
 
         expect(filename.length).toBeGreaterThan(0);
-        // Server returns application/pdf or application/zip (multi-page)
         expect(filename).toMatch(/\.(pdf|zip)$/i);
       });
     });
