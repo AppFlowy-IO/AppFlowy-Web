@@ -1,19 +1,21 @@
-import React, { useCallback, useMemo } from 'react';
+import { ReactNode, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { View, ViewLayout } from '@/application/types';
+import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { useAIEnabled, useAppOperations, useOpenPageModal, useToView } from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-function AddPageActions({ view }: { view: View }) {
+function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (view: View) => void }) {
   const { t } = useTranslation();
   const { addPage } = useAppOperations();
   const openPageModal = useOpenPageModal();
   const toView = useToView();
   const aiEnabled = useAIEnabled();
+  const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
 
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
@@ -23,8 +25,7 @@ function AddPageActions({ view }: { view: View }) {
       try {
         // Append after the last child so the new page appears at the bottom.
         // When prev_view_id is omitted the backend prepends (inserts at index 0).
-        const lastChild = view.children?.[view.children.length - 1];
-        const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChild?.view_id });
+        const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
 
         if (layout === ViewLayout.Document) {
           void openPageModal?.(response.view_id);
@@ -38,12 +39,12 @@ function AddPageActions({ view }: { view: View }) {
         toast.error(e.message);
       }
     },
-    [addPage, aiEnabled, openPageModal, t, toView, view.view_id, view.children]
+    [addPage, aiEnabled, openPageModal, t, toView, view.view_id, lastChildViewId]
   );
 
   const actions: {
     label: string;
-    icon: React.ReactNode;
+    icon: ReactNode;
     testId?: string;
     disabled?: boolean;
     tooltip?: string;
@@ -113,8 +114,16 @@ function AddPageActions({ view }: { view: View }) {
         // eslint-disable-next-line @typescript-eslint/no-empty-function
         onSelect: () => {},
       },
+      {
+        label: t('moreAction.import'),
+        icon: <UploadIcon className='h-5 w-5 text-icon-primary' />,
+        testId: 'add-import-button',
+        onSelect: () => {
+          onImportClick?.(view);
+        },
+      },
     ],
-    [aiEnabled, handleAddPage, t]
+    [aiEnabled, handleAddPage, t, onImportClick, view]
   );
 
   return (
@@ -137,9 +146,7 @@ function AddPageActions({ view }: { view: View }) {
             key={action.label}
             data-testid={action.testId}
             disabled={action.disabled}
-            onClick={() => {
-              action.onSelect();
-            }}
+            onClick={action.onSelect}
           >
             {action.icon}
             {action.label}

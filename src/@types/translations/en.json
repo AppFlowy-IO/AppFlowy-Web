@@ -165,6 +165,13 @@
     "unPublish": "Unpublish",
     "visitSite": "Visit site",
     "exportAsTab": "Export as",
+    "exportPdf": "Export to PDF",
+    "exportPdfExporting": "Exporting...",
+    "exportPdfDescription": "Download this page as a PDF",
+    "exportPdfIncludeLinkedPages": "Include linked pages",
+    "exportPdfIncludeLinkedPagesPro": "Pro plan required",
+    "exportPdfSuccess": "PDF downloaded",
+    "exportPdfError": "Failed to export PDF",
     "publishTab": "Publish",
     "shareTab": "Share",
     "publishOnAppFlowy": "Publish on AppFlowy",
@@ -239,12 +246,15 @@
     "syncedAtLabel": "Synced: "
   },
   "importPanel": {
+    "title": "Import",
     "textAndMarkdown": "Text & Markdown",
     "documentFromV010": "Document from v0.1.0",
     "databaseFromV010": "Database from v0.1.0",
     "notionZip": "Notion Exported Zip File",
     "csv": "CSV",
-    "database": "Database"
+    "database": "Database",
+    "success": "Imported successfully",
+    "failed": "Import failed"
   },
   "teamSpace": "Team space",
   "share": "Share",

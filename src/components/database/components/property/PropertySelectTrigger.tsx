@@ -23,7 +23,7 @@ const properties = [
   FieldType.SingleSelect,
   FieldType.MultiSelect,
   FieldType.DateTime,
-  FieldType.FileMedia,
+  FieldType.Media,
   FieldType.URL,
   FieldType.Checkbox,
   FieldType.Checklist,
@@ -31,14 +31,14 @@ const properties = [
   FieldType.CreatedTime,
   FieldType.Relation,
   FieldType.Rollup,
-  FieldType.AISummaries,
-  FieldType.AITranslations,
+  FieldType.Summary,
+  FieldType.Translate,
   FieldType.Person,
   FieldType.Time,
 ];
 
 // Field types that are not yet supported on web
-const unsupportedFieldTypes = [FieldType.Rollup];
+const unsupportedFieldTypes: FieldType[] = [];
 
 export function PropertySelectTrigger({
   fieldId,
@@ -81,9 +81,9 @@ export function PropertySelectTrigger({
       [FieldType.CreatedTime]: t('tooltip.createdAtField'),
       [FieldType.Relation]: t('tooltip.relationField'),
       [FieldType.Rollup]: t('tooltip.rollupField', { defaultValue: 'Rollup' }),
-      [FieldType.AISummaries]: t('tooltip.AISummaryField'),
-      [FieldType.AITranslations]: t('tooltip.AITranslateField'),
-      [FieldType.FileMedia]: t('tooltip.mediaField'),
+      [FieldType.Summary]: t('tooltip.AISummaryField'),
+      [FieldType.Translate]: t('tooltip.AITranslateField'),
+      [FieldType.Media]: t('tooltip.mediaField'),
       [FieldType.Person]: t('tooltip.personField'),
       [FieldType.Time]: t('tooltip.timeField'), // Added FieldType.Time tooltip
     };
@@ -125,7 +125,7 @@ export function PropertySelectTrigger({
                           }
 
                           handleSelect(property);
-                          if ([FieldType.AITranslations].includes(property)) {
+                          if ([FieldType.Translate].includes(property)) {
                             e.preventDefault();
                             setOpen(false);
                           }

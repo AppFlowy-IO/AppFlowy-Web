@@ -943,19 +943,19 @@ function createField(type: FieldType, fieldId: string) {
       return createSimpleField(FieldType.CreatedTime);
     case FieldType.Relation:
       return createRelationField(fieldId);
-    case FieldType.AISummaries:
-      return createSimpleField(FieldType.AISummaries, (typeOption) => {
+    case FieldType.Summary:
+      return createSimpleField(FieldType.Summary, (typeOption) => {
         typeOption.set(YjsDatabaseKey.auto_fill, false);
       });
-    case FieldType.AITranslations:
-      return createSimpleField(FieldType.AITranslations, (typeOption) => {
+    case FieldType.Translate:
+      return createSimpleField(FieldType.Translate, (typeOption) => {
         typeOption.set(YjsDatabaseKey.auto_fill, false);
         typeOption.set(YjsDatabaseKey.language, AITranslateLanguage.English);
       });
     case FieldType.Time:
       return createSimpleField(FieldType.Time);
-    case FieldType.FileMedia:
-      return createSimpleField(FieldType.FileMedia, (typeOption) => {
+    case FieldType.Media:
+      return createSimpleField(FieldType.Media, (typeOption) => {
         typeOption.set(
           YjsDatabaseKey.content,
           JSON.stringify({
@@ -2347,8 +2347,8 @@ export function useSwitchPropertyType() {
                 FieldType.DateTime,
                 FieldType.CreatedTime,
                 FieldType.LastEditedTime,
-                FieldType.FileMedia,
-                FieldType.AITranslations,
+                FieldType.Media,
+                FieldType.Translate,
                 FieldType.Rollup,
               ].includes(fieldType)
             ) {
@@ -2437,10 +2437,9 @@ export function useSwitchPropertyType() {
                   newTypeOption.set(YjsDatabaseKey.content, content);
                 } else if (fieldType === FieldType.URL) {
                   newTypeOption.set(YjsDatabaseKey.content, '');
-                } else if (fieldType === FieldType.AITranslations) {
+                } else if (fieldType === FieldType.Translate) {
                   newTypeOption.set(YjsDatabaseKey.language, AITranslateLanguage.English);
-                } else if (fieldType === FieldType.FileMedia) {
-                  // to FileMedia
+                } else if (fieldType === FieldType.Media) {
                   const content = JSON.stringify({
                     hide_file_names: true,
                   });
@@ -2611,14 +2610,14 @@ export function useUpdateTranslateLanguage(fieldId: string) {
               field.set(YjsDatabaseKey.type_option, typeOptionMap);
             }
 
-            const typeOption = typeOptionMap.get(String(FieldType.AITranslations));
+            const typeOption = typeOptionMap.get(String(FieldType.Translate));
 
             if (!typeOption) {
               const newTypeOption = new Y.Map() as YMapFieldTypeOption;
 
               newTypeOption.set(YjsDatabaseKey.language, language);
 
-              typeOptionMap.set(String(FieldType.AITranslations), newTypeOption);
+              typeOptionMap.set(String(FieldType.Translate), newTypeOption);
             } else {
               typeOption.set(YjsDatabaseKey.language, language);
             }
@@ -3424,7 +3423,7 @@ export function useAddFilter() {
 
             filter.set(YjsDatabaseKey.id, id);
             filter.set(YjsDatabaseKey.field_id, fieldId);
-            const conditionData = getDefaultFilterCondition(fieldType);
+            const conditionData = getDefaultFilterCondition(fieldType, field);
 
             if (!conditionData) {
               Log.warn('[useAddFilter] No default condition for fieldType:', fieldType);
@@ -3593,7 +3592,7 @@ export function useUpdateFileMediaTypeOption(fieldId: string) {
               field.set(YjsDatabaseKey.type_option, typeOptionMap);
             }
 
-            const typeOption = typeOptionMap.get(String(FieldType.FileMedia));
+            const typeOption = typeOptionMap.get(String(FieldType.Media));
 
             if (!typeOption) {
               const newTypeOption = new Y.Map() as YMapFieldTypeOption;
@@ -3604,7 +3603,7 @@ export function useUpdateFileMediaTypeOption(fieldId: string) {
                   hide_file_names: hideFileNames,
                 })
               );
-              typeOptionMap.set(String(FieldType.FileMedia), newTypeOption);
+              typeOptionMap.set(String(FieldType.Media), newTypeOption);
             } else {
               Log.debug('Updating file media type option', typeOption.toJSON());
               typeOption.set(
