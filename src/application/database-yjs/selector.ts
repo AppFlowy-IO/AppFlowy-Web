@@ -911,7 +911,25 @@ export function useGroup(groupId: string) {
 
       setFieldId(groupFieldId);
       const groupColumnsVisible = group.get(YjsDatabaseKey.groups);
-      const visibleArray = groupColumnsVisible?.toArray() || [];
+      const rawArray = groupColumnsVisible?.toArray() || [];
+      // Cloud serializes each inner group column as a Y.Map (id/visible
+      // keys), not a plain object literal — the array's type signature
+      // misrepresents this. Materialize to plain `GroupColumn`s so
+      // downstream consumers can read `.id` / `.visible` directly.
+      const visibleArray: GroupColumn[] = rawArray.map((item) => {
+        const maybeYMap = item as unknown as {
+          get?: (key: string) => unknown;
+        };
+
+        if (typeof maybeYMap.get === 'function') {
+          return {
+            id: String(maybeYMap.get('id') ?? ''),
+            visible: Boolean(maybeYMap.get('visible')),
+          };
+        }
+
+        return item as GroupColumn;
+      });
 
       setColumns(visibleArray);
     };
