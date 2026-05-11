@@ -151,6 +151,8 @@ export async function getAuthProviders(): Promise<AuthProvider[]> {
             return AuthProvider.MAGIC_LINK;
           case 'saml':
             return AuthProvider.SAML;
+          case 'oidc':
+            return AuthProvider.OIDC;
           case 'phone':
             return AuthProvider.PHONE;
           default:

@@ -1011,6 +1011,7 @@ export enum AuthProvider {
   PASSWORD = 'password',
   MAGIC_LINK = 'magic_link',
   SAML = 'saml',
+  OIDC = 'oidc',
   PHONE = 'phone',
   EMAIL = 'email',
 }

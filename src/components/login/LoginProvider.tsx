@@ -73,6 +73,11 @@ function LoginProvider({
         value: AuthProvider.SAML,
         Icon: SamlSvg,
       },
+      {
+        label: t('web.continueWithSaml'),
+        value: AuthProvider.OIDC,
+        Icon: SamlSvg,
+      },
     ],
     [t]
   );
@@ -107,7 +112,8 @@ function LoginProvider({
             await AuthService.signInDiscord({ redirectTo });
             break;
           case AuthProvider.SAML:
-            // Open SAML dialog to get user's email for domain identification
+          case AuthProvider.OIDC:
+            // Open SAML/OIDC dialog to get user's email for domain identification
             setSamlDialogOpen(true);
             return;
         }
