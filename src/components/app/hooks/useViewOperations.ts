@@ -371,6 +371,7 @@ export function useViewOperations() {
           case ViewLayout.Grid:
           case ViewLayout.Board:
           case ViewLayout.Calendar:
+          case ViewLayout.Chart:
             searchParams.set('r', blockId);
             break;
           default:

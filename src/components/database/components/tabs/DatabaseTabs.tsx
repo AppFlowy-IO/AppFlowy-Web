@@ -153,6 +153,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           ? ViewLayout.Board
           : databaseLayout === DatabaseViewLayout.Calendar
           ? ViewLayout.Calendar
+          : databaseLayout === DatabaseViewLayout.Chart
+          ? ViewLayout.Chart
           : ViewLayout.Grid;
 
       const name = databaseView.get(YjsDatabaseKey.name) || '';

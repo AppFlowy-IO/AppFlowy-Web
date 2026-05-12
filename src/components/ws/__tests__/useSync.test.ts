@@ -984,44 +984,6 @@ describe('useSync queue guards and dedupe', () => {
     errorSpy.mockRestore();
   });
 
-  it('updates lastUpdatedCollab with server timestamp', async () => {
-    const ws = createWs();
-    const bc = createBroadcastChannel();
-    const doc = createDoc('f4444444-4444-4444-8444-444444444444') as Y.Doc & { version?: string };
-    const version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b304';
-    const timestamp = Date.now();
-    doc.version = version;
-    const { result, rerender } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
-
-    act(() => {
-      result.current.registerSyncContext({ doc, collabType: Types.Document });
-    });
-
-    act(() => {
-      ws.lastMessage = {
-        collabMessage: {
-          objectId: doc.guid,
-          collabType: Types.Document,
-          update: {
-            version,
-            messageId: { timestamp, counter: 0 },
-          },
-        },
-      } as AppflowyWebSocketType['lastMessage'];
-      rerender();
-    });
-
-    await waitFor(() => {
-      expect(result.current.lastUpdatedCollab).not.toBeNull();
-    });
-    expect(result.current.lastUpdatedCollab).toEqual(
-      expect.objectContaining({
-        objectId: doc.guid,
-        collabType: Types.Document,
-      })
-    );
-    expect(result.current.lastUpdatedCollab?.publishedAt?.getTime()).toBe(timestamp);
-  });
 });
 
 describe('useSync revertCollabVersion', () => {

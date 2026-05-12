@@ -3748,7 +3748,51 @@
   "disconnected": "Disconnected from cloud. Reconnect to sync changes.",
   "reconnect": "Reconnect",
   "chart": {
-    "menuName": "Chart"
+    "menuName": "Chart",
+    "upgradeRequired": "Upgrade Required",
+    "upgradeToProForChartTypes": "Upgrade to Pro plan to use horizontal bar, line, and donut charts",
+    "barChart": "Bar",
+    "horizontalBarChart": "Horizontal Bar",
+    "lineChart": "Line",
+    "donutChart": "Donut",
+    "dateGrouping": {
+      "day": "Day",
+      "week": "Week",
+      "month": "Month",
+      "year": "Year",
+      "relative": "Relative"
+    },
+    "chartType": "Chart type",
+    "xAxis": "X-Axis",
+    "yAxis": "Y-Axis",
+    "aggregation": "Aggregation",
+    "showEmptyValues": "Show empty values",
+    "cumulative": "Cumulative",
+    "dateCondition": "Date grouping",
+    "noGroupableFields": "No groupable fields available",
+    "emptyState": {
+      "title": "No data to display",
+      "description": "Add rows with data to see the chart",
+      "noField": "No fields available for grouping",
+      "noFieldDescription": "Create a SingleSelect, MultiSelect, Checkbox or Date field to use the chart view."
+    },
+    "tooltip": {
+      "count": "Count",
+      "sum": "Sum",
+      "average": "Average",
+      "min": "Min",
+      "max": "Max",
+      "median": "Median",
+      "countValues": "Count values",
+      "rows": "{{count}} rows",
+      "clickToView": "Click to view data"
+    },
+    "drilldown": {
+      "title": "Rows in \"{{category}}\"",
+      "close": "Close",
+      "rowCount": "{{count}} rows",
+      "noRows": "No rows in this category"
+    }
   },
   "list": {
     "menuName": "List"

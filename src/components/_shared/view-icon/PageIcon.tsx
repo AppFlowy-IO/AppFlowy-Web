@@ -5,6 +5,7 @@ import { ViewIcon, ViewIconType, ViewLayout } from '@/application/types';
 import { ReactComponent as ChatSvg } from '@/assets/icons/ai_chat.svg';
 import { ReactComponent as BoardSvg } from '@/assets/icons/board.svg';
 import { ReactComponent as CalendarSvg } from '@/assets/icons/calendar.svg';
+import { ReactComponent as ChartSvg } from '@/assets/icons/chart.svg';
 import { ReactComponent as GridSvg } from '@/assets/icons/grid.svg';
 import { ReactComponent as DocumentSvg } from '@/assets/icons/page.svg';
 import { cn } from '@/lib/utils';
@@ -137,6 +138,8 @@ function PageIcon({
       return <BoardSvg className={className} />;
     case ViewLayout.Calendar:
       return <CalendarSvg className={className} />;
+    case ViewLayout.Chart:
+      return <ChartSvg className={className} />;
     case ViewLayout.Document:
       return <DocumentSvg className={className} />;
     default:

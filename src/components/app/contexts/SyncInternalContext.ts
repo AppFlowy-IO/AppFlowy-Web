@@ -6,7 +6,7 @@ import { Awareness } from 'y-protocols/awareness';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
 import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
-import { RegisterSyncContext, UpdateCollabInfo } from '@/components/ws/useSync';
+import { RegisterSyncContext } from '@/components/ws/useSync';
 
 // Internal context for synchronization layer
 // This context is only used within the app provider layers
@@ -17,7 +17,6 @@ export interface SyncInternalContextType {
   revertCollabVersion: (viewId: string, version: string) => Promise<void>;
   eventEmitter: EventEmitter;
   awarenessMap: Record<string, Awareness>;
-  lastUpdatedCollab: UpdateCollabInfo | null;
   /**
    * Flush all pending updates for all registered sync contexts.
    * This ensures all local changes are sent to the server before operations like duplicate.
