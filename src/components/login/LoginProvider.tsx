@@ -74,7 +74,7 @@ function LoginProvider({
         Icon: SamlSvg,
       },
       {
-        label: t('web.continueWithSaml'),
+        label: t('web.continueWithOidc'),
         value: AuthProvider.OIDC,
         Icon: SamlSvg,
       },
