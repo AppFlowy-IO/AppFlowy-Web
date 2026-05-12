@@ -117,7 +117,16 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   }, [outline, tabViewId, viewId]);
 
   // Initialize view operations
-  const { loadView, toView, awarenessMap, getViewIdFromDatabaseId, bindViewSync, getCollabHistory, previewCollabVersion } = useViewOperations();
+  const {
+    loadView,
+    toView,
+    awarenessMap,
+    getDatabaseIdForViewId,
+    getViewIdFromDatabaseId,
+    bindViewSync,
+    getCollabHistory,
+    previewCollabVersion,
+  } = useViewOperations();
 
   // Initialize row operations
   const { createRow } = useRowOperations();
@@ -147,6 +156,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     flushAllSync: syncContext.flushAllSync,
     syncAllToServer: syncContext.syncAllToServer,
     loadViewChildren,
+    getDatabaseIdForViewId,
   });
 
   // Check if current view has been deleted

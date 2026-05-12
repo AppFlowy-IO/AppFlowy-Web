@@ -35,12 +35,14 @@ export function usePageOperations({
   flushAllSync,
   syncAllToServer,
   loadViewChildren,
+  getDatabaseIdForViewId,
 }: {
   outlineRef: MutableRefObject<View[] | undefined>;
   loadOutline?: (workspaceId: string, force?: boolean) => Promise<void>;
   flushAllSync?: () => Promise<boolean>;
   syncAllToServer?: (workspaceId: string) => Promise<void>;
   loadViewChildren?: (viewId: string) => Promise<View[]>;
+  getDatabaseIdForViewId?: (viewId: string) => Promise<string | null | undefined>;
 }) {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
   const role = userWorkspaceInfo?.selectedWorkspace.role;
@@ -394,7 +396,8 @@ export function usePageOperations({
           }
         }
 
-        const data = await gatherDatabasePublishData(viewId, resolvedVisibleViewIds, view.extra?.database_id);
+        const databaseId = view.extra?.database_id ?? (await getDatabaseIdForViewId?.(viewId));
+        const data = await gatherDatabasePublishData(viewId, resolvedVisibleViewIds, databaseId);
 
         const toTimestamp = (s?: string) => {
           if (!s) return 0;
@@ -436,7 +439,7 @@ export function usePageOperations({
 
       await loadOutline?.(currentWorkspaceId, false);
     },
-    [currentWorkspaceId, loadOutline, flushAllSync, outlineRef]
+    [currentWorkspaceId, loadOutline, flushAllSync, outlineRef, getDatabaseIdForViewId]
   );
 
   // Unpublish view

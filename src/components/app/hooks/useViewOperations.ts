@@ -82,7 +82,7 @@ export function useViewOperations() {
     };
   }, [eventEmitter]);
 
-  const { resolveCollabObjectId, getViewIdFromDatabaseId } = useDatabaseIdentity({
+  const { resolveCollabObjectId, getDatabaseIdForViewId, getViewIdFromDatabaseId } = useDatabaseIdentity({
     currentWorkspaceId,
     databaseStorageId,
     registerSyncContext,
@@ -458,6 +458,7 @@ export function useViewOperations() {
     bindViewSync,
     toView,
     awarenessMap,
+    getDatabaseIdForViewId,
     getViewIdFromDatabaseId,
     getViewReadOnlyStatus: getViewReadOnlyStatusFromOutline,
     getCollabHistory,
