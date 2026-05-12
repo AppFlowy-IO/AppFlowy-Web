@@ -79,6 +79,11 @@ export interface Row {
   height: number;
 }
 
+function shouldLogDatabaseConditionPerformance() {
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') return false;
+  return typeof window !== 'undefined' && window.location.hostname === 'localhost';
+}
+
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
 /**
@@ -1170,6 +1175,8 @@ export function useRowOrdersSelector() {
   // Once filters have been applied successfully, don't revert to unfiltered
   // when rowDocsForConditions temporarily changes (e.g. new rows being added to rowMap).
   const filtersAppliedRef = useRef(false);
+  const conditionSignatureRef = useRef('');
+  const conditionComputeLogRef = useRef({ count: 0, lastLoggedAt: 0 });
 
   // Check if there are active conditions
   const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
@@ -1262,9 +1269,34 @@ export function useRowOrdersSelector() {
 
   // Main computation: apply sorts and filters to row orders
   const onConditionsChange = useCallback(() => {
+    const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
+    const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
     const originalRowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON();
 
     if (!originalRowOrders) return;
+
+    const logConditionCompute = (readyRows: number, outputRows?: number) => {
+      if (!shouldLogConditionCompute) return;
+
+      const durationMs = performance.now() - computeStartedAt;
+      const logState = conditionComputeLogRef.current;
+      const now = performance.now();
+      const shouldLog = durationMs > 16 || now - logState.lastLoggedAt > 1000;
+
+      logState.count += 1;
+      if (!shouldLog) return;
+
+      logState.lastLoggedAt = now;
+      console.debug('[Database] row conditions computed', {
+        computeCount: logState.count,
+        durationMs: Math.round(durationMs),
+        totalRows: originalRowOrders.length,
+        readyRows,
+        outputRows,
+        filters: filters?.length ?? 0,
+        sorts: sorts?.length ?? 0,
+      });
+    };
 
     // Read current filter/sort state directly from Yjs refs instead of the
     // closed-over `hasConditions`.  The Yjs YArray references are stable but
@@ -1272,25 +1304,37 @@ export function useRowOrdersSelector() {
     // a stale-closure problem when the callback is invoked by a Yjs observer
     // before React has re-rendered (e.g. remote filter/sort sync from desktop).
     const currentHasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
+    const conditionSignature = currentHasConditions
+      ? JSON.stringify({
+        filters: filters?.toJSON?.() ?? [],
+        sorts: sorts?.toJSON?.() ?? [],
+      })
+      : '';
+
+    if (conditionSignatureRef.current !== conditionSignature) {
+      conditionSignatureRef.current = conditionSignature;
+      filtersAppliedRef.current = false;
+    }
 
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
       setRowOrders(originalRowOrders);
+      logConditionCompute(originalRowOrders.length, originalRowOrders.length);
 
       return;
     }
 
-    // Apply filters/sorts progressively to the subset whose row docs are ready.
-    // This never renders raw unfiltered rows, but it allows matching rows to
-    // appear as soon as their cells can be evaluated instead of waiting for the
-    // entire database to finish loading.
     const rowsWithDocs = originalRowOrders.filter((row: Row) => hasRowConditionData(rowDocsForConditions[row.id]));
 
-    if (rowsWithDocs.length === 0) {
+    // Keep conditioned views in an explicit loading state until every row can
+    // be evaluated. Otherwise an early zero-match partial result renders as a
+    // blank grid, which looks like the database finished with no rows.
+    if (rowsWithDocs.length < originalRowOrders.length) {
       if (!filtersAppliedRef.current) {
         setRowOrders(undefined);
       }
 
+      logConditionCompute(rowsWithDocs.length);
       return;
     }
 
@@ -1310,8 +1354,11 @@ export function useRowOrdersSelector() {
       });
     }
 
+    const nextRowOrders = computedRowOrders ?? rowsWithDocs;
+
     filtersAppliedRef.current = true;
-    setRowOrders(computedRowOrders ?? rowsWithDocs);
+    setRowOrders(nextRowOrders);
+    logConditionCompute(rowsWithDocs.length, nextRowOrders.length);
   }, [
     fields,
     filters,

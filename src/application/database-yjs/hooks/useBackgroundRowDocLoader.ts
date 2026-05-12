@@ -1,31 +1,83 @@
 import { startTransition, useCallback, useEffect, useMemo, useSyncExternalStore } from 'react';
+import * as Y from 'yjs';
 
 import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { openCollabDBWithProvider } from '@/application/db';
 import { YDoc, YjsDatabaseKey } from '@/application/types';
 
 const BACKGROUND_BATCH_SIZE = 24;
 const BACKGROUND_CONCURRENCY = 12;
-const SEED_HYDRATE_BATCH_SIZE = 32;
+const SEED_HYDRATE_BATCH_SIZE = 128;
 
 type RowDocMap = Record<string, YDoc>;
 
 const pendingEphemeralRowDocs = new Map<string, Promise<YDoc>>();
 const retainedEphemeralRowDocs = new WeakMap<YDoc, number>();
 
+function openIndexedDB(name: string) {
+  return new Promise<IDBDatabase>((resolve, reject) => {
+    const request = indexedDB.open(name);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+
+      if (!db.objectStoreNames.contains('updates')) {
+        db.createObjectStore('updates', { autoIncrement: true });
+      }
+
+      if (!db.objectStoreNames.contains('custom')) {
+        db.createObjectStore('custom');
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error(`Failed to open IndexedDB database: ${name}`));
+    request.onblocked = () => reject(new Error(`Opening IndexedDB database was blocked: ${name}`));
+  });
+}
+
+function getAllStoreValues<T>(db: IDBDatabase, storeName: string) {
+  return new Promise<T[]>((resolve, reject) => {
+    if (!db.objectStoreNames.contains(storeName)) {
+      resolve([]);
+      return;
+    }
+
+    const transaction = db.transaction(storeName, 'readonly');
+    const request = transaction.objectStore(storeName).getAll();
+
+    request.onsuccess = () => resolve(request.result as T[]);
+    request.onerror = () => reject(request.error ?? new Error(`Failed to read IndexedDB store: ${storeName}`));
+    transaction.onerror = () => reject(transaction.error ?? new Error(`IndexedDB transaction failed: ${storeName}`));
+  });
+}
+
+async function openReadOnlyRowDoc(rowKey: string) {
+  const db = await openIndexedDB(rowKey);
+
+  try {
+    const updates = await getAllStoreValues<Uint8Array>(db, 'updates');
+    const doc = new Y.Doc({ guid: rowKey }) as YDoc;
+
+    Y.transact(doc, () => {
+      updates.forEach((update) => {
+        Y.applyUpdate(doc, update);
+      });
+    }, null, false);
+
+    return doc;
+  } finally {
+    db.close();
+  }
+}
+
 function openEphemeralRowDoc(rowKey: string) {
   const pending = pendingEphemeralRowDocs.get(rowKey);
 
   if (pending) return pending;
 
-  const promise = (async () => {
-    const { doc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
-
-    await provider.destroy();
-    return doc;
-  })();
+  const promise = openReadOnlyRowDoc(rowKey);
 
   pendingEphemeralRowDocs.set(rowKey, promise);
   promise.finally(() => {

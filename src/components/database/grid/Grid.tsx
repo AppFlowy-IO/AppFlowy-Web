@@ -8,18 +8,18 @@ import { GridProvider } from '@/components/database/grid/GridProvider';
 export function Grid() {
   const { fields } = useRenderFields();
   const viewId = useDatabaseViewId();
-  const rows = useRowOrdersSelector();
+  const rowOrders = useRowOrdersSelector();
 
   const { onRendered } = useDatabaseContext();
 
   useEffect(() => {
-    if (fields && rows !== undefined) {
+    if (fields && rowOrders !== undefined) {
       onRendered?.();
     }
-  }, [fields, rows, onRendered]);
+  }, [fields, rowOrders, onRendered]);
 
   return (
-    <GridProvider>
+    <GridProvider rowOrders={rowOrders}>
       <div
         data-testid='database-grid'
         className={`database-grid relative grid-table-${viewId} flex w-full flex-1 flex-col`}

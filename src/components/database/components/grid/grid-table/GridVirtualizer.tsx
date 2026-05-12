@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
+import { PADDING_END, useDatabaseContext, useDatabaseView } from '@/application/database-yjs';
+import { YjsDatabaseKey } from '@/application/types';
+import LoadingDots from '@/components/_shared/LoadingDots';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRowType } from '@/components/database/components/grid/grid-row';
@@ -20,6 +22,8 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { rows: data, resizeRows, onResizeRowEnd } = useGridContext();
   const { handleResizeStart, isResizing } = useColumnResize(columns);
   const { isDocumentBlock, paddingEnd } = useDatabaseContext();
+  const view = useDatabaseView();
+  const hasConditions = (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0 || (view?.get(YjsDatabaseKey.filters)?.length ?? 0) > 0;
 
   const { parentRef, virtualizer, columnVirtualizer, scrollMarginTop, isReady } = useGridVirtualizer({
     data,
@@ -29,6 +33,9 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const rowItems = virtualizer.getVirtualItems();
   const columnItems = columnVirtualizer.getVirtualItems();
   const totalSize = columnVirtualizer.getTotalSize();
+  const hasRegularRows = data.some((row) => row.type === RenderRowType.Row);
+  const hasPlaceholderRow = data.some((row) => row.type === RenderRowType.PlaceholderRow);
+  const showEmptyBodyLoading = hasConditions && !hasRegularRows && !hasPlaceholderRow;
 
   const contextValue = useGridDnd(columns, virtualizer, columnVirtualizer);
   const bottomScrollbarRef = useRef<HTMLDivElement>(null);
@@ -174,6 +181,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
           {rowItems.map((row) => {
             const rowData = data[row.index];
             const rowId = rowData.rowId;
+            const isPlaceholderRow = rowData.type === RenderRowType.PlaceholderRow;
 
             return (
               <div
@@ -189,7 +197,19 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   display: 'flex',
                 }}
               >
-                {rowData.type === RenderRowType.NewRow ? (
+                {isPlaceholderRow ? (
+                  <div
+                    className={'flex min-h-[240px] items-center justify-center'}
+                    role={'status'}
+                    style={{
+                      paddingLeft: columnItems[0]?.start,
+                      paddingRight: isDocumentBlock ? 0 : PADDING_INLINE,
+                      width: totalSize - (paddingEnd ?? 0),
+                    }}
+                  >
+                    <LoadingDots className={'flex items-center justify-center opacity-80'} />
+                  </div>
+                ) : rowData.type === RenderRowType.NewRow ? (
                   <div
                     style={{
                       paddingLeft: columnItems[0]?.start,
@@ -212,6 +232,21 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
               </div>
             );
           })}
+          {showEmptyBodyLoading && (
+            <div
+              className={'absolute flex min-h-[240px] items-center justify-center'}
+              role={'status'}
+              style={{
+                top: 36,
+                left: 0,
+                paddingLeft: columnItems[0]?.start,
+                paddingRight: isDocumentBlock ? 0 : PADDING_INLINE,
+                width: totalSize - (paddingEnd ?? 0),
+              }}
+            >
+              <LoadingDots className={'flex items-center justify-center opacity-80'} />
+            </div>
+          )}
         </div>
         {!isDocumentBlock && (
           <DatabaseStickyTopOverlay>

@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { Row } from '@/application/database-yjs';
 import { RenderRow, useRenderRows } from '@/components/database/components/grid/grid-row';
 import { GridContext } from '@/components/database/grid/useGridContext';
 
-export const GridProvider = ({ children }: { children: React.ReactNode }) => {
+export const GridProvider = ({ children, rowOrders }: { children: React.ReactNode; rowOrders?: Row[] }) => {
   const [hoverRowId, setHoverRowId] = useState<string | undefined>();
   const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
-  const { rows: initialRows } = useRenderRows();
+  const { rows: initialRows } = useRenderRows(rowOrders);
   const [rows, setRows] = useState<RenderRow[]>(initialRows);
   const [resizeRows, setResizeRows] = useState<Map<string, number>>(new Map());
 
