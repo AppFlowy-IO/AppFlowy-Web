@@ -23,11 +23,11 @@ export function useRenderRows (rows?: Row[]) {
       {
         type: RenderRowType.Header,
       },
-      !readOnly && {
-        type: RenderRowType.NewRow,
-      },
       {
         type: RenderRowType.PlaceholderRow,
+      },
+      !readOnly && {
+        type: RenderRowType.NewRow,
       },
     ].filter(Boolean) as RenderRow[];
 

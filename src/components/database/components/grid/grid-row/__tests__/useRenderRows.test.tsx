@@ -23,15 +23,15 @@ function createWrapper() {
 }
 
 describe('useRenderRows', () => {
-  it('keeps the new-row control available while rows are loading', () => {
+  it('renders the loading placeholder above the new-row control while rows are loading', () => {
     const { result } = renderHook(() => useRenderRows(undefined), {
       wrapper: createWrapper(),
     });
 
     expect(result.current.rows.map((row) => row.type)).toEqual([
       RenderRowType.Header,
-      RenderRowType.NewRow,
       RenderRowType.PlaceholderRow,
+      RenderRowType.NewRow,
     ]);
   });
 
