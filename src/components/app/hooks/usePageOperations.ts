@@ -394,7 +394,7 @@ export function usePageOperations({
           }
         }
 
-        const data = await gatherDatabasePublishData(viewId, resolvedVisibleViewIds);
+        const data = await gatherDatabasePublishData(viewId, resolvedVisibleViewIds, view.extra?.database_id);
 
         const toTimestamp = (s?: string) => {
           if (!s) return 0;

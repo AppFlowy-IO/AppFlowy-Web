@@ -956,7 +956,16 @@ export interface PublishViewMetaData {
 export type AppendBreadcrumb = (view?: View) => void;
 
 export type CreateRow = (rowKey: string) => Promise<YDoc>;
-export type LoadView = (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc>;
+export interface LoadViewOptions {
+  databaseId?: string | null;
+}
+
+export type LoadView = (
+  viewId: string,
+  isSubDocument?: boolean,
+  loadAwareness?: boolean,
+  options?: LoadViewOptions
+) => Promise<YDoc>;
 
 export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
 
