@@ -51,8 +51,10 @@ import {
   YDatabaseCell,
   YDatabaseChartLayoutSetting,
   YDatabaseField,
+  YDatabaseFilters,
   YDatabaseMetas,
   YDatabaseRow,
+  YDatabaseSorts,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
@@ -82,6 +84,17 @@ export interface Row {
 function shouldLogDatabaseConditionPerformance() {
   if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') return false;
   return typeof window !== 'undefined' && window.location.hostname === 'localhost';
+}
+
+function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilters) {
+  const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
+
+  if (!hasConditions) return '';
+
+  return JSON.stringify({
+    filters: filters?.toJSON?.() ?? [],
+    sorts: sorts?.toJSON?.() ?? [],
+  });
 }
 
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
@@ -1170,7 +1183,10 @@ export function useRowOrdersSelector() {
   const database = useDatabase();
   const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
 
-  const [rowOrders, setRowOrders] = useState<Row[]>();
+  const [rowOrdersState, setRowOrdersState] = useState<{
+    rows?: Row[];
+    conditionSignature: string;
+  }>({ conditionSignature: '' });
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
   // Once filters have been applied successfully, don't revert to unfiltered
   // when rowDocsForConditions temporarily changes (e.g. new rows being added to rowMap).
@@ -1303,13 +1319,8 @@ export function useRowOrdersSelector() {
     // their `.length` always reflects the live document state, so this avoids
     // a stale-closure problem when the callback is invoked by a Yjs observer
     // before React has re-rendered (e.g. remote filter/sort sync from desktop).
-    const currentHasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
-    const conditionSignature = currentHasConditions
-      ? JSON.stringify({
-        filters: filters?.toJSON?.() ?? [],
-        sorts: sorts?.toJSON?.() ?? [],
-      })
-      : '';
+    const conditionSignature = getConditionSignature(sorts, filters);
+    const currentHasConditions = conditionSignature !== '';
 
     if (conditionSignatureRef.current !== conditionSignature) {
       conditionSignatureRef.current = conditionSignature;
@@ -1318,7 +1329,7 @@ export function useRowOrdersSelector() {
 
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
-      setRowOrders(originalRowOrders);
+      setRowOrdersState({ rows: originalRowOrders, conditionSignature });
       logConditionCompute(originalRowOrders.length, originalRowOrders.length);
 
       return;
@@ -1331,7 +1342,7 @@ export function useRowOrdersSelector() {
     // blank grid, which looks like the database finished with no rows.
     if (rowsWithDocs.length < originalRowOrders.length) {
       if (!filtersAppliedRef.current) {
-        setRowOrders(undefined);
+        setRowOrdersState({ rows: undefined, conditionSignature });
       }
 
       logConditionCompute(rowsWithDocs.length);
@@ -1357,7 +1368,7 @@ export function useRowOrdersSelector() {
     const nextRowOrders = computedRowOrders ?? rowsWithDocs;
 
     filtersAppliedRef.current = true;
-    setRowOrders(nextRowOrders);
+    setRowOrdersState({ rows: nextRowOrders, conditionSignature });
     logConditionCompute(rowsWithDocs.length, nextRowOrders.length);
   }, [
     fields,
@@ -1420,6 +1431,14 @@ export function useRowOrdersSelector() {
     };
 
     const handleSortFilterChange = () => {
+      const conditionSignature = getConditionSignature(sorts, filters);
+
+      if (conditionSignatureRef.current !== conditionSignature) {
+        conditionSignatureRef.current = conditionSignature;
+        filtersAppliedRef.current = false;
+        setRowOrdersState({ rows: undefined, conditionSignature });
+      }
+
       debouncedChange();
     };
 
@@ -1487,7 +1506,9 @@ export function useRowOrdersSelector() {
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);
 
-  return rowOrders;
+  const liveConditionSignature = getConditionSignature(sorts, filters);
+
+  return rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
 }
 
 export function useRowDataSelector(rowId: string) {
