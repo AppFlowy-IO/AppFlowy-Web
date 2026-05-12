@@ -1274,10 +1274,13 @@ export function useRowOrdersSelector() {
               if (!hasRowConditionData(seededDoc)) {
                 const ensuredDoc = await ensureRow?.(rowId);
                 const ensuredHasConditionData = ensuredDoc ? hasRowConditionData(ensuredDoc) : false;
+                // An opened row doc can still receive its row data from sync; don't settle it as unavailable yet.
+                const rowDocOpenedForHydration = Boolean(seededDoc || ensuredDoc);
 
                 if (
                   conditionSignatureRef.current === requestConditionSignature &&
                   !ensuredHasConditionData &&
+                  !rowDocOpenedForHydration &&
                   !hasRowConditionData(rowDocsForConditionsRef.current[rowId])
                 ) {
                   markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
@@ -1520,11 +1523,12 @@ export function useRowOrdersSelector() {
 
     const handleSortFilterChange = () => {
       const conditionSignature = getConditionSignature(sorts, filters);
+      const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
 
-      if (conditionSignatureRef.current !== conditionSignature) {
-        conditionSignatureRef.current = conditionSignature;
+      if (conditionSignatureRef.current !== conditionStateKey) {
+        conditionSignatureRef.current = conditionStateKey;
         filtersAppliedRef.current = false;
-        setRowOrdersState({ rows: undefined, conditionSignature });
+        setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
       }
 
       debouncedChange();
@@ -1589,7 +1593,7 @@ export function useRowOrdersSelector() {
         }
       });
     };
-  }, [onConditionsChange, view, fields, filters, sorts, rows]);
+  }, [onConditionsChange, view, fields, filters, sorts, rows, viewId]);
 
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);

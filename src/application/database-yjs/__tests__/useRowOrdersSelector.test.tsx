@@ -228,4 +228,48 @@ describe('useRowOrdersSelector', () => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-b']);
     });
   });
+
+  it('keeps a conditioned view loading while an opened row doc is still hydrating', async () => {
+    const fixture = createDatabaseFixture();
+    const emptyRowDoc = new Y.Doc() as unknown as YDoc;
+    const ensureRow = jest.fn(async () => emptyRowDoc);
+
+    fixture.rowMap['row-a'] = emptyRowDoc;
+
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture, { ensureRow }),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.filters.push([createTextFilter('match')]);
+    });
+
+    expect(result.current).toBeUndefined();
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(ensureRow).toHaveBeenCalledWith('row-a');
+      expect(result.current).toBeUndefined();
+    });
+
+    const hydratedRowDoc = createRowDoc('row-a', databaseId, {
+      [fieldId]: createCell(FieldType.RichText, 'match first'),
+    });
+
+    act(() => {
+      Y.applyUpdate(emptyRowDoc, Y.encodeStateAsUpdate(hydratedRowDoc));
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+    });
+  });
 });

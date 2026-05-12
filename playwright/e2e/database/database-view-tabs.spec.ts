@@ -305,6 +305,19 @@ test.describe('Database View Tabs', () => {
       });
       await expectGridSettled(page);
     });
+
+    await test.step('When switching back to the filtered first tab', async () => {
+      await DatabaseViewSelectors.viewTab(page, firstGridViewId).click({ force: true });
+    });
+
+    await test.step('Then the filtered rows render again without settling as an empty grid', async () => {
+      await expect(DatabaseViewSelectors.viewTab(page, firstGridViewId)).toHaveAttribute('data-state', 'active', {
+        timeout: 10000,
+      });
+      await expect(DatabaseFilterSelectors.filterCondition(page)).toBeVisible({ timeout: 10000 });
+      await assertRowCount(page, 1);
+      await expectGridSettled(page);
+    });
   });
 
   test('breadcrumb shows active database tab view', async ({ page, request }) => {
