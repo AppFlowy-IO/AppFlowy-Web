@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 
 import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
-import LoadingDots from '@/components/_shared/LoadingDots';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRowType } from '@/components/database/components/grid/grid-row';
@@ -16,6 +15,24 @@ import DatabaseStickyTopOverlay from '@/components/database/components/sticky-ov
 import { useGridContext } from '@/components/database/grid/useGridContext';
 
 import { useColumnResize } from '../grid-column/useColumnResize';
+
+const GRID_LOADING_DOT_COLORS = ['#00b5ff', '#e3006d', '#f7931e'] as const;
+
+const gridLoadingDots = (
+  <div className={'flex h-full items-center gap-1.5'}>
+    {GRID_LOADING_DOT_COLORS.map((color, index) => (
+      <span
+        key={color}
+        className={'h-1.5 w-1.5 animate-bounce rounded-full'}
+        style={{
+          animationDelay: `${index * 120}ms`,
+          animationDuration: '900ms',
+          backgroundColor: color,
+        }}
+      />
+    ))}
+  </div>
+);
 
 function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { rows: data, resizeRows, onResizeRowEnd } = useGridContext();
@@ -189,21 +206,19 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   left: 0,
                   transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
                   display: 'flex',
+                  right: isPlaceholderRow ? 0 : undefined,
                   pointerEvents: isPlaceholderRow ? 'none' : undefined,
                   zIndex: rowData.type === RenderRowType.NewRow ? 1 : undefined,
                 }}
               >
                 {isPlaceholderRow ? (
                   <div
-                    className={'flex min-h-[240px] items-center justify-center'}
+                    data-testid={'grid-loading-indicator'}
+                    className={'flex h-9 w-full items-center justify-center'}
+                    aria-label={'Loading rows'}
                     role={'status'}
-                    style={{
-                      paddingLeft: columnItems[0]?.start,
-                      paddingRight: isDocumentBlock ? 0 : PADDING_INLINE,
-                      width: totalSize - (paddingEnd ?? 0),
-                    }}
                   >
-                    <LoadingDots className={'flex items-center justify-center opacity-80'} />
+                    {gridLoadingDots}
                   </div>
                 ) : rowData.type === RenderRowType.NewRow ? (
                   <div
