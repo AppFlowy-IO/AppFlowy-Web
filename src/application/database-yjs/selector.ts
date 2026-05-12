@@ -1178,6 +1178,7 @@ export function useRowsByGroup(groupId: string) {
 export function useRowOrdersSelector() {
   const rows = useRowMap();
   const view = useDatabaseView();
+  const viewId = useDatabaseViewId();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const fields = useDatabaseFields();
   const filters = view?.get(YjsDatabaseKey.filters);
@@ -1189,12 +1190,14 @@ export function useRowOrdersSelector() {
     conditionSignature: string;
   }>({ conditionSignature: '' });
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
+  const [conditionLoadRevision, setConditionLoadRevision] = useState(0);
   // Once filters have been applied successfully, don't revert to unfiltered
   // when rowDocsForConditions temporarily changes (e.g. new rows being added to rowMap).
   const filtersAppliedRef = useRef(false);
   const conditionSignatureRef = useRef('');
   const conditionComputeLogRef = useRef({ count: 0, lastLoggedAt: 0 });
   const pendingConditionRowLoadsRef = useRef(new Set<string>());
+  const unavailableConditionRowsRef = useRef(new Set<string>());
 
   // Check if there are active conditions
   const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
@@ -1224,9 +1227,29 @@ export function useRowOrdersSelector() {
     rowDocsForConditionsRef.current = rowDocsForConditions;
   }, [rowDocsForConditions]);
 
+  const markConditionRowsUnavailable = useCallback((missingRows: Row[]) => {
+    let changed = false;
+
+    missingRows.forEach(({ id: rowId }) => {
+      if (!rowId || unavailableConditionRowsRef.current.has(rowId)) return;
+
+      unavailableConditionRowsRef.current.add(rowId);
+      changed = true;
+    });
+
+    if (changed) {
+      setConditionLoadRevision((revision) => revision + 1);
+    }
+  }, []);
+
   const requestMissingConditionRows = useCallback(
     (missingRows: Row[]) => {
-      if (!ensureRow && !loadRowFromSeed) return;
+      if (!ensureRow && !loadRowFromSeed) {
+        markConditionRowsUnavailable(missingRows);
+        return;
+      }
+
+      const requestConditionSignature = conditionSignatureRef.current;
 
       missingRows
         .filter(({ id: rowId }) => rowId && !pendingConditionRowLoadsRef.current.has(rowId))
@@ -1249,9 +1272,22 @@ export function useRowOrdersSelector() {
               }
 
               if (!hasRowConditionData(seededDoc)) {
-                await ensureRow?.(rowId);
+                const ensuredDoc = await ensureRow?.(rowId);
+                const ensuredHasConditionData = ensuredDoc ? hasRowConditionData(ensuredDoc) : false;
+
+                if (
+                  conditionSignatureRef.current === requestConditionSignature &&
+                  !ensuredHasConditionData &&
+                  !hasRowConditionData(rowDocsForConditionsRef.current[rowId])
+                ) {
+                  markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
+                }
               }
             } catch (error) {
+              if (conditionSignatureRef.current === requestConditionSignature) {
+                markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
+              }
+
               if (shouldLogDatabaseConditionPerformance()) {
                 console.debug('[Database] failed to hydrate row for conditions', { rowId, error });
               }
@@ -1261,7 +1297,7 @@ export function useRowOrdersSelector() {
           })();
         });
     },
-    [ensureRow, loadRowFromSeed]
+    [ensureRow, loadRowFromSeed, markConditionRowsUnavailable]
   );
 
   // Getter for relation cell text (used in sorting/filtering)
@@ -1362,33 +1398,37 @@ export function useRowOrdersSelector() {
     // a stale-closure problem when the callback is invoked by a Yjs observer
     // before React has re-rendered (e.g. remote filter/sort sync from desktop).
     const conditionSignature = getConditionSignature(sorts, filters);
+    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
     const currentHasConditions = conditionSignature !== '';
 
-    if (conditionSignatureRef.current !== conditionSignature) {
-      conditionSignatureRef.current = conditionSignature;
+    if (conditionSignatureRef.current !== conditionStateKey) {
+      conditionSignatureRef.current = conditionStateKey;
       filtersAppliedRef.current = false;
+      pendingConditionRowLoadsRef.current.clear();
+      unavailableConditionRowsRef.current.clear();
     }
 
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
-      setRowOrdersState({ rows: originalRowOrders, conditionSignature });
+      setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
       logConditionCompute(originalRowOrders.length, originalRowOrders.length);
 
       return;
     }
 
     const rowsWithDocs = originalRowOrders.filter((row) => hasRowConditionData(rowDocsForConditions[row.id]));
+    const unresolvedRows = originalRowOrders.filter(
+      (row) => !hasRowConditionData(rowDocsForConditions[row.id]) && !unavailableConditionRowsRef.current.has(row.id)
+    );
 
     // Keep conditioned views in an explicit loading state until every row can
     // be evaluated. Otherwise an early zero-match partial result renders as a
     // blank grid, which looks like the database finished with no rows.
-    if (rowsWithDocs.length < originalRowOrders.length) {
-      requestMissingConditionRows(
-        originalRowOrders.filter((row) => !hasRowConditionData(rowDocsForConditions[row.id]))
-      );
+    if (unresolvedRows.length > 0) {
+      requestMissingConditionRows(unresolvedRows);
 
       if (!filtersAppliedRef.current) {
-        setRowOrdersState({ rows: undefined, conditionSignature });
+        setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
       }
 
       logConditionCompute(rowsWithDocs.length);
@@ -1414,7 +1454,7 @@ export function useRowOrdersSelector() {
     const nextRowOrders = computedRowOrders ?? rowsWithDocs;
 
     filtersAppliedRef.current = true;
-    setRowOrdersState({ rows: nextRowOrders, conditionSignature });
+    setRowOrdersState({ rows: nextRowOrders, conditionSignature: conditionStateKey });
     logConditionCompute(rowsWithDocs.length, nextRowOrders.length);
   }, [
     fields,
@@ -1426,12 +1466,13 @@ export function useRowOrdersSelector() {
     rollupValueGetter,
     rollupTextGetter,
     requestMissingConditionRows,
+    viewId,
   ]);
 
   // Trigger computation when dependencies change
   useEffect(() => {
     onConditionsChange();
-  }, [onConditionsChange]);
+  }, [conditionLoadRevision, onConditionsChange]);
 
   // Subscribe to relation/rollup cache changes
   useEffect(() => {
@@ -1553,7 +1594,7 @@ export function useRowOrdersSelector() {
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);
 
-  const liveConditionSignature = getConditionSignature(sorts, filters);
+  const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters)}`;
 
   return rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
 }

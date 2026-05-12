@@ -198,4 +198,34 @@ describe('useRowOrdersSelector', () => {
       expect(ensureRow).toHaveBeenCalledWith('row-a');
     });
   });
+
+  it('settles a conditioned view when a missing row cannot be hydrated', async () => {
+    const fixture = createDatabaseFixture();
+    const ensureRow = jest.fn(async () => undefined);
+
+    delete fixture.rowMap['row-a'];
+
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture, { ensureRow }),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.filters.push([createTextFilter('match')]);
+    });
+
+    expect(result.current).toBeUndefined();
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(ensureRow).toHaveBeenCalledWith('row-a');
+      expect(result.current?.map((row) => row.id)).toEqual(['row-b']);
+    });
+  });
 });
