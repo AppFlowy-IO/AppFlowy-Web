@@ -49,6 +49,7 @@ import {
   TimeFormat,
   YDatabase,
   YDatabaseCell,
+  YDatabaseChartLayoutSetting,
   YDatabaseField,
   YDatabaseMetas,
   YDatabaseRow,
@@ -61,7 +62,8 @@ import { MetadataKey } from '@/application/user-metadata';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { getDateFormat, getTimeFormat, renderDate } from '@/utils/time';
 
-import { CalendarLayoutSetting, FieldType, FieldVisibility, Filter, FilterType, RowMeta, SortCondition } from './database.type';
+import { ChartLayoutSettings } from './chart.type';
+import { CalendarLayoutSetting, DateGroupCondition, FieldType, FieldVisibility, Filter, FilterType, RowMeta, SortCondition } from './database.type';
 
 export interface Column {
   fieldId: string;
@@ -909,7 +911,25 @@ export function useGroup(groupId: string) {
 
       setFieldId(groupFieldId);
       const groupColumnsVisible = group.get(YjsDatabaseKey.groups);
-      const visibleArray = groupColumnsVisible?.toArray() || [];
+      const rawArray = groupColumnsVisible?.toArray() || [];
+      // Cloud serializes each inner group column as a Y.Map (id/visible
+      // keys), not a plain object literal — the array's type signature
+      // misrepresents this. Materialize to plain `GroupColumn`s so
+      // downstream consumers can read `.id` / `.visible` directly.
+      const visibleArray: GroupColumn[] = rawArray.map((item) => {
+        const maybeYMap = item as unknown as {
+          get?: (key: string) => unknown;
+        };
+
+        if (typeof maybeYMap.get === 'function') {
+          return {
+            id: String(maybeYMap.get('id') ?? ''),
+            visible: Boolean(maybeYMap.get('visible')),
+          };
+        }
+
+        return item as GroupColumn;
+      });
 
       setColumns(visibleArray);
     };
@@ -2228,4 +2248,93 @@ export function useRowPrimaryContentSelector(rowDoc: YDoc | null, primaryFieldId
   }, [primaryFieldId, row, rowDoc, field]);
 
   return primaryContent;
+}
+
+function chartSettingsEqual(
+  a: ChartLayoutSettings | null,
+  b: ChartLayoutSettings | null
+): boolean {
+  if (a === b) return true;
+  if (!a || !b) return false;
+  return (
+    a.chartType === b.chartType &&
+    a.xFieldId === b.xFieldId &&
+    a.showEmptyValues === b.showEmptyValues &&
+    a.aggregationType === b.aggregationType &&
+    a.yFieldId === b.yFieldId &&
+    a.cumulative === b.cumulative &&
+    a.dateCondition === b.dateCondition
+  );
+}
+
+/**
+ * Subscribe to the chart layout setting persisted at
+ * `view.layout_settings['3']`.
+ *
+ * Uses `observeDeep` on the view to robustly catch initial Yjs sync (which
+ * may deliver layout_settings + its '3' key via nested deltas that wouldn't
+ * fire a direct `observe` on the view). The expensive part — re-rendering
+ * downstream consumers — is gated by `chartSettingsEqual`, so the wider
+ * observer only costs a handful of equality checks per Yjs event.
+ *
+ * Returns the strongly-typed `ChartLayoutSettings`. Persisted Yjs values are
+ * stored as numbers/strings/booleans and cast to enum types here so consumers
+ * don't have to project again.
+ */
+export function useChartLayoutSetting(): ChartLayoutSettings | null {
+  const database = useDatabase();
+  const viewId = useDatabaseViewId();
+  const [setting, setSetting] = useState<ChartLayoutSettings | null>(null);
+
+  useEffect(() => {
+    const view = database.get(YjsDatabaseKey.views)?.get(viewId);
+
+    if (!view) return;
+
+    const observerHandler = () => {
+      const chartSettingMap = view.get(YjsDatabaseKey.layout_settings)?.get('3') as
+        | YDatabaseChartLayoutSetting
+        | undefined;
+
+      if (!chartSettingMap) {
+        setSetting((prev) => (prev === null ? prev : null));
+        return;
+      }
+
+      // Persisted Yjs cells may be missing for fields that haven't been
+      // explicitly written yet (e.g. only `aggregationType` was changed).
+      // Apply desktop-parity defaults for those — most importantly
+      // `showEmptyValues = true`, otherwise an empty grid renders "No data"
+      // instead of a single "No <field>" bar after a partial write.
+      const showEmptyRaw = chartSettingMap.get('showEmptyValues');
+      // `DateGroupCondition.Relative` persists as `0`, so we must use an
+      // undefined-only fallback — `|| 3` would silently coerce Relative back
+      // to Month every time the chart loads.
+      const dateConditionRaw = chartSettingMap.get('dateCondition');
+      const next: ChartLayoutSettings = {
+        chartType: Number(chartSettingMap.get('chartType') || 0) as ChartLayoutSettings['chartType'],
+        xFieldId: String(chartSettingMap.get('xFieldId') || ''),
+        showEmptyValues: showEmptyRaw === undefined ? true : Boolean(showEmptyRaw),
+        aggregationType: Number(chartSettingMap.get('aggregationType') || 0) as ChartLayoutSettings['aggregationType'],
+        yFieldId: chartSettingMap.get('yFieldId') ? String(chartSettingMap.get('yFieldId')) : undefined,
+        cumulative: Boolean(chartSettingMap.get('cumulative')),
+        dateCondition: (
+          dateConditionRaw === undefined || dateConditionRaw === null
+            ? DateGroupCondition.Month
+            : Number(dateConditionRaw)
+        ) as ChartLayoutSettings['dateCondition'],
+      };
+
+      setSetting((prev) => (chartSettingsEqual(prev, next) ? prev : next));
+    };
+
+    observerHandler();
+    view.observeDeep(observerHandler);
+
+    return () => {
+      view.unobserveDeep(observerHandler);
+    };
+  }, [database, viewId]);
+
+  return setting;
 }

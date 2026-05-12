@@ -6,6 +6,7 @@ import { useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/app
 import { FilterType } from '@/application/database-yjs/database.type';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { Board } from '@/components/database/board';
+import { Chart } from '@/components/database/chart';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import UnsupportedView from '@/components/database/components/UnsupportedView';
@@ -309,6 +310,7 @@ function DatabaseViews({
       case DatabaseViewLayout.Calendar:
         return <Calendar />;
       case DatabaseViewLayout.Chart:
+        return <Chart />;
       case DatabaseViewLayout.List:
       case DatabaseViewLayout.Gallery:
         return <UnsupportedView />;

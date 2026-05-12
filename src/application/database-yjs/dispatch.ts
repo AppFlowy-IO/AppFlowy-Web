@@ -55,6 +55,7 @@ import {
   YDatabaseCalculations,
   YDatabaseCalendarLayoutSetting,
   YDatabaseCell,
+  YDatabaseChartLayoutSetting,
   YDatabaseField,
   YDatabaseFieldOrders,
   YDatabaseFieldSetting,
@@ -3695,3 +3696,77 @@ export {
   useRemoveAdvancedFilterAndRebuild,
   useUpdateAdvancedFilterAndRebuild,
 } from './dispatch/sort-filter';
+
+export interface ChartLayoutSetting {
+  chartType?: number;
+  xFieldId?: string;
+  showEmptyValues?: boolean;
+  aggregationType?: number;
+  yFieldId?: string;
+  cumulative?: boolean;
+  dateCondition?: number;
+}
+
+export function useUpdateChartSetting() {
+  const view = useDatabaseView();
+  const sharedRoot = useSharedRoot();
+
+  return useCallback(
+    (settings: Partial<ChartLayoutSetting>) => {
+      executeOperations(
+        sharedRoot,
+        [
+          () => {
+            if (!view) {
+              throw new Error(`Unable to update chart settings`);
+            }
+
+            let layoutSettings = view.get(YjsDatabaseKey.layout_settings);
+
+            if (!layoutSettings) {
+              layoutSettings = new Y.Map() as YDatabaseLayoutSettings;
+              view.set(YjsDatabaseKey.layout_settings, layoutSettings);
+            }
+
+            let layoutSetting = layoutSettings.get('3') as Y.Map<unknown> | undefined;
+
+            if (!layoutSetting) {
+              layoutSetting = new Y.Map();
+              layoutSettings.set('3', layoutSetting as unknown as YDatabaseChartLayoutSetting);
+            }
+
+            if (settings.chartType !== undefined) {
+              layoutSetting.set('chartType', settings.chartType);
+            }
+
+            if (settings.xFieldId !== undefined) {
+              layoutSetting.set('xFieldId', settings.xFieldId);
+            }
+
+            if (settings.showEmptyValues !== undefined) {
+              layoutSetting.set('showEmptyValues', settings.showEmptyValues);
+            }
+
+            if (settings.aggregationType !== undefined) {
+              layoutSetting.set('aggregationType', settings.aggregationType);
+            }
+
+            if (settings.yFieldId !== undefined) {
+              layoutSetting.set('yFieldId', settings.yFieldId);
+            }
+
+            if (settings.cumulative !== undefined) {
+              layoutSetting.set('cumulative', settings.cumulative);
+            }
+
+            if (settings.dateCondition !== undefined) {
+              layoutSetting.set('dateCondition', settings.dateCondition);
+            }
+          },
+        ],
+        'updateChartSetting'
+      );
+    },
+    [sharedRoot, view]
+  );
+}

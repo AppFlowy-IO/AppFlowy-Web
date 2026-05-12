@@ -194,6 +194,7 @@ export const Element = ({
       case BlockType.GridBlock:
       case BlockType.BoardBlock:
       case BlockType.CalendarBlock:
+      case BlockType.ChartBlock:
         return DatabaseBlock;
       case BlockType.LinkPreview:
         return LinkPreview;
