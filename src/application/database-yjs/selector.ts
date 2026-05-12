@@ -25,7 +25,7 @@ import {
   SelectOption,
 } from '@/application/database-yjs/fields';
 import { filterBy, flattenFilterTree, parseFilter } from '@/application/database-yjs/filter';
-import { groupByField } from '@/application/database-yjs/group';
+import { getGroupColumns, groupByField } from '@/application/database-yjs/group';
 import { useBackgroundRowDocLoader, useRollupFieldObservers } from '@/application/database-yjs/hooks';
 import {
   invalidateRelationCell,
@@ -892,10 +892,47 @@ export interface GroupColumn {
   visible: boolean;
 }
 
+function normalizeGroupColumn(column: unknown): GroupColumn | null {
+  const parseVisible = (value: unknown) => value !== false && value !== 'false';
+
+  if (!column || typeof column !== 'object') return null;
+
+  if ('get' in column && typeof column.get === 'function') {
+    const mapColumn = column as { get: (key: YjsDatabaseKey) => unknown };
+    const id = mapColumn.get(YjsDatabaseKey.id);
+
+    if (typeof id !== 'string' || !id) return null;
+
+    return {
+      id,
+      visible: parseVisible(mapColumn.get(YjsDatabaseKey.visible)),
+    };
+  }
+
+  const plainColumn = column as Partial<GroupColumn>;
+
+  if (typeof plainColumn.id !== 'string' || !plainColumn.id) return null;
+
+  return {
+    id: plainColumn.id,
+    visible: parseVisible(plainColumn.visible),
+  };
+}
+
+function getFallbackGroupColumns(field?: YDatabaseField): GroupColumn[] {
+  if (!field) return [];
+
+  return (getGroupColumns(field) ?? []).map((column) => ({
+    id: column.id,
+    visible: true,
+  }));
+}
+
 export function useGroup(groupId: string) {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
   const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const fields = database?.get(YjsDatabaseKey.fields);
   const group = view
     ?.get(YjsDatabaseKey.groups)
     ?.toArray()
@@ -911,36 +948,24 @@ export function useGroup(groupId: string) {
 
       setFieldId(groupFieldId);
       const groupColumnsVisible = group.get(YjsDatabaseKey.groups);
-      const rawArray = groupColumnsVisible?.toArray() || [];
-      // Cloud serializes each inner group column as a Y.Map (id/visible
-      // keys), not a plain object literal — the array's type signature
-      // misrepresents this. Materialize to plain `GroupColumn`s so
-      // downstream consumers can read `.id` / `.visible` directly.
-      const visibleArray: GroupColumn[] = rawArray.map((item) => {
-        const maybeYMap = item as unknown as {
-          get?: (key: string) => unknown;
-        };
+      const persistedColumns = (groupColumnsVisible?.toArray() ?? [])
+        .map(normalizeGroupColumn)
+        .filter((column): column is GroupColumn => Boolean(column));
 
-        if (typeof maybeYMap.get === 'function') {
-          return {
-            id: String(maybeYMap.get('id') ?? ''),
-            visible: Boolean(maybeYMap.get('visible')),
-          };
-        }
-
-        return item as GroupColumn;
-      });
-
-      setColumns(visibleArray);
+      setColumns(
+        persistedColumns.length > 0 ? persistedColumns : getFallbackGroupColumns(fields?.get(groupFieldId))
+      );
     };
 
     observerEvent();
     group?.observeDeep(observerEvent);
+    fields?.observeDeep(observerEvent);
 
     return () => {
       group?.unobserveDeep(observerEvent);
+      fields?.unobserveDeep(observerEvent);
     };
-  }, [database, viewId, groupId, group]);
+  }, [viewId, groupId, group, fields]);
 
   return {
     columns,

@@ -23,6 +23,7 @@ export const DatabaseBlock = memo(
     const viewIds = getViewIds(node.data);
     const viewId = viewIds.length > 0 ? viewIds[0] : '';
     const allowedViewIds = Array.isArray(node.data?.view_ids) ? node.data.view_ids : undefined;
+    const databaseId = typeof node.data?.database_id === 'string' ? node.data.database_id : undefined;
     const context = useEditorContext();
     const workspaceId = context.workspaceId;
 
@@ -43,8 +44,10 @@ export const DatabaseBlock = memo(
     // 1. Document loading
     const { doc, notFound, setNotFound } = useDocumentLoader({
       viewId,
+      databaseId,
       loadView,
       bindViewSync,
+      eventEmitter: context.eventEmitter,
     });
 
     // 2. Visible view IDs from block data
