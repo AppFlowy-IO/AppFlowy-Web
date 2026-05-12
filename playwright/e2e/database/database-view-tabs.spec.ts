@@ -71,6 +71,14 @@ test.describe('Database View Tabs', () => {
     await page.waitForTimeout(500);
   }
 
+  async function saveRenameDialog(page: import('@playwright/test').Page) {
+    const saveButton = ModalSelectors.renameSaveButton(page);
+
+    await expect(saveButton).toBeEnabled({ timeout: 10000 });
+    await saveButton.click();
+    await expect(ModalSelectors.renameInput(page)).toBeHidden({ timeout: 10000 });
+  }
+
   test('creates multiple views that appear immediately in tab bar and sidebar', async ({
     page,
     request,
@@ -139,8 +147,7 @@ test.describe('Database View Tabs', () => {
     await expect(ModalSelectors.renameInput(page)).toBeVisible();
     await ModalSelectors.renameInput(page).clear();
     await ModalSelectors.renameInput(page).fill('MyGrid');
-    await ModalSelectors.renameSaveButton(page).click({ force: true });
-    await page.waitForTimeout(1000);
+    await saveRenameDialog(page);
 
     // Then: the tab displays the new name "MyGrid"
     await expect(page.locator('[data-testid^="view-tab-"]').filter({ hasText: 'MyGrid' })).toBeVisible({ timeout: 10000 });
@@ -155,8 +162,7 @@ test.describe('Database View Tabs', () => {
     await expect(ModalSelectors.renameInput(page)).toBeVisible();
     await ModalSelectors.renameInput(page).clear();
     await ModalSelectors.renameInput(page).fill('MyBoard');
-    await ModalSelectors.renameSaveButton(page).click({ force: true });
-    await page.waitForTimeout(1000);
+    await saveRenameDialog(page);
     await expect(page.locator('[data-testid^="view-tab-"]').filter({ hasText: 'MyBoard' })).toBeVisible({ timeout: 10000 });
 
     // Then: both renamed tabs "MyGrid" and "MyBoard" are visible
