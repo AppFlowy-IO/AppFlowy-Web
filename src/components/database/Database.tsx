@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   getDatabaseRowDocFromSeed,
@@ -231,6 +231,43 @@ function Database(props: Database2Props) {
     return ids;
   }, [doc, activeViewId]);
 
+  const getActiveViewHasConditions = useCallback(() => {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+    const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+    const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
+
+    return (view?.get(YjsDatabaseKey.filters)?.length ?? 0) > 0 || (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0;
+  }, [doc, activeViewId]);
+
+  const activeViewHasConditions = useSyncExternalStore(
+    useCallback(
+      (onStoreChange) => {
+        const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+        const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+        const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
+
+        if (view) {
+          view.observeDeep(onStoreChange);
+          return () => {
+            view.unobserveDeep(onStoreChange);
+          };
+        }
+
+        if (database) {
+          database.observeDeep(onStoreChange);
+          return () => {
+            database.unobserveDeep(onStoreChange);
+          };
+        }
+
+        return () => undefined;
+      },
+      [doc, activeViewId]
+    ),
+    getActiveViewHasConditions,
+    getActiveViewHasConditions
+  );
+
   const registerRowSync = useCallback(
     (rowKey: string) => {
       if (!createRow) {
@@ -420,7 +457,9 @@ function Database(props: Database2Props) {
       return null;
     }
 
-    const existingPromise = prefetchPromisesRef.current.get(databaseId);
+    const forceFullSync = activeViewHasConditions;
+    const prefetchKey = `${databaseId}:${forceFullSync ? 'full' : 'delta'}`;
+    const existingPromise = prefetchPromisesRef.current.get(prefetchKey);
 
     if (existingPromise) {
       blobPrefetchPromiseRef.current = existingPromise;
@@ -428,8 +467,15 @@ function Database(props: Database2Props) {
     }
 
     const priorityRowIds = getPriorityRowIds();
+
+    if (forceFullSync) {
+      setBlobPrefetchComplete(false);
+      setSeedsReady(false);
+    }
+
     const promise = prefetchDatabaseBlobDiff(workspaceId, databaseId, {
       priorityRowIds,
+      forceFullSync,
       onSeedsReady: () => {
         // Seeds are cached — filter/sort can now build ephemeral docs from them
         // without waiting for IndexedDB persist.
@@ -442,16 +488,16 @@ function Database(props: Database2Props) {
         setBlobPrefetchComplete(true);
       })
       .catch(() => {
-        prefetchPromisesRef.current.delete(databaseId);
+        prefetchPromisesRef.current.delete(prefetchKey);
         seedsGateRef.current.resolve(); // Unblock ensureRow on failure
         setBlobPrefetchComplete(true);
         setSeedsReady(true);
       });
 
-    prefetchPromisesRef.current.set(databaseId, promise);
+    prefetchPromisesRef.current.set(prefetchKey, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, runBatchPreload]);
+  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, activeViewHasConditions, runBatchPreload]);
 
   useEffect(() => {
     const databaseId = getDatabaseId();
@@ -590,6 +636,7 @@ function Database(props: Database2Props) {
 
     rowMapRef.current = {};
     pendingRowDocsRef.current.clear();
+    prefetchPromisesRef.current.clear();
     blobPrefetchPromiseRef.current = null;
     localCachePrimedRef.current = false;
     syncedRowKeysRef.current.clear();

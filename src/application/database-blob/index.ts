@@ -24,6 +24,11 @@ type RowDocSeed = {
 
 type PrefetchOptions = {
   priorityRowIds?: string[];
+  /**
+   * Fetch a complete row seed set even when a cached RID exists. Filtered and
+   * sorted views need row data for the full view, not only recent changes.
+   */
+  forceFullSync?: boolean;
   /** Called immediately after seeds are cached (before IndexedDB persist). */
   onSeedsReady?: () => void;
 };
@@ -50,7 +55,19 @@ function ridCacheKey(databaseId: string) {
 }
 
 function sharedPrefetchKey(workspaceId: string, databaseId: string) {
-  return `${workspaceId}:${databaseId}`;
+  return `${workspaceId}:${databaseId}:delta`;
+}
+
+function fullSharedPrefetchKey(workspaceId: string, databaseId: string) {
+  return `${workspaceId}:${databaseId}:full`;
+}
+
+function sharedPrefetchKeyForOptions(workspaceId: string, databaseId: string, options?: PrefetchOptions) {
+  return options?.forceFullSync ? fullSharedPrefetchKey(workspaceId, databaseId) : sharedPrefetchKey(workspaceId, databaseId);
+}
+
+function sharedPrefetchEntryMatchesDatabase(sharedKey: string, databaseId: string) {
+  return sharedKey.includes(`:${databaseId}:`) || sharedKey.endsWith(`:${databaseId}`);
 }
 
 function applyPrefetchOptions(entry: SharedPrefetchEntry, options?: PrefetchOptions) {
@@ -271,11 +288,10 @@ export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
 
 export function clearDatabaseRowDocSeedCache(databaseId: string) {
   const prefix = `${databaseId}_rows_`;
-  const sharedPrefetchSuffix = `:${databaseId}`;
   let hasUnsettledPrefetch = false;
 
   for (const [key, entry] of sharedPrefetchEntries.entries()) {
-    if (key.endsWith(sharedPrefetchSuffix)) {
+    if (sharedPrefetchEntryMatchesDatabase(key, databaseId)) {
       entry.onSeedsReadyCallbacks.clear();
 
       if (entry.promise && !entry.settled) {
@@ -307,7 +323,7 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
   }
 
   for (const [key, entry] of sharedPrefetchEntries.entries()) {
-    if (key.endsWith(sharedPrefetchSuffix)) {
+    if (sharedPrefetchEntryMatchesDatabase(key, databaseId)) {
       entry.onSeedsReadyCallbacks.clear();
       sharedPrefetchEntries.delete(key);
     }
@@ -747,8 +763,8 @@ async function applyDiff(
   });
 }
 
-async function fetchReadyDiff(workspaceId: string, databaseId: string) {
-  const cachedRid = readCachedRid(databaseId);
+async function fetchReadyDiff(workspaceId: string, databaseId: string, options?: { forceFullSync?: boolean }) {
+  const cachedRid = options?.forceFullSync ? null : readCachedRid(databaseId);
   const request = database_blob.DatabaseBlobDiffRequest.create({
     maxKnownRid: cachedRid ? { timestamp: cachedRid.timestamp, seqNo: cachedRid.seqNo } : undefined,
     version: 1,
@@ -757,6 +773,7 @@ async function fetchReadyDiff(workspaceId: string, databaseId: string) {
   Log.debug('[Database] blob diff request', {
     workspaceId,
     databaseId,
+    forceFullSync: options?.forceFullSync ?? false,
     maxKnownRid: cachedRid ?? null,
   });
 
@@ -783,12 +800,16 @@ export async function prefetchDatabaseBlobDiff(
   databaseId: string,
   options?: PrefetchOptions
 ) {
-  const sharedKey = sharedPrefetchKey(workspaceId, databaseId);
+  const sharedKey = sharedPrefetchKeyForOptions(workspaceId, databaseId, options);
   const existingEntry = sharedPrefetchEntries.get(sharedKey);
 
-  if (existingEntry?.promise && !existingEntry.settled) {
-    applyPrefetchOptions(existingEntry, options);
-    return existingEntry.promise;
+  if (existingEntry?.promise) {
+    const canReuseSettledFullSeed = Boolean(options?.forceFullSync && existingEntry.settled && existingEntry.seedsReady);
+
+    if (!existingEntry.settled || canReuseSettledFullSeed) {
+      applyPrefetchOptions(existingEntry, options);
+      return existingEntry.promise;
+    }
   }
 
   if (existingEntry) {
@@ -805,13 +826,16 @@ export async function prefetchDatabaseBlobDiff(
   applyPrefetchOptions(entry, options);
 
   const promise = (async () => {
-    const diff = await fetchReadyDiff(workspaceId, databaseId);
+    const diff = await fetchReadyDiff(workspaceId, databaseId, {
+      forceFullSync: options?.forceFullSync,
+    });
     const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, {
       priorityRowIds: Array.from(entry.priorityRowIds),
     });
 
     Log.debug('[Database] blob seed cache prepared', {
       databaseId,
+      forceFullSync: options?.forceFullSync ?? false,
       ...seedSummary,
       seedCount: rowDocSeedCache.size,
       lookupCount: rowDocSeedLookup.size,
@@ -819,6 +843,14 @@ export async function prefetchDatabaseBlobDiff(
 
     // Signal that seeds are available before the slow IndexedDB persist.
     notifySeedsReady(entry);
+
+    if (options?.forceFullSync) {
+      Log.debug('[Database] blob full seed persistence skipped', {
+        databaseId,
+        ...summarizeDiff(diff),
+      });
+      return diff;
+    }
 
     const applyStartedAt = Date.now();
 

@@ -597,9 +597,14 @@ export async function deleteFieldFromGridHeader(page: Page, fieldId: string): Pr
   await expect(page.locator('[role="menuitem"]').filter({ hasText: /^Delete$/i }).first()).toBeVisible({
     timeout: 10000,
   });
-  await page.locator('[role="menuitem"]').filter({ hasText: /^Delete$/i }).first().click({ force: true });
-  await expect(page.getByRole('button', { name: /^Delete$/i }).last()).toBeVisible({ timeout: 10000 });
-  await page.getByRole('button', { name: /^Delete$/i }).last().click({ force: true });
+  await page.locator('[role="menuitem"]').filter({ hasText: /^Delete$/i }).first().click();
+
+  const confirmDialog = page.getByRole('dialog').filter({ hasText: /Are you sure\?/i });
+  const confirmButton = confirmDialog.getByRole('button', { name: /^Delete$/i });
+
+  await expect(confirmButton).toBeEnabled({ timeout: 10000 });
+  await confirmButton.click();
+  await expect(confirmDialog).toBeHidden({ timeout: 10000 });
   await expect(GridFieldSelectors.fieldHeader(page, fieldId)).toHaveCount(0, { timeout: 20000 });
 }
 

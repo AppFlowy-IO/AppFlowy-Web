@@ -51,8 +51,10 @@ import {
   YDatabaseCell,
   YDatabaseChartLayoutSetting,
   YDatabaseField,
+  YDatabaseFilters,
   YDatabaseMetas,
   YDatabaseRow,
+  YDatabaseSorts,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
@@ -79,6 +81,23 @@ export interface Row {
   height: number;
 }
 
+function shouldLogDatabaseConditionPerformance() {
+  if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'test') return false;
+  return typeof window !== 'undefined' && window.location.hostname === 'localhost';
+}
+
+function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilters) {
+  const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
+
+  if (!hasConditions) return '';
+
+  return JSON.stringify({
+    filters: filters?.toJSON?.() ?? [],
+    sorts: sorts?.toJSON?.() ?? [],
+  });
+}
+
+const CONDITION_ROW_LOAD_BATCH_SIZE = 24;
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
 /**
@@ -1159,17 +1178,26 @@ export function useRowsByGroup(groupId: string) {
 export function useRowOrdersSelector() {
   const rows = useRowMap();
   const view = useDatabaseView();
+  const viewId = useDatabaseViewId();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const fields = useDatabaseFields();
   const filters = view?.get(YjsDatabaseKey.filters);
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, ensureRow, loadRowFromSeed } = useDatabaseContext();
 
-  const [rowOrders, setRowOrders] = useState<Row[]>();
+  const [rowOrdersState, setRowOrdersState] = useState<{
+    rows?: Row[];
+    conditionSignature: string;
+  }>({ conditionSignature: '' });
   const [rollupWatchVersion, setRollupWatchVersion] = useState(0);
+  const [conditionLoadRevision, setConditionLoadRevision] = useState(0);
   // Once filters have been applied successfully, don't revert to unfiltered
   // when rowDocsForConditions temporarily changes (e.g. new rows being added to rowMap).
   const filtersAppliedRef = useRef(false);
+  const conditionSignatureRef = useRef('');
+  const conditionComputeLogRef = useRef({ count: 0, lastLoggedAt: 0 });
+  const pendingConditionRowLoadsRef = useRef(new Set<string>());
+  const unavailableConditionRowsRef = useRef(new Set<string>());
 
   // Check if there are active conditions
   const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
@@ -1198,6 +1226,82 @@ export function useRowOrdersSelector() {
   useEffect(() => {
     rowDocsForConditionsRef.current = rowDocsForConditions;
   }, [rowDocsForConditions]);
+
+  const markConditionRowsUnavailable = useCallback((missingRows: Row[]) => {
+    let changed = false;
+
+    missingRows.forEach(({ id: rowId }) => {
+      if (!rowId || unavailableConditionRowsRef.current.has(rowId)) return;
+
+      unavailableConditionRowsRef.current.add(rowId);
+      changed = true;
+    });
+
+    if (changed) {
+      setConditionLoadRevision((revision) => revision + 1);
+    }
+  }, []);
+
+  const requestMissingConditionRows = useCallback(
+    (missingRows: Row[]) => {
+      if (!ensureRow && !loadRowFromSeed) {
+        markConditionRowsUnavailable(missingRows);
+        return;
+      }
+
+      const requestConditionSignature = conditionSignatureRef.current;
+
+      missingRows
+        .filter(({ id: rowId }) => rowId && !pendingConditionRowLoadsRef.current.has(rowId))
+        .slice(0, CONDITION_ROW_LOAD_BATCH_SIZE)
+        .forEach(({ id: rowId }) => {
+          if (!rowId) return;
+
+          pendingConditionRowLoadsRef.current.add(rowId);
+
+          void (async () => {
+            try {
+              let seededDoc: YDoc | undefined;
+
+              if (loadRowFromSeed) {
+                try {
+                  seededDoc = await loadRowFromSeed(rowId);
+                } catch (error) {
+                  if (!ensureRow) throw error;
+                }
+              }
+
+              if (!hasRowConditionData(seededDoc)) {
+                const ensuredDoc = await ensureRow?.(rowId);
+                const ensuredHasConditionData = ensuredDoc ? hasRowConditionData(ensuredDoc) : false;
+                // An opened row doc can still receive its row data from sync; don't settle it as unavailable yet.
+                const rowDocOpenedForHydration = Boolean(seededDoc || ensuredDoc);
+
+                if (
+                  conditionSignatureRef.current === requestConditionSignature &&
+                  !ensuredHasConditionData &&
+                  !rowDocOpenedForHydration &&
+                  !hasRowConditionData(rowDocsForConditionsRef.current[rowId])
+                ) {
+                  markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
+                }
+              }
+            } catch (error) {
+              if (conditionSignatureRef.current === requestConditionSignature) {
+                markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
+              }
+
+              if (shouldLogDatabaseConditionPerformance()) {
+                console.debug('[Database] failed to hydrate row for conditions', { rowId, error });
+              }
+            } finally {
+              pendingConditionRowLoadsRef.current.delete(rowId);
+            }
+          })();
+        });
+    },
+    [ensureRow, loadRowFromSeed, markConditionRowsUnavailable]
+  );
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -1262,35 +1366,75 @@ export function useRowOrdersSelector() {
 
   // Main computation: apply sorts and filters to row orders
   const onConditionsChange = useCallback(() => {
-    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON();
+    const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
+    const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
+    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as Row[] | undefined;
 
     if (!originalRowOrders) return;
+
+    const logConditionCompute = (readyRows: number, outputRows?: number) => {
+      if (!shouldLogConditionCompute) return;
+
+      const durationMs = performance.now() - computeStartedAt;
+      const logState = conditionComputeLogRef.current;
+      const now = performance.now();
+      const shouldLog = durationMs > 16 || now - logState.lastLoggedAt > 1000;
+
+      logState.count += 1;
+      if (!shouldLog) return;
+
+      logState.lastLoggedAt = now;
+      console.debug('[Database] row conditions computed', {
+        computeCount: logState.count,
+        durationMs: Math.round(durationMs),
+        totalRows: originalRowOrders.length,
+        readyRows,
+        outputRows,
+        filters: filters?.length ?? 0,
+        sorts: sorts?.length ?? 0,
+      });
+    };
 
     // Read current filter/sort state directly from Yjs refs instead of the
     // closed-over `hasConditions`.  The Yjs YArray references are stable but
     // their `.length` always reflects the live document state, so this avoids
     // a stale-closure problem when the callback is invoked by a Yjs observer
     // before React has re-rendered (e.g. remote filter/sort sync from desktop).
-    const currentHasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
+    const conditionSignature = getConditionSignature(sorts, filters);
+    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
+    const currentHasConditions = conditionSignature !== '';
+
+    if (conditionSignatureRef.current !== conditionStateKey) {
+      conditionSignatureRef.current = conditionStateKey;
+      filtersAppliedRef.current = false;
+      pendingConditionRowLoadsRef.current.clear();
+      unavailableConditionRowsRef.current.clear();
+    }
 
     if (!currentHasConditions) {
       filtersAppliedRef.current = false;
-      setRowOrders(originalRowOrders);
+      setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
+      logConditionCompute(originalRowOrders.length, originalRowOrders.length);
 
       return;
     }
 
-    // Apply filters/sorts progressively to the subset whose row docs are ready.
-    // This never renders raw unfiltered rows, but it allows matching rows to
-    // appear as soon as their cells can be evaluated instead of waiting for the
-    // entire database to finish loading.
-    const rowsWithDocs = originalRowOrders.filter((row: Row) => hasRowConditionData(rowDocsForConditions[row.id]));
+    const rowsWithDocs = originalRowOrders.filter((row) => hasRowConditionData(rowDocsForConditions[row.id]));
+    const unresolvedRows = originalRowOrders.filter(
+      (row) => !hasRowConditionData(rowDocsForConditions[row.id]) && !unavailableConditionRowsRef.current.has(row.id)
+    );
 
-    if (rowsWithDocs.length === 0) {
+    // Keep conditioned views in an explicit loading state until every row can
+    // be evaluated. Otherwise an early zero-match partial result renders as a
+    // blank grid, which looks like the database finished with no rows.
+    if (unresolvedRows.length > 0) {
+      requestMissingConditionRows(unresolvedRows);
+
       if (!filtersAppliedRef.current) {
-        setRowOrders(undefined);
+        setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
       }
 
+      logConditionCompute(rowsWithDocs.length);
       return;
     }
 
@@ -1310,8 +1454,11 @@ export function useRowOrdersSelector() {
       });
     }
 
+    const nextRowOrders = computedRowOrders ?? rowsWithDocs;
+
     filtersAppliedRef.current = true;
-    setRowOrders(computedRowOrders ?? rowsWithDocs);
+    setRowOrdersState({ rows: nextRowOrders, conditionSignature: conditionStateKey });
+    logConditionCompute(rowsWithDocs.length, nextRowOrders.length);
   }, [
     fields,
     filters,
@@ -1321,12 +1468,14 @@ export function useRowOrdersSelector() {
     relationTextGetter,
     rollupValueGetter,
     rollupTextGetter,
+    requestMissingConditionRows,
+    viewId,
   ]);
 
   // Trigger computation when dependencies change
   useEffect(() => {
     onConditionsChange();
-  }, [onConditionsChange]);
+  }, [conditionLoadRevision, onConditionsChange]);
 
   // Subscribe to relation/rollup cache changes
   useEffect(() => {
@@ -1373,6 +1522,15 @@ export function useRowOrdersSelector() {
     };
 
     const handleSortFilterChange = () => {
+      const conditionSignature = getConditionSignature(sorts, filters);
+      const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
+
+      if (conditionSignatureRef.current !== conditionStateKey) {
+        conditionSignatureRef.current = conditionStateKey;
+        filtersAppliedRef.current = false;
+        setRowOrdersState({ rows: undefined, conditionSignature: conditionStateKey });
+      }
+
       debouncedChange();
     };
 
@@ -1435,12 +1593,14 @@ export function useRowOrdersSelector() {
         }
       });
     };
-  }, [onConditionsChange, view, fields, filters, sorts, rows]);
+  }, [onConditionsChange, view, fields, filters, sorts, rows, viewId]);
 
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);
 
-  return rowOrders;
+  const liveConditionSignature = `${viewId ?? ''}:${getConditionSignature(sorts, filters)}`;
+
+  return rowOrdersState.conditionSignature === liveConditionSignature ? rowOrdersState.rows : undefined;
 }
 
 export function useRowDataSelector(rowId: string) {

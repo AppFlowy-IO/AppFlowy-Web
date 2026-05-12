@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 
-import { useReadOnly, useRowOrdersSelector } from '@/application/database-yjs';
+import { Row, useReadOnly } from '@/application/database-yjs';
 
 export enum RenderRowType {
   Header = 'header',
@@ -15,21 +15,25 @@ export type RenderRow = {
   rowId?: string;
 };
 
-export function useRenderRows () {
-  const rows = useRowOrdersSelector();
+export function useRenderRows (rows?: Row[]) {
   const readOnly = useReadOnly();
 
   const renderRows = useMemo(() => {
+    const placeholderRows = [
+      {
+        type: RenderRowType.Header,
+      },
+      {
+        type: RenderRowType.PlaceholderRow,
+      },
+      !readOnly && {
+        type: RenderRowType.NewRow,
+      },
+    ].filter(Boolean) as RenderRow[];
+
     // If rows are still loading, show placeholder rows
     if (rows === undefined) {
-      return [
-        {
-          type: RenderRowType.Header,
-        },
-        {
-          type: RenderRowType.CalculateRow,
-        },
-      ].filter(Boolean) as RenderRow[];
+      return placeholderRows;
     }
 
     const rowItems =

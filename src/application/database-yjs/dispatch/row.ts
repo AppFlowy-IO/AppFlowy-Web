@@ -473,9 +473,6 @@ export function useNewRowDispatch() {
           }
         });
 
-        if (shouldOpenRowModal) {
-          navigateToRow?.(rowId);
-        }
       });
 
       executeOperationWithAllViews(
@@ -503,6 +500,10 @@ export function useNewRowDispatch() {
         },
         'newRowDispatch'
       );
+
+      if (shouldOpenRowModal) {
+        navigateToRow?.(rowId);
+      }
 
       // Backfill reciprocal links for two-way relations seeded from filter prefills.
       // Done after row creation so related row docs can be loaded asynchronously.
