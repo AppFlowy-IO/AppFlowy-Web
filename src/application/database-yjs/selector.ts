@@ -97,6 +97,7 @@ function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilter
   });
 }
 
+const CONDITION_ROW_LOAD_BATCH_SIZE = 24;
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
 /**
@@ -1181,7 +1182,7 @@ export function useRowOrdersSelector() {
   const fields = useDatabaseFields();
   const filters = view?.get(YjsDatabaseKey.filters);
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId } = useDatabaseContext();
+  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, ensureRow, loadRowFromSeed } = useDatabaseContext();
 
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
@@ -1193,6 +1194,7 @@ export function useRowOrdersSelector() {
   const filtersAppliedRef = useRef(false);
   const conditionSignatureRef = useRef('');
   const conditionComputeLogRef = useRef({ count: 0, lastLoggedAt: 0 });
+  const pendingConditionRowLoadsRef = useRef(new Set<string>());
 
   // Check if there are active conditions
   const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
@@ -1221,6 +1223,46 @@ export function useRowOrdersSelector() {
   useEffect(() => {
     rowDocsForConditionsRef.current = rowDocsForConditions;
   }, [rowDocsForConditions]);
+
+  const requestMissingConditionRows = useCallback(
+    (missingRows: Row[]) => {
+      if (!ensureRow && !loadRowFromSeed) return;
+
+      missingRows
+        .filter(({ id: rowId }) => rowId && !pendingConditionRowLoadsRef.current.has(rowId))
+        .slice(0, CONDITION_ROW_LOAD_BATCH_SIZE)
+        .forEach(({ id: rowId }) => {
+          if (!rowId) return;
+
+          pendingConditionRowLoadsRef.current.add(rowId);
+
+          void (async () => {
+            try {
+              let seededDoc: YDoc | undefined;
+
+              if (loadRowFromSeed) {
+                try {
+                  seededDoc = await loadRowFromSeed(rowId);
+                } catch (error) {
+                  if (!ensureRow) throw error;
+                }
+              }
+
+              if (!hasRowConditionData(seededDoc)) {
+                await ensureRow?.(rowId);
+              }
+            } catch (error) {
+              if (shouldLogDatabaseConditionPerformance()) {
+                console.debug('[Database] failed to hydrate row for conditions', { rowId, error });
+              }
+            } finally {
+              pendingConditionRowLoadsRef.current.delete(rowId);
+            }
+          })();
+        });
+    },
+    [ensureRow, loadRowFromSeed]
+  );
 
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
@@ -1287,7 +1329,7 @@ export function useRowOrdersSelector() {
   const onConditionsChange = useCallback(() => {
     const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
     const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
-    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON();
+    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as Row[] | undefined;
 
     if (!originalRowOrders) return;
 
@@ -1335,12 +1377,16 @@ export function useRowOrdersSelector() {
       return;
     }
 
-    const rowsWithDocs = originalRowOrders.filter((row: Row) => hasRowConditionData(rowDocsForConditions[row.id]));
+    const rowsWithDocs = originalRowOrders.filter((row) => hasRowConditionData(rowDocsForConditions[row.id]));
 
     // Keep conditioned views in an explicit loading state until every row can
     // be evaluated. Otherwise an early zero-match partial result renders as a
     // blank grid, which looks like the database finished with no rows.
     if (rowsWithDocs.length < originalRowOrders.length) {
+      requestMissingConditionRows(
+        originalRowOrders.filter((row) => !hasRowConditionData(rowDocsForConditions[row.id]))
+      );
+
       if (!filtersAppliedRef.current) {
         setRowOrdersState({ rows: undefined, conditionSignature });
       }
@@ -1379,6 +1425,7 @@ export function useRowOrdersSelector() {
     relationTextGetter,
     rollupValueGetter,
     rollupTextGetter,
+    requestMissingConditionRows,
   ]);
 
   // Trigger computation when dependencies change

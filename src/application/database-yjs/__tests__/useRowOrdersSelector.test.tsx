@@ -107,7 +107,7 @@ function createDatabaseFixture(): DatabaseFixture {
   };
 }
 
-function createWrapper(fixture: DatabaseFixture) {
+function createWrapper(fixture: DatabaseFixture, contextOverrides: Partial<DatabaseContextState> = {}) {
   const contextValue: DatabaseContextState = {
     readOnly: false,
     databaseDoc: fixture.databaseDoc,
@@ -115,6 +115,7 @@ function createWrapper(fixture: DatabaseFixture) {
     activeViewId: fixture.viewId,
     rowMap: fixture.rowMap,
     workspaceId: 'workspace-id',
+    ...contextOverrides,
   };
 
   return ({ children }: { children: React.ReactNode }) => (
@@ -166,6 +167,35 @@ describe('useRowOrdersSelector', () => {
 
     await waitFor(() => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+    });
+  });
+
+  it('requests missing row docs while a conditioned view is loading', async () => {
+    const fixture = createDatabaseFixture();
+    const ensureRow = jest.fn(async () => undefined);
+
+    delete fixture.rowMap['row-a'];
+
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture, { ensureRow }),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.filters.push([createTextFilter('match')]);
+    });
+
+    expect(result.current).toBeUndefined();
+
+    act(() => {
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(ensureRow).toHaveBeenCalledWith('row-a');
     });
   });
 });

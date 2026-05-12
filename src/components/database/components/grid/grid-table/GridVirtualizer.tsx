@@ -195,6 +195,8 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   left: 0,
                   transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
                   display: 'flex',
+                  pointerEvents: isPlaceholderRow ? 'none' : undefined,
+                  zIndex: rowData.type === RenderRowType.NewRow ? 1 : undefined,
                 }}
               >
                 {isPlaceholderRow ? (
