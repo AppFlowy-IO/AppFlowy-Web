@@ -588,15 +588,11 @@ export function useDuplicateRowDispatch() {
       const icon = referenceMeta.icon;
       const cover = referenceMeta.cover;
       const sourceDocId = referenceMeta.documentId;
-      // Only treat the source row as definitely having a non-empty document
-      // when it has a document id and meta explicitly says it is non-empty.
-      // Older rows may have a document id with undefined isEmptyDocument; we
-      // still ask the server to check those, but we do not mark the duplicated
-      // row as non-empty until the client or server confirms content exists.
-      const sourceDocumentMayExist = Boolean(sourceDocId) && referenceMeta.isEmptyDocument !== true;
-      const sourceDocumentKnownNonEmpty = Boolean(sourceDocId) && referenceMeta.isEmptyDocument === false;
+      const isSourceDocEmpty = referenceMeta.isEmptyDocument === true;
+      const isSourceDocNonEmpty = referenceMeta.isEmptyDocument === false;
+      const shouldDuplicateSourceDoc = Boolean(sourceDocId) && !isSourceDocEmpty;
       const newMeta = generateRowMeta(rowId, {
-        [RowMetaKey.IsDocumentEmpty]: !sourceDocumentKnownNonEmpty,
+        [RowMetaKey.IsDocumentEmpty]: !isSourceDocNonEmpty,
         [RowMetaKey.IconId]: icon,
         [RowMetaKey.CoverId]: cover ? JSON.stringify(cover) : null,
       });
@@ -683,7 +679,7 @@ export function useDuplicateRowDispatch() {
           let clientDocStateB64: string | undefined;
           let hasClientDocumentContent = false;
 
-          if (sourceDocumentMayExist) {
+          if (shouldDuplicateSourceDoc) {
             // Find a Y.Doc with actual content. Check in priority order:
             //   1. Dialog sub-doc cache (rowSubDocs) — populated when user
             //      opens the row in dialog mode.
@@ -759,7 +755,7 @@ export function useDuplicateRowDispatch() {
               // If we found a cached doc with content, ensure the duplicated
               // row's meta marks the document as non-empty so the client
               // fetches from the server when the row is opened.
-              if (!sourceDocumentKnownNonEmpty) {
+              if (!isSourceDocNonEmpty) {
                 rowDoc.transact(() => {
                   const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
                   const meta = rowSharedRoot.get(YjsEditorKey.meta);
@@ -773,7 +769,7 @@ export function useDuplicateRowDispatch() {
             }
           }
 
-          if (sourceDocumentMayExist || hasClientDocumentContent) {
+          if (shouldDuplicateSourceDoc || hasClientDocumentContent) {
             await duplicateRowDocument(
               databaseId,
               referenceRowId,
