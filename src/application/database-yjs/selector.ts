@@ -1187,7 +1187,16 @@ export function useRowOrdersSelector() {
   const fields = useDatabaseFields();
   const filters = view?.get(YjsDatabaseKey.filters);
   const database = useDatabase();
-  const { databaseDoc, loadView, createRow, getViewIdFromDatabaseId, ensureRow, loadRowFromSeed } = useDatabaseContext();
+  const {
+    databaseDoc,
+    loadView,
+    createRow,
+    getViewIdFromDatabaseId,
+    ensureRow,
+    loadRowFromSeed,
+    blobPrefetchComplete,
+    seedsReady,
+  } = useDatabaseContext();
 
   const [rowOrdersState, setRowOrdersState] = useState<{
     rows?: Row[];
@@ -1281,12 +1290,12 @@ export function useRowOrdersSelector() {
                 // An opened row doc can still receive its row data from sync; don't settle it as unavailable yet.
                 const rowDocOpenedForHydration = Boolean(seededDoc || ensuredDoc);
 
-                if (
-                  conditionSignatureRef.current === requestConditionSignature &&
+                const shouldMarkUnavailable =
                   !ensuredHasConditionData &&
-                  !rowDocOpenedForHydration &&
-                  !hasRowConditionData(rowDocsForConditionsRef.current[rowId])
-                ) {
+                  !hasRowConditionData(rowDocsForConditionsRef.current[rowId]) &&
+                  (!rowDocOpenedForHydration || seedsReady || blobPrefetchComplete);
+
+                if (conditionSignatureRef.current === requestConditionSignature && shouldMarkUnavailable) {
                   markConditionRowsUnavailable([{ id: rowId, height: 0 }]);
                 }
               }
@@ -1304,7 +1313,7 @@ export function useRowOrdersSelector() {
           })();
         });
     },
-    [ensureRow, loadRowFromSeed, markConditionRowsUnavailable]
+    [blobPrefetchComplete, ensureRow, loadRowFromSeed, markConditionRowsUnavailable, seedsReady]
   );
 
   // Getter for relation cell text (used in sorting/filtering)

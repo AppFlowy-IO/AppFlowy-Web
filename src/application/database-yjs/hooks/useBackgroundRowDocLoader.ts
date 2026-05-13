@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 
 import { useDatabaseContext, useDatabaseView, useDatabaseViewId, useRowMap } from '@/application/database-yjs/context';
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
+import { openRowCollabDBWithProvider } from '@/application/db';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { YDoc, YjsDatabaseKey } from '@/application/types';
 
@@ -53,7 +54,7 @@ function getAllStoreValues<T>(db: IDBDatabase, storeName: string) {
   });
 }
 
-async function openReadOnlyRowDoc(rowKey: string) {
+async function openLegacyReadOnlyRowDoc(rowKey: string) {
   const db = await openIndexedDB(rowKey);
 
   try {
@@ -72,17 +73,31 @@ async function openReadOnlyRowDoc(rowKey: string) {
   }
 }
 
-function openEphemeralRowDoc(rowKey: string) {
-  const pending = pendingEphemeralRowDocs.get(rowKey);
+async function openReadOnlyRowDoc(rowKey: string, rowId: string) {
+  const { doc, provider } = await openRowCollabDBWithProvider(rowId, { skipCache: true });
+
+  await provider.destroy();
+
+  if (hasRowConditionData(doc)) {
+    return doc;
+  }
+
+  doc.destroy();
+  return openLegacyReadOnlyRowDoc(rowKey);
+}
+
+function openEphemeralRowDoc(rowKey: string, rowId: string) {
+  const pendingKey = `${rowKey}:${rowId}`;
+  const pending = pendingEphemeralRowDocs.get(pendingKey);
 
   if (pending) return pending;
 
-  const promise = openReadOnlyRowDoc(rowKey);
+  const promise = openReadOnlyRowDoc(rowKey, rowId);
 
-  pendingEphemeralRowDocs.set(rowKey, promise);
+  pendingEphemeralRowDocs.set(pendingKey, promise);
   promise.finally(() => {
-    if (pendingEphemeralRowDocs.get(rowKey) === promise) {
-      pendingEphemeralRowDocs.delete(rowKey);
+    if (pendingEphemeralRowDocs.get(pendingKey) === promise) {
+      pendingEphemeralRowDocs.delete(pendingKey);
     }
   }).catch(() => undefined);
 
@@ -501,7 +516,7 @@ export function useBackgroundRowDocLoader(hasConditions: boolean) {
               // module-level pending map dedupes concurrent opens across views
               // without retaining the doc in the process-wide row cache.
               const rowKey = getRowKey(databaseDoc.guid, rowId);
-              const pending = openEphemeralRowDoc(rowKey);
+              const pending = openEphemeralRowDoc(rowKey, rowId);
 
               store.cachedRowDocPending.set(rowId, pending);
 
