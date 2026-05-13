@@ -1,4 +1,5 @@
 import {
+  appendViewId,
   insertViewIdAfter,
   readStoredViewOrder,
   reconcileOrderedViewIds,
@@ -22,6 +23,14 @@ describe('database view ordering helpers', () => {
 
   it('inserts a new view immediately after the active tab', () => {
     expect(insertViewIdAfter(['grid', 'board'], 'grid', 'calendar')).toEqual(['grid', 'calendar', 'board']);
+  });
+
+  it('appends a new view to the end', () => {
+    expect(appendViewId(['grid', 'board'], 'calendar')).toEqual(['grid', 'board', 'calendar']);
+  });
+
+  it('moves an existing view to the end when appending', () => {
+    expect(appendViewId(['grid', 'calendar', 'board'], 'calendar')).toEqual(['grid', 'board', 'calendar']);
   });
 
   it('persists and restores stored view order', () => {

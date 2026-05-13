@@ -16,6 +16,8 @@ export interface RenderCard {
   id: string;
 }
 
+const CARD_LIST_MAX_HEIGHT = 2000;
+
 function CardList({
   data,
   fieldId,
@@ -71,13 +73,28 @@ function CardList({
     getItemKey: (index) => data[index].id || String(index),
   });
 
-  const items = virtualizer.getVirtualItems();
+  const virtualItems = virtualizer.getVirtualItems();
+  const viewportHeight = Math.min(
+    parentRef.current?.clientHeight || CARD_LIST_MAX_HEIGHT,
+    CARD_LIST_MAX_HEIGHT
+  );
+  const scrollTop = parentRef.current?.scrollTop ?? 0;
+  const renderStart = Math.max(0, scrollTop - 5 * 36);
+  const renderEnd = scrollTop + viewportHeight + 5 * 36;
+  const maxRenderedItems = Math.ceil(viewportHeight / 36) + 12;
+  const items = virtualItems.length > maxRenderedItems
+    ? virtualItems
+      .filter((item) => item.end >= renderStart && item.start <= renderEnd)
+      .slice(0, maxRenderedItems)
+    : virtualItems;
 
   return (
     <div
       ref={parentRef}
-      className='appflowy-custom-scroller w-full'
+      className='appflowy-custom-scroller w-full shrink-0'
       style={{
+        height: CARD_LIST_MAX_HEIGHT,
+        maxHeight: CARD_LIST_MAX_HEIGHT,
         overflowY: 'auto',
       }}
     >
