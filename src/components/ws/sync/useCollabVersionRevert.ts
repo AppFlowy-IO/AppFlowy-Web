@@ -3,7 +3,7 @@ import EventEmitter from 'events';
 import { useCallback } from 'react';
 import * as Y from 'yjs';
 
-import { openCollabDB } from '@/application/db';
+import { deleteCollabDB, openCollabDB } from '@/application/db';
 import * as http from '@/application/services/js-services/http/http_api';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { User, YDoc } from '@/application/types';
@@ -76,6 +76,7 @@ export function useCollabVersionRevert(deps: CollabVersionRevertDeps) {
         Log.debug('[Version] Collab version changed:', viewId, previousDoc.version, nextVersion);
         previousDoc.emit('reset', [context, nextVersion]);
         refs.skipFlushOnDestroy.current.add(previousDoc.guid);
+        await deleteCollabDB(previousDoc.guid, { destroyDoc: false });
         previousDoc.destroy();
 
         try {

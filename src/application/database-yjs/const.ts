@@ -6,6 +6,7 @@ import { RowId, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/appli
 export const DEFAULT_ROW_HEIGHT = 36;
 export const MIN_COLUMN_WIDTH = 150;
 export const PADDING_END = 220;
+export const DEFAULT_FIELD_WRAP = false;
 
 export const getCell = (rowId: string, fieldId: string, rowMetas: Record<RowId, YDoc>) => {
   const rowMeta = rowMetas[rowId];

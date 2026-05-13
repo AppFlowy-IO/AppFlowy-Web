@@ -3,7 +3,16 @@ import * as Y from 'yjs';
 import { invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { migrateDatabaseFieldTypes } from '@/application/database-yjs/migrations/rollup_fieldtype';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { closeCollabDB, db, evictProviderCache, openCollabDB, openCollabDBWithProvider } from '@/application/db';
+import {
+  closeCollabDB,
+  collabIndexedDBExists,
+  db,
+  deleteCollabDB,
+  evictProviderCache,
+  openCollabDB,
+  openCollabDBWithProvider,
+  openRowCollabDBWithProvider,
+} from '@/application/db';
 import { Fetcher, StrategyType } from '@/application/services/js-services/cache/types';
 import {
   DatabaseId,
@@ -463,6 +472,194 @@ let rowFastLogCount = 0;
 const rowDocs = new Map<string, RowDocEntry>();
 const pendingRowDocEntries = new Map<string, Promise<RowDocEntry>>();
 const appliedSeedBytesByDoc = new WeakMap<YDoc, WeakSet<Uint8Array>>();
+const ROW_KEY_SEPARATOR = '_rows_';
+const LEGACY_ROW_BACKFILL_MARKER_PREFIX = 'legacy-row-backfill:';
+
+function getRowObjectId(rowKey: string) {
+  const separatorIndex = rowKey.lastIndexOf(ROW_KEY_SEPARATOR);
+
+  if (separatorIndex < 0) {
+    return rowKey;
+  }
+
+  const rowObjectId = rowKey.slice(separatorIndex + ROW_KEY_SEPARATOR.length);
+
+  return rowObjectId || rowKey;
+}
+
+function hasDatabaseRow(doc: YDoc) {
+  return doc.getMap(YjsEditorKey.data_section).has(YjsEditorKey.database_row);
+}
+
+function cloneLegacyYjsValue(value: unknown): unknown {
+  if (value instanceof Uint8Array) {
+    return new Uint8Array(value);
+  }
+
+  if (value instanceof Y.Map) {
+    const clonedMap = new Y.Map<unknown>();
+
+    value.forEach((childValue, key) => {
+      clonedMap.set(key, cloneLegacyYjsValue(childValue));
+    });
+
+    return clonedMap;
+  }
+
+  if (value instanceof Y.Array) {
+    const clonedArray = new Y.Array<unknown>();
+
+    clonedArray.push(value.toArray().map(cloneLegacyYjsValue));
+    return clonedArray;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map(cloneLegacyYjsValue);
+  }
+
+  if (value && typeof value === 'object') {
+    try {
+      return structuredClone(value);
+    } catch {
+      return JSON.parse(JSON.stringify(value));
+    }
+  }
+
+  return value;
+}
+
+function mergeLegacyYMapIntoTarget(target: Y.Map<unknown>, legacy: Y.Map<unknown>, overwriteExisting: boolean): boolean {
+  let merged = false;
+
+  legacy.forEach((legacyValue, key) => {
+    const targetValue = target.get(key);
+
+    if (targetValue instanceof Y.Map && legacyValue instanceof Y.Map) {
+      merged = mergeLegacyYMapIntoTarget(targetValue, legacyValue, overwriteExisting) || merged;
+      return;
+    }
+
+    if (!target.has(key) || overwriteExisting) {
+      target.set(key, cloneLegacyYjsValue(legacyValue));
+      merged = true;
+    }
+  });
+
+  return merged;
+}
+
+function mergeLegacyCellsIntoTarget(target: Y.Map<unknown>, legacy: Y.Map<unknown>) {
+  let merged = false;
+
+  legacy.forEach((legacyCell, fieldId) => {
+    const targetCell = target.get(fieldId);
+
+    if (targetCell instanceof Y.Map && legacyCell instanceof Y.Map) {
+      merged = mergeLegacyYMapIntoTarget(targetCell, legacyCell, true) || merged;
+      return;
+    }
+
+    target.set(fieldId, cloneLegacyYjsValue(legacyCell));
+    merged = true;
+  });
+
+  return merged;
+}
+
+function mergeLegacyRowDataIntoExistingDoc(doc: YDoc, legacyDoc: YDoc): boolean {
+  const row = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
+  const legacyRow = legacyDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
+
+  if (!(row instanceof Y.Map) || !(legacyRow instanceof Y.Map)) {
+    return false;
+  }
+
+  let merged = false;
+
+  legacyRow.forEach((legacyValue, key) => {
+    const targetValue = row.get(key);
+
+    if (key === YjsDatabaseKey.cells && targetValue instanceof Y.Map && legacyValue instanceof Y.Map) {
+      merged = mergeLegacyCellsIntoTarget(targetValue, legacyValue) || merged;
+      return;
+    }
+
+    if (key === YjsDatabaseKey.id || key === YjsDatabaseKey.database_id) {
+      if (!row.has(key)) {
+        row.set(key, cloneLegacyYjsValue(legacyValue));
+        merged = true;
+      }
+
+      return;
+    }
+
+    row.set(key, cloneLegacyYjsValue(legacyValue));
+    merged = true;
+  });
+
+  return merged;
+}
+
+function getLegacyRowBackfillMarkerKey(rowKey: string) {
+  return `${LEGACY_ROW_BACKFILL_MARKER_PREFIX}${rowKey}`;
+}
+
+async function hasLegacyRowBackfillCompleted(rowObjectId: string, rowKey: string) {
+  try {
+    return Boolean(await db.collab_custom.get([rowObjectId, getLegacyRowBackfillMarkerKey(rowKey)]));
+  } catch (error) {
+    Log.warn('[Database] failed to read legacy row backfill marker', { rowKey, rowObjectId, error });
+    return false;
+  }
+}
+
+async function markLegacyRowBackfillCompleted(rowObjectId: string, rowKey: string) {
+  try {
+    await db.collab_custom.put({
+      objectId: rowObjectId,
+      key: getLegacyRowBackfillMarkerKey(rowKey),
+      value: {
+        rowKey,
+        migratedAt: Date.now(),
+      },
+    });
+  } catch (error) {
+    Log.warn('[Database] failed to write legacy row backfill marker', { rowKey, rowObjectId, error });
+  }
+}
+
+async function deleteLegacyRowCache(rowKey: string, rowObjectId: string) {
+  try {
+    const deleted = await deleteCollabDB(rowKey);
+
+    if (!deleted) {
+      Log.warn('[Database] failed to delete legacy row IndexedDB cache after backfill', { rowKey, rowObjectId });
+    }
+  } catch (error) {
+    Log.warn('[Database] failed to delete legacy row IndexedDB cache after backfill', { rowKey, rowObjectId, error });
+  }
+}
+
+function applyLegacyRowUpdate(doc: YDoc, legacyDoc: YDoc, rowKey: string, rowObjectId: string) {
+  const hadSharedRowData = hasDatabaseRow(doc);
+  const legacyUpdate = Y.encodeStateAsUpdate(legacyDoc, Y.encodeStateVector(doc));
+
+  // Yjs encodes an empty v1 update as two bytes. Nothing to merge.
+  if (legacyUpdate.byteLength <= 2) {
+    return false;
+  }
+
+  applyYDoc(doc, legacyUpdate);
+  invalidateRowConditionCache(doc);
+  Log.debug('[Database] migrated legacy row IndexedDB cache', {
+    rowKey,
+    rowObjectId,
+    bytes: legacyUpdate.byteLength,
+    hadSharedRowData,
+  });
+
+  return true;
+}
 
 function hasAppliedSeed(doc: YDoc, seedBytes: Uint8Array) {
   return appliedSeedBytesByDoc.get(doc)?.has(seedBytes) ?? false;
@@ -479,14 +676,77 @@ function markSeedApplied(doc: YDoc, seedBytes: Uint8Array) {
   appliedSeeds.add(seedBytes);
 }
 
+export async function mergeLegacyRowDocIfExists(
+  rowKey: string,
+  rowObjectId: string,
+  doc: YDoc,
+  options: { legacyExists?: boolean } = {}
+) {
+  if (rowKey === rowObjectId) {
+    return false;
+  }
+
+  if (await hasLegacyRowBackfillCompleted(rowObjectId, rowKey)) {
+    return false;
+  }
+
+  const legacyExists = options.legacyExists ?? (await collabIndexedDBExists(rowKey));
+
+  if (!legacyExists) {
+    return false;
+  }
+
+  const { doc: legacyDoc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
+  let merged = false;
+  let consumedLegacyCache = false;
+
+  try {
+    if (!hasDatabaseRow(legacyDoc)) {
+      return merged;
+    }
+
+    consumedLegacyCache = true;
+
+    if (hasDatabaseRow(doc)) {
+      merged = mergeLegacyRowDataIntoExistingDoc(doc, legacyDoc);
+
+      if (merged) {
+        invalidateRowConditionCache(doc);
+        Log.debug('[Database] merged legacy row IndexedDB cache into existing shared row', {
+          rowKey,
+          rowObjectId,
+        });
+      }
+
+      return merged;
+    }
+
+    merged = applyLegacyRowUpdate(doc, legacyDoc, rowKey, rowObjectId);
+
+    return merged;
+  } finally {
+    if (consumedLegacyCache) {
+      await markLegacyRowBackfillCompleted(rowObjectId, rowKey);
+    }
+
+    await provider.destroy();
+    legacyDoc.destroy();
+
+    if (consumedLegacyCache) {
+      await deleteLegacyRowCache(rowKey, rowObjectId);
+    }
+  }
+}
+
 async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
-  const existing = rowDocs.get(rowKey);
+  const rowObjectId = getRowObjectId(rowKey);
+  const existing = rowDocs.get(rowObjectId);
 
   if (existing) {
     return existing;
   }
 
-  const pending = pendingRowDocEntries.get(rowKey);
+  const pending = pendingRowDocEntries.get(rowObjectId);
 
   if (pending) {
     return pending;
@@ -496,33 +756,33 @@ async function getOrCreateRowDocEntry(rowKey: string): Promise<RowDocEntry> {
     // providerCache in openCollabDBWithProvider handles provider-level dedup;
     // this map prevents duplicate row doc entry creation while the first open
     // is still awaiting IndexedDB/provider setup.
-    const entry = await _createRowDocEntry(rowKey);
+    const entry = await _createRowDocEntry(rowKey, rowObjectId);
 
     // Post-await race check: another caller may have populated rowDocs.
-    const raceWinner = rowDocs.get(rowKey);
+    const raceWinner = rowDocs.get(rowObjectId);
 
     if (raceWinner) {
       return raceWinner;
     }
 
-    rowDocs.set(rowKey, entry);
+    rowDocs.set(rowObjectId, entry);
     return entry;
   })();
 
-  pendingRowDocEntries.set(rowKey, promise);
+  pendingRowDocEntries.set(rowObjectId, promise);
 
   try {
     return await promise;
   } finally {
-    if (pendingRowDocEntries.get(rowKey) === promise) {
-      pendingRowDocEntries.delete(rowKey);
+    if (pendingRowDocEntries.get(rowObjectId) === promise) {
+      pendingRowDocEntries.delete(rowObjectId);
     }
   }
 }
 
-async function _createRowDocEntry(rowKey: string): Promise<RowDocEntry> {
+async function _createRowDocEntry(rowKey: string, rowObjectId: string): Promise<RowDocEntry> {
   const startedAt = Date.now();
-  const { doc, provider } = await openCollabDBWithProvider(rowKey, { awaitSync: false });
+  const { doc, provider } = await openRowCollabDBWithProvider(rowObjectId, { awaitSync: false });
 
   // Check initial state immediately after opening
   const initialSharedRoot = doc.getMap(YjsEditorKey.data_section);
@@ -530,12 +790,13 @@ async function _createRowDocEntry(rowKey: string): Promise<RowDocEntry> {
 
   Log.debug('[Database] getOrCreateRowDocEntry opened (before sync)', {
     rowKey,
+    rowObjectId,
     openDurationMs: Date.now() - startedAt,
     providerSynced: provider.synced,
     hasRowDataBeforeSync: initialHasRowData,
   });
 
-  const whenSynced = provider.synced
+  const syncedPromise = provider.synced
     ? Promise.resolve()
     : new Promise<void>((resolve) => {
         provider.on('synced', () => {
@@ -546,6 +807,7 @@ async function _createRowDocEntry(rowKey: string): Promise<RowDocEntry> {
 
             Log.debug('[Database] row doc IndexedDB synced', {
               rowKey,
+              rowObjectId,
               durationMs: Date.now() - startedAt,
               hasRowDataAfterSync: hasRowData,
               hadRowDataBeforeSync: initialHasRowData,
@@ -555,6 +817,13 @@ async function _createRowDocEntry(rowKey: string): Promise<RowDocEntry> {
           resolve();
         });
       });
+  const whenSynced = syncedPromise
+    .then(async () => {
+      await mergeLegacyRowDocIfExists(rowKey, rowObjectId, doc);
+    })
+    .catch((error) => {
+      Log.warn('[Database] row doc IndexedDB sync failed', { rowKey, rowObjectId, error });
+    });
 
   return { doc, whenSynced };
 }
@@ -612,18 +881,20 @@ export async function openRowDoc(rowKey: string, seed?: { bytes: Uint8Array; enc
 }
 
 export function getCachedRowDoc(rowKey: string): YDoc | undefined {
-  return rowDocs.get(rowKey)?.doc;
+  return rowDocs.get(getRowObjectId(rowKey))?.doc;
 }
 
 export function deleteRow(rowKey: string) {
-  const entry = rowDocs.get(rowKey);
+  const rowObjectId = getRowObjectId(rowKey);
+  const entry = rowDocs.get(rowObjectId);
+
+  rowDocs.delete(rowObjectId);
 
   if (entry) {
     entry.doc.destroy();
   }
 
-  rowDocs.delete(rowKey);
-  evictProviderCache(rowKey);
+  evictProviderCache(rowObjectId);
 }
 
 // ============================================================================

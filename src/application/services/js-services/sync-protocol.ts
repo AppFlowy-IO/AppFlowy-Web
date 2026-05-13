@@ -1,6 +1,7 @@
 import * as awarenessProtocol from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
+import { deleteCollabDB } from '@/application/db';
 import {
   deleteOutboxByObjectId,
   enqueueOutboxUpdate,
@@ -97,6 +98,7 @@ const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): 
     void ctx.discardPendingUpdates?.();
     ctx.flush = undefined;
     ctx.discardPendingUpdates = undefined;
+    void deleteCollabDB(ctx.doc.guid, { destroyDoc: false });
     ctx.doc.destroy();
   }
 };

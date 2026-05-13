@@ -3,7 +3,7 @@ import EventEmitter from 'events';
 import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { openCollabDB } from '@/application/db';
+import { deleteCollabDB, openCollabDB } from '@/application/db';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
 import { User, YDoc } from '@/application/types';
 import { collab } from '@/proto/messages';
@@ -157,6 +157,7 @@ export function useCollabMessageHandler(
               // `applyCollabMessage` would queue every subsequent message
               // and the doc would stay stuck until reload.
               await context.discardPendingUpdates?.();
+              await deleteCollabDB(previousDoc.guid, { destroyDoc: false });
               previousDoc.destroy();
 
               const localContext = context;

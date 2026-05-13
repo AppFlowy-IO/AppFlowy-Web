@@ -1,9 +1,19 @@
 import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { getRowKey , getMetaJSON } from '@/application/database-yjs/row_meta';
-import { openCollabDBWithProvider } from '@/application/db';
-import { getCachedRowSubDoc, getCachedRowSubDocIds, awaitPendingRowDocEnsures } from '@/application/services/js-services/cache';
+import { getRowKey, getMetaJSON } from '@/application/database-yjs/row_meta';
+import {
+  collabIndexedDBExists,
+  listCollabIndexedDBNames,
+  openCollabDBWithProvider,
+  openRowCollabDBWithProvider,
+} from '@/application/db';
+import {
+  getCachedRowSubDoc,
+  getCachedRowSubDocIds,
+  awaitPendingRowDocEnsures,
+  mergeLegacyRowDocIfExists,
+} from '@/application/services/js-services/cache';
 import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
 import { withRetry } from '@/application/services/js-services/http/core';
 import { waitForDrain } from '@/application/sync-outbox';
@@ -157,6 +167,8 @@ export function useBatchSync(refs: SyncRefs) {
         }
       });
 
+      const existingIndexedDBNames = unregisteredRows.length > 0 ? await listCollabIndexedDBNames() : new Set<string>();
+
       for (let i = 0; i < unregisteredRows.length; i += ROW_SYNC_CONCURRENCY) {
         const slice = unregisteredRows.slice(i, i + ROW_SYNC_CONCURRENCY);
 
@@ -164,40 +176,51 @@ export function useBatchSync(refs: SyncRefs) {
           slice.map(async ({ rowId, rowKey }) => {
             try {
               // Use skipCache to avoid permanently pinning every row doc in memory.
-              // Destroy the provider immediately after reading — we only need the
-              // encoded state for the batch request.
-              const { doc: rowDoc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
+              const { doc: rowDoc, provider } = await openRowCollabDBWithProvider(rowId, { skipCache: true });
 
-              await provider.destroy();
+              try {
+                // If the row was never cached locally, the doc will be empty.
+                // Skip it — uploading an empty state would overwrite the server's
+                // real data during duplicate.
+                let rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
 
-              // If the row was never cached locally, the doc will be empty.
-              // Skip it — uploading an empty state would overwrite the server's
-              // real data during duplicate.
-              const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
-              const rowMeta = rowSharedRoot.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+                const legacyExists =
+                  existingIndexedDBNames.has(rowKey) ||
+                  (existingIndexedDBNames.size === 0 && (await collabIndexedDBExists(rowKey)));
 
-              if (!rowSharedRoot.has(YjsEditorKey.database_row)) {
-                rowDoc.destroy();
-                return;
+                if (legacyExists) {
+                  await mergeLegacyRowDocIfExists(rowKey, rowId, rowDoc, { legacyExists: true });
+                  rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+                }
+
+                if (!rowSharedRoot.has(YjsEditorKey.database_row)) {
+                  return;
+                }
+
+                const rowMeta = rowSharedRoot.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+                const rowDocumentId = rowMeta ? getMetaJSON(rowId, rowMeta).documentId : '';
+
+                if (rowDocumentId && !registeredObjectIds.has(rowDocumentId)) {
+                  unregisteredRowDocumentIds.add(rowDocumentId);
+                }
+
+                const docState = Y.encodeStateAsUpdate(rowDoc);
+                const stateVector = Y.encodeStateVector(rowDoc);
+
+                items.push({
+                  objectId: rowId,
+                  collabType: Types.DatabaseRow,
+                  stateVector,
+                  docState,
+                });
+              } finally {
+                try {
+                  await provider.destroy();
+                } finally {
+                  rowDoc.destroy();
+                }
               }
 
-              const rowDocumentId = rowMeta ? getMetaJSON(rowId, rowMeta).documentId : '';
-
-              if (rowDocumentId && !registeredObjectIds.has(rowDocumentId)) {
-                unregisteredRowDocumentIds.add(rowDocumentId);
-              }
-
-              const docState = Y.encodeStateAsUpdate(rowDoc);
-              const stateVector = Y.encodeStateVector(rowDoc);
-
-              rowDoc.destroy();
-
-              items.push({
-                objectId: rowId,
-                collabType: Types.DatabaseRow,
-                stateVector,
-                docState,
-              });
             } catch (e) {
               Log.warn('Failed to load unregistered row doc for sync', { rowKey, error: e });
             }

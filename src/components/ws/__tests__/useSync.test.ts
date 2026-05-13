@@ -4,10 +4,16 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import * as Y from 'yjs';
 
 import { APP_EVENTS } from '@/application/constants';
-import { openCollabDB } from '@/application/db';
+import {
+  openCollabDB,
+  openCollabDBWithProvider,
+  openRowCollabDBWithProvider,
+  listCollabIndexedDBNames,
+  collabIndexedDBExists,
+} from '@/application/db';
 import * as httpApi from '@/application/services/js-services/http/http_api';
 import { handleMessage } from '@/application/services/js-services/sync-protocol';
-import { Types, User } from '@/application/types';
+import { Types, User, YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { Log } from '@/utils/log';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 
@@ -19,6 +25,10 @@ jest.mock('@/application/db', () => {
   return {
     ...jest.requireActual('@/application/db'),
     openCollabDB: jest.fn(),
+    openCollabDBWithProvider: jest.fn(),
+    openRowCollabDBWithProvider: jest.fn(),
+    listCollabIndexedDBNames: jest.fn(),
+    collabIndexedDBExists: jest.fn(),
   };
 });
 
@@ -142,6 +152,52 @@ const createDoc = (guid: string): Y.Doc => {
   return doc;
 };
 
+const createDatabaseDocWithRows = (databaseId: string, rowIds: string[]): Y.Doc => {
+  const doc = createDoc(databaseId);
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+  const database = new Y.Map();
+  const views = new Y.Map();
+  const view = new Y.Map();
+  const rowOrders = new Y.Array<{ id: string; height: number }>();
+
+  rowOrders.push(rowIds.map((id) => ({ id, height: 44 })));
+  view.set(YjsDatabaseKey.row_orders, rowOrders);
+  views.set('view-id', view);
+  database.set(YjsDatabaseKey.id, databaseId);
+  database.set(YjsDatabaseKey.views, views);
+  sharedRoot.set(YjsEditorKey.database, database);
+
+  return doc;
+};
+
+const createDatabaseRowDoc = (rowId: string, databaseId: string, cells: Record<string, unknown>): YDoc => {
+  const doc = createDoc(rowId) as YDoc;
+  const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+  const row = new Y.Map();
+  const cellMap = new Y.Map();
+
+  sharedRoot.set(YjsEditorKey.database_row, row);
+  row.set(YjsDatabaseKey.id, rowId);
+  row.set(YjsDatabaseKey.database_id, databaseId);
+  row.set(YjsDatabaseKey.cells, cellMap);
+
+  Object.entries(cells).forEach(([fieldId, data]) => {
+    const cell = new Y.Map();
+
+    cell.set(YjsDatabaseKey.data, data);
+    cellMap.set(fieldId, cell);
+  });
+
+  return doc;
+};
+
+const getRowCellData = (doc: Y.Doc, fieldId: string) => {
+  const row = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row) as Y.Map<unknown> | undefined;
+  const cells = row?.get(YjsDatabaseKey.cells) as Y.Map<Y.Map<unknown>> | undefined;
+
+  return cells?.get(fieldId)?.get(YjsDatabaseKey.data);
+};
+
 type Deferred<T> = {
   promise: Promise<T>;
   resolve: (value: T) => void;
@@ -160,6 +216,10 @@ const createDeferred = <T>(): Deferred<T> => {
 };
 
 const mockedOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollabDB>;
+const mockedOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
+const mockedOpenRowCollabDBWithProvider = openRowCollabDBWithProvider as jest.MockedFunction<typeof openRowCollabDBWithProvider>;
+const mockedListCollabIndexedDBNames = listCollabIndexedDBNames as jest.MockedFunction<typeof listCollabIndexedDBNames>;
+const mockedCollabIndexedDBExists = collabIndexedDBExists as jest.MockedFunction<typeof collabIndexedDBExists>;
 const mockedHandleMessage = handleMessage as jest.MockedFunction<typeof handleMessage>;
 const mockedCollabFullSyncBatch = httpApi.collabFullSyncBatch as jest.MockedFunction<typeof httpApi.collabFullSyncBatch>;
 const mockedRevertCollabVersion = httpApi.revertCollabVersion as jest.MockedFunction<typeof httpApi.revertCollabVersion>;
@@ -180,6 +240,12 @@ const defaultWorkspaceId = 'test-workspace';
 const resetCommonMocks = () => {
   mockedUseCurrentUserOptional.mockReturnValue(undefined);
   mockedOpenCollabDB.mockReset();
+  mockedOpenCollabDBWithProvider.mockReset();
+  mockedOpenRowCollabDBWithProvider.mockReset();
+  mockedListCollabIndexedDBNames.mockReset();
+  mockedListCollabIndexedDBNames.mockResolvedValue(new Set());
+  mockedCollabIndexedDBExists.mockReset();
+  mockedCollabIndexedDBExists.mockResolvedValue(false);
   mockedHandleMessage.mockReset();
   mockedCollabFullSyncBatch.mockReset();
   mockedRevertCollabVersion.mockReset();
@@ -827,6 +893,101 @@ describe('useSync public API', () => {
     expect(items.map((item) => item.objectId).sort()).toEqual([docA.guid, docB.guid].sort());
     expect(items.every((item) => item.stateVector instanceof Uint8Array)).toBe(true);
     expect(items.every((item) => item.docState instanceof Uint8Array)).toBe(true);
+  });
+
+  it('syncAllToServer merges legacy row updates before encoding unregistered shared rows', async () => {
+    mockedCollabFullSyncBatch.mockResolvedValueOnce(undefined);
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const databaseId = 'abcabcab-1111-4111-8111-abcabcabcabc';
+    const rowId = 'defdefde-2222-4222-8222-defdefdefdef';
+    const rowKey = `${databaseId}_rows_${rowId}`;
+    const databaseDoc = createDatabaseDocWithRows(databaseId, [rowId]);
+    const sharedRowDoc = createDatabaseRowDoc(rowId, databaseId, { 'server-field': 'server-value' });
+    const legacyRowDoc = createDatabaseRowDoc(rowId, databaseId, { 'legacy-field': 'legacy-value' });
+    const sharedProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+    const legacyProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    mockedListCollabIndexedDBNames.mockResolvedValueOnce(new Set([rowKey]));
+    mockedOpenRowCollabDBWithProvider.mockResolvedValueOnce({
+      doc: sharedRowDoc,
+      provider: sharedProvider,
+    } as never);
+    mockedOpenCollabDBWithProvider.mockResolvedValueOnce({
+      doc: legacyRowDoc,
+      provider: legacyProvider,
+    } as never);
+
+    act(() => {
+      result.current.registerSyncContext({ doc: databaseDoc, collabType: Types.Database });
+    });
+
+    await act(async () => {
+      await result.current.syncAllToServer('workspace-sync');
+    });
+
+    const [, items] = mockedCollabFullSyncBatch.mock.calls[0]!;
+    const rowItem = items.find((item) => item.objectId === rowId);
+    const encodedRowDoc = createDoc(rowId);
+
+    expect(rowItem).toBeDefined();
+    Y.applyUpdate(encodedRowDoc, rowItem!.docState);
+    expect(getRowCellData(encodedRowDoc, 'server-field')).toBe('server-value');
+    expect(getRowCellData(encodedRowDoc, 'legacy-field')).toBe('legacy-value');
+    expect(sharedProvider.destroy).toHaveBeenCalledTimes(1);
+    expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
+    expect(sharedProvider.destroy.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      legacyProvider.destroy.mock.invocationCallOrder[0]!
+    );
+    expect(mockedCollabIndexedDBExists).not.toHaveBeenCalled();
+  });
+
+  it('syncAllToServer probes legacy row cache when IndexedDB enumeration is empty', async () => {
+    mockedCollabFullSyncBatch.mockResolvedValueOnce(undefined);
+    mockedCollabIndexedDBExists.mockResolvedValueOnce(true);
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const databaseId = 'abcabcab-3333-4333-8333-abcabcabcabc';
+    const rowId = 'defdefde-4444-4444-8444-defdefdefdef';
+    const rowKey = `${databaseId}_rows_${rowId}`;
+    const databaseDoc = createDatabaseDocWithRows(databaseId, [rowId]);
+    const sharedRowDoc = createDatabaseRowDoc(rowId, databaseId, { 'server-field': 'server-value' });
+    const legacyRowDoc = createDatabaseRowDoc(rowId, databaseId, { 'legacy-field': 'legacy-value' });
+    const sharedProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+    const legacyProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    mockedListCollabIndexedDBNames.mockResolvedValueOnce(new Set());
+    mockedOpenRowCollabDBWithProvider.mockResolvedValueOnce({
+      doc: sharedRowDoc,
+      provider: sharedProvider,
+    } as never);
+    mockedOpenCollabDBWithProvider.mockResolvedValueOnce({
+      doc: legacyRowDoc,
+      provider: legacyProvider,
+    } as never);
+
+    act(() => {
+      result.current.registerSyncContext({ doc: databaseDoc, collabType: Types.Database });
+    });
+
+    await act(async () => {
+      await result.current.syncAllToServer('workspace-sync');
+    });
+
+    const [, items] = mockedCollabFullSyncBatch.mock.calls[0]!;
+    const rowItem = items.find((item) => item.objectId === rowId);
+    const encodedRowDoc = createDoc(rowId);
+
+    expect(mockedCollabIndexedDBExists).toHaveBeenCalledWith(rowKey);
+    expect(rowItem).toBeDefined();
+    Y.applyUpdate(encodedRowDoc, rowItem!.docState);
+    expect(getRowCellData(encodedRowDoc, 'server-field')).toBe('server-value');
+    expect(getRowCellData(encodedRowDoc, 'legacy-field')).toBe('legacy-value');
+    expect(sharedProvider.destroy.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      legacyProvider.destroy.mock.invocationCallOrder[0]!
+    );
   });
 
   it('syncAllToServer tolerates batch API errors', async () => {
