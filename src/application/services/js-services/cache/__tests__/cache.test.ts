@@ -264,6 +264,38 @@ describe('database row legacy cache migration', () => {
     expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
   });
 
+  it('can keep the legacy row cache after a recovery merge', async () => {
+    const rowId = 'row-legacy-recovery';
+    const databaseId = 'database-legacy-recovery';
+    const rowKey = `${databaseId}_rows_${rowId}`;
+    const sharedDoc = createRowDoc(rowId, databaseId, { 'server-field': 'server-value' });
+    const legacyDoc = createRowDoc(rowId, databaseId, { 'legacy-field': 'legacy-value' });
+    const legacyProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+
+    mockedCollabIndexedDBExists.mockResolvedValue(true);
+    mockedOpenCollabDBWithProvider.mockResolvedValue({
+      doc: legacyDoc,
+      provider: legacyProvider,
+    } as never);
+
+    await expect(
+      mergeLegacyRowDocIfExists(rowKey, rowId, sharedDoc, {
+        deleteLegacyCache: false,
+      })
+    ).resolves.toBe(true);
+
+    expect(getCellData(sharedDoc, 'server-field')).toBe('server-value');
+    expect(getCellData(sharedDoc, 'legacy-field')).toBe('legacy-value');
+    expect(db.collab_custom.put).toHaveBeenCalledWith(
+      expect.objectContaining({
+        objectId: rowId,
+        key: `legacy-row-backfill:${rowKey}`,
+      })
+    );
+    expect(mockedDeleteCollabDB).not.toHaveBeenCalled();
+    expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
+  });
+
   it('skips legacy row migration after the one-time backfill marker exists', async () => {
     const rowId = 'row-legacy-marked';
     const databaseId = 'database-legacy-marked';

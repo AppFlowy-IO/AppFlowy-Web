@@ -61,7 +61,7 @@ export async function collabFullSyncBatch(
     stateVector: Uint8Array;
     docState: Uint8Array;
   }>
-): Promise<void> {
+): Promise<collab.CollabBatchSyncResponse> {
   const url = `/api/workspace/v1/${workspaceId}/collab/full-sync/batch`;
 
   // Build the protobuf request
@@ -124,6 +124,33 @@ export async function collabFullSyncBatch(
       });
     }
   }
+
+  return batchResponse;
+}
+
+export async function collabFullSyncBatchStrict(
+  workspaceId: string,
+  items: Array<{
+    objectId: string;
+    collabType: Types;
+    stateVector: Uint8Array;
+    docState: Uint8Array;
+  }>
+): Promise<void> {
+  const response = await collabFullSyncBatch(workspaceId, items);
+  const failedResults = response.results.filter((result) => result.error);
+
+  if (failedResults.length === 0) return;
+
+  const error = new Error(
+    `Collab batch sync failed for ${failedResults.length} object(s): ${failedResults
+      .map((result) => result.objectId)
+      .join(', ')}`
+  ) as Error & APIError & { results: typeof failedResults };
+
+  error.code = 400;
+  error.results = failedResults;
+  throw error;
 }
 
 export async function getCollab(workspaceId: string, objectId: string, collabType: Types) {

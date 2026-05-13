@@ -9,6 +9,10 @@ import {
   type CollabStorageTable,
   type CollabUpdateRecord,
 } from '@/application/db/tables/collab_storage';
+import {
+  localCollabRecoverySchema,
+  type LocalCollabRecoveryTable,
+} from '@/application/db/tables/local_collab_recovery';
 import { rowSchema, rowTable } from '@/application/db/tables/rows';
 import { syncOutboxSchema, SyncOutboxTable } from '@/application/db/tables/sync_outbox';
 import { userSchema, UserTable } from '@/application/db/tables/users';
@@ -27,14 +31,23 @@ type DexieTables = ViewMetasTable &
   WorkspaceMemberProfileTable &
   VersionsTable &
   SyncOutboxTable &
-  CollabStorageTable;
+  CollabStorageTable &
+  LocalCollabRecoveryTable;
 
 export type Dexie<T = DexieTables> = BaseDexie & T;
 
 export const db = new BaseDexie(`${databasePrefix}_cache`) as Dexie;
 const _schema = Object.assign(
   {},
-  { ...viewMetasSchema, ...userSchema, ...rowSchema, ...versionSchema, ...syncOutboxSchema, ...collabStorageSchema }
+  {
+    ...viewMetasSchema,
+    ...userSchema,
+    ...rowSchema,
+    ...versionSchema,
+    ...syncOutboxSchema,
+    ...collabStorageSchema,
+    ...localCollabRecoverySchema,
+  }
 );
 
 // Version 1: Initial schema with view_metas, users, and rows
@@ -145,6 +158,19 @@ db.version(7).stores({
   ...versionSchema,
   ...syncOutboxSchema,
   ...collabStorageSchema,
+});
+
+// Version 8: Durable recovery manifest for local collab data that must be
+// uploaded independently from React's opened-doc lifecycle.
+db.version(8).stores({
+  ...viewMetasSchema,
+  ...userSchema,
+  ...rowSchema,
+  ...workspaceMemberProfileSchema,
+  ...versionSchema,
+  ...syncOutboxSchema,
+  ...collabStorageSchema,
+  ...localCollabRecoverySchema,
 });
 
 const openedSet = new Set<string>();

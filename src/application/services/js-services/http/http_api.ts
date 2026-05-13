@@ -88,6 +88,7 @@ export {
 export {
   updateCollab,
   collabFullSyncBatch,
+  collabFullSyncBatchStrict,
   getCollab,
   getPageCollab,
   databaseBlobDiff,

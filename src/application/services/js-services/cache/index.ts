@@ -680,7 +680,7 @@ export async function mergeLegacyRowDocIfExists(
   rowKey: string,
   rowObjectId: string,
   doc: YDoc,
-  options: { legacyExists?: boolean } = {}
+  options: { legacyExists?: boolean; deleteLegacyCache?: boolean } = {}
 ) {
   if (rowKey === rowObjectId) {
     return false;
@@ -732,7 +732,7 @@ export async function mergeLegacyRowDocIfExists(
     await provider.destroy();
     legacyDoc.destroy();
 
-    if (consumedLegacyCache) {
+    if (consumedLegacyCache && options.deleteLegacyCache !== false) {
       await deleteLegacyRowCache(rowKey, rowObjectId);
     }
   }

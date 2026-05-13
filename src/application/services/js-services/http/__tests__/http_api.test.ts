@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, jest } from '@jest/globals';
 
-import { AuthProvider } from '@/application/types';
+import { AuthProvider, Types } from '@/application/types';
+import { collab } from '@/proto/messages';
 
 const mockAxiosInstance = {
   interceptors: { request: { use: jest.fn() }, response: { use: jest.fn() } },
@@ -52,6 +53,7 @@ describe('http_api client (unit)', () => {
     jest.resetModules();
     mockAxiosCreate.mockClear();
     mockAxiosInstance.get.mockReset();
+    mockAxiosInstance.post.mockReset();
   });
 
   it('initializes axios instance once with provided config', async () => {
@@ -127,5 +129,48 @@ describe('http_api client (unit)', () => {
     await expect(module.getAuthProviders()).resolves.toEqual([AuthProvider.PASSWORD]);
     expect(errorSpy).toHaveBeenCalled();
     errorSpy.mockRestore();
+  });
+
+  it('marks batch item errors as non-retryable API errors', async () => {
+    const module = await import('../http_api');
+
+    module.initAPIService(baseConfig);
+
+    const responseData = collab.CollabBatchSyncResponse.encode(
+      collab.CollabBatchSyncResponse.create({
+        results: [
+          {
+            objectId: 'row-id',
+            collabType: Types.DatabaseRow,
+            error: 'row was deleted',
+          },
+        ],
+      })
+    ).finish();
+
+    mockAxiosInstance.post.mockResolvedValueOnce({
+      status: 200,
+      data: responseData,
+      headers: {},
+    });
+
+    await expect(
+      module.collabFullSyncBatchStrict('workspace-id', [
+        {
+          objectId: 'row-id',
+          collabType: Types.DatabaseRow,
+          stateVector: new Uint8Array(),
+          docState: new Uint8Array(),
+        },
+      ])
+    ).rejects.toMatchObject({
+      code: 400,
+      results: [
+        expect.objectContaining({
+          objectId: 'row-id',
+          error: 'row was deleted',
+        }),
+      ],
+    });
   });
 });
