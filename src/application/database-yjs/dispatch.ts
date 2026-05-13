@@ -37,6 +37,7 @@ import { createRollupField } from '@/application/database-yjs/fields/rollup/util
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { createDateTimeField } from '@/application/database-yjs/fields/text/utils';
 import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
+import { DEFAULT_FIELD_WRAP } from '@/application/database-yjs/const';
 import { getOptionsFromRow } from '@/application/database-yjs/row';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useFieldSelector, useFieldType } from '@/application/database-yjs/selector';
@@ -1011,6 +1012,7 @@ export function useNewPropertyDispatch() {
           const setting = new Y.Map() as YDatabaseFieldSetting;
 
           setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+          setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
           fieldSettings.set(fieldId, setting);
 
           fieldOrders.push([
@@ -1054,6 +1056,7 @@ export function useAddPropertyLeftDispatch() {
           const setting = new Y.Map() as YDatabaseFieldSetting;
 
           setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+          setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
           fieldSettings.set(newId, setting);
 
           const index = fieldOrders.toArray().findIndex((field) => field.id === fieldId);
@@ -1100,6 +1103,7 @@ export function useAddPropertyRightDispatch() {
           const setting = new Y.Map() as YDatabaseFieldSetting;
 
           setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+          setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
           fieldSettings.set(newId, setting);
 
           const index = fieldOrders.toArray().findIndex((field) => field.id === fieldId);
@@ -1424,7 +1428,7 @@ export function useTogglePropertyWrapDispatch() {
               fieldSettings.set(fieldId, setting);
             }
 
-            const wrap = setting.get(YjsDatabaseKey.wrap) ?? true;
+            const wrap = setting.get(YjsDatabaseKey.wrap) ?? DEFAULT_FIELD_WRAP;
 
             if (checked !== undefined) {
               setting.set(YjsDatabaseKey.wrap, checked);
@@ -1889,6 +1893,7 @@ function generateBoardSetting(database: YDatabase): YDatabaseFieldSettings {
     const setting = new Y.Map() as YDatabaseFieldSetting;
 
     setting.set(YjsDatabaseKey.visibility, FieldVisibility.HideWhenEmpty);
+    setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
 
     fieldSettingsMap.set(id, setting);
   });
@@ -2011,6 +2016,7 @@ function useEnhanceCalendarLayoutByFieldExists() {
           const setting = new Y.Map() as YDatabaseFieldSetting;
 
           setting.set(YjsDatabaseKey.visibility, FieldVisibility.AlwaysShown);
+          setting.set(YjsDatabaseKey.wrap, DEFAULT_FIELD_WRAP);
           fieldSettings.set(fieldId, setting);
         },
         'newDateTimeField'

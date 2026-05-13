@@ -5,7 +5,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { parseYDatabaseCellToCell } from '@/application/database-yjs/cell.parse';
 import { DateTimeCell, RollupCell } from '@/application/database-yjs/cell.type';
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
-import { getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
+import { DEFAULT_FIELD_WRAP, getCell, MIN_COLUMN_WIDTH } from '@/application/database-yjs/const';
 import {
   useDatabase,
   useDatabaseContext,
@@ -270,7 +270,7 @@ export function useFieldsSelector(visibilitys: FieldVisibility[] = defaultVisibl
             visibility: Number(
               setting?.get(YjsDatabaseKey.visibility) || FieldVisibility.AlwaysShown
             ) as FieldVisibility,
-            wrap: setting?.get(YjsDatabaseKey.wrap) ?? true,
+            wrap: setting?.get(YjsDatabaseKey.wrap) ?? DEFAULT_FIELD_WRAP,
             fieldType: Number(field?.get(YjsDatabaseKey.type)) as FieldType,
           };
         })
@@ -355,13 +355,13 @@ export function useFieldWrap(fieldId: string) {
   const fieldSettings = view?.get(YjsDatabaseKey.field_settings);
   const fieldSetting = fieldSettings?.get(fieldId);
 
-  const [wrap, setWrap] = useState(fieldSetting?.get(YjsDatabaseKey.wrap) ?? true);
+  const [wrap, setWrap] = useState(fieldSetting?.get(YjsDatabaseKey.wrap) ?? DEFAULT_FIELD_WRAP);
 
   useEffect(() => {
     if (!view) return;
 
     const observerEvent = () => {
-      setWrap(fieldSetting?.get(YjsDatabaseKey.wrap) ?? true);
+      setWrap(fieldSetting?.get(YjsDatabaseKey.wrap) ?? DEFAULT_FIELD_WRAP);
     };
 
     observerEvent();
