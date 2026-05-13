@@ -548,6 +548,24 @@ function mergeLegacyYMapIntoTarget(target: Y.Map<unknown>, legacy: Y.Map<unknown
   return merged;
 }
 
+function mergeLegacyCellsIntoTarget(target: Y.Map<unknown>, legacy: Y.Map<unknown>) {
+  let merged = false;
+
+  legacy.forEach((legacyCell, fieldId) => {
+    const targetCell = target.get(fieldId);
+
+    if (targetCell instanceof Y.Map && legacyCell instanceof Y.Map) {
+      merged = mergeLegacyYMapIntoTarget(targetCell, legacyCell, true) || merged;
+      return;
+    }
+
+    target.set(fieldId, cloneLegacyYjsValue(legacyCell));
+    merged = true;
+  });
+
+  return merged;
+}
+
 function mergeLegacyRowDataIntoExistingDoc(doc: YDoc, legacyDoc: YDoc): boolean {
   const row = doc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
   const legacyRow = legacyDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
@@ -556,7 +574,30 @@ function mergeLegacyRowDataIntoExistingDoc(doc: YDoc, legacyDoc: YDoc): boolean 
     return false;
   }
 
-  return mergeLegacyYMapIntoTarget(row, legacyRow, false);
+  let merged = false;
+
+  legacyRow.forEach((legacyValue, key) => {
+    const targetValue = row.get(key);
+
+    if (key === YjsDatabaseKey.cells && targetValue instanceof Y.Map && legacyValue instanceof Y.Map) {
+      merged = mergeLegacyCellsIntoTarget(targetValue, legacyValue) || merged;
+      return;
+    }
+
+    if (key === YjsDatabaseKey.id || key === YjsDatabaseKey.database_id) {
+      if (!row.has(key)) {
+        row.set(key, cloneLegacyYjsValue(legacyValue));
+        merged = true;
+      }
+
+      return;
+    }
+
+    row.set(key, cloneLegacyYjsValue(legacyValue));
+    merged = true;
+  });
+
+  return merged;
 }
 
 function getLegacyRowBackfillMarkerKey(rowKey: string) {
@@ -597,6 +638,27 @@ async function deleteLegacyRowCache(rowKey: string, rowObjectId: string) {
   } catch (error) {
     Log.warn('[Database] failed to delete legacy row IndexedDB cache after backfill', { rowKey, rowObjectId, error });
   }
+}
+
+function applyLegacyRowUpdate(doc: YDoc, legacyDoc: YDoc, rowKey: string, rowObjectId: string) {
+  const hadSharedRowData = hasDatabaseRow(doc);
+  const legacyUpdate = Y.encodeStateAsUpdate(legacyDoc, Y.encodeStateVector(doc));
+
+  // Yjs encodes an empty v1 update as two bytes. Nothing to merge.
+  if (legacyUpdate.byteLength <= 2) {
+    return false;
+  }
+
+  applyYDoc(doc, legacyUpdate);
+  invalidateRowConditionCache(doc);
+  Log.debug('[Database] migrated legacy row IndexedDB cache', {
+    rowKey,
+    rowObjectId,
+    bytes: legacyUpdate.byteLength,
+    hadSharedRowData,
+  });
+
+  return true;
 }
 
 function hasAppliedSeed(doc: YDoc, seedBytes: Uint8Array) {
@@ -659,19 +721,7 @@ export async function mergeLegacyRowDocIfExists(
       return merged;
     }
 
-    const legacyUpdate = Y.encodeStateAsUpdate(legacyDoc, Y.encodeStateVector(doc));
-
-    // Yjs encodes an empty v1 update as two bytes. Nothing to merge.
-    if (legacyUpdate.byteLength > 2) {
-      applyYDoc(doc, legacyUpdate);
-      invalidateRowConditionCache(doc);
-      Log.debug('[Database] migrated legacy row IndexedDB cache', {
-        rowKey,
-        rowObjectId,
-        bytes: legacyUpdate.byteLength,
-      });
-      merged = true;
-    }
+    merged = applyLegacyRowUpdate(doc, legacyDoc, rowKey, rowObjectId);
 
     return merged;
   } finally {

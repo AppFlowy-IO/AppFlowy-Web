@@ -9,6 +9,7 @@ import {
   openCollabDBWithProvider,
   openRowCollabDBWithProvider,
   listCollabIndexedDBNames,
+  collabIndexedDBExists,
 } from '@/application/db';
 import * as httpApi from '@/application/services/js-services/http/http_api';
 import { handleMessage } from '@/application/services/js-services/sync-protocol';
@@ -27,6 +28,7 @@ jest.mock('@/application/db', () => {
     openCollabDBWithProvider: jest.fn(),
     openRowCollabDBWithProvider: jest.fn(),
     listCollabIndexedDBNames: jest.fn(),
+    collabIndexedDBExists: jest.fn(),
   };
 });
 
@@ -217,6 +219,7 @@ const mockedOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollab
 const mockedOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
 const mockedOpenRowCollabDBWithProvider = openRowCollabDBWithProvider as jest.MockedFunction<typeof openRowCollabDBWithProvider>;
 const mockedListCollabIndexedDBNames = listCollabIndexedDBNames as jest.MockedFunction<typeof listCollabIndexedDBNames>;
+const mockedCollabIndexedDBExists = collabIndexedDBExists as jest.MockedFunction<typeof collabIndexedDBExists>;
 const mockedHandleMessage = handleMessage as jest.MockedFunction<typeof handleMessage>;
 const mockedCollabFullSyncBatch = httpApi.collabFullSyncBatch as jest.MockedFunction<typeof httpApi.collabFullSyncBatch>;
 const mockedRevertCollabVersion = httpApi.revertCollabVersion as jest.MockedFunction<typeof httpApi.revertCollabVersion>;
@@ -241,6 +244,8 @@ const resetCommonMocks = () => {
   mockedOpenRowCollabDBWithProvider.mockReset();
   mockedListCollabIndexedDBNames.mockReset();
   mockedListCollabIndexedDBNames.mockResolvedValue(new Set());
+  mockedCollabIndexedDBExists.mockReset();
+  mockedCollabIndexedDBExists.mockResolvedValue(false);
   mockedHandleMessage.mockReset();
   mockedCollabFullSyncBatch.mockReset();
   mockedRevertCollabVersion.mockReset();
@@ -932,6 +937,57 @@ describe('useSync public API', () => {
     expect(getRowCellData(encodedRowDoc, 'legacy-field')).toBe('legacy-value');
     expect(sharedProvider.destroy).toHaveBeenCalledTimes(1);
     expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
+    expect(sharedProvider.destroy.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      legacyProvider.destroy.mock.invocationCallOrder[0]!
+    );
+    expect(mockedCollabIndexedDBExists).not.toHaveBeenCalled();
+  });
+
+  it('syncAllToServer probes legacy row cache when IndexedDB enumeration is empty', async () => {
+    mockedCollabFullSyncBatch.mockResolvedValueOnce(undefined);
+    mockedCollabIndexedDBExists.mockResolvedValueOnce(true);
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const databaseId = 'abcabcab-3333-4333-8333-abcabcabcabc';
+    const rowId = 'defdefde-4444-4444-8444-defdefdefdef';
+    const rowKey = `${databaseId}_rows_${rowId}`;
+    const databaseDoc = createDatabaseDocWithRows(databaseId, [rowId]);
+    const sharedRowDoc = createDatabaseRowDoc(rowId, databaseId, { 'server-field': 'server-value' });
+    const legacyRowDoc = createDatabaseRowDoc(rowId, databaseId, { 'legacy-field': 'legacy-value' });
+    const sharedProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+    const legacyProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+    const { result } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    mockedListCollabIndexedDBNames.mockResolvedValueOnce(new Set());
+    mockedOpenRowCollabDBWithProvider.mockResolvedValueOnce({
+      doc: sharedRowDoc,
+      provider: sharedProvider,
+    } as never);
+    mockedOpenCollabDBWithProvider.mockResolvedValueOnce({
+      doc: legacyRowDoc,
+      provider: legacyProvider,
+    } as never);
+
+    act(() => {
+      result.current.registerSyncContext({ doc: databaseDoc, collabType: Types.Database });
+    });
+
+    await act(async () => {
+      await result.current.syncAllToServer('workspace-sync');
+    });
+
+    const [, items] = mockedCollabFullSyncBatch.mock.calls[0]!;
+    const rowItem = items.find((item) => item.objectId === rowId);
+    const encodedRowDoc = createDoc(rowId);
+
+    expect(mockedCollabIndexedDBExists).toHaveBeenCalledWith(rowKey);
+    expect(rowItem).toBeDefined();
+    Y.applyUpdate(encodedRowDoc, rowItem!.docState);
+    expect(getRowCellData(encodedRowDoc, 'server-field')).toBe('server-value');
+    expect(getRowCellData(encodedRowDoc, 'legacy-field')).toBe('legacy-value');
+    expect(sharedProvider.destroy.mock.invocationCallOrder[0]!).toBeGreaterThan(
+      legacyProvider.destroy.mock.invocationCallOrder[0]!
+    );
   });
 
   it('syncAllToServer tolerates batch API errors', async () => {

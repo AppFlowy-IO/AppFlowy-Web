@@ -2,7 +2,12 @@ import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
 import { getRowKey, getMetaJSON } from '@/application/database-yjs/row_meta';
-import { listCollabIndexedDBNames, openCollabDBWithProvider, openRowCollabDBWithProvider } from '@/application/db';
+import {
+  collabIndexedDBExists,
+  listCollabIndexedDBNames,
+  openCollabDBWithProvider,
+  openRowCollabDBWithProvider,
+} from '@/application/db';
 import {
   getCachedRowSubDoc,
   getCachedRowSubDocIds,
@@ -171,45 +176,51 @@ export function useBatchSync(refs: SyncRefs) {
           slice.map(async ({ rowId, rowKey }) => {
             try {
               // Use skipCache to avoid permanently pinning every row doc in memory.
-              // Destroy the provider immediately after reading — we only need the
-              // encoded state for the batch request.
               const { doc: rowDoc, provider } = await openRowCollabDBWithProvider(rowId, { skipCache: true });
 
-              await provider.destroy();
+              try {
+                // If the row was never cached locally, the doc will be empty.
+                // Skip it — uploading an empty state would overwrite the server's
+                // real data during duplicate.
+                let rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
 
-              // If the row was never cached locally, the doc will be empty.
-              // Skip it — uploading an empty state would overwrite the server's
-              // real data during duplicate.
-              let rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+                const legacyExists =
+                  existingIndexedDBNames.has(rowKey) ||
+                  (existingIndexedDBNames.size === 0 && (await collabIndexedDBExists(rowKey)));
 
-              if (existingIndexedDBNames.has(rowKey)) {
-                await mergeLegacyRowDocIfExists(rowKey, rowId, rowDoc, { legacyExists: true });
-                rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+                if (legacyExists) {
+                  await mergeLegacyRowDocIfExists(rowKey, rowId, rowDoc, { legacyExists: true });
+                  rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section);
+                }
+
+                if (!rowSharedRoot.has(YjsEditorKey.database_row)) {
+                  return;
+                }
+
+                const rowMeta = rowSharedRoot.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
+                const rowDocumentId = rowMeta ? getMetaJSON(rowId, rowMeta).documentId : '';
+
+                if (rowDocumentId && !registeredObjectIds.has(rowDocumentId)) {
+                  unregisteredRowDocumentIds.add(rowDocumentId);
+                }
+
+                const docState = Y.encodeStateAsUpdate(rowDoc);
+                const stateVector = Y.encodeStateVector(rowDoc);
+
+                items.push({
+                  objectId: rowId,
+                  collabType: Types.DatabaseRow,
+                  stateVector,
+                  docState,
+                });
+              } finally {
+                try {
+                  await provider.destroy();
+                } finally {
+                  rowDoc.destroy();
+                }
               }
 
-              if (!rowSharedRoot.has(YjsEditorKey.database_row)) {
-                rowDoc.destroy();
-                return;
-              }
-
-              const rowMeta = rowSharedRoot.get(YjsEditorKey.meta) as Y.Map<unknown> | undefined;
-              const rowDocumentId = rowMeta ? getMetaJSON(rowId, rowMeta).documentId : '';
-
-              if (rowDocumentId && !registeredObjectIds.has(rowDocumentId)) {
-                unregisteredRowDocumentIds.add(rowDocumentId);
-              }
-
-              const docState = Y.encodeStateAsUpdate(rowDoc);
-              const stateVector = Y.encodeStateVector(rowDoc);
-
-              rowDoc.destroy();
-
-              items.push({
-                objectId: rowId,
-                collabType: Types.DatabaseRow,
-                stateVector,
-                docState,
-              });
             } catch (e) {
               Log.warn('Failed to load unregistered row doc for sync', { rowKey, error: e });
             }

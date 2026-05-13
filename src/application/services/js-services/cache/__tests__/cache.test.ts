@@ -202,16 +202,16 @@ describe('database row legacy cache migration', () => {
     expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
   });
 
-  it('does not overwrite existing shared row cells with stale legacy data', async () => {
-    const rowId = 'row-legacy-stale';
-    const databaseId = 'database-legacy-stale';
+  it('preserves target-only cells while importing legacy edits for existing cells', async () => {
+    const rowId = 'row-legacy-existing-cell';
+    const databaseId = 'database-legacy-existing-cell';
     const rowKey = `${databaseId}_rows_${rowId}`;
     const sharedDoc = createRowDoc(rowId, databaseId, {
-      'same-field': 'current-value',
+      'same-field': 'server-value',
       'server-field': 'server-value',
     });
     const legacyDoc = createRowDoc(rowId, databaseId, {
-      'same-field': 'stale-value',
+      'same-field': 'legacy-local-value',
       'legacy-field': 'legacy-value',
     });
     const legacyProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
@@ -224,7 +224,7 @@ describe('database row legacy cache migration', () => {
 
     await expect(mergeLegacyRowDocIfExists(rowKey, rowId, sharedDoc)).resolves.toBe(true);
 
-    expect(getCellData(sharedDoc, 'same-field')).toBe('current-value');
+    expect(getCellData(sharedDoc, 'same-field')).toBe('legacy-local-value');
     expect(getCellData(sharedDoc, 'server-field')).toBe('server-value');
     expect(getCellData(sharedDoc, 'legacy-field')).toBe('legacy-value');
     expect(db.collab_custom.put).toHaveBeenCalledWith(
@@ -237,12 +237,12 @@ describe('database row legacy cache migration', () => {
     expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
   });
 
-  it('marks the legacy row cache consumed even when it has no missing data to merge', async () => {
+  it('marks the legacy row cache consumed when only existing cells were migrated', async () => {
     const rowId = 'row-legacy-noop';
     const databaseId = 'database-legacy-noop';
     const rowKey = `${databaseId}_rows_${rowId}`;
     const sharedDoc = createRowDoc(rowId, databaseId, { 'same-field': 'current-value' });
-    const legacyDoc = createRowDoc(rowId, databaseId, { 'same-field': 'stale-value' });
+    const legacyDoc = createRowDoc(rowId, databaseId, { 'same-field': 'legacy-local-value' });
     const legacyProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
 
     mockedCollabIndexedDBExists.mockResolvedValue(true);
@@ -251,9 +251,9 @@ describe('database row legacy cache migration', () => {
       provider: legacyProvider,
     } as never);
 
-    await expect(mergeLegacyRowDocIfExists(rowKey, rowId, sharedDoc)).resolves.toBe(false);
+    await expect(mergeLegacyRowDocIfExists(rowKey, rowId, sharedDoc)).resolves.toBe(true);
 
-    expect(getCellData(sharedDoc, 'same-field')).toBe('current-value');
+    expect(getCellData(sharedDoc, 'same-field')).toBe('legacy-local-value');
     expect(db.collab_custom.put).toHaveBeenCalledWith(
       expect.objectContaining({
         objectId: rowId,

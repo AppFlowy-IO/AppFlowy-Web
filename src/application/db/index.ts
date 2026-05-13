@@ -237,10 +237,79 @@ export async function listCollabIndexedDBNames() {
   }
 }
 
+async function probeCollabIndexedDBExists(name: string) {
+  if (typeof indexedDB === 'undefined') return false;
+
+  return new Promise<boolean>((resolve) => {
+    let createdDuringProbe = false;
+    let settled = false;
+    const resolveOnce = (exists: boolean) => {
+      if (settled) return;
+
+      settled = true;
+      resolve(exists);
+    };
+
+    try {
+      const request = indexedDB.open(name);
+
+      request.onupgradeneeded = () => {
+        createdDuringProbe = true;
+      };
+
+      request.onsuccess = async () => {
+        const database = request.result;
+
+        database.close();
+
+        if (createdDuringProbe) {
+          const deleted = await deleteIndexedDBDatabase(name);
+
+          if (!deleted) {
+            Log.warn('[DB] failed to delete empty IndexedDB database created while probing existence', { name });
+          }
+
+          resolveOnce(false);
+          return;
+        }
+
+        resolveOnce(true);
+      };
+
+      request.onerror = () => {
+        Log.warn('[DB] failed to probe collab IndexedDB database', { name, error: request.error });
+        resolveOnce(false);
+      };
+
+      request.onblocked = () => {
+        Log.warn('[DB] collab IndexedDB existence probe blocked', { name });
+        resolveOnce(false);
+      };
+    } catch (error) {
+      Log.warn('[DB] failed to probe collab IndexedDB database', { name, error });
+      resolveOnce(false);
+    }
+  });
+}
+
 export async function collabIndexedDBExists(name: string) {
   if (!name) return false;
 
-  return (await listCollabIndexedDBNames()).has(name);
+  if (typeof indexedDB === 'undefined') return false;
+
+  const indexedDBWithDatabases = indexedDB as IndexedDBFactoryWithDatabases;
+
+  if (typeof indexedDBWithDatabases.databases === 'function') {
+    try {
+      const databases = await indexedDBWithDatabases.databases();
+
+      return databases.some((database) => database.name === name);
+    } catch (error) {
+      Log.warn('[DB] failed to list IndexedDB databases while checking collab existence', { name, error });
+    }
+  }
+
+  return probeCollabIndexedDBExists(name);
 }
 
 export interface OpenCollabOptions {
