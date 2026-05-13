@@ -900,7 +900,7 @@ function Database(props: Database2Props) {
   }
 
   return (
-    <div className={'flex w-full flex-1 justify-center'}>
+    <div className={'flex min-h-0 w-full flex-1 justify-center'}>
       <DatabaseContextProvider value={mainContextValue}>
         {rowId ? (
           <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
@@ -908,7 +908,7 @@ function Database(props: Database2Props) {
           <div
             className={cn(
               'appflowy-database relative flex w-full select-text flex-col',
-              shouldUseFixedViewport ? 'flex-1 overflow-hidden' : 'overflow-visible'
+              shouldUseFixedViewport ? 'min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
             )}
           >
             <DatabaseViews

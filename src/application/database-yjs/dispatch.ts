@@ -2114,7 +2114,7 @@ export function useAddDatabaseView() {
         if (isDatabaseContainer(parentMeta)) {
           return {
             tabsParentViewId: parentId,
-            prevViewId: currentMeta?.view_id,
+            prevViewId: getLastChildViewId(parentMeta),
           };
         }
 
@@ -2122,7 +2122,7 @@ export function useAddDatabaseView() {
         if (isDocumentBlock) {
           return {
             tabsParentViewId: parentId,
-            prevViewId: currentMeta?.view_id,
+            prevViewId: getLastChildViewId(parentMeta) ?? currentMeta?.view_id,
           };
         }
 

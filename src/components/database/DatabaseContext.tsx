@@ -32,6 +32,11 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
       __TEST_DATABASE_CONTEXT__?: DatabaseContextState;
       Y?: typeof Y;
     };
+    const previousTestContext = {
+      databaseDoc: testWindow.__TEST_DATABASE_DOC__,
+      viewId: testWindow.__TEST_DATABASE_VIEW_ID__,
+      context: testWindow.__TEST_DATABASE_CONTEXT__,
+    };
 
     testWindow.__TEST_DATABASE_DOC__ = value.databaseDoc;
     testWindow.__TEST_DATABASE_VIEW_ID__ = value.activeViewId;
@@ -40,9 +45,15 @@ export const DatabaseContextProvider = ({ children, value }: DatabaseContextProv
 
     return () => {
       if (testWindow.__TEST_DATABASE_CONTEXT__ === value) {
-        delete testWindow.__TEST_DATABASE_DOC__;
-        delete testWindow.__TEST_DATABASE_VIEW_ID__;
-        delete testWindow.__TEST_DATABASE_CONTEXT__;
+        if (previousTestContext.context) {
+          testWindow.__TEST_DATABASE_DOC__ = previousTestContext.databaseDoc;
+          testWindow.__TEST_DATABASE_VIEW_ID__ = previousTestContext.viewId;
+          testWindow.__TEST_DATABASE_CONTEXT__ = previousTestContext.context;
+        } else {
+          delete testWindow.__TEST_DATABASE_DOC__;
+          delete testWindow.__TEST_DATABASE_VIEW_ID__;
+          delete testWindow.__TEST_DATABASE_CONTEXT__;
+        }
       }
 
       // Keep Y exposed — it may be needed by other editors

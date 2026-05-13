@@ -34,10 +34,11 @@ function createView(overrides: Partial<View>): View {
 }
 
 describe('useAddDatabaseView', () => {
-  it('creates linked view under database container when parent is container', async () => {
+  it('appends linked view under database container when parent is container', async () => {
     const databaseId = 'db-1';
     const baseViewId = 'base-view-id';
     const activeViewId = 'active-view-id';
+    const lastChildId = 'last-child-id';
     const containerId = 'container-view-id';
 
     const createDatabaseView = jest.fn().mockResolvedValue({
@@ -61,6 +62,8 @@ describe('useAddDatabaseView', () => {
           extra: { is_space: false, is_database_container: true },
           children: [
             createView({ view_id: baseViewId, layout: ViewLayout.Grid, parent_view_id: containerId }),
+            createView({ view_id: activeViewId, layout: ViewLayout.Board, parent_view_id: containerId }),
+            createView({ view_id: lastChildId, layout: ViewLayout.Calendar, parent_view_id: containerId }),
           ],
         });
       }
@@ -92,7 +95,7 @@ describe('useAddDatabaseView', () => {
       activeViewId,
       expect.objectContaining({
         parent_view_id: containerId,
-        prev_view_id: activeViewId,
+        prev_view_id: lastChildId,
         database_id: databaseId,
         layout: ViewLayout.Calendar,
         name: 'Calendar',
@@ -104,6 +107,7 @@ describe('useAddDatabaseView', () => {
   it('creates embedded linked view under document when no container exists', async () => {
     const databaseId = 'db-1';
     const baseViewId = 'linked-view-id';
+    const lastChildId = 'last-document-child-id';
     const documentId = 'document-id';
 
     const createDatabaseView = jest.fn().mockResolvedValue({
@@ -125,6 +129,10 @@ describe('useAddDatabaseView', () => {
         return createView({
           view_id: documentId,
           layout: ViewLayout.Document,
+          children: [
+            createView({ view_id: baseViewId, layout: ViewLayout.Grid, parent_view_id: documentId }),
+            createView({ view_id: lastChildId, layout: ViewLayout.Document, parent_view_id: documentId }),
+          ],
         });
       }
 
@@ -155,7 +163,7 @@ describe('useAddDatabaseView', () => {
       baseViewId,
       expect.objectContaining({
         parent_view_id: documentId,
-        prev_view_id: baseViewId,
+        prev_view_id: lastChildId,
         database_id: databaseId,
         layout: ViewLayout.Board,
         name: 'Board',
