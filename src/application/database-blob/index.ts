@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 
 import { hasRowConditionData, invalidateRowConditionCache } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { getCachedProviderDoc, openCollabDBWithProvider } from '@/application/db';
+import { getCachedProviderDoc, openCollabDBWithProvider, openRowCollabDBWithProvider } from '@/application/db';
 import { getCachedRowDoc } from '@/application/services/js-services/cache';
 import { databaseBlobDiff } from '@/application/services/js-services/http/http_api';
 import { YDoc, YjsEditorKey } from '@/application/types';
@@ -550,7 +550,11 @@ function inspectDocRowData(doc: YDoc, objectId: string): {
   }
 }
 
-async function applyCollabUpdate(objectId: string, docState: database_blob.ICollabDocState) {
+async function applyCollabUpdate(
+  objectId: string,
+  docState: database_blob.ICollabDocState,
+  options?: { useSharedRowStorage?: boolean }
+) {
   const state = getDocState(docState);
 
   if (!state) {
@@ -589,7 +593,9 @@ async function applyCollabUpdate(objectId: string, docState: database_blob.IColl
   });
 
   const openStartedAt = Date.now();
-  const { doc, provider } = await openCollabDBWithProvider(objectId, { skipCache: true });
+  const { doc, provider } = options?.useSharedRowStorage
+    ? await openRowCollabDBWithProvider(objectId, { skipCache: true })
+    : await openCollabDBWithProvider(objectId, { skipCache: true });
 
   const beforeState = inspectDocRowData(doc, objectId);
 
@@ -658,7 +664,7 @@ async function applyRowUpdate(
       cacheRowDocSeed(rowKey, rowDocState);
     }
 
-    await applyCollabUpdate(rowKey, rowDocState);
+    await applyCollabUpdate(rowId, rowDocState, { useSharedRowStorage: true });
   }
 
   const doc = update.document;

@@ -40,6 +40,8 @@ import { getDefaultFilterCondition } from '@/application/database-yjs/filter';
 import { getOptionsFromRow } from '@/application/database-yjs/row';
 import { getMetaIdMap } from '@/application/database-yjs/row_meta';
 import { useBoardLayoutSettings, useCalendarLayoutSetting, useFieldSelector, useFieldType } from '@/application/database-yjs/selector';
+import { deleteCollabDB } from '@/application/db';
+import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
   DatabaseViewLayout,
@@ -693,6 +695,8 @@ export function useDeleteRowDispatch() {
         },
         'deleteRowDispatch'
       );
+      void deleteOutboxByObjectId(rowId);
+      void deleteCollabDB(rowId, { destroyDoc: false });
     },
     [sharedRoot, database]
   );
@@ -729,6 +733,10 @@ export function useBulkDeleteRowDispatch() {
         },
         'bulkDeleteRowDispatch'
       );
+      rowIds.forEach((rowId) => {
+        void deleteOutboxByObjectId(rowId);
+        void deleteCollabDB(rowId, { destroyDoc: false });
+      });
     },
     [sharedRoot, database]
   );

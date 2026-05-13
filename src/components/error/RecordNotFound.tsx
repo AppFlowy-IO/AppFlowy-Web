@@ -22,7 +22,7 @@ function RecordNotFound({
   noContent?: boolean;
   isViewNotFound?: boolean;
   error?: AppError;
-  onRetry?: () => void | Promise<void>;
+  onRetry?: () => void | Promise<unknown>;
 }) {
   const { t } = useTranslation();
   const currentWorkspaceId = useCurrentWorkspaceId();

@@ -28,7 +28,8 @@ import {
 } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
-import { getCachedProviderDoc, openCollabDB } from '@/application/db';
+import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
+import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import { Log } from '@/utils/log';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
@@ -246,6 +247,8 @@ export function useDeleteRowDispatch() {
         },
         'deleteRowDispatch'
       );
+      void deleteOutboxByObjectId(rowId);
+      void deleteCollabDB(rowId, { destroyDoc: false });
     },
     [sharedRoot, database]
   );
@@ -282,6 +285,10 @@ export function useBulkDeleteRowDispatch() {
         },
         'bulkDeleteRowDispatch'
       );
+      rowIds.forEach((rowId) => {
+        void deleteOutboxByObjectId(rowId);
+        void deleteCollabDB(rowId, { destroyDoc: false });
+      });
     },
     [sharedRoot, database]
   );

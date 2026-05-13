@@ -1,18 +1,32 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Row } from '@/application/database-yjs';
-import { RenderRow, useRenderRows } from '@/components/database/components/grid/grid-row';
+import { Row, useDatabaseContext } from '@/application/database-yjs';
+import {
+  EMBEDDED_GRID_INITIAL_ROW_LIMIT,
+  EMBEDDED_GRID_LOAD_MORE_INCREMENT,
+  RenderRow,
+  useRenderRows,
+} from '@/components/database/components/grid/grid-row';
 import { GridContext } from '@/components/database/grid/useGridContext';
 
 export const GridProvider = ({ children, rowOrders }: { children: React.ReactNode; rowOrders?: Row[] }) => {
   const [hoverRowId, setHoverRowId] = useState<string | undefined>();
   const [activePropertyId, setActivePropertyId] = useState<string | undefined>();
-  const { rows: initialRows } = useRenderRows(rowOrders);
+  const { isDocumentBlock, activeViewId } = useDatabaseContext();
+  const [visibleRowLimit, setVisibleRowLimit] = useState(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
+  const embeddedVisibleRowLimit = isDocumentBlock ? visibleRowLimit : undefined;
+  const { rows: initialRows, remainingRowCount, lastVisibleRowId } = useRenderRows(rowOrders, {
+    visibleRowLimit: embeddedVisibleRowLimit,
+  });
   const [rows, setRows] = useState<RenderRow[]>(initialRows);
   const [resizeRows, setResizeRows] = useState<Map<string, number>>(new Map());
 
   const isWheelingRef = useRef(false);
   const ref = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setVisibleRowLimit(EMBEDDED_GRID_INITIAL_ROW_LIMIT);
+  }, [activeViewId, isDocumentBlock]);
 
   useEffect(() => {
     setRows(initialRows);
@@ -64,6 +78,16 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
     });
   }, []);
 
+  const loadMoreRows = useCallback(() => {
+    setVisibleRowLimit((prev) => prev + EMBEDDED_GRID_LOAD_MORE_INCREMENT);
+  }, []);
+
+  const revealCreatedRow = useCallback(() => {
+    if (!isDocumentBlock) return;
+
+    setVisibleRowLimit((prev) => prev + 1);
+  }, [isDocumentBlock]);
+
   const [showStickyHeader, setShowStickyHeader] = useState(false);
   const contextValue = useMemo(
     () => ({
@@ -78,6 +102,10 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
       resizeRows,
       setResizeRow: onResizeRow,
       onResizeRowEnd,
+      remainingRowCount,
+      lastVisibleRowId,
+      loadMoreRows,
+      revealCreatedRow,
       showStickyHeader,
       setShowStickyHeader,
     }),
@@ -90,6 +118,10 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
       resizeRows,
       onResizeRow,
       onResizeRowEnd,
+      remainingRowCount,
+      lastVisibleRowId,
+      loadMoreRows,
+      revealCreatedRow,
       showStickyHeader,
     ]
   );

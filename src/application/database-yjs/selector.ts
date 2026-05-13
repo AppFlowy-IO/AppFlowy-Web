@@ -86,12 +86,16 @@ function shouldLogDatabaseConditionPerformance() {
   return typeof window !== 'undefined' && window.location.hostname === 'localhost';
 }
 
+function stringifyConditionSignature(value: unknown) {
+  return JSON.stringify(value, (_key, item) => (typeof item === 'bigint' ? item.toString() : item));
+}
+
 function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilters) {
   const hasConditions = (sorts?.length ?? 0) > 0 || (filters?.length ?? 0) > 0;
 
   if (!hasConditions) return '';
 
-  return JSON.stringify({
+  return stringifyConditionSignature({
     filters: filters?.toJSON?.() ?? [],
     sorts: sorts?.toJSON?.() ?? [],
   });

@@ -46,4 +46,57 @@ describe('useRenderRows', () => {
       RenderRowType.CalculateRow,
     ]);
   });
+
+  it('does not limit rows when no visible row limit is provided', () => {
+    const rows = [{ id: 'row-1' }, { id: 'row-2' }, { id: 'row-3' }];
+    const { result } = renderHook(() => useRenderRows(rows), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.Header,
+      RenderRowType.Row,
+      RenderRowType.Row,
+      RenderRowType.Row,
+      RenderRowType.NewRow,
+      RenderRowType.CalculateRow,
+    ]);
+    expect(result.current.remainingRowCount).toBe(0);
+    expect(result.current.lastVisibleRowId).toBe('row-3');
+  });
+
+  it('adds a load-more row when a visible row limit hides rows', () => {
+    const rows = [{ id: 'row-1' }, { id: 'row-2' }, { id: 'row-3' }, { id: 'row-4' }];
+    const { result } = renderHook(() => useRenderRows(rows, { visibleRowLimit: 2 }), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.Header,
+      RenderRowType.Row,
+      RenderRowType.Row,
+      RenderRowType.LoadMoreRow,
+      RenderRowType.NewRow,
+      RenderRowType.CalculateRow,
+    ]);
+    expect(result.current.remainingRowCount).toBe(2);
+    expect(result.current.lastVisibleRowId).toBe('row-2');
+  });
+
+  it('does not add a load-more row when the limit covers every row', () => {
+    const rows = [{ id: 'row-1' }, { id: 'row-2' }];
+    const { result } = renderHook(() => useRenderRows(rows, { visibleRowLimit: 25 }), {
+      wrapper: createWrapper(),
+    });
+
+    expect(result.current.rows.map((row) => row.type)).toEqual([
+      RenderRowType.Header,
+      RenderRowType.Row,
+      RenderRowType.Row,
+      RenderRowType.NewRow,
+      RenderRowType.CalculateRow,
+    ]);
+    expect(result.current.remainingRowCount).toBe(0);
+    expect(result.current.lastVisibleRowId).toBe('row-2');
+  });
 });

@@ -4,6 +4,7 @@ import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRowType } from '@/components/database/components/grid/grid-row';
+import GridLoadMoreRow from '@/components/database/components/grid/grid-row/GridLoadMoreRow';
 import GridNewRow from '@/components/database/components/grid/grid-row/GridNewRow';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
@@ -193,6 +194,8 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
             const rowData = data[row.index];
             const rowId = rowData.rowId;
             const isPlaceholderRow = rowData.type === RenderRowType.PlaceholderRow;
+            const isFullWidthControlRow =
+              rowData.type === RenderRowType.NewRow || rowData.type === RenderRowType.LoadMoreRow;
 
             return (
               <div
@@ -220,7 +223,7 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   >
                     {gridLoadingDots}
                   </div>
-                ) : rowData.type === RenderRowType.NewRow ? (
+                ) : isFullWidthControlRow ? (
                   <div
                     style={{
                       paddingLeft: columnItems[0]?.start,
@@ -228,7 +231,11 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                       width: totalSize - (paddingEnd ?? 0),
                     }}
                   >
-                    <GridNewRow />
+                    {rowData.type === RenderRowType.LoadMoreRow ? (
+                      <GridLoadMoreRow remainingCount={rowData.remainingRowCount ?? 0} />
+                    ) : (
+                      <GridNewRow />
+                    )}
                   </div>
                 ) : (
                   <GridVirtualRow
