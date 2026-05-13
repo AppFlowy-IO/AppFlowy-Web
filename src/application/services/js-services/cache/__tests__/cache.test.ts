@@ -9,7 +9,7 @@ import {
   mergeLegacyRowDocIfExists,
 } from '@/application/services/js-services/cache';
 import { applyYDoc } from '@/application/ydoc/apply';
-import { openCollabDB, openCollabDBWithProvider, collabIndexedDBExists, db } from '@/application/db';
+import { openCollabDB, openCollabDBWithProvider, collabIndexedDBExists, db, deleteCollabDB } from '@/application/db';
 import { StrategyType } from '@/application/services/js-services/cache/types';
 
 jest.mock('@/application/ydoc/apply', () => ({
@@ -22,9 +22,14 @@ jest.mock('@/application/db', () => ({
   openRowCollabDBWithProvider: jest.fn(),
   collabIndexedDBExists: jest.fn(),
   closeCollabDB: jest.fn(),
+  deleteCollabDB: jest.fn(),
   evictProviderCache: jest.fn(),
   db: {
     view_metas: {
+      get: jest.fn(),
+      put: jest.fn(),
+    },
+    collab_custom: {
       get: jest.fn(),
       put: jest.fn(),
     },
@@ -36,6 +41,7 @@ const mockFetcher = jest.fn();
 const mockedApplyYDoc = applyYDoc as jest.MockedFunction<typeof applyYDoc>;
 const mockedOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
 const mockedCollabIndexedDBExists = collabIndexedDBExists as jest.MockedFunction<typeof collabIndexedDBExists>;
+const mockedDeleteCollabDB = deleteCollabDB as jest.MockedFunction<typeof deleteCollabDB>;
 
 function createRowDoc(rowId: string, databaseId: string, cells: Record<string, unknown>) {
   const doc = new Y.Doc() as YDoc;
@@ -159,6 +165,9 @@ describe('Cache functions', () => {
 describe('database row legacy cache migration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    (db.collab_custom.get as jest.Mock).mockResolvedValue(undefined);
+    (db.collab_custom.put as jest.Mock).mockResolvedValue(undefined);
+    mockedDeleteCollabDB.mockResolvedValue(true);
     mockedApplyYDoc.mockImplementation((doc, state) => {
       Y.applyUpdate(doc, state);
     });
@@ -183,7 +192,93 @@ describe('database row legacy cache migration', () => {
     expect(mockedCollabIndexedDBExists).toHaveBeenCalledWith(rowKey);
     expect(getCellData(sharedDoc, 'server-field')).toBe('server-value');
     expect(getCellData(sharedDoc, 'legacy-field')).toBe('legacy-value');
+    expect(db.collab_custom.put).toHaveBeenCalledWith(
+      expect.objectContaining({
+        objectId: rowId,
+        key: `legacy-row-backfill:${rowKey}`,
+      })
+    );
+    expect(mockedDeleteCollabDB).toHaveBeenCalledWith(rowKey);
     expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not overwrite existing shared row cells with stale legacy data', async () => {
+    const rowId = 'row-legacy-stale';
+    const databaseId = 'database-legacy-stale';
+    const rowKey = `${databaseId}_rows_${rowId}`;
+    const sharedDoc = createRowDoc(rowId, databaseId, {
+      'same-field': 'current-value',
+      'server-field': 'server-value',
+    });
+    const legacyDoc = createRowDoc(rowId, databaseId, {
+      'same-field': 'stale-value',
+      'legacy-field': 'legacy-value',
+    });
+    const legacyProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+
+    mockedCollabIndexedDBExists.mockResolvedValue(true);
+    mockedOpenCollabDBWithProvider.mockResolvedValue({
+      doc: legacyDoc,
+      provider: legacyProvider,
+    } as never);
+
+    await expect(mergeLegacyRowDocIfExists(rowKey, rowId, sharedDoc)).resolves.toBe(true);
+
+    expect(getCellData(sharedDoc, 'same-field')).toBe('current-value');
+    expect(getCellData(sharedDoc, 'server-field')).toBe('server-value');
+    expect(getCellData(sharedDoc, 'legacy-field')).toBe('legacy-value');
+    expect(db.collab_custom.put).toHaveBeenCalledWith(
+      expect.objectContaining({
+        objectId: rowId,
+        key: `legacy-row-backfill:${rowKey}`,
+      })
+    );
+    expect(mockedDeleteCollabDB).toHaveBeenCalledWith(rowKey);
+    expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('marks the legacy row cache consumed even when it has no missing data to merge', async () => {
+    const rowId = 'row-legacy-noop';
+    const databaseId = 'database-legacy-noop';
+    const rowKey = `${databaseId}_rows_${rowId}`;
+    const sharedDoc = createRowDoc(rowId, databaseId, { 'same-field': 'current-value' });
+    const legacyDoc = createRowDoc(rowId, databaseId, { 'same-field': 'stale-value' });
+    const legacyProvider = { destroy: jest.fn().mockResolvedValue(undefined) };
+
+    mockedCollabIndexedDBExists.mockResolvedValue(true);
+    mockedOpenCollabDBWithProvider.mockResolvedValue({
+      doc: legacyDoc,
+      provider: legacyProvider,
+    } as never);
+
+    await expect(mergeLegacyRowDocIfExists(rowKey, rowId, sharedDoc)).resolves.toBe(false);
+
+    expect(getCellData(sharedDoc, 'same-field')).toBe('current-value');
+    expect(db.collab_custom.put).toHaveBeenCalledWith(
+      expect.objectContaining({
+        objectId: rowId,
+        key: `legacy-row-backfill:${rowKey}`,
+      })
+    );
+    expect(mockedDeleteCollabDB).toHaveBeenCalledWith(rowKey);
+    expect(legacyProvider.destroy).toHaveBeenCalledTimes(1);
+  });
+
+  it('skips legacy row migration after the one-time backfill marker exists', async () => {
+    const rowId = 'row-legacy-marked';
+    const databaseId = 'database-legacy-marked';
+    const rowKey = `${databaseId}_rows_${rowId}`;
+    const sharedDoc = createRowDoc(rowId, databaseId, { 'same-field': 'current-value' });
+
+    (db.collab_custom.get as jest.Mock).mockResolvedValue({ rowKey, migratedAt: Date.now() });
+
+    await expect(mergeLegacyRowDocIfExists(rowKey, rowId, sharedDoc)).resolves.toBe(false);
+
+    expect(mockedCollabIndexedDBExists).not.toHaveBeenCalled();
+    expect(mockedOpenCollabDBWithProvider).not.toHaveBeenCalled();
+    expect(db.collab_custom.put).not.toHaveBeenCalled();
+    expect(mockedDeleteCollabDB).not.toHaveBeenCalled();
+    expect(getCellData(sharedDoc, 'same-field')).toBe('current-value');
   });
 });
 

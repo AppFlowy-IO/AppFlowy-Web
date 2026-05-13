@@ -7,6 +7,7 @@ import {
   closeCollabDB,
   collabIndexedDBExists,
   db,
+  deleteCollabDB,
   evictProviderCache,
   openCollabDB,
   openCollabDBWithProvider,
@@ -472,6 +473,7 @@ const rowDocs = new Map<string, RowDocEntry>();
 const pendingRowDocEntries = new Map<string, Promise<RowDocEntry>>();
 const appliedSeedBytesByDoc = new WeakMap<YDoc, WeakSet<Uint8Array>>();
 const ROW_KEY_SEPARATOR = '_rows_';
+const LEGACY_ROW_BACKFILL_MARKER_PREFIX = 'legacy-row-backfill:';
 
 function getRowObjectId(rowKey: string) {
   const separatorIndex = rowKey.lastIndexOf(ROW_KEY_SEPARATOR);
@@ -533,7 +535,7 @@ function mergeLegacyYMapIntoTarget(target: Y.Map<unknown>, legacy: Y.Map<unknown
     const targetValue = target.get(key);
 
     if (targetValue instanceof Y.Map && legacyValue instanceof Y.Map) {
-      merged = mergeLegacyYMapIntoTarget(targetValue, legacyValue, true) || merged;
+      merged = mergeLegacyYMapIntoTarget(targetValue, legacyValue, overwriteExisting) || merged;
       return;
     }
 
@@ -554,7 +556,47 @@ function mergeLegacyRowDataIntoExistingDoc(doc: YDoc, legacyDoc: YDoc): boolean 
     return false;
   }
 
-  return mergeLegacyYMapIntoTarget(row, legacyRow, true);
+  return mergeLegacyYMapIntoTarget(row, legacyRow, false);
+}
+
+function getLegacyRowBackfillMarkerKey(rowKey: string) {
+  return `${LEGACY_ROW_BACKFILL_MARKER_PREFIX}${rowKey}`;
+}
+
+async function hasLegacyRowBackfillCompleted(rowObjectId: string, rowKey: string) {
+  try {
+    return Boolean(await db.collab_custom.get([rowObjectId, getLegacyRowBackfillMarkerKey(rowKey)]));
+  } catch (error) {
+    Log.warn('[Database] failed to read legacy row backfill marker', { rowKey, rowObjectId, error });
+    return false;
+  }
+}
+
+async function markLegacyRowBackfillCompleted(rowObjectId: string, rowKey: string) {
+  try {
+    await db.collab_custom.put({
+      objectId: rowObjectId,
+      key: getLegacyRowBackfillMarkerKey(rowKey),
+      value: {
+        rowKey,
+        migratedAt: Date.now(),
+      },
+    });
+  } catch (error) {
+    Log.warn('[Database] failed to write legacy row backfill marker', { rowKey, rowObjectId, error });
+  }
+}
+
+async function deleteLegacyRowCache(rowKey: string, rowObjectId: string) {
+  try {
+    const deleted = await deleteCollabDB(rowKey);
+
+    if (!deleted) {
+      Log.warn('[Database] failed to delete legacy row IndexedDB cache after backfill', { rowKey, rowObjectId });
+    }
+  } catch (error) {
+    Log.warn('[Database] failed to delete legacy row IndexedDB cache after backfill', { rowKey, rowObjectId, error });
+  }
 }
 
 function hasAppliedSeed(doc: YDoc, seedBytes: Uint8Array) {
@@ -582,6 +624,10 @@ export async function mergeLegacyRowDocIfExists(
     return false;
   }
 
+  if (await hasLegacyRowBackfillCompleted(rowObjectId, rowKey)) {
+    return false;
+  }
+
   const legacyExists = options.legacyExists ?? (await collabIndexedDBExists(rowKey));
 
   if (!legacyExists) {
@@ -589,14 +635,18 @@ export async function mergeLegacyRowDocIfExists(
   }
 
   const { doc: legacyDoc, provider } = await openCollabDBWithProvider(rowKey, { skipCache: true });
+  let merged = false;
+  let consumedLegacyCache = false;
 
   try {
     if (!hasDatabaseRow(legacyDoc)) {
-      return false;
+      return merged;
     }
 
+    consumedLegacyCache = true;
+
     if (hasDatabaseRow(doc)) {
-      const merged = mergeLegacyRowDataIntoExistingDoc(doc, legacyDoc);
+      merged = mergeLegacyRowDataIntoExistingDoc(doc, legacyDoc);
 
       if (merged) {
         invalidateRowConditionCache(doc);
@@ -612,22 +662,29 @@ export async function mergeLegacyRowDocIfExists(
     const legacyUpdate = Y.encodeStateAsUpdate(legacyDoc, Y.encodeStateVector(doc));
 
     // Yjs encodes an empty v1 update as two bytes. Nothing to merge.
-    if (legacyUpdate.byteLength <= 2) {
-      return false;
+    if (legacyUpdate.byteLength > 2) {
+      applyYDoc(doc, legacyUpdate);
+      invalidateRowConditionCache(doc);
+      Log.debug('[Database] migrated legacy row IndexedDB cache', {
+        rowKey,
+        rowObjectId,
+        bytes: legacyUpdate.byteLength,
+      });
+      merged = true;
     }
 
-    applyYDoc(doc, legacyUpdate);
-    invalidateRowConditionCache(doc);
-    Log.debug('[Database] migrated legacy row IndexedDB cache', {
-      rowKey,
-      rowObjectId,
-      bytes: legacyUpdate.byteLength,
-    });
-
-    return true;
+    return merged;
   } finally {
+    if (consumedLegacyCache) {
+      await markLegacyRowBackfillCompleted(rowObjectId, rowKey);
+    }
+
     await provider.destroy();
     legacyDoc.destroy();
+
+    if (consumedLegacyCache) {
+      await deleteLegacyRowCache(rowKey, rowObjectId);
+    }
   }
 }
 
