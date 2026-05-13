@@ -149,6 +149,12 @@ export function enqueueOutboxUpdate(record: Omit<SyncOutboxRecord, 'id' | 'creat
 
   addPromise
     .then(() => {
+      Log.debug('[outbox] enqueue persisted', {
+        workspaceId,
+        objectId: record.objectId,
+        collabType: record.collabType,
+        payloadBytes: record.payload.byteLength,
+      });
       scheduleDrain(record.objectId);
     })
     .catch((error) => {
@@ -268,6 +274,11 @@ export function startDrainAll() {
 
     try {
       const objectIds = await distinctObjectIdsForSession(drainConfig.userId, drainConfig.workspaceId);
+
+      Log.debug('[outbox] startDrainAll discovered pending objects', {
+        workspaceId: drainConfig.workspaceId,
+        objectCount: objectIds.length,
+      });
 
       for (const objectId of objectIds) {
         scheduleDrain(objectId);
@@ -537,6 +548,16 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
       : Y.mergeUpdates(records.map((r) => r.payload));
     const collabType = records[records.length - 1].collabType as Types;
     const version = records[records.length - 1].version;
+    const payloadBytes = records.reduce((sum, record) => sum + record.payload.byteLength, 0);
+
+    Log.debug('[outbox] draining object', {
+      workspaceId,
+      objectId,
+      collabType,
+      recordCount: records.length,
+      payloadBytes,
+      mergedBytes: merged.byteLength,
+    });
 
     const message: messages.IMessage = {
       collabMessage: {
@@ -559,6 +580,13 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
 
     try {
       config.send(message);
+      Log.debug('[outbox] sent object update', {
+        workspaceId,
+        objectId,
+        collabType,
+        recordCount: records.length,
+        mergedBytes: merged.byteLength,
+      });
     } catch (error) {
       Log.warn('[outbox] send failed; leaving records for retry', { objectId, error });
       return;
@@ -568,6 +596,11 @@ async function drainObjectWhileReady(objectId: string): Promise<void> {
 
     try {
       await db.sync_outbox.bulkDelete(ids);
+      Log.debug('[outbox] deleted drained records', {
+        workspaceId,
+        objectId,
+        deletedCount: ids.length,
+      });
     } catch (error) {
       Log.error('[outbox] bulkDelete failed after send', { objectId, error });
       return;
