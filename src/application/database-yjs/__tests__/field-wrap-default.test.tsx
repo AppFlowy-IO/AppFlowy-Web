@@ -34,9 +34,9 @@ function createDatabaseDoc(wrap?: boolean): {
   const databaseDoc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = databaseDoc.getMap(YjsEditorKey.data_section);
   const database = new Y.Map() as YDatabase;
-  const fields = new Y.Map() as Y.Map<YDatabaseField>;
+  const fields = new Y.Map<YDatabaseField>();
   const field = new Y.Map() as YDatabaseField;
-  const views = new Y.Map() as Y.Map<YDatabaseView>;
+  const views = new Y.Map<YDatabaseView>();
   const view = new Y.Map() as YDatabaseView;
   const fieldOrders = new Y.Array<{ id: string }>();
   const fieldSettings = new Y.Map() as YDatabaseFieldSettings;

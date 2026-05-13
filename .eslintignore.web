@@ -14,3 +14,4 @@ playwright.config.ts
 playwright-snapshot.config.ts
 deploy/*.test.ts
 deploy/*.integration.test.ts
+scripts/export-indexeddb-to-zip.js
