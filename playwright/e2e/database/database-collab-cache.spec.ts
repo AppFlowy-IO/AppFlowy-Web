@@ -11,12 +11,11 @@ import { v4 as uuidv4 } from 'uuid';
 
 import { signInAndWaitForApp } from '../../support/auth-flow-helpers';
 import { createDatabaseView, waitForGridReady } from '../../support/database-ui-helpers';
-import { getSlashMenuItemName } from '../../support/i18n-constants';
+import { insertInlineGridViaSlash } from '../../support/duplicate-test-helpers';
 import { createDocumentPageAndNavigate } from '../../support/page-utils';
 import {
   DatabaseGridSelectors,
   DatabaseViewSelectors,
-  SlashCommandSelectors,
 } from '../../support/selectors';
 import { generateRandomEmail } from '../../support/test-config';
 import {
@@ -143,13 +142,7 @@ async function insertEmbeddedGridDatabase(page: Page, docViewId: string) {
   const editor = page.locator(`#editor-${docViewId}`);
 
   await expect(editor).toBeVisible({ timeout: 15000 });
-  await editor.click({ position: { x: 200, y: 100 }, force: true });
-  await editor.pressSequentially('/', { delay: 50 });
-
-  const slashPanel = SlashCommandSelectors.slashPanel(page);
-
-  await expect(slashPanel).toBeVisible({ timeout: 10000 });
-  await SlashCommandSelectors.slashMenuItem(page, getSlashMenuItemName('grid')).first().click({ force: true });
+  await insertInlineGridViaSlash(page, docViewId);
   await waitForDatabaseTestContext(page);
   await closeViewModalIfOpen(page);
 
