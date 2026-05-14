@@ -1,12 +1,17 @@
-import { Element, Node } from 'slate';
+import { Editor, Element, Node, Range, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
-import { findSlateEntryByBlockId, getBlockEntry, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
-import { BlockType, FieldURLType, FileBlockData, ImageBlockData, ImageType } from '@/application/types';
+import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
+import { findSlateEntryByBlockId, getBlockEntry, getSharedRoot, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
+import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
+import { BlockType, FieldURLType, FileBlockData, ImageBlockData, ImageType, YjsEditorKey } from '@/application/types';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import { FileHandler } from '@/utils/file';
+import { Log } from '@/utils/log';
+
+type BlockElement = Element & { blockId?: string };
 
 
 export const withInsertData = (editor: ReactEditor) => {
@@ -18,7 +23,7 @@ export const withInsertData = (editor: ReactEditor) => {
     // When pasting inside a table cell, check if the fragment contains table blocks
     // and prevent nesting tables. Instead, extract text and fill adjacent cells.
     const tableCheckEntry = getBlockEntry(e);
-    const tableCheckBlockId = tableCheckEntry ? (tableCheckEntry[0] as Element & { blockId?: string }).blockId : undefined;
+    const tableCheckBlockId = tableCheckEntry ? (tableCheckEntry[0] as BlockElement).blockId : undefined;
 
     if (tableCheckBlockId && isInsideSimpleTableCell(e, tableCheckBlockId)) {
       // Check plain text for TSV (tab-separated values)
@@ -60,14 +65,25 @@ export const withInsertData = (editor: ReactEditor) => {
       }
     }
 
-    const fragment = data.getData('application/x-slate-fragment');
+    const rawFragment =
+      data.getData('application/x-slate-fragment') ||
+      extractSlateFragmentFromHTML(data.getData('text/html'));
 
-    if (fragment) {
-      const decoded = decodeURIComponent(window.atob(fragment));
-      const parsed = JSON.parse(decoded) as Node[];
-      const newFragment = convertSlateFragmentTo(parsed);
+    if (rawFragment) {
+      const parsed = decodeSlateFragment(rawFragment);
 
-      return e.insertFragment(newFragment);
+      if (parsed) {
+        const newFragment = convertSlateFragmentTo(parsed);
+
+        // Slate's default insertFragment nests pasted blocks under the current
+        // block when the cursor sits deep inside a text wrapper. Use the YJS
+        // insertion path instead so the pasted blocks become siblings of the
+        // current block at the same indent level.
+        if (insertFragmentAsSiblings(e, newFragment)) return;
+
+        return e.insertFragment(newFragment);
+      }
+      // Malformed fragment data — fall through to other handlers.
     }
 
     // Do something with the data...
@@ -161,6 +177,146 @@ export const withInsertData = (editor: ReactEditor) => {
 
   return editor;
 };
+
+/**
+ * When Slate copies content, it encodes the full Slate fragment as a base64
+ * blob in the `data-slate-fragment` HTML attribute. The system clipboard
+ * often drops the `application/x-slate-fragment` MIME entry, so we recover
+ * the fragment from the HTML attribute when available.
+ *
+ * Uses the same regex shape as `slate-dom`'s `getSlateFragmentAttribute`.
+ */
+function extractSlateFragmentFromHTML(html: string | undefined): string | undefined {
+  if (!html) return undefined;
+
+  const match = html.match(/data-slate-fragment="(.+?)"/m);
+
+  return match ? match[1] : undefined;
+}
+
+/**
+ * Decode the base64+URI-encoded JSON Slate fragment. Returns `null` for
+ * malformed input so the caller can fall back gracefully instead of throwing
+ * out of the paste handler.
+ */
+function decodeSlateFragment(raw: string): Node[] | null {
+  try {
+    return JSON.parse(decodeURIComponent(window.atob(raw))) as Node[];
+  } catch (err) {
+    Log.warn('decodeSlateFragment: malformed clipboard fragment', err);
+    return null;
+  }
+}
+
+/**
+ * Inserts a Slate fragment as siblings of the current block using the YJS
+ * shared doc, mirroring the path used by `insertParsedBlocks` for HTML paste.
+ *
+ * Returns true if the fragment was inserted; false if the caller should fall
+ * back to Slate's default `insertFragment`.
+ *
+ * Mirrors two behaviors of Slate's `Transforms.insertFragment`:
+ *  - If the selection is expanded, delete the selected range first.
+ *  - After insertion, place the cursor at the end of the last inserted block.
+ */
+function insertFragmentAsSiblings(editor: YjsEditor, fragment: Node[]): boolean {
+  if (fragment.length === 0) return false;
+
+  try {
+    // Every fragment node must be a block-level element with a text wrapper
+    // child — anything else (loose text, inline-only fragments) goes through
+    // Slate's default path so inline pastes still work.
+    const allBlocks = fragment.every((n) => {
+      if (!Element.isElement(n)) return false;
+      const children = n.children;
+
+      return (
+        Array.isArray(children) &&
+        children.length > 0 &&
+        Element.isElement(children[0]) &&
+        children[0].type === YjsEditorKey.text
+      );
+    });
+
+    if (!allBlocks) return false;
+
+    // Match Slate's default `Transforms.insertFragment`: collapse expanded
+    // selection by deleting the selected range first. Re-fetch the block
+    // entry afterward because the deletion changes which block holds the
+    // cursor and whether it is empty.
+    if (editor.selection && !Range.isCollapsed(editor.selection)) {
+      Transforms.delete(editor);
+    }
+
+    const entry = getBlockEntry(editor);
+
+    if (!entry) return false;
+
+    const [node] = entry;
+    const blockId = (node as BlockElement).blockId;
+
+    if (!blockId) return false;
+
+    const sharedRoot = getSharedRoot(editor);
+    const block = getBlock(blockId, sharedRoot);
+
+    if (!block) return false;
+
+    const parentId = block.get(YjsEditorKey.block_parent);
+    const parent = getBlock(parentId, sharedRoot);
+
+    if (!parent) return false;
+
+    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
+    const index = parentChildren.toArray().findIndex((id) => id === blockId);
+
+    if (index < 0) return false;
+
+    // If the current block is empty (no text, no children), the user expects
+    // paste to fill that block — not push it above the pasted content. Insert
+    // at the current index and remove the empty original.
+    const isEmpty =
+      CustomEditor.getBlockTextContent(node as Node).length === 0 &&
+      (node.children?.length ?? 0) <= 1;
+
+    const doc = assertDocExists(sharedRoot);
+    let insertedIds: string[] = [];
+
+    doc.transact(() => {
+      if (isEmpty) {
+        insertedIds = slateContentInsertToYData(parentId, index, fragment, doc);
+        CustomEditor.deleteBlock(editor, blockId);
+      } else {
+        insertedIds = slateContentInsertToYData(parentId, index + 1, fragment, doc);
+      }
+    });
+
+    // Place the cursor at the end of the last inserted block so subsequent
+    // edits target a valid location (not the now-deleted original block).
+    const lastId = insertedIds[insertedIds.length - 1];
+
+    if (lastId) {
+      const lastEntry = findSlateEntryByBlockId(editor, lastId);
+
+      if (lastEntry) {
+        const [, path] = lastEntry;
+
+        try {
+          Transforms.select(editor, Editor.end(editor, path));
+        } catch (err) {
+          // Editor.end can throw if the path was rebuilt mid-transact; the
+          // selection will be re-derived on the next user keystroke.
+          Log.warn('insertFragmentAsSiblings: could not set selection', err);
+        }
+      }
+    }
+
+    return true;
+  } catch (err) {
+    Log.error('insertFragmentAsSiblings failed', err);
+    return false;
+  }
+}
 
 /**
  * Extract text content from a Slate fragment that contains table cells.
