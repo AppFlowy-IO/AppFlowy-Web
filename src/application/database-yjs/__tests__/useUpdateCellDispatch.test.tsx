@@ -3,7 +3,7 @@ import type React from 'react';
 import * as Y from 'yjs';
 
 import { DatabaseContext, DatabaseContextState, FieldType } from '@/application/database-yjs';
-import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
+import { useUpdateCellDispatch, useUpdateStartEndTimeCell } from '@/application/database-yjs/dispatch';
 import {
   RowId,
   YDatabase,
@@ -62,6 +62,13 @@ function getCellData(rowDoc: YDoc) {
   return cells?.get(fieldId)?.get(YjsDatabaseKey.data);
 }
 
+function getCell(rowDoc: YDoc) {
+  const row = rowDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database_row);
+  const cells = row?.get(YjsDatabaseKey.cells);
+
+  return cells?.get(fieldId);
+}
+
 function createWrapper(contextValue: DatabaseContextState) {
   return ({ children }: { children: React.ReactNode }) => (
     <DatabaseContext.Provider value={contextValue}>{children}</DatabaseContext.Provider>
@@ -92,5 +99,53 @@ describe('useUpdateCellDispatch', () => {
       expect(getCellData(rowDoc)).toBe('Recovered value');
     });
     expect(ensureRow).toHaveBeenCalledWith(rowId);
+  });
+});
+
+describe('useUpdateStartEndTimeCell', () => {
+  it('ensures a missing row doc before committing the calendar time update', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const rowDoc = createRowDoc(rowId, databaseId, {});
+    const ensureRow = jest.fn<Promise<YDoc>, [RowId]>().mockResolvedValue(rowDoc);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      ensureRow,
+      workspaceId: 'workspace-id',
+    };
+    const { result } = renderHook(() => useUpdateStartEndTimeCell(), {
+      wrapper: createWrapper(contextValue),
+    });
+
+    await result.current(rowId, fieldId, '100', '200', false);
+
+    const cell = getCell(rowDoc);
+
+    expect(cell?.get(YjsDatabaseKey.data)).toBe('100');
+    expect(cell?.get(YjsDatabaseKey.end_timestamp)).toBe('200');
+    expect(cell?.get(YjsDatabaseKey.include_time)).toBe(true);
+    expect(ensureRow).toHaveBeenCalledWith(rowId);
+  });
+
+  it('rejects calendar time updates when the row doc cannot be loaded', async () => {
+    const databaseDoc = createDatabaseDoc();
+    const ensureRow = jest.fn<Promise<YDoc | undefined>, [RowId]>().mockResolvedValue(undefined);
+    const contextValue: DatabaseContextState = {
+      readOnly: false,
+      databaseDoc,
+      databasePageId: viewId,
+      activeViewId: viewId,
+      rowMap: {},
+      ensureRow,
+      workspaceId: 'workspace-id',
+    };
+    const { result } = renderHook(() => useUpdateStartEndTimeCell(), {
+      wrapper: createWrapper(contextValue),
+    });
+
+    await expect(result.current(rowId, fieldId, '100')).rejects.toThrow('Row doc not ready for cell update');
   });
 });

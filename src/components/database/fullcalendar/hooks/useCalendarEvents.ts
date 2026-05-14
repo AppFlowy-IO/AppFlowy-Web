@@ -23,17 +23,17 @@ export function useCalendarEvents() {
 
   // Create a function that can update any event's time directly
   const updateEventTime = useCallback(
-    (rowId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
+    async (rowId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
       Log.debug('📅 Updating event time:', { rowId, fieldId, startTimestamp, endTimestamp });
 
-      updateCell(rowId, fieldId, startTimestamp, endTimestamp, isAllDay);
+      await updateCell(rowId, fieldId, startTimestamp, endTimestamp, isAllDay);
     },
     [fieldId, updateCell]
   );
 
   // Handle event drop (move event to different time)
   const handleEventDrop = useCallback(
-    (dropInfo: EventDropArg) => {
+    async (dropInfo: EventDropArg) => {
       Log.debug('📅 Event dropped:', dropInfo.event);
 
       try {
@@ -61,7 +61,7 @@ export function useCalendarEvents() {
         const endTimestamp = correctedEndDate ? dateToUnixTimestamp(correctedEndDate) : undefined;
 
         // Update the event time
-        updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
+        await updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
 
         Log.debug('📅 Event time updated successfully');
       } catch (error) {
@@ -74,7 +74,7 @@ export function useCalendarEvents() {
 
   // Handle event resize (change event duration)
   const handleEventResize = useCallback(
-    (resizeInfo: EventResizeDoneArg) => {
+    async (resizeInfo: EventResizeDoneArg) => {
       Log.debug('📅 Event resized:', resizeInfo.event);
 
       try {
@@ -95,7 +95,7 @@ export function useCalendarEvents() {
         const endTimestamp = correctedEndDate ? dateToUnixTimestamp(correctedEndDate) : undefined;
 
         // Update the event time
-        updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
+        await updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
 
         Log.debug('📅 Event duration updated successfully');
       } catch (error) {

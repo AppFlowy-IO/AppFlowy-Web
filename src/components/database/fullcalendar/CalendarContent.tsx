@@ -228,7 +228,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
 
   // Handle external event creation (FullCalendar eventReceive callback)
   const handleEventReceive = useCallback(
-    (receiveInfo: EventReceiveArg) => {
+    async (receiveInfo: EventReceiveArg) => {
       Log.debug('📅 FullCalendar eventReceive:', receiveInfo);
 
       try {
@@ -267,7 +267,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
         }
 
         // Update the row's date field to move it from NoDate to calendar
-        updateEventTime(rowId, startTimestamp, endTimestamp, allDay);
+        await updateEventTime(rowId, startTimestamp, endTimestamp, allDay);
 
         // Mark the event as new for visual feedback
         setNewEventRowIds((prev) => new Set(prev).add(rowId));

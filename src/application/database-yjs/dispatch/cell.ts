@@ -242,47 +242,45 @@ export function useUpdateStartEndTimeCell() {
   const { rowMap, ensureRow } = useDatabaseContext();
 
   return useCallback(
-    (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
-      void (async () => {
-        let rowDoc = rowMap?.[rowId];
-        let target = rowDoc ? getWritableRowTarget(rowDoc) : null;
+    async (rowId: string, fieldId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
+      let rowDoc = rowMap?.[rowId];
+      let target = rowDoc ? getWritableRowTarget(rowDoc) : null;
 
-        if (!target && ensureRow) {
-          rowDoc = (await ensureRow(rowId)) ?? rowDoc;
-          target = rowDoc ? await waitForWritableRowTarget(rowDoc) : null;
+      if (!target && ensureRow) {
+        rowDoc = (await ensureRow(rowId)) ?? rowDoc;
+        target = rowDoc ? await waitForWritableRowTarget(rowDoc) : null;
+      }
+
+      if (!rowDoc || !target) {
+        const error = new Error('Row doc not ready for cell update');
+
+        Log.warn('[useUpdateStartEndTimeCell] Row doc not ready for cell update', { rowId, fieldId });
+        throw error;
+      }
+
+      const writableTarget = target;
+
+      rowDoc.transact(() => {
+        let cell = writableTarget.cells.get(fieldId);
+
+        if (!cell) {
+          cell = new Y.Map() as YDatabaseCell;
+          cell.set(YjsDatabaseKey.field_type, FieldType.DateTime);
+
+          cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
+          writableTarget.cells.set(fieldId, cell);
         }
 
-        if (!rowDoc || !target) {
-          Log.warn('[useUpdateStartEndTimeCell] Row doc not ready for cell update', { rowId, fieldId });
-          return;
-        }
+        cell.set(YjsDatabaseKey.data, startTimestamp);
+        cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
-        const writableTarget = target;
-
-        rowDoc.transact(() => {
-          let cell = writableTarget.cells.get(fieldId);
-
-          if (!cell) {
-            cell = new Y.Map() as YDatabaseCell;
-            cell.set(YjsDatabaseKey.field_type, FieldType.DateTime);
-
-            cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-            writableTarget.cells.set(fieldId, cell);
-          }
-
-          cell.set(YjsDatabaseKey.data, startTimestamp);
-          cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
-
-          updateDateCell(cell, {
-            data: startTimestamp,
-            endTimestamp,
-            isRange: !!endTimestamp,
-            includeTime: !isAllDay,
-          });
-          writableTarget.row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+        updateDateCell(cell, {
+          data: startTimestamp,
+          endTimestamp,
+          isRange: !!endTimestamp,
+          includeTime: !isAllDay,
         });
-      })().catch((error: unknown) => {
-        Log.error('[useUpdateStartEndTimeCell] failed to update cell', { rowId, fieldId, error });
+        writableTarget.row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
       });
     },
     [ensureRow, rowMap]
