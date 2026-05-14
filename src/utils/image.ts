@@ -175,9 +175,24 @@ const validateImageBlob = async (blob: Blob, url?: string): Promise<Blob | null>
   return transcodeIfUnsupported(normalizedBlob, url);
 };
 
-export const checkImage = async (url: string): Promise<CheckImageResult> => {
+export interface CheckImageOptions {
+  /**
+   * True when this call is a retry after a previous failure. Retries skip
+   * the browser HTTP cache so we always re-ask the origin — defends against
+   * a misbehaving proxy that cached a transient failure. First attempts use
+   * the default cache mode so successful responses (which the server tags
+   * `Cache-Control: public, immutable, max-age=31536000`) can be reused
+   * across mounts without a network round-trip.
+   */
+  retry?: boolean;
+}
+
+export const checkImage = async (
+  url: string,
+  options: CheckImageOptions = {}
+): Promise<CheckImageResult> => {
   if (isAppFlowyFileStorageUrl(url)) {
-    return checkAppFlowyImage(url);
+    return checkAppFlowyImage(url, options);
   }
 
   // External URL — let the browser do its thing.
@@ -199,7 +214,10 @@ export const checkImage = async (url: string): Promise<CheckImageResult> => {
  *
  * Instead, return a typed error so the caller can apply a sensible backoff.
  */
-async function checkAppFlowyImage(url: string): Promise<CheckImageResult> {
+async function checkAppFlowyImage(
+  url: string,
+  options: CheckImageOptions
+): Promise<CheckImageResult> {
   const fullUrl = resolveImageUrl(url);
 
   Log.debug('[checkImage] AppFlowy', fullUrl);
@@ -219,10 +237,15 @@ async function checkAppFlowyImage(url: string): Promise<CheckImageResult> {
         Authorization: `Bearer ${token.access_token}`,
         'x-platform': 'web-app',
       },
-      // Don't let the browser cache transient failures (404/425/5xx) — the
-      // server now sends `Cache-Control: no-store` on those, but defending
-      // against an older server / misbehaving proxy is cheap.
-      cache: 'no-store',
+      // First attempt: honor the server's Cache-Control (immutable, 1 yr
+      // on 200; no-store on 4xx/5xx). This is what lets the browser cache
+      // a once-fetched image forever and skip the network on later mounts.
+      //
+      // Retry: force a server round-trip via `reload`, in case some proxy
+      // or older server version cached a stale failure. We deliberately
+      // don't use `no-store` here — `reload` still allows the response we
+      // receive *now* to enter the cache normally.
+      cache: options.retry ? 'reload' : 'default',
     });
   } catch (err) {
     Log.warn('[checkImage] auth fetch network error', err);

@@ -112,7 +112,11 @@ function Img({
         let result: CheckImageResult;
 
         try {
-          result = await checkImage(targetUrl);
+          // First attempt uses the browser HTTP cache (so a previously
+          // fetched immutable image is served from disk without hitting
+          // the network). Subsequent attempts bypass the cache in case
+          // a stale failure response is somehow lingering.
+          result = await checkImage(targetUrl, { retry: attempt > 0 });
         } catch (err) {
           Log.warn('[Img] checkImage threw', err);
           result = {
