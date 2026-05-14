@@ -120,17 +120,19 @@ describe('useUpdateStartEndTimeCell', () => {
       wrapper: createWrapper(contextValue),
     });
 
-    await result.current(rowId, fieldId, '100', '200', false);
+    result.current(rowId, fieldId, '100', '200', false);
 
-    const cell = getCell(rowDoc);
+    await waitFor(() => {
+      const cell = getCell(rowDoc);
 
-    expect(cell?.get(YjsDatabaseKey.data)).toBe('100');
-    expect(cell?.get(YjsDatabaseKey.end_timestamp)).toBe('200');
-    expect(cell?.get(YjsDatabaseKey.include_time)).toBe(true);
+      expect(cell?.get(YjsDatabaseKey.data)).toBe('100');
+      expect(cell?.get(YjsDatabaseKey.end_timestamp)).toBe('200');
+      expect(cell?.get(YjsDatabaseKey.include_time)).toBe(true);
+    });
     expect(ensureRow).toHaveBeenCalledWith(rowId);
   });
 
-  it('rejects calendar time updates when the row doc cannot be loaded', async () => {
+  it('does not commit calendar time updates when the row doc cannot be loaded', async () => {
     const databaseDoc = createDatabaseDoc();
     const ensureRow = jest.fn<Promise<YDoc | undefined>, [RowId]>().mockResolvedValue(undefined);
     const contextValue: DatabaseContextState = {
@@ -146,6 +148,10 @@ describe('useUpdateStartEndTimeCell', () => {
       wrapper: createWrapper(contextValue),
     });
 
-    await expect(result.current(rowId, fieldId, '100')).rejects.toThrow('Row doc not ready for cell update');
+    result.current(rowId, fieldId, '100');
+
+    await waitFor(() => {
+      expect(ensureRow).toHaveBeenCalledWith(rowId);
+    });
   });
 });
