@@ -132,48 +132,6 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
   const { createRow } = useRowOperations();
 
   useEffect(() => {
-    if (!currentWorkspaceId) return;
-    if (typeof window === 'undefined' || typeof document === 'undefined') return;
-
-    let cancelled = false;
-
-    const runLegacyRowRecovery = () => {
-      void (async () => {
-        try {
-          const databaseRelations = await loadDatabaseRelations();
-
-          if (cancelled || !databaseRelations) return;
-          const { recoverLegacyDatabaseRowsForWorkspace } = await import('@/application/local-collab-recovery');
-
-          if (cancelled) return;
-          await recoverLegacyDatabaseRowsForWorkspace({
-            workspaceId: currentWorkspaceId,
-            databaseRelations,
-          });
-        } catch (error) {
-          console.warn('[Recovery] failed to run legacy row recovery', error);
-        }
-      })();
-    };
-
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        runLegacyRowRecovery();
-      }
-    };
-
-    runLegacyRowRecovery();
-    window.addEventListener('online', runLegacyRowRecovery);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      cancelled = true;
-      window.removeEventListener('online', runLegacyRowRecovery);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [currentWorkspaceId, loadDatabaseRelations]);
-
-  useEffect(() => {
     if (typeof window === 'undefined') return;
 
     const globalWindow = window as typeof window & {
