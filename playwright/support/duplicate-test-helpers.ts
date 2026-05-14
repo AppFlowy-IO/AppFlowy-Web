@@ -172,12 +172,15 @@ export async function duplicateCurrentPageViaHeader(page: Page): Promise<void> {
   await dupBtn.click();
 
   const blockingLoader = page.getByTestId('blocking-loader');
-  await blockingLoader.waitFor({ state: 'visible', timeout: 5000 }).catch(() => undefined);
+  const loaderAppeared = await blockingLoader
+    .waitFor({ state: 'visible', timeout: 5000 })
+    .then(() => true)
+    .catch(() => false);
 
-  if ((await blockingLoader.count()) > 0) {
-    await expect(blockingLoader)
-      .toBeHidden({ timeout: 10000 })
-      .catch(() => undefined);
+  if (loaderAppeared || (await blockingLoader.count()) > 0) {
+    await expect(blockingLoader, 'Expected duplicate blocking loader to finish before opening the copy').toBeHidden({
+      timeout: 60000,
+    });
   }
 
   await page.waitForTimeout(2000);
@@ -442,7 +445,12 @@ export async function editFirstGridCell(page: Page, gridBlock: Locator, text: st
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await page.keyboard.type(text);
   await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
+  await expect
+    .poll(async () => firstGridCellText(gridBlock), {
+      timeout: 15000,
+      message: `Expected first grid cell to contain "${text}" after editing`,
+    })
+    .toContain(text);
 }
 
 export async function firstGridCellText(gridBlock: Locator): Promise<string> {

@@ -587,14 +587,12 @@ export function useDuplicateRowDispatch() {
 
       const icon = referenceMeta.icon;
       const cover = referenceMeta.cover;
-      // Treat undefined (never set) the same as false — if the source row
-      // was opened and content was added, isEmptyDocument is explicitly false.
-      // If it was never opened, isEmptyDocument is undefined; in that case we
-      // still want to ask the server to duplicate the document (the server
-      // will check whether there is actual content).
-      const hasDocument = referenceMeta.isEmptyDocument !== true;
+      const sourceDocId = referenceMeta.documentId;
+      const isSourceDocEmpty = referenceMeta.isEmptyDocument === true;
+      const isSourceDocNonEmpty = referenceMeta.isEmptyDocument === false;
+      const shouldDuplicateSourceDoc = Boolean(sourceDocId) && !isSourceDocEmpty;
       const newMeta = generateRowMeta(rowId, {
-        [RowMetaKey.IsDocumentEmpty]: !hasDocument,
+        [RowMetaKey.IsDocumentEmpty]: !isSourceDocNonEmpty,
         [RowMetaKey.IconId]: icon,
         [RowMetaKey.CoverId]: cover ? JSON.stringify(cover) : null,
       });
@@ -676,12 +674,12 @@ export function useDuplicateRowDispatch() {
       // the latest content even if WebSocket sync hasn't persisted yet.
       if (duplicateRowDocument) {
         const databaseId = database.get(YjsDatabaseKey.id);
-        const sourceDocId = referenceMeta.documentId;
 
         try {
           let clientDocStateB64: string | undefined;
+          let hasClientDocumentContent = false;
 
-          if (sourceDocId) {
+          if (shouldDuplicateSourceDoc) {
             // Find a Y.Doc with actual content. Check in priority order:
             //   1. Dialog sub-doc cache (rowSubDocs) — populated when user
             //      opens the row in dialog mode.
@@ -740,7 +738,9 @@ export function useDuplicateRowDispatch() {
               }
             }
 
-            if (cachedDoc) {
+            hasClientDocumentContent = hasMeaningfulContent(cachedDoc);
+
+            if (cachedDoc && hasClientDocumentContent) {
               const docState = Y.encodeStateAsUpdate(cachedDoc);
               // Convert to base64 for the server (chunked to avoid stack overflow on large docs)
               const CHUNK = 8192;
@@ -755,7 +755,7 @@ export function useDuplicateRowDispatch() {
               // If we found a cached doc with content, ensure the duplicated
               // row's meta marks the document as non-empty so the client
               // fetches from the server when the row is opened.
-              if (!hasDocument) {
+              if (!isSourceDocNonEmpty) {
                 rowDoc.transact(() => {
                   const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
                   const meta = rowSharedRoot.get(YjsEditorKey.meta);
@@ -769,12 +769,14 @@ export function useDuplicateRowDispatch() {
             }
           }
 
-          await duplicateRowDocument(
-            databaseId,
-            referenceRowId,
-            rowId,
-            clientDocStateB64
-          );
+          if (shouldDuplicateSourceDoc || hasClientDocumentContent) {
+            await duplicateRowDocument(
+              databaseId,
+              referenceRowId,
+              rowId,
+              clientDocStateB64
+            );
+          }
         } catch (err) {
           Log.error('[duplicateRowDocument] failed:', err);
         }
