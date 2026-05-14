@@ -228,7 +228,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
 
   // Handle external event creation (FullCalendar eventReceive callback)
   const handleEventReceive = useCallback(
-    (receiveInfo: EventReceiveArg) => {
+    async (receiveInfo: EventReceiveArg) => {
       Log.debug('📅 FullCalendar eventReceive:', receiveInfo);
 
       try {
