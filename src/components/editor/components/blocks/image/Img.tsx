@@ -3,8 +3,11 @@ import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as ErrorOutline } from '@/assets/icons/error.svg';
 import LoadingDots from '@/components/_shared/LoadingDots';
+import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
 
 import { useImageWithRetry } from './useImageWithRetry';
+
+const GENERIC_ALT = 'Image';
 
 interface ImgProps {
   url: string;
@@ -20,32 +23,42 @@ interface ImgProps {
 }
 
 /**
- * Derive a human-ish alt label from a URL when none was provided. Picks the
- * last path segment, strips the extension and percent-encoding, and trims
- * any AppFlowy-internal prefix (e.g. "presigned_upload_<uuid>"). The result
- * is never empty — non-content images should explicitly pass `alt=""`.
+ * Derive a human-ish alt label from a URL when none was provided.
+ *
+ * For AppFlowy storage URLs the trailing path segment is an opaque hash
+ * (file_id) — reading "bGTk 4nxVz" aloud is no better than empty alt, so
+ * we just use the generic label. For external URLs the trailing filename
+ * is usually human-chosen and worth surfacing.
+ *
+ * Returns a non-empty string so screen readers always announce something
+ * — callers must pass an explicit `alt=""` for genuinely decorative images.
  */
 function fallbackAltFromUrl(url: string): string {
+  if (!url) return GENERIC_ALT;
+  if (isAppFlowyFileStorageUrl(url)) return GENERIC_ALT;
+
   try {
     const parsed = new URL(url, 'http://_');
     const segment = parsed.pathname.split('/').filter(Boolean).pop() ?? '';
     const decoded = decodeURIComponent(segment);
     const withoutExt = decoded.replace(/\.[a-z0-9]+$/i, '');
-    const cleaned = withoutExt
-      .replace(/^presigned_upload_/i, '')
-      .replace(/[-_]+/g, ' ')
-      .trim();
+    const cleaned = withoutExt.replace(/[-_]+/g, ' ').trim();
 
-    return cleaned.length > 0 ? cleaned : 'Embedded image';
+    // Reject runs of hex/base64-ish hash output even from non-AppFlowy URLs.
+    // A reasonable heuristic: needs at least one vowel and 3+ chars to be
+    // worth reading aloud. Otherwise fall back to the generic label.
+    const looksLikeWord = cleaned.length >= 3 && /[aeiou]/i.test(cleaned);
+
+    return looksLikeWord ? cleaned : GENERIC_ALT;
   } catch {
-    return 'Embedded image';
+    return GENERIC_ALT;
   }
 }
 
 function Img({ onLoad, imgRef, url, width, alt }: ImgProps) {
   const { t } = useTranslation();
   const { src, phase, isImageReady, lastError, retry, onImageLoaded, onImageError } =
-    useImageWithRetry(url, { onReady: onLoad });
+    useImageWithRetry(url, onLoad);
 
   const showLoading = phase === 'loading' && !isImageReady;
   const showPending = phase === 'pending';

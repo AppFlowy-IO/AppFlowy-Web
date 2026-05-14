@@ -50,12 +50,18 @@ function jitter(ms: number): number {
   return Math.round(ms * (0.8 + Math.random() * 0.4));
 }
 
-export interface UseImageWithRetryOptions {
-  /**
-   * Called once the `<img>` has actually decoded and painted. Defers the
-   * notification until the bytes are visible, not just downloaded.
-   */
-  onReady?: () => void;
+/**
+ * Holds the latest value of `value` in a ref. Lets event handlers and async
+ * loops read the current value without subscribing — keeping their identity
+ * stable across renders. Equivalent to Vercel's `advanced-use-latest` pattern.
+ */
+function useLatest<T>(value: T) {
+  const ref = useRef(value);
+
+  useEffect(() => {
+    ref.current = value;
+  });
+  return ref;
 }
 
 export interface UseImageWithRetryResult {
@@ -90,33 +96,25 @@ export interface UseImageWithRetryResult {
  */
 export function useImageWithRetry(
   url: string,
-  options: UseImageWithRetryOptions = {}
+  onReady?: () => void
 ): UseImageWithRetryResult {
   const [phase, setPhase] = useState<LoadPhase>('loading');
   const [src, setSrc] = useState('');
   const [lastError, setLastError] = useState<CheckImageResult | null>(null);
   const [isImageReady, setIsImageReady] = useState(false);
 
-  // Refs let event handlers and async loops read the latest values
-  // without subscribing — keeps `runCheck`'s identity stable so its
-  // useEffect doesn't tear down on every parent render.
-  const onReadyRef = useRef(options.onReady);
-  const urlRef = useRef(url);
-  const phaseRef = useRef(phase);
-  const previousBlobUrlRef = useRef<string>('');
+  // Refs let event handlers and async loops read the latest values without
+  // subscribing — keeps `runCheck`'s identity stable so its useEffect
+  // doesn't tear down on every parent render.
+  const onReadyRef = useLatest(onReady);
+  const urlRef = useLatest(url);
+  const phaseRef = useLatest(phase);
+  // The blob URL we're currently rendering. Tracked separately from `src`
+  // state because we need ref-stable access from the async loop in order
+  // to revoke it correctly on swap/unmount.
+  const currentBlobUrlRef = useRef<string>('');
   const controllersRef = useRef<Set<AbortController>>(new Set());
   const timersRef = useRef<Set<number>>(new Set());
-
-  // Mirror current props/state into refs every commit.
-  useEffect(() => {
-    onReadyRef.current = options.onReady;
-  });
-  useEffect(() => {
-    urlRef.current = url;
-  });
-  useEffect(() => {
-    phaseRef.current = phase;
-  });
 
   const scheduleTimer = useCallback((cb: () => void, ms: number) => {
     const id = window.setTimeout(() => {
@@ -136,9 +134,9 @@ export function useImageWithRetry(
   }, []);
 
   const revokePreviousBlob = useCallback(() => {
-    if (previousBlobUrlRef.current && previousBlobUrlRef.current.startsWith('blob:')) {
-      URL.revokeObjectURL(previousBlobUrlRef.current);
-      previousBlobUrlRef.current = '';
+    if (currentBlobUrlRef.current && currentBlobUrlRef.current.startsWith('blob:')) {
+      URL.revokeObjectURL(currentBlobUrlRef.current);
+      currentBlobUrlRef.current = '';
     }
   }, []);
 
@@ -159,13 +157,17 @@ export function useImageWithRetry(
 
       const startedAt = Date.now();
       let attempt = 0;
+      // Tracks whether this run has completed (success or terminal failure).
+      // The pending-promotion timer checks this so we don't briefly flash the
+      // "still uploading…" UI between fetch success and <img> decode.
+      let settled = false;
 
       setPhase('loading');
       setLastError(null);
 
       // Promote loading → pending if we cross the threshold without success.
       scheduleTimer(() => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || settled) return;
         setPhase((p) => (p === 'loading' ? 'pending' : p));
       }, PENDING_AFTER_MS);
 
@@ -220,19 +222,20 @@ export function useImageWithRetry(
           const newUrl = result.validatedUrl || '';
 
           if (
-            previousBlobUrlRef.current &&
-            previousBlobUrlRef.current !== newUrl &&
-            previousBlobUrlRef.current.startsWith('blob:')
+            currentBlobUrlRef.current &&
+            currentBlobUrlRef.current !== newUrl &&
+            currentBlobUrlRef.current.startsWith('blob:')
           ) {
-            URL.revokeObjectURL(previousBlobUrlRef.current);
+            URL.revokeObjectURL(currentBlobUrlRef.current);
           }
 
-          previousBlobUrlRef.current = newUrl;
+          currentBlobUrlRef.current = newUrl;
           setSrc(newUrl);
           setLastError(null);
           // Stay in 'loading' until <img> fires onLoad and we flip
           // isImageReady. That keeps the spinner up across the decode.
           setPhase('loading');
+          settled = true;
           controllersRef.current.delete(controller);
           return;
         }
@@ -245,6 +248,7 @@ export function useImageWithRetry(
 
         if (exhausted || elapsed > MAX_BUDGET_MS) {
           setPhase('failed');
+          settled = true;
           controllersRef.current.delete(controller);
           return;
         }
@@ -282,19 +286,20 @@ export function useImageWithRetry(
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);
     };
-  }, [runCheck]);
+    // Refs have stable identity, including them just satisfies the linter.
+  }, [runCheck, phaseRef, urlRef]);
 
   const retry = useCallback(() => {
     void runCheck(urlRef.current);
-  }, [runCheck]);
+  }, [runCheck, urlRef]);
 
   const onImageLoaded = useCallback(() => {
-    if (!previousBlobUrlRef.current) return;
+    if (!currentBlobUrlRef.current) return;
     setIsImageReady(true);
     setLastError(null);
     // Notify the parent once the bytes are visible, not just downloaded.
     onReadyRef.current?.();
-  }, []);
+  }, [onReadyRef]);
 
   const onImageError = useCallback(() => {
     // The browser couldn't decode the bytes we gave it (rare — corrupted
