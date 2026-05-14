@@ -23,10 +23,10 @@ export function useCalendarEvents() {
 
   // Create a function that can update any event's time directly
   const updateEventTime = useCallback(
-    async (rowId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
+    (rowId: string, startTimestamp: string, endTimestamp?: string, isAllDay?: boolean) => {
       Log.debug('📅 Updating event time:', { rowId, fieldId, startTimestamp, endTimestamp });
 
-      await updateCell(rowId, fieldId, startTimestamp, endTimestamp, isAllDay);
+      updateCell(rowId, fieldId, startTimestamp, endTimestamp, isAllDay);
     },
     [fieldId, updateCell]
   );
@@ -61,7 +61,7 @@ export function useCalendarEvents() {
         const endTimestamp = correctedEndDate ? dateToUnixTimestamp(correctedEndDate) : undefined;
 
         // Update the event time
-        await updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
+        updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
 
         Log.debug('📅 Event time updated successfully');
       } catch (error) {
@@ -95,7 +95,7 @@ export function useCalendarEvents() {
         const endTimestamp = correctedEndDate ? dateToUnixTimestamp(correctedEndDate) : undefined;
 
         // Update the event time
-        await updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
+        updateEventTime(rowId, startTimestamp, endTimestamp, isAllDay);
 
         Log.debug('📅 Event duration updated successfully');
       } catch (error) {

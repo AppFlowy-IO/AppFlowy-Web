@@ -267,7 +267,7 @@ export function CalendarContent({ onDataChange, normalToolbarRef, onDragEnd }: C
         }
 
         // Update the row's date field to move it from NoDate to calendar
-        await updateEventTime(rowId, startTimestamp, endTimestamp, allDay);
+        updateEventTime(rowId, startTimestamp, endTimestamp, allDay);
 
         // Mark the event as new for visual feedback
         setNewEventRowIds((prev) => new Set(prev).add(rowId));
