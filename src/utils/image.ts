@@ -185,6 +185,12 @@ export interface CheckImageOptions {
    * across mounts without a network round-trip.
    */
   retry?: boolean;
+  /**
+   * Lets the caller cancel an in-flight fetch (and the retry chain that
+   * follows it) on unmount / URL change. Without this, orphan fetches can
+   * keep running after the component goes away.
+   */
+  signal?: AbortSignal;
 }
 
 export const checkImage = async (
@@ -246,8 +252,15 @@ async function checkAppFlowyImage(
       // don't use `no-store` here — `reload` still allows the response we
       // receive *now* to enter the cache normally.
       cache: options.retry ? 'reload' : 'default',
+      signal: options.signal,
     });
   } catch (err) {
+    if ((err as { name?: string })?.name === 'AbortError') {
+      // Caller aborted (unmount, URL change). Surface as a non-actionable
+      // error so the caller can detect it without logging noise.
+      return errorResult(0, 'Aborted', 'network', 'aborted');
+    }
+
     Log.warn('[checkImage] auth fetch network error', err);
     return errorResult(0, 'Network error', 'network', String(err));
   }
