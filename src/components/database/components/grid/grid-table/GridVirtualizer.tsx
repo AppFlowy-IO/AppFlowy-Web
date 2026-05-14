@@ -14,6 +14,7 @@ import DatabaseStickyBottomOverlay from '@/components/database/components/sticky
 import DatabaseStickyHorizontalScrollbar from '@/components/database/components/sticky-overlay/DatabaseStickyHorizontalScrollbar';
 import DatabaseStickyTopOverlay from '@/components/database/components/sticky-overlay/DatabaseStickyTopOverlay';
 import { useGridContext } from '@/components/database/grid/useGridContext';
+import { cn } from '@/lib/utils';
 
 import { useColumnResize } from '../grid-column/useColumnResize';
 
@@ -175,7 +176,10 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         ref={parentRef}
-        className={'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar'}
+        className={cn(
+          'appflowy-custom-scroller appflowy-hidden-horizontal-scrollbar',
+          isDocumentBlock && 'min-h-0 flex-1'
+        )}
         style={{
           overflowY: 'auto',
           overflowX: 'auto',

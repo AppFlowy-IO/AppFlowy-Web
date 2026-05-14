@@ -22,7 +22,7 @@ export function Grid() {
     <GridProvider rowOrders={rowOrders}>
       <div
         data-testid='database-grid'
-        className={`database-grid relative grid-table-${viewId} flex w-full flex-1 flex-col`}
+        className={`database-grid relative grid-table-${viewId} flex w-full min-h-0 flex-1 flex-col`}
       >
         <GridVirtualizer columns={fields} />
       </div>
