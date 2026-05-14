@@ -18,6 +18,11 @@ export interface RenderCard {
 
 const CARD_LIST_MAX_HEIGHT = 2000;
 
+const CARD_LIST_STYLE = {
+  maxHeight: CARD_LIST_MAX_HEIGHT,
+  overflowY: 'auto',
+} as const;
+
 function CardList({
   data,
   fieldId,
@@ -91,12 +96,8 @@ function CardList({
   return (
     <div
       ref={parentRef}
-      className='appflowy-custom-scroller w-full shrink-0'
-      style={{
-        height: CARD_LIST_MAX_HEIGHT,
-        maxHeight: CARD_LIST_MAX_HEIGHT,
-        overflowY: 'auto',
-      }}
+      className='appflowy-custom-scroller w-full min-h-0 flex-1'
+      style={CARD_LIST_STYLE}
     >
       <div
         style={{

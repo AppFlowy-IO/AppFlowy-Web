@@ -6,6 +6,8 @@ import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot
 import { LoadView, LoadViewMeta, UIVariant, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
 
+const EMBEDDED_DATABASE_FIXED_HEIGHT = 300;
+
 interface DatabaseContentProps {
   /**
    * The base/primary view ID for the embedded database.
@@ -62,7 +64,7 @@ export const DatabaseContent = ({
   onViewAdded,
   onViewIdsChanged,
   context,
-  fixedHeight,
+  fixedHeight = EMBEDDED_DATABASE_FIXED_HEIGHT,
   onRendered,
 }: DatabaseContentProps) => {
   const { t } = useTranslation();

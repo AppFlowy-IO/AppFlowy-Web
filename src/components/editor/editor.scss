@@ -76,9 +76,7 @@
   }
 
   &.block-element[data-block-type="grid"], &.block-element[data-block-type="board"], &.block-element[data-block-type="calendar"] {
-    .database-tabs, .grid-row-filed-cell, .column {
-      @apply bg-fill-theme-select;
-    }
+    @apply bg-fill-theme-select;
   }
 
   &.block-element[data-block-type="simple_table"] {

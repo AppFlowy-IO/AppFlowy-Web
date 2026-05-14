@@ -128,7 +128,7 @@ export const GridProvider = ({ children, rowOrders }: { children: React.ReactNod
 
   return (
     <GridContext.Provider value={contextValue}>
-      <div ref={ref} className={'flex-1'}>
+      <div ref={ref} className={'flex min-h-0 flex-1 flex-col'}>
         {children}
       </div>
     </GridContext.Provider>
