@@ -146,7 +146,7 @@ jobs:
         with:
           repository: AppFlowy-IO/AppFlowy-Cloud-Premium
           ref: main
-          token: ${{ secrets.CI_TOKEN }}
+          token: ${{ secrets.CI_TOKEN || github.token }}
           path: AppFlowy-Cloud-Premium
 
       - name: Setup AppFlowy Cloud
