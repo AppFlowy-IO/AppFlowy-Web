@@ -302,6 +302,18 @@ export const useRowData = (rowId: string) => {
 };
 
 /**
+ * Returns true once the row's collab content has been loaded into the local
+ * doc (i.e. the `database_row` YMap is present in the row's data_section).
+ * Useful for showing a loading indicator on rows that have no local
+ * IndexedDB cache yet while their first sync arrives.
+ */
+export const useIsRowLoaded = (rowId: string) => {
+  const dataSection = useRow(rowId);
+
+  return Boolean(dataSection?.has(YjsEditorKey.database_row));
+};
+
+/**
  * Returns the currently active view tab ID.
  * This is the view that is currently being displayed (Grid, Board, or Calendar).
  */

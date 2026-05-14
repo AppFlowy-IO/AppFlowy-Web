@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { FieldType, useCellSelector, useFieldWrap, useReadOnly } from '@/application/database-yjs';
+import { FieldType, useCellSelector, useFieldWrap, useIsRowLoaded, useReadOnly } from '@/application/database-yjs';
 import { CellProps, Cell as CellType } from '@/application/database-yjs/cell.type';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { FieldId, YjsDatabaseKey } from '@/application/types';
@@ -26,6 +26,7 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
   const isPrimary = field?.get(YjsDatabaseKey.is_primary);
   const disableRelationRollupEdit = isFieldEditingDisabled(fieldType as FieldType);
   const isReadOnlyCell = readOnly || disableRelationRollupEdit;
+  const isRowLoaded = useIsRowLoaded(rowId);
   const cell = useCellSelector({
     rowId,
     fieldId,
@@ -117,6 +118,19 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
   }, [wrap, isActive, resizeRow]);
 
   if (!field) return null;
+
+  // While the row's collab content is still loading from IndexedDB/network,
+  // render blank non-primary cells. The primary cell renders a loading
+  // indicator (handled inside PrimaryCell).
+  if (!isRowLoaded && !isPrimary) {
+    return (
+      <div
+        ref={ref}
+        data-testid={`grid-cell-${rowId}-${fieldId}`}
+        className={cn('grid-cell flex h-full w-full items-start overflow-hidden px-2 text-sm', paddingVertical)}
+      />
+    );
+  }
 
   return (
     <div
