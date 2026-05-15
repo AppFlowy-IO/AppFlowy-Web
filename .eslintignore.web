@@ -11,6 +11,7 @@ cypress/e2e/
 cypress/support/
 playwright/
 playwright.config.ts
+playwright.bdd.config.ts
 playwright-snapshot.config.ts
 deploy/*.test.ts
 deploy/*.integration.test.ts
