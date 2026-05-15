@@ -1182,6 +1182,7 @@ export function useRowsByGroup(groupId: string) {
 export function useRowOrdersSelector() {
   const rows = useRowMap();
   const view = useDatabaseView();
+  const rowOrders = view?.get(YjsDatabaseKey.row_orders);
   const viewId = useDatabaseViewId();
   const sorts = view?.get(YjsDatabaseKey.sorts);
   const fields = useDatabaseFields();
@@ -1316,6 +1317,29 @@ export function useRowOrdersSelector() {
     [blobPrefetchComplete, ensureRow, loadRowFromSeed, markConditionRowsUnavailable, seedsReady]
   );
 
+  const syncUnconditionedRowOrders = useCallback(() => {
+    const originalRowOrders = rowOrders?.toJSON() as Row[] | undefined;
+
+    if (!originalRowOrders) return false;
+
+    const conditionSignature = getConditionSignature(sorts, filters);
+    const conditionStateKey = `${viewId ?? ''}:${conditionSignature}`;
+    const currentHasConditions = conditionSignature !== '';
+
+    if (conditionSignatureRef.current !== conditionStateKey) {
+      conditionSignatureRef.current = conditionStateKey;
+      filtersAppliedRef.current = false;
+      pendingConditionRowLoadsRef.current.clear();
+      unavailableConditionRowsRef.current.clear();
+    }
+
+    if (currentHasConditions) return false;
+
+    filtersAppliedRef.current = false;
+    setRowOrdersState({ rows: originalRowOrders, conditionSignature: conditionStateKey });
+    return true;
+  }, [filters, rowOrders, sorts, viewId]);
+
   // Getter for relation cell text (used in sorting/filtering)
   const relationTextGetter = useCallback(
     (rowId: string, fieldId: string) => {
@@ -1381,7 +1405,7 @@ export function useRowOrdersSelector() {
   const onConditionsChange = useCallback(() => {
     const shouldLogConditionCompute = shouldLogDatabaseConditionPerformance();
     const computeStartedAt = shouldLogConditionCompute ? performance.now() : 0;
-    const originalRowOrders = view?.get(YjsDatabaseKey.row_orders)?.toJSON() as Row[] | undefined;
+    const originalRowOrders = rowOrders?.toJSON() as Row[] | undefined;
 
     if (!originalRowOrders) return;
 
@@ -1477,7 +1501,7 @@ export function useRowOrdersSelector() {
     filters,
     rowDocsForConditions,
     sorts,
-    view,
+    rowOrders,
     relationTextGetter,
     rollupValueGetter,
     rollupTextGetter,
@@ -1511,7 +1535,13 @@ export function useRowOrdersSelector() {
       onConditionsChange();
     }, 200);
 
-    view?.get(YjsDatabaseKey.row_orders)?.observeDeep(debouncedChange);
+    const handleRowOrdersChange = () => {
+      if (!syncUnconditionedRowOrders()) {
+        debouncedChange();
+      }
+    };
+
+    rowOrders?.observeDeep(handleRowOrdersChange);
 
     const observers = new Map<string, () => void>();
     let relationFieldIds: string[] = [];
@@ -1593,7 +1623,7 @@ export function useRowOrdersSelector() {
     });
 
     return () => {
-      view?.get(YjsDatabaseKey.row_orders)?.unobserveDeep(debouncedChange);
+      rowOrders?.unobserveDeep(handleRowOrdersChange);
       sorts?.unobserveDeep(handleSortFilterChange);
       filters?.unobserveDeep(handleSortFilterChange);
       fields?.unobserveDeep(handleFieldChange);
@@ -1606,7 +1636,7 @@ export function useRowOrdersSelector() {
         }
       });
     };
-  }, [onConditionsChange, view, fields, filters, sorts, rows, viewId]);
+  }, [onConditionsChange, rowOrders, fields, filters, sorts, rows, viewId, syncUnconditionedRowOrders]);
 
   // Set up rollup field observers (extracted hook)
   useRollupFieldObservers(onConditionsChange, rollupWatchVersion);
