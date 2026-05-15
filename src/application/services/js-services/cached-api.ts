@@ -46,6 +46,7 @@ import {
   changePassword,
   forgotPassword,
   signInApple,
+  signInAuthentik,
   signInDiscord,
   signInGithub,
   signInGoogle,
@@ -461,6 +462,7 @@ export {
   signInApple,
   signInGithub,
   signInDiscord,
+  signInAuthentik,
   signInSaml,
 };
 
@@ -482,6 +484,11 @@ export async function signInGithubWithRedirect(params: { redirectTo: string }) {
 export async function signInDiscordWithRedirect(params: { redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
   return signInDiscord(AUTH_CALLBACK_URL);
+}
+
+export async function signInAuthentikWithRedirect(params: { redirectTo: string }) {
+  saveRedirectTo(params.redirectTo);
+  return signInAuthentik(AUTH_CALLBACK_URL);
 }
 
 export async function signInSamlWithRedirect(params: { redirectTo: string; domain: string }): Promise<void> {

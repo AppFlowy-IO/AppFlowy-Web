@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   appflowy-web:
-    image: appflowy/appflowy_web:latest
+    image: ${APPFLOWY_WEB_IMAGE:-appflowyinc/appflowy_web}:${APPFLOWY_WEB_VERSION:-latest}
     ports:
       - "80:80"
     environment:

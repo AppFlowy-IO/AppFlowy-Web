@@ -3148,6 +3148,7 @@
     "continueWithDiscord": "Continue with Discord",
     "continueWithApple": "Continue with Apple ",
     "continueWithSaml": "Continue with SSO",
+    "continueWithOidc": "Continue with OIDC",
     "continueWithSso": "Continue",
     "ssoLogin": "SSO Login",
     "ssoLoginDescription": "Enter your work email to sign in with your organization's identity provider.",
