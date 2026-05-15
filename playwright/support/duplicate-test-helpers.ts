@@ -440,11 +440,78 @@ export async function insertLinkedGridViaSlash(
 export async function editFirstGridCell(page: Page, gridBlock: Locator, text: string): Promise<void> {
   const firstCell = gridBlock.locator('[data-testid^="grid-cell-"]').first();
   await expect(firstCell).toBeVisible({ timeout: 15000 });
-  await firstCell.click({ force: true });
-  await page.waitForTimeout(300);
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await page.keyboard.type(text);
-  await page.keyboard.press('Enter');
+
+  // The grid-row-cell wrapper owns the activation click handler. Clicking the
+  // inner data-testid div relies on bubbling, which can be eaten on slow CI if
+  // the row is still hydrating, so assert the editor is actually mounted.
+
+  // Wait for the primary cell's row data to finish hydrating. PrimaryCell.tsx
+  // renders a CircularProgress with testid `primary-cell-loading-<rowId>`
+  // until the row's collab content is loaded; clicking before then has no
+  // effect because the editable TextCell isn't mounted yet.
+  await expect(firstCell.locator('[data-testid^="primary-cell-loading-"]')).toHaveCount(0, {
+    timeout: 30000,
+  });
+
+  // The activation click handler lives on the .grid-row-cell wrapper (see
+  // GridVirtualColumn.tsx). Resolve it directly via the DOM rather than an
+  // ancestor xpath. Playwright's `ancestor::` returns the outermost match
+  // even with `.first()`, which is the document root, not the wrapper.
+  const editingTextarea = firstCell.locator('textarea');
+
+  let entered = false;
+
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const handle = await firstCell.elementHandle();
+    const wrapper = handle
+      ? await handle.evaluateHandle((el) => (el as HTMLElement).closest('.grid-row-cell') ?? el)
+      : null;
+    const wrapperElement = wrapper?.asElement();
+
+    if (wrapperElement) {
+      await wrapperElement.click({ force: true });
+    } else {
+      await firstCell.click({ force: true });
+    }
+
+    if (await editingTextarea.isVisible().catch(() => false)) {
+      entered = true;
+      break;
+    }
+
+    try {
+      await expect(editingTextarea).toBeVisible({ timeout: 3000 });
+      entered = true;
+      break;
+    } catch {
+      // Some browsers / cell types only enter edit mode on Enter after focus,
+      // not on raw click. Try that next.
+      await page.keyboard.press('Enter').catch(() => undefined);
+
+      if (await editingTextarea.isVisible({ timeout: 1500 }).catch(() => false)) {
+        entered = true;
+        break;
+      }
+
+      await page.waitForTimeout(500);
+    }
+  }
+
+  if (!entered) {
+    throw new Error(
+      'First grid cell did not enter edit mode after click. Is the grid readOnly, ' +
+        'still loading, or covered by another element?'
+    );
+  }
+
+  await editingTextarea.focus();
+  await editingTextarea.fill(text);
+  await expect(editingTextarea).toHaveValue(text, { timeout: 5000 });
+  await editingTextarea.press('Enter');
+  // After Enter, the textarea unmounts and the cell re-renders with the new
+  // value. Wait for the textarea to be gone so the next innerText() reads the
+  // committed display text, not stale empty editing markup.
+  await expect(editingTextarea).toHaveCount(0, { timeout: 10000 });
   await expect
     .poll(async () => firstGridCellText(gridBlock), {
       timeout: 15000,
