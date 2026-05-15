@@ -281,6 +281,33 @@ export function databaseBlocks(editor: Locator): Locator {
   return editor.locator(BlockSelectors.blockSelector('grid'));
 }
 
+async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
+  let slateEditor = editor.locator('[data-slate-editor="true"]').first();
+
+  if (
+    !(await slateEditor
+      .isVisible({ timeout: 3000 })
+      .catch(() => false))
+  ) {
+    slateEditor = page.locator('[data-slate-editor="true"]').first();
+  }
+
+  await expect(slateEditor).toBeVisible({ timeout: 15000 });
+  await slateEditor.scrollIntoViewIfNeeded();
+  await slateEditor.click({ force: true });
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() => {
+          const activeElement = document.activeElement as Element | null;
+
+          return Boolean(activeElement?.closest('[data-slate-editor="true"]'));
+        }),
+      { timeout: 5000, message: 'Waiting for editor focus' }
+    )
+    .toBe(true);
+}
+
 async function openSlashMenuInEditor(page: Page, editor: Locator, line: number = 0): Promise<void> {
   const blocks = databaseBlocks(editor);
   const blockCount = await blocks.count();
@@ -298,7 +325,7 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
       // Click just below the last database block
       await page.mouse.click(box.x + box.width / 2, box.y + box.height + 10);
     } else {
-      await editor.click({ force: true });
+      await focusEditorForSlash(page, editor);
     }
 
     await page.waitForTimeout(300);
@@ -320,7 +347,7 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
     await expect(slashPanel).toBeVisible({ timeout: 10000 });
     return;
   } else {
-    await editor.click({ position: { x: 200, y: 100 }, force: true });
+    await focusEditorForSlash(page, editor);
   }
 
   await page.waitForTimeout(300);
@@ -335,6 +362,7 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
   ) {
     await page.keyboard.press('Enter');
     await page.waitForTimeout(200);
+    await focusEditorForSlash(page, editor);
     await page.keyboard.type('/', { delay: 50 });
   }
 

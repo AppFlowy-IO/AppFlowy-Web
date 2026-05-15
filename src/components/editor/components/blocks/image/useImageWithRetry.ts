@@ -302,6 +302,11 @@ export function useImageWithRetry(
   }, [onReadyRef]);
 
   const onImageError = useCallback(() => {
+    // Ignore the initial empty-src error: React renders `<img src="">`
+    // before the fetch loop has produced a validated URL, and some browsers
+    // fire `error` for that. Only treat errors as terminal once we've
+    // actually handed the <img> a real source.
+    if (!currentBlobUrlRef.current) return;
     // The browser couldn't decode the bytes we gave it (rare — corrupted
     // blob, format mismatch). Treat as a format error and stop retrying.
     setIsImageReady(false);

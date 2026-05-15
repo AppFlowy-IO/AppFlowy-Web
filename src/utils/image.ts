@@ -230,19 +230,44 @@ async function checkAppFlowyImage(
 
   const token = getTokenParsed();
 
-  if (!token) {
-    // Token may still be hydrating from storage. Caller retries shortly.
-    return errorResult(401, 'No auth token', 'no-auth');
+  // First attempt: with bearer if we have one, anonymous otherwise.
+  // Anonymous covers logged-out viewers on published / template pages where
+  // the file_storage URL is publicly readable.
+  const firstAttempt = await attemptFileStorageFetch(fullUrl, url, options, token?.access_token);
+
+  if (firstAttempt.ok) return firstAttempt;
+
+  // Token present but rejected (expired, scoped to different user, etc.) and
+  // the resource may still be publicly readable. Retry once anonymously so
+  // logged-in viewers on public/template pages don't see broken images just
+  // because their local session went stale.
+  if (token && (firstAttempt.status === 401 || firstAttempt.status === 403)) {
+    const fallback = await attemptFileStorageFetch(fullUrl, url, options, undefined);
+
+    if (fallback.ok) return fallback;
+    // If the anonymous attempt also failed with 401/403, the resource is
+    // genuinely private — surface that. Otherwise prefer the original error.
+    if (fallback.status === 401 || fallback.status === 403) return fallback;
   }
+
+  return firstAttempt;
+}
+
+async function attemptFileStorageFetch(
+  fullUrl: string,
+  originalUrl: string,
+  options: CheckImageOptions,
+  accessToken: string | undefined
+): Promise<CheckImageResult> {
+  const headers: Record<string, string> = { 'x-platform': 'web-app' };
+
+  if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
 
   let response: Response;
 
   try {
     response = await fetch(fullUrl, {
-      headers: {
-        Authorization: `Bearer ${token.access_token}`,
-        'x-platform': 'web-app',
-      },
+      headers,
       // First attempt: honor the server's Cache-Control (immutable, 1 yr
       // on 200; no-store on 4xx/5xx). This is what lets the browser cache
       // a once-fetched image forever and skip the network on later mounts.
@@ -261,7 +286,7 @@ async function checkAppFlowyImage(
       return errorResult(0, 'Aborted', 'network', 'aborted');
     }
 
-    Log.warn('[checkImage] auth fetch network error', err);
+    Log.warn('[checkImage] fetch network error', err);
     return errorResult(0, 'Network error', 'network', String(err));
   }
 
@@ -274,7 +299,7 @@ async function checkAppFlowyImage(
   }
 
   const blob = await response.blob();
-  const validatedBlob = await validateImageBlob(blob, url);
+  const validatedBlob = await validateImageBlob(blob, originalUrl);
 
   if (!validatedBlob) {
     return errorResult(

@@ -1,5 +1,6 @@
 # Test results
 test-results/
+playwright/.features-gen/
 
 # Logs
 logs
