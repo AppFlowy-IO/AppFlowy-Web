@@ -1,13 +1,52 @@
 import { AuthProvider } from '@/application/types';
 import { Log } from '@/utils/log';
 
-import { refreshToken } from './gotrue';
+import { refreshToken, settings as getGoTrueSettings } from './gotrue';
 import { parseGoTrueErrorFromUrl } from './gotrue-error';
 import { APIError, APIResponse, executeAPIRequest, getAxios } from './core';
 
 export interface ServerInfo {
   enable_page_history: boolean;
   ai_enabled?: boolean;
+}
+
+interface GoTrueSettingsPayload {
+  external?: Record<string, boolean>;
+  saml_enabled?: boolean;
+}
+
+function mapAuthProvider(provider: string): AuthProvider | null {
+  switch (provider.toLowerCase()) {
+    case 'google':
+      return AuthProvider.GOOGLE;
+    case 'apple':
+      return AuthProvider.APPLE;
+    case 'github':
+      return AuthProvider.GITHUB;
+    case 'discord':
+      return AuthProvider.DISCORD;
+    case 'authentik':
+      return AuthProvider.AUTHENTIK;
+    case 'email':
+      return AuthProvider.EMAIL;
+    case 'password':
+      return AuthProvider.PASSWORD;
+    case 'magic_link':
+      return AuthProvider.MAGIC_LINK;
+    case 'saml':
+      return AuthProvider.SAML;
+    case 'oidc':
+      return AuthProvider.OIDC;
+    case 'phone':
+      return AuthProvider.PHONE;
+    default:
+      console.warn(`Unknown auth provider from server: ${provider}`);
+      return null;
+  }
+}
+
+function mapAuthProviders(providers: string[]): AuthProvider[] {
+  return providers.map(mapAuthProvider).filter((provider): provider is AuthProvider => provider !== null);
 }
 
 export async function signInWithUrl(url: string) {
@@ -132,42 +171,35 @@ export async function getAuthProviders(): Promise<AuthProvider[]> {
       }>>(url)
     );
 
-    return payload.providers
-      .map((provider: string) => {
-        switch (provider.toLowerCase()) {
-          case 'google':
-            return AuthProvider.GOOGLE;
-          case 'apple':
-            return AuthProvider.APPLE;
-          case 'github':
-            return AuthProvider.GITHUB;
-          case 'discord':
-            return AuthProvider.DISCORD;
-          case 'authentik':
-            return AuthProvider.AUTHENTIK;
-          case 'email':
-            return AuthProvider.EMAIL;
-          case 'password':
-            return AuthProvider.PASSWORD;
-          case 'magic_link':
-            return AuthProvider.MAGIC_LINK;
-          case 'saml':
-            return AuthProvider.SAML;
-          case 'oidc':
-            return AuthProvider.OIDC;
-          case 'phone':
-            return AuthProvider.PHONE;
-          default:
-            console.warn(`Unknown auth provider from server: ${provider}`);
-            return null;
-        }
-      })
-      .filter((provider): provider is AuthProvider => provider !== null);
+    return mapAuthProviders(payload.providers);
   } catch (error) {
     const message = (error as APIError)?.message;
 
     console.warn('Auth providers API returned error:', message);
     console.error('Failed to fetch auth providers:', error);
+
+    // Fallback for self-hosted deployments where /api/server-info/auth-providers
+    // is not available: read provider flags directly from GoTrue settings.
+    try {
+      const settings = (await getGoTrueSettings()) as GoTrueSettingsPayload;
+      const enabledExternalProviders = Object.entries(settings.external || {})
+        .filter(([, enabled]) => enabled === true)
+        .map(([provider]) => provider);
+
+      if (settings.saml_enabled) {
+        enabledExternalProviders.push('saml');
+      }
+
+      const uniqueProviders = Array.from(new Set(enabledExternalProviders));
+      const mappedProviders = mapAuthProviders(uniqueProviders);
+
+      if (mappedProviders.length > 0) {
+        return mappedProviders;
+      }
+    } catch (fallbackError) {
+      console.error('Failed to fetch auth providers from GoTrue settings fallback:', fallbackError);
+    }
+
     return [AuthProvider.PASSWORD];
   }
 }
