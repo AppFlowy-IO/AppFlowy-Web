@@ -4,22 +4,18 @@ Feature: Editor editing
   Background:
     Given a blank document page is open
 
-  Scenario: Type plain text into the editor
+  Scenario: Basic text input, replacement, and deletion
     When I type "Hello AppFlowy" in the editor
     Then the editor contains "Hello AppFlowy"
-
-  Scenario: Replace selected text with typed text
-    When I type "Hello World" in the editor
+    When I start a new editor paragraph
+    And I type "Hello World" in the editor
     And I select the last word
     And I type "AppFlowy" in the editor
     Then the editor contains "Hello AppFlowy"
     And the editor does not contain "Hello World"
-
-  Scenario: Delete the previous word
-    When I type "Hello World Test" in the editor
+    When I type " Test" in the editor
     And I delete the previous word
-    Then the editor contains "Hello World"
-    And the editor does not contain "Hello World Test"
+    Then the editor does not contain "Hello AppFlowy Test"
 
   Scenario: Split a paragraph with Enter
     When I type "SplitHere" in the editor
@@ -97,19 +93,20 @@ Feature: Editor editing
     When I type quote markdown text "Quote Text" in the editor
     Then a "quote" block contains "Quote Text"
 
-  Scenario Outline: Inline markdown marks convert to styled text
-    When I type "<input>" in the editor
-    Then "<format>" formatting contains "<content>"
-    And the editor does not contain "<input>"
-
-    Examples:
-      | input                       | format        | content     |
-      | Normal **Bold Text** Normal | bold          | Bold Text   |
-      | Normal *Italic Text* Normal | italic        | Italic Text |
-      | Normal ~~Strike Text~~ Normal | strikethrough | Strike Text |
-
-  Scenario: Markdown inline code converts to styled text
-    When I type "Normal `Inline Code` Normal" in the editor
+  Scenario: Inline markdown converts text marks
+    When I type "Normal **Bold Text** Normal" in the editor
+    Then "bold" formatting contains "Bold Text"
+    And the editor does not contain "Normal **Bold Text** Normal"
+    When I start a new editor paragraph
+    And I type "Normal *Italic Text* Normal" in the editor
+    Then "italic" formatting contains "Italic Text"
+    And the editor does not contain "Normal *Italic Text* Normal"
+    When I start a new editor paragraph
+    And I type "Normal ~~Strike Text~~ Normal" in the editor
+    Then "strikethrough" formatting contains "Strike Text"
+    And the editor does not contain "Normal ~~Strike Text~~ Normal"
+    When I start a new editor paragraph
+    And I type "Normal `Inline Code` Normal" in the editor
     Then inline code contains "Inline Code"
     And the editor does not contain "`Inline Code`"
 
@@ -135,6 +132,13 @@ Feature: Editor editing
     When I press "Escape"
     Then the slash menu is hidden
 
+  Scenario: Keyboard Enter selects a filtered slash command
+    When I open the slash menu
+    And I search the slash menu for "quote"
+    Then the slash menu has 1 visible command
+    And I press "Enter"
+    Then editor block 0 has type "quote"
+
   Scenario Outline: Slash commands create text blocks
     When I choose slash command "<command>"
     And I type "<content>" in the editor
@@ -148,13 +152,6 @@ Feature: Editor editing
       | todoList     | todo_list     | Slash Todo     |
       | quote        | quote         | Slash Quote    |
       | code         | code          | const value = 1 |
-
-  Scenario: Keyboard Enter selects a filtered slash command
-    When I open the slash menu
-    And I search the slash menu for "quote"
-    Then the slash menu has 1 visible command
-    And I press "Enter"
-    Then editor block 0 has type "quote"
 
   Scenario Outline: Slash trigger on non-empty line inserts a new block below
     When I type "Hello world" in the editor
@@ -197,52 +194,49 @@ Feature: Editor editing
     When I toggle the todo item checkbox
     Then the todo item "Checkbox Todo" is not checked
 
-  Scenario: Toggle list collapse hides and shows child content
+  Scenario: Toggle list interactions collapse and expand content
     When I type "> Parent Toggle" in the editor
     And I press "Enter"
     And I type "Hidden Child" in the editor
     Then the editor visibly contains "Hidden Child"
     When I toggle the toggle list icon
     Then the editor does not visibly contain "Hidden Child"
-    When I toggle the toggle list icon
-    Then the editor visibly contains "Hidden Child"
-
-  Scenario: Toggle list shortcut collapses and expands the block
-    When I type "> Keyboard Toggle" in the editor
+    And the first toggle list is collapsed
+    When I press the toggle block shortcut
     Then the first toggle list is expanded
+    And the editor visibly contains "Hidden Child"
     When I press the toggle block shortcut
     Then the first toggle list is collapsed
-    When I press the toggle block shortcut
+    And the editor does not visibly contain "Hidden Child"
+    When I toggle the toggle list icon
     Then the first toggle list is expanded
+    And the editor visibly contains "Hidden Child"
 
   Scenario: Empty toggle list clears back to paragraph
     When I type "> " in the editor
     And I press "Enter"
     Then editor block 0 has type "paragraph"
 
-  Scenario Outline: Toolbar converts selected blocks
+  Scenario: Toolbar and alignment actions update the selected block
     When I type "Toolbar Block" in the editor
-    And I select all editor content
-    And I apply the "<action>" block toolbar action
-    Then editor block 0 has type "<block_type>"
-
-    Examples:
-      | action        | block_type    |
-      | heading1      | heading       |
-      | bulletedList  | bulleted_list |
-      | numberedList  | numbered_list |
-      | quote         | quote         |
-
-  Scenario Outline: Alignment shortcuts update paragraph alignment
-    When I type "Aligned text" in the editor
-    And I apply the "<alignment>" alignment shortcut
-    Then editor block 0 has alignment "<alignment>"
-
-    Examples:
-      | alignment |
-      | left      |
-      | center    |
-      | right     |
+    And I apply the "left" alignment shortcut
+    Then editor block 0 has alignment "left"
+    When I apply the "center" alignment shortcut
+    Then editor block 0 has alignment "center"
+    When I apply the "right" alignment shortcut
+    Then editor block 0 has alignment "right"
+    When I select all editor content
+    And I apply the "heading1" block toolbar action
+    Then editor block 0 has type "heading"
+    When I select all editor content
+    And I apply the "bulletedList" block toolbar action
+    Then editor block 0 has type "bulleted_list"
+    When I select all editor content
+    And I apply the "numberedList" block toolbar action
+    Then editor block 0 has type "numbered_list"
+    When I select all editor content
+    And I apply the "quote" block toolbar action
+    Then editor block 0 has type "quote"
 
   Scenario: Toolbar applies a link to selected text
     When I type "appflowy" in the editor
@@ -250,7 +244,7 @@ Feature: Editor editing
     And I apply link "https://appflowy.io" from the toolbar
     Then link mark "appflowy" has href "https://appflowy.io"
 
-  Scenario: Paste HTML preserves heading, bold text, and links
+  Scenario: Paste rich HTML, markdown headings, and plain text
     When I paste html content:
       """
       <meta charset="utf-8"><h2><strong>User Installation</strong></h2><ul><li><a href="https://appflowy.io/download">Windows/Mac/Linux</a></li><li><a href="https://appflowy.io/docs">Docs</a></li></ul>
@@ -259,20 +253,15 @@ Feature: Editor editing
     And "bold" formatting contains "User Installation"
     And link mark "Windows/Mac/Linux" has href "https://appflowy.io/download"
     And link mark "Docs" has href "https://appflowy.io/docs"
-
-  Scenario: Paste markdown headings creates heading blocks
     When I paste markdown text:
       """
       # I'm h1
       ## I'm h2
       ### I'm h3
       """
-    Then the document has 3 "heading" block
-    And a "heading" block contains "I'm h1"
+    Then a "heading" block contains "I'm h1"
     And a "heading" block contains "I'm h2"
     And a "heading" block contains "I'm h3"
-
-  Scenario: Paste plain text into the editor
     When I paste plain text:
       """
       First pasted line

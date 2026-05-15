@@ -117,6 +117,14 @@ When('I select all editor content', async ({ page }) => {
   await page.waitForTimeout(500);
 });
 
+When('I start a new editor paragraph', async ({ page }) => {
+  await focusEditor(page);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('End');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+});
+
 When('I apply the {string} formatting shortcut', async ({ page }, format: string) => {
   await page.keyboard.press(formatShortcut(format));
   await page.waitForTimeout(500);
