@@ -71,6 +71,9 @@ function ImageRender({
         width={rendered ? (newWidth ?? '100%') : 0}
         imgRef={imgRef}
         url={url}
+        // `ImageBlockData` has no caption field today, so let `Img` derive
+        // an alt from the URL filename. This avoids screen readers reading
+        // the raw blob URL or skipping the image entirely.
         onLoad={() => {
           setRendered(true);
         }}

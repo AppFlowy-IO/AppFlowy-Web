@@ -76,27 +76,56 @@ const resolveImageUrl = (url: string): string => {
 };
 
 
-interface CheckImageResult {
+/**
+ * Categorized failure mode for image loads. The polling/retry policy in
+ * `Img.tsx` keys off this — different categories deserve different backoff.
+ */
+export type CheckImageErrorKind =
+  | 'no-auth'        // Local: no token yet. Wait briefly; token is hydrating.
+  | 'auth-rejected'  // 401 from server. Token expired / invalid. Refresh + retry once.
+  | 'forbidden'      // 403 from server. Permission denied. Terminal.
+  | 'not-ready'      // 425/503 from server. Upload pipeline still in flight. Fast retry.
+  | 'not-found'      // 404 from server. Could still be a slow optimistic upload — slow retry.
+  | 'server-error'   // 5xx. Normal retry.
+  | 'network'        // fetch threw / timed out / opaque <img> onerror.
+  | 'format';        // Successfully fetched but not a usable image blob.
+
+export interface CheckImageResult {
   ok: boolean;
   status: number;
   statusText: string;
   error?: string;
+  errorKind?: CheckImageErrorKind;
   validatedUrl?: string;
 }
 
-// Helper function to check image using Image() approach
+const errorResult = (
+  status: number,
+  statusText: string,
+  errorKind: CheckImageErrorKind,
+  error?: string
+): CheckImageResult => ({ ok: false, status, statusText, errorKind, error });
+
+const classifyHttpStatus = (status: number): CheckImageErrorKind => {
+  if (status === 401) return 'auth-rejected';
+  if (status === 403) return 'forbidden';
+  if (status === 404) return 'not-found';
+  if (status === 425 || status === 503 || status === 408) return 'not-ready';
+  if (status >= 500) return 'server-error';
+  return 'network';
+};
+
+// Probe a non-AppFlowy URL by attempting to load it via <img>. We can't read
+// the HTTP status from a cross-origin <img>, so failures collapse into a
+// generic 'network' error — that's fine for the retry policy because it
+// doesn't try to distinguish 404 vs 5xx for external hosts anyway.
 const validateImageLoad = (imageUrl: string): Promise<CheckImageResult> => {
   return new Promise((resolve) => {
     const img = new Image();
 
     // Set a timeout to handle very slow loads
     const timeoutId = setTimeout(() => {
-      resolve({
-        ok: false,
-        status: 408,
-        statusText: 'Request Timeout',
-        error: 'Image loading timed out',
-      });
+      resolve(errorResult(408, 'Request Timeout', 'not-ready', 'Image loading timed out'));
     }, 10000); // 10 second timeout
 
     img.onload = () => {
@@ -111,12 +140,7 @@ const validateImageLoad = (imageUrl: string): Promise<CheckImageResult> => {
 
     img.onerror = () => {
       clearTimeout(timeoutId);
-      resolve({
-        ok: false,
-        status: 404,
-        statusText: 'Image Not Found',
-        error: 'Failed to load image',
-      });
+      resolve(errorResult(0, 'Image load failed', 'network', 'Failed to load image'));
     };
 
     img.src = imageUrl;
@@ -151,59 +175,123 @@ const validateImageBlob = async (blob: Blob, url?: string): Promise<Blob | null>
   return transcodeIfUnsupported(normalizedBlob, url);
 };
 
-export const checkImage = async (url: string): Promise<CheckImageResult> => {
-  // If it's an AppFlowy file storage URL, try authenticated fetch first
+export interface CheckImageOptions {
+  /**
+   * True when this call is a retry after a previous failure. Retries skip
+   * the browser HTTP cache so we always re-ask the origin — defends against
+   * a misbehaving proxy that cached a transient failure. First attempts use
+   * the default cache mode so successful responses (which the server tags
+   * `Cache-Control: public, immutable, max-age=31536000`) can be reused
+   * across mounts without a network round-trip.
+   */
+  retry?: boolean;
+  /**
+   * Lets the caller cancel an in-flight fetch (and the retry chain that
+   * follows it) on unmount / URL change. Without this, orphan fetches can
+   * keep running after the component goes away.
+   */
+  signal?: AbortSignal;
+}
+
+export const checkImage = async (
+  url: string,
+  options: CheckImageOptions = {}
+): Promise<CheckImageResult> => {
   if (isAppFlowyFileStorageUrl(url)) {
-    const token = getTokenParsed();
-    const fullUrl = resolveImageUrl(url);
-
-    Log.debug('[checkImage] fullUrl', fullUrl);
-
-    if (token) {
-      try {
-        const response = await fetch(fullUrl, {
-          headers: {
-            Authorization: `Bearer ${token.access_token}`,
-            'x-platform': 'web-app',
-          },
-        });
-
-        if (response.ok) {
-          const blob = await response.blob();
-          const validatedBlob = await validateImageBlob(blob, url);
-
-          if (!validatedBlob) {
-            return {
-              ok: false,
-              status: 406, // Not Acceptable
-              statusText: 'Not Acceptable',
-              error: 'Image fetch returned JSON instead of image',
-            };
-          }
-
-          const blobUrl = URL.createObjectURL(validatedBlob);
-
-          return {
-            ok: true,
-            status: 200,
-            statusText: 'OK',
-            validatedUrl: blobUrl,
-          };
-        }
-
-        console.error('Authenticated image fetch failed', response.status, response.statusText);
-      } catch (error) {
-        console.error('Failed to fetch authenticated image', error);
-      }
-    }
-
-    // Fallback for no token or failed fetch
-    return validateImageLoad(fullUrl);
+    return checkAppFlowyImage(url, options);
   }
 
-  // For non-AppFlowy URLs, use the original Image() approach
+  // External URL — let the browser do its thing.
   return validateImageLoad(url);
 };
+
+/**
+ * Fetch an AppFlowy-storage image with auth and turn it into a blob URL the
+ * <img> can render.
+ *
+ * Why not fall back to a plain `<img src>` on failure (as we used to):
+ *   - AppFlowy storage requires a Bearer token; an unauthenticated <img>
+ *     request is guaranteed to fail (401/403). The browser would then cache
+ *     that failure under the URL, so subsequent legitimate retries get the
+ *     cached error without ever hitting the server.
+ *   - The polling loop in Img.tsx burns retry attempts on guaranteed-failure
+ *     requests instead of waiting for a real condition to change (token
+ *     becoming available, upload pipeline finishing).
+ *
+ * Instead, return a typed error so the caller can apply a sensible backoff.
+ */
+async function checkAppFlowyImage(
+  url: string,
+  options: CheckImageOptions
+): Promise<CheckImageResult> {
+  const fullUrl = resolveImageUrl(url);
+
+  Log.debug('[checkImage] AppFlowy', fullUrl);
+
+  const token = getTokenParsed();
+
+  if (!token) {
+    // Token may still be hydrating from storage. Caller retries shortly.
+    return errorResult(401, 'No auth token', 'no-auth');
+  }
+
+  let response: Response;
+
+  try {
+    response = await fetch(fullUrl, {
+      headers: {
+        Authorization: `Bearer ${token.access_token}`,
+        'x-platform': 'web-app',
+      },
+      // First attempt: honor the server's Cache-Control (immutable, 1 yr
+      // on 200; no-store on 4xx/5xx). This is what lets the browser cache
+      // a once-fetched image forever and skip the network on later mounts.
+      //
+      // Retry: force a server round-trip via `reload`, in case some proxy
+      // or older server version cached a stale failure. We deliberately
+      // don't use `no-store` here — `reload` still allows the response we
+      // receive *now* to enter the cache normally.
+      cache: options.retry ? 'reload' : 'default',
+      signal: options.signal,
+    });
+  } catch (err) {
+    if ((err as { name?: string })?.name === 'AbortError') {
+      // Caller aborted (unmount, URL change). Surface as a non-actionable
+      // error so the caller can detect it without logging noise.
+      return errorResult(0, 'Aborted', 'network', 'aborted');
+    }
+
+    Log.warn('[checkImage] auth fetch network error', err);
+    return errorResult(0, 'Network error', 'network', String(err));
+  }
+
+  if (!response.ok) {
+    return errorResult(
+      response.status,
+      response.statusText,
+      classifyHttpStatus(response.status)
+    );
+  }
+
+  const blob = await response.blob();
+  const validatedBlob = await validateImageBlob(blob, url);
+
+  if (!validatedBlob) {
+    return errorResult(
+      406,
+      'Not Acceptable',
+      'format',
+      'Image fetch returned JSON instead of image'
+    );
+  }
+
+  return {
+    ok: true,
+    status: 200,
+    statusText: 'OK',
+    validatedUrl: URL.createObjectURL(validatedBlob),
+  };
+}
 
 export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
   if (isAppFlowyFileStorageUrl(url)) {
