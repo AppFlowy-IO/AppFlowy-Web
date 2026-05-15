@@ -68,6 +68,30 @@ export async function waitForDatabaseTestContext(page: Page): Promise<void> {
     .toBe(true);
 }
 
+async function waitForActiveDatabasePage(page: Page, pageId: string): Promise<void> {
+  await expect
+    .poll(
+      () =>
+        page.evaluate((expectedPageId) => {
+          const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+          const titlePageId = document
+            .querySelector('[data-testid="page-title-input"]')
+            ?.id
+            ?.replace('editor-title-', '');
+
+          return Boolean(
+            ctx?.databaseDoc &&
+              ctx?.activeViewId &&
+              (ctx.databasePageId === expectedPageId ||
+                ctx.activeViewId === expectedPageId ||
+                titlePageId === expectedPageId)
+          );
+        }, pageId),
+      { timeout: 20000, message: `Waiting for database page ${pageId} to become active` }
+    )
+    .toBe(true);
+}
+
 export async function getCurrentDatabaseInfo(page: Page): Promise<DatabaseFixtureInfo> {
   await waitForDatabaseTestContext(page);
 
@@ -195,7 +219,8 @@ export async function openGridDatabaseByPageId(page: Page, pageId: string): Prom
 
   await expect(pageItem).toBeVisible({ timeout: 20000 });
   await pageItem.click({ force: true });
-  await waitForGridReady(page);
+  await waitForActiveDatabasePage(page, pageId);
+  await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 30000 });
   await waitForDatabaseTestContext(page);
   return getCurrentDatabaseInfo(page);
 }
@@ -420,11 +445,17 @@ export async function setOnlyRelationFilterDirect(
 ): Promise<string> {
   const filterId = makeTestId('rel_filter');
 
+  await waitForDatabaseTestContext(page);
   await page.evaluate(
     ({ condition, fieldId, filterId, targetRowIds, advanced, relationFieldType }) => {
       const win = window as any;
       const ctx = win.__TEST_DATABASE_CONTEXT__;
       const Y = win.Y;
+
+      if (!ctx?.databaseDoc || !ctx?.activeViewId) {
+        throw new Error('Database test context bridge is unavailable');
+      }
+
       const database = ctx.databaseDoc.getMap('data').get('database');
       const view = database.get('views').get(ctx.activeViewId);
       let filters = view.get('filters');
@@ -489,9 +520,15 @@ export async function updateRelationFilterDirect(
     targetRowIds?: string[];
   }
 ): Promise<void> {
+  await waitForDatabaseTestContext(page);
   await page.evaluate(
     ({ filterId, updates }) => {
       const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+
+      if (!ctx?.databaseDoc || !ctx?.activeViewId) {
+        throw new Error('Database test context bridge is unavailable');
+      }
+
       const database = ctx.databaseDoc.getMap('data').get('database');
       const view = database.get('views').get(ctx.activeViewId);
       const filters = view.get('filters');
@@ -561,8 +598,14 @@ export async function convertCurrentFiltersToAdvancedDirect(page: Page): Promise
 }
 
 export async function deleteCurrentDatabaseRowDirect(page: Page, rowId: string): Promise<void> {
+  await waitForDatabaseTestContext(page);
   await page.evaluate((rowId) => {
     const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+
+    if (!ctx?.databaseDoc) {
+      throw new Error('Database test context bridge is unavailable');
+    }
+
     const database = ctx.databaseDoc.getMap('data').get('database');
 
     database.get('views').forEach((view: any) => {
