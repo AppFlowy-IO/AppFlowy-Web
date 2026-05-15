@@ -15,6 +15,7 @@ import {
   YDatabaseField,
   YDatabaseFilter,
   YDatabaseFilters,
+  YDatabaseRowOrders,
   YDatabaseSorts,
   YDatabaseView,
   YDoc,
@@ -32,6 +33,8 @@ type DatabaseFixture = {
   databaseDoc: YDoc;
   filters: YDatabaseFilters;
   rowMap: Record<RowId, YDoc>;
+  rowOrders: YDatabaseRowOrders;
+  view: YDatabaseView;
   viewId: string;
 };
 
@@ -103,6 +106,8 @@ function createDatabaseFixture(): DatabaseFixture {
         [fieldId]: createCell(FieldType.RichText, 'skip'),
       }),
     },
+    rowOrders,
+    view,
     viewId,
   };
 }
@@ -168,6 +173,84 @@ describe('useRowOrdersSelector', () => {
     await waitFor(() => {
       expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
     });
+  });
+
+  it('updates unconditioned row order immediately when rows are added or removed', async () => {
+    const fixture = createDatabaseFixture();
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.rowOrders.insert(1, [{ id: 'row-new', height: 44 }]);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-new', 'row-a', 'row-b']);
+
+    act(() => {
+      fixture.rowOrders.delete(0);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-new', 'row-a', 'row-b']);
+  });
+
+  it('resubscribes when the row order array is replaced', async () => {
+    const fixture = createDatabaseFixture();
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    const replacementRowOrders = new Y.Array<{ id: RowId; height: number }>() as YDatabaseRowOrders;
+
+    replacementRowOrders.push([{ id: 'row-replacement', height: 44 }]);
+
+    act(() => {
+      fixture.view.set(YjsDatabaseKey.row_orders, replacementRowOrders);
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-replacement']);
+    });
+
+    act(() => {
+      replacementRowOrders.push([{ id: 'row-new', height: 44 }]);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-replacement', 'row-new']);
+  });
+
+  it('does not publish raw row order immediately when filters are active', async () => {
+    const fixture = createDatabaseFixture();
+    const { result } = renderHook(() => useRowOrdersSelector(), {
+      wrapper: createWrapper(fixture),
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-c', 'row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.filters.push([createTextFilter('match')]);
+      jest.advanceTimersByTime(250);
+    });
+
+    await waitFor(() => {
+      expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
+    });
+
+    act(() => {
+      fixture.rowOrders.insert(0, [{ id: 'row-new', height: 44 }]);
+    });
+
+    expect(result.current?.map((row) => row.id)).toEqual(['row-a', 'row-b']);
   });
 
   it('requests missing row docs while a conditioned view is loading', async () => {
