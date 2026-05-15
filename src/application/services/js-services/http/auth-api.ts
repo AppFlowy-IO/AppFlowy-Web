@@ -143,6 +143,8 @@ export async function getAuthProviders(): Promise<AuthProvider[]> {
             return AuthProvider.GITHUB;
           case 'discord':
             return AuthProvider.DISCORD;
+          case 'authentik':
+            return AuthProvider.AUTHENTIK;
           case 'email':
             return AuthProvider.EMAIL;
           case 'password':

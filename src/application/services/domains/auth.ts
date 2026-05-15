@@ -5,6 +5,7 @@ export {
   signInAppleWithRedirect as signInApple,
   signInGithubWithRedirect as signInGithub,
   signInDiscordWithRedirect as signInDiscord,
+  signInAuthentikWithRedirect as signInAuthentik,
   signInSamlWithRedirect as signInSaml,
   signInWithPasswordWithRedirect as signInWithPassword,
   signUpWithPasswordWithRedirect as signUpWithPassword,

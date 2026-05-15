@@ -69,6 +69,11 @@ function LoginProvider({
         Icon: DiscordSvg,
       },
       {
+        label: 'Continue with Authentik',
+        value: AuthProvider.AUTHENTIK,
+        Icon: SamlSvg,
+      },
+      {
         label: t('web.continueWithSaml'),
         value: AuthProvider.SAML,
         Icon: SamlSvg,
@@ -110,6 +115,9 @@ function LoginProvider({
             break;
           case AuthProvider.DISCORD:
             await AuthService.signInDiscord({ redirectTo });
+            break;
+          case AuthProvider.AUTHENTIK:
+            await AuthService.signInAuthentik({ redirectTo });
             break;
           case AuthProvider.SAML:
           case AuthProvider.OIDC:
