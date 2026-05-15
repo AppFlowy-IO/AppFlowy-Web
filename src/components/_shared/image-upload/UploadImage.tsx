@@ -3,7 +3,7 @@ import React, { useCallback } from 'react';
 import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import { notify } from '@/components/_shared/notify';
 
-export const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp'];
+export const ALLOWED_IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'svg', 'webp', 'tif', 'tiff', 'heic', 'heif'];
 
 export function UploadImage({
   onDone,

@@ -193,6 +193,73 @@ test.describe('Row Document Test', () => {
     await expect(page.locator('[role="dialog"]')).toContainText(longText);
   });
 
+  /**
+   * Repro: pasting a URL as a bookmark in a row's document, then closing
+   * the card immediately, used to lose the bookmark. The LinkPreview block
+   * was inserted via Slate's Transforms.insertNodes, but the slate-yjs
+   * binding's applyInsertNode bails out for non-text nodes — so the block
+   * rendered in Slate's local state but never persisted to the Y.Doc, and
+   * was discarded as soon as the editor unmounted. The fix writes the
+   * block directly to Yjs (matching the markdown-paste path).
+   */
+  test('persists pasted bookmark when card is closed immediately after paste', async ({
+    page,
+    request,
+  }) => {
+    const testEmail = generateRandomEmail();
+    const cardName = `Bookmark-${uuidv4().substring(0, 6)}`;
+    const bookmarkUrl = `https://appflowy.io/bookmark-test-${uuidv4().substring(0, 8)}`;
+
+    // Given: a board with a new card and the row document editor focused
+    await createBoardAndWait(page, request, testEmail);
+    await addNewCard(page, cardName);
+    await openCard(page, cardName);
+    await clickIntoEditor(page);
+
+    // When: pasting a URL into the row document editor
+    await page.evaluate((url) => {
+      const editors = Array.from(document.querySelectorAll('[data-slate-editor="true"]')) as HTMLElement[];
+      // The dialog's row sub-document editor is the last/innermost slate editor
+      const target = editors[editors.length - 1];
+
+      if (!target) throw new Error('No slate editor found in dialog');
+
+      const clipboardData = new DataTransfer();
+
+      clipboardData.setData('text/plain', url);
+      const event = new ClipboardEvent('paste', {
+        clipboardData,
+        bubbles: true,
+        cancelable: true,
+      });
+
+      target.dispatchEvent(event);
+    }, bookmarkUrl);
+
+    const dialog = page.locator('[role="dialog"]');
+
+    await expect(dialog.locator('.link-preview-block')).toBeVisible({ timeout: 5000 });
+
+    // When: closing the modal IMMEDIATELY after paste — no debounce window.
+    await closeRowDetailWithEscape(page);
+    await page.waitForTimeout(3000);
+
+    // And: reopening the same card
+    await openCard(page, cardName);
+    await page.waitForTimeout(2000);
+
+    const scrollContainer = dialog.locator('.appflowy-scroll-container');
+
+    if ((await scrollContainer.count()) > 0) {
+      await scrollContainer.evaluate((el) => el.scrollTo(0, 9999));
+      await page.waitForTimeout(500);
+    }
+
+    // Then: the bookmark must still be present in the row document
+    await expect(dialog.locator('.link-preview-block')).toBeVisible({ timeout: 10000 });
+    await expect(dialog).toContainText(bookmarkUrl);
+  });
+
   test('shows row document indicator after editing row document', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
     const cardName = `RowDoc-${uuidv4().substring(0, 6)}`;

@@ -3,6 +3,73 @@ import { isAppFlowyFileStorageUrl } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
 import { getConfigValue } from '@/utils/runtime-config';
 
+const HEIC_MIME_TYPES = new Set(['image/heic', 'image/heif', 'image/heic-sequence', 'image/heif-sequence']);
+const TIFF_MIME_TYPES = new Set(['image/tiff', 'image/tif', 'image/x-tiff']);
+const HEIC_EXT_REGEX = /\.(heic|heif)(\?.*)?$/i;
+const TIFF_EXT_REGEX = /\.(tiff?)(\?.*)?$/i;
+
+const isHeicBlob = (blob: Blob, url?: string): boolean => {
+  if (HEIC_MIME_TYPES.has(blob.type)) return true;
+  return !!url && HEIC_EXT_REGEX.test(url);
+};
+
+const isTiffBlob = (blob: Blob, url?: string): boolean => {
+  if (TIFF_MIME_TYPES.has(blob.type)) return true;
+  return !!url && TIFF_EXT_REGEX.test(url);
+};
+
+/**
+ * Browsers (other than Safari) cannot decode HEIC/HEIF or TIFF natively.
+ * Transcode such blobs to PNG client-side so a regular <img> can render them.
+ */
+export const transcodeIfUnsupported = async (blob: Blob, url?: string): Promise<Blob> => {
+  try {
+    if (isHeicBlob(blob, url)) {
+      const heic2any = (await import('heic2any')).default;
+      const result = await heic2any({ blob, toType: 'image/png' });
+
+      return Array.isArray(result) ? result[0] : result;
+    }
+
+    if (isTiffBlob(blob, url)) {
+      const utifMod = await import('utif');
+      const UTIF = ((utifMod as unknown) as { default?: typeof import('utif') }).default ?? utifMod;
+      const arrayBuffer = await blob.arrayBuffer();
+      const ifds = UTIF.decode(arrayBuffer);
+
+      if (!ifds.length) {
+        throw new Error('No image frames found in TIFF');
+      }
+
+      UTIF.decodeImage(arrayBuffer, ifds[0]);
+      const rgba = UTIF.toRGBA8(ifds[0]);
+      const { width, height } = ifds[0];
+      const canvas = document.createElement('canvas');
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+
+      if (!ctx) throw new Error('Failed to get canvas context');
+      const clamped = new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.byteLength);
+      const imageData = new ImageData(clamped, width, height);
+
+      ctx.putImageData(imageData, 0, 0);
+
+      return await new Promise<Blob>((resolve, reject) => {
+        canvas.toBlob((pngBlob) => {
+          if (pngBlob) resolve(pngBlob);
+          else reject(new Error('Failed to encode TIFF as PNG'));
+        }, 'image/png');
+      });
+    }
+  } catch (error) {
+    Log.error('Failed to transcode unsupported image format', error);
+  }
+
+  return blob;
+};
+
 const resolveImageUrl = (url: string): string => {
   if (!url) return '';
   return url.startsWith('http') ? url : `${getConfigValue('APPFLOWY_BASE_URL', '')}${url}`;
@@ -70,16 +137,18 @@ const validateImageBlob = async (blob: Blob, url?: string): Promise<Blob | null>
     return null;
   }
 
+  let normalizedBlob = blob;
+
   // If the blob type is generic or missing, try to infer from URL
-  if ((!blob.type || blob.type === 'application/octet-stream') && url) {
+  if ((!normalizedBlob.type || normalizedBlob.type === 'application/octet-stream') && url) {
     const inferredType = getMimeTypeFromUrl(url);
 
     if (inferredType) {
-      return blob.slice(0, blob.size, inferredType);
+      normalizedBlob = normalizedBlob.slice(0, normalizedBlob.size, inferredType);
     }
   }
 
-  return blob;
+  return transcodeIfUnsupported(normalizedBlob, url);
 };
 
 export const checkImage = async (url: string): Promise<CheckImageResult> => {
@@ -169,18 +238,18 @@ export const fetchImageBlob = async (url: string): Promise<Blob | null> => {
       const response = await fetch(url);
 
       if (response.ok) {
-        const blob = await response.blob();
+        let blob = await response.blob();
 
         // If the blob type is generic or missing, try to infer from URL
         if ((!blob.type || blob.type === 'application/octet-stream') && url) {
           const inferredType = getMimeTypeFromUrl(url);
 
           if (inferredType) {
-            return blob.slice(0, blob.size, inferredType);
+            blob = blob.slice(0, blob.size, inferredType);
           }
         }
 
-        return blob;
+        return transcodeIfUnsupported(blob, url);
       }
     } catch (error) {
       return null;
@@ -250,6 +319,15 @@ const getMimeTypeFromUrl = (url: string): string | null => {
       return 'image/webp';
     case 'svg':
       return 'image/svg+xml';
+    case 'bmp':
+      return 'image/bmp';
+    case 'tif':
+    case 'tiff':
+      return 'image/tiff';
+    case 'heic':
+      return 'image/heic';
+    case 'heif':
+      return 'image/heif';
     default:
       return null;
   }

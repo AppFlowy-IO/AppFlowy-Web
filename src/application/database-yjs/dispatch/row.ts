@@ -28,11 +28,15 @@ import {
 } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
 import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
-import { getCachedProviderDoc, openCollabDB } from '@/application/db';
+import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
+import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import { Log } from '@/utils/log';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
 import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
-import { dateFilterFillData, filterFillData } from '@/application/database-yjs/filter';
+import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
+import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { dateFilterFillData, filterFillData, relationFilterFillData } from '@/application/database-yjs/filter';
+import { applyRelationReciprocalInserts } from './relation';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { useDatabaseViewLayout, useCalendarLayoutSetting } from '@/application/database-yjs/selector';
@@ -243,6 +247,8 @@ export function useDeleteRowDispatch() {
         },
         'deleteRowDispatch'
       );
+      void deleteOutboxByObjectId(rowId);
+      void deleteCollabDB(rowId, { destroyDoc: false });
     },
     [sharedRoot, database]
   );
@@ -279,6 +285,10 @@ export function useBulkDeleteRowDispatch() {
         },
         'bulkDeleteRowDispatch'
       );
+      rowIds.forEach((rowId) => {
+        void deleteOutboxByObjectId(rowId);
+        void deleteCollabDB(rowId, { destroyDoc: false });
+      });
     },
     [sharedRoot, database]
   );
@@ -295,7 +305,8 @@ export function useNewRowDispatch() {
   const isCalendar = layout === DatabaseViewLayout.Calendar;
   const calendarSetting = useCalendarLayoutSetting();
   const filters = currentView?.get(YjsDatabaseKey.filters);
-  const { navigateToRow } = useDatabaseContext();
+  const { navigateToRow, databaseDoc, loadView, getViewIdFromDatabaseId, bindViewSync } = useDatabaseContext();
+  const rowMap = useRowMap();
 
   return useCallback(
     async ({
@@ -328,64 +339,108 @@ export function useNewRowDispatch() {
       const rowId = uuidv4();
       const rowKey = getRowKey(guid, rowId);
       const rowDoc = await createRow(rowKey);
-      let shouldOpenRowModal = false;
+      // Snapshot the filter array once: Y.Array.toArray() allocates a fresh
+      // JS array on each call, and we read it twice (length check + forEach).
+      const filterArray = filters?.toArray() ?? [];
+      // Open the row detail page whenever filters are active so the user can
+      // see and complete the new row (its primary "Name" cell is always empty,
+      // and other cells get pre-filled from filters but still need user input).
+      let shouldOpenRowModal = filterArray.length > 0;
+      // Relation prefills are written synchronously in the transact below, but
+      // their reciprocal/back-link updates must run async after the row exists.
+      // Keyed by fieldId so multiple filters on the same relation field don't
+      // queue conflicting backfills — only the LAST filter's IDs survive in
+      // the cell (cells.set overwrites), and the reciprocal updates must
+      // mirror that final state, not every intermediate write.
+      const relationPrefills = new Map<FieldId, string[]>();
 
       rowDoc.transact(() => {
         initialDatabaseRow(rowId, database.get(YjsDatabaseKey.id), rowDoc);
         const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
         const row = rowSharedRoot.get(YjsEditorKey.database_row);
+        const meta = rowSharedRoot.get(YjsEditorKey.meta);
 
         const cells = row.get(YjsDatabaseKey.cells);
 
-        if (filters) {
-          filters.toArray().forEach((filter) => {
-            const cell = new Y.Map() as YDatabaseCell;
-            const fieldId = filter.get(YjsDatabaseKey.field_id);
-            const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
+        filterArray.forEach((filter) => {
+          const cell = new Y.Map() as YDatabaseCell;
+          const fieldId = filter.get(YjsDatabaseKey.field_id);
+          const field = database.get(YjsDatabaseKey.fields)?.get(fieldId);
 
-            if (!field) {
-              return;
-            }
+          if (!field) {
+            return;
+          }
 
-            if (isCalendar && calendarSetting?.fieldId === fieldId) {
-              shouldOpenRowModal = true;
-            }
+          if (isCalendar && calendarSetting?.fieldId === fieldId) {
+            shouldOpenRowModal = true;
+          }
 
-            const type = Number(field.get(YjsDatabaseKey.type));
+          const type = Number(field.get(YjsDatabaseKey.type));
 
-            if (type === FieldType.DateTime) {
-              const { data, endTimestamp, isRange } = dateFilterFillData(filter);
+          if (type === FieldType.DateTime) {
+            const { data, endTimestamp, isRange } = dateFilterFillData(filter);
 
-              if (data !== null) {
-                cell.set(YjsDatabaseKey.data, data);
-              }
-
-              if (endTimestamp) {
-                cell.set(YjsDatabaseKey.end_timestamp, endTimestamp);
-              }
-
-              if (isRange) {
-                cell.set(YjsDatabaseKey.is_range, isRange);
-              }
-            } else if ([FieldType.CreatedTime, FieldType.LastEditedTime].includes(type)) {
-              shouldOpenRowModal = true;
-              return;
-            } else {
-              const data = filterFillData(filter, field);
-
-              if (data === null) {
-                return;
-              }
-
+            if (data !== null) {
               cell.set(YjsDatabaseKey.data, data);
             }
 
-            cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
-            cell.set(YjsDatabaseKey.field_type, type);
+            if (endTimestamp) {
+              cell.set(YjsDatabaseKey.end_timestamp, endTimestamp);
+            }
 
-            cells.set(fieldId, cell);
-          });
-        }
+            if (isRange) {
+              cell.set(YjsDatabaseKey.is_range, isRange);
+            }
+          } else if ([FieldType.CreatedTime, FieldType.LastEditedTime].includes(type)) {
+            shouldOpenRowModal = true;
+            return;
+          } else if (type === FieldType.Relation) {
+            const rowIds = relationFilterFillData(
+              String(filter.get(YjsDatabaseKey.content) ?? ''),
+              Number(filter.get(YjsDatabaseKey.condition))
+            );
+
+            if (!rowIds) {
+              return;
+            }
+
+            // Enforce source_limit synchronously so OneOnly relations don't
+            // silently end up with multiple linked rows when the filter has
+            // several values selected.
+            const typeOption = parseRelationTypeOption(field);
+            const limitedRowIds =
+              typeOption.source_limit === RelationLimit.OneOnly && rowIds.length > 1
+                ? [rowIds[rowIds.length - 1]]
+                : rowIds;
+
+            const data = new Y.Array<string>();
+
+            if (limitedRowIds.length > 0) {
+              data.push([...limitedRowIds]);
+              relationPrefills.set(fieldId, limitedRowIds);
+            } else {
+              // An earlier filter on this same field may have queued IDs;
+              // an empty later filter must clear that queue so the backfill
+              // doesn't write reciprocals to rows the source no longer links.
+              relationPrefills.delete(fieldId);
+            }
+
+            cell.set(YjsDatabaseKey.data, data);
+          } else {
+            const data = filterFillData(filter, field);
+
+            if (data === null) {
+              return;
+            }
+
+            cell.set(YjsDatabaseKey.data, data);
+          }
+
+          cell.set(YjsDatabaseKey.created_at, String(dayjs().unix()));
+          cell.set(YjsDatabaseKey.field_type, type);
+
+          cells.set(fieldId, cell);
+        });
 
         if (cellsData) {
           Object.entries(cellsData).forEach(([fieldId, data]) => {
@@ -413,9 +468,18 @@ export function useNewRowDispatch() {
 
         row.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
 
-        if (shouldOpenRowModal) {
-          navigateToRow?.(rowId);
-        }
+        const newMeta = generateRowMeta(rowId, {
+          [RowMetaKey.IsDocumentEmpty]: true,
+        });
+
+        Object.keys(newMeta).forEach((key) => {
+          const value = newMeta[key];
+
+          if (value) {
+            meta.set(key, value);
+          }
+        });
+
       });
 
       executeOperationWithAllViews(
@@ -444,13 +508,53 @@ export function useNewRowDispatch() {
         'newRowDispatch'
       );
 
+      if (shouldOpenRowModal) {
+        navigateToRow?.(rowId);
+      }
+
+      // Backfill reciprocal links for two-way relations seeded from filter prefills.
+      // Done after row creation so related row docs can be loaded asynchronously.
+      // Independent prefills on different fields are processed in parallel.
+      await Promise.all(
+        Array.from(relationPrefills, ([fieldId, rowIds]) =>
+          applyRelationReciprocalInserts({
+            sourceRowId: rowId,
+            sourceFieldId: fieldId,
+            insertedRowIds: rowIds,
+            database,
+            databaseDoc,
+            rowMap,
+            createRow,
+            loadView,
+            getViewIdFromDatabaseId,
+            bindViewSync,
+          })
+        )
+      );
+
       if (isCalendar && shouldOpenRowModal) {
         return null;
       }
 
       return rowId;
     },
-    [calendarSetting, createRow, currentView, database, filters, guid, isCalendar, navigateToRow, sharedRoot, viewId]
+    [
+      bindViewSync,
+      calendarSetting,
+      createRow,
+      currentView,
+      database,
+      databaseDoc,
+      filters,
+      getViewIdFromDatabaseId,
+      guid,
+      isCalendar,
+      loadView,
+      navigateToRow,
+      rowMap,
+      sharedRoot,
+      viewId,
+    ]
   );
 }
 
@@ -483,14 +587,12 @@ export function useDuplicateRowDispatch() {
 
       const icon = referenceMeta.icon;
       const cover = referenceMeta.cover;
-      // Treat undefined (never set) the same as false — if the source row
-      // was opened and content was added, isEmptyDocument is explicitly false.
-      // If it was never opened, isEmptyDocument is undefined; in that case we
-      // still want to ask the server to duplicate the document (the server
-      // will check whether there is actual content).
-      const hasDocument = referenceMeta.isEmptyDocument !== true;
+      const sourceDocId = referenceMeta.documentId;
+      const isSourceDocEmpty = referenceMeta.isEmptyDocument === true;
+      const isSourceDocNonEmpty = referenceMeta.isEmptyDocument === false;
+      const shouldDuplicateSourceDoc = Boolean(sourceDocId) && !isSourceDocEmpty;
       const newMeta = generateRowMeta(rowId, {
-        [RowMetaKey.IsDocumentEmpty]: !hasDocument,
+        [RowMetaKey.IsDocumentEmpty]: !isSourceDocNonEmpty,
         [RowMetaKey.IconId]: icon,
         [RowMetaKey.CoverId]: cover ? JSON.stringify(cover) : null,
       });
@@ -572,12 +674,12 @@ export function useDuplicateRowDispatch() {
       // the latest content even if WebSocket sync hasn't persisted yet.
       if (duplicateRowDocument) {
         const databaseId = database.get(YjsDatabaseKey.id);
-        const sourceDocId = referenceMeta.documentId;
 
         try {
           let clientDocStateB64: string | undefined;
+          let hasClientDocumentContent = false;
 
-          if (sourceDocId) {
+          if (shouldDuplicateSourceDoc) {
             // Find a Y.Doc with actual content. Check in priority order:
             //   1. Dialog sub-doc cache (rowSubDocs) — populated when user
             //      opens the row in dialog mode.
@@ -636,7 +738,9 @@ export function useDuplicateRowDispatch() {
               }
             }
 
-            if (cachedDoc) {
+            hasClientDocumentContent = hasMeaningfulContent(cachedDoc);
+
+            if (cachedDoc && hasClientDocumentContent) {
               const docState = Y.encodeStateAsUpdate(cachedDoc);
               // Convert to base64 for the server (chunked to avoid stack overflow on large docs)
               const CHUNK = 8192;
@@ -651,7 +755,7 @@ export function useDuplicateRowDispatch() {
               // If we found a cached doc with content, ensure the duplicated
               // row's meta marks the document as non-empty so the client
               // fetches from the server when the row is opened.
-              if (!hasDocument) {
+              if (!isSourceDocNonEmpty) {
                 rowDoc.transact(() => {
                   const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as YSharedRoot;
                   const meta = rowSharedRoot.get(YjsEditorKey.meta);
@@ -665,12 +769,14 @@ export function useDuplicateRowDispatch() {
             }
           }
 
-          await duplicateRowDocument(
-            databaseId,
-            referenceRowId,
-            rowId,
-            clientDocStateB64
-          );
+          if (shouldDuplicateSourceDoc || hasClientDocumentContent) {
+            await duplicateRowDocument(
+              databaseId,
+              referenceRowId,
+              rowId,
+              clientDocStateB64
+            );
+          }
         } catch (err) {
           Log.error('[duplicateRowDocument] failed:', err);
         }

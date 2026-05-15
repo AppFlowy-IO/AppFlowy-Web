@@ -1,4 +1,4 @@
-import { Page, Locator } from '@playwright/test';
+import { Page } from '@playwright/test';
 
 /**
  * Centralized selectors for Playwright E2E tests
@@ -256,6 +256,73 @@ export const DatabaseViewSelectors = {
   gridView: (page: Page) => page.getByTestId('grid-view'),
   boardView: (page: Page) => page.locator('[data-testid*="board"]'),
   calendarView: (page: Page) => page.locator('[data-testid*="calendar"]'),
+  /**
+   * Locator for a layout option inside the AddViewButton dropdown
+   * (e.g. "Grid", "Board", "Calendar", "Chart"). The dropdown items have no
+   * dedicated test ids; they're identified by visible label.
+   */
+  viewTypeOption: (page: Page, label: string) =>
+    page.getByRole('menuitem', { name: label }),
+};
+
+/**
+ * Chart view selectors
+ */
+export const ChartSelectors = {
+  chart: (page: Page) => page.getByTestId('database-chart'),
+  anyChart: (page: Page) => page.locator('.recharts-wrapper'),
+  barChart: (page: Page) => page.locator('.recharts-bar-rectangles'),
+  lineChart: (page: Page) => page.locator('.recharts-line'),
+  pieChart: (page: Page) => page.locator('.recharts-pie'),
+  bars: (page: Page) => page.locator('.recharts-bar-rectangle'),
+  dots: (page: Page) => page.locator('.recharts-dot'),
+  slices: (page: Page) => page.locator('.recharts-pie-sector'),
+  emptyStateNoField: (page: Page) =>
+    page.getByTestId('database-chart').getByText('No fields available for grouping'),
+  emptyStateNoData: (page: Page) =>
+    page.getByTestId('database-chart').getByText('No data'),
+  tooltip: (page: Page) => page.locator('.recharts-tooltip-wrapper'),
+  legend: (page: Page) => page.locator('.recharts-legend-wrapper'),
+};
+
+/**
+ * Chart settings dropdown selectors. The dropdown opens off the
+ * `database-actions-settings` (gear) button and contains nested submenus.
+ * Items are matched by visible label since the dropdown items have no
+ * dedicated test ids.
+ */
+export const ChartSettingsSelectors = {
+  settingsButton: (page: Page) => page.getByTestId('database-actions-settings'),
+  // Submenu triggers in the top-level Properties / Layout / Chart settings menu
+  chartSettingsSubTrigger: (page: Page) =>
+    page.getByRole('menuitem', { name: /chart settings/i }),
+  // Sub-submenu trigger inside Chart settings for the four chart types
+  chartTypeSubTrigger: (page: Page) =>
+    page.getByRole('menuitem', { name: /^chart type$/i }),
+  // Section labels inside the Chart settings submenu
+  xAxisLabel: (page: Page) => page.getByText('X-Axis', { exact: true }),
+  aggregationLabel: (page: Page) => page.getByText('Aggregation', { exact: true }),
+  yAxisLabel: (page: Page) => page.getByText('Y-Axis', { exact: true }),
+  // A specific aggregation row by label (e.g. "Count", "Sum", "Average").
+  aggregationItem: (page: Page, label: string) =>
+    page.getByRole('menuitem', { name: new RegExp(`^${label}$`, 'i') }),
+  // A chart type row by label (Bar / Horizontal Bar / Line / Donut)
+  chartTypeItem: (page: Page, label: string) =>
+    page.getByRole('menuitem', { name: new RegExp(`^${label}$`, 'i') }),
+  // Toggle rows
+  showEmptyValuesItem: (page: Page) =>
+    page.getByRole('menuitem', { name: /show empty values/i }),
+  cumulativeItem: (page: Page) =>
+    page.getByRole('menuitem', { name: /cumulative/i }),
+};
+
+/**
+ * Drill-down popup selectors (rendered when the user clicks a chart element).
+ */
+export const ChartDrilldownSelectors = {
+  dialog: (page: Page) => page.getByRole('dialog'),
+  closeButton: (page: Page) =>
+    page.getByRole('dialog').getByRole('button').first(),
 };
 
 /**
@@ -425,6 +492,28 @@ export const AddPageSelectors = {
   addCalendarButton: (page: Page) => page.getByTestId('add-calendar-button'),
   addBoardButton: (page: Page) => page.getByTestId('add-board-button'),
   addAIChatButton: (page: Page) => page.getByTestId('add-ai-chat-button'),
+  addChartButton: (page: Page) => page.getByTestId('add-chart-button'),
+  addImportButton: (page: Page) => page.getByTestId('add-import-button'),
+};
+
+/**
+ * Export-As (PDF) selectors
+ */
+export const ExportSelectors = {
+  panel: (page: Page) => page.getByTestId('export-panel'),
+  pdfButton: (page: Page) => page.getByTestId('export-pdf-button'),
+  includeLinkedPagesSwitch: (page: Page) => page.getByTestId('export-include-linked-pages-switch'),
+};
+
+/**
+ * Import dialog selectors
+ */
+export const ImportSelectors = {
+  dialog: (page: Page) => page.getByTestId('import-dialog'),
+  markdownButton: (page: Page) => page.getByTestId('import-markdown'),
+  csvButton: (page: Page) => page.getByTestId('import-csv'),
+  markdownInput: (page: Page) => page.getByTestId('import-markdown-input'),
+  csvInput: (page: Page) => page.getByTestId('import-csv-input'),
 };
 
 /**

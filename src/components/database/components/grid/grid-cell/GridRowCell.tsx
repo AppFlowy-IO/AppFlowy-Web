@@ -94,7 +94,7 @@ export function GridRowCell({ rowId, fieldId }: GridCellProps) {
       case FieldType.SingleSelect:
       case FieldType.MultiSelect:
         return 'py-[7px]';
-      case FieldType.FileMedia:
+      case FieldType.Media:
         return 'py-1';
       default:
         return 'py-2';

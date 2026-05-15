@@ -2,6 +2,16 @@ import { Filter } from '@/application/database-yjs';
 
 export interface RelationTypeOption {
   database_id: string;
+  is_two_way: boolean;
+  reciprocal_field_id?: string;
+  reciprocal_field_name?: string;
+  source_limit: RelationLimit;
+  target_limit: RelationLimit;
+}
+
+export enum RelationLimit {
+  NoLimit = 0,
+  OneOnly = 1,
 }
 
 export enum RelationFilterCondition {

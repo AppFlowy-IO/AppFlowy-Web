@@ -98,18 +98,14 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
           {t('calendar.menuName')}
         </DropdownMenuItem>
 
-        {/* Chart - Desktop Only */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <div>
-              <DropdownMenuItem disabled>
-                <ViewIcon layout={ViewLayout.Chart} size={'small'} />
-                {t('chart.menuName')}
-              </DropdownMenuItem>
-            </div>
-          </TooltipTrigger>
-          <TooltipContent>{t('common.desktopOnly')}</TooltipContent>
-        </Tooltip>
+        <DropdownMenuItem
+          onClick={() => {
+            void handleAddView(DatabaseViewLayout.Chart, t('chart.menuName'));
+          }}
+        >
+          <ViewIcon layout={ViewLayout.Chart} size={'small'} />
+          {t('chart.menuName')}
+        </DropdownMenuItem>
 
         {/* List - Desktop Only */}
         <Tooltip>

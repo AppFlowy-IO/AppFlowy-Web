@@ -56,6 +56,12 @@ export function insertViewIdAfter(viewIds: string[], anchorViewId: string, newVi
   ];
 }
 
+export function appendViewId(viewIds: string[], newViewId: string): string[] {
+  const dedupedViewIds = viewIds.filter((viewId) => viewId !== newViewId);
+
+  return [...dedupedViewIds, newViewId];
+}
+
 export function selectStableViewOrder(params: {
   previousViewIds: string[];
   storedViewIds?: string[];

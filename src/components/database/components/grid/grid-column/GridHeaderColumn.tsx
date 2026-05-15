@@ -12,7 +12,7 @@ import { useGridContext } from '@/components/database/grid/useGridContext';
 import { isFieldEditingDisabled } from '@/components/database/utils/field-editing';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-import FieldDisplay from 'src/components/database/components/field/FieldDisplay';
+import { FieldDisplay } from 'src/components/database/components/field/FieldDisplay';
 
 import { ResizeHandle } from './ResizeHandle';
 
@@ -31,7 +31,7 @@ export function GridHeaderColumn({
   const { isSticky } = useGridRowContext();
   const { field } = useFieldSelector(fieldId);
   const type = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
-  const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(type);
+  const isAIField = [FieldType.Summary, FieldType.Translate].includes(type);
   const isEditingDisabled = isFieldEditingDisabled(type);
   const isNewProperty = column.type === GridColumnType.NewProperty;
   const [menuOpen, setMenuOpen] = useState(false);
@@ -52,7 +52,11 @@ export function GridHeaderColumn({
     };
     const triggerContent = (
       <>
-        <FieldDisplay fieldId={fieldId} className={'flex-1 justify-start gap-[10px] overflow-hidden text-left'} />
+        <FieldDisplay
+          fieldId={fieldId}
+          showRelationDatabaseName
+          className={'flex-1 justify-start gap-[10px] overflow-hidden text-left'}
+        />
         {isAIField && <AIIndicatorSvg className={'h-5 w-5 text-text-featured'} />}
       </>
     );

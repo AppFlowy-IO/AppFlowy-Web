@@ -163,11 +163,17 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
   // and the correct layout is known for the page-view API call.
   const resolvedView = effectiveOutlineView || fallbackMeta;
 
+  // Gate on metadata availability via a boolean so outline updates (e.g. a
+  // title edit propagating through the outline tree) don't churn the dep
+  // array and re-trigger loadPageDoc — which would setDoc(undefined) and
+  // remount the editor mid-keystroke.
+  const hasResolvedView = !!resolvedView;
+
   useEffect(() => {
-    if (open && effectiveViewId && resolvedView) {
+    if (open && effectiveViewId && hasResolvedView) {
       void loadPageDoc(effectiveViewId);
     }
-  }, [open, effectiveViewId, loadPageDoc, resolvedView]);
+  }, [open, effectiveViewId, loadPageDoc, hasResolvedView]);
 
   const layout = resolvedView?.layout ?? ViewLayout.Document;
 
@@ -331,6 +337,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
       case ViewLayout.Grid:
       case ViewLayout.Board:
       case ViewLayout.Calendar:
+      case ViewLayout.Chart:
         return DatabaseView;
       default:
         return null;

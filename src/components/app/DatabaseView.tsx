@@ -1,15 +1,16 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { View, ViewComponentProps, ViewLayout, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
+import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import ComponentLoading from '@/components/_shared/progress/ComponentLoading';
 import CalendarSkeleton from '@/components/_shared/skeleton/CalendarSkeleton';
 import DocumentSkeleton from '@/components/_shared/skeleton/DocumentSkeleton';
 import GridSkeleton from '@/components/_shared/skeleton/GridSkeleton';
 import KanbanSkeleton from '@/components/_shared/skeleton/KanbanSkeleton';
-import { useAppOutline } from '@/components/app/app.hooks';
+import { useAppOutline, useBreadcrumb } from '@/components/app/app.hooks';
 import { DATABASE_TAB_VIEW_ID_QUERY_PARAM } from '@/components/app/hooks/resolveSidebarSelectedViewId';
 import { Database } from '@/components/database';
 import { useContainerVisibleViewIds } from '@/components/database/hooks';
@@ -30,6 +31,7 @@ function DatabaseView(props: DatabaseViewProps) {
    * This is the main entry point for the database and remains constant.
    */
   const databasePageId = viewMeta.viewId || '';
+  const breadcrumbs = useBreadcrumb();
 
   const view = useMemo(() => {
     if (!outline || !databasePageId) return;
@@ -45,8 +47,25 @@ function DatabaseView(props: DatabaseViewProps) {
     embedded: viewMeta.extra?.embedded,
   });
 
+  // Breadcrumb-based container fallback. The breadcrumb chain is built with
+  // server fetches for any ancestor missing from the shallow outline, so it
+  // resolves the database container even when the outline tree doesn't yet
+  // include the route view's parent (e.g. immediately after refresh while
+  // the outline still loads at depth=2).
+  const breadcrumbContainerView = useMemo((): View | undefined => {
+    if (containerView) return undefined;
+    if (viewMeta.extra?.embedded) return undefined;
+    if (!breadcrumbs?.length) return undefined;
+    const currentIdx = breadcrumbs.findIndex((crumb) => crumb.view_id === databasePageId);
+
+    if (currentIdx <= 0) return undefined;
+    const parent = breadcrumbs[currentIdx - 1];
+
+    return parent && isDatabaseContainer(parent) ? parent : undefined;
+  }, [breadcrumbs, containerView, databasePageId, viewMeta.extra?.embedded]);
+
   // Use container view (if present) as the "page meta" view for naming/icon operations.
-  const pageView = containerView || view;
+  const pageView = containerView || breadcrumbContainerView || view;
 
   const pageMeta = useMemo(() => {
     if (!pageView) {

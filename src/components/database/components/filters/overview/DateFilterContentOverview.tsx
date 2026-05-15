@@ -52,6 +52,24 @@ function DateFilterContentOverview({ filter }: { filter: DateFilter }) {
       case DateFilterCondition.DateStartIsNotEmpty:
       case DateFilterCondition.DateEndIsNotEmpty:
         return `: ${t('grid.dateFilter.choicechipPrefix.isNotEmpty')}`;
+      case DateFilterCondition.DateStartsToday:
+      case DateFilterCondition.DateEndsToday:
+        return `: ${t('relativeDates.today')}`;
+      case DateFilterCondition.DateStartsYesterday:
+      case DateFilterCondition.DateEndsYesterday:
+        return `: ${t('relativeDates.yesterday')}`;
+      case DateFilterCondition.DateStartsTomorrow:
+      case DateFilterCondition.DateEndsTomorrow:
+        return `: ${t('relativeDates.tomorrow')}`;
+      case DateFilterCondition.DateStartsThisWeek:
+      case DateFilterCondition.DateEndsThisWeek:
+        return `: ${t('relativeDates.thisWeek')}`;
+      case DateFilterCondition.DateStartsLastWeek:
+      case DateFilterCondition.DateEndsLastWeek:
+        return `: ${t('relativeDates.lastWeek')}`;
+      case DateFilterCondition.DateStartsNextWeek:
+      case DateFilterCondition.DateEndsNextWeek:
+        return `: ${t('relativeDates.nextWeek')}`;
       default:
         return '';
     }

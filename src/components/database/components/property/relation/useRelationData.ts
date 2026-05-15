@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
+import { APP_EVENTS } from '@/application/constants';
 import { parseRelationTypeOption, useDatabaseContext, useFieldSelector } from '@/application/database-yjs';
-import { useUpdateRelationDatabaseId } from '@/application/database-yjs/dispatch';
+import { useUpdateRelationTypeOption } from '@/application/database-yjs/dispatch/relation';
+import { RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
 import { DatabaseRelations, View } from '@/application/types';
 import { findView } from '@/components/_shared/outline/utils';
 
@@ -43,16 +45,19 @@ export interface UseRelationDataOptions {
 
 export function useRelationData (fieldId: string, options: UseRelationDataOptions = {}) {
   const { enabled = true } = options;
-  const { loadDatabaseRelations, loadViews, workspaceId } = useDatabaseContext();
+  const { eventEmitter, getViewIdFromDatabaseId, loadDatabaseRelations, loadViewMeta, loadViews, workspaceId } = useDatabaseContext();
 
   const { field } = useFieldSelector(fieldId);
   const [relations, setRelations] = useState<DatabaseRelations | undefined>(undefined);
-  const relatedDatabaseId = field ? parseRelationTypeOption(field)?.database_id : null;
-  const relatedViewId = relatedDatabaseId ? relations?.[relatedDatabaseId] : null;
+  const relationOption: RelationTypeOption | null = field ? parseRelationTypeOption(field) : null;
+  const relatedDatabaseId = relationOption?.database_id || null;
+  const [fallbackRelatedViewId, setFallbackRelatedViewId] = useState<string | null>(null);
+  const relatedViewId = relatedDatabaseId ? relations?.[relatedDatabaseId] || fallbackRelatedViewId : null;
   const [selectedView, setSelectedView] = useState<View | undefined>(undefined);
   // Initialize views with cached data if available for this workspace
   const [views, setViews] = useState<View[]>(() => getCachedViews(workspaceId) || []);
-  const onUpdateDatabaseId = useUpdateRelationDatabaseId(fieldId);
+  const onUpdateTypeOption = useUpdateRelationTypeOption(fieldId);
+  const onUpdateDatabaseId = (databaseId: string) => onUpdateTypeOption({ database_id: databaseId });
   const [loadingRelations, setLoadingRelations] = useState<boolean>(false);
   const [loadingViews, setLoadingViews] = useState<boolean>(false);
   const hasInitializedRef = useRef(false);
@@ -88,8 +93,14 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
 
   useEffect(() => {
     void (async () => {
-      if (!enabled || !loadViews || !relations) return;
-      const viewIds = Object.values(relations);
+      if (!enabled || !loadViews) return;
+
+      const viewIds = Array.from(new Set([
+        ...Object.values(relations || {}),
+        ...(relatedViewId ? [relatedViewId] : []),
+      ]));
+
+      if (viewIds.length === 0) return;
 
       // Only show loading if we don't have cached views for this workspace
       const cachedViews = getCachedViews(workspaceId);
@@ -118,26 +129,126 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
         }
       }
     })();
-  }, [enabled, loadViews, relations, workspaceId]);
+  }, [enabled, loadViews, relations, relatedViewId, workspaceId]);
 
   useEffect(() => {
+    if (!enabled || !eventEmitter) return;
+
+    const handleOutlineLoaded = (outline?: View[]) => {
+      if (!Array.isArray(outline)) return;
+
+      setCachedViews(workspaceId, outline);
+
+      const viewIds = Array.from(new Set([
+        ...Object.values(relations || {}),
+        ...(relatedViewId ? [relatedViewId] : []),
+      ]));
+
+      if (viewIds.length === 0) return;
+
+      const filteredViews = viewIds.map((viewId: string) => {
+        return findView(outline, viewId);
+      }).filter((view) => !!view) as View[];
+
+      setViews(filteredViews);
+    };
+
+    eventEmitter.on(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
+
+    return () => {
+      eventEmitter.off(APP_EVENTS.OUTLINE_LOADED, handleOutlineLoaded);
+    };
+  }, [enabled, eventEmitter, relations, relatedViewId, workspaceId]);
+
+  useEffect(() => {
+    if (!enabled || !relatedDatabaseId || relations?.[relatedDatabaseId] || !getViewIdFromDatabaseId) {
+      setFallbackRelatedViewId(null);
+      return;
+    }
+
+    let cancelled = false;
+
     void (async () => {
-      if (!relatedViewId) return;
+      const viewId = await getViewIdFromDatabaseId(relatedDatabaseId);
+
+      if (!cancelled) {
+        setFallbackRelatedViewId(viewId);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [enabled, getViewIdFromDatabaseId, relatedDatabaseId, relations]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      if (!relatedViewId) {
+        setSelectedView(undefined);
+        return;
+      }
+
+      const resolveDisplayView = async (view: View): Promise<View> => {
+        if (!view.parent_view_id || !loadViewMeta) return view;
+
+        try {
+          const parentView = await loadViewMeta(view.parent_view_id);
+
+          if (parentView?.name) {
+            return {
+              ...view,
+              icon: parentView.icon ?? view.icon,
+              name: parentView.name,
+            };
+          }
+        } catch (e) {
+          //
+        }
+
+        return view;
+      };
+
       const view = findView(views, relatedViewId);
 
       if (view) {
-        setSelectedView(view);
+        const displayView = await resolveDisplayView(view);
+
+        if (!cancelled) {
+          setSelectedView(displayView);
+        }
+
+        return;
+      }
+
+      try {
+        const viewMeta = await loadViewMeta?.(relatedViewId);
+
+        if (!cancelled && viewMeta) {
+          const displayView = await resolveDisplayView(viewMeta);
+
+          if (!cancelled) {
+            setSelectedView(displayView);
+          }
+        }
+      } catch (e) {
+        //
       }
     })();
-  }, [relatedViewId, views]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadViewMeta, relatedViewId, views]);
 
   // Consider loading true if:
   // 1. Explicitly loading relations or views
   // 2. Or enabled but relations haven't been fetched yet (initial load state)
   // 3. Or enabled and relations loaded but views haven't been fetched yet
   const isLoading = loadingRelations || loadingViews ||
-    (enabled && !relations) ||
-    Boolean(enabled && relations && views.length === 0 && !getCachedViews(workspaceId));
+    (enabled && !relations && !relatedViewId) ||
+    Boolean(enabled && (relations || relatedViewId) && !selectedView && views.length === 0 && !getCachedViews(workspaceId));
 
   return {
     loading: isLoading,
@@ -146,7 +257,9 @@ export function useRelationData (fieldId: string, options: UseRelationDataOption
     selectedView,
     views,
     onUpdateDatabaseId,
+    onUpdateTypeOption,
     setSelectedView,
     relatedDatabaseId,
+    relationOption,
   };
 }

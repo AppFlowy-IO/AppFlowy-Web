@@ -29,7 +29,7 @@ function RowPropertyPrimitive({
   const { t } = useTranslation();
   const { field } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
-  const isAIField = [FieldType.AISummaries, FieldType.AITranslations].includes(fieldType);
+  const isAIField = [FieldType.Summary, FieldType.Translate].includes(fieldType);
   const fieldName = field?.get(YjsDatabaseKey.name) || '';
   const isEditingDisabled = isFieldEditingDisabled(fieldType);
   const fallbackFieldName =

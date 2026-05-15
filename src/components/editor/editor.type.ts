@@ -171,7 +171,7 @@ export interface TableCellNode extends BlockNode {
 }
 
 export interface DatabaseNode extends BlockNode {
-  type: BlockType.GridBlock | BlockType.BoardBlock | BlockType.CalendarBlock;
+  type: BlockType.GridBlock | BlockType.BoardBlock | BlockType.CalendarBlock | BlockType.ChartBlock;
   blockId: string;
   data: DatabaseNodeData;
 }

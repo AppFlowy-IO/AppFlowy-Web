@@ -271,19 +271,27 @@ export function useDatabaseIdentity({
   );
 
   const resolveCollabObjectId = useCallback(
-    async (doc: YDoc, viewId: string, collabType: Types): Promise<string> => {
+    async (
+      doc: YDoc,
+      viewId: string,
+      collabType: Types,
+      options?: { databaseIdHint?: string | null; updateDocGuid?: boolean }
+    ): Promise<string> => {
       if (collabType !== Types.Database) {
         return viewId;
       }
 
+      const databaseIdHint = options?.databaseIdHint;
+
       // First try getting databaseId directly from the doc (fast, synchronous).
       // This works for newly created embedded databases where the doc already has the ID.
-      let databaseId = getDatabaseIdFromDoc(doc);
+      let databaseId = databaseIdHint || getDatabaseIdFromDoc(doc);
 
       if (databaseId) {
-        Log.debug('[useDatabaseIdentity] databaseId loaded from Yjs document', {
+        Log.debug('[useDatabaseIdentity] databaseId resolved for view', {
           viewId,
           databaseId,
+          source: databaseIdHint ? 'hint' : 'doc',
         });
       } else {
         // Fallback to workspace database mapping lookup (async, may timeout).
@@ -298,13 +306,17 @@ export function useDatabaseIdentity({
 
       // Database views (grid/board/calendar, etc.) share one underlying database collab object.
       // Use databaseId as guid so all layouts attach to the same sync channel and cache entry.
-      doc.guid = databaseId;
+      if (options?.updateDocGuid !== false) {
+        doc.guid = databaseId;
+      }
+
       return databaseId;
     },
     [getDatabaseIdForViewId]
   );
 
   return {
+    getDatabaseIdForViewId,
     resolveCollabObjectId,
     getViewIdFromDatabaseId,
   };

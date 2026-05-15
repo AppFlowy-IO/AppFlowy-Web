@@ -12,7 +12,12 @@ import {
 import { CustomIconPopover } from '@/components/_shared/cutsom-icon';
 import OutlineIcon from '@/components/_shared/outline/OutlineIcon';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
-import { useAIEnabled, useAppOperations, useSidebarHighlightedViewIds, useSidebarSelectedViewId } from '@/components/app/app.hooks';
+import {
+  useAIEnabled,
+  useAppOperations,
+  useSidebarHighlightedViewIds,
+  useSidebarSelectedViewId,
+} from '@/components/app/app.hooks';
 
 function ViewItem({
   view,
@@ -118,11 +123,13 @@ function ViewItem({
     const isLoaded = loadedViewIds?.has(view.view_id) ?? false;
     const hasConfirmedChildren = Boolean(visibleChildren?.length);
     // Use server-provided has_children when available; fall back to heuristic for old servers
-    const hasChildren = hasConfirmedChildren || (view.has_children ?? (!isLoaded && view.layout === ViewLayout.Document));
+    const hasChildren =
+      hasConfirmedChildren || (view.has_children ?? (!isLoaded && view.layout === ViewLayout.Document));
 
     // Calculate left padding based on icon presence
     const showLeftIcon = isRefDatabaseView || hasChildren;
     const leftPadding = showLeftIcon ? level * 16 : level * 16 + 24;
+    const showPageIcon = !isRefDatabaseView;
 
     // Render left icon: dot for referenced database views, expand icon for views with children
     const renderLeftIcon = () => {
@@ -161,39 +168,41 @@ function ViewItem({
       >
         {renderLeftIcon()}
 
-        <CustomIconPopover
-          defaultActiveTab={view.icon?.ty === 1 ? 'upload' : view.icon?.ty === 2 ? 'icon' : 'emoji'}
-          tabs={['emoji', 'icon', 'upload']}
-          onUploadFile={onUploadFile}
-          onSelectIcon={(icon) => {
-            if (icon.ty === ViewIconType.Icon) {
-              void handleChangeIcon({
-                ty: ViewIconType.Icon,
-                value: JSON.stringify({
-                  color: icon.color,
-                  groupName: icon.value.split('/')[0],
-                  iconName: icon.value.split('/')[1],
-                }),
-              });
-              return;
-            }
+        {showPageIcon ? (
+          <CustomIconPopover
+            defaultActiveTab={view.icon?.ty === 1 ? 'upload' : view.icon?.ty === 2 ? 'icon' : 'emoji'}
+            tabs={['emoji', 'icon', 'upload']}
+            onUploadFile={onUploadFile}
+            onSelectIcon={(icon) => {
+              if (icon.ty === ViewIconType.Icon) {
+                void handleChangeIcon({
+                  ty: ViewIconType.Icon,
+                  value: JSON.stringify({
+                    color: icon.color,
+                    groupName: icon.value.split('/')[0],
+                    iconName: icon.value.split('/')[1],
+                  }),
+                });
+                return;
+              }
 
-            void handleChangeIcon(icon);
-          }}
-          removeIcon={handleRemoveIcon}
-        >
-          <div
-            data-testid='page-icon'
-            onClick={(e) => {
-              e.stopPropagation();
+              void handleChangeIcon(icon);
             }}
+            removeIcon={handleRemoveIcon}
           >
-            <PageIcon
-              view={view}
-              className={'mr-1 flex h-5 w-5 items-center justify-center text-base text-text-secondary'}
-            />
-          </div>
-        </CustomIconPopover>
+            <div
+              data-testid='page-icon'
+              onClick={(e) => {
+                e.stopPropagation();
+              }}
+            >
+              <PageIcon
+                view={view}
+                className={'mr-1 flex h-5 w-5 items-center justify-center text-base text-text-secondary'}
+              />
+            </div>
+          </CustomIconPopover>
+        ) : null}
 
         <div className={'flex flex-1 items-center gap-1 overflow-hidden text-sm'}>
           <div data-testid='page-name' className={'w-full truncate'}>
@@ -244,7 +253,11 @@ function ViewItem({
         {isLoadingChildren ? (
           <div className={'flex flex-col'}>
             {[96, 72, 88].map((w, i) => (
-              <div key={i} className={'flex min-h-[30px] items-center gap-1.5 py-1 px-0.5'} style={{ paddingLeft: `${(level + 1) * 16}px` }}>
+              <div
+                key={i}
+                className={'flex min-h-[30px] items-center gap-1.5 px-0.5 py-1'}
+                style={{ paddingLeft: `${(level + 1) * 16}px` }}
+              >
                 <div className={'h-4 w-4 animate-pulse rounded bg-fill-content-hover'} />
                 <div className={`h-4 animate-pulse rounded bg-fill-content-hover`} style={{ width: `${w}px` }} />
               </div>
@@ -269,7 +282,21 @@ function ViewItem({
         )}
       </div>
     );
-  }, [aiEnabled, toggleExpand, onClickView, isExpanded, isLoadingChildren, expandIds, level, renderExtra, view, visibleChildren, width, loadingViewIds, loadedViewIds]);
+  }, [
+    aiEnabled,
+    toggleExpand,
+    onClickView,
+    isExpanded,
+    isLoadingChildren,
+    expandIds,
+    level,
+    renderExtra,
+    view,
+    visibleChildren,
+    width,
+    loadingViewIds,
+    loadedViewIds,
+  ]);
 
   if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
 

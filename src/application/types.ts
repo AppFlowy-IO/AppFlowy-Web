@@ -36,6 +36,7 @@ export enum BlockType {
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
+  ChartBlock = 'chart',
   OutlineBlock = 'outline',
   TableBlock = 'table',
   TableCell = 'table/cell',
@@ -720,6 +721,9 @@ export interface YDatabaseLayoutSettings extends Y.Map<unknown> {
 
   // DatabaseViewLayout.Calendar
   get(key: '2'): YDatabaseCalendarLayoutSetting;
+
+  // DatabaseViewLayout.Chart
+  get(key: '3'): YDatabaseChartLayoutSetting;
 }
 
 export interface YDatabaseBoardLayoutSetting extends Y.Map<unknown> {
@@ -731,6 +735,12 @@ export interface YDatabaseCalendarLayoutSetting extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.number_of_days): number;
 
   get(key: YjsDatabaseKey.show_week_numbers | YjsDatabaseKey.show_weekends): boolean;
+}
+
+export interface YDatabaseChartLayoutSetting extends Y.Map<unknown> {
+  get(key: 'chartType' | 'aggregationType' | 'dateCondition'): string;
+  get(key: 'xFieldId' | 'yFieldId'): string | undefined;
+  get(key: 'showEmptyValues' | 'cumulative'): boolean;
 }
 
 export interface YDatabaseGroup extends Y.Map<unknown> {
@@ -909,12 +919,14 @@ export const layoutMap = {
   [ViewLayout.Grid]: 'grid',
   [ViewLayout.Board]: 'board',
   [ViewLayout.Calendar]: 'calendar',
+  [ViewLayout.Chart]: 'chart',
 };
 
 export const databaseLayoutMap = {
   [DatabaseViewLayout.Grid]: 'grid',
   [DatabaseViewLayout.Board]: 'board',
   [DatabaseViewLayout.Calendar]: 'calendar',
+  [DatabaseViewLayout.Chart]: 'chart',
 };
 
 export enum FontLayout {
@@ -956,7 +968,16 @@ export interface PublishViewMetaData {
 export type AppendBreadcrumb = (view?: View) => void;
 
 export type CreateRow = (rowKey: string) => Promise<YDoc>;
-export type LoadView = (viewId: string, isSubDocument?: boolean, loadAwareness?: boolean) => Promise<YDoc>;
+export interface LoadViewOptions {
+  databaseId?: string | null;
+}
+
+export type LoadView = (
+  viewId: string,
+  isSubDocument?: boolean,
+  loadAwareness?: boolean,
+  options?: LoadViewOptions
+) => Promise<YDoc>;
 
 export type LoadViewMeta = (viewId: string, onChange?: (meta: View | null) => void) => Promise<View | null>;
 
@@ -1361,7 +1382,7 @@ export interface ViewComponentProps {
   updatePageName?: (viewId: string, name: string) => Promise<void>;
   currentUser?: User;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
-  loadDatabaseRelations?: () => Promise<DatabaseRelations | undefined>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
   scheduleDeferredCleanup?: (objectId: string, delayMs?: number) => void;
   getSubscriptions?: () => Promise<Subscription[]>;
   eventEmitter?: EventEmitter;

@@ -18,15 +18,15 @@ export enum FieldType {
   LastEditedTime = 8,
   CreatedTime = 9,
   Relation = 10,
-  AISummaries = 11,
-  AITranslations = 12,
+  Summary = 11,
+  Translate = 12,
   Time = 13,
-  FileMedia = 14,
+  Media = 14,
   Person = 15,
   Rollup = 16,
 }
 
-export const AI_FIELD_TYPES = [FieldType.AISummaries, FieldType.AITranslations] as const;
+export const AI_FIELD_TYPES = [FieldType.Summary, FieldType.Translate] as const;
 
 export function isAIFieldType(fieldType: FieldType | undefined): boolean {
   return fieldType !== undefined && AI_FIELD_TYPES.includes(fieldType as (typeof AI_FIELD_TYPES)[number]);

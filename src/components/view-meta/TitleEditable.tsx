@@ -92,19 +92,6 @@ function TitleEditable({
   const blurTimerRef = useRef<NodeJS.Timeout>();
   const cleanupTimerRef = useRef<NodeJS.Timeout>();
 
-  // State checking functions
-  const isTyping = useCallback(() => {
-    return Date.now() - lastInputTimeRef.current < 500; // 500ms typing window
-  }, []);
-
-  const isRecentlyUpdated = useCallback(() => {
-    return Date.now() - lastUpdateSentTimeRef.current < 2000; // 2s protection window
-  }, []);
-
-  const isPotentialEcho = useCallback((value: string) => {
-    return sentValuesRef.current.has(value);
-  }, []);
-
   // Cache management
   const cleanOldSentValues = useCallback(() => {
     const now = Date.now();
@@ -149,25 +136,32 @@ function TitleEditable({
 
   // Handle remote updates with echo prevention
   useEffect(() => {
-    // Never overwrite user edits while the title is focused.
-    // The title uses a plain contentEditable (not Y.js CRDT), so
-    // last-writer-wins via the API is the correct model.
-    // On blur, sendUpdateImmediately sends the user's final value.
-    if (isFocused) {
+    const now = Date.now();
+    const isTyping = now - lastInputTimeRef.current < 500;
+    const isRecentlyUpdated = now - lastUpdateSentTimeRef.current < 2000;
+
+    // Skip if the user is actively editing — preserves in-progress typing.
+    // Without this guard, a remote echo would clobber characters mid-keystroke.
+    if (isTyping || isRecentlyUpdated) {
       return;
     }
 
-    if (isTyping() || isRecentlyUpdated()) {
+    if (sentValuesRef.current.has(name)) {
       return;
     }
 
-    if (isPotentialEcho(name)) {
+    // If the title was auto-focused on mount but the user hasn't typed yet,
+    // allow remote updates to flow through. This handles the case where the
+    // initial `name` prop changes shortly after mount (e.g. database title
+    // resolving from the child view's "Grid" to the container's real name)
+    // — without this, a no-op blur would persist the stale initial value.
+    const hasUserTyped = lastInputTimeRef.current > 0;
+
+    if (isFocused && hasUserTyped) {
       return;
     }
 
     // Genuine remote update — clean old cache entries
-    const now = Date.now();
-
     for (const [value, timestamp] of sentValuesRef.current.entries()) {
       if (now - timestamp > 5000) {
         sentValuesRef.current.delete(value);
@@ -180,9 +174,14 @@ function TitleEditable({
 
       if (currentContent !== name) {
         contentRef.current.textContent = name;
+
+        // Restore cursor to end if the input is currently focused.
+        if (isFocused && contentRef.current === document.activeElement) {
+          setCursorPosition(contentRef.current, name.length);
+        }
       }
     }
-  }, [name, isTyping, isRecentlyUpdated, isPotentialEcho, isFocused]);
+  }, [name, isFocused]);
 
   // Initialize component
   useEffect(() => {
@@ -230,10 +229,17 @@ function TitleEditable({
   const handleBlur = useCallback(() => {
     Log.debug('👋 Input blurred');
     const currentText = contentRef.current?.textContent || '';
-    
-    sendUpdateImmediately(currentText);
+    const hasUserTyped = lastInputTimeRef.current > 0;
+
+    // Only persist on blur if the user actually edited the field. Auto-focus
+    // without typing must not overwrite the stored name with whatever stale
+    // text was rendered at mount time.
+    if (hasUserTyped) {
+      sendUpdateImmediately(currentText);
+    }
+
     setIsFocused(false);
-    
+
     blurTimerRef.current = setTimeout(() => {
       Log.debug('🧹 Cleaning input state after blur');
       lastInputTimeRef.current = 0;

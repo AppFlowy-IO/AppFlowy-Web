@@ -155,7 +155,7 @@ function AITextCellActions({
     loadingRef.current = true;
     setLoading(true);
     try {
-      if (type === FieldType.AISummaries) {
+      if (type === FieldType.Summary) {
         await handleGenerateSummary();
       } else {
         await handleGenerateAITranslate();

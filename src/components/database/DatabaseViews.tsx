@@ -6,6 +6,7 @@ import { useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/app
 import { FilterType } from '@/application/database-yjs/database.type';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
 import { Board } from '@/components/database/board';
+import { Chart } from '@/components/database/chart';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import UnsupportedView from '@/components/database/components/UnsupportedView';
@@ -15,7 +16,7 @@ import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
 import { ElementFallbackRender } from '@/components/error/ElementFallbackRender';
 import { cn } from '@/lib/utils';
 import {
-  insertViewIdAfter,
+  appendViewId,
   readStoredViewOrder,
   reconcileOrderedViewIds,
   selectHydratingViewOrder,
@@ -70,14 +71,15 @@ function DatabaseViews({
   const orderedDatabaseIdRef = useRef<string | undefined>();
   const pendingViewCreationRef = useRef(false);
   const pendingExpectedViewIdsRef = useRef<string[] | null>(null);
-  const pendingViewInsertionRef = useRef<{ anchorViewId: string; baseViewIds: string[] } | null>(null);
+  const pendingViewAppendBaseRef = useRef<string[] | null>(null);
+  const hasAuthoritativeVisibleOrder = Boolean(visibleViewIds && visibleViewIds.length > 0);
 
   const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
   // Track the previous valid layout to prevent flash when switching to a new view
   const prevLayoutRef = useRef<DatabaseViewLayout | null>(null);
 
   const fallbackViewIds = useMemo(() => {
-    if (!visibleViewIds || visibleViewIds.length === 0) {
+    if (hasAuthoritativeVisibleOrder) {
       return viewIds;
     }
 
@@ -100,7 +102,7 @@ function DatabaseViews({
     };
 
     return [...viewIds].sort((left, right) => getCreatedAtSortValue(left) - getCreatedAtSortValue(right));
-  }, [viewIds, views, visibleViewIds]);
+  }, [hasAuthoritativeVisibleOrder, viewIds, views]);
 
   useEffect(() => {
     const isNewDatabase = orderedDatabaseIdRef.current !== databaseId;
@@ -131,6 +133,8 @@ function DatabaseViews({
     const baseViewIds =
       pendingExpectedViewIds && pendingExpectedViewIds.every((viewId) => viewIds.includes(viewId))
         ? pendingExpectedViewIds
+        : hasAuthoritativeVisibleOrder
+        ? fallbackViewIds
         : storedViewIds && storedViewIds.length > 0
         ? storedViewIds
         : isNewDatabase
@@ -152,7 +156,7 @@ function DatabaseViews({
     orderedViewIdsRef.current = nextViewIds;
     writeStoredViewOrder(databaseId, nextViewIds);
     setOrderedViewIds(nextViewIds);
-  }, [databaseId, fallbackViewIds, viewIds]);
+  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder, viewIds]);
 
   const [conditionsExpanded, setConditionsExpanded] = useState<boolean>(false);
   const toggleExpanded = useCallback(() => {
@@ -252,36 +256,33 @@ function DatabaseViews({
     const baseViewIds =
       orderedViewIdsRef.current.length > 0
         ? orderedViewIdsRef.current
+        : hasAuthoritativeVisibleOrder
+        ? fallbackViewIds
         : storedViewIds && storedViewIds.length > 0
         ? storedViewIds
         : fallbackViewIds;
 
     pendingViewCreationRef.current = true;
-    pendingViewInsertionRef.current = {
-      anchorViewId: activeViewId,
-      baseViewIds,
-    };
-  }, [activeViewId, databaseId, fallbackViewIds]);
+    pendingViewAppendBaseRef.current = baseViewIds;
+  }, [databaseId, fallbackViewIds, hasAuthoritativeVisibleOrder]);
 
   const handleAfterViewAddedToDatabase = useCallback(() => {
     pendingViewCreationRef.current = false;
-    pendingViewInsertionRef.current = null;
+    pendingViewAppendBaseRef.current = null;
   }, []);
 
   const handleViewAddedToDatabase = useCallback(
     (newViewId: string) => {
       const storedViewIds = readStoredViewOrder(databaseId);
-      const pendingViewInsertion = pendingViewInsertionRef.current;
       const baseViewIds =
-        pendingViewInsertion?.baseViewIds ??
+        pendingViewAppendBaseRef.current ??
         selectStableViewOrder({
           previousViewIds: orderedViewIdsRef.current,
           storedViewIds,
           fallbackViewIds,
           pendingViewId: newViewId,
         });
-      const anchorViewId = pendingViewInsertion?.anchorViewId ?? activeViewId;
-      const nextViewIds = insertViewIdAfter(baseViewIds, anchorViewId, newViewId);
+      const nextViewIds = appendViewId(baseViewIds, newViewId);
 
       pendingExpectedViewIdsRef.current = nextViewIds;
       orderedViewIdsRef.current = nextViewIds;
@@ -291,7 +292,7 @@ function DatabaseViews({
       });
       onViewAdded?.(newViewId);
     },
-    [activeViewId, databaseId, fallbackViewIds, onViewAdded]
+    [databaseId, fallbackViewIds, onViewAdded]
   );
 
   const displayedViewIds = orderedViewIds.length > 0 ? orderedViewIds : viewIds;
@@ -309,6 +310,7 @@ function DatabaseViews({
       case DatabaseViewLayout.Calendar:
         return <Calendar />;
       case DatabaseViewLayout.Chart:
+        return <Chart />;
       case DatabaseViewLayout.List:
       case DatabaseViewLayout.Gallery:
         return <UnsupportedView />;
@@ -362,7 +364,7 @@ function DatabaseViews({
         <div
           className={cn(
             'relative flex w-full flex-col',
-            shouldUseFixedViewport ? 'h-full flex-1 overflow-hidden' : 'overflow-visible'
+            shouldUseFixedViewport ? 'h-full min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
           )}
           style={
             fixedHeight !== undefined
@@ -371,7 +373,7 @@ function DatabaseViews({
           }
         >
           <div
-            className={cn('w-full', shouldUseFixedViewport && 'h-full')}
+            className={cn('w-full', shouldUseFixedViewport && 'flex h-full min-h-0 flex-col')}
             style={
               fixedHeight !== undefined
                 ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` }

@@ -47,10 +47,10 @@ export function Cell(props: CellProps<CellType>) {
         return ChecklistCell;
       case FieldType.Relation:
         return RelationCell;
-      case FieldType.FileMedia:
+      case FieldType.Media:
         return FileMediaCell;
-      case FieldType.AISummaries:
-      case FieldType.AITranslations:
+      case FieldType.Summary:
+      case FieldType.Translate:
         return AITextCell;
       case FieldType.Person:
         return PersonCell;

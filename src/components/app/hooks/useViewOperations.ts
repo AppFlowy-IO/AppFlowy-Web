@@ -7,6 +7,7 @@ import { APP_EVENTS } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
+  LoadViewOptions,
   Types,
   View,
   ViewLayout,
@@ -14,7 +15,7 @@ import {
   YDocWithMeta,
 } from '@/application/types';
 import { openView } from '@/application/view-loader';
-import { getFirstChildView, isDatabaseContainer } from '@/application/view-utils';
+import { getDatabaseIdFromExtra, getFirstChildView, isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
 import { findView, findViewInShareWithMe } from '@/components/_shared/outline/utils';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
@@ -81,7 +82,7 @@ export function useViewOperations() {
     };
   }, [eventEmitter]);
 
-  const { resolveCollabObjectId, getViewIdFromDatabaseId } = useDatabaseIdentity({
+  const { resolveCollabObjectId, getDatabaseIdForViewId, getViewIdFromDatabaseId } = useDatabaseIdentity({
     currentWorkspaceId,
     databaseStorageId,
     registerSyncContext,
@@ -103,13 +104,30 @@ export function useViewOperations() {
    * Call bindViewSync() AFTER render to start WebSocket sync.
    */
   const loadView = useCallback(
-    async (viewId: string, isSubDocument = false, loadAwareness = false, outline?: View[]) => {
+    async (
+      viewId: string,
+      isSubDocument = false,
+      loadAwareness = false,
+      outline?: View[],
+      options?: LoadViewOptions
+    ) => {
       try {
         if (!currentWorkspaceId) {
           throw new Error('Workspace not found');
         }
 
-        const view = findView(outline || [], viewId);
+        let view = findView(outline || [], viewId);
+
+        if (!view && !isSubDocument && !options?.databaseId) {
+          try {
+            view = await ViewService.get(currentWorkspaceId, viewId);
+          } catch (e) {
+            Log.debug('[useViewOperations] failed to fetch view metadata before load', {
+              viewId,
+              error: e,
+            });
+          }
+        }
 
         // Check for AIChat early
         if (view?.layout === ViewLayout.AIChat) {
@@ -127,24 +145,50 @@ export function useViewOperations() {
           })();
         }
 
+        const layout = isSubDocument ? ViewLayout.Document : view?.layout;
+        const databaseIdHint = !isSubDocument
+          ? options?.databaseId ??
+            (
+              layout !== undefined && isDatabaseLayout(layout)
+                ? getDatabaseIdFromExtra(view)
+                : undefined
+            )
+          : undefined;
+
         // Use view-loader to open document (handles cache vs fetch)
-        const { doc, collabType: detectedCollabType } = await openView(
+        let { doc, collabType: detectedCollabType } = await openView(
           currentWorkspaceId,
           viewId,
-          isSubDocument ? ViewLayout.Document : view?.layout
+          layout,
+          { databaseId: databaseIdHint }
         );
 
         // Use detected collab type, or override for sub-documents
-        const collabType = isSubDocument ? Types.Document : detectedCollabType;
+        let collabType = isSubDocument ? Types.Document : detectedCollabType;
 
         Log.debug('[useViewOperations] loadView complete (sync not bound)', {
           viewId,
           layout: view?.layout,
           collabType,
+          databaseIdHint,
           isSubDocument,
         });
 
-        const collabObjectId = await resolveCollabObjectId(doc, viewId, collabType);
+        let collabObjectId = await resolveCollabObjectId(doc, viewId, collabType, {
+          databaseIdHint,
+          updateDocGuid: !!databaseIdHint,
+        });
+
+        if (collabType === Types.Database && !databaseIdHint && collabObjectId !== viewId) {
+          const canonical = await openView(currentWorkspaceId, viewId, layout, { databaseId: collabObjectId });
+
+          doc = canonical.doc;
+          detectedCollabType = canonical.collabType;
+          collabType = isSubDocument ? Types.Document : detectedCollabType;
+          collabObjectId = await resolveCollabObjectId(doc, viewId, collabType, {
+            databaseIdHint: collabObjectId,
+          });
+        }
 
         // Store metadata on doc for deferred sync binding
         const docWithMeta = doc as YDocWithMeta;
@@ -327,6 +371,7 @@ export function useViewOperations() {
           case ViewLayout.Grid:
           case ViewLayout.Board:
           case ViewLayout.Calendar:
+          case ViewLayout.Chart:
             searchParams.set('r', blockId);
             break;
           default:
@@ -413,6 +458,7 @@ export function useViewOperations() {
     bindViewSync,
     toView,
     awarenessMap,
+    getDatabaseIdForViewId,
     getViewIdFromDatabaseId,
     getViewReadOnlyStatus: getViewReadOnlyStatusFromOutline,
     getCollabHistory,

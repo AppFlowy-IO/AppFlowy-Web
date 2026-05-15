@@ -10,9 +10,10 @@
  * before the component finishes rendering.
  */
 
-import { openCollabDB } from '@/application/db';
+import { openCollabDB, openCollabDBWithProvider } from '@/application/db';
 import { getOrCreateRowSubDoc, hasCollabCache } from '@/application/services/js-services/cache';
 import { fetchPageCollab } from '@/application/services/js-services/fetch';
+import { enqueueOutboxUpdate } from '@/application/sync-outbox';
 import { Types, ViewLayout, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
@@ -26,6 +27,10 @@ export interface ViewLoaderResult {
   doc: YDoc;
   fromCache: boolean;
   collabType: Types;
+}
+
+export interface OpenViewOptions {
+  databaseId?: string | null;
 }
 
 // ============================================================================
@@ -82,6 +87,87 @@ function detectFromDocStructure(doc: YDoc): Types | null {
  */
 function detectCollabType(doc: YDoc, layout?: ViewLayout): Types {
   return detectFromLayout(layout) ?? detectFromDocStructure(doc) ?? Types.Document;
+}
+
+function isDatabaseLayout(layout?: ViewLayout): boolean {
+  return (
+    layout === ViewLayout.Grid ||
+    layout === ViewLayout.Board ||
+    layout === ViewLayout.Calendar
+  );
+}
+
+async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, targetDoc: YDoc): Promise<boolean> {
+  if (viewId === databaseId) {
+    return false;
+  }
+
+  const { doc: legacyDoc, provider } = await openCollabDBWithProvider(viewId, { skipCache: true });
+
+  try {
+    if (!hasCollabCache(legacyDoc)) {
+      return false;
+    }
+
+    const legacyDatabaseId = getDatabaseIdFromDoc(legacyDoc);
+
+    if (legacyDatabaseId && legacyDatabaseId !== databaseId) {
+      Log.warn('[ViewLoader] skipped legacy database cache merge due to databaseId mismatch', {
+        viewId,
+        databaseId,
+        legacyDatabaseId,
+      });
+      return false;
+    }
+
+    const missingUpdate = Y.encodeStateAsUpdate(legacyDoc, Y.encodeStateVector(targetDoc));
+
+    // Yjs encodes an empty v1 update as two bytes. Nothing to merge.
+    if (missingUpdate.byteLength <= 2) {
+      return false;
+    }
+
+    applyYDoc(targetDoc, missingUpdate);
+    enqueueOutboxUpdate({
+      objectId: databaseId,
+      collabType: Types.Database,
+      version: targetDoc.version ?? null,
+      payload: missingUpdate,
+    });
+
+    Log.debug('[ViewLoader] merged legacy database view cache into canonical database cache', {
+      viewId,
+      databaseId,
+      updateBytes: missingUpdate.byteLength,
+    });
+
+    return true;
+  } finally {
+    await provider.destroy();
+    legacyDoc.destroy();
+  }
+}
+
+async function openCollabDocForView(viewId: string, layout?: ViewLayout, options: OpenViewOptions = {}): Promise<YDoc> {
+  const databaseId = (layout === undefined || isDatabaseLayout(layout)) ? options.databaseId ?? undefined : undefined;
+
+  if (!databaseId) {
+    return openCollabDB(viewId);
+  }
+
+  const { doc } = await openCollabDBWithProvider(databaseId, { awaitSync: true });
+
+  try {
+    await mergeLegacyDatabaseViewCache(viewId, databaseId, doc);
+  } catch (error) {
+    Log.warn('[ViewLoader] failed to merge legacy database view cache', {
+      viewId,
+      databaseId,
+      error,
+    });
+  }
+
+  return doc;
 }
 
 // ============================================================================
@@ -145,14 +231,15 @@ async function fetchAndApply(workspaceId: string, viewId: string, doc: YDoc): Pr
 export async function openView(
   workspaceId: string,
   viewId: string,
-  layout?: ViewLayout
+  layout?: ViewLayout,
+  options: OpenViewOptions = {}
 ): Promise<ViewLoaderResult> {
   const startedAt = Date.now();
 
-  Log.debug('[ViewLoader] openView start', { workspaceId, viewId, layout });
+  Log.debug('[ViewLoader] openView start', { workspaceId, viewId, layout, databaseId: options.databaseId });
 
   // Step 1: Open from IndexedDB
-  const doc = await openCollabDB(viewId);
+  const doc = await openCollabDocForView(viewId, layout, options);
 
   // Step 2: Check cache — also detect empty-shell documents that were cached
   // during a previous load when the server hadn't finished duplication yet.

@@ -9,7 +9,7 @@ import { SearchInput } from '@/components/ui/search-input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-const DEFAULT_EXCLUDED_TYPES = [FieldType.AISummaries, FieldType.AITranslations, FieldType.FileMedia];
+const DEFAULT_EXCLUDED_TYPES = [FieldType.Summary, FieldType.Translate, FieldType.Media];
 
 function PropertiesMenu({
   open,

@@ -37,7 +37,7 @@ function RowPropertyCell({
   const [editing, setEditing] = React.useState<boolean>(false);
 
   const isChecklist = fieldType === FieldType.Checklist;
-  const isFileMedia = fieldType === FieldType.FileMedia;
+  const isFileMedia = fieldType === FieldType.Media;
   const CellComponent = useMemo(() => {
     if (isChecklist) {
       return ChecklistCell;

@@ -1,6 +1,6 @@
 import EventEmitter from 'events';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 
 import {
   getDatabaseRowDocFromSeed,
@@ -12,6 +12,7 @@ import {
 import { hasRowConditionData } from '@/application/database-yjs/condition-value-cache';
 import { getRowKey } from '@/application/database-yjs/row_meta';
 import { getCachedRowDoc, openRowDoc } from '@/application/services/js-services/cache';
+import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   AppendBreadcrumb,
   CreateDatabaseViewPayload,
@@ -19,6 +20,7 @@ import {
   CreatePagePayload,
   CreatePageResponse,
   CreateRow,
+  DatabaseRelations,
   GenerateAISummaryRowPayload,
   GenerateAITranslateRowPayload,
   LoadView,
@@ -26,12 +28,12 @@ import {
   RowId,
   UIVariant,
   UpdatePagePayload,
+  View,
   YDatabase,
   YDoc,
   YjsDatabaseKey,
   YjsEditorKey,
 } from '@/application/types';
-import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import { DatabaseRow } from '@/components/database/DatabaseRow';
 import DatabaseRowModal from '@/components/database/DatabaseRowModal';
 import DatabaseViews from '@/components/database/DatabaseViews';
@@ -103,6 +105,8 @@ export interface Database2Props {
   showActions?: boolean;
   createDatabaseView?: (viewId: string, payload: CreateDatabaseViewPayload) => Promise<CreateDatabaseViewResponse>;
   getViewIdFromDatabaseId?: (databaseId: string) => Promise<string | null>;
+  loadDatabaseRelations?: (options?: { refresh?: boolean }) => Promise<DatabaseRelations | undefined>;
+  loadViews?: (variant?: UIVariant) => Promise<View[] | undefined>;
   embeddedHeight?: number;
   /**
    * Callback when view IDs change (views added or removed).
@@ -166,6 +170,8 @@ function Database(props: Database2Props) {
     workspaceId,
     addPage,
     openPageModal,
+    loadDatabaseRelations,
+    loadViews,
     generateAISummaryForRow,
     generateAITranslateForRow,
   } = props;
@@ -224,6 +230,43 @@ function Database(props: Database2Props) {
 
     return ids;
   }, [doc, activeViewId]);
+
+  const getActiveViewHasConditions = useCallback(() => {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+    const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+    const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
+
+    return (view?.get(YjsDatabaseKey.filters)?.length ?? 0) > 0 || (view?.get(YjsDatabaseKey.sorts)?.length ?? 0) > 0;
+  }, [doc, activeViewId]);
+
+  const activeViewHasConditions = useSyncExternalStore(
+    useCallback(
+      (onStoreChange) => {
+        const sharedRoot = doc.getMap(YjsEditorKey.data_section);
+        const database = sharedRoot?.get(YjsEditorKey.database) as YDatabase | undefined;
+        const view = database?.get(YjsDatabaseKey.views)?.get(activeViewId);
+
+        if (view) {
+          view.observeDeep(onStoreChange);
+          return () => {
+            view.unobserveDeep(onStoreChange);
+          };
+        }
+
+        if (database) {
+          database.observeDeep(onStoreChange);
+          return () => {
+            database.unobserveDeep(onStoreChange);
+          };
+        }
+
+        return () => undefined;
+      },
+      [doc, activeViewId]
+    ),
+    getActiveViewHasConditions,
+    getActiveViewHasConditions
+  );
 
   const registerRowSync = useCallback(
     (rowKey: string) => {
@@ -414,7 +457,9 @@ function Database(props: Database2Props) {
       return null;
     }
 
-    const existingPromise = prefetchPromisesRef.current.get(databaseId);
+    const forceFullSync = activeViewHasConditions;
+    const prefetchKey = `${databaseId}:${forceFullSync ? 'full' : 'delta'}`;
+    const existingPromise = prefetchPromisesRef.current.get(prefetchKey);
 
     if (existingPromise) {
       blobPrefetchPromiseRef.current = existingPromise;
@@ -422,8 +467,15 @@ function Database(props: Database2Props) {
     }
 
     const priorityRowIds = getPriorityRowIds();
+
+    if (forceFullSync) {
+      setBlobPrefetchComplete(false);
+      setSeedsReady(false);
+    }
+
     const promise = prefetchDatabaseBlobDiff(workspaceId, databaseId, {
       priorityRowIds,
+      forceFullSync,
       onSeedsReady: () => {
         // Seeds are cached — filter/sort can now build ephemeral docs from them
         // without waiting for IndexedDB persist.
@@ -436,16 +488,16 @@ function Database(props: Database2Props) {
         setBlobPrefetchComplete(true);
       })
       .catch(() => {
-        prefetchPromisesRef.current.delete(databaseId);
+        prefetchPromisesRef.current.delete(prefetchKey);
         seedsGateRef.current.resolve(); // Unblock ensureRow on failure
         setBlobPrefetchComplete(true);
         setSeedsReady(true);
       });
 
-    prefetchPromisesRef.current.set(databaseId, promise);
+    prefetchPromisesRef.current.set(prefetchKey, promise);
     blobPrefetchPromiseRef.current = promise;
     return promise;
-  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, runBatchPreload]);
+  }, [readOnly, workspaceId, getDatabaseId, getPriorityRowIds, activeViewHasConditions, runBatchPreload]);
 
   useEffect(() => {
     const databaseId = getDatabaseId();
@@ -584,6 +636,7 @@ function Database(props: Database2Props) {
 
     rowMapRef.current = {};
     pendingRowDocsRef.current.clear();
+    prefetchPromisesRef.current.clear();
     blobPrefetchPromiseRef.current = null;
     localCachePrimedRef.current = false;
     syncedRowKeysRef.current.clear();
@@ -713,6 +766,10 @@ function Database(props: Database2Props) {
     [handleCloseRowModal]
   );
 
+  const loadViewsForContext = useCallback(async () => {
+    return (await loadViews?.()) ?? [];
+  }, [loadViews]);
+
   // Shared context properties - extracted to reduce duplication between main and modal contexts
   const sharedContextProps = useMemo(
     () => ({
@@ -746,6 +803,8 @@ function Database(props: Database2Props) {
       deletePage: props.deletePage,
       eventEmitter: props.eventEmitter,
       getViewIdFromDatabaseId: props.getViewIdFromDatabaseId,
+      loadDatabaseRelations,
+      loadViews: loadViews ? loadViewsForContext : undefined,
       variant: props.variant,
       calendarViewTypeMap,
       setCalendarViewType,
@@ -784,6 +843,9 @@ function Database(props: Database2Props) {
       props.deletePage,
       props.eventEmitter,
       props.getViewIdFromDatabaseId,
+      loadDatabaseRelations,
+      loadViews,
+      loadViewsForContext,
       props.variant,
       calendarViewTypeMap,
       setCalendarViewType,
@@ -838,7 +900,7 @@ function Database(props: Database2Props) {
   }
 
   return (
-    <div className={'flex w-full flex-1 justify-center'}>
+    <div className={'flex min-h-0 w-full flex-1 justify-center'}>
       <DatabaseContextProvider value={mainContextValue}>
         {rowId ? (
           <DatabaseRow appendBreadcrumb={appendBreadcrumb} rowId={rowId} />
@@ -846,7 +908,7 @@ function Database(props: Database2Props) {
           <div
             className={cn(
               'appflowy-database relative flex w-full select-text flex-col',
-              shouldUseFixedViewport ? 'flex-1 overflow-hidden' : 'overflow-visible'
+              shouldUseFixedViewport ? 'min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
             )}
           >
             <DatabaseViews

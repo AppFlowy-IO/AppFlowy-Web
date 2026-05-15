@@ -9,11 +9,13 @@ import {
   DateFilterCondition,
   FieldType,
   Filter,
+  isRelativeDateCondition,
   NumberFilter,
   NumberFilterCondition,
   parseSelectOptionTypeOptions,
   PersonFilter,
   PersonFilterCondition,
+  RelationFilterCondition,
   SelectOptionFilter,
   SelectOptionFilterCondition,
   TextFilter,
@@ -27,16 +29,19 @@ import {
   useUpdateAdvancedFilter,
   useUpdateAdvancedFilterAndRebuild,
 } from '@/application/database-yjs/dispatch';
-import { YjsDatabaseKey } from '@/application/types';
+import { isNumericRollupField } from '@/application/database-yjs/rollup/utils';
+import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as ArrowDownSvg } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as CheckIcon } from '@/assets/icons/tick.svg';
 import { Tag } from '@/components/_shared/tag';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 import { useMentionableUsersWithAutoFetch } from '@/components/database/components/cell/person/useMentionableUsers';
+import RelationCellMenuContent from '@/components/database/components/cell/relation/RelationCellMenuContent';
 import PropertiesMenu from '@/components/database/components/conditions/PropertiesMenu';
 import { FieldDisplay } from '@/components/database/components/field';
 import { SelectOptionList } from '@/components/database/components/filters/filter-menu/SelectOptionList';
+import { useRelationData } from '@/components/database/components/property/relation/useRelationData';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -150,12 +155,13 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
       <ConditionSelector
         filter={filter}
         fieldType={fieldType}
+        field={field}
         onConditionChange={handleConditionChange}
         disabled={readOnly}
       />
 
       {/* Value input - flex-[3] */}
-      <ValueInput filter={filter} fieldType={fieldType} disabled={readOnly} />
+      <ValueInput filter={filter} fieldType={fieldType} field={field} disabled={readOnly} />
 
       {/* Delete button - 24px */}
       {!readOnly && (
@@ -175,13 +181,14 @@ export function FilterPanelRow({ filter, isFirst, onOperatorChange }: FilterPane
 interface ConditionSelectorProps {
   filter: Filter;
   fieldType: FieldType | null;
+  field?: YDatabaseField;
   onConditionChange: (condition: number) => void;
   disabled?: boolean;
 }
 
-function ConditionSelector({ filter, fieldType, onConditionChange, disabled }: ConditionSelectorProps) {
+function ConditionSelector({ filter, fieldType, field, onConditionChange, disabled }: ConditionSelectorProps) {
   const { t } = useTranslation();
-  const conditions = useConditionsForFieldType(fieldType, t);
+  const conditions = useConditionsForFieldType(fieldType, t, field);
 
   const selectedCondition = useMemo(() => {
     // For Checkbox, always show "Is" (the actual condition is in the value dropdown)
@@ -233,14 +240,34 @@ function ConditionSelector({ filter, fieldType, onConditionChange, disabled }: C
 // Get conditions based on field type
 function useConditionsForFieldType(
   fieldType: FieldType | null,
-  t: (key: string) => string
+  t: (key: string) => string,
+  field?: YDatabaseField
 ): { value: number; text: string }[] {
+  // Numeric rollups must use Number conditions; non-numeric rollups stay as text.
+  // Mirrors RollupFilterMenu's branching so every Rollup surface (FilterMenu,
+  // advanced editor, badge, runtime eval) agrees on which condition vocabulary applies.
+  const isNumericRollup = fieldType === FieldType.Rollup && isNumericRollupField(field);
+
   return useMemo(() => {
     if (fieldType === null) return [];
 
-    const textTypes = [FieldType.RichText, FieldType.URL, FieldType.Relation, FieldType.Rollup];
+    const textTypes = [FieldType.RichText, FieldType.URL];
     const dateTypes = [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime];
     const selectTypes = [FieldType.SingleSelect, FieldType.MultiSelect];
+
+    if (fieldType === FieldType.Rollup && !isNumericRollup) {
+      // Non-numeric rollup → text conditions
+      return [
+        { value: TextFilterCondition.TextContains, text: t('grid.textFilter.contains') },
+        { value: TextFilterCondition.TextDoesNotContain, text: t('grid.textFilter.doesNotContain') },
+        { value: TextFilterCondition.TextStartsWith, text: t('grid.textFilter.startWith') },
+        { value: TextFilterCondition.TextEndsWith, text: t('grid.textFilter.endsWith') },
+        { value: TextFilterCondition.TextIs, text: t('grid.textFilter.is') },
+        { value: TextFilterCondition.TextIsNot, text: t('grid.textFilter.isNot') },
+        { value: TextFilterCondition.TextIsEmpty, text: t('grid.textFilter.isEmpty') },
+        { value: TextFilterCondition.TextIsNotEmpty, text: t('grid.textFilter.isNotEmpty') },
+      ];
+    }
 
     if (textTypes.includes(fieldType)) {
       return [
@@ -255,7 +282,16 @@ function useConditionsForFieldType(
       ];
     }
 
-    if (fieldType === FieldType.Number) {
+    if (fieldType === FieldType.Relation) {
+      return [
+        { value: RelationFilterCondition.RelationContains, text: t('grid.personFilter.contains') },
+        { value: RelationFilterCondition.RelationDoesNotContain, text: t('grid.personFilter.doesNotContain') },
+        { value: RelationFilterCondition.RelationIsEmpty, text: t('grid.personFilter.isEmpty') },
+        { value: RelationFilterCondition.RelationIsNotEmpty, text: t('grid.personFilter.isNotEmpty') },
+      ];
+    }
+
+    if (fieldType === FieldType.Number || fieldType === FieldType.Time || isNumericRollup) {
       return [
         { value: NumberFilterCondition.Equal, text: t('grid.numberFilter.equal') },
         { value: NumberFilterCondition.NotEqual, text: t('grid.numberFilter.notEqual') },
@@ -276,6 +312,12 @@ function useConditionsForFieldType(
         { value: DateFilterCondition.DateStartsOnOrBefore, text: t('grid.dateFilter.onOrBefore') },
         { value: DateFilterCondition.DateStartsOnOrAfter, text: t('grid.dateFilter.onOrAfter') },
         { value: DateFilterCondition.DateStartsBetween, text: t('grid.dateFilter.between') },
+        { value: DateFilterCondition.DateStartsToday, text: t('relativeDates.today') },
+        { value: DateFilterCondition.DateStartsYesterday, text: t('relativeDates.yesterday') },
+        { value: DateFilterCondition.DateStartsTomorrow, text: t('relativeDates.tomorrow') },
+        { value: DateFilterCondition.DateStartsThisWeek, text: t('relativeDates.thisWeek') },
+        { value: DateFilterCondition.DateStartsLastWeek, text: t('relativeDates.lastWeek') },
+        { value: DateFilterCondition.DateStartsNextWeek, text: t('relativeDates.nextWeek') },
         { value: DateFilterCondition.DateStartIsEmpty, text: t('grid.dateFilter.empty') },
         { value: DateFilterCondition.DateStartIsNotEmpty, text: t('grid.dateFilter.notEmpty') },
       ];
@@ -314,30 +356,43 @@ function useConditionsForFieldType(
     }
 
     return [];
-  }, [fieldType, t]);
+  }, [fieldType, t, isNumericRollup]);
 }
 
 // Value Input Component - Renders appropriate input based on field type
 interface ValueInputProps {
   filter: Filter;
   fieldType: FieldType | null;
+  field?: YDatabaseField;
   disabled?: boolean;
 }
 
-function ValueInput({ filter, fieldType, disabled }: ValueInputProps) {
+function ValueInput({ filter, fieldType, field, disabled }: ValueInputProps) {
   if (fieldType === null) return null;
 
-  const textTypes = [FieldType.RichText, FieldType.URL, FieldType.Relation, FieldType.Rollup];
+  const textTypes = [FieldType.RichText, FieldType.URL];
   const dateTypes = [FieldType.DateTime, FieldType.LastEditedTime, FieldType.CreatedTime];
   const selectTypes = [FieldType.SingleSelect, FieldType.MultiSelect];
+  const isNumericRollup = fieldType === FieldType.Rollup && isNumericRollupField(field);
+
+  // Numeric rollup → number input. Non-numeric rollup → text input.
+  if (fieldType === FieldType.Rollup) {
+    return isNumericRollup
+      ? <NumberValueInput filter={filter as NumberFilter} disabled={disabled} />
+      : <TextValueInput filter={filter as TextFilter} disabled={disabled} />;
+  }
 
   // Text/URL fields - editable text input
   if (textTypes.includes(fieldType)) {
     return <TextValueInput filter={filter as TextFilter} disabled={disabled} />;
   }
 
-  // Number field - editable number input
-  if (fieldType === FieldType.Number) {
+  if (fieldType === FieldType.Relation) {
+    return <RelationValueInput filter={filter} disabled={disabled} />;
+  }
+
+  // Number / Time field - editable number input
+  if (fieldType === FieldType.Number || fieldType === FieldType.Time) {
     return <NumberValueInput filter={filter as NumberFilter} disabled={disabled} />;
   }
 
@@ -413,6 +468,94 @@ function TextValueInput({ filter, disabled }: { filter: TextFilter; disabled?: b
   );
 }
 
+function parseRelationFilterRowIds(content: string | undefined) {
+  if (!content) return [];
+
+  try {
+    const parsed = JSON.parse(content);
+
+    return Array.isArray(parsed) ? parsed.map((id) => String(id)).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+function RelationValueInput({ filter, disabled }: { filter: Filter; disabled?: boolean }) {
+  const { t } = useTranslation();
+  const updateFilter = useUpdateAdvancedFilter();
+  const [open, setOpen] = useState(false);
+  const showInput = useMemo(() => {
+    return [
+      RelationFilterCondition.RelationContains,
+      RelationFilterCondition.RelationDoesNotContain,
+    ].includes(filter.condition);
+  }, [filter.condition]);
+  const selectedRowIds = useMemo(() => parseRelationFilterRowIds(filter.content), [filter.content]);
+  const { loading, selectedView, relatedDatabaseId } = useRelationData(filter.fieldId, { enabled: showInput && open });
+
+  const updateSelectedRowIds = useCallback(
+    (rowIds: string[]) => {
+      updateFilter({
+        filterId: filter.id,
+        fieldId: filter.fieldId,
+        content: JSON.stringify(rowIds),
+      });
+    },
+    [filter.fieldId, filter.id, updateFilter]
+  );
+
+  const handleAddRelationRowId = useCallback(
+    (rowId: string) => {
+      if (selectedRowIds.includes(rowId)) return;
+      updateSelectedRowIds([...selectedRowIds, rowId]);
+    },
+    [selectedRowIds, updateSelectedRowIds]
+  );
+
+  const handleRemoveRelationRowId = useCallback(
+    (rowId: string) => {
+      updateSelectedRowIds(selectedRowIds.filter((id) => id !== rowId));
+    },
+    [selectedRowIds, updateSelectedRowIds]
+  );
+
+  if (!showInput) return <div className='min-w-0 flex-[3]' />;
+
+  return (
+    <div className='min-w-0 flex-[3]'>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild disabled={disabled}>
+          <button
+            className='flex h-7 w-full items-center justify-between gap-1 overflow-hidden rounded-md border border-line-border bg-transparent px-2 hover:border-content-blue-400 disabled:opacity-50'
+            data-testid='advanced-filter-relation-input'
+          >
+            <span className={cn('truncate text-xs', selectedRowIds.length > 0 ? 'text-text-primary' : 'text-text-caption')}>
+              {selectedRowIds.length > 0 ? `${selectedRowIds.length} selected` : t('grid.settings.typeAValue')}
+            </span>
+            <ArrowDownSvg className='h-3 w-3 shrink-0 text-text-primary' />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent align='start' className='w-[340px] p-1'>
+          {loading || !selectedView || !relatedDatabaseId ? (
+            <div className='flex min-h-[100px] items-center justify-center'>
+              {loading ? <Progress variant='primary' /> : t('grid.relation.inRelatedDatabase')}
+            </div>
+          ) : (
+            <RelationCellMenuContent
+              relationRowIds={selectedRowIds}
+              selectedView={selectedView}
+              relatedDatabaseId={relatedDatabaseId}
+              loading={loading}
+              onAddRelationRowId={handleAddRelationRowId}
+              onRemoveRelationRowId={handleRemoveRelationRowId}
+            />
+          )}
+        </PopoverContent>
+      </Popover>
+    </div>
+  );
+}
+
 // Number Value Input — uses lightweight in-place updater (no tree rebuild on every keystroke)
 function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled?: boolean }) {
   const { t } = useTranslation();
@@ -460,8 +603,10 @@ function NumberValueInput({ filter, disabled }: { filter: NumberFilter; disabled
 
 // Date Value Input - uses the existing DateTimeFilterDatePicker
 function DateValueInput({ filter, disabled }: { filter: DateFilter; disabled?: boolean }) {
-  // Don't show input for isEmpty/isNotEmpty conditions
+  // Don't show input for isEmpty/isNotEmpty or relative date conditions (Today, This week, …)
   const showInput = useMemo(() => {
+    if (isRelativeDateCondition(filter.condition)) return false;
+
     return ![
       DateFilterCondition.DateStartIsEmpty,
       DateFilterCondition.DateStartIsNotEmpty,

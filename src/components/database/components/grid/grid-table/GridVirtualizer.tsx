@@ -4,6 +4,7 @@ import { PADDING_END, useDatabaseContext } from '@/application/database-yjs';
 import { GridDragContext } from '@/components/database/components/grid/drag-and-drop/GridDragContext';
 import { RenderColumn } from '@/components/database/components/grid/grid-column/useRenderFields';
 import { RenderRowType } from '@/components/database/components/grid/grid-row';
+import GridLoadMoreRow from '@/components/database/components/grid/grid-row/GridLoadMoreRow';
 import GridNewRow from '@/components/database/components/grid/grid-row/GridNewRow';
 import GridVirtualRow from '@/components/database/components/grid/grid-row/GridVirtualRow';
 import GridStickyHeader from '@/components/database/components/grid/grid-table/GridStickyHeader';
@@ -15,6 +16,24 @@ import DatabaseStickyTopOverlay from '@/components/database/components/sticky-ov
 import { useGridContext } from '@/components/database/grid/useGridContext';
 
 import { useColumnResize } from '../grid-column/useColumnResize';
+
+const GRID_LOADING_DOT_COLORS = ['#00b5ff', '#e3006d', '#f7931e'] as const;
+
+const gridLoadingDots = (
+  <div className={'flex h-full items-center gap-1.5'}>
+    {GRID_LOADING_DOT_COLORS.map((color, index) => (
+      <span
+        key={color}
+        className={'h-1.5 w-1.5 animate-bounce rounded-full'}
+        style={{
+          animationDelay: `${index * 120}ms`,
+          animationDuration: '900ms',
+          backgroundColor: color,
+        }}
+      />
+    ))}
+  </div>
+);
 
 function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
   const { rows: data, resizeRows, onResizeRowEnd } = useGridContext();
@@ -174,6 +193,9 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
           {rowItems.map((row) => {
             const rowData = data[row.index];
             const rowId = rowData.rowId;
+            const isPlaceholderRow = rowData.type === RenderRowType.PlaceholderRow;
+            const isFullWidthControlRow =
+              rowData.type === RenderRowType.NewRow || rowData.type === RenderRowType.LoadMoreRow;
 
             return (
               <div
@@ -187,9 +209,21 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                   left: 0,
                   transform: `translateY(${row.start - virtualizer.options.scrollMargin}px)`,
                   display: 'flex',
+                  right: isPlaceholderRow ? 0 : undefined,
+                  pointerEvents: isPlaceholderRow ? 'none' : undefined,
+                  zIndex: rowData.type === RenderRowType.NewRow ? 1 : undefined,
                 }}
               >
-                {rowData.type === RenderRowType.NewRow ? (
+                {isPlaceholderRow ? (
+                  <div
+                    data-testid={'grid-loading-indicator'}
+                    className={'flex h-9 w-full items-center justify-center'}
+                    aria-label={'Loading rows'}
+                    role={'status'}
+                  >
+                    {gridLoadingDots}
+                  </div>
+                ) : isFullWidthControlRow ? (
                   <div
                     style={{
                       paddingLeft: columnItems[0]?.start,
@@ -197,7 +231,11 @@ function GridVirtualizer({ columns }: { columns: RenderColumn[] }) {
                       width: totalSize - (paddingEnd ?? 0),
                     }}
                   >
-                    <GridNewRow />
+                    {rowData.type === RenderRowType.LoadMoreRow ? (
+                      <GridLoadMoreRow remainingCount={rowData.remainingRowCount ?? 0} />
+                    ) : (
+                      <GridNewRow />
+                    )}
                   </div>
                 ) : (
                   <GridVirtualRow

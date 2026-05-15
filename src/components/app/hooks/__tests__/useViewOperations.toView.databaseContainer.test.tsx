@@ -54,7 +54,6 @@ describe('useViewOperations.toView database container', () => {
       registerSyncContext: () => ({ doc: {} as never }),
       eventEmitter: new EventEmitter(),
       awarenessMap: {},
-      lastUpdatedCollab: null,
     } as unknown as SyncInternalContextType;
 
     const loadViewMeta = jest.fn(async (_viewId: string) => {
@@ -104,7 +103,6 @@ describe('useViewOperations.toView database container', () => {
       registerSyncContext: () => ({ doc: {} as never }),
       eventEmitter: new EventEmitter(),
       awarenessMap: {},
-      lastUpdatedCollab: null,
     } as unknown as SyncInternalContextType;
 
     const loadViewMeta = jest.fn(async (_viewId: string) => {
@@ -155,7 +153,6 @@ describe('useViewOperations.toView database container', () => {
       registerSyncContext: () => ({ doc: {} as never }),
       eventEmitter: new EventEmitter(),
       awarenessMap: {},
-      lastUpdatedCollab: null,
     } as unknown as SyncInternalContextType;
 
     const loadViewMeta = jest.fn(async (viewId: string) => {

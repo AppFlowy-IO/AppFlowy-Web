@@ -25,7 +25,7 @@ test.describe('Database File Upload', () => {
     await loginAndCreateGrid(page, request, testEmail);
 
     // Step 1: Add a File & Media field
-    await addNewProperty(page, FieldType.FileMedia);
+    await addNewProperty(page, FieldType.Media);
     await page.waitForTimeout(1000);
 
     // Verify the field was added (at least 2 column headers)
