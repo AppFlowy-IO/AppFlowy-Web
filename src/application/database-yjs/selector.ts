@@ -104,6 +104,16 @@ function getConditionSignature(sorts?: YDatabaseSorts, filters?: YDatabaseFilter
 const CONDITION_ROW_LOAD_BATCH_SIZE = 24;
 const defaultVisible = [FieldVisibility.AlwaysShown, FieldVisibility.HideWhenEmpty];
 
+type ConditionReference = { id: string; fieldId: string };
+
+function areConditionReferencesEqual(left: ConditionReference[], right: ConditionReference[]) {
+  return left.length === right.length && left.every((item, index) => {
+    const rightItem = right[index];
+
+    return item.id === rightItem?.id && item.fieldId === rightItem.fieldId;
+  });
+}
+
 /**
  * Hook to get all database views (tabs) for the database.
  * @param databasePageId - The main database page ID in the folder structure
@@ -425,14 +435,15 @@ export function useDatabaseIdFromField(fieldId: string) {
 export function useFiltersSelector() {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
-  const [filters, setFilters] = useState<{ id: string; fieldId: string }[]>([]);
+  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const filterOrders = view?.get(YjsDatabaseKey.filters);
+  const [filters, setFilters] = useState<ConditionReference[]>([]);
 
   useEffect(() => {
-    if (!viewId) return;
-    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
-    const filterOrders = view?.get(YjsDatabaseKey.filters);
-
-    if (!filterOrders) return;
+    if (!filterOrders) {
+      setFilters([]);
+      return;
+    }
 
     const getFilters = () => {
       const rawData = filterOrders.toJSON();
@@ -458,17 +469,19 @@ export function useFiltersSelector() {
     };
 
     const observerEvent = () => {
-      setFilters(getFilters());
+      const nextFilters = getFilters();
+
+      setFilters((prevFilters) => areConditionReferencesEqual(prevFilters, nextFilters) ? prevFilters : nextFilters);
     };
 
     observerEvent();
 
-    filterOrders.observe(observerEvent);
+    filterOrders.observeDeep(observerEvent);
 
     return () => {
-      filterOrders.unobserve(observerEvent);
+      filterOrders.unobserveDeep(observerEvent);
     };
-  }, [database, viewId]);
+  }, [filterOrders]);
 
   return filters;
 }
@@ -477,32 +490,40 @@ export function useFilterSelector(filterId: string) {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
+  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const filter = view
+    ?.get(YjsDatabaseKey.filters)
+    ?.toArray()
+    .find((filter) => filter.get(YjsDatabaseKey.id) === filterId);
   const [filterValue, setFilterValue] = useState<Filter | null>(null);
 
   useEffect(() => {
-    if (!viewId) return;
-    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
-    const filter = view
-      ?.get(YjsDatabaseKey.filters)
-      .toArray()
-      .find((filter) => filter.get(YjsDatabaseKey.id) === filterId);
-    const field = fields?.get(filter?.get(YjsDatabaseKey.field_id) as FieldId);
+    if (!filter || !fields) {
+      setFilterValue(null);
+      return;
+    }
 
     const observerEvent = () => {
-      if (!filter || !field) return;
+      const field = fields.get(filter.get(YjsDatabaseKey.field_id));
+
+      if (!field) {
+        setFilterValue(null);
+        return;
+      }
+
       const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
 
       setFilterValue(parseFilter(fieldType, filter));
     };
 
     observerEvent();
-    field?.observe(observerEvent);
-    filter?.observe(observerEvent);
+    fields.observeDeep(observerEvent);
+    filter.observeDeep(observerEvent);
     return () => {
-      field?.unobserve(observerEvent);
-      filter?.unobserve(observerEvent);
+      fields.unobserveDeep(observerEvent);
+      filter.unobserveDeep(observerEvent);
     };
-  }, [fields, viewId, filterId, database]);
+  }, [fields, filter]);
   return filterValue;
 }
 
@@ -514,6 +535,8 @@ const DEFAULT_ROOT_INFO = { isHierarchical: false, rootType: null, childCount: 0
 export function useRootFilterInfo() {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
+  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const filters = view?.get(YjsDatabaseKey.filters);
   const [rootInfo, setRootInfo] = useState<{
     isHierarchical: boolean;
     rootType: FilterType | null;
@@ -521,11 +544,10 @@ export function useRootFilterInfo() {
   }>(DEFAULT_ROOT_INFO);
 
   useEffect(() => {
-    if (!viewId) return;
-    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
-    const filters = view?.get(YjsDatabaseKey.filters);
-
-    if (!filters) return;
+    if (!filters) {
+      setRootInfo(DEFAULT_ROOT_INFO);
+      return;
+    }
 
     const observerEvent = () => {
       if (filters.length === 0) {
@@ -571,7 +593,7 @@ export function useRootFilterInfo() {
     return () => {
       filters.unobserveDeep(observerEvent);
     };
-  }, [database, viewId]);
+  }, [filters]);
 
   return rootInfo;
 }
@@ -585,14 +607,12 @@ export function useAdvancedFiltersSelector() {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
+  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const filtersArray = view?.get(YjsDatabaseKey.filters);
   const [filters, setFilters] = useState<Filter[]>([]);
 
   useEffect(() => {
-    if (!viewId || !fields) return;
-    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
-    const filtersArray = view?.get(YjsDatabaseKey.filters);
-
-    if (!filtersArray) {
+    if (!fields || !filtersArray) {
       setFilters([]);
       return;
     }
@@ -637,7 +657,7 @@ export function useAdvancedFiltersSelector() {
     return () => {
       filtersArray.unobserveDeep(observerEvent);
     };
-  }, [database, viewId, fields]);
+  }, [fields, filtersArray]);
 
   return filters;
 }
@@ -649,16 +669,22 @@ export function useAdvancedFilterSelector(filterId: string) {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
   const fields = database?.get(YjsDatabaseKey.fields);
+  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const filtersArray = view?.get(YjsDatabaseKey.filters);
   const [filterValue, setFilterValue] = useState<Filter | null>(null);
 
   useEffect(() => {
-    if (!viewId || !fields) return;
-    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
-    const filtersArray = view?.get(YjsDatabaseKey.filters);
-
-    if (!filtersArray || filtersArray.length === 0) return;
+    if (!fields || !filtersArray) {
+      setFilterValue(null);
+      return;
+    }
 
     const observerEvent = () => {
+      if (filtersArray.length === 0) {
+        setFilterValue(null);
+        return;
+      }
+
       const rootFilter = filtersArray.get(0);
 
       if (!rootFilter) {
@@ -749,7 +775,7 @@ export function useAdvancedFilterSelector(filterId: string) {
     return () => {
       filtersArray.unobserveDeep(observerEvent);
     };
-  }, [database, viewId, fields, filterId]);
+  }, [fields, filterId, filtersArray]);
 
   return filterValue;
 }
@@ -757,14 +783,15 @@ export function useAdvancedFilterSelector(filterId: string) {
 export function useSortsSelector() {
   const database = useDatabase();
   const viewId = useDatabaseViewId();
-  const [sorts, setSorts] = useState<{ id: string; fieldId: string }[]>([]);
+  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const sortOrders = view?.get(YjsDatabaseKey.sorts);
+  const [sorts, setSorts] = useState<ConditionReference[]>([]);
 
   useEffect(() => {
-    if (!viewId) return;
-    const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
-    const sortOrders = view?.get(YjsDatabaseKey.sorts);
-
-    if (!sortOrders) return;
+    if (!sortOrders) {
+      setSorts([]);
+      return;
+    }
 
     const getSorts = () => {
       return (sortOrders.toJSON() as { id: string; field_id: string }[]).map((item) => {
@@ -775,16 +802,20 @@ export function useSortsSelector() {
       });
     };
 
-    const observerEvent = () => setSorts(getSorts());
+    const observerEvent = () => {
+      const nextSorts = getSorts();
+
+      setSorts((prevSorts) => areConditionReferencesEqual(prevSorts, nextSorts) ? prevSorts : nextSorts);
+    };
 
     setSorts(getSorts());
 
-    sortOrders.observe(observerEvent);
+    sortOrders.observeDeep(observerEvent);
 
     return () => {
-      sortOrders.unobserve(observerEvent);
+      sortOrders.unobserveDeep(observerEvent);
     };
-  }, [database, viewId]);
+  }, [sortOrders]);
 
   return sorts;
 }
@@ -800,30 +831,33 @@ export function useSortSelector(sortId: SortId) {
   const viewId = useDatabaseViewId();
   const [sortValue, setSortValue] = useState<Sort | null>(null);
   const views = database?.get(YjsDatabaseKey.views);
+  const view = views?.get(viewId);
+  const sort = view
+    ?.get(YjsDatabaseKey.sorts)
+    ?.toArray()
+    .find((sort) => sort.get(YjsDatabaseKey.id) === sortId);
 
   useEffect(() => {
-    if (!viewId) return;
-    const view = views?.get(viewId);
-    const sort = view
-      ?.get(YjsDatabaseKey.sorts)
-      .toArray()
-      .find((sort) => sort.get(YjsDatabaseKey.id) === sortId);
+    if (!sort) {
+      setSortValue(null);
+      return;
+    }
 
     const observerEvent = () => {
       setSortValue({
-        fieldId: sort?.get(YjsDatabaseKey.field_id) as FieldId,
-        condition: Number(sort?.get(YjsDatabaseKey.condition)),
-        id: sort?.get(YjsDatabaseKey.id) as SortId,
+        fieldId: sort.get(YjsDatabaseKey.field_id),
+        condition: Number(sort.get(YjsDatabaseKey.condition)),
+        id: sort.get(YjsDatabaseKey.id),
       });
     };
 
     observerEvent();
-    sort?.observe(observerEvent);
+    sort.observe(observerEvent);
 
     return () => {
-      sort?.unobserve(observerEvent);
+      sort.unobserve(observerEvent);
     };
-  }, [viewId, sortId, views]);
+  }, [sort]);
 
   return sortValue;
 }
