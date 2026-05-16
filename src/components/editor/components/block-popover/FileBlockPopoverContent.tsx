@@ -76,23 +76,71 @@ function FileBlockPopoverContent({ blockId, onClose }: { blockId: string; onClos
     } as FileBlockData;
 
     if (!remoteUrl) {
-      const fileHandler = new FileHandler();
-      const res = await fileHandler.handleFileUpload(file);
+      // Best-effort: a missing local snapshot must not block the remote upload
+      // (IndexedDB may be unavailable in private mode or over quota).
+      try {
+        const fileHandler = new FileHandler();
+        const res = await fileHandler.handleFileUpload(file);
 
-      data.retry_local_url = res.id;
+        // The popover never renders the local preview itself — the block
+        // creates its own object URL via `getStoredFile`. Revoke the one
+        // created here so it doesn't leak until the tab unloads.
+        URL.revokeObjectURL(res.url);
+        data.retry_local_url = res.id;
+      } catch {
+        data.retry_local_url = '';
+      }
     }
 
     return data;
   }, []);
 
-  const insertFileBlock = useCallback(
-    async (file: File) => {
-      const url = await uploadFileRemote(file);
-      const data = await getData(file, url);
+  const cleanupLocalFile = useCallback(async (retryLocalUrl?: string) => {
+    if (!retryLocalUrl) return;
 
-      CustomEditor.addBelowBlock(editor, blockId, BlockType.FileBlock, data);
+    const fileHandler = new FileHandler();
+
+    await fileHandler.cleanup(retryLocalUrl).catch(() => undefined);
+  }, []);
+
+  const uploadIntoFileBlock = useCallback(
+    async (targetBlockId: string, file: File, pendingData: FileBlockData) => {
+      const url = await uploadFileRemote(file);
+
+      if (!url) {
+        return;
+      }
+
+      await cleanupLocalFile(pendingData.retry_local_url);
+
+      // Popover closes before the upload settles, so the user may have
+      // deleted/edited/replaced the block. Skip the write if the placeholder
+      // we created is no longer there (block gone, URL already set, or
+      // retry_local_url has changed because a different file was uploaded
+      // onto the same block).
+      let currentData: FileBlockData | undefined;
+
+      try {
+        const entry = findSlateEntryByBlockId(editor, targetBlockId);
+
+        currentData = entry ? ((entry[0] as { data?: FileBlockData }).data ?? undefined) : undefined;
+      } catch {
+        return;
+      }
+
+      if (!currentData) return;
+      if (currentData.url) return;
+      if ((currentData.retry_local_url ?? '') !== (pendingData.retry_local_url ?? '')) return;
+
+      CustomEditor.setBlockData(editor, targetBlockId, {
+        url,
+        name: file.name,
+        uploaded_at: Date.now(),
+        url_type: FieldURLType.Upload,
+        retry_local_url: '',
+      } as FileBlockData);
     },
-    [blockId, editor, getData, uploadFileRemote]
+    [cleanupLocalFile, editor, uploadFileRemote]
   );
 
   const handleChangeUploadFiles = useCallback(
@@ -101,22 +149,36 @@ function FileBlockPopoverContent({ blockId, onClose }: { blockId: string; onClos
 
       setUploading(true);
       try {
+        // Run every local snapshot in parallel so the popover doesn't pay
+        // N×IDB-latency before it can close.
+        const [primaryData, ...otherDatas] = await Promise.all(files.map((f) => getData(f)));
         const [file, ...otherFiles] = files;
-        const url = await uploadFileRemote(file);
-        const data = await getData(file, url);
 
-        CustomEditor.setBlockData(editor, blockId, data);
+        CustomEditor.setBlockData(editor, blockId, primaryData);
 
-        for (const file of otherFiles.reverse()) {
-          await insertFileBlock(file);
+        const pendingUploads: Promise<void>[] = [uploadIntoFileBlock(blockId, file, primaryData)];
+
+        // Each new block is inserted directly below `blockId`, so iterating
+        // in reverse preserves the user's original file order in the doc.
+        const reversedPairs = otherFiles
+          .map((f, i) => [f, otherDatas[i]] as const)
+          .reverse();
+
+        for (const [f, d] of reversedPairs) {
+          const newId = CustomEditor.addBelowBlock(editor, blockId, BlockType.FileBlock, d);
+
+          if (newId) {
+            pendingUploads.push(uploadIntoFileBlock(newId, f, d));
+          }
         }
 
         onClose();
+        await Promise.all(pendingUploads);
       } finally {
         setUploading(false);
       }
     },
-    [blockId, editor, getData, insertFileBlock, onClose, uploadFileRemote]
+    [blockId, editor, getData, onClose, uploadIntoFileBlock]
   );
 
   const tabOptions = useMemo(() => {

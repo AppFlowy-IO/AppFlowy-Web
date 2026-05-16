@@ -70,26 +70,79 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
     [uploadFile]
   );
 
-  const processFileUpload = useCallback(
+  const createPendingFileData = useCallback(
     async (file: File): Promise<PDFBlockData> => {
-      const url = await uploadFileRemote(file);
       const data: PDFBlockData = {
-        url,
+        url: undefined,
         name: file.name,
         uploaded_at: Date.now(),
         url_type: FieldURLType.Upload,
       };
 
-      if (!url) {
+      // Best-effort: a missing local snapshot must not block the remote upload
+      // (IndexedDB may be unavailable in private mode or over quota).
+      try {
         const fileHandler = new FileHandler();
         const res = await fileHandler.handleFileUpload(file);
 
+        // The popover never renders the local preview itself — the block
+        // creates its own object URL via `getStoredFile`. Revoke the one
+        // created here so it doesn't leak until the tab unloads.
+        URL.revokeObjectURL(res.url);
         data.retry_local_url = res.id;
+      } catch {
+        data.retry_local_url = '';
       }
 
       return data;
     },
-    [uploadFileRemote]
+    []
+  );
+
+  const cleanupLocalFile = useCallback(async (retryLocalUrl?: string) => {
+    if (!retryLocalUrl) return;
+
+    const fileHandler = new FileHandler();
+
+    await fileHandler.cleanup(retryLocalUrl).catch(() => undefined);
+  }, []);
+
+  const uploadIntoPdfBlock = useCallback(
+    async (targetBlockId: string, file: File, pendingData: PDFBlockData) => {
+      const url = await uploadFileRemote(file);
+
+      if (!url) {
+        return;
+      }
+
+      await cleanupLocalFile(pendingData.retry_local_url);
+
+      // Popover closes before the upload settles, so the user may have
+      // deleted/edited/replaced the block. Skip the write if the placeholder
+      // we created is no longer there.
+      let currentData: PDFBlockData | undefined;
+
+      try {
+        const entry = findSlateEntryByBlockId(editor, targetBlockId);
+
+        currentData = entry ? ((entry[0] as { data?: PDFBlockData }).data ?? undefined) : undefined;
+      } catch {
+        return;
+      }
+
+      if (!currentData) return;
+      if (currentData.url) return;
+      if ((currentData.retry_local_url ?? '') !== (pendingData.retry_local_url ?? '')) return;
+
+      CustomEditor.setBlockData(editor, targetBlockId, {
+        url,
+        name: file.name,
+        uploaded_at: Date.now(),
+        url_type: FieldURLType.Upload,
+        retry_local_url: '',
+      } as PDFBlockData);
+    },
+    [cleanupLocalFile, editor, uploadFileRemote]
   );
 
   const handleChangeUploadFiles = useCallback(
@@ -98,23 +151,38 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
 
       setUploading(true);
       try {
+        // Run every local snapshot in parallel so the popover doesn't pay
+        // N×IDB-latency before it can close.
+        const [primaryData, ...otherDatas] = await Promise.all(
+          files.map((f) => createPendingFileData(f))
+        );
         const [file, ...otherFiles] = files;
-        const data = await processFileUpload(file);
 
-        CustomEditor.setBlockData(editor, blockId, data);
+        CustomEditor.setBlockData(editor, blockId, primaryData);
 
-        for (const file of otherFiles.reverse()) {
-          const data = await processFileUpload(file);
+        const pendingUploads: Promise<void>[] = [uploadIntoPdfBlock(blockId, file, primaryData)];
 
-          CustomEditor.addBelowBlock(editor, blockId, BlockType.PDFBlock, data);
+        // Each new block is inserted directly below `blockId`, so iterating
+        // in reverse preserves the user's original file order in the doc.
+        const reversedPairs = otherFiles
+          .map((f, i) => [f, otherDatas[i]] as const)
+          .reverse();
+
+        for (const [f, d] of reversedPairs) {
+          const newId = CustomEditor.addBelowBlock(editor, blockId, BlockType.PDFBlock, d);
+
+          if (newId) {
+            pendingUploads.push(uploadIntoPdfBlock(newId, f, d));
+          }
         }
 
         onClose();
+        await Promise.all(pendingUploads);
       } finally {
         setUploading(false);
       }
     },
-    [blockId, editor, onClose, processFileUpload]
+    [blockId, createPendingFileData, editor, onClose, uploadIntoPdfBlock]
   );
 
   const defaultLink = useMemo(() => {

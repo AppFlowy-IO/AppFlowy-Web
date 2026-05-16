@@ -7,18 +7,22 @@ import { v4 as uuidv4 } from 'uuid';
 
 import {
   getAppFlowyFileUrl,
+  getMultipartAbortUrl,
   getMultipartCompleteUrl,
   getMultipartCreateUrl,
+  getMultipartUploadedPartsUrl,
   getMultipartUploadPartUrl,
 } from '@/utils/file-storage-url';
 import { Log } from '@/utils/log';
 import { getAxiosInstance } from './http_api';
+import { multipartUploadStore, PersistedMultipartUpload } from './multipart-upload-store';
 import {
   CHUNK_SIZE,
   CreateUploadResponse,
   MAX_CONCURRENCY,
   MAX_RETRIES,
   UploadFileMultipartParams,
+  UploadPartsResponse,
   UploadPartInfo,
 } from './multipart-upload.types';
 
@@ -29,6 +33,31 @@ interface APIResponse<T = unknown> {
   code: number;
   data?: T;
   message: string;
+}
+
+type UploadChunk = { partNumber: number; blob: Blob };
+
+// Keyed by destination first, then by File reference. Two distinct File objects
+// sharing metadata never collide; the same File uploaded to different
+// workspace/view destinations also stays independent. A duplicate dispatch with
+// the *same* File instance and *same* destination still dedupes.
+const activeUploads = new Map<string, WeakMap<File, Promise<string>>>();
+
+function getActiveUploadKey(workspaceId: string, viewId: string): string {
+  return `${workspaceId}:${viewId}`;
+}
+
+function isStaleSessionError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const e = error as {
+    response?: { status?: number; data?: { code?: number; message?: string } };
+    message?: string;
+  };
+
+  if (e.response?.status === 404) return true;
+  const msg = e.message ?? e.response?.data?.message ?? '';
+
+  return /upload.{0,8}(not\s*found|expired|invalid|missing|gone)/i.test(msg);
 }
 
 /**
@@ -62,6 +91,52 @@ async function createMultipartUpload(
   }
 
   return response.data.data;
+}
+
+/**
+ * Lists parts that the server already has for this multipart upload.
+ */
+async function listUploadedParts(
+  workspaceId: string,
+  parentDir: string,
+  fileId: string,
+  uploadId: string
+): Promise<UploadPartInfo[]> {
+  const axiosInstance = getAxiosInstance();
+
+  if (!axiosInstance) {
+    throw new Error('API service not initialized');
+  }
+
+  const url = getMultipartUploadedPartsUrl(workspaceId, parentDir, fileId, uploadId);
+
+  const response = await axiosInstance.get<APIResponse<UploadPartsResponse>>(url);
+
+  if (response.data.code !== 0 || !response.data.data) {
+    throw new Error(response.data.message || 'Failed to list uploaded parts');
+  }
+
+  return response.data.data.parts;
+}
+
+/**
+ * Aborts an upload session so object storage can release incomplete parts.
+ */
+async function abortMultipartUpload(
+  workspaceId: string,
+  parentDir: string,
+  fileId: string,
+  uploadId: string
+): Promise<void> {
+  const axiosInstance = getAxiosInstance();
+
+  if (!axiosInstance) {
+    return;
+  }
+
+  const url = getMultipartAbortUrl(workspaceId, parentDir, fileId, uploadId);
+
+  await axiosInstance.delete<APIResponse>(url);
 }
 
 /**
@@ -151,7 +226,7 @@ async function completeMultipartUpload(
     file_id: fileId,
     parent_dir: parentDir,
     upload_id: uploadId,
-    parts: parts
+    parts: [...parts]
       .sort((a, b) => a.part_number - b.part_number)
       .map((p) => ({
         e_tag: p.e_tag,
@@ -198,37 +273,8 @@ async function executeWithConcurrency<T, R>(
   return results;
 }
 
-/**
- * Main function to upload a file using multipart upload
- * Splits the file into chunks and uploads them in parallel
- */
-export async function uploadFileMultipart({
-  workspaceId,
-  viewId,
-  file,
-  onProgress,
-}: UploadFileMultipartParams): Promise<string> {
-  Log.debug('[UploadFile] multipart starting', { fileName: file.name, fileSize: file.size });
-
-  // Report initializing phase
-  onProgress?.({
-    phase: 'initializing',
-    totalBytes: file.size,
-    uploadedBytes: 0,
-    percentage: 0,
-  });
-
-  // Generate a unique file ID
-  const fileId = uuidv4();
-  const parentDir = viewId;
-
-  // Step 1: Create upload session
-  const { upload_id: uploadId } = await createMultipartUpload(workspaceId, parentDir, file, fileId);
-
-  Log.debug('[UploadFile] multipart upload created', { uploadId, fileId });
-
-  // Step 2: Split file into chunks
-  const chunks: { partNumber: number; blob: Blob }[] = [];
+function createChunks(file: File): UploadChunk[] {
+  const chunks: UploadChunk[] = [];
   let offset = 0;
   let partNumber = 1;
 
@@ -241,47 +287,258 @@ export async function uploadFileMultipart({
     partNumber++;
   }
 
-  Log.debug('[UploadFile] multipart chunks created', { totalChunks: chunks.length });
+  return chunks;
+}
 
-  // Step 3: Upload parts with concurrency control
-  let uploadedBytes = 0;
-  const totalBytes = file.size;
+function mergeParts(...partLists: UploadPartInfo[][]): UploadPartInfo[] {
+  const partsByNumber = new Map<number, UploadPartInfo>();
 
-  const parts = await executeWithConcurrency(chunks, MAX_CONCURRENCY, async (chunk) => {
-    const result = await uploadPart(
-      workspaceId,
-      parentDir,
-      fileId,
-      uploadId,
-      chunk.partNumber,
-      chunk.blob
+  for (const parts of partLists) {
+    for (const part of parts) {
+      if (!part.e_tag || part.part_number < 1) {
+        continue;
+      }
+
+      partsByNumber.set(part.part_number, part);
+    }
+  }
+
+  return Array.from(partsByNumber.values()).sort((a, b) => a.part_number - b.part_number);
+}
+
+function getUploadedBytes(chunks: UploadChunk[], parts: UploadPartInfo[]): number {
+  const uploadedPartNumbers = new Set(parts.map((part) => part.part_number));
+
+  return chunks.reduce((total, chunk) => {
+    return uploadedPartNumbers.has(chunk.partNumber) ? total + chunk.blob.size : total;
+  }, 0);
+}
+
+async function getOrCreateSession(
+  workspaceId: string,
+  parentDir: string,
+  file: File
+): Promise<PersistedMultipartUpload> {
+  const existingSession = await multipartUploadStore.getSession(workspaceId, parentDir, file);
+
+  if (existingSession) {
+    Log.debug('[UploadFile] multipart resumed session found', {
+      fileId: existingSession.fileId,
+      uploadId: existingSession.uploadId,
+      partsCount: existingSession.parts.length,
+    });
+
+    return {
+      ...existingSession,
+      file,
+    };
+  }
+
+  const requestedFileId = uuidv4();
+  const { upload_id: uploadId, file_id: createdFileId } = await createMultipartUpload(
+    workspaceId,
+    parentDir,
+    file,
+    requestedFileId
+  );
+  const now = Date.now();
+  const session: PersistedMultipartUpload = {
+    id: multipartUploadStore.getSessionId(workspaceId, parentDir, file),
+    workspaceId,
+    viewId: parentDir,
+    fileId: createdFileId || requestedFileId,
+    uploadId,
+    fileName: file.name,
+    fileType: file.type || 'application/octet-stream',
+    fileSize: file.size,
+    fileLastModified: file.lastModified,
+    chunkSize: CHUNK_SIZE,
+    file,
+    parts: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await multipartUploadStore.saveSession(session);
+  Log.debug('[UploadFile] multipart upload created', { uploadId, fileId: session.fileId });
+
+  return session;
+}
+
+async function syncUploadedParts(session: PersistedMultipartUpload): Promise<UploadPartInfo[]> {
+  try {
+    const serverParts = await listUploadedParts(
+      session.workspaceId,
+      session.viewId,
+      session.fileId,
+      session.uploadId
     );
+    const parts = mergeParts(session.parts, serverParts);
 
-    // Update progress after each part completes
-    uploadedBytes += chunk.blob.size;
+    if (parts.length !== session.parts.length) {
+      await multipartUploadStore.saveSession({
+        ...session,
+        parts,
+      });
+    }
+
+    return parts;
+  } catch (error) {
+    Log.warn('[UploadFile] multipart uploaded-parts lookup failed, using local session', error);
+    return session.parts;
+  }
+}
+
+async function uploadFileMultipartInternal({
+  workspaceId,
+  viewId,
+  file,
+  onProgress,
+}: UploadFileMultipartParams): Promise<string> {
+  Log.debug('[UploadFile] multipart starting', { fileName: file.name, fileSize: file.size });
+
+  onProgress?.({
+    phase: 'initializing',
+    totalBytes: file.size,
+    uploadedBytes: 0,
+    percentage: 0,
+  });
+
+  const parentDir = viewId;
+  const session = await getOrCreateSession(workspaceId, parentDir, file);
+
+  try {
+    const chunks = createChunks(file);
+
+    Log.debug('[UploadFile] multipart chunks created', { totalChunks: chunks.length });
+
+    const syncedParts = await syncUploadedParts(session);
+    const partsByNumber = new Map<number, UploadPartInfo>(
+      syncedParts.map((part) => [part.part_number, part])
+    );
+    let uploadedBytes = getUploadedBytes(chunks, syncedParts);
+    const totalBytes = file.size;
+
     onProgress?.({
       phase: 'uploading',
       totalBytes,
       uploadedBytes,
-      percentage: Math.round((uploadedBytes / totalBytes) * 100),
+      percentage: totalBytes === 0 ? 0 : Math.round((uploadedBytes / totalBytes) * 100),
     });
 
-    return result;
-  });
+    const missingChunks = chunks.filter((chunk) => !partsByNumber.has(chunk.partNumber));
 
-  Log.debug('[UploadFile] multipart all parts uploaded', { partsCount: parts.length });
+    await executeWithConcurrency(missingChunks, MAX_CONCURRENCY, async (chunk) => {
+      const result = await uploadPart(
+        workspaceId,
+        parentDir,
+        session.fileId,
+        session.uploadId,
+        chunk.partNumber,
+        chunk.blob
+      );
 
-  // Step 4: Complete the upload
-  onProgress?.({
-    phase: 'completing',
-    totalBytes,
-    uploadedBytes: totalBytes,
-    percentage: 100,
-  });
+      partsByNumber.set(result.part_number, result);
+      uploadedBytes += chunk.blob.size;
 
-  const fileUrl = await completeMultipartUpload(workspaceId, parentDir, uploadId, fileId, parts);
+      await multipartUploadStore.saveSession({
+        ...session,
+        parts: Array.from(partsByNumber.values()),
+      });
 
-  Log.debug('[UploadFile] multipart completed', { fileUrl });
+      onProgress?.({
+        phase: 'uploading',
+        totalBytes,
+        uploadedBytes,
+        percentage: Math.round((uploadedBytes / totalBytes) * 100),
+      });
 
-  return fileUrl;
+      return result;
+    });
+
+    const parts = Array.from(partsByNumber.values()).sort((a, b) => a.part_number - b.part_number);
+
+    Log.debug('[UploadFile] multipart all parts uploaded', { partsCount: parts.length });
+
+    onProgress?.({
+      phase: 'completing',
+      totalBytes,
+      uploadedBytes: totalBytes,
+      percentage: 100,
+    });
+
+    const fileUrl = await completeMultipartUpload(
+      workspaceId,
+      parentDir,
+      session.uploadId,
+      session.fileId,
+      parts
+    );
+
+    await multipartUploadStore.deleteSession(session.id);
+
+    Log.debug('[UploadFile] multipart completed', { fileUrl });
+
+    return fileUrl;
+  } catch (error) {
+    // Discard a stale/expired server-side session so the next attempt starts
+    // fresh instead of pinning the same (now-dead) uploadId forever.
+    if (isStaleSessionError(error)) {
+      Log.warn('[UploadFile] multipart session appears stale; discarding for next attempt', error);
+      await multipartUploadStore.deleteSession(session.id).catch(() => undefined);
+    }
+
+    throw error;
+  }
+}
+
+/**
+ * Main function to upload a file using multipart upload
+ * Splits the file into chunks and uploads them in parallel
+ */
+export async function uploadFileMultipart({
+  workspaceId,
+  viewId,
+  file,
+  onProgress,
+}: UploadFileMultipartParams): Promise<string> {
+  const destKey = getActiveUploadKey(workspaceId, viewId);
+  const destMap = activeUploads.get(destKey);
+  const activeUpload = destMap?.get(file);
+
+  if (activeUpload) {
+    return activeUpload;
+  }
+
+  const upload = uploadFileMultipartInternal({ workspaceId, viewId, file, onProgress }).finally(
+    () => {
+      activeUploads.get(destKey)?.delete(file);
+    }
+  );
+  const targetMap = destMap ?? new WeakMap<File, Promise<string>>();
+
+  targetMap.set(file, upload);
+  if (!destMap) {
+    activeUploads.set(destKey, targetMap);
+  }
+
+  return upload;
+}
+
+export async function abortPersistedMultipartUpload(
+  workspaceId: string,
+  viewId: string,
+  file: File
+): Promise<void> {
+  const session = await multipartUploadStore.getSession(workspaceId, viewId, file);
+
+  if (!session) {
+    return;
+  }
+
+  try {
+    await abortMultipartUpload(workspaceId, viewId, session.fileId, session.uploadId);
+  } finally {
+    await multipartUploadStore.deleteSession(session.id);
+  }
 }

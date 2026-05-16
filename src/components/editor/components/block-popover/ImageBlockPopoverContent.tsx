@@ -66,24 +66,68 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
     } as ImageBlockData;
 
     if (!remoteUrl) {
-      const fileHandler = new FileHandler();
-      const res = await fileHandler.handleFileUpload(file);
+      // Best-effort: a missing local snapshot must not block the remote upload
+      // (IndexedDB may be unavailable in private mode or over quota).
+      try {
+        const fileHandler = new FileHandler();
+        const res = await fileHandler.handleFileUpload(file);
 
-      data.retry_local_url = res.id;
-      data.image_type = undefined;
+        // The popover never renders the local preview itself — the block
+        // creates its own object URL via `getStoredFile`. Revoke the one
+        // created here so it doesn't leak until the tab unloads.
+        URL.revokeObjectURL(res.url);
+        data.retry_local_url = res.id;
+        data.image_type = undefined;
+      } catch {
+        data.retry_local_url = '';
+      }
     }
 
     return data;
   }, []);
 
-  const insertImageBlock = useCallback(
-    async (file: File) => {
-      const url = await uploadFileRemote(file);
-      const data = await getData(file, url);
+  const cleanupLocalFile = useCallback(async (retryLocalUrl?: string) => {
+    if (!retryLocalUrl) return;
 
-      return CustomEditor.addBelowBlock(editor, blockId, BlockType.ImageBlock, data);
+    const fileHandler = new FileHandler();
+
+    await fileHandler.cleanup(retryLocalUrl).catch(() => undefined);
+  }, []);
+
+  const uploadIntoImageBlock = useCallback(
+    async (targetBlockId: string, file: File, pendingData: ImageBlockData) => {
+      const url = await uploadFileRemote(file);
+
+      if (!url) {
+        return;
+      }
+
+      await cleanupLocalFile(pendingData.retry_local_url);
+
+      // Popover closes before the upload settles, so the user may have
+      // deleted/edited/replaced the block. Skip the write if the placeholder
+      // we created is no longer there.
+      let currentData: ImageBlockData | undefined;
+
+      try {
+        const entry = findSlateEntryByBlockId(editor, targetBlockId);
+
+        currentData = entry ? ((entry[0] as { data?: ImageBlockData }).data ?? undefined) : undefined;
+      } catch {
+        return;
+      }
+
+      if (!currentData) return;
+      if (currentData.url) return;
+      if ((currentData.retry_local_url ?? '') !== (pendingData.retry_local_url ?? '')) return;
+
+      CustomEditor.setBlockData(editor, targetBlockId, {
+        url,
+        image_type: ImageType.External,
+        retry_local_url: '',
+      } as ImageBlockData);
     },
-    [blockId, editor, getData, uploadFileRemote]
+    [cleanupLocalFile, editor, uploadFileRemote]
   );
 
   const handleChangeUploadFiles = useCallback(
@@ -92,21 +136,30 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
 
       setUploading(true);
       try {
+        // Run every local snapshot in parallel so the popover doesn't pay
+        // N×IDB-latency before it can close.
+        const [primaryData, ...otherDatas] = await Promise.all(files.map((f) => getData(f)));
         const [file, ...otherFiles] = files;
-        const url = await uploadFileRemote(file);
-        const data = await getData(file, url);
 
-        CustomEditor.setBlockData(editor, blockId, data);
+        CustomEditor.setBlockData(editor, blockId, primaryData);
 
         let belowBlockId: string | undefined = blockId;
+        const pendingUploads: Promise<void>[] = [uploadIntoImageBlock(blockId, file, primaryData)];
 
-        for (const file of otherFiles) {
-          const newId = await insertImageBlock(file);
+        for (let i = 0; i < otherFiles.length; i++) {
+          const f = otherFiles[i];
+          const d = otherDatas[i];
+          const newId: string | undefined = belowBlockId
+            ? CustomEditor.addBelowBlock(editor, belowBlockId, BlockType.ImageBlock, d)
+            : undefined;
 
           if (newId) {
             belowBlockId = newId;
+            pendingUploads.push(uploadIntoImageBlock(newId, f, d));
           }
         }
+
+        if (!belowBlockId) return;
 
         belowBlockId = CustomEditor.addBelowBlock(editor, belowBlockId, BlockType.Paragraph, {});
 
@@ -128,11 +181,13 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
 
           el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }, 250);
+
+        await Promise.all(pendingUploads);
       } finally {
         setUploading(false);
       }
     },
-    [blockId, editor, getData, insertImageBlock, onClose, uploadFileRemote]
+    [blockId, editor, getData, onClose, uploadIntoImageBlock]
   );
 
   const tabOptions = useMemo(() => {

@@ -105,48 +105,112 @@ export const withInsertData = (editor: ReactEditor) => {
       void (async () => {
         const text = CustomEditor.getBlockTextContent(node);
         let newBlockId: string = blockId;
+        const pendingUploads: Promise<void>[] = [];
 
-        for (const file of fileArray) {
-          const url = await e.uploadFile?.(file);
-          let fileId = '';
+        // One handler for the whole batch — each `new FileHandler()` opens
+        // its own IDB connection promise, so reusing avoids that overhead.
+        const fileHandler = new FileHandler();
 
-          if (!url) {
-            const fileHandler = new FileHandler();
-            const res = await fileHandler.handleFileUpload(file);
+        // Best-effort: a missing local snapshot must not block the remote
+        // upload (IndexedDB may be unavailable in private mode or over
+        // quota). Persist every snapshot in parallel so paste latency
+        // scales with the slowest IDB write, not the sum.
+        const fileIds = await Promise.all(
+          fileArray.map(async (file) => {
+            try {
+              const res = await fileHandler.handleFileUpload(file);
 
-            fileId = res.id;
-          }
+              // Paste path never renders the local preview itself — the
+              // block creates its own object URL via `getStoredFile`.
+              // Revoke the one created here so it doesn't leak until the
+              // tab unloads.
+              URL.revokeObjectURL(res.url);
+              return res.id;
+            } catch (err) {
+              Log.warn('withInsertData: failed to persist local snapshot for pasted file', err);
+              return '';
+            }
+          })
+        );
 
+        for (let i = 0; i < fileArray.length; i++) {
+          const file = fileArray[i];
+          const fileId = fileIds[i];
           const isImage = file.type.startsWith('image/');
+          let insertedBlockId: string | undefined;
 
           if (isImage) {
             const data = {
-              url: url,
-              image_type: ImageType.External,
+              url: '',
+              image_type: undefined,
+              retry_local_url: fileId,
             } as ImageBlockData;
 
-            if (fileId) {
-              data.retry_local_url = fileId;
-            }
-
-            // Handle images...
-            newBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.ImageBlock, data) || newBlockId;
+            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.ImageBlock, data);
+            newBlockId = insertedBlockId || newBlockId;
           } else {
             const data = {
-              url: url,
+              url: '',
               name: file.name,
               uploaded_at: Date.now(),
               url_type: FieldURLType.Upload,
+              retry_local_url: fileId,
             } as FileBlockData;
 
-            if (fileId) {
-              data.retry_local_url = fileId;
-            }
-
-            // Handle files...
-            newBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.FileBlock, data) || newBlockId;
+            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.FileBlock, data);
+            newBlockId = insertedBlockId || newBlockId;
           }
 
+          if (insertedBlockId) {
+            pendingUploads.push((async () => {
+              let url: string | undefined;
+
+              try {
+                url = await e.uploadFile?.(file);
+              } catch {
+                return;
+              }
+
+              if (!url) return;
+
+              if (fileId) {
+                await fileHandler.cleanup(fileId).catch(() => undefined);
+              }
+
+              // The paste handler runs in the background after the user
+              // already moved on. Skip the write if the placeholder is gone
+              // or already finalised so we don't clobber later edits.
+              let currentData: { url?: string; retry_local_url?: string } | undefined;
+
+              try {
+                const entry = findSlateEntryByBlockId(e, insertedBlockId);
+
+                currentData = entry ? ((entry[0] as { data?: { url?: string; retry_local_url?: string } }).data ?? undefined) : undefined;
+              } catch {
+                return;
+              }
+
+              if (!currentData) return;
+              if (currentData.url) return;
+              if ((currentData.retry_local_url ?? '') !== fileId) return;
+
+              if (isImage) {
+                CustomEditor.setBlockData(e, insertedBlockId, {
+                  url,
+                  image_type: ImageType.External,
+                  retry_local_url: '',
+                } as ImageBlockData);
+              } else {
+                CustomEditor.setBlockData(e, insertedBlockId, {
+                  url,
+                  name: file.name,
+                  uploaded_at: Date.now(),
+                  url_type: FieldURLType.Upload,
+                  retry_local_url: '',
+                } as FileBlockData);
+              }
+            })());
+          }
         }
 
         if (!text) {
@@ -170,6 +234,9 @@ export const withInsertData = (editor: ReactEditor) => {
 
         }
 
+        void Promise.all(pendingUploads).catch((err) => {
+          Log.warn('withInsertData: failed to finalize pasted file upload', err);
+        });
       })();
 
     }
