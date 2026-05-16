@@ -10,6 +10,7 @@ import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { FileHandler } from '@/utils/file';
+import { createPendingUploadId } from '@/utils/pending-upload';
 
 import EmbedLink from 'src/components/_shared/image-upload/EmbedLink';
 
@@ -73,6 +74,7 @@ function FileBlockPopoverContent({ blockId, onClose }: { blockId: string; onClos
       name: file.name,
       uploaded_at: Date.now(),
       url_type: FieldURLType.Upload,
+      pending_upload_id: createPendingUploadId(),
     } as FileBlockData;
 
     if (!remoteUrl) {
@@ -116,21 +118,21 @@ function FileBlockPopoverContent({ blockId, onClose }: { blockId: string; onClos
       // Popover closes before the upload settles, so the user may have
       // deleted/edited/replaced the block. Skip the write if the placeholder
       // we created is no longer there (block gone, URL already set, or
-      // retry_local_url has changed because a different file was uploaded
+      // pending_upload_id has changed because a different file was uploaded
       // onto the same block).
       let currentData: FileBlockData | undefined;
 
       try {
         const entry = findSlateEntryByBlockId(editor, targetBlockId);
 
-        currentData = entry ? ((entry[0] as { data?: FileBlockData }).data ?? undefined) : undefined;
+        currentData = entry ? (entry[0] as { data?: FileBlockData }).data ?? undefined : undefined;
       } catch {
         return;
       }
 
       if (!currentData) return;
       if (currentData.url) return;
-      if ((currentData.retry_local_url ?? '') !== (pendingData.retry_local_url ?? '')) return;
+      if (!pendingData.pending_upload_id || currentData.pending_upload_id !== pendingData.pending_upload_id) return;
 
       CustomEditor.setBlockData(editor, targetBlockId, {
         url,
@@ -138,6 +140,7 @@ function FileBlockPopoverContent({ blockId, onClose }: { blockId: string; onClos
         uploaded_at: Date.now(),
         url_type: FieldURLType.Upload,
         retry_local_url: '',
+        pending_upload_id: '',
       } as FileBlockData);
     },
     [cleanupLocalFile, editor, uploadFileRemote]
@@ -160,9 +163,7 @@ function FileBlockPopoverContent({ blockId, onClose }: { blockId: string; onClos
 
         // Each new block is inserted directly below `blockId`, so iterating
         // in reverse preserves the user's original file order in the doc.
-        const reversedPairs = otherFiles
-          .map((f, i) => [f, otherDatas[i]] as const)
-          .reverse();
+        const reversedPairs = otherFiles.map((f, i) => [f, otherDatas[i]] as const).reverse();
 
         for (const [f, d] of reversedPairs) {
           const newId = CustomEditor.addBelowBlock(editor, blockId, BlockType.FileBlock, d);

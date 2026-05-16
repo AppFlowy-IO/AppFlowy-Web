@@ -50,14 +50,16 @@ function getActiveUploadKey(workspaceId: string, viewId: string): string {
 function isStaleSessionError(error: unknown): boolean {
   if (typeof error !== 'object' || error === null) return false;
   const e = error as {
-    response?: { status?: number; data?: { code?: number; message?: string } };
+    response?: { status?: number; data?: { code?: number | string; message?: string } };
     message?: string;
   };
 
   if (e.response?.status === 404) return true;
-  const msg = e.message ?? e.response?.data?.message ?? '';
+  const msg = [e.response?.data?.code, e.response?.data?.message, e.message].filter(Boolean).join(' ');
 
-  return /upload.{0,8}(not\s*found|expired|invalid|missing|gone)/i.test(msg);
+  return /no\s*such\s*upload|nosuchupload|upload.{0,32}(not\s*found|does\s+not\s+exist|doesn't\s+exist|expired|invalid|missing|gone)/i.test(
+    msg
+  );
 }
 
 /**
@@ -166,15 +168,11 @@ async function uploadPart(
 
       const arrayBuffer = await chunk.arrayBuffer();
 
-      const response = await axiosInstance.put<APIResponse<{ e_tag: string; part_num: number }>>(
-        url,
-        arrayBuffer,
-        {
-          headers: {
-            'Content-Type': 'application/octet-stream',
-          },
-        }
-      );
+      const response = await axiosInstance.put<APIResponse<{ e_tag: string; part_num: number }>>(url, arrayBuffer, {
+        headers: {
+          'Content-Type': 'application/octet-stream',
+        },
+      });
 
       if (response.data.code !== 0 || !response.data.data) {
         throw new Error(response.data.message || `Failed to upload part ${partNumber}`);
@@ -367,12 +365,7 @@ async function getOrCreateSession(
 
 async function syncUploadedParts(session: PersistedMultipartUpload): Promise<UploadPartInfo[]> {
   try {
-    const serverParts = await listUploadedParts(
-      session.workspaceId,
-      session.viewId,
-      session.fileId,
-      session.uploadId
-    );
+    const serverParts = await listUploadedParts(session.workspaceId, session.viewId, session.fileId, session.uploadId);
     const parts = mergeParts(session.parts, serverParts);
 
     if (parts.length !== session.parts.length) {
@@ -413,9 +406,7 @@ async function uploadFileMultipartInternal({
     Log.debug('[UploadFile] multipart chunks created', { totalChunks: chunks.length });
 
     const syncedParts = await syncUploadedParts(session);
-    const partsByNumber = new Map<number, UploadPartInfo>(
-      syncedParts.map((part) => [part.part_number, part])
-    );
+    const partsByNumber = new Map<number, UploadPartInfo>(syncedParts.map((part) => [part.part_number, part]));
     let uploadedBytes = getUploadedBytes(chunks, syncedParts);
     const totalBytes = file.size;
 
@@ -467,13 +458,7 @@ async function uploadFileMultipartInternal({
       percentage: 100,
     });
 
-    const fileUrl = await completeMultipartUpload(
-      workspaceId,
-      parentDir,
-      session.uploadId,
-      session.fileId,
-      parts
-    );
+    const fileUrl = await completeMultipartUpload(workspaceId, parentDir, session.uploadId, session.fileId, parts);
 
     await multipartUploadStore.deleteSession(session.id);
 
@@ -510,11 +495,9 @@ export async function uploadFileMultipart({
     return activeUpload;
   }
 
-  const upload = uploadFileMultipartInternal({ workspaceId, viewId, file, onProgress }).finally(
-    () => {
-      activeUploads.get(destKey)?.delete(file);
-    }
-  );
+  const upload = uploadFileMultipartInternal({ workspaceId, viewId, file, onProgress }).finally(() => {
+    activeUploads.get(destKey)?.delete(file);
+  });
   const targetMap = destMap ?? new WeakMap<File, Promise<string>>();
 
   targetMap.set(file, upload);
@@ -525,11 +508,7 @@ export async function uploadFileMultipart({
   return upload;
 }
 
-export async function abortPersistedMultipartUpload(
-  workspaceId: string,
-  viewId: string,
-  file: File
-): Promise<void> {
+export async function abortPersistedMultipartUpload(workspaceId: string, viewId: string, file: File): Promise<void> {
   const session = await multipartUploadStore.getSession(workspaceId, viewId, file);
 
   if (!session) {

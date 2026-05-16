@@ -130,6 +130,7 @@ export const FileBlock = memo(
             uploaded_at: Date.now(),
             url_type: FieldURLType.Upload,
             retry_local_url: '',
+            pending_upload_id: '',
           } as FileBlockData);
         } catch (e) {
           // do nothing
@@ -190,7 +191,7 @@ export const FileBlock = memo(
             />
           )}
         </div>
-        <div ref={ref} className={`absolute h-full w-full caret-transparent text-transparent`}>
+        <div ref={ref} className={`absolute h-full w-full text-transparent caret-transparent`}>
           {children}
         </div>
       </div>

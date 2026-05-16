@@ -10,6 +10,7 @@ import FileDropzone from '@/components/_shared/file-dropzone/FileDropzone';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { FileHandler } from '@/utils/file';
+import { createPendingUploadId } from '@/utils/pending-upload';
 
 import EmbedLink from 'src/components/_shared/image-upload/EmbedLink';
 
@@ -70,34 +71,32 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
     [uploadFile]
   );
 
-  const createPendingFileData = useCallback(
-    async (file: File): Promise<PDFBlockData> => {
-      const data: PDFBlockData = {
-        url: undefined,
-        name: file.name,
-        uploaded_at: Date.now(),
-        url_type: FieldURLType.Upload,
-      };
+  const createPendingFileData = useCallback(async (file: File): Promise<PDFBlockData> => {
+    const data: PDFBlockData = {
+      url: undefined,
+      name: file.name,
+      uploaded_at: Date.now(),
+      url_type: FieldURLType.Upload,
+      pending_upload_id: createPendingUploadId(),
+    };
 
-      // Best-effort: a missing local snapshot must not block the remote upload
-      // (IndexedDB may be unavailable in private mode or over quota).
-      try {
-        const fileHandler = new FileHandler();
-        const res = await fileHandler.handleFileUpload(file);
+    // Best-effort: a missing local snapshot must not block the remote upload
+    // (IndexedDB may be unavailable in private mode or over quota).
+    try {
+      const fileHandler = new FileHandler();
+      const res = await fileHandler.handleFileUpload(file);
 
-        // The popover never renders the local preview itself — the block
-        // creates its own object URL via `getStoredFile`. Revoke the one
-        // created here so it doesn't leak until the tab unloads.
-        URL.revokeObjectURL(res.url);
-        data.retry_local_url = res.id;
-      } catch {
-        data.retry_local_url = '';
-      }
+      // The popover never renders the local preview itself — the block
+      // creates its own object URL via `getStoredFile`. Revoke the one
+      // created here so it doesn't leak until the tab unloads.
+      URL.revokeObjectURL(res.url);
+      data.retry_local_url = res.id;
+    } catch {
+      data.retry_local_url = '';
+    }
 
-      return data;
-    },
-    []
-  );
+    return data;
+  }, []);
 
   const cleanupLocalFile = useCallback(async (retryLocalUrl?: string) => {
     if (!retryLocalUrl) return;
@@ -125,14 +124,14 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
       try {
         const entry = findSlateEntryByBlockId(editor, targetBlockId);
 
-        currentData = entry ? ((entry[0] as { data?: PDFBlockData }).data ?? undefined) : undefined;
+        currentData = entry ? (entry[0] as { data?: PDFBlockData }).data ?? undefined : undefined;
       } catch {
         return;
       }
 
       if (!currentData) return;
       if (currentData.url) return;
-      if ((currentData.retry_local_url ?? '') !== (pendingData.retry_local_url ?? '')) return;
+      if (!pendingData.pending_upload_id || currentData.pending_upload_id !== pendingData.pending_upload_id) return;
 
       CustomEditor.setBlockData(editor, targetBlockId, {
         url,
@@ -140,6 +139,7 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
         uploaded_at: Date.now(),
         url_type: FieldURLType.Upload,
         retry_local_url: '',
+        pending_upload_id: '',
       } as PDFBlockData);
     },
     [cleanupLocalFile, editor, uploadFileRemote]
@@ -153,9 +153,7 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
       try {
         // Run every local snapshot in parallel so the popover doesn't pay
         // N×IDB-latency before it can close.
-        const [primaryData, ...otherDatas] = await Promise.all(
-          files.map((f) => createPendingFileData(f))
-        );
+        const [primaryData, ...otherDatas] = await Promise.all(files.map((f) => createPendingFileData(f)));
         const [file, ...otherFiles] = files;
 
         CustomEditor.setBlockData(editor, blockId, primaryData);
@@ -164,9 +162,7 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
 
         // Each new block is inserted directly below `blockId`, so iterating
         // in reverse preserves the user's original file order in the doc.
-        const reversedPairs = otherFiles
-          .map((f, i) => [f, otherDatas[i]] as const)
-          .reverse();
+        const reversedPairs = otherFiles.map((f, i) => [f, otherDatas[i]] as const).reverse();
 
         for (const [f, d] of reversedPairs) {
           const newId = CustomEditor.addBelowBlock(editor, blockId, BlockType.PDFBlock, d);
@@ -206,7 +202,7 @@ function PDFBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose
       <div className={'appflowy-scroller max-h-[400px] overflow-y-auto p-2'}>
         <TabPanel className={'flex h-full w-full flex-col'} index={0} value={selectedIndex}>
           <FileDropzone
-            accept="application/pdf,.pdf"
+            accept='application/pdf,.pdf'
             multiple={true}
             placeholder={
               <span>

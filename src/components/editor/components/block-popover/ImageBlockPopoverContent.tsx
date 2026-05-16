@@ -12,6 +12,7 @@ import EmbedLink from '@/components/_shared/image-upload/EmbedLink';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { FileHandler } from '@/utils/file';
+import { createPendingUploadId } from '@/utils/pending-upload';
 
 function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
   const { uploadFile } = useEditorContext();
@@ -63,6 +64,7 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
     const data = {
       url: remoteUrl || '',
       image_type: ImageType.External,
+      pending_upload_id: createPendingUploadId(),
     } as ImageBlockData;
 
     if (!remoteUrl) {
@@ -112,19 +114,20 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
       try {
         const entry = findSlateEntryByBlockId(editor, targetBlockId);
 
-        currentData = entry ? ((entry[0] as { data?: ImageBlockData }).data ?? undefined) : undefined;
+        currentData = entry ? (entry[0] as { data?: ImageBlockData }).data ?? undefined : undefined;
       } catch {
         return;
       }
 
       if (!currentData) return;
       if (currentData.url) return;
-      if ((currentData.retry_local_url ?? '') !== (pendingData.retry_local_url ?? '')) return;
+      if (!pendingData.pending_upload_id || currentData.pending_upload_id !== pendingData.pending_upload_id) return;
 
       CustomEditor.setBlockData(editor, targetBlockId, {
         url,
         image_type: ImageType.External,
         retry_local_url: '',
+        pending_upload_id: '',
       } as ImageBlockData);
     },
     [cleanupLocalFile, editor, uploadFileRemote]
@@ -196,7 +199,12 @@ function ImageBlockPopoverContent({ blockId, onClose }: { blockId: string; onClo
         key: 'upload',
         label: t('button.upload'),
         panel: (
-          <FileDropzone multiple={true} onChange={handleChangeUploadFiles} accept={ALLOWED_IMAGE_EXTENSIONS.join(',')} loading={uploading} />
+          <FileDropzone
+            multiple={true}
+            onChange={handleChangeUploadFiles}
+            accept={ALLOWED_IMAGE_EXTENSIONS.join(',')}
+            loading={uploading}
+          />
         ),
       },
       {
