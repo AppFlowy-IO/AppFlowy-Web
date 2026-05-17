@@ -1,5 +1,6 @@
 import { test, expect, Page, Request } from '@playwright/test';
-import { signInAndNavigate } from '../../support/auth-utils';
+import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
+import { generateRandomEmail } from '../../../support/test-config';
 
 /**
  * Editor file-block / image-block popover upload regression tests.
@@ -25,14 +26,10 @@ test.describe('Feature: Editor block popover upload', () => {
 
   let page: Page;
 
-  test.beforeEach(async ({ browser }) => {
-    page = await browser.newPage();
-    await signInAndNavigate(page);
+  test.beforeEach(async ({ page: testPage, request }) => {
+    page = testPage;
+    await signInAndWaitForApp(page, request, generateRandomEmail());
     await page.locator('[data-testid="inline-add-page"]').first().waitFor({ state: 'visible', timeout: 30000 });
-  });
-
-  test.afterEach(async () => {
-    await page.close();
   });
 
   /**
@@ -106,10 +103,12 @@ test.describe('Feature: Editor block popover upload', () => {
     // just persist it locally. The local IndexedDB save and the remote upload
     // were re-ordered in a recent refactor; this catches a regression where
     // a missing/failed local save would short-circuit the remote upload.
-    await expect.poll(
-      () => uploadRequests.filter((r) => r.method() !== 'GET').length,
-      { timeout: 30000, message: 'no upload request fired for file block' }
-    ).toBeGreaterThan(0);
+    await expect
+      .poll(() => uploadRequests.filter((r) => r.method() !== 'GET').length, {
+        timeout: 30000,
+        message: 'no upload request fired for file block',
+      })
+      .toBeGreaterThan(0);
 
     // The block also flips out of its empty state (the file name appears).
     await expect(getEditor()).toContainText('regression.bin', { timeout: 30000 });
@@ -131,10 +130,12 @@ test.describe('Feature: Editor block popover upload', () => {
       buffer: TINY_PNG,
     });
 
-    await expect.poll(
-      () => uploadRequests.filter((r) => r.method() !== 'GET').length,
-      { timeout: 30000, message: 'no upload request fired for image block' }
-    ).toBeGreaterThan(0);
+    await expect
+      .poll(() => uploadRequests.filter((r) => r.method() !== 'GET').length, {
+        timeout: 30000,
+        message: 'no upload request fired for image block',
+      })
+      .toBeGreaterThan(0);
 
     // The block flips out of its empty state and renders an <img>.
     await expect(getEditor().locator('img').first()).toBeVisible({ timeout: 30000 });
@@ -207,9 +208,11 @@ test.describe('Feature: Editor block popover upload', () => {
     // rejects, the popover code must NOT swallow that error and skip the
     // remote upload. A non-GET request to a file storage endpoint must still
     // fire.
-    await expect.poll(
-      () => uploadRequests.filter((r) => r.method() !== 'GET').length,
-      { timeout: 30000, message: 'no upload request fired when IndexedDB was disabled' }
-    ).toBeGreaterThan(0);
+    await expect
+      .poll(() => uploadRequests.filter((r) => r.method() !== 'GET').length, {
+        timeout: 30000,
+        message: 'no upload request fired when IndexedDB was disabled',
+      })
+      .toBeGreaterThan(0);
   });
 });
