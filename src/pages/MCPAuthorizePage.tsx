@@ -79,9 +79,10 @@ function readParams(search: URLSearchParams): OAuthParams | { error: string } {
 }
 
 function isOwner(workspace: Workspace | undefined, userUid: string | undefined): boolean {
-  if (!workspace || !userUid) return false;
+  if (!workspace) return false;
+  if (workspace.role === Role.Owner) return true;
 
-  return workspace.role === Role.Owner || workspace.owner?.uid.toString() === userUid;
+  return !!userUid && workspace.owner?.uid.toString() === userUid;
 }
 
 /**
@@ -138,14 +139,18 @@ function MCPAuthorizePage() {
     if (!params) return;
     let cancelled = false;
 
-    void McpService.getClientInfo(params.client_id).then((info) => {
-      if (cancelled || !info) return;
-      setClientInfo({
-        client_name: info.client_name?.trim() || undefined,
-        client_uri: safeHttpUrl(info.client_uri),
-        logo_uri: safeHttpUrl(info.logo_uri),
+    McpService.getClientInfo(params.client_id)
+      .then((info) => {
+        if (cancelled || !info) return;
+        setClientInfo({
+          client_name: info.client_name?.trim() || undefined,
+          client_uri: safeHttpUrl(info.client_uri),
+          logo_uri: safeHttpUrl(info.logo_uri),
+        });
+      })
+      .catch(() => {
+        // Public lookup is best-effort — fall back to the client_id prefix.
       });
-    });
     return () => {
       cancelled = true;
     };
@@ -172,8 +177,8 @@ function MCPAuthorizePage() {
     };
   }, [isAuthenticated, params, workspaces]);
 
-  if (paramError) {
-    return <ErrorPanel title='Invalid request' message={paramError} />;
+  if (!params) {
+    return <ErrorPanel title='Invalid request' message={paramError ?? 'Invalid authorization request.'} />;
   }
 
   if (!isAuthenticated) {
@@ -293,7 +298,7 @@ function MCPAuthorizePage() {
             {clientInfo.client_name ? (
               <span className='text-text-action'>{clientInfo.client_name}</span>
             ) : (
-              <span className='font-mono text-text-secondary'>{params!.client_id.slice(0, 12)}…</span>
+              <span className='font-mono text-text-secondary'>{params.client_id.slice(0, 12)}…</span>
             )}
           </h1>
           {clientInfo.client_uri && (
@@ -313,7 +318,7 @@ function MCPAuthorizePage() {
         search content, and create / update / delete documents on your behalf.
       </p>
       <div className='rounded-300 border border-border-primary bg-fill-content px-3 py-2 text-xs text-text-secondary'>
-        Scope: <span className='font-medium text-text-primary'>{params!.scope || 'workspace'}</span>
+        Scope: <span className='font-medium text-text-primary'>{params.scope || 'workspace'}</span>
       </div>
 
       {usePicker ? (
@@ -355,7 +360,7 @@ function MCPAuthorizePage() {
 
       <div className='text-xs text-text-secondary'>
         Redirect: <code className='break-all rounded bg-fill-content px-1 py-0.5 font-mono text-[11px]'>
-          {params!.redirect_uri}
+          {params.redirect_uri}
         </code>
       </div>
 

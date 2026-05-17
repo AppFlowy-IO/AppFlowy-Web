@@ -11,7 +11,7 @@ import { type RequestContext } from './server';
 
 type RouteHandler = (context: RequestContext) => Promise<Response | undefined>;
 
-const MARKETING_PATHS = ['/after-payment', '/login', '/as-template', '/app', '/accept-invitation', '/import', '/oauth'];
+const MARKETING_PATHS = ['/after-payment', '/login', '/as-template', '/app', '/accept-invitation', '/import', '/oauth/mcp/'];
 
 // Static file paths that should be served from dist
 const STATIC_PATHS = ['/static/', '/af_icons/', '/covers/', '/.well-known/'];

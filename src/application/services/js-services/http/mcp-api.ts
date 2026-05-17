@@ -1,9 +1,11 @@
 import axios from 'axios';
+import dayjs from 'dayjs';
 
 import { getTokenParsed } from '@/application/session/token';
 import { getConfigValue } from '@/utils/runtime-config';
 
 import { getAxios } from './core';
+import { refreshToken } from './gotrue';
 
 export interface McpApprovedClient {
   client_id: string;
@@ -174,6 +176,21 @@ export async function getMcpClientInfo(clientId: string): Promise<McpClientInfo 
 export async function createMcpAuthorizationCode(
   req: CreateMcpAuthorizationCodeRequest
 ): Promise<string> {
+  // Refresh proactively so the refresh_token / expires_at we forward to the
+  // MCP server match the access token that will be on the request. The shared
+  // request interceptor refreshes on expiry too, but it runs *after* the
+  // request body is constructed — leaving the body holding a rotated refresh
+  // token and stale `expires_at` from the previous session.
+  const initial = getTokenParsed();
+
+  if (initial && dayjs().isAfter(dayjs.unix(initial.expires_at))) {
+    try {
+      await refreshToken(initial.refresh_token);
+    } catch {
+      // Fall through — the request interceptor will surface the auth error.
+    }
+  }
+
   const token = getTokenParsed();
 
   try {

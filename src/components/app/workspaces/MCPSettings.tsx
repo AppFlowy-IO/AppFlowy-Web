@@ -56,7 +56,7 @@ export function MCPSettings({
   const [actionKey, setActionKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const approvedClients = settings?.approved_clients ?? [];
+  const approvedClients = useMemo(() => settings?.approved_clients ?? [], [settings]);
   const connectionsByClient = useMemo(() => {
     return connections.reduce<Record<string, number>>((acc, connection) => {
       acc[connection.client_id] = (acc[connection.client_id] ?? 0) + 1;
