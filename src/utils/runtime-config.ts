@@ -1,6 +1,7 @@
 interface RuntimeConfig {
   APPFLOWY_BASE_URL?: string;
   APPFLOWY_GOTRUE_BASE_URL?: string;
+  APPFLOWY_MCP_BASE_URL?: string;
   APPFLOWY_WS_BASE_URL?: string;
 }
 

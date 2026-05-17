@@ -1,4 +1,4 @@
-import { afterAuth, isSafeRedirectUrl, safeDecodeRedirectParam } from '../sign_in';
+import { afterAuth, isSafeRedirectUrl, resolveStoredRedirectUrl, safeDecodeRedirectParam } from '../sign_in';
 
 // Mock localStorage
 const localStorageMock = (() => {
@@ -140,6 +140,15 @@ describe('afterAuth', () => {
     expect(window.location.href).toBe('/settings');
   });
 
+  it('preserves nested OAuth query encoding in a safe relative path', () => {
+    const redirect =
+      '/oauth/mcp/authorize?client_id=client&redirect_uri=http%3A%2F%2Flocalhost%3A4567%2Fcallback%3Fnext%3Da%2526b&state=one%2526two';
+
+    localStorage.setItem('redirectTo', redirect);
+    afterAuth();
+    expect(window.location.href).toBe(redirect);
+  });
+
   it('follows a safe absolute same-origin URL', () => {
     localStorage.setItem('redirectTo', encodeURIComponent('http://localhost/settings'));
     afterAuth();
@@ -174,5 +183,18 @@ describe('safeDecodeRedirectParam', () => {
 
   it('returns null for a lone percent sign', () => {
     expect(safeDecodeRedirectParam('%')).toBeNull();
+  });
+});
+
+describe('resolveStoredRedirectUrl', () => {
+  it('returns already-safe relative URLs without decoding nested query values', () => {
+    const redirect =
+      '/oauth/mcp/authorize?redirect_uri=http%3A%2F%2Flocalhost%2Fcallback%3Fx%3D1%2526y%3D2';
+
+    expect(resolveStoredRedirectUrl(redirect)).toBe(redirect);
+  });
+
+  it('supports legacy encoded relative URLs', () => {
+    expect(resolveStoredRedirectUrl(encodeURIComponent('/settings'))).toBe('/settings');
   });
 });

@@ -77,20 +77,39 @@ export function isSafeRedirectUrl(url: string): boolean {
   }
 }
 
+/**
+ * Resolve the value stored by login flows without decoding already-safe relative
+ * URLs. OAuth handoffs can contain nested, percent-encoded query values; decoding
+ * those before navigation can turn encoded "&" characters into real separators.
+ */
+export function resolveStoredRedirectUrl(value: string): string | null {
+  if (isSafeRedirectUrl(value)) {
+    return value;
+  }
+
+  const decoded = safeDecodeRedirectParam(value);
+
+  if (decoded && isSafeRedirectUrl(decoded)) {
+    return decoded;
+  }
+
+  return null;
+}
+
 export function afterAuth() {
   const redirectTo = getRedirectTo();
 
   clearRedirectTo();
 
   if (redirectTo) {
-    const decoded = safeDecodeRedirectParam(redirectTo);
+    const resolved = resolveStoredRedirectUrl(redirectTo);
 
-    if (!decoded || !isSafeRedirectUrl(decoded)) {
+    if (!resolved) {
       window.location.href = '/app';
       return;
     }
 
-    const url = new URL(decoded, window.location.origin);
+    const url = new URL(resolved, window.location.origin);
     const pathname = url.pathname;
 
     // Check if URL contains workspace/view UUIDs (user-specific paths)
@@ -108,7 +127,7 @@ export function afterAuth() {
       window.location.href = url.toString();
     } else {
       Log.info('[Auth] afterAuth: redirecting to saved destination', { pathname });
-      window.location.href = decoded;
+      window.location.href = resolved;
     }
   } else {
     Log.info('[Auth] afterAuth: no redirectTo saved, going to /app');
