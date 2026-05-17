@@ -138,6 +138,30 @@ export function getMultipartUploadPartUrl(
 }
 
 /**
+ * Constructs URL for listing uploaded parts in a multipart upload
+ */
+export function getMultipartUploadedPartsUrl(
+  workspaceId: string,
+  parentDir: string,
+  fileId: string,
+  uploadId: string
+): string {
+  return `${getFileStorageBaseUrl()}/${workspaceId}/upload_parts/${parentDir}/${fileId}/${uploadId}`;
+}
+
+/**
+ * Constructs URL for aborting a multipart upload
+ */
+export function getMultipartAbortUrl(
+  workspaceId: string,
+  parentDir: string,
+  fileId: string,
+  uploadId: string
+): string {
+  return `${getFileStorageBaseUrl()}/${workspaceId}/upload/${parentDir}/${fileId}/${uploadId}`;
+}
+
+/**
  * Constructs URL for completing a multipart upload
  * @param workspaceId - The workspace ID
  * @returns Complete upload completion URL

@@ -45,6 +45,15 @@ export interface CompleteUploadResponse {
   url: string;
 }
 
+/**
+ * Response from uploaded parts endpoint
+ */
+export interface UploadPartsResponse {
+  file_id: string;
+  upload_id: string;
+  parts: UploadPartInfo[];
+}
+
 // Constants for multipart upload configuration
 export const MULTIPART_THRESHOLD = 5 * 1024 * 1024; // 5MB - files >= this size use multipart
 export const CHUNK_SIZE = 5 * 1024 * 1024;          // 5MB - AWS S3 minimum part size

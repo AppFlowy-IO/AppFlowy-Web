@@ -110,7 +110,6 @@ export const ImageBlock = memo(
       [uploadFile]
     );
 
-
     const handleRetry = useCallback(
       async (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -133,6 +132,7 @@ export const ImageBlock = memo(
             url,
             image_type: ImageType.External,
             retry_local_url: '',
+            pending_upload_id: '',
           } as ImageBlockData);
         } catch (e) {
           // do noting
@@ -158,8 +158,9 @@ export const ImageBlock = memo(
       >
         <div
           contentEditable={false}
-          className={`embed-block relative ${alignCss} ${url || needRetry ? '!rounded-none !border-none !bg-transparent' : 'p-4'
-            }`}
+          className={`embed-block relative ${alignCss} ${
+            url || needRetry ? '!rounded-none !border-none !bg-transparent' : 'p-4'
+          }`}
         >
           {url || needRetry ? (
             <ImageRender

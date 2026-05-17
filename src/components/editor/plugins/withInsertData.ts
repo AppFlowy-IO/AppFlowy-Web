@@ -4,15 +4,20 @@ import { ReactEditor } from 'slate-react';
 import { YjsEditor } from '@/application/slate-yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
-import { findSlateEntryByBlockId, getBlockEntry, getSharedRoot, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
+import {
+  findSlateEntryByBlockId,
+  getBlockEntry,
+  getSharedRoot,
+  isInsideSimpleTableCell,
+} from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
 import { BlockType, FieldURLType, FileBlockData, ImageBlockData, ImageType, YjsEditorKey } from '@/application/types';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import { FileHandler } from '@/utils/file';
 import { Log } from '@/utils/log';
+import { createPendingUploadId } from '@/utils/pending-upload';
 
 type BlockElement = Element & { blockId?: string };
-
 
 export const withInsertData = (editor: ReactEditor) => {
   const { insertData } = editor;
@@ -45,8 +50,12 @@ export const withInsertData = (editor: ReactEditor) => {
           const parsed = JSON.parse(decoded) as Node[];
 
           // Check if fragment contains table blocks
-          const hasTable = parsed.some((n: Node) =>
-            Element.isElement(n) && [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(n.type as BlockType)
+          const hasTable = parsed.some(
+            (n: Node) =>
+              Element.isElement(n) &&
+              [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(
+                n.type as BlockType
+              )
           );
 
           if (hasTable) {
@@ -66,8 +75,7 @@ export const withInsertData = (editor: ReactEditor) => {
     }
 
     const rawFragment =
-      data.getData('application/x-slate-fragment') ||
-      extractSlateFragmentFromHTML(data.getData('text/html'));
+      data.getData('application/x-slate-fragment') || extractSlateFragmentFromHTML(data.getData('text/html'));
 
     if (rawFragment) {
       const parsed = decodeSlateFragment(rawFragment);
@@ -105,48 +113,121 @@ export const withInsertData = (editor: ReactEditor) => {
       void (async () => {
         const text = CustomEditor.getBlockTextContent(node);
         let newBlockId: string = blockId;
+        const pendingUploads: Promise<void>[] = [];
 
-        for (const file of fileArray) {
-          const url = await e.uploadFile?.(file);
-          let fileId = '';
+        // One handler for the whole batch — each `new FileHandler()` opens
+        // its own IDB connection promise, so reusing avoids that overhead.
+        const fileHandler = new FileHandler();
 
-          if (!url) {
-            const fileHandler = new FileHandler();
-            const res = await fileHandler.handleFileUpload(file);
+        // Best-effort: a missing local snapshot must not block the remote
+        // upload (IndexedDB may be unavailable in private mode or over
+        // quota). Persist every snapshot in parallel so paste latency
+        // scales with the slowest IDB write, not the sum.
+        const fileIds = await Promise.all(
+          fileArray.map(async (file) => {
+            try {
+              const res = await fileHandler.handleFileUpload(file);
 
-            fileId = res.id;
-          }
+              // Paste path never renders the local preview itself — the
+              // block creates its own object URL via `getStoredFile`.
+              // Revoke the one created here so it doesn't leak until the
+              // tab unloads.
+              URL.revokeObjectURL(res.url);
+              return res.id;
+            } catch (err) {
+              Log.warn('withInsertData: failed to persist local snapshot for pasted file', err);
+              return '';
+            }
+          })
+        );
 
+        for (let i = 0; i < fileArray.length; i++) {
+          const file = fileArray[i];
+          const fileId = fileIds[i];
+          const pendingUploadId = createPendingUploadId();
           const isImage = file.type.startsWith('image/');
+          let insertedBlockId: string | undefined;
 
           if (isImage) {
             const data = {
-              url: url,
-              image_type: ImageType.External,
+              url: '',
+              image_type: undefined,
+              retry_local_url: fileId,
+              pending_upload_id: pendingUploadId,
             } as ImageBlockData;
 
-            if (fileId) {
-              data.retry_local_url = fileId;
-            }
-
-            // Handle images...
-            newBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.ImageBlock, data) || newBlockId;
+            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.ImageBlock, data);
+            newBlockId = insertedBlockId || newBlockId;
           } else {
             const data = {
-              url: url,
+              url: '',
               name: file.name,
               uploaded_at: Date.now(),
               url_type: FieldURLType.Upload,
+              retry_local_url: fileId,
+              pending_upload_id: pendingUploadId,
             } as FileBlockData;
 
-            if (fileId) {
-              data.retry_local_url = fileId;
-            }
-
-            // Handle files...
-            newBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.FileBlock, data) || newBlockId;
+            insertedBlockId = CustomEditor.addBelowBlock(e, newBlockId, BlockType.FileBlock, data);
+            newBlockId = insertedBlockId || newBlockId;
           }
 
+          if (insertedBlockId) {
+            pendingUploads.push(
+              (async () => {
+                let url: string | undefined;
+
+                try {
+                  url = await e.uploadFile?.(file);
+                } catch {
+                  return;
+                }
+
+                if (!url) return;
+
+                if (fileId) {
+                  await fileHandler.cleanup(fileId).catch(() => undefined);
+                }
+
+                // The paste handler runs in the background after the user
+                // already moved on. Skip the write if the placeholder is gone
+                // or already finalised so we don't clobber later edits.
+                let currentData: { url?: string; pending_upload_id?: string } | undefined;
+
+                try {
+                  const entry = findSlateEntryByBlockId(e, insertedBlockId);
+
+                  currentData = entry
+                    ? (entry[0] as { data?: { url?: string; pending_upload_id?: string } }).data ?? undefined
+                    : undefined;
+                } catch {
+                  return;
+                }
+
+                if (!currentData) return;
+                if (currentData.url) return;
+                if (currentData.pending_upload_id !== pendingUploadId) return;
+
+                if (isImage) {
+                  CustomEditor.setBlockData(e, insertedBlockId, {
+                    url,
+                    image_type: ImageType.External,
+                    retry_local_url: '',
+                    pending_upload_id: '',
+                  } as ImageBlockData);
+                } else {
+                  CustomEditor.setBlockData(e, insertedBlockId, {
+                    url,
+                    name: file.name,
+                    uploaded_at: Date.now(),
+                    url_type: FieldURLType.Upload,
+                    retry_local_url: '',
+                    pending_upload_id: '',
+                  } as FileBlockData);
+                }
+              })()
+            );
+          }
         }
 
         if (!text) {
@@ -167,11 +248,12 @@ export const withInsertData = (editor: ReactEditor) => {
           const [, path] = entry;
 
           editor.select(editor.start(path));
-
         }
 
+        void Promise.all(pendingUploads).catch((err) => {
+          Log.warn('withInsertData: failed to finalize pasted file upload', err);
+        });
       })();
-
     }
   };
 
@@ -275,9 +357,7 @@ function insertFragmentAsSiblings(editor: YjsEditor, fragment: Node[]): boolean 
     // If the current block is empty (no text, no children), the user expects
     // paste to fill that block — not push it above the pasted content. Insert
     // at the current index and remove the empty original.
-    const isEmpty =
-      CustomEditor.getBlockTextContent(node as Node).length === 0 &&
-      (node.children?.length ?? 0) <= 1;
+    const isEmpty = CustomEditor.getBlockTextContent(node as Node).length === 0 && (node.children?.length ?? 0) <= 1;
 
     const doc = assertDocExists(sharedRoot);
     let insertedIds: string[] = [];
@@ -363,7 +443,7 @@ function extractTextsFromFragment(nodes: Node[]): string | null {
 
   if (rows.length === 0) return null;
 
-  return rows.map(row => row.join('\t')).join('\n');
+  return rows.map((row) => row.join('\t')).join('\n');
 }
 
 /**
