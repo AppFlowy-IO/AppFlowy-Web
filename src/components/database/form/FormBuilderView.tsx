@@ -19,7 +19,6 @@ import { FormQuestionCardReadOnly } from './FormQuestionCardReadOnly';
 import { FormQuestionTypePicker } from './FormQuestionTypePicker';
 import { FormShareButton } from './FormShareButton';
 import { FormShareProvider } from './FormShareContext';
-import { FormSubmissionsLink } from './FormSubmissionsLink';
 import { FormTitle } from './FormTitle';
 
 /**
@@ -109,7 +108,6 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
       */}
       {!readOnly && (
         <header className='flex items-center justify-end gap-2'>
-          <FormSubmissionsLink />
           <FormPreviewButton />
           <FormShareButton />
         </header>
