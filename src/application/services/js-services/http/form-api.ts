@@ -4,7 +4,7 @@ import {
   PublicFormResponse,
 } from '@/application/types/form';
 
-import { APIResponse, executeAPIRequest, getAxios } from './core';
+import { getAxios } from './core';
 
 /**
  * Public form HTTP surface — mirror of the actix scope
@@ -17,6 +17,7 @@ import { APIResponse, executeAPIRequest, getAxios } from './core';
  * existing instance is correct.
  */
 
+// nudge: form-api wire-shape fix
 const PUBLIC_FORM_BASE = '/api/workspace/public-form';
 
 /**
@@ -38,11 +39,22 @@ const PUBLIC_FORM_BASE = '/api/workspace/public-form';
 export async function getPublicFormSchema(
   token: string,
 ): Promise<PublicFormResponse> {
-  return executeAPIRequest<PublicFormResponse>(() =>
-    getAxios()?.get<APIResponse<PublicFormResponse>>(
-      `${PUBLIC_FORM_BASE}/${token}`,
-    ),
+  // The cloud's public-form endpoints return the schema body directly
+  // (not wrapped in the workspace-API `{code, data}` envelope), so we
+  // can't route through `executeAPIRequest`. Validate-and-throw here.
+  const axios = getAxios();
+
+  if (!axios) {
+    return Promise.reject({ code: -1, message: 'API service not initialized' });
+  }
+  const response = await axios.get<PublicFormResponse>(
+    `${PUBLIC_FORM_BASE}/${token}`,
   );
+
+  if (!response?.data || typeof response.data !== 'object') {
+    return Promise.reject({ code: -1, message: 'Malformed form schema response' });
+  }
+  return response.data;
 }
 
 /**
@@ -60,15 +72,25 @@ export async function submitPublicForm(
   payload: FormSubmissionPayload,
   idempotencyKey: string,
 ): Promise<FormSubmitResponse> {
-  return executeAPIRequest<FormSubmitResponse>(() =>
-    getAxios()?.post<APIResponse<FormSubmitResponse>>(
-      `${PUBLIC_FORM_BASE}/${token}/submit`,
-      payload,
-      {
-        headers: {
-          'Idempotency-Key': idempotencyKey,
-        },
+  // Same wire-shape mismatch as `getPublicFormSchema` — body returns the
+  // tagged-union response directly, not the workspace-API envelope.
+  const axios = getAxios();
+
+  if (!axios) {
+    return Promise.reject({ code: -1, message: 'API service not initialized' });
+  }
+  const response = await axios.post<FormSubmitResponse>(
+    `${PUBLIC_FORM_BASE}/${token}/submit`,
+    payload,
+    {
+      headers: {
+        'Idempotency-Key': idempotencyKey,
       },
-    ),
+    },
   );
+
+  if (!response?.data || typeof response.data !== 'object') {
+    return Promise.reject({ code: -1, message: 'Malformed submit response' });
+  }
+  return response.data;
 }

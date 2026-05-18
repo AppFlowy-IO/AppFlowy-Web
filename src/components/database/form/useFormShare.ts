@@ -181,13 +181,27 @@ export function useFormShare(): FormShareState {
     async (value: boolean) => {
       if (!info) return;
       if (info.tier === 'public') return; // cloud forces it
+      // Auto-promote tier→Public when Anonymous flips ON under Workspace.
+      // "Anonymous" colloquially means "anyone can fill out"; without
+      // this the share link would still 401 anonymous traffic and the
+      // toggle would feel like a no-op. Mirror of the desktop
+      // `FormShareController.setAnonymous` promotion rule.
+      const promoteTier = value && info.tier === 'workspace';
+      const nextTier: FormShareTier = promoteTier ? 'public' : info.tier;
       const submission_access = coerceSubmissionAccess(
-        info.tier,
+        nextTier,
         value,
         info.submission_access,
       );
+      const delta: {
+        tier?: FormShareTier;
+        anonymous: boolean;
+        submission_access: FormSubmissionAccess;
+      } = { anonymous: value, submission_access };
 
-      await patch({ anonymous: value, submission_access });
+      if (promoteTier) delta.tier = 'public';
+
+      await patch(delta);
     },
     [info, patch],
   );
