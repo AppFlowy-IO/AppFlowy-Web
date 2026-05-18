@@ -75,61 +75,76 @@ export function FormSharePopover({
   return (
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align='end' className='w-96 p-2'>
-        <SubMenuRow
-          icon={<User size={14} />}
-          label='Who can fill out'
-          value={tierLabel(tier, workspaceName)}
-          badge={tierBadge(tier)}
-          submenu={
-            <TierSubmenu
-              current={tier}
-              workspaceName={workspaceName}
-              onSelect={setTier}
+      <PopoverContent align='end' className='w-[420px] p-1'>
+        {info === null ? (
+          // Bootstrap not complete (or failed). The setters short-circuit
+          // on `!info` server-side, so without a guard the rows would
+          // render real-looking defaults that silently no-op on click.
+          // Disable the whole popover surface until `info` arrives.
+          <ShareLoading />
+        ) : (
+          <>
+            <SubMenuRow
+              icon={<User size={14} />}
+              label='Who can fill out'
+              value={tierLabel(tier, workspaceName)}
+              badge={tierBadge(tier)}
+              submenu={
+                <TierSubmenu
+                  current={tier}
+                  workspaceName={workspaceName}
+                  onSelect={setTier}
+                />
+              }
             />
-          }
-        />
-        <ToggleRow
-          icon={<UserCheck size={14} />}
-          label='Anonymous responses'
-          subtitle={
-            tier === 'public'
-              ? 'Public forms always collect responses anonymously.'
-              : 'Turning on switches “Who can fill out” to Anyone with link.'
-          }
-          checked={anonymous}
-          forcedOn={tier === 'public'}
-          forcedTooltip='Public forms always collect responses anonymously.'
-          onChange={setAnonymous}
-        />
-        {showSubmissionAccess && (
-          <SubMenuRow
-            icon={<FileText size={14} />}
-            label='Access to submission'
-            value={submissionAccessLabel(submissionAccess)}
-            submenu={
-              <AccessSubmenu current={submissionAccess} onSelect={setSubmissionAccess} />
-            }
-          />
+            <ToggleRow
+              icon={<UserCheck size={14} />}
+              label='Anonymous responses'
+              checked={anonymous}
+              forcedOn={tier === 'public'}
+              forcedTooltip='Public forms always collect responses anonymously.'
+              onChange={setAnonymous}
+            />
+            {showSubmissionAccess && (
+              <SubMenuRow
+                icon={<FileText size={14} />}
+                label='Access to submission'
+                value={submissionAccessLabel(submissionAccess)}
+                submenu={
+                  <AccessSubmenu current={submissionAccess} onSelect={setSubmissionAccess} />
+                }
+              />
+            )}
+            <div className='my-2 border-t border-line-divider' />
+            <div className='flex items-center gap-2 px-1'>
+              <input
+                readOnly
+                value={url}
+                className='flex-1 rounded-l-md border border-r-0 border-line-divider px-2 py-1 text-xs'
+              />
+              <button
+                type='button'
+                onClick={copy}
+                className='flex items-center gap-1 rounded-r-md border border-line-divider px-2 py-1 text-xs hover:bg-fill-content'
+              >
+                <LinkIcon size={12} />
+                {copied ? 'Copied' : 'Copy form link'}
+              </button>
+            </div>
+          </>
         )}
-        <div className='my-2 border-t border-line-divider' />
-        <div className='flex items-center gap-2 px-1'>
-          <input
-            readOnly
-            value={url}
-            className='flex-1 rounded-l-md border border-r-0 border-line-divider px-2 py-1 text-xs'
-          />
-          <button
-            type='button'
-            onClick={copy}
-            className='flex items-center gap-1 rounded-r-md border border-line-divider px-2 py-1 text-xs hover:bg-fill-content'
-          >
-            <LinkIcon size={12} />
-            {copied ? 'Copied' : 'Copy form link'}
-          </button>
-        </div>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function ShareLoading() {
+  return (
+    <div className='flex flex-col gap-2 px-2 py-3'>
+      <div className='h-8 w-full animate-pulse rounded bg-fill-content' />
+      <div className='h-8 w-full animate-pulse rounded bg-fill-content' />
+      <div className='mt-2 h-7 w-full animate-pulse rounded bg-fill-content' />
+    </div>
   );
 }
 
@@ -151,15 +166,24 @@ function SubMenuRow({
       <PopoverTrigger asChild>
         <button
           type='button'
-          className='flex w-full items-center gap-2 rounded px-2 py-2 text-sm hover:bg-fill-content'
+          className='flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-fill-content'
         >
           <span className='text-text-tertiary'>{icon}</span>
-          <span className='flex-1 text-left'>{label}</span>
-          <span className='flex items-center gap-1.5 text-xs text-text-tertiary'>
-            <span className='max-w-[180px] truncate'>{value}</span>
+          {/*
+            `whitespace-nowrap` keeps "Who can fill out" / "Access to
+            submission" on a single line even when the value+badge eats
+            a lot of horizontal space; without it the flex-1 span lets
+            the browser wrap the label to two lines (user-reported
+            regression — see the wider-popover screenshot).
+          */}
+          <span className='flex-1 truncate whitespace-nowrap text-left'>
+            {label}
+          </span>
+          <span className='flex min-w-0 items-center gap-1.5 text-xs text-text-tertiary'>
+            <span className='truncate'>{value}</span>
             {badge}
           </span>
-          <ChevronRight size={14} className='text-text-tertiary' />
+          <ChevronRight size={14} className='shrink-0 text-text-tertiary' />
         </button>
       </PopoverTrigger>
       <PopoverContent side='right' align='start' className='w-72 p-1'>
@@ -169,10 +193,17 @@ function SubMenuRow({
   );
 }
 
+/**
+ * Single-line `icon · label · toggle` row. The forced-on hint
+ * (`forcedTooltip`) is attached to the row's native `title` attribute so
+ * the user can hover to learn why the toggle is locked, without the
+ * subtitle taking up vertical space in the normal layout — the previous
+ * two-line variant made the popover ~2× taller than the Notion reference
+ * for no gain when the row isn't disabled.
+ */
 function ToggleRow({
   icon,
   label,
-  subtitle,
   checked,
   forcedOn,
   forcedTooltip,
@@ -180,7 +211,6 @@ function ToggleRow({
 }: {
   icon: React.ReactNode;
   label: string;
-  subtitle?: string;
   checked: boolean;
   forcedOn: boolean;
   forcedTooltip: string;
@@ -190,17 +220,12 @@ function ToggleRow({
     <div
       title={forcedOn ? forcedTooltip : undefined}
       className={cn(
-        'flex items-start gap-2 rounded px-2 py-2 text-sm',
+        'flex items-center gap-2 rounded px-2 py-1 text-sm',
         forcedOn && 'opacity-70',
       )}
     >
-      <span className='mt-0.5 text-text-tertiary'>{icon}</span>
-      <span className='flex-1'>
-        <div>{label}</div>
-        {subtitle && (
-          <div className='text-xs text-text-caption'>{subtitle}</div>
-        )}
-      </span>
+      <span className='text-text-tertiary'>{icon}</span>
+      <span className='flex-1 whitespace-nowrap'>{label}</span>
       <Switch
         checked={checked}
         disabled={forcedOn}
@@ -314,9 +339,14 @@ function Choice({
  * color) is obvious at a glance.
  */
 function TierBadge({ kind }: { kind: 'public' | 'closed' }) {
+  // Established AppFlowy badge palette — `bg-fill-warning-light` plus
+  // `text-text-warning-on-fill` matches the guest-pill in `PersonItem`,
+  // `WorkspaceItem`, `PersonSuggestionItem`. The earlier
+  // `bg-fill-warning/15 text-fill-warning` tokens don't exist in
+  // `tailwind/new-colors.cjs` and rendered as transparent.
   const palette =
     kind === 'public'
-      ? 'bg-fill-warning/15 text-fill-warning'
+      ? 'bg-fill-warning-light text-text-warning-on-fill'
       : 'bg-fill-secondary text-text-caption';
   const label = kind === 'public' ? 'Public' : 'Closed';
 

@@ -1,11 +1,13 @@
+import { Dialog } from '@mui/material';
 import { Eye } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 
 import {
   useDatabaseFields,
   useDatabaseFieldsVersion,
   useFormLayoutSnapshot,
 } from '@/application/database-yjs';
+import { useDatabaseView } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
 import {
   PublicFormSchema,
@@ -16,7 +18,22 @@ import {
 import { YjsDatabaseKey } from '@/application/types';
 import { FormBody } from '@/components/form/FormBody';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
+
+// Synthetic placeholder options shown when a select question has none.
+// Mirrors `_readSelectOptions`'s fallback in the desktop preview
+// (`form_preview_inputs.dart`): a fresh question with no options yet
+// still renders three "Option 1/2/3" rows so the creator can see the
+// option-picker shape without first authoring real options.
+const PREVIEW_PLACEHOLDER_OPTIONS: PublicOption[] = [
+  { id: '__preview_opt_1', label: 'Option 1' },
+  { id: '__preview_opt_2', label: 'Option 2' },
+  { id: '__preview_opt_3', label: 'Option 3' },
+];
+
+// Hoisted so MUI's Paper doesn't see a fresh props object every render.
+const DIALOG_PAPER_PROPS = {
+  className: 'max-h-[85vh] w-[90vw] max-w-2xl overflow-auto',
+} as const;
 
 /**
  * Preview the form-builder draft in respondent mode. Reuses the
@@ -34,11 +51,20 @@ export function FormPreviewButton() {
   const snapshot = useFormLayoutSnapshot();
   const fieldsMap = useDatabaseFields();
   const fieldsVersion = useDatabaseFieldsVersion();
+  const view = useDatabaseView();
+  // Use the actual form view name as the preview title (desktop:
+  // `form_preview_page.dart` falls back to "Form title" when empty —
+  // matching that here too).
+  const viewName = view?.get(YjsDatabaseKey.name) ?? '';
+  const previewTitle = viewName || 'Form title';
 
+  // Gate the heavy compute (JSON.parse per select field, O(N) over the
+  // question list) on `open`. The form builder updates the snapshot on
+  // every keystroke in question titles / descriptions; without this
+  // gate we'd compute a preview schema the user never sees on every
+  // one of those updates. The one-time recompute when the user opens
+  // the dialog is acceptable.
   const schema = useMemo<PublicFormSchema | null>(() => {
-    // Skip the JSON-parse-per-select-field cost when the preview is
-    // closed. The dialog only renders the body when `open` is true, so
-    // a stale value while closed is harmless.
     if (!open) return null;
     if (!fieldsMap) return null;
     const questions: PublicQuestion[] = [];
@@ -51,6 +77,20 @@ export function FormPreviewButton() {
       const kind = toPublicKind(fieldType);
 
       if (!kind) continue;
+      // For select questions with no real options yet, fall back to
+      // the synthetic placeholder list so the creator sees the row
+      // shape (matches desktop `_readSelectOptions` fallback).
+      const realOptions =
+        kind === 'single_select' || kind === 'multi_select'
+          ? extractOptions(field)
+          : undefined;
+      const previewOptions =
+        kind === 'single_select' || kind === 'multi_select'
+          ? realOptions && realOptions.length > 0
+            ? realOptions
+            : PREVIEW_PLACEHOLDER_OPTIONS
+          : undefined;
+
       questions.push({
         id: q.fieldId,
         label: field.get(YjsDatabaseKey.name) || 'Untitled question',
@@ -59,9 +99,7 @@ export function FormPreviewButton() {
         required: q.required,
         long_answer: q.longAnswer,
         max_selections: undefined,
-        options: kind === 'single_select' || kind === 'multi_select'
-          ? extractOptions(field)
-          : undefined,
+        options: previewOptions,
         input_style: 'auto',
       });
     }
@@ -70,7 +108,7 @@ export function FormPreviewButton() {
       form_id: 'preview',
       tier: 'workspace',
       anonymous: true,
-      title: 'Form preview',
+      title: previewTitle,
       description: snapshot.description || undefined,
       questions,
       submit_label: 'Submit',
@@ -79,10 +117,12 @@ export function FormPreviewButton() {
       allow_another_response: false,
       hide_branding: true,
     };
-    // `fieldsVersion` re-runs the memo when fields mutate; the Y.Map
-    // identity alone is stable across mutations.
+    // `fieldsVersion` is an invalidation token (see useDatabaseFieldsVersion).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, snapshot, fieldsMap, fieldsVersion]);
+  }, [open, snapshot, fieldsMap, fieldsVersion, previewTitle]);
+
+  const handleOpen = useCallback(() => setOpen(true), []);
+  const handleClose = useCallback(() => setOpen(false), []);
 
   return (
     <>
@@ -90,15 +130,17 @@ export function FormPreviewButton() {
         variant='ghost'
         size='sm'
         className='gap-1'
-        onClick={() => setOpen(true)}
+        onClick={handleOpen}
       >
         <Eye size={14} />
         Preview
       </Button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className='max-h-[85vh] w-[90vw] max-w-2xl overflow-auto p-0'>
-          {schema && <FormBody token='preview' schema={schema} />}
-        </DialogContent>
+      <Dialog
+        open={open}
+        onClose={handleClose}
+        PaperProps={DIALOG_PAPER_PROPS}
+      >
+        {open && schema && <FormBody token='preview' schema={schema} />}
       </Dialog>
     </>
   );

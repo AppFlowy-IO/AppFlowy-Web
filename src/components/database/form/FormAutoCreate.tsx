@@ -1,6 +1,6 @@
 import { Dialog } from '@mui/material';
 import { ArrowRight, FileText, Table2 } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 import {
   useDatabaseFields,
@@ -29,6 +29,9 @@ const SUPPORTED_TYPES: Set<FieldType> = new Set([
   FieldType.Media,
 ]);
 
+// Hoisted so MUI's Paper doesn't see a fresh props object every render.
+const DIALOG_PAPER_PROPS = { className: 'max-w-md w-full' } as const;
+
 /**
  * Mirror of the desktop's `_evaluateAutoCreatePromptOnce`. Three landing
  * states gated by `(snapshot.decided, snapshot.questions.length, fields)`:
@@ -51,50 +54,20 @@ export function FormAutoCreate() {
   const ctx = useDatabaseContextOptional();
   const readOnly = ctx?.readOnly ?? false;
 
-  // Latch so the evaluator runs once per mount even if the snapshot
-  // observer re-emits. Mirrors `_firstFieldsEvaluated` on desktop.
-  const evaluated = useRef(false);
-  const [showModal, setShowModal] = useState(false);
-
-  // Refresh race guard. On a refreshed page, the YJS doc loads
+  // Refresh race guard. On a refreshed page the YJS doc applies
   // asynchronously: the React tree mounts before the persisted
-  // `__form_decided__` sentinel arrives over the wire. Without a
-  // hydration await (desktop has `_overrides.hydrated.then(...)` —
-  // `form_page.dart:_evaluateAutoCreatePromptOnce`), the effect
-  // below can see `decided=false` for a brief moment, commit to
-  // showing the modal, and then never reverse course when sync
-  // finally delivers `decided=true`.
-  //
-  // We address it from two sides:
-  //   - Defer the *initial* evaluation by one paint, so a same-tick
-  //     YJS apply has a chance to land before we decide.
-  //   - Watch `snapshot.decided` after the modal is open and
-  //     auto-dismiss when sync confirms a prior decision (covers
-  //     slower remote-sync arrivals).
+  // `__form_decided__` sentinel arrives over the wire. Desktop's
+  // `form_page.dart:_evaluateAutoCreatePromptOnce` awaits an
+  // explicit `_overrides.hydrated` future before deciding; our
+  // analog is a one-render delay — `useEffect` with no deps fires
+  // after the first commit, by which point an in-flight Y.applyUpdate
+  // for the same tick has already flushed through the observer.
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
-    // One animation frame is enough for the YJS provider to flush
-    // its initial doc apply into React state. A timer (rather than
-    // `requestAnimationFrame`) makes the gate testable and survives
-    // tabs that are momentarily backgrounded.
-    const timer = setTimeout(() => setHydrated(true), 0);
-
-    return () => clearTimeout(timer);
+    setHydrated(true);
   }, []);
 
-  // Auto-dismiss when a remotely-delivered decision catches up after
-  // we already showed the modal. Keeps the latch (`evaluated.current`)
-  // intact so we don't re-fire elsewhere.
-  useEffect(() => {
-    if (showModal && snapshot.decided) {
-      setShowModal(false);
-    }
-  }, [showModal, snapshot.decided]);
-
-  // `fieldsVersion` re-runs the memo when fields mutate; without it the
-  // count would freeze at the first-hydrate value and Create-N would
-  // miss any field added between hydrate and the modal opening.
   const supportedFieldIds = useMemo(() => {
     if (!fields) return [];
     const out: string[] = [];
@@ -106,51 +79,32 @@ export function FormAutoCreate() {
       if (SUPPORTED_TYPES.has(ty)) out.push(id);
     });
     return out;
+    // `fieldsVersion` invalidates the memo when the field map mutates;
+    // the Y.Map identity in `fields` is stable across mutations so we
+    // can't rely on it alone. eslint can't see this dependency because
+    // `fieldsVersion` isn't referenced inside the closure — that's the
+    // entire point of the invalidation-token pattern.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fields, fieldsVersion]);
 
   const fieldCount = supportedFieldIds.length;
 
+  // Silent-seed path. Self-gating on `snapshot.decided` — the second
+  // call inside the effect (`markDecided`) flips that flag synchronously
+  // via the YJS observer, so the next run bails on the guard. No
+  // imperative latch needed.
+  //
+  // 0 supported → seed nothing + mark decided so a "Create 0 questions"
+  // modal never fires for a database of only unsupported types.
+  // 1-2 supported → adopt silently. 3+ → fall through to the modal
+  // surfaced by `showDialog` below.
   useEffect(() => {
-    if (readOnly) return;
-    if (evaluated.current) return;
-    // Wait one tick after mount to let an in-flight YJS apply land
-    // before we commit a decision. See `hydrated` definition above.
-    if (!hydrated) return;
-    if (snapshot.decided) {
-      evaluated.current = true;
-      return;
-    }
-
-    if (snapshot.questions.length > 0) {
-      evaluated.current = true;
-      return;
-    }
-
-    // Wait for the fields Y.Map to surface at all. Until then we can't
-    // count anything. `fields == null` happens during the database YJS
-    // doc's initial sync; the effect will re-fire on the next field
-    // change so we don't need a retry loop.
+    if (readOnly || !hydrated) return;
+    if (snapshot.decided || snapshot.questions.length > 0) return;
     if (!fields) return;
-    evaluated.current = true;
-
-    // Silent-seed branch — gated on **supported** field count, not the
-    // total. 0 supported → seed nothing + mark decided so a "Create 0
-    // questions" modal never fires for a database of only unsupported
-    // types (Rollup-only, etc.). 1-2 supported → adopt them silently.
-    // 3+ → fall through to the modal so the user picks.
-    //
-    // Mirrors the desktop `_evaluateAutoCreatePromptAfterHydration`
-    // rule. Keeping the two in lockstep.
-    if (fieldCount <= 2) {
-      if (fieldCount > 0) {
-        writer.populateFromFields(supportedFieldIds);
-      }
-      writer.markDecided();
-      return;
-    }
-
-    setShowModal(true);
+    if (fieldCount > 2) return;
+    if (fieldCount > 0) writer.populateFromFields(supportedFieldIds);
+    writer.markDecided();
   }, [
     readOnly,
     hydrated,
@@ -162,21 +116,33 @@ export function FormAutoCreate() {
     writer,
   ]);
 
-  if (!showModal) return null;
+  // Modal visibility is derived, not imperative. When the user picks
+  // Create-N / Start-from-scratch (or a remote sync delivers a
+  // previously-persisted decision), `writer.markDecided()` flips
+  // `snapshot.decided` and this expression evaluates false on the
+  // same render — no auto-dismiss effect, no flash.
+  const showDialog =
+    !readOnly &&
+    hydrated &&
+    !snapshot.decided &&
+    snapshot.questions.length === 0 &&
+    fieldCount > 2;
+
+  if (!showDialog) return null;
+
   // Tap-outside or Esc → treat as Start-from-scratch (cleanest default;
   // the user explicitly didn't pick Create-N). Matches the desktop's
   // `FormAutoCreateDialog.show` barrier policy.
   const dismissAsScratch = () => {
     writer.clearQuestions();
     writer.markDecided();
-    setShowModal(false);
   };
 
   return (
     <Dialog
-      open={showModal}
+      open={true}
       onClose={dismissAsScratch}
-      PaperProps={{ className: 'max-w-md w-full' }}
+      PaperProps={DIALOG_PAPER_PROPS}
     >
       <div className='flex flex-col items-center gap-4 px-6 py-6 text-center'>
         <div className='flex items-center gap-3 text-text-caption'>
@@ -195,7 +161,6 @@ export function FormAutoCreate() {
           onClick={() => {
             writer.populateFromFields(supportedFieldIds);
             writer.markDecided();
-            setShowModal(false);
           }}
         >
           {fieldCount === 1

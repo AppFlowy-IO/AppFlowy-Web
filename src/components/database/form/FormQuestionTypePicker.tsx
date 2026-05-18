@@ -95,6 +95,7 @@ export function FormQuestionTypePicker() {
       });
     });
     return out;
+    // `fieldsVersion` is an invalidation token (see useDatabaseFieldsVersion).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fieldsMap, fieldsVersion, snapshot]);
 

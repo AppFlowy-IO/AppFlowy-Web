@@ -95,6 +95,7 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
         };
       })
       .filter((v): v is NonNullable<typeof v> => v !== null);
+    // `fieldsVersion` is an invalidation token (see useDatabaseFieldsVersion).
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot, fields, fieldsVersion]);
 

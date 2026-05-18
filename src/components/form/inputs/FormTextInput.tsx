@@ -21,7 +21,9 @@ export function FormTextInput({
   value: string;
   onChange: (value: string) => void;
 }) {
-  const placeholder = "Respondent's answer";
+  // "Type your answer" — matches desktop `form_preview_inputs.dart`
+  // `_TextInput` and respondent-facing copy across both clients.
+  const placeholder = 'Type your answer';
 
   if (question.long_answer) {
     return (

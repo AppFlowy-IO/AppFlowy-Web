@@ -23,6 +23,7 @@ import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
 
 import { FormQuestionPlaceholder } from './FormQuestionPlaceholder';
+import { FormSelectOptionsEditor } from './FormSelectOptionsEditor';
 
 /**
  * Editable per-question card. Wraps the read-only visual scaffolding
@@ -175,6 +176,18 @@ function _FormQuestionCard({
         )}
       </div>
 
+      {/*
+        Helper subtitle — matches the desktop's `_PreviewQuestionCard._helperText`
+        and Notion's authoring card. Single-select reads
+        "Respondents can select up to 1"; multi-select / relation /
+        person read "Respondents can select as many as they like".
+        Other types don't surface a helper because the affordance
+        (e.g. single text input) is self-evident from the placeholder.
+      */}
+      {helperText(fieldType) && (
+        <p className='mt-1 text-xs text-text-caption'>{helperText(fieldType)}</p>
+      )}
+
       {descriptionVisible && (
         <Input
           variant='ghost'
@@ -186,8 +199,52 @@ function _FormQuestionCard({
       )}
 
       <div className='mt-3'>
-        <FormQuestionPlaceholder fieldType={fieldType} longAnswer={longAnswer} />
+        {/*
+          Single-/Multi-select questions render an editable option list
+          (Notion / desktop parity). All other types stay as static
+          placeholders since their value space isn't authorable from
+          inside the form card — RichText needs the cell, Date is a
+          calendar, etc.
+
+          Comparing on `Number()` instead of `String()` so a numeric
+          `fieldType` (which is what `FormBuilderView` actually passes
+          after `String(q.fieldType)` is coerced) and a string both
+          resolve correctly.
+        */}
+        {isSelectFieldType(fieldType) ? (
+          <FormSelectOptionsEditor fieldId={questionId} />
+        ) : (
+          <FormQuestionPlaceholder fieldType={fieldType} longAnswer={longAnswer} />
+        )}
       </div>
     </div>
   );
+}
+
+function isSelectFieldType(fieldType: string): boolean {
+  const ty = Number(fieldType);
+
+  return ty === FieldType.SingleSelect || ty === FieldType.MultiSelect;
+}
+
+/// Helper subtitle shown between the question title and its body. Single-
+/// select reads "up to 1"; multi-value pickers (multi-select, relation,
+/// person) read "as many as they like". Returns `null` for types where
+/// the affordance is self-evident (text/number/date/checkbox/url/files).
+function helperText(fieldType: string): string | null {
+  const ty = Number(fieldType);
+
+  if (ty === FieldType.SingleSelect) {
+    return 'Respondents can select up to 1';
+  }
+
+  if (
+    ty === FieldType.MultiSelect ||
+    ty === FieldType.Relation ||
+    ty === FieldType.Person
+  ) {
+    return 'Respondents can select as many as they like';
+  }
+
+  return null;
 }

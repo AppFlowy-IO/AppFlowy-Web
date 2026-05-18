@@ -159,11 +159,38 @@ export function FormBody({
         </Button>
       </div>
 
+      {/*
+        Safety footer — disclaimer + abuse-report link, mirrored on the
+        desktop preview (`form_preview_page.dart::_SafetyFooter`). Always
+        rendered, regardless of `hide_branding`, since `hide_branding`
+        toggles the "Built with AppFlowy" pill, not the abuse policy.
+      */}
+      <SafetyFooter />
+
       {!schema.hide_branding && (
-        <p className='pt-6 text-center text-xs text-text-caption'>
+        <p className='pt-2 text-center text-xs text-text-caption'>
           Built with AppFlowy
         </p>
       )}
+    </div>
+  );
+}
+
+function SafetyFooter() {
+  return (
+    <div className='flex flex-col items-start gap-1 pt-6 text-xs text-text-caption'>
+      <p>
+        Never submit sensitive personal information, like passwords, through
+        AppFlowy Forms.
+      </p>
+      <a
+        href='https://appflowy.com/report-abuse'
+        target='_blank'
+        rel='noopener noreferrer'
+        className='underline hover:text-text-primary'
+      >
+        Report abuse
+      </a>
     </div>
   );
 }

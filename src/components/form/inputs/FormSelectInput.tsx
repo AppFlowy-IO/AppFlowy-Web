@@ -1,4 +1,9 @@
-import { Check } from 'lucide-react';
+import {
+  Circle,
+  CircleCheck,
+  Square,
+  SquareCheckBig,
+} from 'lucide-react';
 
 import { PublicQuestion } from '@/application/types/form';
 import { cn } from '@/lib/utils';
@@ -61,27 +66,37 @@ export function FormSelectInput(props: SingleProps | MultiProps) {
     props.onChange(Array.from(set));
   };
 
+  // Notion-style respondent picker — indicator on the left, plain label
+  // on the right. Single-select uses radio circles (only one can be
+  // on), multi-select uses square checkboxes. Replaces the prior
+  // bordered-button-with-fill variant, which read more like a button
+  // group than a form picker (image #19 in the design spec).
+  const isMulti = props.mode === 'multi';
+  const IndicatorOn = isMulti ? SquareCheckBig : CircleCheck;
+  const IndicatorOff = isMulti ? Square : Circle;
+
   return (
-    <div className='flex flex-col gap-1.5'>
+    <div className='flex flex-col gap-1'>
       {options.map((opt) => {
         const selected = isSelected(opt.id);
+        const Indicator = selected ? IndicatorOn : IndicatorOff;
 
         return (
           <button
             key={opt.id}
             type='button'
             onClick={() => handleToggle(opt.id)}
-            className={cn(
-              'flex w-full items-center justify-between rounded-md border px-3 py-2 text-left text-sm transition-colors',
-              selected
-                ? 'border-fill-default bg-fill-default/10'
-                : 'border-line-divider hover:border-fill-default',
-            )}
+            className='flex items-center gap-2 rounded px-1 py-1 text-left text-sm transition-colors hover:bg-fill-content'
           >
+            <Indicator
+              size={18}
+              className={cn(
+                'shrink-0',
+                selected ? 'text-fill-default' : 'text-text-tertiary',
+              )}
+              strokeWidth={selected ? 2.5 : 2}
+            />
             <span>{opt.label}</span>
-            {selected && (
-              <Check size={14} className='text-fill-default' strokeWidth={3} />
-            )}
           </button>
         );
       })}
