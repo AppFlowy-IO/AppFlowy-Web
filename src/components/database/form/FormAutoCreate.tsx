@@ -1,3 +1,4 @@
+import { Dialog } from '@mui/material';
 import { ArrowRight, FileText, Table2 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -11,7 +12,6 @@ import { FieldType } from '@/application/database-yjs/database.type';
 import { useDatabaseContextOptional } from '@/application/database-yjs/context';
 import { YjsDatabaseKey } from '@/application/types';
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 /**
  * Same field-type filter as the desktop's `formQuestionFieldTypes`.
@@ -56,6 +56,42 @@ export function FormAutoCreate() {
   const evaluated = useRef(false);
   const [showModal, setShowModal] = useState(false);
 
+  // Refresh race guard. On a refreshed page, the YJS doc loads
+  // asynchronously: the React tree mounts before the persisted
+  // `__form_decided__` sentinel arrives over the wire. Without a
+  // hydration await (desktop has `_overrides.hydrated.then(...)` —
+  // `form_page.dart:_evaluateAutoCreatePromptOnce`), the effect
+  // below can see `decided=false` for a brief moment, commit to
+  // showing the modal, and then never reverse course when sync
+  // finally delivers `decided=true`.
+  //
+  // We address it from two sides:
+  //   - Defer the *initial* evaluation by one paint, so a same-tick
+  //     YJS apply has a chance to land before we decide.
+  //   - Watch `snapshot.decided` after the modal is open and
+  //     auto-dismiss when sync confirms a prior decision (covers
+  //     slower remote-sync arrivals).
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    // One animation frame is enough for the YJS provider to flush
+    // its initial doc apply into React state. A timer (rather than
+    // `requestAnimationFrame`) makes the gate testable and survives
+    // tabs that are momentarily backgrounded.
+    const timer = setTimeout(() => setHydrated(true), 0);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  // Auto-dismiss when a remotely-delivered decision catches up after
+  // we already showed the modal. Keeps the latch (`evaluated.current`)
+  // intact so we don't re-fire elsewhere.
+  useEffect(() => {
+    if (showModal && snapshot.decided) {
+      setShowModal(false);
+    }
+  }, [showModal, snapshot.decided]);
+
   // `fieldsVersion` re-runs the memo when fields mutate; without it the
   // count would freeze at the first-hydrate value and Create-N would
   // miss any field added between hydrate and the modal opening.
@@ -78,6 +114,9 @@ export function FormAutoCreate() {
   useEffect(() => {
     if (readOnly) return;
     if (evaluated.current) return;
+    // Wait one tick after mount to let an in-flight YJS apply land
+    // before we commit a decision. See `hydrated` definition above.
+    if (!hydrated) return;
     if (snapshot.decided) {
       evaluated.current = true;
       return;
@@ -88,14 +127,25 @@ export function FormAutoCreate() {
       return;
     }
 
-    // Wait for fields to hydrate. Until at least one field surfaces we
-    // can't tell sidebar-create (≤ 2 fields) from linked-view (> 2).
-    if (!fields || fieldCount === 0) return;
+    // Wait for the fields Y.Map to surface at all. Until then we can't
+    // count anything. `fields == null` happens during the database YJS
+    // doc's initial sync; the effect will re-fire on the next field
+    // change so we don't need a retry loop.
+    if (!fields) return;
     evaluated.current = true;
 
+    // Silent-seed branch — gated on **supported** field count, not the
+    // total. 0 supported → seed nothing + mark decided so a "Create 0
+    // questions" modal never fires for a database of only unsupported
+    // types (Rollup-only, etc.). 1-2 supported → adopt them silently.
+    // 3+ → fall through to the modal so the user picks.
+    //
+    // Mirrors the desktop `_evaluateAutoCreatePromptAfterHydration`
+    // rule. Keeping the two in lockstep.
     if (fieldCount <= 2) {
-      // Sidebar-create silent seed.
-      writer.populateFromFields(supportedFieldIds);
+      if (fieldCount > 0) {
+        writer.populateFromFields(supportedFieldIds);
+      }
       writer.markDecided();
       return;
     }
@@ -103,6 +153,7 @@ export function FormAutoCreate() {
     setShowModal(true);
   }, [
     readOnly,
+    hydrated,
     snapshot.decided,
     snapshot.questions.length,
     fields,
@@ -112,57 +163,53 @@ export function FormAutoCreate() {
   ]);
 
   if (!showModal) return null;
+  // Tap-outside or Esc → treat as Start-from-scratch (cleanest default;
+  // the user explicitly didn't pick Create-N). Matches the desktop's
+  // `FormAutoCreateDialog.show` barrier policy.
+  const dismissAsScratch = () => {
+    writer.clearQuestions();
+    writer.markDecided();
+    setShowModal(false);
+  };
+
   return (
     <Dialog
       open={showModal}
-      onOpenChange={(open) => {
-        if (open) return;
-        // Tap-outside or Esc → treat as Start-from-scratch (cleanest
-        // default; the user explicitly didn't pick Create-N). Matches
-        // the desktop's `FormAutoCreateDialog.show` barrier policy.
-        writer.clearQuestions();
-        writer.markDecided();
-        setShowModal(false);
-      }}
+      onClose={dismissAsScratch}
+      PaperProps={{ className: 'max-w-md w-full' }}
     >
-      <DialogContent className='max-w-md'>
-        <div className='flex flex-col items-center gap-4 px-2 py-4 text-center'>
-          <div className='flex items-center gap-3 text-text-caption'>
-            <Table2 size={24} />
-            <ArrowRight size={16} />
-            <FileText size={24} />
-          </div>
-          <h2 className='text-lg font-semibold'>
-            Auto-create form questions based on existing properties?
-          </h2>
-          <p className='text-sm text-text-caption'>
-            Only supported property types will create new questions.
-          </p>
-          <Button
-            className='w-full'
-            onClick={() => {
-              writer.populateFromFields(supportedFieldIds);
-              writer.markDecided();
-              setShowModal(false);
-            }}
-          >
-            {fieldCount === 1
-              ? 'Create 1 question'
-              : `Create ${fieldCount} questions`}
-          </Button>
-          <button
-            type='button'
-            onClick={() => {
-              writer.clearQuestions();
-              writer.markDecided();
-              setShowModal(false);
-            }}
-            className='text-sm text-text-caption hover:underline'
-          >
-            Start from scratch
-          </button>
+      <div className='flex flex-col items-center gap-4 px-6 py-6 text-center'>
+        <div className='flex items-center gap-3 text-text-caption'>
+          <Table2 size={24} />
+          <ArrowRight size={16} />
+          <FileText size={24} />
         </div>
-      </DialogContent>
+        <h2 className='text-lg font-semibold'>
+          Auto-create form questions based on existing properties?
+        </h2>
+        <p className='text-sm text-text-caption'>
+          Only supported property types will create new questions.
+        </p>
+        <Button
+          className='w-full'
+          onClick={() => {
+            writer.populateFromFields(supportedFieldIds);
+            writer.markDecided();
+            setShowModal(false);
+          }}
+        >
+          {fieldCount === 1
+            ? 'Create 1 question'
+            : `Create ${fieldCount} questions`}
+        </Button>
+        <button
+          type='button'
+          onClick={dismissAsScratch}
+          className='text-sm text-text-caption hover:underline'
+        >
+          Start from scratch
+        </button>
+      </div>
     </Dialog>
   );
 }
