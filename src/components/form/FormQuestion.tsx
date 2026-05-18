@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 
 import { FormCheckboxInput } from './inputs/FormCheckboxInput';
 import { FormDateInput } from './inputs/FormDateInput';
+import { FormMediaInput } from './inputs/FormMediaInput';
 import { FormNumberInput } from './inputs/FormNumberInput';
 import { FormSelectInput } from './inputs/FormSelectInput';
 import { FormTextInput } from './inputs/FormTextInput';
@@ -127,6 +128,11 @@ function QuestionInput({
         />
       );
     case 'files':
+      // F1 stub — upload pipeline lands in F2. Render the Notion-style
+      // shell (button + size-limit caption) instead of a generic
+      // "unsupported" tile so the question still looks like the desktop
+      // version and the form layout doesn't shift when F2 ships.
+      return <FormMediaInput />;
     case 'person':
     case 'relation':
       return <FormUnsupportedInput kind={question.kind} />;

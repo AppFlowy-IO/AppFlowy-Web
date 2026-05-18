@@ -1,3 +1,5 @@
+import { ArrowUpCircle, Upload } from 'lucide-react';
+
 import { cn } from '@/lib/utils';
 
 /**
@@ -46,7 +48,35 @@ export function FormQuestionPlaceholder({
     case 6 /* URL */:
       return <Placeholder>https://…</Placeholder>;
     case 14 /* Media */:
-      return <Placeholder>Files & media</Placeholder>;
+      // Mirror of desktop `_MediaBody` (form_question_body.dart): a
+      // disabled Upload button, the workspace's per-file / file-count
+      // caps, and an Upgrade affordance. F1 is authoring-only — the
+      // button stays disabled until F2 wires the upload pipeline.
+      // Authoring-side keeps the Upgrade link (creator-facing); the
+      // respondent-side mirror in FormMediaInput drops it.
+      return (
+        <div className='flex flex-wrap items-center gap-3 rounded-md border border-line-divider px-3 py-2'>
+          <button
+            type='button'
+            disabled
+            className='inline-flex items-center gap-1.5 rounded-md border border-line-divider px-2.5 py-1 text-xs font-medium text-text-tertiary'
+          >
+            <Upload size={12} />
+            Upload
+          </button>
+          <span className='text-xs text-text-tertiary'>
+            Size limit: 5 MB. File limit: 10.
+          </span>
+          <button
+            type='button'
+            className='inline-flex items-center gap-1 text-xs font-medium text-fill-default'
+          >
+            <ArrowUpCircle size={12} />
+            Upgrade
+          </button>
+          <span className='text-xs text-text-tertiary'>to increase limit</span>
+        </div>
+      );
     default:
       // Unsupported / Phase-2 types. Surface a neutral "unsupported"
       // tile so the creator sees there's a question here, just not one
