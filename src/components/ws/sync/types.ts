@@ -68,6 +68,10 @@ export const isCollabVersionId = (value: string | null | undefined): value is st
 };
 
 export const versionChanged = (context: SyncContext, message: collab.ICollabMessage): boolean => {
+  if (context.collabType === Types.DatabaseRow) {
+    return false;
+  }
+
   if (!message.update && !message.syncRequest) {
     return false; // we only detect version changes for these two message types
   }

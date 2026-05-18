@@ -80,23 +80,25 @@ jest.mock('@/application/sync-outbox', () => {
   };
 
   return {
-    enqueueOutboxUpdate: jest.fn((record: { objectId: string; collabType: number; version?: string | null; payload: Uint8Array }) => {
-      const queued = ctx.pending.get(record.objectId) ?? [];
+    enqueueOutboxUpdate: jest.fn(
+      (record: { objectId: string; collabType: number; version?: string | null; payload: Uint8Array }) => {
+        const queued = ctx.pending.get(record.objectId) ?? [];
 
-      queued.push({
-        collabMessage: {
-          objectId: record.objectId,
-          collabType: record.collabType,
-          update: {
-            flags: 0,
-            payload: record.payload,
-            version: record.version ?? undefined,
+        queued.push({
+          collabMessage: {
+            objectId: record.objectId,
+            collabType: record.collabType,
+            update: {
+              flags: 0,
+              payload: record.payload,
+              version: record.version ?? undefined,
+            },
           },
-        },
-      });
-      ctx.pending.set(record.objectId, queued);
-      drain(record.objectId);
-    }),
+        });
+        ctx.pending.set(record.objectId, queued);
+        drain(record.objectId);
+      }
+    ),
     deleteOutboxByObjectId: jest.fn(async (objectId: string) => {
       ctx.pending.delete(objectId);
     }),
@@ -217,7 +219,9 @@ const createDeferred = <T>(): Deferred<T> => {
 
 const mockedOpenCollabDB = openCollabDB as jest.MockedFunction<typeof openCollabDB>;
 const mockedOpenCollabDBWithProvider = openCollabDBWithProvider as jest.MockedFunction<typeof openCollabDBWithProvider>;
-const mockedOpenRowCollabDBWithProvider = openRowCollabDBWithProvider as jest.MockedFunction<typeof openRowCollabDBWithProvider>;
+const mockedOpenRowCollabDBWithProvider = openRowCollabDBWithProvider as jest.MockedFunction<
+  typeof openRowCollabDBWithProvider
+>;
 const mockedListCollabIndexedDBNames = listCollabIndexedDBNames as jest.MockedFunction<typeof listCollabIndexedDBNames>;
 const mockedCollabIndexedDBExists = collabIndexedDBExists as jest.MockedFunction<typeof collabIndexedDBExists>;
 const mockedHandleMessage = handleMessage as jest.MockedFunction<typeof handleMessage>;
@@ -368,7 +372,7 @@ describe('useSync deferred cleanup', () => {
           collabType: Types.DatabaseRow,
           update: expect.any(Object),
         }),
-      }),
+      })
     );
 
     outboxMock.clearDrainConfig();
@@ -548,6 +552,44 @@ describe('useSync version-gated message handling', () => {
     unmount();
     doc.destroy();
     nextDoc.destroy();
+  });
+
+  it('ignores version changes for database row messages', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '55555555-5555-4555-8555-555555555557';
+    const incomingVersion = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b013';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+
+    doc.version = '018f2f9e-3f04-7c8d-8a2e-8df6dff4b012';
+    const { result, rerender, unmount } = renderHook(() => useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId));
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+    });
+
+    const message = {
+      objectId,
+      collabType: Types.DatabaseRow,
+      update: {
+        version: incomingVersion,
+      },
+    };
+
+    act(() => {
+      ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockedOpenCollabDB).not.toHaveBeenCalled();
+    expect(mockedOpenRowCollabDBWithProvider).not.toHaveBeenCalled();
+
+    unmount();
+    doc.destroy();
   });
 
   it('processes versioned updates sequentially during reset handling', async () => {
@@ -1144,7 +1186,6 @@ describe('useSync queue guards and dedupe', () => {
 
     errorSpy.mockRestore();
   });
-
 });
 
 describe('useSync revertCollabVersion', () => {
@@ -1261,12 +1302,7 @@ describe('useSync revertCollabVersion', () => {
       await result.current.revertCollabVersion(doc.guid, targetVersion);
     });
 
-    expect(mockedRevertCollabVersion).toHaveBeenCalledWith(
-      workspaceId,
-      doc.guid,
-      Types.Document,
-      targetVersion
-    );
+    expect(mockedRevertCollabVersion).toHaveBeenCalledWith(workspaceId, doc.guid, Types.Document, targetVersion);
     expect(mockedOpenCollabDB).toHaveBeenCalledWith(doc.guid, {
       expectedVersion: targetVersion,
       currentUser: user.uid,

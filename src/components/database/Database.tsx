@@ -47,7 +47,9 @@ const PRIORITY_ROW_SEED_LIMIT = 200;
 
 function createDeferredGate() {
   let resolve!: () => void;
-  const promise = new Promise<void>((r) => { resolve = r; });
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
 
   return { promise, resolve };
 }
@@ -72,7 +74,12 @@ export interface Database2Props {
    * Only available in app mode - not provided in publish mode.
    */
   createRowDocument?: (documentId: string) => Promise<Uint8Array | null>;
-  duplicateRowDocument?: (databaseId: string, sourceRowId: string, newRowId: string, clientDocStateB64?: string) => Promise<void>;
+  duplicateRowDocument?: (
+    databaseId: string,
+    sourceRowId: string,
+    newRowId: string,
+    clientDocStateB64?: string
+  ) => Promise<void>;
   navigateToView?: (viewId: string, blockId?: string) => Promise<void>;
   loadViewMeta?: LoadViewMeta;
   /**
@@ -379,7 +386,11 @@ function Database(props: Database2Props) {
 
     // Collect seeds for the first N priority rows (visible + overscan) in a single pass
     const BATCH_SIZE = 30;
-    const rowsWithSeeds: { rowId: string; rowKey: string; seed: NonNullable<ReturnType<typeof peekDatabaseRowDocSeed>> }[] = [];
+    const rowsWithSeeds: {
+      rowId: string;
+      rowKey: string;
+      seed: NonNullable<ReturnType<typeof peekDatabaseRowDocSeed>>;
+    }[] = [];
 
     for (const rowId of priorityRowIds) {
       if (rowsWithSeeds.length >= BATCH_SIZE) break;
@@ -408,36 +419,38 @@ function Database(props: Database2Props) {
           return null;
         }
       })
-    ).then((results) => {
-      const newEntries: Record<string, YDoc> = {};
-      const syncKeys: string[] = [];
+    )
+      .then((results) => {
+        const newEntries: Record<string, YDoc> = {};
+        const syncKeys: string[] = [];
 
-      for (const result of results) {
-        if (result?.rowDoc && !rowMapRef.current[result.rowId]) {
-          newEntries[result.rowId] = result.rowDoc;
-          syncKeys.push(result.rowKey);
+        for (const result of results) {
+          if (result?.rowDoc && !rowMapRef.current[result.rowId]) {
+            newEntries[result.rowId] = result.rowDoc;
+            syncKeys.push(result.rowKey);
+          }
         }
-      }
 
-      const count = Object.keys(newEntries).length;
+        const count = Object.keys(newEntries).length;
 
-      if (count > 0) {
-        // Single setState to add all preloaded rows at once
-        setRowMap((prev) => ({ ...prev, ...newEntries }));
+        if (count > 0) {
+          // Single setState to add all preloaded rows at once
+          setRowMap((prev) => ({ ...prev, ...newEntries }));
 
-        // Defer sync binding — rows are hydrated from seeds, sync can wait
-        requestAnimationFrame(() => {
-          syncKeys.forEach((rowKey) => registerRowSync(rowKey));
-        });
-      }
+          // Defer sync binding — rows are hydrated from seeds, sync can wait
+          requestAnimationFrame(() => {
+            syncKeys.forEach((rowKey) => registerRowSync(rowKey));
+          });
+        }
 
-      // Open the gate — ensureRow calls can now proceed
-      gate.resolve();
-    }).catch(() => {
-      // Ensure the gate always resolves even on unexpected errors,
-      // otherwise ensureRow calls would be permanently blocked.
-      gate.resolve();
-    });
+        // Open the gate — ensureRow calls can now proceed
+        gate.resolve();
+      })
+      .catch(() => {
+        // Ensure the gate always resolves even on unexpected errors,
+        // otherwise ensureRow calls would be permanently blocked.
+        gate.resolve();
+      });
   }, [getDatabaseId, getPriorityRowIds, registerRowSync]);
 
   const ensureBlobPrefetch = useCallback(() => {
@@ -646,7 +659,7 @@ function Database(props: Database2Props) {
     setRowMap(initialRowMap);
     setBlobPrefetchComplete(false);
     setSeedsReady(false);
-  }, [doc.guid, props.initialRowMap]);
+  }, [doc, props.initialRowMap]);
 
   // Trigger blob prefetch when database opens
   useEffect(() => {
@@ -674,7 +687,7 @@ function Database(props: Database2Props) {
         }
       });
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [props.scheduleDeferredCleanup]);
 
   // Combined modal state to avoid multiple re-renders when updating related values

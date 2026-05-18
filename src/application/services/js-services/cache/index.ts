@@ -897,6 +897,46 @@ export function deleteRow(rowKey: string) {
   evictProviderCache(rowObjectId);
 }
 
+export async function resetDatabaseRowDocs(databaseId: string, rowIds: Iterable<string>) {
+  const uniqueRowIds = Array.from(new Set(Array.from(rowIds).filter(Boolean)));
+
+  await Promise.all(
+    uniqueRowIds.map(async (rowId) => {
+      const rowKey = getRowKey(databaseId, rowId);
+      const rowObjectId = getRowObjectId(rowKey);
+
+      // A row open in `pendingRowDocEntries` will run `rowDocs.set(rowObjectId, entry)`
+      // once its IndexedDB read resolves. If we deleted before that, the late
+      // continuation would re-insert a pre-reset doc into the cache. Await the
+      // in-flight open first so its set runs before our delete.
+      const pending = pendingRowDocEntries.get(rowObjectId);
+
+      if (pending) {
+        await pending.catch(() => undefined);
+      }
+
+      const entry = rowDocs.get(rowObjectId);
+
+      rowDocs.delete(rowObjectId);
+      pendingRowDocEntries.delete(rowObjectId);
+
+      try {
+        await deleteCollabDB(rowObjectId, { destroyDoc: false });
+        // Also evict any legacy per-row IndexedDB so a future open does not
+        // resurrect stale pre-reset cells via mergeLegacyRowDocIfExists.
+        // Deleting the shared row above also wiped the backfill marker, so
+        // without this any leftover legacy DB would re-trigger migration.
+        if (rowKey !== rowObjectId) {
+          await deleteLegacyRowCache(rowKey, rowObjectId);
+        }
+      } finally {
+        entry?.doc.destroy();
+        evictProviderCache(rowObjectId);
+      }
+    })
+  );
+}
+
 // ============================================================================
 // Row Sub-Document Cache (for document content inside database rows)
 // ============================================================================
@@ -1065,9 +1105,7 @@ export function trackRowDocEnsure(documentId: string, promise: Promise<boolean>)
  */
 export async function awaitPendingRowDocEnsures(documentIds?: string[]): Promise<void> {
   const ids = documentIds ?? Array.from(pendingRowDocEnsures.keys());
-  const promises = ids
-    .map((id) => pendingRowDocEnsures.get(id))
-    .filter((p): p is Promise<boolean> => p !== undefined);
+  const promises = ids.map((id) => pendingRowDocEnsures.get(id)).filter((p): p is Promise<boolean> => p !== undefined);
 
   if (promises.length > 0) {
     await Promise.allSettled(promises);

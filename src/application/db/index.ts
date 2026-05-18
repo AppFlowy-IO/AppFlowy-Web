@@ -150,10 +150,7 @@ db.version(7).stores({
 const openedSet = new Set<string>();
 const ensuredStores = new Map<string, Promise<void>>();
 
-const yjsStoreDefinitions = [
-  { name: 'updates', options: { autoIncrement: true } },
-  { name: 'custom' },
-];
+const yjsStoreDefinitions = [{ name: 'updates', options: { autoIncrement: true } }, { name: 'custom' }];
 
 type IndexedDBFactoryWithDatabases = IDBFactory & {
   databases?: () => Promise<Array<{ name?: string | null }>>;
@@ -354,7 +351,12 @@ const SHARED_COLLAB_COMPACT_UPDATE_THRESHOLD = 200;
 const SHARED_COLLAB_COMPACT_MAX_RETRIES = 3;
 
 type CollabPersistenceProvider = IndexeddbPersistence | SharedIndexeddbPersistence;
-type SharedCollabOpenOptions = { awaitSync?: boolean; expectedVersion?: string; forceReset?: boolean; skipCache?: boolean };
+type SharedCollabOpenOptions = {
+  awaitSync?: boolean;
+  expectedVersion?: string;
+  forceReset?: boolean;
+  skipCache?: boolean;
+};
 
 class SharedCollabCompactionRetry extends Error {
   constructor() {
@@ -421,7 +423,10 @@ function createCachedProviderEntry(
       if (settled) return;
 
       settled = true;
-      (provider as { off?: (event: string, listener: (...args: unknown[]) => void) => void }).off?.('synced', handleSync);
+      (provider as { off?: (event: string, listener: (...args: unknown[]) => void) => void }).off?.(
+        'synced',
+        handleSync
+      );
       resolveWhenSynced();
     },
   };
@@ -566,9 +571,11 @@ class SharedIndexeddbPersistence {
   };
 
   private queueCompact() {
-    this._pendingWrite = this._pendingWrite.then(() => this.compact()).catch((error) => {
-      Log.warn('[DB] failed to compact shared collab updates', { name: this.name, error });
-    });
+    this._pendingWrite = this._pendingWrite
+      .then(() => this.compact())
+      .catch((error) => {
+        Log.warn('[DB] failed to compact shared collab updates', { name: this.name, error });
+      });
   }
 
   private async compact() {
@@ -795,6 +802,61 @@ async function deleteSharedCollabData(name: string) {
   }
 }
 
+function collabVersionKey(name: string) {
+  return `${name}/version`;
+}
+
+async function getCachedCollabVersion(name: string) {
+  try {
+    const record = await db.collab_custom.get([name, collabVersionKey(name)]);
+
+    return typeof record?.value === 'string' ? record.value : undefined;
+  } catch (error) {
+    Log.warn('[DB] failed to read cached collab version', { name, error });
+    return undefined;
+  }
+}
+
+async function setCachedCollabVersion(name: string, version: string) {
+  try {
+    await db.collab_custom.put({
+      objectId: name,
+      key: collabVersionKey(name),
+      value: version,
+    });
+  } catch (error) {
+    Log.warn('[DB] failed to write cached collab version', { name, version, error });
+  }
+}
+
+async function deleteCachedCollabVersion(name: string) {
+  try {
+    await db.collab_custom.delete([name, collabVersionKey(name)]);
+  } catch (error) {
+    Log.warn('[DB] failed to delete cached collab version', { name, error });
+  }
+}
+
+async function readCollabVersion(name: string, provider: CollabPersistenceProvider) {
+  const key = collabVersionKey(name);
+  const providerVersion = (await provider.get(key)) as string | undefined;
+
+  if (typeof providerVersion === 'string') {
+    await setCachedCollabVersion(name, providerVersion);
+    return providerVersion;
+  }
+
+  return getCachedCollabVersion(name);
+}
+
+async function writeCollabVersion(name: string, provider: CollabPersistenceProvider, version: string) {
+  await Promise.all([provider.set(collabVersionKey(name), version), setCachedCollabVersion(name, version)]);
+}
+
+async function clearCollabVersion(name: string, provider: CollabPersistenceProvider) {
+  await Promise.all([provider.del(collabVersionKey(name)), deleteCachedCollabVersion(name)]);
+}
+
 /**
  * Open the collaboration database, and return a function to close it
  */
@@ -1000,7 +1062,11 @@ async function _openRowCollabDBWithProviderInternal(
     guid: name,
   }) as YDoc;
   let provider = new SharedIndexeddbPersistence(name, doc);
-  let version = await provider.get(name + '/version') as string | undefined;
+  let version = options?.expectedVersion ? await readCollabVersion(name, provider) : undefined;
+
+  if (!options?.expectedVersion) {
+    await clearCollabVersion(name, provider);
+  }
 
   if (options?.forceReset || (options?.expectedVersion && version !== options.expectedVersion)) {
     await provider.destroy();
@@ -1018,9 +1084,10 @@ async function _openRowCollabDBWithProviderInternal(
     provider = new SharedIndexeddbPersistence(name, doc);
 
     if (options?.expectedVersion) {
-      await provider.set(name + '/version', options.expectedVersion);
+      await writeCollabVersion(name, provider, options.expectedVersion);
       version = options.expectedVersion;
     } else {
+      await clearCollabVersion(name, provider);
       version = undefined;
     }
   }
@@ -1048,7 +1115,7 @@ async function _openCollabDBWithProviderInternal(
   await ensureYjsStores(name);
 
   let provider = new IndexeddbPersistence(name, doc);
-  let version = await provider.get(name + '/version');
+  let version = await readCollabVersion(name, provider);
 
   if (options?.forceReset || (options?.expectedVersion && version !== options.expectedVersion)) {
     await provider.destroy();
@@ -1067,9 +1134,10 @@ async function _openCollabDBWithProviderInternal(
     provider = new IndexeddbPersistence(name, doc);
 
     if (options?.expectedVersion) {
-      await provider.set(name + '/version', options.expectedVersion);
+      await writeCollabVersion(name, provider, options.expectedVersion);
       version = options.expectedVersion;
     } else {
+      await clearCollabVersion(name, provider);
       version = undefined;
     }
   }

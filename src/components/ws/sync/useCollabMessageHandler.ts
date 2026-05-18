@@ -3,18 +3,43 @@ import EventEmitter from 'events';
 import { useCallback, useEffect, useRef } from 'react';
 import * as Y from 'yjs';
 
-import { deleteCollabDB, openCollabDB } from '@/application/db';
+import { deleteCollabDB, openCollabDB, openRowCollabDBWithProvider } from '@/application/db';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { User, YDoc } from '@/application/types';
+import { Types, User, YDoc } from '@/application/types';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
+import { prepareDatabaseRowsForVersionReset } from './databaseVersionReset';
 import { rebuildCollabDoc } from './rebuildCollabDoc';
 import { replayQueuedMessages } from './replayQueuedMessages';
 import { SyncRefs } from './syncRefs';
 import { isCollabVersionId, RegisterSyncContext, SyncDocMeta, versionChanged } from './types';
 
 import ICollabMessage = collab.ICollabMessage;
+
+type ResetOpenOptions = {
+  expectedVersion?: string;
+  forceReset?: boolean;
+  currentUser?: string;
+};
+
+async function openReplacementCollabDoc(
+  objectId: string,
+  collabType: Types,
+  options: ResetOpenOptions
+): Promise<YDoc & SyncDocMeta> {
+  if (collabType === Types.DatabaseRow) {
+    const { doc } = await openRowCollabDBWithProvider(objectId, {
+      forceReset: options.forceReset,
+    });
+
+    doc.version = undefined;
+
+    return doc as YDoc & SyncDocMeta;
+  }
+
+  return (await openCollabDB(objectId, options)) as YDoc & SyncDocMeta;
+}
 
 export function useCollabMessageHandler(
   refs: SyncRefs,
@@ -40,7 +65,11 @@ export function useCollabMessageHandler(
 
       const incomingVersion = message.update?.version || message.syncRequest?.version || null;
 
-      Log.debug(`[Version] applyCollabMessage: objectId=${objectId}, incomingVersion=${JSON.stringify(incomingVersion)}, isCollabVersionId=${isCollabVersionId(incomingVersion)}`);
+      Log.debug(
+        `[Version] applyCollabMessage: objectId=${objectId}, incomingVersion=${JSON.stringify(
+          incomingVersion
+        )}, isCollabVersionId=${isCollabVersionId(incomingVersion)}`
+      );
 
       if (isCollabVersionId(incomingVersion)) {
         refs.latestIncomingVersionRef.current.set(objectId, incomingVersion);
@@ -61,7 +90,11 @@ export function useCollabMessageHandler(
         return;
       }
 
-      Log.debug(`[Version] context lookup: objectId=${objectId}, hasContext=${!!context}, docVersion=${JSON.stringify(context?.doc?.version)}, isCollabVersionId(docVersion)=${context ? isCollabVersionId(context.doc.version) : 'N/A'}`);
+      Log.debug(
+        `[Version] context lookup: objectId=${objectId}, hasContext=${!!context}, docVersion=${JSON.stringify(
+          context?.doc?.version
+        )}, isCollabVersionId(docVersion)=${context ? isCollabVersionId(context.doc.version) : 'N/A'}`
+      );
 
       if (context) {
         let messageHandled = false;
@@ -74,10 +107,18 @@ export function useCollabMessageHandler(
           }
 
           const activeVersion = activeContext.doc.version;
-          const activeVersionKnown = isCollabVersionId(activeVersion);
+          const activeVersionKnown = activeContext.collabType !== Types.DatabaseRow && isCollabVersionId(activeVersion);
           const incomingVersionKnown = isCollabVersionId(incomingVersion);
 
-          Log.debug(`[Version] handleOnActiveContext guard: objectId=${objectId}, activeVersion=${JSON.stringify(activeVersion)}, activeVersionKnown=${activeVersionKnown}, incomingVersion=${JSON.stringify(incomingVersion)}, incomingVersionKnown=${incomingVersionKnown}, guardWillFire=${activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)}`);
+          Log.debug(
+            `[Version] handleOnActiveContext guard: objectId=${objectId}, activeVersion=${JSON.stringify(
+              activeVersion
+            )}, activeVersionKnown=${activeVersionKnown}, incomingVersion=${JSON.stringify(
+              incomingVersion
+            )}, incomingVersionKnown=${incomingVersionKnown}, guardWillFire=${
+              activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)
+            }`
+          );
 
           if (activeVersionKnown && (!incomingVersionKnown || incomingVersion !== activeVersion)) {
             Log.debug('Skipped collab message with mismatched version on active context', {
@@ -96,7 +137,9 @@ export function useCollabMessageHandler(
 
         const _versionChanged = versionChanged(context, message);
 
-        Log.debug(`[Version] versionChanged=${_versionChanged}, allowVersionReset=${options?.allowVersionReset}, objectId=${objectId}`);
+        Log.debug(
+          `[Version] versionChanged=${_versionChanged}, allowVersionReset=${options?.allowVersionReset}, objectId=${objectId}`
+        );
 
         if (options?.allowVersionReset && _versionChanged) {
           if (options?.isCancelled?.()) {
@@ -132,10 +175,20 @@ export function useCollabMessageHandler(
             return !activeContext;
           };
 
-          Log.debug('[Version] Collab version changed: objectId=%s, localVersion=%s, incomingVersion=%s', objectId, context.doc.version, newVersion);
+          Log.debug(
+            '[Version] Collab version changed: objectId=%s, localVersion=%s, incomingVersion=%s',
+            objectId,
+            context.doc.version,
+            newVersion
+          );
 
           if (shouldAbortReset()) {
-            Log.debug('[Version] abort reset: objectId=%s, localVersion=%s, incomingVersion=%s', objectId, context.doc.version, newVersion);
+            Log.debug(
+              '[Version] abort reset: objectId=%s, localVersion=%s, incomingVersion=%s',
+              objectId,
+              context.doc.version,
+              newVersion
+            );
             messageHandled = handleOnActiveContext();
           } else {
             const hadPendingDeferredCleanup = refs.pendingCleanups.current.has(previousDoc.guid);
@@ -157,6 +210,30 @@ export function useCollabMessageHandler(
               // `applyCollabMessage` would queue every subsequent message
               // and the doc would stay stuck until reload.
               await context.discardPendingUpdates?.();
+              const rowIdsPendingReset = new Set<string>();
+
+              try {
+                await prepareDatabaseRowsForVersionReset(context, previousDoc, {
+                  beforeResetRow: async (rowId) => {
+                    // Only mark rows that actually have a sync context. Adding
+                    // the flag for an unregistered row would leak — the cleanup
+                    // below only clears it when a context exists, so a future
+                    // open + destroy of that row would silently skip its flush.
+                    const rowContext = refs.registeredContexts.current.get(rowId);
+
+                    if (!rowContext) return;
+
+                    rowIdsPendingReset.add(rowId);
+                    refs.skipFlushOnDestroy.current.add(rowId);
+                    await rowContext.discardPendingUpdates?.();
+                  },
+                });
+              } finally {
+                rowIdsPendingReset.forEach((rowId) => {
+                  refs.skipFlushOnDestroy.current.delete(rowId);
+                });
+              }
+
               await deleteCollabDB(previousDoc.guid, { destroyDoc: false });
               previousDoc.destroy();
 
@@ -174,7 +251,8 @@ export function useCollabMessageHandler(
                   let nextDoc: YDoc & SyncDocMeta;
 
                   try {
-                    const shouldForceResetCache = !isCollabVersionId(newVersion) && isCollabVersionId(previousDoc.version);
+                    const shouldForceResetCache =
+                      !isCollabVersionId(newVersion) && isCollabVersionId(previousDoc.version);
                     const openOptions: {
                       expectedVersion?: string;
                       currentUser?: string;
@@ -189,16 +267,24 @@ export function useCollabMessageHandler(
                       openOptions.forceReset = true;
                     }
 
-                    Log.debug('[Version] opening new doc: objectId=%s, expectedVersion=%s, forceReset=%s, previousDocVersion=%s, incomingVersion=%s', objectId, openOptions.expectedVersion, openOptions.forceReset, previousDoc.version, newVersion);
-                    nextDoc = (await openCollabDB(previousDoc.guid, {
-                      ...openOptions,
-                    })) as YDoc & SyncDocMeta;
+                    Log.debug(
+                      '[Version] opening new doc: objectId=%s, expectedVersion=%s, forceReset=%s, previousDocVersion=%s, incomingVersion=%s',
+                      objectId,
+                      openOptions.expectedVersion,
+                      openOptions.forceReset,
+                      previousDoc.version,
+                      newVersion
+                    );
+                    nextDoc = await openReplacementCollabDoc(previousDoc.guid, localContext.collabType, openOptions);
                     Log.debug('[Version] opened new doc: objectId=%s, nextDocVersion=%s', objectId, nextDoc.version);
                     if (!isCollabVersionId(newVersion)) {
                       // Align with desktop Option<version> semantics after mismatch reset:
                       // local doc should become version-unknown until a new authoritative version is learned.
                       nextDoc.version = undefined;
-                      Log.debug('[Version] newVersion is unknown, set nextDoc.version=undefined for objectId=%s', objectId);
+                      Log.debug(
+                        '[Version] newVersion is unknown, set nextDoc.version=undefined for objectId=%s',
+                        objectId
+                      );
                     }
                   } catch (error) {
                     // Keep the page usable if cache replacement/open fails after teardown.
@@ -226,7 +312,12 @@ export function useCollabMessageHandler(
               // a later unrelated destroy doesn't accidentally suppress flush.
               refs.skipFlushOnDestroy.current.delete(previousDoc.guid);
               refs.resettingObjectIds.current.delete(objectId);
-              await replayQueuedMessages(objectId, refs.queuedMessagesDuringReset.current, applyCollabMessage, options?.user);
+              await replayQueuedMessages(
+                objectId,
+                refs.queuedMessagesDuringReset.current,
+                applyCollabMessage,
+                options?.user
+              );
             }
           }
         }
@@ -241,50 +332,53 @@ export function useCollabMessageHandler(
     [refs, eventEmitter, registerSyncContext, scheduleDeferredCleanup]
   );
 
-  const processIncomingMessageQueueForObject = useCallback(async (objectId: string) => {
-    if (refs.isDisposedRef.current || refs.processingObjectIdsRef.current.has(objectId)) {
-      return;
-    }
+  const processIncomingMessageQueueForObject = useCallback(
+    async (objectId: string) => {
+      if (refs.isDisposedRef.current || refs.processingObjectIdsRef.current.has(objectId)) {
+        return;
+      }
 
-    refs.processingObjectIdsRef.current.add(objectId);
+      refs.processingObjectIdsRef.current.add(objectId);
 
-    try {
-      while (!refs.isDisposedRef.current) {
+      try {
+        while (!refs.isDisposedRef.current) {
+          const queue = refs.incomingMessageQueuesRef.current.get(objectId);
+
+          if (!queue || queue.length === 0) {
+            break;
+          }
+
+          const nextMessage = queue.shift();
+
+          if (!nextMessage) {
+            continue;
+          }
+
+          try {
+            await applyCollabMessage(nextMessage, {
+              allowVersionReset: true,
+              user: refs.latestUserRef.current,
+            });
+          } catch (error) {
+            Log.error('Failed to apply queued collab message', error);
+          }
+        }
+      } finally {
+        refs.processingObjectIdsRef.current.delete(objectId);
         const queue = refs.incomingMessageQueuesRef.current.get(objectId);
 
-        if (!queue || queue.length === 0) {
-          break;
+        if (queue && queue.length === 0) {
+          refs.incomingMessageQueuesRef.current.delete(objectId);
         }
 
-        const nextMessage = queue.shift();
-
-        if (!nextMessage) {
-          continue;
-        }
-
-        try {
-          await applyCollabMessage(nextMessage, {
-            allowVersionReset: true,
-            user: refs.latestUserRef.current,
-          });
-        } catch (error) {
-          Log.error('Failed to apply queued collab message', error);
+        // If new messages for this object were enqueued during the final await, keep draining.
+        if (queue && queue.length > 0 && !refs.isDisposedRef.current) {
+          void processIncomingMessageQueueForObject(objectId);
         }
       }
-    } finally {
-      refs.processingObjectIdsRef.current.delete(objectId);
-      const queue = refs.incomingMessageQueuesRef.current.get(objectId);
-
-      if (queue && queue.length === 0) {
-        refs.incomingMessageQueuesRef.current.delete(objectId);
-      }
-
-      // If new messages for this object were enqueued during the final await, keep draining.
-      if (queue && queue.length > 0 && !refs.isDisposedRef.current) {
-        void processIncomingMessageQueueForObject(objectId);
-      }
-    }
-  }, [refs, applyCollabMessage]);
+    },
+    [refs, applyCollabMessage]
+  );
 
   const enqueueIncomingCollabMessage = useCallback(
     (message: ICollabMessage) => {

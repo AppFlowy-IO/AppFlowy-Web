@@ -72,7 +72,9 @@ function fullSharedPrefetchKey(workspaceId: string, databaseId: string) {
 }
 
 function sharedPrefetchKeyForOptions(workspaceId: string, databaseId: string, options?: PrefetchOptions) {
-  return options?.forceFullSync ? fullSharedPrefetchKey(workspaceId, databaseId) : sharedPrefetchKey(workspaceId, databaseId);
+  return options?.forceFullSync
+    ? fullSharedPrefetchKey(workspaceId, databaseId)
+    : sharedPrefetchKey(workspaceId, databaseId);
 }
 
 function sharedPrefetchEntryMatchesDatabase(sharedKey: string, databaseId: string) {
@@ -109,21 +111,19 @@ function notifySeedsReady(entry: SharedPrefetchEntry) {
   callbacks.forEach((callback) => callback());
 }
 
-function clearSharedPrefetchEntryAfterSettle(
-  databaseId: string,
-  sharedKey: string,
-  entry: SharedPrefetchEntry
-) {
+function clearSharedPrefetchEntryAfterSettle(databaseId: string, sharedKey: string, entry: SharedPrefetchEntry) {
   if (entry.clearWhenSettled) return;
   entry.clearWhenSettled = true;
 
-  entry.promise?.finally(() => {
-    entry.clearWhenSettled = false;
+  entry.promise
+    ?.finally(() => {
+      entry.clearWhenSettled = false;
 
-    if ((rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) === 0 && sharedPrefetchEntries.get(sharedKey) === entry) {
-      clearDatabaseRowDocSeedCache(databaseId);
-    }
-  }).catch(() => undefined);
+      if ((rowDocSeedCacheRetainCounts.get(databaseId) ?? 0) === 0 && sharedPrefetchEntries.get(sharedKey) === entry) {
+        clearDatabaseRowDocSeedCache(databaseId);
+      }
+    })
+    .catch(() => undefined);
 }
 
 function parseRid(rid?: database_blob.IDatabaseBlobRowRid | null): DatabaseBlobRowRid | null {
@@ -161,6 +161,14 @@ function writeCachedRid(databaseId: string, rid: DatabaseBlobRowRid) {
   }
 }
 
+function clearCachedRid(databaseId: string) {
+  try {
+    localStorage.removeItem(ridCacheKey(databaseId));
+  } catch {
+    // Ignore storage failures (private mode/quota).
+  }
+}
+
 function compareRid(a: DatabaseBlobRowRid, b: DatabaseBlobRowRid) {
   if (a.timestamp === b.timestamp) {
     return a.seqNo - b.seqNo;
@@ -173,6 +181,15 @@ const rowDocSeedCache = new Map<string, RowDocSeed>();
 const rowDocSeedLookup = new Map<string, RowDocSeed>();
 const rowDocSeedDocCache = new Map<string, YDoc>();
 const rowDocSeedCacheRetainCounts = new Map<string, number>();
+const invalidationGenerations = new Map<string, number>();
+
+function currentInvalidationGeneration(databaseId: string) {
+  return invalidationGenerations.get(databaseId) ?? 0;
+}
+
+function isStalePrefetch(databaseId: string, generation: number) {
+  return currentInvalidationGeneration(databaseId) !== generation;
+}
 
 function applySeedToSharedRowDoc(rowKey: string, seed: RowDocSeed) {
   const doc = rowDocSeedDocCache.get(rowKey);
@@ -304,7 +321,7 @@ export function getDatabaseRowDocFromSeed(rowKey: string): YDoc | null {
   return doc;
 }
 
-export function clearDatabaseRowDocSeedCache(databaseId: string) {
+export function clearDatabaseRowDocSeedCache(databaseId: string, options?: { force?: boolean }) {
   const prefix = `${databaseId}_rows_`;
   let hasUnsettledPrefetch = false;
 
@@ -319,7 +336,7 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
     }
   }
 
-  if (hasUnsettledPrefetch) return;
+  if (hasUnsettledPrefetch && !options?.force) return;
 
   for (const key of rowDocSeedCache.keys()) {
     if (key.startsWith(prefix)) {
@@ -346,6 +363,12 @@ export function clearDatabaseRowDocSeedCache(databaseId: string) {
       sharedPrefetchEntries.delete(key);
     }
   }
+}
+
+export function invalidateDatabaseBlobCache(databaseId: string) {
+  invalidationGenerations.set(databaseId, currentInvalidationGeneration(databaseId) + 1);
+  clearCachedRid(databaseId);
+  clearDatabaseRowDocSeedCache(databaseId, { force: true });
 }
 
 export function retainDatabaseRowDocSeedCache(databaseId: string) {
@@ -439,7 +462,11 @@ function applySeedToCachedDoc(rowKey: string, seed: RowDocSeed) {
   return true;
 }
 
-function seedRowDocCacheFromDiff(databaseId: string, diff: database_blob.DatabaseBlobDiffResponse, options?: PrefetchOptions) {
+function seedRowDocCacheFromDiff(
+  databaseId: string,
+  diff: database_blob.DatabaseBlobDiffResponse,
+  options?: PrefetchOptions
+) {
   const updates = [...diff.creates, ...diff.updates];
 
   if (updates.length === 0) {
@@ -536,7 +563,10 @@ function seedRowDocCacheFromDiff(databaseId: string, diff: database_blob.Databas
   };
 }
 
-function inspectDocRowData(doc: YDoc, objectId: string): {
+function inspectDocRowData(
+  doc: YDoc,
+  objectId: string
+): {
   hasDataSection: boolean;
   hasDatabaseRow: boolean;
   rowKeys: string[];
@@ -896,11 +926,8 @@ async function fetchReadyDiff(
   throw new Error('database blob diff is not ready');
 }
 
-export async function prefetchDatabaseBlobDiff(
-  workspaceId: string,
-  databaseId: string,
-  options?: PrefetchOptions
-) {
+export async function prefetchDatabaseBlobDiff(workspaceId: string, databaseId: string, options?: PrefetchOptions) {
+  const prefetchGeneration = currentInvalidationGeneration(databaseId);
   const sharedKey = sharedPrefetchKeyForOptions(workspaceId, databaseId, options);
   const existingEntry = sharedPrefetchEntries.get(sharedKey);
 
@@ -929,6 +956,14 @@ export async function prefetchDatabaseBlobDiff(
   let pendingPersistQueue: Promise<void> = Promise.resolve();
 
   const seedDiff = (diff: database_blob.DatabaseBlobDiffResponse, source: string) => {
+    if (isStalePrefetch(databaseId, prefetchGeneration)) {
+      Log.debug('[Database] skipped stale blob seed cache', {
+        databaseId,
+        source,
+      });
+      return { seeded: 0, prioritized: 0, priorityRequested: entry.priorityRowIds.size, appliedToCached: 0 };
+    }
+
     const seedSummary = seedRowDocCacheFromDiff(databaseId, diff, {
       priorityRowIds: Array.from(entry.priorityRowIds),
     });
@@ -949,18 +984,22 @@ export async function prefetchDatabaseBlobDiff(
   };
 
   const handlePendingDiff = (diff: database_blob.DatabaseBlobDiffResponse, attempt: number) => {
+    if (isStalePrefetch(databaseId, prefetchGeneration)) return;
+
     const summary = summarizeDiff(diff);
 
     if (summary.rowDocStates === 0) return;
 
     seedDiff(diff, 'pending');
 
-    pendingPersistQueue = pendingPersistQueue.then(() =>
-      persistDiffToIndexedDB(databaseId, diff, {
+    pendingPersistQueue = pendingPersistQueue.then(() => {
+      if (isStalePrefetch(databaseId, prefetchGeneration)) return undefined;
+
+      return persistDiffToIndexedDB(databaseId, diff, {
         source: `pending attempt ${attempt}`,
         writeRid: false,
-      })
-    );
+      });
+    });
   };
 
   const promise = (async () => {
@@ -980,10 +1019,12 @@ export async function prefetchDatabaseBlobDiff(
 
     seedDiff(diff, 'ready');
     await pendingPersistQueue;
-    await persistDiffToIndexedDB(databaseId, diff, {
-      source: options?.forceFullSync ? 'ready full' : 'ready delta',
-      writeRid: !options?.forceFullSync,
-    });
+    if (!isStalePrefetch(databaseId, prefetchGeneration)) {
+      await persistDiffToIndexedDB(databaseId, diff, {
+        source: options?.forceFullSync ? 'ready full' : 'ready delta',
+        writeRid: !options?.forceFullSync,
+      });
+    }
 
     return diff;
   })().finally(() => {
