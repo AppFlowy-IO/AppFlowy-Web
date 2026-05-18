@@ -545,6 +545,14 @@ function ensureTextForBlock(sharedRoot: YSharedRoot, block: YBlock) {
   }
 }
 
+function canTurnToBlockInPlace(type: BlockType, sourceChildren?: Y.Array<string>) {
+  if (isEmbedBlockTypes(type)) {
+    return false;
+  }
+
+  return !sourceChildren || sourceChildren.length === 0 || CONTAINER_BLOCK_TYPES.includes(type);
+}
+
 export function prepareBreakOperation(sharedRoot: YSharedRoot, block: YBlock, offset: number) {
   const yText = getText(block.get(YjsEditorKey.block_external_id), sharedRoot);
   const ops = yText.toDelta() as Op[];
@@ -675,10 +683,8 @@ export function turnToBlock<T extends BlockData>(
   data: T
 ) {
   const sourceChildren = getChildrenArray(sourceBlock.get(YjsEditorKey.block_children), sharedRoot);
-  const canUpdateInPlace =
-    !isEmbedBlockTypes(type) && (CONTAINER_BLOCK_TYPES.includes(type) || !sourceChildren || sourceChildren.length === 0);
 
-  if (canUpdateInPlace) {
+  if (canTurnToBlockInPlace(type, sourceChildren)) {
     ensureTextForBlock(sharedRoot, sourceBlock);
     sourceBlock.set(YjsEditorKey.block_type, type);
     sourceBlock.set(YjsEditorKey.block_data, JSON.stringify(data));
