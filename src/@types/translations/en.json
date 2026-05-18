@@ -3320,6 +3320,9 @@
     "zoomIn": "Zoom in",
     "zoomOut": "Zoom out"
   },
+  "form": {
+    "menuName": "Form"
+  },
   "invitation": {
     "join": "Join",
     "on": "on",

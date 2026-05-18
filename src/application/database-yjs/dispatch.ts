@@ -1920,6 +1920,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Chart]: ViewLayout.Chart,
         [DatabaseViewLayout.List]: ViewLayout.List,
         [DatabaseViewLayout.Gallery]: ViewLayout.Gallery,
+        [DatabaseViewLayout.Form]: ViewLayout.Form,
       };
       const layoutToName: Record<DatabaseViewLayout, string> = {
         [DatabaseViewLayout.Grid]: 'Grid',
@@ -1928,6 +1929,7 @@ export function useAddDatabaseView() {
         [DatabaseViewLayout.Chart]: 'Chart',
         [DatabaseViewLayout.List]: 'List',
         [DatabaseViewLayout.Gallery]: 'Gallery',
+        [DatabaseViewLayout.Form]: 'Form',
       };
       const viewLayout = layoutToViewLayout[layout];
       const name = layoutToName[layout];

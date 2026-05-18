@@ -16,6 +16,7 @@ const AcceptInvitationPage = lazy(() => import('@/pages/AcceptInvitationPage'));
 const AfterPaymentPage = lazy(() => import('@/pages/AfterPaymentPage'));
 const ImportPage = lazy(() => import('@/pages/ImportPage'));
 const PublishPage = lazy(() => import('@/pages/PublishPage'));
+const FormPage = lazy(() => import('@/pages/FormPage'));
 
 const AppMain = withAppWrapper(() => {
   return (
@@ -55,6 +56,10 @@ const AppMain = withAppWrapper(() => {
       <Route
         path={'/import'}
         element={<Suspense><ImportPage /></Suspense>}
+      />
+      <Route
+        path={'/form/:token'}
+        element={<Suspense><FormPage /></Suspense>}
       />
       <Route
         path="/"

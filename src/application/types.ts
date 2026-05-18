@@ -319,6 +319,12 @@ export enum ViewLayout {
   Chart = 5,
   List = 6,
   Gallery = 7,
+  /// Folder-side layout value for form views. Matches
+  /// `ViewLayout::Form = 9` in `libs/collab/src/folder/view.rs`. The
+  /// database-side `DatabaseViewLayout.Form` has a different numeric
+  /// value (7) — they're distinct enums and the mapping between them
+  /// lives in `dispatch.ts`.
+  Form = 9,
 }
 
 export enum YjsEditorKey {
@@ -404,6 +410,10 @@ export enum YjsDatabaseKey {
   condition_value = 'condition_value',
   field_orders = 'field_orders',
   field_settings = 'field_settings',
+  /// Per-view form-builder map (`form_field_settings` key on each view in
+  /// the database collab). Keys are field ids; values are the
+  /// `FormFieldSettings` map (see `parseFormFieldSettings`).
+  form_field_settings = 'form_field_settings',
   visibility = 'visibility',
   wrap = 'wrap',
   width = 'width',
@@ -666,6 +676,10 @@ export enum DatabaseViewLayout {
   Chart = 3,
   List = 4,
   Gallery = 5,
+  /// Matches `DatabaseLayout::Form = 7` in
+  /// `libs/collab/src/database/views/layout.rs`. `Feed = 6` is not
+  /// represented on the web yet — leave the gap rather than renumber.
+  Form = 7,
 }
 
 export interface YDatabaseView extends Y.Map<unknown> {
@@ -689,6 +703,14 @@ export interface YDatabaseView extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.sorts): YDatabaseSorts;
 
   get(key: YjsDatabaseKey.field_settings): YDatabaseFieldSettings;
+
+  /// Per-view form-builder map; only present on Form-layout views.
+  /// Missing on every other layout (Grid/Board/Calendar/etc). Treat
+  /// `undefined` as "this view never authored form questions" — the
+  /// projection should render empty, not synthesize one entry per field.
+  get(
+    key: YjsDatabaseKey.form_field_settings,
+  ): YDatabaseFormFieldSettings | undefined;
 
   get(key: YjsDatabaseKey.field_orders): YDatabaseFieldOrders;
 
@@ -810,6 +832,23 @@ export interface YDatabaseFieldSetting extends Y.Map<unknown> {
 
   // eslint-disable-next-line @typescript-eslint/unified-signatures
   get(key: YjsDatabaseKey.width): string;
+}
+
+/// Per-view form-builder overrides. Mirrors the collab struct
+/// `FormFieldSettingsByFieldIdMap` in
+/// `libs/collab/src/database/views/form_field_settings.rs` —
+/// keys are field ids, values are the `FormFieldSettings` map. The
+/// map is the source of truth for the projection model (plan §1.4.1):
+/// a field is on the form iff an entry exists for it; the entries are
+/// rendered in `order` ascending. Two sentinel keys (`__form_decided__`
+/// and `__form_description__`) carry form-level state — readers must
+/// skip them when projecting per-question entries.
+export interface YDatabaseFormFieldSettings extends Y.Map<unknown> {
+  // The value type is intentionally a permissive `Y.Map<unknown>` rather
+  // than a typed `YDatabaseFormFieldSetting` because the per-key set is
+  // small enough that callers reach for `get(string)` directly and the
+  // typed-overload pattern doesn't pay off here.
+  get(key: string): Y.Map<unknown> | undefined;
 }
 
 export interface YDatabaseMetas extends Y.Map<unknown> {

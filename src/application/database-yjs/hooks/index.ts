@@ -8,4 +8,7 @@
 
 export { useBackgroundRowDocLoader } from './useBackgroundRowDocLoader';
 export { useRollupFieldObservers } from './useRollupFieldObservers';
+export { useFormLayoutSnapshot, asSnapshot } from './useFormLayoutSnapshot';
+export { useFormWriter } from './useFormWriter';
+export { useDatabaseFieldsVersion } from './useDatabaseFieldsVersion';
 

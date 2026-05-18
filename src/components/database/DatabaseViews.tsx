@@ -10,6 +10,7 @@ import { Chart } from '@/components/database/chart';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
 import { DatabaseTabs } from '@/components/database/components/tabs';
 import UnsupportedView from '@/components/database/components/UnsupportedView';
+import { FormBuilderView } from '@/components/database/form';
 import { Calendar } from '@/components/database/fullcalendar';
 import { Grid } from '@/components/database/grid';
 import { shouldUseFixedDatabaseViewport } from '@/components/database/layout';
@@ -311,6 +312,8 @@ function DatabaseViews({
         return <Calendar />;
       case DatabaseViewLayout.Chart:
         return <Chart />;
+      case DatabaseViewLayout.Form:
+        return <FormBuilderView />;
       case DatabaseViewLayout.List:
       case DatabaseViewLayout.Gallery:
         return <UnsupportedView />;

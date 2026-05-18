@@ -107,6 +107,15 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
           {t('chart.menuName')}
         </DropdownMenuItem>
 
+        <DropdownMenuItem
+          onClick={() => {
+            void handleAddView(DatabaseViewLayout.Form, t('form.menuName'));
+          }}
+        >
+          <ViewIcon layout={ViewLayout.Form} size={'small'} />
+          {t('form.menuName')}
+        </DropdownMenuItem>
+
         {/* List - Desktop Only */}
         <Tooltip>
           <TooltipTrigger asChild>
