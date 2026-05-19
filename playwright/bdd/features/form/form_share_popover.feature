@@ -18,6 +18,18 @@ Feature: Form Share Popover
     Then the share popover shows the upgrade prompt
     And the share popover does not show the loading skeleton
 
+  Scenario: Share popover never renders a blank surface
+    # Regression for image #44 — the loading skeleton used a fill color
+    # that matched the popover background in dark mode, so users saw
+    # an empty rectangle for the whole retry window. This scenario
+    # opens the popover immediately after the form view is created (so
+    # the bootstrap is likely mid-retry) and asserts the popover
+    # surface always carries human-readable copy — either the loading
+    # text, the upgrade copy, the error copy, or the share controls.
+    Given a Grid with a Form tab is open on a Pro workspace
+    When I open the share popover
+    Then the share popover surface is not blank
+
   Scenario: Pro workspace sees the share rows after the popover bootstraps
     Given a Grid with a Form tab is open on a Pro workspace
     When I open the share popover

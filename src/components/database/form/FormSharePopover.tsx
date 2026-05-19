@@ -187,11 +187,24 @@ function ShareLoading() {
   return (
     <div
       data-testid='form-share-popover-loading'
-      className='flex flex-col gap-2 px-2 py-3'
+      className='flex flex-col items-center gap-3 px-4 py-6'
     >
-      <div className='h-8 w-full animate-pulse rounded bg-fill-content' />
-      <div className='h-8 w-full animate-pulse rounded bg-fill-content' />
-      <div className='mt-2 h-7 w-full animate-pulse rounded bg-fill-content' />
+      {/*
+        Visible "Loading…" copy + skeleton bars. The previous skeleton-
+        only design (image #44) used `bg-fill-content` which matches the
+        popover's `bg-surface-layer-03` surface in dark mode — the bars
+        rendered as invisible boxes. Adding text gives the user
+        something to read while the bootstrap retries against the
+        cloud's folder cache, and `bg-fill-secondary` is the
+        established "filled placeholder" token that contrasts with both
+        the surface above and the text below.
+      */}
+      <p className='text-sm text-text-caption'>Loading share settings…</p>
+      <div className='flex w-full flex-col gap-2'>
+        <div className='h-8 w-full animate-pulse rounded bg-fill-secondary' />
+        <div className='h-8 w-full animate-pulse rounded bg-fill-secondary' />
+        <div className='mt-1 h-7 w-full animate-pulse rounded bg-fill-secondary' />
+      </div>
     </div>
   );
 }

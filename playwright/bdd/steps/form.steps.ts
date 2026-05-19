@@ -238,6 +238,22 @@ Then('the share URL is non-empty', async ({ page }) => {
   expect(url.length).toBeGreaterThan(0);
 });
 
+Then('the share popover surface is not blank', async ({ page }) => {
+  // The popover's textContent must contain something human-readable.
+  // Regression target: the loading skeleton (image #44) used
+  // `bg-fill-content` for the pulsing bars — that token matched the
+  // popover's `bg-surface-layer-03` background in dark mode, so the
+  // bars rendered invisibly. The testid was present, but the user saw
+  // an empty rectangle. This test catches that class of regression by
+  // requiring SOME readable text in any of the three branches.
+  const text = await page
+    .locator('[data-slot="popover-content"]')
+    .first()
+    .innerText();
+
+  expect(text.replace(/\s+/g, '').length).toBeGreaterThan(0);
+});
+
 When(
   'I switch the share tier to {string}',
   async ({ page }, tier: string) => {
