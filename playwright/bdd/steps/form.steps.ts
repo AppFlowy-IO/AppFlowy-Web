@@ -357,3 +357,23 @@ Then(
     expect(count).toBeGreaterThanOrEqual(expected);
   },
 );
+
+// ── Access-level respondent landing states ─────────────────────────
+
+Then(
+  'the public form shows the login required prompt',
+  async ({ page }) => {
+    await expect(
+      PublicFormSelectors.authRequiredPage(getRespondent(page)),
+    ).toBeVisible({ timeout: 15000 });
+  },
+);
+
+Then(
+  'the public form shows the closed page',
+  async ({ page }) => {
+    await expect(
+      PublicFormSelectors.closedPage(getRespondent(page)),
+    ).toBeVisible({ timeout: 15000 });
+  },
+);

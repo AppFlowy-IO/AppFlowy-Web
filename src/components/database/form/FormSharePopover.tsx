@@ -338,6 +338,7 @@ function TierSubmenu({
   return (
     <div className='flex flex-col'>
       <Choice
+        testId='form-share-tier-choice-workspace'
         selected={current === 'workspace'}
         title={`Anyone at ${workspaceName} with link`}
         subtitle='Only signed-in members can fill out.'
@@ -345,6 +346,7 @@ function TierSubmenu({
         leadingIcon={<Lock size={14} />}
       />
       <Choice
+        testId='form-share-tier-choice-public'
         selected={current === 'public'}
         title='Anyone on the web with link'
         titleBadge={<TierBadge kind='public' />}
@@ -352,6 +354,7 @@ function TierSubmenu({
         onClick={() => onSelect('public')}
       />
       <Choice
+        testId='form-share-tier-choice-closed'
         selected={current === 'closed'}
         title='No access'
         titleBadge={<TierBadge kind='closed' />}
@@ -394,6 +397,7 @@ function Choice({
   subtitle,
   onClick,
   leadingIcon,
+  testId,
 }: {
   selected: boolean;
   title: string;
@@ -401,9 +405,11 @@ function Choice({
   subtitle: string;
   onClick: () => void;
   leadingIcon?: React.ReactNode;
+  testId?: string;
 }) {
   return (
     <button
+      data-testid={testId}
       type='button'
       onClick={onClick}
       className='flex items-start gap-2 rounded px-3 py-2 text-left text-sm hover:bg-fill-content'

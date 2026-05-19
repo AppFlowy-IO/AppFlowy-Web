@@ -72,6 +72,7 @@ export function FormView({ token }: { token: string }) {
     case 'auth_required':
       return (
         <FormMessageLayout
+          testid='public-form-auth-required'
           title='Log in to fill out this form'
           body='This form is only available to members of the workspace. Sign in to continue.'
           action={
@@ -92,6 +93,7 @@ export function FormView({ token }: { token: string }) {
     case 'closed':
       return (
         <FormMessageLayout
+          testid='public-form-closed'
           title='Form closed'
           body={status.message}
         />
@@ -124,13 +126,18 @@ function FormMessageLayout({
   title,
   body,
   action,
+  testid,
 }: {
   title: string;
   body: string;
   action?: React.ReactNode;
+  testid?: string;
 }) {
   return (
-    <div className='flex h-screen flex-col items-center justify-center gap-3 px-6 text-center'>
+    <div
+      data-testid={testid}
+      className='flex h-screen flex-col items-center justify-center gap-3 px-6 text-center'
+    >
       <h1 className='text-2xl font-semibold'>{title}</h1>
       <p className='max-w-md text-text-caption'>{body}</p>
       {action}

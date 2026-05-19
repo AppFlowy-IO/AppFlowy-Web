@@ -249,6 +249,10 @@ export async function openSharePopover(page: Page): Promise<void> {
  * Select a tier (Workspace / Public / Closed) from the share popover's
  * "Who can fill out" submenu. Each row mutates the cloud token via
  * `patchFormShare` and refreshes `info` on success.
+ *
+ * Anchors on per-choice testids (`form-share-tier-choice-*`) because
+ * the popover's submission-access row also surfaces "No access" copy
+ * — a visible-text query would be ambiguous for the `closed` tier.
  */
 export async function selectShareTier(
   page: Page,
@@ -258,18 +262,10 @@ export async function selectShareTier(
   // row's `User` icon doesn't move so we anchor by the visible label
   // (single-line "Who can fill out").
   await page.getByRole('button', { name: /Who can fill out/i }).click();
-
-  const label =
-    tier === 'workspace'
-      ? /Anyone at .* with link/i
-      : tier === 'public'
-        ? /Anyone on the web with link/i
-        : /No access/i;
-
-  await page.getByRole('button', { name: label }).click();
-  // Closing the submenu requires a click outside; just press Escape so
-  // subsequent assertions can re-open the popover cleanly.
-  await page.waitForTimeout(500);
+  await page.getByTestId(`form-share-tier-choice-${tier}`).click();
+  // Wait briefly for the patch round-trip to settle so the next step
+  // sees the new `info` and `data-tier` reflects the choice.
+  await page.waitForTimeout(800);
 }
 
 /**
@@ -289,21 +285,33 @@ export async function readShareUrl(page: Page): Promise<string> {
 }
 
 /**
- * Visit the public share URL in a clean popup tab. Returns the new page
- * so callers can scope assertions to it without interfering with the
- * authoring tab.
+ * Visit the public share URL in a FRESH BrowserContext so the request
+ * is truly anonymous (no shared cookies / no `Authorization` header
+ * carried from the authoring tab). Returns the new page so callers can
+ * scope assertions to it without interfering with the authoring tab.
  *
- * The public form route is auth-bypassed (`/api/workspace/public-form/`)
- * so we can open it in a context that doesn't have the authoring user's
- * session — a fresh `browser.newContext()` would be cleaner but we use
- * a new tab in the same context for simplicity. Anonymous submission
- * tests should run inside an incognito context.
+ * Sharing the existing `page.context()` would make the request appear
+ * as the authoring user — for Workspace-tier forms the cloud would
+ * then return `kind: 'active'` (member!) instead of `auth_required`,
+ * defeating the whole point of the access-level scenarios.
+ *
+ * The caller is responsible for closing the returned context when the
+ * scenario finishes; Playwright tears down all contexts at test end
+ * automatically so for one-shot scenario use the explicit cleanup is
+ * optional.
  */
 export async function openSharePageInNewTab(
   page: Page,
   shareUrl: string,
 ): Promise<Page> {
-  const newTab = await page.context().newPage();
+  const browser = page.context().browser();
+
+  if (!browser) {
+    throw new Error('no browser instance — cannot create anonymous context');
+  }
+
+  const anonymousContext = await browser.newContext();
+  const newTab = await anonymousContext.newPage();
 
   await newTab.goto(shareUrl, { waitUntil: 'domcontentloaded' });
   return newTab;

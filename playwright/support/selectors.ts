@@ -398,6 +398,15 @@ export const PublicFormSelectors = {
   confirmation: (page: Page) => page.getByTestId('public-form-confirmation'),
   questionByKind: (page: Page, kind: string) =>
     page.locator(`[data-question-kind="${kind}"]`),
+
+  // Three non-active states the public route can land in:
+  //   * authRequired: workspace-tier hit by an anonymous client.
+  //     The cloud responds with `kind: 'auth_required'` + a login_url.
+  //   * closed: tier=closed (or revoked) — page shows "Form closed".
+  //   * notFound: 404 / 410 surface as a clean NotFound to avoid
+  //     leaking server internals (no testid; assert on visible copy).
+  authRequiredPage: (page: Page) => page.getByTestId('public-form-auth-required'),
+  closedPage: (page: Page) => page.getByTestId('public-form-closed'),
 };
 
 /**
