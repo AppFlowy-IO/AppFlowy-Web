@@ -1,6 +1,7 @@
 import { ArrowUpCircle, Upload } from 'lucide-react';
 
 import { FieldType } from '@/application/database-yjs/database.type';
+import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { cn } from '@/lib/utils';
 
 /**
@@ -42,7 +43,10 @@ export function FormQuestionPlaceholder({
       return <Placeholder>Respondents can select as many as they like</Placeholder>;
     case FieldType.Checkbox:
       return (
-        <div className='h-5 w-5 rounded border-2 border-line-divider' aria-hidden />
+        <CheckboxUncheckSvg
+          className='h-5 w-5 text-border-primary'
+          aria-hidden
+        />
       );
     case FieldType.URL:
       return <Placeholder>https://…</Placeholder>;

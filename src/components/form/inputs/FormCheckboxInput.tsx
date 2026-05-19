@@ -1,11 +1,11 @@
-import { Check } from 'lucide-react';
-
+import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
+import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { cn } from '@/lib/utils';
 
 /**
- * Bare checkbox toggle. Matches the desktop preview's stand-alone
- * checkbox (no inline label — the question title above carries the
- * meaning, just like Notion).
+ * Bare checkbox toggle. Uses the same filled/unfilled assets as the
+ * AppFlowy grid checkbox cell; the question title above carries the
+ * meaning, so there is no inline label.
  */
 export function FormCheckboxInput({
   value,
@@ -17,16 +17,19 @@ export function FormCheckboxInput({
   return (
     <button
       type='button'
-      aria-pressed={value}
+      role='checkbox'
+      aria-checked={value}
       onClick={() => onChange(!value)}
       className={cn(
-        'flex h-6 w-6 items-center justify-center rounded border-2 transition-colors',
-        value
-          ? 'border-fill-default bg-fill-default text-text-on-fill'
-          : 'border-line-divider hover:border-fill-default',
+        'group flex h-5 w-5 items-center justify-center text-text-action',
+        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fill-default/40',
       )}
     >
-      {value && <Check size={14} strokeWidth={3} />}
+      {value ? (
+        <CheckboxCheckSvg className='h-5 w-5' />
+      ) : (
+        <CheckboxUncheckSvg className='h-5 w-5 text-border-primary group-hover:text-border-primary-hover' />
+      )}
     </button>
   );
 }

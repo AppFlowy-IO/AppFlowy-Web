@@ -3,14 +3,18 @@ import { useContext } from 'react';
 
 import { FormShareTier } from '@/application/services/js-services/http';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
+import { cn } from '@/lib/utils';
 
 import { FormSharePopover } from './FormSharePopover';
 import { useFormShareContext } from './FormShareContext';
 
 /**
- * At-rest banner that surfaces the current share tier (Image #9). The
- * `Change` link opens the same popover as the toolbar's `Share form`
- * button — two anchors, one menu definition.
+ * At-rest banner that surfaces the current share tier (Image #9 /
+ * Image #33). Public tier elevates to the warning palette since
+ * "anyone with the link can submit" carries operational risk; other
+ * tiers keep the neutral surface. The `Change` link opens the same
+ * popover as the toolbar's `Share form` button — two anchors, one
+ * menu definition.
  */
 export function FormAccessBanner() {
   const share = useFormShareContext();
@@ -23,18 +27,27 @@ export function FormAccessBanner() {
 
   const tier = share.info?.tier ?? 'workspace';
   const url = share.resolveShareUrl();
+  const isPublic = tier === 'public';
 
   return (
-    <div className='flex items-center gap-3 rounded-md border border-line-divider px-4 py-3 text-sm'>
-      <BannerIcon tier={tier} />
-      <span className='flex-1 text-text-primary'>
-        {bannerCopy(tier, workspaceName)}
-      </span>
+    <div
+      className={cn(
+        'flex items-center gap-3 rounded-md border px-4 py-3 text-sm',
+        isPublic
+          ? 'border-border-warning-thick bg-fill-warning-light text-text-warning-on-fill'
+          : 'border-line-divider text-text-primary',
+      )}
+    >
+      <BannerIcon tier={tier} isPublic={isPublic} />
+      <span className='flex-1'>{bannerCopy(tier, workspaceName)}</span>
       <FormSharePopover
         trigger={
           <button
             type='button'
-            className='text-sm font-medium text-fill-default hover:underline'
+            className={cn(
+              'text-sm font-medium hover:underline',
+              isPublic ? 'text-text-warning-on-fill' : 'text-fill-default',
+            )}
           >
             Change
           </button>
@@ -49,8 +62,15 @@ export function FormAccessBanner() {
   );
 }
 
-function BannerIcon({ tier }: { tier: FormShareTier }) {
-  const props = { size: 16, className: 'text-text-tertiary' };
+function BannerIcon({
+  tier,
+  isPublic,
+}: {
+  tier: FormShareTier;
+  isPublic: boolean;
+}) {
+  const className = isPublic ? 'text-text-warning-on-fill' : 'text-text-tertiary';
+  const props = { size: 16, className };
 
   switch (tier) {
     case 'public':
@@ -66,7 +86,7 @@ function BannerIcon({ tier }: { tier: FormShareTier }) {
 function bannerCopy(tier: FormShareTier, workspaceName: string): string {
   switch (tier) {
     case 'public':
-      return 'Anyone with the link can fill out this form.';
+      return 'This form is public. Anyone with the link can submit a response.';
     case 'closed':
       return 'This form is no longer accepting responses.';
     case 'workspace':
