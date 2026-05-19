@@ -279,6 +279,7 @@ export function useBatchSync(
         delays: BATCH_SYNC_DELAYS,
         signal: controller.signal,
       });
+
       applyFullSyncResults(results);
 
       for (const [objectId, dirty] of dirtySnapshot) {
@@ -632,6 +633,7 @@ export function useBatchSync(
     const timers = refs.pendingCleanups.current;
     const abortRef = batchSyncAbortRef;
     const backgroundAbortRef = backgroundHttpSyncAbortRef;
+    const dirtyEdits = backgroundDirtyEditsRef.current;
 
     return () => {
       timers.forEach((timer) => clearTimeout(timer));
@@ -639,7 +641,7 @@ export function useBatchSync(
       abortRef.current?.abort();
       backgroundAbortRef.current?.abort();
       clearBackgroundHttpSyncTimer();
-      backgroundDirtyEditsRef.current.clear();
+      dirtyEdits.clear();
     };
   }, [refs, clearBackgroundHttpSyncTimer]);
 
