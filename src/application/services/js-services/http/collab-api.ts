@@ -13,6 +13,14 @@ import { Log } from '@/utils/log';
 
 import { APIResponse, APIError, executeAPIRequest, executeAPIVoidRequest, getAxios, parseRetryAfterSecs } from './core';
 
+export interface CollabFullSyncBatchResult {
+  objectId: string;
+  collabType: Types;
+  missingUpdate: Uint8Array;
+  serverStateVector: Uint8Array;
+  error?: string;
+}
+
 export async function updateCollab(
   workspaceId: string,
   objectId: string,
@@ -61,7 +69,7 @@ export async function collabFullSyncBatch(
     stateVector: Uint8Array;
     docState: Uint8Array;
   }>
-): Promise<void> {
+): Promise<CollabFullSyncBatchResult[]> {
   const url = `/api/workspace/v1/${workspaceId}/collab/full-sync/batch`;
 
   // Build the protobuf request
@@ -113,6 +121,7 @@ export async function collabFullSyncBatch(
   // Decode and check the response for errors
   const responseData = new Uint8Array(response.data);
   const batchResponse = collab.CollabBatchSyncResponse.decode(responseData);
+  const results: CollabFullSyncBatchResult[] = [];
 
   // Check for any errors in the results
   for (const result of batchResponse.results) {
@@ -123,7 +132,17 @@ export async function collabFullSyncBatch(
         error: result.error,
       });
     }
+
+    results.push({
+      objectId: result.objectId ?? '',
+      collabType: result.collabType as Types,
+      missingUpdate: result.missingUpdate ?? new Uint8Array(),
+      serverStateVector: result.serverStateVector ?? new Uint8Array(),
+      error: result.error || undefined,
+    });
   }
+
+  return results;
 }
 
 export async function getCollab(workspaceId: string, objectId: string, collabType: Types) {

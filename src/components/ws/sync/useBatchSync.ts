@@ -18,6 +18,7 @@ import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/
 import { withRetry } from '@/application/services/js-services/http/core';
 import { waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
+import { applyYDoc } from '@/application/ydoc/apply';
 import { Log } from '@/utils/log';
 
 import { SyncRefs } from './syncRefs';
@@ -25,6 +26,22 @@ import { SyncRefs } from './syncRefs';
 // 30s base delay for batch sync retries (rate-limited / server-busy).
 // withRetry adds jitter and honours server Retry-After when present.
 const BATCH_SYNC_DELAYS = [30_000, 30_000, 30_000];
+const WS_READY_STATE_OPEN = 1;
+const BACKGROUND_HTTP_SYNC_DELAY_MS = 5_000;
+const BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS = 10 * 60 * 1000;
+const BACKGROUND_HTTP_SYNC_TYPES = new Set<Types>([
+  Types.Document,
+  Types.Database,
+  Types.WorkspaceDatabase,
+  Types.Folder,
+  Types.DatabaseRow,
+]);
+const EMPTY_YJS_UPDATE_MAX_BYTES = 2;
+
+interface BackgroundDirtyEdit {
+  seq: number;
+  editedAt: number;
+}
 
 /**
  * Collect all unique row IDs from every view in a database Y.Doc.
@@ -59,8 +76,256 @@ function collectAllRowIds(databaseDoc: Y.Doc): string[] {
   return Array.from(rowIdSet);
 }
 
-export function useBatchSync(refs: SyncRefs) {
+export function useBatchSync(
+  refs: SyncRefs,
+  options?: {
+    workspaceId?: string;
+    wsReadyState?: number;
+  }
+) {
   const batchSyncAbortRef = useRef<AbortController | null>(null);
+  const backgroundHttpSyncAbortRef = useRef<AbortController | null>(null);
+  const backgroundHttpSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const backgroundHttpSyncInFlightRef = useRef(false);
+  const backgroundDirtyEditsRef = useRef<Map<string, BackgroundDirtyEdit>>(new Map());
+  const backgroundDirtySeqRef = useRef(0);
+  const wsReadyStateRef = useRef<number | undefined>(options?.wsReadyState);
+  const workspaceIdRef = useRef<string | undefined>(options?.workspaceId);
+  const runBackgroundHttpSyncRef = useRef<() => Promise<void>>(async () => undefined);
+
+  const clearBackgroundHttpSyncTimer = useCallback(() => {
+    if (backgroundHttpSyncTimerRef.current) {
+      clearTimeout(backgroundHttpSyncTimerRef.current);
+      backgroundHttpSyncTimerRef.current = null;
+    }
+  }, []);
+
+  const scheduleBackgroundHttpSyncTimer = useCallback(() => {
+    const workspaceId = workspaceIdRef.current;
+    const readyState = wsReadyStateRef.current;
+
+    if (!workspaceId || readyState === undefined || readyState === WS_READY_STATE_OPEN) return;
+
+    clearBackgroundHttpSyncTimer();
+    backgroundHttpSyncTimerRef.current = setTimeout(() => {
+      backgroundHttpSyncTimerRef.current = null;
+      void runBackgroundHttpSyncRef.current();
+    }, BACKGROUND_HTTP_SYNC_DELAY_MS);
+  }, [clearBackgroundHttpSyncTimer]);
+
+  useEffect(() => {
+    const previousWorkspaceId = workspaceIdRef.current;
+
+    workspaceIdRef.current = options?.workspaceId;
+
+    if (previousWorkspaceId && previousWorkspaceId !== options?.workspaceId) {
+      backgroundDirtyEditsRef.current.clear();
+      clearBackgroundHttpSyncTimer();
+      backgroundHttpSyncAbortRef.current?.abort();
+    }
+  }, [options?.workspaceId, clearBackgroundHttpSyncTimer]);
+
+  useEffect(() => {
+    wsReadyStateRef.current = options?.wsReadyState;
+
+    if (options?.wsReadyState === WS_READY_STATE_OPEN) {
+      clearBackgroundHttpSyncTimer();
+      backgroundHttpSyncAbortRef.current?.abort();
+      return;
+    }
+
+    if (backgroundDirtyEditsRef.current.size > 0) {
+      scheduleBackgroundHttpSyncTimer();
+    }
+  }, [options?.wsReadyState, clearBackgroundHttpSyncTimer, scheduleBackgroundHttpSyncTimer]);
+
+  const buildBackgroundHttpSyncItems = useCallback((objectIds: Iterable<string>) => {
+    const ids = new Set(objectIds);
+    const items: Array<{
+      objectId: string;
+      collabType: Types;
+      stateVector: Uint8Array;
+      docState: Uint8Array;
+    }> = [];
+
+    refs.registeredContexts.current.forEach((context) => {
+      const { doc, collabType } = context;
+
+      if (!doc || collabType === undefined || !ids.has(doc.guid)) return;
+      if (!BACKGROUND_HTTP_SYNC_TYPES.has(collabType)) return;
+
+      items.push({
+        objectId: doc.guid,
+        collabType,
+        stateVector: Y.encodeStateVector(doc),
+        docState: Y.encodeStateAsUpdate(doc),
+      });
+    });
+
+    return items;
+  }, [refs]);
+
+  const clearBackgroundDirtyEdits = useCallback((objectIds: Iterable<string>) => {
+    for (const objectId of objectIds) {
+      backgroundDirtyEditsRef.current.delete(objectId);
+    }
+  }, []);
+
+  const notifyManifestSync = useCallback((objectId: string) => {
+    if (wsReadyStateRef.current !== WS_READY_STATE_OPEN) return;
+
+    clearBackgroundDirtyEdits([objectId]);
+  }, [clearBackgroundDirtyEdits]);
+
+  const applyFullSyncResults = useCallback((results: Awaited<ReturnType<typeof collabFullSyncBatch>>) => {
+    for (const result of results) {
+      if (result.error) {
+        Log.warn('[sync] HTTP full-sync result error', {
+          objectId: result.objectId,
+          collabType: result.collabType,
+          error: result.error,
+        });
+        continue;
+      }
+
+      const missingUpdate = result.missingUpdate;
+
+      if (!missingUpdate || missingUpdate.byteLength <= EMPTY_YJS_UPDATE_MAX_BYTES) {
+        continue;
+      }
+
+      const context = refs.registeredContexts.current.get(result.objectId);
+
+      if (!context?.doc) {
+        Log.debug('[sync] HTTP full-sync missing update skipped: context not registered', {
+          objectId: result.objectId,
+        });
+        continue;
+      }
+
+      try {
+        applyYDoc(context.doc, missingUpdate);
+
+        if (context.doc.store.pendingStructs || context.doc.store.pendingDs) {
+          Log.debug('[sync] HTTP full-sync missing update has pending dependencies; sending sync request', {
+            objectId: result.objectId,
+            collabType: context.collabType,
+          });
+          context.emit({
+            collabMessage: {
+              objectId: context.doc.guid,
+              collabType: context.collabType,
+              syncRequest: {
+                stateVector: Y.encodeStateVector(context.doc),
+                lastMessageId: context.lastMessageId || { timestamp: 0, counter: 0 },
+                version: context.doc.version,
+              },
+            },
+          });
+        }
+      } catch (error) {
+        Log.warn('[sync] failed to apply HTTP full-sync missing update', {
+          objectId: result.objectId,
+          error,
+        });
+      }
+    }
+  }, [refs]);
+
+  const runBackgroundHttpSync = useCallback(async () => {
+    if (backgroundHttpSyncInFlightRef.current) return;
+
+    const workspaceId = workspaceIdRef.current;
+    const readyState = wsReadyStateRef.current;
+
+    if (!workspaceId || readyState === undefined || readyState === WS_READY_STATE_OPEN) return;
+
+    const now = Date.now();
+    const dirtySnapshot = Array.from(backgroundDirtyEditsRef.current.entries()).filter(([objectId, dirty]) => {
+      if (now - dirty.editedAt <= BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS) return true;
+
+      if (backgroundDirtyEditsRef.current.get(objectId)?.seq === dirty.seq) {
+        backgroundDirtyEditsRef.current.delete(objectId);
+      }
+
+      return false;
+    });
+
+    if (dirtySnapshot.length === 0) return;
+
+    const items = buildBackgroundHttpSyncItems(dirtySnapshot.map(([objectId]) => objectId));
+    const itemIds = new Set(items.map((item) => item.objectId));
+
+    for (const [objectId, dirty] of dirtySnapshot) {
+      if (!itemIds.has(objectId) && backgroundDirtyEditsRef.current.get(objectId)?.seq === dirty.seq) {
+        backgroundDirtyEditsRef.current.delete(objectId);
+      }
+    }
+
+    if (items.length === 0) return;
+
+    backgroundHttpSyncInFlightRef.current = true;
+    backgroundHttpSyncAbortRef.current?.abort();
+    const controller = new AbortController();
+
+    backgroundHttpSyncAbortRef.current = controller;
+
+    try {
+      Log.debug('[sync] background HTTP full-sync started', {
+        workspaceId,
+        items: items.length,
+      });
+      const results = await withRetry(() => collabFullSyncBatch(workspaceId, items), {
+        delays: BATCH_SYNC_DELAYS,
+        signal: controller.signal,
+      });
+
+      applyFullSyncResults(results);
+
+      for (const [objectId, dirty] of dirtySnapshot) {
+        if (itemIds.has(objectId) && backgroundDirtyEditsRef.current.get(objectId)?.seq === dirty.seq) {
+          backgroundDirtyEditsRef.current.delete(objectId);
+        }
+      }
+
+      Log.debug('[sync] background HTTP full-sync completed', {
+        workspaceId,
+        items: items.length,
+      });
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        Log.warn('[sync] background HTTP full-sync failed', { workspaceId, error });
+      }
+    } finally {
+      if (backgroundHttpSyncAbortRef.current === controller) {
+        backgroundHttpSyncAbortRef.current = null;
+      }
+
+      backgroundHttpSyncInFlightRef.current = false;
+
+      if (backgroundDirtyEditsRef.current.size > 0) {
+        scheduleBackgroundHttpSyncTimer();
+      }
+    }
+  }, [applyFullSyncResults, buildBackgroundHttpSyncItems, scheduleBackgroundHttpSyncTimer]);
+
+  useEffect(() => {
+    runBackgroundHttpSyncRef.current = runBackgroundHttpSync;
+  }, [runBackgroundHttpSync]);
+
+  const notifyLocalEdit = useCallback((objectId: string) => {
+    const readyState = wsReadyStateRef.current;
+
+    backgroundDirtySeqRef.current += 1;
+    backgroundDirtyEditsRef.current.set(objectId, {
+      seq: backgroundDirtySeqRef.current,
+      editedAt: Date.now(),
+    });
+
+    if (readyState === undefined || readyState === WS_READY_STATE_OPEN) return;
+
+    scheduleBackgroundHttpSyncTimer();
+  }, [scheduleBackgroundHttpSyncTimer]);
 
   /**
    * Wait until the persistent sync_outbox has drained for every registered
@@ -335,32 +600,50 @@ export function useBatchSync(refs: SyncRefs) {
       const controller = new AbortController();
 
       batchSyncAbortRef.current = controller;
+      const dirtySeqBeforeSync = new Map(
+        items.map((item) => [item.objectId, backgroundDirtyEditsRef.current.get(item.objectId)?.seq])
+      );
 
       try {
-        await withRetry(() => collabFullSyncBatch(workspaceId, items), {
+        const results = await withRetry(() => collabFullSyncBatch(workspaceId, items), {
           delays: BATCH_SYNC_DELAYS,
           signal: controller.signal,
         });
+
+        applyFullSyncResults(results);
+        for (const item of items) {
+          const seq = dirtySeqBeforeSync.get(item.objectId);
+
+          if (seq !== undefined && backgroundDirtyEditsRef.current.get(item.objectId)?.seq === seq) {
+            backgroundDirtyEditsRef.current.delete(item.objectId);
+          }
+        }
+
         Log.debug('Batch sync completed successfully');
       } catch (error) {
         Log.warn('Failed to batch sync collabs to server', { error });
         // Don't throw - we still want to attempt the duplicate
       }
     },
-    [refs, flushAllSync]
+    [refs, flushAllSync, applyFullSyncResults]
   );
 
   // Cancel all pending deferred cleanup timers and in-flight batch sync on unmount
   useEffect(() => {
     const timers = refs.pendingCleanups.current;
     const abortRef = batchSyncAbortRef;
+    const backgroundAbortRef = backgroundHttpSyncAbortRef;
+    const dirtyEdits = backgroundDirtyEditsRef.current;
 
     return () => {
       timers.forEach((timer) => clearTimeout(timer));
       timers.clear();
       abortRef.current?.abort();
+      backgroundAbortRef.current?.abort();
+      clearBackgroundHttpSyncTimer();
+      dirtyEdits.clear();
     };
-  }, [refs]);
+  }, [refs, clearBackgroundHttpSyncTimer]);
 
-  return { flushAllSync, syncAllToServer };
+  return { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync };
 }
