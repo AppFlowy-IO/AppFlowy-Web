@@ -362,6 +362,19 @@ export const FormSelectors = {
   autoCreateConfirm: (page: Page) => page.getByTestId('form-auto-create-confirm'),
   autoCreateStartFromScratch: (page: Page) =>
     page.getByTestId('form-auto-create-start-from-scratch'),
+
+  // Per-card query helpers. The Nth card is a stable target because the
+  // form builder only ever appends (Q1 is index 0, Q2 is index 1, etc.)
+  // — reorders go through `writer.reorderQuestion`, which renumbers the
+  // whole list. Tests that care about specific cards should index by
+  // their authoring order.
+  questionCardAt: (page: Page, index: number) =>
+    page.locator('[data-testid="form-question-card"]').nth(index),
+  questionMenuTriggerAt: (page: Page, index: number) =>
+    page
+      .locator('[data-testid="form-question-card"]')
+      .nth(index)
+      .locator('[data-testid="form-question-menu-trigger"]'),
 };
 
 /**

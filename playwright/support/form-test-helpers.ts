@@ -165,3 +165,32 @@ export async function closeFormPreview(page: Page): Promise<void> {
   await page.keyboard.press('Escape');
   await expect(FormSelectors.previewDialog(page)).toBeHidden({ timeout: 5000 });
 }
+
+/**
+ * Open the 3-dot menu on the Nth question card and click a labeled
+ * menu row (Required / Description / Long answer / Move up / Move down
+ * / Remove from form). The Radix dropdown closes itself on `onSelect`
+ * for navigation actions but stays open for toggle rows (which call
+ * `e.preventDefault()`) — wait briefly after the click so the YJS
+ * observer has time to fan out the state change before the caller
+ * polls a `data-*` attribute.
+ */
+export async function toggleQuestionMenuItem(
+  page: Page,
+  questionIndex: number,
+  label: string,
+): Promise<void> {
+  await FormSelectors.questionMenuTriggerAt(page, questionIndex).click();
+  // Radix renders menus in a portal — scope the lookup to the open
+  // menu surface so we don't match a stray duplicate (e.g. the
+  // tab-bar `+` picker if it's still mounted).
+  const menu = page.locator('[role="menu"]').first();
+
+  await expect(menu).toBeVisible({ timeout: 5000 });
+  await menu.getByRole('menuitem', { name: label }).click();
+  // Toggle rows preventDefault — close the dropdown explicitly so the
+  // next interaction (e.g. clicking the add-question button) isn't
+  // blocked by the menu's outside-click guard.
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden({ timeout: 5000 });
+}

@@ -83,7 +83,13 @@ function _FormQuestionCard({
     fieldType === FieldType.MultiSelect;
 
   return (
-    <div data-testid='form-question-card' className='group relative rounded-md border border-line-divider px-5 py-4 transition-colors hover:cursor-grab hover:border-fill-default'>
+    <div
+      data-testid='form-question-card'
+      data-required={required ? 'true' : 'false'}
+      data-description-visible={descriptionVisible ? 'true' : 'false'}
+      data-long-answer={longAnswer ? 'true' : 'false'}
+      className='group relative rounded-md border border-line-divider px-5 py-4 transition-colors hover:cursor-grab hover:border-fill-default'
+    >
       {/*
         Stop mouse-down here so clicking the 3-dot trigger doesn't
         race the RBD drag sensor (which is bound to this card's
@@ -101,6 +107,7 @@ function _FormQuestionCard({
         >
           <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger
+              data-testid='form-question-menu-trigger'
               aria-label='Question options'
               className='rounded p-1 hover:bg-fill-content'
             >
