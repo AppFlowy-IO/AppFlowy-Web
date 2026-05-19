@@ -330,3 +330,29 @@ export async function countGridRows(page: Page): Promise<number> {
   await page.waitForTimeout(500);
   return DatabaseGridSelectors.rows(page).count();
 }
+
+/**
+ * Wait until the grid renders at least `expected` rows. The collab
+ * stream is asynchronous — a fresh public-form submission lands in the
+ * cloud, fans out via the YJS WebSocket, and the React tree commits
+ * the new row. That round-trip can take 1-3 seconds on a healthy local
+ * stack; we poll up to 15s before giving up.
+ *
+ * Returns the final count once met (or the timed-out count for nicer
+ * test failures).
+ */
+export async function waitForGridRowCount(
+  page: Page,
+  expected: number,
+): Promise<number> {
+  await page.waitForFunction(
+    (target) => {
+      const rows = document.querySelectorAll('[data-testid^="grid-row-"]');
+
+      return rows.length >= target;
+    },
+    expected,
+    { timeout: 15000 },
+  );
+  return DatabaseGridSelectors.rows(page).count();
+}

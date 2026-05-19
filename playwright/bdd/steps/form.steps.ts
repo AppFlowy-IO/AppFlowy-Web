@@ -1,6 +1,8 @@
 import { expect } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
+import { Page } from '@playwright/test';
+
 import {
   FormFieldType,
   FormFieldTypeName,
@@ -9,14 +11,20 @@ import {
   closeFormPreview,
   openFormPreview,
   openSharePopover,
+  openSharePageInNewTab,
   readShareUrl,
   selectShareTier,
   signInAddProAndOpenForm,
   signInAndAddFormViewViaTabBar,
   toggleQuestionMenuItem,
+  waitForGridRowCount,
 } from '../../support/form-test-helpers';
 import { signInAndCreateDatabaseView } from '../../support/database-ui-helpers';
-import { DatabaseViewSelectors, FormSelectors } from '../../support/selectors';
+import {
+  DatabaseViewSelectors,
+  FormSelectors,
+  PublicFormSelectors,
+} from '../../support/selectors';
 import { generateRandomEmail, setupPageErrorHandling } from '../../support/test-config';
 
 const { Given, When, Then, Before } = createBdd();
@@ -251,5 +259,101 @@ Then(
       tier,
       { timeout: 10000 },
     );
+  },
+);
+
+// ── Share-link submission ──────────────────────────────────────────
+//
+// The respondent tab lives in a separate Playwright `Page` opened on
+// the authoring page's `BrowserContext`. We stash both on the world's
+// `page` reference via module-scope state — `playwright-bdd` rebuilds
+// the context per scenario so this Map never accumulates across runs.
+
+const sharedState = new WeakMap<
+  Page,
+  { authoringPage: Page; respondentPage?: Page; capturedUrl?: string }
+>();
+
+When('I copy the share URL from the popover', async ({ page }) => {
+  const url = await readShareUrl(page);
+
+  sharedState.set(page, { authoringPage: page, capturedUrl: url });
+});
+
+When(
+  'I open the share URL in a fresh anonymous tab',
+  async ({ page }) => {
+    const state = sharedState.get(page);
+
+    if (!state?.capturedUrl) {
+      throw new Error('share URL was not captured before opening the tab');
+    }
+
+    const respondent = await openSharePageInNewTab(page, state.capturedUrl);
+
+    sharedState.set(page, { ...state, respondentPage: respondent });
+  },
+);
+
+function getRespondent(page: Page): Page {
+  const r = sharedState.get(page)?.respondentPage;
+
+  if (!r) {
+    throw new Error(
+      'respondent tab not opened — call `I open the share URL in a fresh anonymous tab` first',
+    );
+  }
+  return r;
+}
+
+Then('the public form body is visible', async ({ page }) => {
+  await expect(PublicFormSelectors.body(getRespondent(page))).toBeVisible({
+    timeout: 30000,
+  });
+});
+
+When(
+  'I fill the first text input with {string}',
+  async ({ page }, value: string) => {
+    const respondent = getRespondent(page);
+    // First text question = first input under any text-kind FormQuestion.
+    // Anchor by the kind attribute on the question container so we don't
+    // accidentally hit a Number / URL input.
+    const textQuestion = PublicFormSelectors.questionByKind(respondent, 'text')
+      .first();
+
+    await expect(textQuestion).toBeVisible({ timeout: 10000 });
+    await textQuestion.locator('input, textarea').first().fill(value);
+  },
+);
+
+When('I submit the public form', async ({ page }) => {
+  const respondent = getRespondent(page);
+
+  await PublicFormSelectors.submitButton(respondent).click();
+});
+
+Then('the public form confirmation page is visible', async ({ page }) => {
+  await expect(
+    PublicFormSelectors.confirmation(getRespondent(page)),
+  ).toBeVisible({ timeout: 15000 });
+});
+
+When('I switch back to the authoring tab', async ({ page }) => {
+  // The authoring tab is `page` itself — Playwright doesn't auto-focus
+  // a new tab the way a browser would, but the WebSocket on `page` is
+  // still subscribed. Bring `page` to the front so any focus-gated
+  // YJS handlers fire.
+  await page.bringToFront();
+});
+
+Then(
+  'the source grid has at least {int} rows',
+  async ({ page }, expected: number) => {
+    // Flip to the Grid tab (index 0). Then poll for the new row.
+    await DatabaseViewSelectors.viewTab(page).first().click();
+    const count = await waitForGridRowCount(page, expected);
+
+    expect(count).toBeGreaterThanOrEqual(expected);
   },
 );
