@@ -66,6 +66,7 @@ async function addNewCard(page: Page, cardName: string) {
     .filter({ hasText: 'To Do' });
 
   await todoColumn.getByText('New').click({ force: true });
+  await page.waitForTimeout(500);
   await page.keyboard.type(cardName, { delay: 30 });
   await page.keyboard.press('Enter');
   await page.waitForTimeout(2000);
