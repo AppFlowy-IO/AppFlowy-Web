@@ -38,8 +38,8 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
   const selectedColor = originalColor || (hasNonTransparentBg ? ColorEnum.Tint10 : '');
 
   const [activeSubscriptionPlan, setActiveSubscriptionPlan] = useState<SubscriptionPlan | null>(null);
-  // Pro features are enabled by default on self-hosted instances
-  const isPro = activeSubscriptionPlan === SubscriptionPlan.Pro || !isAppFlowyHosted();
+  const isHosted = useMemo(() => isAppFlowyHosted(), []);
+  const isPro = !isHosted || activeSubscriptionPlan === SubscriptionPlan.Pro;
 
   const loadSubscription = useCallback(async () => {
     try {
@@ -58,8 +58,13 @@ function Color({ node, onSelectColor }: { node: BlockNode; onSelectColor: () => 
   }, [getSubscriptions]);
 
   useEffect(() => {
+    if (!isHosted) {
+      setActiveSubscriptionPlan(null);
+      return;
+    }
+
     void loadSubscription();
-  }, [loadSubscription]);
+  }, [isHosted, loadSubscription]);
 
   const builtinColors = useMemo(() => {
     const proPalette = [
