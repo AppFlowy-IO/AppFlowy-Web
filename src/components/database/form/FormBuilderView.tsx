@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   DragDropContext,
   Draggable,
+  DraggableProvided,
+  DraggableStateSnapshot,
   Droppable,
   DropResult,
 } from 'react-beautiful-dnd';
@@ -241,21 +244,9 @@ function DraggableQuestionList({
                 index={idx}
               >
                 {(draggable, snapshot) => (
-                  <div
-                    ref={draggable.innerRef}
-                    {...draggable.draggableProps}
-                    // Spread `dragHandleProps` here (not on a small
-                    // grip glyph) so the ENTIRE card body is the drag
-                    // activator — matches the desktop, which uses
-                    // `LongPressDraggable` over the whole card. Users
-                    // can grab any blank area of the card to reorder.
-                    //
-                    // Internal interactive widgets (toggles, the 3-dot
-                    // menu, the description input) keep working because
-                    // their click handlers run before the drag pan
-                    // recognizer kicks in.
-                    {...draggable.dragHandleProps}
-                    className={snapshot.isDragging ? 'opacity-90' : ''}
+                  <PortaledDraggable
+                    draggable={draggable}
+                    snapshot={snapshot}
                   >
                     <FormQuestionCard
                       questionId={q.questionId}
@@ -269,7 +260,7 @@ function DraggableQuestionList({
                       questionCount={questions.length}
                       isRichText={q.isRichText}
                     />
-                  </div>
+                  </PortaledDraggable>
                 )}
               </Draggable>
             ))}
@@ -302,4 +293,54 @@ function EmptyState({
       {copy}
     </div>
   );
+}
+
+/**
+ * Wraps each `<Draggable>` child so the dragging clone renders via a
+ * portal to `document.body`.
+ *
+ * Why portal: `react-beautiful-dnd` positions the dragging item with
+ * `position: fixed`. By CSS spec, `position: fixed` is relative to the
+ * nearest ancestor that has `transform` / `filter` / `perspective` /
+ * `will-change: transform` — NOT the viewport. AppFlowy's main layout
+ * (`MainLayout.tsx`) applies the Tailwind `transform` class to its
+ * scroll container, which establishes a transformed containing block
+ * even when no translate is active. The dragging clone therefore
+ * appears horizontally offset from the cursor (the bug from the
+ * "Type" card screenshot).
+ *
+ * Portaling to `document.body` escapes that containing block, so the
+ * `position: fixed` clone is computed against the viewport and tracks
+ * the cursor correctly.
+ *
+ * Only the DRAGGING render uses the portal. In the static state the
+ * draggable stays inside the column flow so the layout doesn't jump
+ * on drag-end.
+ */
+function PortaledDraggable({
+  draggable,
+  snapshot,
+  children,
+}: {
+  draggable: DraggableProvided;
+  snapshot: DraggableStateSnapshot;
+  children: React.ReactNode;
+}) {
+  const child = (
+    <div
+      ref={draggable.innerRef}
+      {...draggable.draggableProps}
+      // The whole card body is the drag activator. Internal interactive
+      // widgets (toggles, 3-dot menu, description input) keep working
+      // because their click handlers run before the drag pan recognizer
+      // resolves.
+      {...draggable.dragHandleProps}
+      className={snapshot.isDragging ? 'opacity-90' : ''}
+    >
+      {children}
+    </div>
+  );
+
+  if (!snapshot.isDragging) return child;
+  return createPortal(child, document.body);
 }

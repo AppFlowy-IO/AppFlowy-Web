@@ -75,7 +75,7 @@ export function FormSharePopover({
   return (
     <Popover>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent align='end' className='w-[420px] p-1'>
+      <PopoverContent align='end' className='w-[420px] p-1 pb-3'>
         {info === null ? (
           // Bootstrap not complete (or failed). The setters short-circuit
           // on `!info` server-side, so without a guard the rows would
@@ -116,16 +116,26 @@ export function FormSharePopover({
               />
             )}
             <div className='my-2 border-t border-line-divider' />
-            <div className='flex items-center gap-2 px-1'>
+            {/*
+              Notion-parity link row (matches desktop's `_LinkRow`):
+              ONE rounded container with a vertical hairline divider
+              between the URL field and the copy button. The previous
+              `gap-2` + individual borders produced two visually separate
+              pills with a gap — broke the unified-box look.
+              `overflow-hidden` clips the button's hover splash to the
+              rounded corners.
+            */}
+            <div className='mx-1 flex items-stretch overflow-hidden rounded-md border border-line-divider'>
               <input
                 readOnly
                 value={url}
-                className='flex-1 rounded-l-md border border-r-0 border-line-divider px-2 py-1 text-xs'
+                className='flex-1 bg-transparent px-2 py-1 text-xs outline-none'
               />
+              <div className='w-px bg-line-divider' />
               <button
                 type='button'
                 onClick={copy}
-                className='flex items-center gap-1 rounded-r-md border border-line-divider px-2 py-1 text-xs hover:bg-fill-content'
+                className='flex shrink-0 items-center gap-1 px-3 py-1 text-xs hover:bg-fill-content'
               >
                 <LinkIcon size={12} />
                 {copied ? 'Copied' : 'Copy form link'}
