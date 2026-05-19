@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
-import { DatabaseViewLayout, ViewLayout } from '@/application/types';
+import { BillingService } from '@/application/services/js-services/http/billing-api';
+import { DatabaseViewLayout, Subscription, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
+import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { ViewIcon } from '@/components/_shared/view-icon';
 import { Button } from '@/components/ui/button';
 import {
@@ -27,7 +31,39 @@ export function AddViewButton({ onBeforeAddView, onAfterAddView, onViewAdded }: 
   const onAddView = useAddDatabaseView();
   const [addLoading, setAddLoading] = useState(false);
 
+  // Form-view Pro gate (web mirror of the desktop's
+  // `canCreateFormView`). Web has no local-only mode, so the rules
+  // simplify to "Pro / Team plan, or self-hosted". `useSubscriptionPlan`
+  // already returns `isPro = true` for self-hosted instances, so the
+  // same hook covers both branches.
+  const userWorkspaceInfo = useUserWorkspaceInfo();
+  const currentWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
+  const getSubscriptions = useCallback(async (): Promise<Subscription[] | undefined> => {
+    if (!currentWorkspaceId) return undefined;
+    return BillingService.getWorkspaceSubscriptions(currentWorkspaceId);
+  }, [currentWorkspaceId]);
+  const { isPro } = useSubscriptionPlan(getSubscriptions);
+
+  // `?action=change_plan` is observed by the `UpgradePlan` widget
+  // mounted in `Workspaces`, which auto-opens the compare-plan modal.
+  // Same entry point the chart-layout settings use — keeps the upgrade
+  // UX consistent across paid features.
+  const [, setSearch] = useSearchParams();
+  const openUpgradePlan = useCallback(() => {
+    setSearch((prev) => {
+      prev.set('action', 'change_plan');
+      return prev;
+    });
+  }, [setSearch]);
+
   const handleAddView = async (layout: DatabaseViewLayout, name: string) => {
+    // Pro gate at click time: Form on Free plan opens the upgrade
+    // modal instead of creating a view the user can't share. Other
+    // layouts proceed without gating.
+    if (layout === DatabaseViewLayout.Form && !isPro) {
+      openUpgradePlan();
+      return;
+    }
     onBeforeAddView?.();
     setAddLoading(true);
     const startTime = Date.now();
