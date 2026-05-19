@@ -37,7 +37,11 @@ function _FormQuestion({
   onChange: (questionId: string, value: FormAnswerValue) => void;
 }) {
   return (
-    <div className='flex flex-col gap-2'>
+    <div
+      data-testid={`public-form-question-${question.id}`}
+      data-question-kind={question.kind}
+      className='flex flex-col gap-2'
+    >
       <div className='flex flex-col gap-1'>
         <h2 className='text-base font-semibold'>
           {question.label}

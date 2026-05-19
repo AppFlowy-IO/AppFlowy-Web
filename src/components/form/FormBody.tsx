@@ -122,7 +122,10 @@ export function FormBody({
   }
 
   return (
-    <div className='mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10'>
+    <div
+      data-testid='public-form-body'
+      className='mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10'
+    >
       <header className='flex flex-col gap-2'>
         {schema.icon && (
           <div className='text-3xl' aria-hidden>
@@ -152,6 +155,7 @@ export function FormBody({
           <p className='text-sm text-fill-default'>{submitState.message}</p>
         )}
         <Button
+          data-testid='public-form-submit'
           onClick={handleSubmit}
           disabled={submitState.kind === 'submitting'}
         >
@@ -288,7 +292,10 @@ function ConfirmationScreen({
   redirectUrl?: string;
 }) {
   return (
-    <div className='mx-auto flex max-w-md flex-col items-center gap-4 px-6 py-20 text-center'>
+    <div
+      data-testid='public-form-confirmation'
+      className='mx-auto flex max-w-md flex-col items-center gap-4 px-6 py-20 text-center'
+    >
       <h2 className='text-2xl font-semibold'>{title}</h2>
       {body && <p className='text-text-caption'>{body}</p>}
       <div className='flex gap-2'>

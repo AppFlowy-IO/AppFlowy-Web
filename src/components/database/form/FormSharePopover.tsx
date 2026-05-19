@@ -1,4 +1,4 @@
-import { Check, ChevronRight, FileText, Link as LinkIcon, Lock, User, UserCheck } from 'lucide-react';
+import { Check, ChevronRight, FileText, Link as LinkIcon, Lock, Sparkles, User, UserCheck } from 'lucide-react';
 import { useContext, useEffect, useRef, useState } from 'react';
 
 import {
@@ -7,6 +7,7 @@ import {
   FormSubmissionAccess,
 } from '@/application/services/js-services/http';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
+import { Button } from '@/components/ui/button';
 import {
   Popover,
   PopoverContent,
@@ -14,6 +15,8 @@ import {
 } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/lib/utils';
+
+import type { FormShareErrorKind } from './useFormShare';
 
 /**
  * Notion-parity share popover (Image #10) — three rows + the link row.
@@ -28,6 +31,9 @@ import { cn } from '@/lib/utils';
 export function FormSharePopover({
   trigger,
   info,
+  isLoading,
+  errorKind,
+  onUpgradePlan,
   setTier,
   setAnonymous,
   setSubmissionAccess,
@@ -35,6 +41,15 @@ export function FormSharePopover({
 }: {
   trigger: React.ReactNode;
   info: FormShareInfo | null;
+  /// Bootstrap pending — shows the skeleton. Distinct from `info === null
+  /// && !isLoading` (which is an error state).
+  isLoading: boolean;
+  /// Set when the cloud refused the bootstrap (regression image #41).
+  /// `'plan_required'` swaps the popover body for an upgrade prompt
+  /// instead of an infinite skeleton; `'other'` shows a generic error
+  /// so the user knows it isn't loading anymore.
+  errorKind: FormShareErrorKind | null;
+  onUpgradePlan: () => void;
   setTier: (t: FormShareTier) => Promise<void>;
   setAnonymous: (v: boolean) => Promise<void>;
   setSubmissionAccess: (a: FormSubmissionAccess) => Promise<void>;
@@ -77,11 +92,23 @@ export function FormSharePopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent align='end' className='w-[420px] p-1 pb-3'>
         {info === null ? (
-          // Bootstrap not complete (or failed). The setters short-circuit
-          // on `!info` server-side, so without a guard the rows would
-          // render real-looking defaults that silently no-op on click.
-          // Disable the whole popover surface until `info` arrives.
-          <ShareLoading />
+          // Bootstrap not complete (or failed). Three branches:
+          //   * Still loading → skeleton (existing behaviour).
+          //   * plan_required → upgrade prompt (regression image #41:
+          //     DEV mode lets the popover open on Free workspaces, but
+          //     the cloud's `is_workspace_on_paid_plan` gate refuses
+          //     the mint — without this branch the skeleton would
+          //     animate forever).
+          //   * other error → generic non-skeleton message so the user
+          //     can close + retry instead of staring at a "loading"
+          //     indicator that won't resolve.
+          isLoading ? (
+            <ShareLoading />
+          ) : errorKind === 'plan_required' ? (
+            <UpgradePrompt onUpgradePlan={onUpgradePlan} />
+          ) : (
+            <GenericLoadFailure />
+          )
         ) : (
           <>
             <SubMenuRow
@@ -150,10 +177,64 @@ export function FormSharePopover({
 
 function ShareLoading() {
   return (
-    <div className='flex flex-col gap-2 px-2 py-3'>
+    <div
+      data-testid='form-share-popover-loading'
+      className='flex flex-col gap-2 px-2 py-3'
+    >
       <div className='h-8 w-full animate-pulse rounded bg-fill-content' />
       <div className='h-8 w-full animate-pulse rounded bg-fill-content' />
       <div className='mt-2 h-7 w-full animate-pulse rounded bg-fill-content' />
+    </div>
+  );
+}
+
+/**
+ * Shown when the cloud refused to mint the share token because the
+ * workspace isn't on a paid plan. Replaces the previous always-skeleton
+ * behaviour where DEV-mode Free workspaces saw a frozen popover.
+ *
+ * The CTA hands off to `?action=change_plan`, the same upgrade entry
+ * the chart-layout settings + AddViewButton's Form item use.
+ */
+function UpgradePrompt({ onUpgradePlan }: { onUpgradePlan: () => void }) {
+  return (
+    <div
+      data-testid='form-share-popover-upgrade-prompt'
+      className='flex flex-col items-center gap-3 px-4 py-5 text-center'
+    >
+      <Sparkles size={20} className='text-fill-default' />
+      <div className='text-sm font-semibold'>Sharing forms is a Pro feature</div>
+      <p className='text-xs text-text-caption'>
+        Upgrade to Pro or Team to publish forms and collect responses.
+      </p>
+      <Button
+        data-testid='form-share-popover-upgrade-cta'
+        size='sm'
+        onClick={onUpgradePlan}
+      >
+        See upgrade options
+      </Button>
+    </div>
+  );
+}
+
+/**
+ * Catch-all for non-plan-gate failures (network, permission, transient
+ * cloud errors). Distinct from the loading skeleton so the user
+ * understands the popover finished trying and isn't going to resolve
+ * on its own.
+ */
+function GenericLoadFailure() {
+  return (
+    <div
+      data-testid='form-share-popover-error'
+      className='flex flex-col items-center gap-2 px-4 py-5 text-center'
+    >
+      <div className='text-sm font-medium'>Couldn&apos;t load share settings</div>
+      <p className='text-xs text-text-caption'>
+        Close this popover and try again. If the problem persists, refresh
+        the page.
+      </p>
     </div>
   );
 }

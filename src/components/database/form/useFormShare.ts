@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { ERROR_CODE } from '@/application/constants';
 import { useDatabase, useDatabaseViewId } from '@/application/database-yjs';
 import {
   FormShareInfo,
@@ -11,6 +12,28 @@ import {
 } from '@/application/services/js-services/http';
 import { YjsDatabaseKey } from '@/application/types';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
+
+/**
+ * Why an error from the share bootstrap matters to the UI:
+ *   - `plan_required` — the cloud's `is_workspace_on_paid_plan` gate
+ *     refused. Surface an upgrade prompt instead of the loading skeleton
+ *     so Free workspaces don't see a blank popover (regression image #41).
+ *   - `other` — network failure, permission, transient cloud error. Keep
+ *     a generic message; the user can retry by closing and reopening.
+ */
+export type FormShareErrorKind = 'plan_required' | 'other';
+
+function classifyError(err: unknown): FormShareErrorKind {
+  const e = err as { code?: number; message?: string } | null | undefined;
+
+  // Server contract: `FeatureNotAvailable` (1067) is the gate refusal.
+  // Message-substring fallback is paranoia for older cloud builds that
+  // might surface the gate as a different code; the message text is
+  // pinned by `share.rs` and changes only via deliberate edit.
+  if (e?.code === ERROR_CODE.FEATURE_NOT_AVAILABLE) return 'plan_required';
+  if (e?.message && /Pro or Team plan/i.test(e.message)) return 'plan_required';
+  return 'other';
+}
 
 function coerceSubmissionAccess(
   tier: FormShareTier,
@@ -41,6 +64,10 @@ export interface FormShareState {
   info: FormShareInfo | null;
   isLoading: boolean;
   error: string | null;
+  /// Distinguishes a plan-gate refusal from a generic failure so the
+  /// popover can render an upgrade prompt instead of an infinite
+  /// loading skeleton (regression image #41).
+  errorKind: FormShareErrorKind | null;
   setTier: (tier: FormShareTier) => Promise<void>;
   setAnonymous: (value: boolean) => Promise<void>;
   setSubmissionAccess: (access: FormSubmissionAccess) => Promise<void>;
@@ -58,6 +85,7 @@ export function useFormShare(): FormShareState {
   const [info, setInfo] = useState<FormShareInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [errorKind, setErrorKind] = useState<FormShareErrorKind | null>(null);
   const busy = useRef(false);
 
   // Bootstrap order:
@@ -93,6 +121,7 @@ export function useFormShare(): FormShareState {
         if (existing) {
           setInfo(existing);
           setError(null);
+          setErrorKind(null);
           return;
         }
 
@@ -101,6 +130,7 @@ export function useFormShare(): FormShareState {
         if (cancelled) return;
         setInfo(minted);
         setError(null);
+        setErrorKind(null);
       } catch (e) {
         if (cancelled) return;
         const message = (e as { message?: string })?.message ?? 'load failed';
@@ -113,6 +143,7 @@ export function useFormShare(): FormShareState {
             if (existing) {
               setInfo(existing);
               setError(null);
+              setErrorKind(null);
               return;
             }
           } catch {
@@ -122,6 +153,7 @@ export function useFormShare(): FormShareState {
 
         if (cancelled) return;
         setError(message);
+        setErrorKind(classifyError(e));
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -151,10 +183,12 @@ export function useFormShare(): FormShareState {
 
         setInfo(next);
         setError(null);
+        setErrorKind(null);
       } catch (e) {
         const message = (e as { message?: string })?.message ?? 'patch failed';
 
         setError(message);
+        setErrorKind(classifyError(e));
       } finally {
         busy.current = false;
       }
@@ -239,6 +273,7 @@ export function useFormShare(): FormShareState {
     info,
     isLoading,
     error,
+    errorKind,
     setTier,
     setAnonymous,
     setSubmissionAccess,

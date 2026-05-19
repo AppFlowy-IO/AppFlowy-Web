@@ -1,7 +1,9 @@
 import { Page, APIRequestContext, expect } from '@playwright/test';
 
 import { signInAndCreateDatabaseView } from './database-ui-helpers';
+import { seedProSubscriptionForUser } from './pro-seed-helpers';
 import {
+  DatabaseGridSelectors,
   DatabaseViewSelectors,
   FormSelectors,
 } from './selectors';
@@ -58,6 +60,36 @@ export async function signInAndAddFormViewViaTabBar(
       });
     },
   });
+  await addFormViewToTabBar(page);
+}
+
+/**
+ * Sign in, seed Pro on the workspace, then layer a Form view on the
+ * starter Grid via the tab bar. Required for any scenario that needs
+ * the cloud's form-share endpoints to succeed — Free workspaces are
+ * refused by `is_workspace_on_paid_plan` and would leave the popover
+ * stuck on `errorKind: 'plan_required'`.
+ *
+ * The Pro seed happens AFTER signin (so the user + workspace rows
+ * exist) but BEFORE the Form-view add (which is the first action the
+ * cloud gate evaluates).
+ */
+export async function signInAddProAndOpenForm(
+  page: Page,
+  request: APIRequestContext,
+  email: string,
+): Promise<void> {
+  await signInAndCreateDatabaseView(page, request, email, 'Grid', {
+    verify: async (p) => {
+      await expect(p.locator('[class*="appflowy-database"]')).toBeVisible({
+        timeout: 15000,
+      });
+      await expect(DatabaseViewSelectors.viewTab(p).first()).toBeVisible({
+        timeout: 10000,
+      });
+    },
+  });
+  await seedProSubscriptionForUser(email);
   await addFormViewToTabBar(page);
 }
 
@@ -193,4 +225,108 @@ export async function toggleQuestionMenuItem(
   // blocked by the menu's outside-click guard.
   await page.keyboard.press('Escape');
   await expect(menu).toBeHidden({ timeout: 5000 });
+}
+
+// ── Share popover actions ───────────────────────────────────────────
+
+/**
+ * Open the share popover from the toolbar. Waits for either the share
+ * controls (Pro path) or the upgrade prompt (Free path) to appear so
+ * the caller doesn't race the bootstrap.
+ */
+export async function openSharePopover(page: Page): Promise<void> {
+  await FormSelectors.shareButton(page).click();
+  // Either the share rows render (info available) or the upgrade /
+  // error fallback renders. Either path is "popover content visible";
+  // wait on the popover container itself instead of one specific
+  // child.
+  await expect(page.locator('[data-slot="popover-content"]').first()).toBeVisible({
+    timeout: 10000,
+  });
+}
+
+/**
+ * Select a tier (Workspace / Public / Closed) from the share popover's
+ * "Who can fill out" submenu. Each row mutates the cloud token via
+ * `patchFormShare` and refreshes `info` on success.
+ */
+export async function selectShareTier(
+  page: Page,
+  tier: 'workspace' | 'public' | 'closed',
+): Promise<void> {
+  // Tier submenu trigger label changes with the active selection; the
+  // row's `User` icon doesn't move so we anchor by the visible label
+  // (single-line "Who can fill out").
+  await page.getByRole('button', { name: /Who can fill out/i }).click();
+
+  const label =
+    tier === 'workspace'
+      ? /Anyone at .* with link/i
+      : tier === 'public'
+        ? /Anyone on the web with link/i
+        : /No access/i;
+
+  await page.getByRole('button', { name: label }).click();
+  // Closing the submenu requires a click outside; just press Escape so
+  // subsequent assertions can re-open the popover cleanly.
+  await page.waitForTimeout(500);
+}
+
+/**
+ * Read the share URL out of the popover's read-only input. The cloud's
+ * `share_url` field is empty when `APPFLOWY_WEB_URL` isn't configured;
+ * the popover's `resolveShareUrl` falls back to `${origin}/form/${token}`
+ * in that case, which is what we read here.
+ */
+export async function readShareUrl(page: Page): Promise<string> {
+  const input = page.locator('input[readonly]').first();
+
+  await expect(input).toBeVisible({ timeout: 10000 });
+  const url = await input.inputValue();
+
+  if (!url) throw new Error('share URL is empty');
+  return url;
+}
+
+/**
+ * Visit the public share URL in a clean popup tab. Returns the new page
+ * so callers can scope assertions to it without interfering with the
+ * authoring tab.
+ *
+ * The public form route is auth-bypassed (`/api/workspace/public-form/`)
+ * so we can open it in a context that doesn't have the authoring user's
+ * session — a fresh `browser.newContext()` would be cleaner but we use
+ * a new tab in the same context for simplicity. Anonymous submission
+ * tests should run inside an incognito context.
+ */
+export async function openSharePageInNewTab(
+  page: Page,
+  shareUrl: string,
+): Promise<Page> {
+  const newTab = await page.context().newPage();
+
+  await newTab.goto(shareUrl, { waitUntil: 'domcontentloaded' });
+  return newTab;
+}
+
+/**
+ * Switch back to the form's Responses Grid tab and return the count of
+ * "real" rows (i.e. rows the user has filled — excludes the "add new
+ * row" placeholder cell). Used to verify a submission ended up in the
+ * underlying database.
+ *
+ * Anchors on the row container so the count reflects what's painted,
+ * not the YJS state — which is the user-visible truth we want.
+ */
+export async function countGridRows(page: Page): Promise<number> {
+  // Switch to the Grid (index 0). The Form view was added as a
+  // sibling of the starter Grid, so flipping to the first tab puts
+  // us on the database's actual storage. `grid-row-*` testids on
+  // each rendered row let us count without depending on cell-per-row
+  // arithmetic.
+  const tabs = DatabaseViewSelectors.viewTab(page);
+
+  await tabs.first().click();
+  await page.waitForTimeout(500);
+  return DatabaseGridSelectors.rows(page).count();
 }

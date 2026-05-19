@@ -8,6 +8,10 @@ import {
   addFormViewToTabBarRaw,
   closeFormPreview,
   openFormPreview,
+  openSharePopover,
+  readShareUrl,
+  selectShareTier,
+  signInAddProAndOpenForm,
   signInAndAddFormViewViaTabBar,
   toggleQuestionMenuItem,
 } from '../../support/form-test-helpers';
@@ -177,5 +181,75 @@ When(
   'I click start from scratch in the auto-create form questions dialog',
   async ({ page }) => {
     await FormSelectors.autoCreateStartFromScratch(page).click();
+  },
+);
+
+// ── Share popover ───────────────────────────────────────────────────
+
+Given(
+  'a Grid with a Form tab is open on a Pro workspace',
+  async ({ page, request }) => {
+    await signInAddProAndOpenForm(page, request, generateRandomEmail());
+  },
+);
+
+When('I open the share popover', async ({ page }) => {
+  await openSharePopover(page);
+});
+
+Then('the share popover shows the upgrade prompt', async ({ page }) => {
+  await expect(FormSelectors.popoverUpgradePrompt(page)).toBeVisible({
+    timeout: 10000,
+  });
+  await expect(FormSelectors.popoverUpgradeCta(page)).toBeVisible();
+});
+
+Then(
+  'the share popover does not show the loading skeleton',
+  async ({ page }) => {
+    // Loading skeleton is mutually exclusive with the upgrade prompt;
+    // assert non-existence to catch regressions where the skeleton
+    // stays mounted forever (image #41).
+    await expect(FormSelectors.popoverLoading(page)).toBeHidden();
+  },
+);
+
+Then('the share popover shows the share controls', async ({ page }) => {
+  // The share rows render the "Who can fill out" submenu trigger when
+  // `info` is non-null. Anchor on that since it's stable across tiers.
+  await expect(
+    page.getByRole('button', { name: /Who can fill out/i }),
+  ).toBeVisible({ timeout: 15000 });
+});
+
+Then('the share URL is non-empty', async ({ page }) => {
+  const url = await readShareUrl(page);
+
+  expect(url.length).toBeGreaterThan(0);
+});
+
+When(
+  'I switch the share tier to {string}',
+  async ({ page }, tier: string) => {
+    if (tier !== 'workspace' && tier !== 'public' && tier !== 'closed') {
+      throw new Error(`Unknown tier ${tier}`);
+    }
+
+    await selectShareTier(page, tier as 'workspace' | 'public' | 'closed');
+  },
+);
+
+Then(
+  'the access banner reflects the {string} tier',
+  async ({ page }, tier: string) => {
+    // Dismiss the popover by clicking the form body so the banner is
+    // visible (popover surface anchors at the toolbar; banner sits in
+    // the form body).
+    await page.keyboard.press('Escape');
+    await expect(FormSelectors.accessBanner(page)).toHaveAttribute(
+      'data-tier',
+      tier,
+      { timeout: 10000 },
+    );
   },
 );

@@ -375,6 +375,29 @@ export const FormSelectors = {
       .locator('[data-testid="form-question-card"]')
       .nth(index)
       .locator('[data-testid="form-question-menu-trigger"]'),
+
+  // Popover state branches — `info === null && !isLoading` flows into
+  // one of these instead of the share rows.
+  popoverUpgradePrompt: (page: Page) =>
+    page.getByTestId('form-share-popover-upgrade-prompt'),
+  popoverUpgradeCta: (page: Page) =>
+    page.getByTestId('form-share-popover-upgrade-cta'),
+  popoverLoading: (page: Page) => page.getByTestId('form-share-popover-loading'),
+  popoverError: (page: Page) => page.getByTestId('form-share-popover-error'),
+};
+
+/**
+ * Public form page selectors. The page mounts when a respondent opens
+ * `/form/{token}`; on web that route auth-bypasses (`form-api.ts`) so
+ * tests can open it in an incognito context to exercise the anonymous
+ * path.
+ */
+export const PublicFormSelectors = {
+  body: (page: Page) => page.getByTestId('public-form-body'),
+  submitButton: (page: Page) => page.getByTestId('public-form-submit'),
+  confirmation: (page: Page) => page.getByTestId('public-form-confirmation'),
+  questionByKind: (page: Page, kind: string) =>
+    page.locator(`[data-question-kind="${kind}"]`),
 };
 
 /**

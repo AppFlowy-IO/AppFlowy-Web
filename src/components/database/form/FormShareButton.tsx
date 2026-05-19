@@ -60,6 +60,9 @@ export function FormShareButton() {
         </Button>
       }
       info={share.info}
+      isLoading={share.isLoading}
+      errorKind={share.errorKind}
+      onUpgradePlan={openUpgradePlan}
       setTier={share.setTier}
       setAnonymous={share.setAnonymous}
       setSubmissionAccess={share.setSubmissionAccess}
