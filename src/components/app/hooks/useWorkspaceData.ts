@@ -169,6 +169,7 @@ export function useWorkspaceData() {
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
+  const trashRequestSeqRef = useRef(0);
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
 
@@ -564,6 +565,40 @@ export function useWorkspaceData() {
     setLoadedViewIdsRevision((r) => r + 1);
   }, [stableOutlineRef, currentWorkspaceId]);
 
+  // Load trash list
+  const loadTrash = useCallback(
+    async (currentWorkspaceId: string) => {
+      const requestSeq = ++trashRequestSeqRef.current;
+
+      try {
+        const res = await ViewService.getTrash(currentWorkspaceId);
+
+        if (!res) {
+          throw new Error('App trash not found');
+        }
+
+        if (requestSeq !== trashRequestSeqRef.current) {
+          return;
+        }
+
+        setTrashList(sortBy(uniqBy(res, 'view_id') as unknown as View[], 'last_edited_time').reverse());
+      } catch (e) {
+        return Promise.reject('App trash not found');
+      }
+    },
+    []
+  );
+
+  // Remote delete/restore arrives as folder changes. Keep the app-level trash
+  // state fresh because deleted-page routing is derived from `trashList`.
+  const refreshTrashListInBackground = useCallback(() => {
+    if (!currentWorkspaceId) return;
+
+    void loadTrash(currentWorkspaceId).catch((error) => {
+      Log.warn('[Trash] Failed to refresh trash list after folder change', error);
+    });
+  }, [currentWorkspaceId, loadTrash]);
+
   useEffect(() => {
     const handleShareViewsChanged = () => {
       if (!currentWorkspaceId) return;
@@ -589,6 +624,7 @@ export function useWorkspaceData() {
       // If no diff JSON provided, fall back to full outline reload
       if (!payload?.outlineDiffJson) {
         Log.debug('[Outline] [FolderOutlineChanged] No diff JSON, reloading outline');
+        refreshTrashListInBackground();
         void loadOutline(currentWorkspaceId, false);
         return;
       }
@@ -600,11 +636,13 @@ export function useWorkspaceData() {
         patch = JSON.parse(payload.outlineDiffJson) as JsonPatchOperation[];
       } catch (error) {
         Log.warn('[Outline] [FolderOutlineChanged] Failed to parse outline diff, reloading outline', error);
+        refreshTrashListInBackground();
         void loadOutline(currentWorkspaceId, false);
         return;
       }
 
       if (!patch || !Array.isArray(patch)) {
+        refreshTrashListInBackground();
         void loadOutline(currentWorkspaceId, false);
         return;
       }
@@ -624,6 +662,8 @@ export function useWorkspaceData() {
         updateLastFolderRid(patchRid);
         return;
       }
+
+      refreshTrashListInBackground();
 
       Log.debug('[Outline] [FolderOutlineChanged] parsed patch', patch);
 
@@ -710,7 +750,15 @@ export function useWorkspaceData() {
         eventEmitter.off(APP_EVENTS.FOLDER_OUTLINE_CHANGED, handleFolderOutlineChanged);
       }
     };
-  }, [currentWorkspaceId, eventEmitter, loadOutline, replaceOutlinePreservingChildren, stableOutlineRef, updateLastFolderRid]);
+  }, [
+    currentWorkspaceId,
+    eventEmitter,
+    loadOutline,
+    refreshTrashListInBackground,
+    replaceOutlinePreservingChildren,
+    stableOutlineRef,
+    updateLastFolderRid,
+  ]);
 
   // Handle granular FolderViewChanged notifications
   useEffect(() => {
@@ -730,6 +778,7 @@ export function useWorkspaceData() {
 
       const changeType = payload.changeType ?? 0;
       let nextOutline = stableOutlineRef.current;
+      let shouldRefreshTrash = false;
 
       switch (changeType) {
         case FOLDER_VIEW_CHANGE_TYPE.VIEW_FIELDS_CHANGED: {
@@ -748,6 +797,8 @@ export function useWorkspaceData() {
         }
 
         case FOLDER_VIEW_CHANGE_TYPE.VIEW_ADDED: {
+          shouldRefreshTrash = true;
+
           if (!payload.viewJson || !payload.parentViewId) break;
           try {
             const newView = JSON.parse(payload.viewJson) as View;
@@ -764,6 +815,8 @@ export function useWorkspaceData() {
         }
 
         case FOLDER_VIEW_CHANGE_TYPE.VIEW_REMOVED: {
+          shouldRefreshTrash = true;
+
           const parentId = payload.viewId;
           const childIds = payload.childViewIds ?? [];
 
@@ -803,9 +856,14 @@ export function useWorkspaceData() {
         default: {
           // Unknown change type — fall back to full reload
           Log.debug('[Outline] [FolderViewChanged] Unknown change_type, reloading outline', changeType);
+          refreshTrashListInBackground();
           void loadOutline(currentWorkspaceId, false);
           return;
         }
+      }
+
+      if (shouldRefreshTrash) {
+        refreshTrashListInBackground();
       }
 
       if (nextOutline !== stableOutlineRef.current) {
@@ -830,7 +888,14 @@ export function useWorkspaceData() {
         eventEmitter.off(APP_EVENTS.FOLDER_VIEW_CHANGED, handleFolderViewChanged);
       }
     };
-  }, [currentWorkspaceId, eventEmitter, loadOutline, stableOutlineRef, updateLastFolderRid]);
+  }, [
+    currentWorkspaceId,
+    eventEmitter,
+    loadOutline,
+    refreshTrashListInBackground,
+    stableOutlineRef,
+    updateLastFolderRid,
+  ]);
 
   // Load favorite views
   const loadFavoriteViews = useCallback(async () => {
@@ -870,24 +935,6 @@ export function useWorkspaceData() {
       console.error('Recent views not found');
     }
   }, [currentWorkspaceId]);
-
-  // Load trash list
-  const loadTrash = useCallback(
-    async (currentWorkspaceId: string) => {
-      try {
-        const res = await ViewService.getTrash(currentWorkspaceId);
-
-        if (!res) {
-          throw new Error('App trash not found');
-        }
-
-        setTrashList(sortBy(uniqBy(res, 'view_id') as unknown as View[], 'last_edited_time').reverse());
-      } catch (e) {
-        return Promise.reject('App trash not found');
-      }
-    },
-    []
-  );
 
   // Get cached database relations (synchronous, returns immediately)
   const getCachedDatabaseRelations = useCallback(() => {

@@ -15,7 +15,7 @@ import { useUpdateRowMetaDispatch } from '@/application/database-yjs/dispatch';
 import { openCollabDB } from '@/application/db';
 import { getCachedRowSubDoc, getOrCreateRowSubDoc, trackRowDocEnsure } from '@/application/services/js-services/cache';
 import { YjsEditor } from '@/application/slate-yjs';
-import { initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
+import { dataStringTOJson, initializeDocumentStructure } from '@/application/slate-yjs/utils/yjs';
 import {
   BlockType,
   CollabOrigin,
@@ -33,6 +33,65 @@ import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { Editor } from '@/components/editor';
 import { useCurrentUserOptional } from '@/components/main/app.hooks';
 import { Log } from '@/utils/log';
+
+type ContentNode = {
+  type?: BlockType | string;
+  text?: string;
+  children?: unknown[];
+  data?: Record<string, unknown>;
+};
+
+function hasNonEmptyString(value: unknown) {
+  return typeof value === 'string' && value.length > 0;
+}
+
+function hasImageContent(data: Record<string, unknown> | undefined) {
+  if (!data) return false;
+
+  return (
+    hasNonEmptyString(data.url) ||
+    hasNonEmptyString(data.retry_local_url) ||
+    hasNonEmptyString(data.pending_upload_id)
+  );
+}
+
+function hasEditorNodeContent(node: unknown): boolean {
+  if (typeof node !== 'object' || node === null) return false;
+
+  const contentNode = node as ContentNode;
+
+  if ('text' in contentNode) {
+    return hasNonEmptyString(contentNode.text);
+  }
+
+  if (contentNode.type === BlockType.ImageBlock) {
+    return hasImageContent(contentNode.data);
+  }
+
+  if (contentNode.type === YjsEditorKey.text) {
+    return contentNode.children?.some(hasEditorNodeContent) ?? false;
+  }
+
+  if (contentNode.type && contentNode.type !== BlockType.Page && contentNode.type !== BlockType.Paragraph) {
+    return true;
+  }
+
+  return contentNode.children?.some(hasEditorNodeContent) ?? false;
+}
+
+function hasYjsBlockContent(block: Y.Map<unknown>) {
+  const type = block.get(YjsEditorKey.block_type);
+
+  if (!type || type === BlockType.Page || type === BlockType.Paragraph) {
+    return false;
+  }
+
+  if (type === BlockType.ImageBlock) {
+    return hasImageContent(dataStringTOJson(block.get(YjsEditorKey.block_data) as string) as Record<string, unknown>);
+  }
+
+  return true;
+}
 
 /**
  * DatabaseRowSubDocument - Full-featured component for row documents in app mode.
@@ -140,53 +199,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
         return false;
       }
 
-      const children = editor.children;
-
-      if (children.length === 0) {
-        return true;
-      }
-
-      if (children.length === 1) {
-        const firstChild = children[0];
-        const firstChildBlockType = 'type' in firstChild ? (firstChild.type as BlockType) : BlockType.Paragraph;
-
-        if (firstChildBlockType !== BlockType.Paragraph) {
-          return false;
-        }
-
-        // Check if the paragraph has any text content
-        // AppFlowy Slate structure: paragraph -> text node (type: 'text') -> leaf nodes ({text: '...'})
-        if ('children' in firstChild && Array.isArray(firstChild.children)) {
-          const hasContent = firstChild.children.some((child: unknown) => {
-            // Check for direct leaf node with text property (standard Slate)
-            if (typeof child === 'object' && child !== null && 'text' in child) {
-              return (child as { text: string }).text.length > 0;
-            }
-
-            // Check for AppFlowy text node structure: {type: 'text', children: [{text: '...'}]}
-            if (
-              typeof child === 'object' &&
-              child !== null &&
-              'type' in child &&
-              (child as { type: string }).type === 'text' &&
-              'children' in child &&
-              Array.isArray((child as { children: unknown[] }).children)
-            ) {
-              const textNode = child as { children: Array<{ text?: string }> };
-
-              return textNode.children.some((leaf) => leaf.text && leaf.text.length > 0);
-            }
-
-            return true; // Non-text nodes (embeds, etc.) count as content
-          });
-
-          return !hasContent;
-        }
-
-        return true;
-      }
-
-      return false;
+      return !editor.children.some(hasEditorNodeContent);
     },
     [meta?.isEmptyDocument]
   );
@@ -218,9 +231,7 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
 
         if (blocks) {
           for (const block of blocks.values()) {
-            const type = block.get(YjsEditorKey.block_type);
-
-            if (type && type !== BlockType.Page && type !== BlockType.Paragraph) {
+            if (hasYjsBlockContent(block)) {
               return true;
             }
           }

@@ -6,7 +6,7 @@ import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot
 import { LoadView, LoadViewMeta, UIVariant, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
 
-const EMBEDDED_DATABASE_FIXED_HEIGHT = 300;
+const EMBEDDED_DATABASE_FIXED_HEIGHT = 600;
 
 interface DatabaseContentProps {
   /**
