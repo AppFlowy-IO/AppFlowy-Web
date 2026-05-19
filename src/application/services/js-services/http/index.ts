@@ -14,6 +14,7 @@ export * from './import-api';
 export * from './file-api';
 export * from './access-api';
 export * from './misc-api';
+export * from './mcp-api';
 
 // Note: http_api.ts is kept as a re-export file for integration test setup
 // (http/__tests__/setup.ts imports `* as APIService from '../http_api'`)

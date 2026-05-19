@@ -49,6 +49,10 @@ if [ -z "${APPFLOWY_WS_BASE_URL}" ]; then
   exit 1
 fi
 
+if [ -z "${APPFLOWY_MCP_BASE_URL}" ]; then
+  export APPFLOWY_MCP_BASE_URL="${APPFLOWY_BASE_URL}"
+fi
+
 # Show deprecation summary if any old variables were used
 if [ -n "${AF_BASE_URL}" ] || [ -n "${AF_GOTRUE_URL}" ] || [ -n "${AF_WS_V2_URL}" ] || [ -n "${AF_WS_URL}" ]; then
   echo ""
@@ -64,7 +68,7 @@ if [ -n "${AF_BASE_URL}" ] || [ -n "${AF_GOTRUE_URL}" ] || [ -n "${AF_WS_V2_URL}
 fi
 
 # IMPORTANT: For client-side React app, inject config into HTML
-CONFIG_SCRIPT="<script>window.__APP_CONFIG__={APPFLOWY_BASE_URL:'${APPFLOWY_BASE_URL}',APPFLOWY_GOTRUE_BASE_URL:'${APPFLOWY_GOTRUE_BASE_URL}',APPFLOWY_WS_BASE_URL:'${APPFLOWY_WS_BASE_URL}'};</script>"
+CONFIG_SCRIPT="<script>window.__APP_CONFIG__={APPFLOWY_BASE_URL:'${APPFLOWY_BASE_URL}',APPFLOWY_GOTRUE_BASE_URL:'${APPFLOWY_GOTRUE_BASE_URL}',APPFLOWY_MCP_BASE_URL:'${APPFLOWY_MCP_BASE_URL}',APPFLOWY_WS_BASE_URL:'${APPFLOWY_WS_BASE_URL}'};</script>"
 
 # Inject the config script into both nginx and Bun server locations
 sed -i "s|</head>|${CONFIG_SCRIPT}</head>|g" /usr/share/nginx/html/index.html
@@ -73,12 +77,14 @@ sed -i "s|</head>|${CONFIG_SCRIPT}</head>|g" /app/dist/index.html
 echo "Environment variables configured:"
 echo "  APPFLOWY_BASE_URL: ${APPFLOWY_BASE_URL}"
 echo "  APPFLOWY_GOTRUE_BASE_URL: ${APPFLOWY_GOTRUE_BASE_URL}"
+echo "  APPFLOWY_MCP_BASE_URL: ${APPFLOWY_MCP_BASE_URL}"
 echo "  APPFLOWY_WS_BASE_URL: ${APPFLOWY_WS_BASE_URL}"
 echo ""
 
 # Export for Bun server to use
 export APPFLOWY_BASE_URL
 export APPFLOWY_GOTRUE_BASE_URL
+export APPFLOWY_MCP_BASE_URL
 export APPFLOWY_WS_BASE_URL
 
 # Start supervisor to manage both nginx and Bun server

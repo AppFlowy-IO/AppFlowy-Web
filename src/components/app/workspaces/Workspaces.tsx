@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { PlugZap } from 'lucide-react';
 
 import { clearRedirectTo } from '@/application/session/sign_in';
 import { invalidToken } from '@/application/session/token';
@@ -43,6 +44,8 @@ import { openUrl } from '@/utils/url';
 
 import { AccountSettings } from './AccountSettings';
 
+const MCPSettings = lazy(() => import('@/components/app/workspaces/MCPSettings'));
+
 export function Workspaces() {
   const { t } = useTranslation();
   const userWorkspaceInfo = useUserWorkspaceInfo();
@@ -71,6 +74,7 @@ export function Workspaces() {
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openLogoutConfirm, setOpenLogoutConfirm] = useState(false);
   const [openAccountSettings, setOpenAccountSettings] = useState(false);
+  const [openMcpSettings, setOpenMcpSettings] = useState(false);
 
   const isOwner = currentWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
 
@@ -196,14 +200,25 @@ export function Workspaces() {
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
               {currentWorkspace && isOwner && (
-                <DropdownMenuItem
-                  onSelect={() => {
-                    setOpenInviteMember(true);
-                  }}
-                >
-                  <AddUserIcon />
-                  {t('settings.appearance.members.inviteMembers')}
-                </DropdownMenuItem>
+                <>
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      setOpenInviteMember(true);
+                    }}
+                  >
+                    <AddUserIcon />
+                    {t('settings.appearance.members.inviteMembers')}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    data-testid='mcp-settings-button'
+                    onSelect={() => {
+                      setOpenMcpSettings(true);
+                    }}
+                  >
+                    <PlugZap className='h-5 w-5' />
+                    {t('settings.mcp.title', { defaultValue: 'MCP connectors' })}
+                  </DropdownMenuItem>
+                </>
               )}
               <DropdownMenuItem onSelect={handleOpenImport}>
                 <ImportIcon />
@@ -332,6 +347,16 @@ export function Workspaces() {
       )}
 
       <AccountSettings open={openAccountSettings} onClose={() => setOpenAccountSettings(false)} />
+      {openMcpSettings && currentWorkspace && (
+        <Suspense fallback={null}>
+          <MCPSettings
+            key={currentWorkspace.id}
+            open={openMcpSettings}
+            onClose={() => setOpenMcpSettings(false)}
+            workspaceId={currentWorkspace.id}
+          />
+        </Suspense>
+      )}
       <LogoutConfirm open={openLogoutConfirm} onClose={() => setOpenLogoutConfirm(false)} onConfirm={handleSignOut} />
     </>
   );
