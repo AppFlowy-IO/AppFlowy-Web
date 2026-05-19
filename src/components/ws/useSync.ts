@@ -151,7 +151,7 @@ export const useSync = (
   eventEmitter: EventEmitter,
   workspaceId: string
 ): SyncContextType => {
-  const { sendMessage, lastMessage } = ws;
+  const { sendMessage, lastMessage, readyState } = ws;
   const { postMessage, lastBroadcastMessage } = bc;
   const currentUser = useCurrentUserOptional();
 
@@ -192,12 +192,22 @@ export const useSync = (
   // WebSocket notifications and cross-tab BroadcastChannel relays.
   useWorkspaceNotifications(wsNotification, bcNotification, eventEmitter);
 
+  // ── Batch sync utilities ─────────────────────────────────────────────
+  // flushAllSync: drain buffered local updates to WebSocket for every registered doc.
+  // syncAllToServer: full HTTP batch sync (used before operations like "Duplicate").
+  // notifyLocalEdit: debounced HTTP full-sync fallback while WebSocket is reconnecting.
+  // notifyManifestSync: clears HTTP fallback markers after a WS manifest/state-vector exchange.
+  const { flushAllSync, syncAllToServer, notifyLocalEdit, notifyManifestSync } = useBatchSync(refs, {
+    workspaceId,
+    wsReadyState: readyState,
+  });
+
   // ── Sync context lifecycle ───────────────────────────────────────────
   // Provides registerSyncContext / unregisterSyncContext / scheduleDeferredCleanup.
   // Manages ref-counting so multiple components sharing the same Y.Doc don't
   // tear it down prematurely.
   const { registerSyncContext, unregisterSyncContext, scheduleDeferredCleanup } =
-    useSyncContextLifecycle(refs, sendMessage, postMessage);
+    useSyncContextLifecycle(refs, sendMessage, postMessage, notifyLocalEdit, notifyManifestSync);
 
   // ── Incoming collab messages ─────────────────────────────────────────
   // Watches wsCollabMessage / bcCollabMessage and routes them through a per-objectId
@@ -211,11 +221,6 @@ export const useSync = (
     registerSyncContext,
     scheduleDeferredCleanup
   );
-
-  // ── Batch sync utilities ─────────────────────────────────────────────
-  // flushAllSync: drain buffered local updates to WebSocket for every registered doc.
-  // syncAllToServer: full HTTP batch sync (used before operations like "Duplicate").
-  const { flushAllSync, syncAllToServer } = useBatchSync(refs);
 
   // ── User-initiated version revert ────────────────────────────────────
   // Tears down the current doc, calls the server revert API, rebuilds a fresh doc

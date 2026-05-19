@@ -39,7 +39,9 @@ import { RegisterSyncContext } from './types';
 export function useSyncContextLifecycle(
   refs: SyncRefs,
   sendMessage: (message: messages.IMessage) => void,
-  postMessage: (message: messages.IMessage) => void
+  postMessage: (message: messages.IMessage) => void,
+  onLocalUpdate?: (objectId: string) => void,
+  onManifestSync?: (objectId: string) => void
 ) {
   const cancelDeferredCleanup = useCallback((objectId: string) => {
     const timer = refs.pendingCleanups.current.get(objectId);
@@ -157,6 +159,8 @@ export function useSyncContextLifecycle(
       if (existingContext !== undefined) {
         // If same doc instance, reuse the existing context
         if (existingContext.doc === context.doc) {
+          existingContext.onLocalUpdate = onLocalUpdate;
+          existingContext.onManifestSync = onManifestSync;
           const refCount = incrementContextRefCount(context.doc.guid);
 
           Log.debug(`Reusing existing sync context for objectId ${context.doc.guid}; owner count=${refCount}`);
@@ -177,6 +181,8 @@ export function useSyncContextLifecycle(
       // SyncContext extends RegisterSyncContext by attaching the emit function and destroy handler
       const syncContext = context as SyncContext;
 
+      syncContext.onLocalUpdate = onLocalUpdate;
+      syncContext.onManifestSync = onManifestSync;
       refs.registeredContexts.current.set(syncContext.doc.guid, syncContext);
       const handleDocDestroy = () => {
         const objectId = syncContext.doc.guid;
@@ -221,7 +227,7 @@ export function useSyncContextLifecycle(
 
       return syncContext;
     },
-    [refs, sendMessage, postMessage, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
+    [refs, sendMessage, postMessage, onLocalUpdate, onManifestSync, cancelDeferredCleanup, unregisterSyncContext, incrementContextRefCount]
   );
 
   return {
