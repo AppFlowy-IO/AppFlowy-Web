@@ -4,7 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useAddDatabaseView } from '@/application/database-yjs/dispatch';
-import { BillingService } from '@/application/services/js-services/http/billing-api';
+import { BillingService } from '@/application/services/domains';
 import { DatabaseViewLayout, Subscription, ViewLayout } from '@/application/types';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
