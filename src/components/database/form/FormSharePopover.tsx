@@ -33,6 +33,7 @@ export function FormSharePopover({
   info,
   isLoading,
   errorKind,
+  errorMessage,
   onUpgradePlan,
   setTier,
   setAnonymous,
@@ -49,6 +50,11 @@ export function FormSharePopover({
   /// instead of an infinite skeleton; `'other'` shows a generic error
   /// so the user knows it isn't loading anymore.
   errorKind: FormShareErrorKind | null;
+  /// Raw error message from the failed bootstrap. Surfaced in the
+  /// generic-failure UI so a user-reported screenshot carries the
+  /// underlying cause (cloud error code / network failure / etc.) —
+  /// the popover alone is otherwise the only diagnostic surface.
+  errorMessage: string | null;
   onUpgradePlan: () => void;
   setTier: (t: FormShareTier) => Promise<void>;
   setAnonymous: (v: boolean) => Promise<void>;
@@ -107,7 +113,7 @@ export function FormSharePopover({
           ) : errorKind === 'plan_required' ? (
             <UpgradePrompt onUpgradePlan={onUpgradePlan} />
           ) : (
-            <GenericLoadFailure />
+            <GenericLoadFailure errorMessage={errorMessage} />
           )
         ) : (
           <>
@@ -225,8 +231,14 @@ function UpgradePrompt({ onUpgradePlan }: { onUpgradePlan: () => void }) {
  * cloud errors). Distinct from the loading skeleton so the user
  * understands the popover finished trying and isn't going to resolve
  * on its own.
+ *
+ * Surfaces the underlying error message so a user-reported screenshot
+ * carries the diagnostic context — without this the only signal is
+ * the generic copy, and tracking down whether it's a network glitch /
+ * permission / cloud-side validation requires reproducing locally
+ * with devtools open.
  */
-function GenericLoadFailure() {
+function GenericLoadFailure({ errorMessage }: { errorMessage: string | null }) {
   return (
     <div
       data-testid='form-share-popover-error'
@@ -237,6 +249,14 @@ function GenericLoadFailure() {
         Close this popover and try again. If the problem persists, refresh
         the page.
       </p>
+      {errorMessage && (
+        <p
+          data-testid='form-share-popover-error-detail'
+          className='mt-2 max-w-full break-words text-[11px] text-text-tertiary'
+        >
+          {errorMessage}
+        </p>
+      )}
     </div>
   );
 }
@@ -383,12 +403,14 @@ function AccessSubmenu({
   return (
     <div className='flex flex-col'>
       <Choice
+        testId='form-share-submission-access-choice-none'
         selected={current === 'none'}
         title='No access'
         subtitle="Respondents can't revisit their submission."
         onClick={() => onSelect('none')}
       />
       <Choice
+        testId='form-share-submission-access-choice-view'
         selected={current === 'view'}
         title='Can view'
         subtitle='Respondents can see what they submitted.'

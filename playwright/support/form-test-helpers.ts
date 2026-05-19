@@ -233,16 +233,40 @@ export async function toggleQuestionMenuItem(
  * Open the share popover from the toolbar. Waits for either the share
  * controls (Pro path) or the upgrade prompt (Free path) to appear so
  * the caller doesn't race the bootstrap.
+ *
+ * Distinct "fully bootstrapped" anchor: the popover surface flashes
+ * the loading skeleton during the GET / mint round-trip; clicks on the
+ * skeleton can't navigate to actual controls. After the popover
+ * mounts, wait until either the share controls OR the upgrade prompt
+ * land before returning — both indicate the bootstrap settled.
  */
 export async function openSharePopover(page: Page): Promise<void> {
   await FormSelectors.shareButton(page).click();
-  // Either the share rows render (info available) or the upgrade /
-  // error fallback renders. Either path is "popover content visible";
-  // wait on the popover container itself instead of one specific
-  // child.
+  // First wait — popover surface exists at all.
   await expect(page.locator('[data-slot="popover-content"]').first()).toBeVisible({
     timeout: 10000,
   });
+  // Second wait — bootstrap settled. Race the two terminal states so
+  // either branch unblocks the caller. The loading skeleton is
+  // explicitly NOT a settled state.
+  //
+  // Anchor on the Anonymous toggle (rows path) and the upgrade prompt
+  // (Free path) — both are mounted exclusively, with the skeleton in
+  // between. Once one of them appears the bootstrap has resolved.
+  await page.waitForFunction(
+    () => {
+      const upgrade = document.querySelector(
+        '[data-testid="form-share-popover-upgrade-prompt"]',
+      );
+      const rows = document.querySelector(
+        '[data-testid="form-share-anonymous-toggle"]',
+      );
+
+      return !!(upgrade || rows);
+    },
+    undefined,
+    { timeout: 15000 },
+  );
 }
 
 /**
@@ -266,6 +290,67 @@ export async function selectShareTier(
   // Wait briefly for the patch round-trip to settle so the next step
   // sees the new `info` and `data-tier` reflects the choice.
   await page.waitForTimeout(800);
+}
+
+/**
+ * Click the Anonymous toggle in the share popover. Radix's `<Switch>`
+ * renders as a button with `role="switch"`; the per-row `data-testid`
+ * we added gives us a stable handle without depending on the visible
+ * label (which is wrapped in a span sibling).
+ *
+ * Server-side `useFormShare.setAnonymous` short-circuits when
+ * `tier === 'public'` (cloud forces it). For Workspace tier, toggling
+ * Anonymous ON auto-promotes the tier to Public per the
+ * "promotePublic" rule — caller should assert on `data-tier` after
+ * to verify the promotion.
+ */
+export async function toggleAnonymousSwitch(page: Page): Promise<void> {
+  await page.getByTestId('form-share-anonymous-toggle').click();
+  // YJS observer + patch round-trip — wait for the banner to reflect
+  // the new state rather than a fixed sleep.
+  await page.waitForTimeout(800);
+}
+
+/**
+ * Open the submission-access submenu and pick a row. The row is only
+ * rendered when `tier === 'workspace' && !anonymous` (mirror of cloud's
+ * `coerce_submission_access`), so this helper requires the caller to
+ * have left the form on Workspace / anon=false first.
+ */
+export async function selectSubmissionAccess(
+  page: Page,
+  access: 'none' | 'view',
+): Promise<void> {
+  // Capture console messages so a regression in `setSubmissionAccess`
+  // (e.g., `info` null at click time → early return) surfaces in the
+  // test log instead of as a silent state mismatch.
+  const logs: string[] = [];
+  const handler = (msg: { type(): string; text(): string }) => {
+    if (msg.type() === 'warn' || msg.type() === 'error') logs.push(msg.text());
+  };
+
+  page.on('console', handler);
+  try {
+    await page.getByTestId('form-share-submission-access-row').click();
+    await page.waitForTimeout(300);
+
+    const choiceSel = `[data-testid="form-share-submission-access-choice-${access}"]`;
+    const choice = page.locator(choiceSel);
+
+    await expect(choice).toBeVisible({ timeout: 5000 });
+    // Real mouse click — Radix submenu choice has no nested popover
+    // conflict (the click target is inside the submenu portal which
+    // is the deepest open popover at this point). Pointer events fire
+    // cleanly.
+    await choice.click();
+    await page.waitForTimeout(1200);
+  } finally {
+    page.off('console', handler);
+    if (logs.length) {
+      // eslint-disable-next-line no-console
+      console.log('[selectSubmissionAccess] console logs during click:', logs);
+    }
+  }
 }
 
 /**

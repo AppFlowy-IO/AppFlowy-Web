@@ -83,6 +83,7 @@ export function FormAccessBanner() {
           info={share.info}
           isLoading={share.isLoading}
           errorKind={share.errorKind}
+          errorMessage={share.error}
           onUpgradePlan={openUpgradePlan}
           setTier={share.setTier}
           setAnonymous={share.setAnonymous}

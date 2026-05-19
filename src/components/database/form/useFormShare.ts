@@ -35,6 +35,93 @@ function classifyError(err: unknown): FormShareErrorKind {
   return 'other';
 }
 
+/**
+ * Errors that warrant a retry rather than a final-state UI commit.
+ * The cloud's `check_form_view_scope` rejects with `RecordNotFound`
+ * when a freshly-created form view hasn't propagated to its folder-
+ * cache lookup yet (the view exists in YJS / collab, but the cache
+ * lags by a beat). That's a transient race, not a real failure —
+ * retrying with backoff lets the cache catch up.
+ *
+ * `FeatureNotAvailable` is deliberately NOT in this set: a Free
+ * workspace will keep getting the same answer no matter how long we
+ * wait, so a retry would just add latency before the upgrade prompt.
+ */
+function wait(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type BootstrapOutcome =
+  | { kind: 'success'; info: FormShareInfo }
+  | { kind: 'failure'; error: unknown };
+
+/**
+ * One GET-then-mint attempt against the cloud. The caller wraps this
+ * in a retry loop because some failures are transient (folder cache
+ * race on a freshly-created form view).
+ *
+ * Returns `success` when either the GET produced a token, the mint
+ * succeeded, or the mint hit 409 and the follow-up GET picked up the
+ * existing token. `failure` carries the last error untouched so the
+ * caller can classify (plan_required vs transient vs other) and
+ * decide whether to retry.
+ */
+async function tryBootstrap(
+  workspaceId: string,
+  databaseId: string,
+  viewId: string,
+): Promise<BootstrapOutcome> {
+  try {
+    const existing = await getFormShare(workspaceId, databaseId, viewId);
+
+    if (existing) return { kind: 'success', info: existing };
+  } catch (e) {
+    // Fall through to mint — mint carries the authoritative answer.
+    // eslint-disable-next-line no-console
+    console.debug('[useFormShare] GET failed, falling through to mint', e);
+  }
+
+  try {
+    const minted = await mintFormShare(workspaceId, databaseId, viewId);
+
+    return { kind: 'success', info: minted };
+  } catch (e) {
+    const message = (e as { message?: string })?.message ?? 'mint failed';
+
+    // 409 = a token already exists (race between our GET and POST).
+    // Re-fetch to pick it up.
+    if (/already exists|409/i.test(message)) {
+      try {
+        const after = await getFormShare(workspaceId, databaseId, viewId);
+
+        if (after) return { kind: 'success', info: after };
+      } catch {
+        // Fall through to the failure branch.
+      }
+    }
+
+    return { kind: 'failure', error: e };
+  }
+}
+
+function isTransientError(err: unknown): boolean {
+  const e = err as { code?: number; message?: string } | null | undefined;
+
+  // RECORD_NOT_FOUND (-2) is the canonical "the cloud doesn't see
+  // this view yet" signal. NetworkError / -1 also retries — covers
+  // the case where the user opened the popover while offline for a
+  // second.
+  if (e?.code === ERROR_CODE.RECORD_NOT_FOUND) return true;
+
+  if (e?.code === -1) return true;
+
+  if (e?.message && /not found|view.*does not exist/i.test(e.message)) {
+    return true;
+  }
+
+  return false;
+}
+
 function coerceSubmissionAccess(
   tier: FormShareTier,
   anonymous: boolean,
@@ -114,86 +201,74 @@ export function useFormShare(): FormShareState {
 
     setIsLoading(true);
     void (async () => {
-      // GET-first path. Cheap when the desktop / another tab has
-      // already minted the token — most common case after the first
-      // session. But GET can fail for transient reasons that don't
-      // mean "the user can't share":
-      //   * The form view was just created and the cloud hasn't fully
-      //     reconciled folder state → RecordNotFound from
-      //     `check_form_view_scope`.
-      //   * Permission cache race on a freshly-joined member.
-      //   * Network glitch.
+      // GET-first path. Cheap when another client has already minted —
+      // most common case after the first session. Failures fall
+      // through to mint, which carries the authoritative answer
+      // (plan-gate refusal / success / actual server error).
       //
-      // For ANY GET failure we fall through to mint instead of
-      // bailing out: mint is idempotent (returns 409 if a token
-      // already exists, which we recover from below) AND carries the
-      // authoritative plan-gate error if the workspace is Free. That
-      // way the popover surface reflects the true blocker rather than
-      // a stale "couldn't load" message that we can't classify.
-      let existing: FormShareInfo | null | undefined;
+      // Both GET and mint depend on `check_form_view_scope` server-
+      // side, which rejects with `RecordNotFound` when a freshly-
+      // created form view hasn't propagated to the folder cache yet
+      // (regression image #43: "Couldn't load share settings"
+      // appearing on a brand-new form view). That's a transient race
+      // — retry the whole bootstrap a handful of times with backoff
+      // before surfacing as a final-state error.
+      const MAX_ATTEMPTS = 5;
+      const BACKOFF_MS = [250, 500, 1000, 1500, 2000];
+      let lastError: unknown = null;
 
-      try {
-        existing = await getFormShare(workspaceId, databaseId, viewId);
-      } catch (e) {
-        // Don't surface the GET error — we'll let mint speak. Log so
-        // future regressions are diagnosable from the browser console.
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt += 1) {
+        if (cancelled) return;
+        const outcome = await tryBootstrap(workspaceId, databaseId, viewId);
+
+        if (cancelled) return;
+        if (outcome.kind === 'success') {
+          setInfo(outcome.info);
+          setError(null);
+          setErrorKind(null);
+          setIsLoading(false);
+          return;
+        }
+
+        lastError = outcome.error;
+
+        // `plan_required` is terminal — retrying won't help a Free
+        // workspace; commit the upgrade prompt immediately so the
+        // user can act on it.
+        if (classifyError(outcome.error) === 'plan_required') {
+          break;
+        }
+
+        if (!isTransientError(outcome.error)) {
+          // Non-transient, non-plan-gate error (auth, 5xx, etc.)
+          // — break out so we don't burn the user's time on a hopeless
+          // retry loop.
+          break;
+        }
+
+        const delay = BACKOFF_MS[attempt] ?? 2000;
+
         // eslint-disable-next-line no-console
-        console.debug('[useFormShare] GET failed, falling through to mint', e);
-        existing = undefined;
+        console.debug(
+          `[useFormShare] bootstrap attempt ${attempt + 1} hit transient error; retrying in ${delay}ms`,
+          outcome.error,
+        );
+        await wait(delay);
       }
 
       if (cancelled) return;
-      if (existing) {
-        setInfo(existing);
-        setError(null);
-        setErrorKind(null);
-        setIsLoading(false);
-        return;
-      }
+      const message =
+        (lastError as { message?: string })?.message ?? 'load failed';
+      const kind = classifyError(lastError);
 
-      try {
-        const minted = await mintFormShare(workspaceId, databaseId, viewId);
-
-        if (cancelled) return;
-        setInfo(minted);
-        setError(null);
-        setErrorKind(null);
-      } catch (e) {
-        if (cancelled) return;
-        const message = (e as { message?: string })?.message ?? 'load failed';
-
-        // 409 = a token already exists (race between our GET and POST).
-        // Re-fetch to pick it up.
-        if (/already exists|409/i.test(message)) {
-          try {
-            const after = await getFormShare(workspaceId, databaseId, viewId);
-
-            if (cancelled) return;
-            if (after) {
-              setInfo(after);
-              setError(null);
-              setErrorKind(null);
-              return;
-            }
-          } catch {
-            // Fall through to the original error path.
-          }
-        }
-
-        if (cancelled) return;
-        const kind = classifyError(e);
-
-        // Log the raw error shape so we can tell `plan_required` from
-        // `other` in the field. Without this the popover's generic
-        // error surface is the only signal — useful for the user but
-        // opaque to debugging.
-        // eslint-disable-next-line no-console
-        console.warn('[useFormShare] mint failed', { kind, error: e });
-        setError(message);
-        setErrorKind(kind);
-      } finally {
-        if (!cancelled) setIsLoading(false);
-      }
+      // eslint-disable-next-line no-console
+      console.warn('[useFormShare] bootstrap failed after retries', {
+        kind,
+        error: lastError,
+      });
+      setError(message);
+      setErrorKind(kind);
+      setIsLoading(false);
     })();
 
     return () => {
