@@ -144,7 +144,10 @@ export function FormAutoCreate() {
       onClose={dismissAsScratch}
       PaperProps={DIALOG_PAPER_PROPS}
     >
-      <div className='flex flex-col items-center gap-4 px-6 py-6 text-center'>
+      <div
+        data-testid='form-auto-create-dialog'
+        className='flex flex-col items-center gap-4 px-6 py-6 text-center'
+      >
         <div className='flex items-center gap-3 text-text-caption'>
           <Table2 size={24} />
           <ArrowRight size={16} />
@@ -157,6 +160,7 @@ export function FormAutoCreate() {
           Only supported property types will create new questions.
         </p>
         <Button
+          data-testid='form-auto-create-confirm'
           className='w-full'
           onClick={() => {
             writer.populateFromFields(supportedFieldIds);
@@ -168,6 +172,7 @@ export function FormAutoCreate() {
             : `Create ${fieldCount} questions`}
         </Button>
         <button
+          data-testid='form-auto-create-start-from-scratch'
           type='button'
           onClick={dismissAsScratch}
           className='text-sm text-text-caption hover:underline'

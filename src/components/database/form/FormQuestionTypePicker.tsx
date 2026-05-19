@@ -109,6 +109,7 @@ export function FormQuestionTypePicker() {
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
+          data-testid='form-add-question-button'
           type='button'
           className='mx-auto flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-fill-default hover:bg-fill-content'
         >
@@ -164,6 +165,7 @@ export function FormQuestionTypePicker() {
         {FORM_QUESTION_FIELD_TYPES.map((ty) => (
           <button
             key={ty}
+            data-testid={`form-question-type-option-${ty}`}
             type='button'
             onClick={() => {
               const newFieldId = createProperty(ty);

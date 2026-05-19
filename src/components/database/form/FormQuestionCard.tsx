@@ -83,7 +83,7 @@ function _FormQuestionCard({
     fieldType === FieldType.MultiSelect;
 
   return (
-    <div className='group relative rounded-md border border-line-divider px-5 py-4 transition-colors hover:cursor-grab hover:border-fill-default'>
+    <div data-testid='form-question-card' className='group relative rounded-md border border-line-divider px-5 py-4 transition-colors hover:cursor-grab hover:border-fill-default'>
       {/*
         Stop mouse-down here so clicking the 3-dot trigger doesn't
         race the RBD drag sensor (which is bound to this card's

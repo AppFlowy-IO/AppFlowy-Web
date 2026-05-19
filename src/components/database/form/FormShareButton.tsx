@@ -2,13 +2,10 @@ import { Share2 } from 'lucide-react';
 import { useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { BillingService } from '@/application/services/domains';
-import { Subscription } from '@/application/types';
-import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
-import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { Button } from '@/components/ui/button';
 
 import { FormSharePopover } from './FormSharePopover';
+import { useCanAuthorFormView } from './useCanAuthorFormView';
 import { useFormShareContext } from './FormShareContext';
 
 /**
@@ -22,24 +19,15 @@ import { useFormShareContext } from './FormShareContext';
  * bootstrap with `info === null` forever — the popover would render
  * its `ShareLoading` skeleton indefinitely. Mirrors the gate the
  * `AddViewButton` picker already applies for Form creation.
+ *
+ * Dev / test / self-hosted bypass lives in `useCanAuthorFormView` so
+ * all three web entry points (this button, the access banner's
+ * `Change` link, and the `+` picker) stay consistent.
  */
 export function FormShareButton() {
   const share = useFormShareContext();
   const url = share.resolveShareUrl();
-
-  // Same subscription-plan helper the chart settings and the
-  // AddViewButton picker use. Self-hosted instances return
-  // `isPro = true` without a billing round-trip, so the share button
-  // stays usable for both cloud-Pro and on-prem deployments.
-  const userWorkspaceInfo = useUserWorkspaceInfo();
-  const currentWorkspaceId = userWorkspaceInfo?.selectedWorkspace.id;
-  const getSubscriptions = useCallback(async (): Promise<
-    Subscription[] | undefined
-  > => {
-    if (!currentWorkspaceId) return undefined;
-    return BillingService.getWorkspaceSubscriptions(currentWorkspaceId);
-  }, [currentWorkspaceId]);
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
+  const canAuthor = useCanAuthorFormView();
 
   const [, setSearch] = useSearchParams();
   const openUpgradePlan = useCallback(() => {
@@ -49,9 +37,14 @@ export function FormShareButton() {
     });
   }, [setSearch]);
 
-  if (!isPro) {
+  if (!canAuthor) {
     return (
-      <Button size='sm' className='gap-1' onClick={openUpgradePlan}>
+      <Button
+        data-testid='form-share-button'
+        size='sm'
+        className='gap-1'
+        onClick={openUpgradePlan}
+      >
         <Share2 size={14} />
         Share form
       </Button>
@@ -61,7 +54,7 @@ export function FormShareButton() {
   return (
     <FormSharePopover
       trigger={
-        <Button size='sm' className='gap-1'>
+        <Button data-testid='form-share-button' size='sm' className='gap-1'>
           <Share2 size={14} />
           Share form
         </Button>

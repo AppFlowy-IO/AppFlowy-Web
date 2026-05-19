@@ -326,6 +326,45 @@ export const ChartDrilldownSelectors = {
 };
 
 /**
+ * Form-builder selectors. The Form layout is web-mirror of the desktop's
+ * `FormBuilderPage`. Field-type ids match the FieldType enum in
+ * `database-yjs/database.type.ts` — keep in sync if the enum renumbers.
+ */
+export const FormSelectors = {
+  // Tab-bar dropdown item that creates a Form view linked to the
+  // current database. Only entry point on web — the sidebar `+` menu
+  // doesn't include Form (mirror of `desktop/bdd/form_from_tab_bar`).
+  addFormViewOption: (page: Page) => page.getByTestId('add-form-view-option'),
+
+  // Toolbar
+  previewButton: (page: Page) => page.getByTestId('form-preview-button'),
+  shareButton: (page: Page) => page.getByTestId('form-share-button'),
+  previewDialog: (page: Page) => page.getByTestId('form-preview-dialog'),
+
+  // Question stack
+  addQuestionButton: (page: Page) => page.getByTestId('form-add-question-button'),
+  questionTypeOption: (page: Page, fieldType: number) =>
+    page.getByTestId(`form-question-type-option-${fieldType}`),
+  questionCards: (page: Page) => page.locator('[data-testid="form-question-card"]'),
+
+  // Banner — `data-tier` exposes the active share tier (workspace / public / closed)
+  // so tests can assert the at-rest state without scraping copy.
+  accessBanner: (page: Page) => page.getByTestId('form-access-banner'),
+  accessBannerTier: async (page: Page): Promise<string | null> =>
+    page.getByTestId('form-access-banner').getAttribute('data-tier'),
+
+  // Auto-create modal. Fires when a Form view is layered onto a database
+  // with > 2 supported fields (e.g. a default Grid w/ Name/Type/Done).
+  // Most scenarios dismiss it via Start-from-scratch to land on an empty
+  // form; scenarios that care about the modal itself (mirror of
+  // desktop's `form_from_tab_bar`) assert on it directly.
+  autoCreateDialog: (page: Page) => page.getByTestId('form-auto-create-dialog'),
+  autoCreateConfirm: (page: Page) => page.getByTestId('form-auto-create-confirm'),
+  autoCreateStartFromScratch: (page: Page) =>
+    page.getByTestId('form-auto-create-start-from-scratch'),
+};
+
+/**
  * Database Filter & Sort selectors
  */
 export const DatabaseFilterSelectors = {

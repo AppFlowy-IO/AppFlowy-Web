@@ -2,15 +2,12 @@ import { Ban, Globe, Lock } from 'lucide-react';
 import { useCallback, useContext } from 'react';
 import { useSearchParams } from 'react-router-dom';
 
-import { BillingService } from '@/application/services/domains';
 import { FormShareTier } from '@/application/services/js-services/http';
-import { Subscription } from '@/application/types';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
-import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
-import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { cn } from '@/lib/utils';
 
 import { FormSharePopover } from './FormSharePopover';
+import { useCanAuthorFormView } from './useCanAuthorFormView';
 import { useFormShareContext } from './FormShareContext';
 
 /**
@@ -34,18 +31,13 @@ export function FormAccessBanner() {
   const url = share.resolveShareUrl();
   const isPublic = tier === 'public';
 
-  // Pro gate — same shape as `FormShareButton`. Free workspaces clicking
-  // `Change` get routed to the upgrade modal instead of an empty
-  // popover; the cloud's plan gate refuses the underlying mint and
-  // `info` would otherwise stay null forever.
-  const currentWorkspaceId = auth?.userWorkspaceInfo?.selectedWorkspace?.id;
-  const getSubscriptions = useCallback(async (): Promise<
-    Subscription[] | undefined
-  > => {
-    if (!currentWorkspaceId) return undefined;
-    return BillingService.getWorkspaceSubscriptions(currentWorkspaceId);
-  }, [currentWorkspaceId]);
-  const { isPro } = useSubscriptionPlan(getSubscriptions);
+  // Pro gate — single source of truth in `useCanAuthorFormView`
+  // (covers dev / test / self-hosted bypasses + Pro plan in one
+  // place). Free workspaces clicking `Change` get routed to the
+  // upgrade modal instead of an empty popover; the cloud's plan
+  // gate refuses the underlying mint and `info` would otherwise
+  // stay null forever.
+  const canAuthor = useCanAuthorFormView();
 
   const [, setSearch] = useSearchParams();
   const openUpgradePlan = useCallback(() => {
@@ -62,6 +54,8 @@ export function FormAccessBanner() {
 
   return (
     <div
+      data-testid='form-access-banner'
+      data-tier={tier}
       className={cn(
         'flex items-center gap-3 rounded-md border px-4 py-3 text-sm',
         isPublic
@@ -71,7 +65,7 @@ export function FormAccessBanner() {
     >
       <BannerIcon tier={tier} isPublic={isPublic} />
       <span className='flex-1'>{bannerCopy(tier, workspaceName)}</span>
-      {isPro ? (
+      {canAuthor ? (
         <FormSharePopover
           trigger={
             <button type='button' className={changeLinkClasses}>

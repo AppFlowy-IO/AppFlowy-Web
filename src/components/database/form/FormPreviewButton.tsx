@@ -127,6 +127,7 @@ export function FormPreviewButton() {
   return (
     <>
       <Button
+        data-testid='form-preview-button'
         variant='ghost'
         size='sm'
         className='gap-1'
@@ -140,7 +141,11 @@ export function FormPreviewButton() {
         onClose={handleClose}
         PaperProps={DIALOG_PAPER_PROPS}
       >
-        {open && schema && <FormBody token='preview' schema={schema} />}
+        {open && schema && (
+          <div data-testid='form-preview-dialog'>
+            <FormBody token='preview' schema={schema} />
+          </div>
+        )}
       </Dialog>
     </>
   );
