@@ -48,6 +48,17 @@ jest.mock('@/application/services/domains', () => ({
 const workspaceId = 'workspace-id';
 const restoredViewId = 'restored-view-id';
 
+function createDeferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+
+  return { promise, resolve, reject };
+}
+
 const createView = (viewId: string, overrides: Partial<View> = {}): View => ({
   view_id: viewId,
   name: overrides.name ?? viewId,
@@ -144,6 +155,68 @@ describe('useWorkspaceData trash refresh', () => {
 
     await waitFor(() => {
       expect(ViewService.getTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
+      expect(result.current.trashList).toEqual([]);
+    });
+  });
+
+  it('ignores stale trash refresh responses from overlapping folder notifications', async () => {
+    const eventEmitter = new EventEmitter();
+    const restoredView = createView(restoredViewId);
+    const trashRequests: Array<ReturnType<typeof createDeferred<View[]>>> = [];
+
+    (ViewService.getTrash as jest.Mock).mockImplementation(() => {
+      const deferred = createDeferred<View[]>();
+
+      trashRequests.push(deferred);
+      return deferred.promise;
+    });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(trashRequests).toHaveLength(1);
+    });
+
+    await act(async () => {
+      trashRequests[0].resolve([restoredView]);
+    });
+
+    await waitFor(() => {
+      expect(result.current.trashList?.map((view) => view.view_id)).toEqual([restoredViewId]);
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_VIEW_CHANGED, {
+        changeType: 1,
+        folderRid: '2-1',
+        parentViewId: 'space-id',
+        viewJson: JSON.stringify(restoredView),
+      });
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        folderRid: '3-1',
+        outlineDiffJson: JSON.stringify([{ op: 'replace', path: '/outline', value: [] }]),
+      });
+    });
+
+    await waitFor(() => {
+      expect(trashRequests).toHaveLength(3);
+    });
+
+    await act(async () => {
+      trashRequests[2].resolve([]);
+    });
+
+    await waitFor(() => {
+      expect(result.current.trashList).toEqual([]);
+    });
+
+    await act(async () => {
+      trashRequests[1].resolve([restoredView]);
+    });
+
+    await waitFor(() => {
       expect(result.current.trashList).toEqual([]);
     });
   });

@@ -6,3 +6,5 @@ Feature: Database row document
     When I add image link "https://example.com/row-page-image.png" to the card row page
     And I close the card row page
     Then the card primary cell shows a row document icon
+    When I switch the database to a new Grid view
+    Then the grid primary cell shows a row document icon

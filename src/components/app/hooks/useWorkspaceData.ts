@@ -169,6 +169,7 @@ export function useWorkspaceData() {
   const [workspaceDatabases, setWorkspaceDatabases] = useState<DatabaseRelations | undefined>(undefined);
   const workspaceDatabasesRef = useRef<DatabaseRelations | undefined>(undefined);
   const [requestAccessError, setRequestAccessError] = useState<RequestAccessError | null>(null);
+  const trashRequestSeqRef = useRef(0);
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
 
@@ -567,11 +568,17 @@ export function useWorkspaceData() {
   // Load trash list
   const loadTrash = useCallback(
     async (currentWorkspaceId: string) => {
+      const requestSeq = ++trashRequestSeqRef.current;
+
       try {
         const res = await ViewService.getTrash(currentWorkspaceId);
 
         if (!res) {
           throw new Error('App trash not found');
+        }
+
+        if (requestSeq !== trashRequestSeqRef.current) {
+          return;
         }
 
         setTrashList(sortBy(uniqBy(res, 'view_id') as unknown as View[], 'last_edited_time').reverse());
