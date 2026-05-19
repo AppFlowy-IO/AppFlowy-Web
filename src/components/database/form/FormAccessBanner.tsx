@@ -1,8 +1,13 @@
 import { Ban, Globe, Lock } from 'lucide-react';
-import { useContext } from 'react';
+import { useCallback, useContext } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
+import { BillingService } from '@/application/services/domains';
 import { FormShareTier } from '@/application/services/js-services/http';
+import { Subscription } from '@/application/types';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
+import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import { cn } from '@/lib/utils';
 
 import { FormSharePopover } from './FormSharePopover';
@@ -29,6 +34,32 @@ export function FormAccessBanner() {
   const url = share.resolveShareUrl();
   const isPublic = tier === 'public';
 
+  // Pro gate — same shape as `FormShareButton`. Free workspaces clicking
+  // `Change` get routed to the upgrade modal instead of an empty
+  // popover; the cloud's plan gate refuses the underlying mint and
+  // `info` would otherwise stay null forever.
+  const currentWorkspaceId = auth?.userWorkspaceInfo?.selectedWorkspace?.id;
+  const getSubscriptions = useCallback(async (): Promise<
+    Subscription[] | undefined
+  > => {
+    if (!currentWorkspaceId) return undefined;
+    return BillingService.getWorkspaceSubscriptions(currentWorkspaceId);
+  }, [currentWorkspaceId]);
+  const { isPro } = useSubscriptionPlan(getSubscriptions);
+
+  const [, setSearch] = useSearchParams();
+  const openUpgradePlan = useCallback(() => {
+    setSearch((prev) => {
+      prev.set('action', 'change_plan');
+      return prev;
+    });
+  }, [setSearch]);
+
+  const changeLinkClasses = cn(
+    'text-sm font-medium hover:underline',
+    isPublic ? 'text-text-warning-on-fill' : 'text-fill-default',
+  );
+
   return (
     <div
       className={cn(
@@ -40,24 +71,28 @@ export function FormAccessBanner() {
     >
       <BannerIcon tier={tier} isPublic={isPublic} />
       <span className='flex-1'>{bannerCopy(tier, workspaceName)}</span>
-      <FormSharePopover
-        trigger={
-          <button
-            type='button'
-            className={cn(
-              'text-sm font-medium hover:underline',
-              isPublic ? 'text-text-warning-on-fill' : 'text-fill-default',
-            )}
-          >
-            Change
-          </button>
-        }
-        info={share.info}
-        setTier={share.setTier}
-        setAnonymous={share.setAnonymous}
-        setSubmissionAccess={share.setSubmissionAccess}
-        url={url}
-      />
+      {isPro ? (
+        <FormSharePopover
+          trigger={
+            <button type='button' className={changeLinkClasses}>
+              Change
+            </button>
+          }
+          info={share.info}
+          setTier={share.setTier}
+          setAnonymous={share.setAnonymous}
+          setSubmissionAccess={share.setSubmissionAccess}
+          url={url}
+        />
+      ) : (
+        <button
+          type='button'
+          className={changeLinkClasses}
+          onClick={openUpgradePlan}
+        >
+          Change
+        </button>
+      )}
     </div>
   );
 }
