@@ -1,4 +1,10 @@
-import { useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  DragDropContext,
+  Draggable,
+  Droppable,
+  DropResult,
+} from 'react-beautiful-dnd';
 
 import {
   useDatabaseFields,
@@ -99,6 +105,41 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [snapshot, fields, fieldsVersion]);
 
+  // Drag-to-reorder hook. `react-beautiful-dnd` passes the source +
+  // destination as zero-based indices into the visible item list; we
+  // forward to `writer.reorderQuestion` which mutates the per-view
+  // `form_field_settings.questions` order. Mirrors the desktop's
+  // `FormQuestionOverridesService.reorderQuestion` semantics.
+  //
+  // `resolved` is in a `useRef` (not a `useCallback` dep) so the
+  // callback identity is stable across snapshot mutations. Without
+  // this, every keystroke into any question's title would recreate
+  // the handler and rebind it on `<DragDropContext onDragEnd>`. The
+  // ref pattern is the `advanced-use-latest` rule from the perf guide.
+  const resolvedRef = useRef(resolved);
+
+  useEffect(() => {
+    resolvedRef.current = resolved;
+  }, [resolved]);
+
+  const handleReorder = useCallback(
+    (result: DropResult) => {
+      if (!result.destination) return;
+      const from = result.source.index;
+      const to = result.destination.index;
+
+      if (from === to) return;
+      const questionId = resolvedRef.current[from]?.questionId;
+
+      if (!questionId) return;
+      writer.reorderQuestion(questionId, to);
+    },
+    // `writer` is memoized on view identity in `useFormWriter`, so
+    // this callback only changes on a view swap — never on snapshot
+    // updates.
+    [writer],
+  );
+
   return (
     <div className='mx-auto flex w-full max-w-2xl flex-col gap-4 px-6 py-10'>
       {/*
@@ -122,41 +163,121 @@ function FormBuilderBody({ readOnly }: { readOnly: boolean }) {
       {!readOnly && <FormAccessBanner />}
       {!readOnly && <FormAutoCreate />}
 
-      <div className='flex flex-col gap-3'>
-        {resolved.length === 0 ? (
-          <EmptyState decided={snapshot.decided} readOnly={readOnly} />
-        ) : (
-          resolved.map((q, idx) =>
-            readOnly ? (
-              <FormQuestionCardReadOnly
-                key={q.questionId}
-                name={q.name}
-                fieldType={q.fieldType}
-                required={q.required}
-                description={q.descriptionVisible ? q.description : ''}
-                longAnswer={q.longAnswer}
-              />
-            ) : (
-              <FormQuestionCard
-                key={q.questionId}
-                questionId={q.questionId}
-                name={q.name}
-                fieldType={String(q.fieldType)}
-                required={q.required}
-                description={q.description}
-                descriptionVisible={q.descriptionVisible}
-                longAnswer={q.longAnswer}
-                index={idx}
-                questionCount={resolved.length}
-                isRichText={q.isRichText}
-              />
-            ),
-          )
-        )}
-      </div>
+      {resolved.length === 0 ? (
+        <EmptyState decided={snapshot.decided} readOnly={readOnly} />
+      ) : readOnly ? (
+        <div className='flex flex-col gap-3'>
+          {resolved.map((q) => (
+            <FormQuestionCardReadOnly
+              key={q.questionId}
+              name={q.name}
+              fieldType={q.fieldType}
+              required={q.required}
+              description={q.descriptionVisible ? q.description : ''}
+              longAnswer={q.longAnswer}
+            />
+          ))}
+        </div>
+      ) : (
+        <DraggableQuestionList
+          questions={resolved}
+          onReorder={handleReorder}
+        />
+      )}
 
       {!readOnly && <FormQuestionTypePicker />}
     </div>
+  );
+}
+
+type ResolvedQuestion = {
+  questionId: string;
+  name: string;
+  fieldType: FieldType;
+  required: boolean;
+  description: string;
+  descriptionVisible: boolean;
+  longAnswer: boolean;
+  isRichText: boolean;
+};
+
+/**
+ * Question stack wrapped in a `react-beautiful-dnd` drag context.
+ * Mirrors the desktop's `ReorderableListView.builder`. The entire
+ * card body is the drag activator (`dragHandleProps` spread on the
+ * wrapper `<div>`, not on a separate grip glyph) — matches the
+ * desktop's `LongPressDraggable` over the whole card.
+ *
+ * Interactive descendants inside the card (the description input,
+ * the inline option-add input, the 3-dot menu trigger) stop
+ * propagation on mouse-down so RBD's sensor doesn't see them and
+ * start a drag instead of a click / text-selection. See
+ * `FormQuestionCard.tsx` and `FormSelectOptionsEditor.tsx`.
+ *
+ * The container reuses the same `flex flex-col gap-3` rhythm as the
+ * read-only branch so the layout doesn't shift when toggling between
+ * editor and viewer modes.
+ */
+function DraggableQuestionList({
+  questions,
+  onReorder,
+}: {
+  questions: ResolvedQuestion[];
+  onReorder: (result: DropResult) => void;
+}) {
+  return (
+    <DragDropContext onDragEnd={onReorder}>
+      <Droppable droppableId='form-question-stack'>
+        {(provided) => (
+          <div
+            ref={provided.innerRef}
+            {...provided.droppableProps}
+            className='flex flex-col gap-3'
+          >
+            {questions.map((q, idx) => (
+              <Draggable
+                key={q.questionId}
+                draggableId={q.questionId}
+                index={idx}
+              >
+                {(draggable, snapshot) => (
+                  <div
+                    ref={draggable.innerRef}
+                    {...draggable.draggableProps}
+                    // Spread `dragHandleProps` here (not on a small
+                    // grip glyph) so the ENTIRE card body is the drag
+                    // activator — matches the desktop, which uses
+                    // `LongPressDraggable` over the whole card. Users
+                    // can grab any blank area of the card to reorder.
+                    //
+                    // Internal interactive widgets (toggles, the 3-dot
+                    // menu, the description input) keep working because
+                    // their click handlers run before the drag pan
+                    // recognizer kicks in.
+                    {...draggable.dragHandleProps}
+                    className={snapshot.isDragging ? 'opacity-90' : ''}
+                  >
+                    <FormQuestionCard
+                      questionId={q.questionId}
+                      name={q.name}
+                      fieldType={q.fieldType}
+                      required={q.required}
+                      description={q.description}
+                      descriptionVisible={q.descriptionVisible}
+                      longAnswer={q.longAnswer}
+                      index={idx}
+                      questionCount={questions.length}
+                      isRichText={q.isRichText}
+                    />
+                  </div>
+                )}
+              </Draggable>
+            ))}
+            {provided.placeholder}
+          </div>
+        )}
+      </Droppable>
+    </DragDropContext>
   );
 }
 

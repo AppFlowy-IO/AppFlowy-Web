@@ -136,6 +136,11 @@ export function FormSelectOptionsEditor({ fieldId }: { fieldId: string }) {
 
             setEditing(false);
           }}
+          // Stop mouse-down so RBD's drag sensor (bound to the
+          // enclosing card in `DraggableQuestionList`) doesn't start
+          // a reorder when the creator clicks into the input or
+          // selects text inside it.
+          onMouseDownCapture={(e) => e.stopPropagation()}
           placeholder='Option name'
           className='w-full rounded border border-line-divider bg-transparent px-2 py-1 text-sm outline-none focus:border-fill-default'
         />

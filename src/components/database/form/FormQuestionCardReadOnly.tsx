@@ -21,18 +21,16 @@ function _FormQuestionCardReadOnly({
   longAnswer,
 }: {
   name: string;
-  fieldType: string | number;
+  fieldType: FieldType;
   required: boolean;
   description: string;
   longAnswer: boolean;
 }) {
-  const ty = (typeof fieldType === 'number' ? fieldType : Number(fieldType)) as FieldType;
-
   return (
     <div className='rounded-md border border-line-divider px-5 py-4'>
       <div className='flex items-center gap-1.5'>
         <FieldTypeIcon
-          type={ty}
+          type={fieldType}
           className='h-4 w-4 shrink-0 text-text-tertiary'
         />
         <h2 className='text-base font-semibold'>{name}</h2>

@@ -38,8 +38,12 @@ import { FormSelectOptionsEditor } from './FormSelectOptionsEditor';
  * `order` re-packing logic stays in one place.
  */
 // Memoized so toggling Required / Description on one card doesn't
-// re-render every other card. `useFormWriter()` returns a writer
-// memoized on the view identity, so it's stable across renders.
+// re-render every other card. All props are primitives or
+// stable-by-identity — the writer from `useFormWriter()` is memoized
+// on view id — so default shallow equality is sufficient. Drag wiring
+// lives one level up (on the wrapper `<div>` in
+// `FormBuilderView.tsx::DraggableQuestionList`), so RBD's
+// fresh-each-render props never reach this component.
 export const FormQuestionCard = memo(_FormQuestionCard);
 
 function _FormQuestionCard({
@@ -56,7 +60,7 @@ function _FormQuestionCard({
 }: {
   questionId: string;
   name: string;
-  fieldType: string;
+  fieldType: FieldType;
   required: boolean;
   description: string;
   descriptionVisible: boolean;
@@ -66,25 +70,36 @@ function _FormQuestionCard({
   isRichText: boolean;
 }) {
   const writer = useFormWriter();
-  const [hovered, setHovered] = useState(false);
+  // Tracks ONLY the dropdown's open state — needed so the 3-dot
+  // trigger stays visible while the menu is open even if the user
+  // moves the cursor off the card. Border color and trigger visibility
+  // for the *unopened* state are driven by Tailwind `group-hover:`
+  // (no React state → no re-render per mouse-enter / leave on every
+  // card in the list).
+  const [menuOpen, setMenuOpen] = useState(false);
+  const helper = helperText(fieldType);
+  const isSelect =
+    fieldType === FieldType.SingleSelect ||
+    fieldType === FieldType.MultiSelect;
 
   return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      className={cn(
-        'group relative rounded-md border px-5 py-4 transition-colors',
-        hovered ? 'border-fill-default' : 'border-line-divider',
-      )}
-    >
-      <div className='absolute right-3 top-3'>
+    <div className='group relative rounded-md border border-line-divider px-5 py-4 transition-colors hover:cursor-grab hover:border-fill-default'>
+      {/*
+        Stop mouse-down here so clicking the 3-dot trigger doesn't
+        race the RBD drag sensor (which is bound to this card's
+        wrapper `<div>` — see `DraggableQuestionList`).
+      */}
+      <div
+        className='absolute right-3 top-3'
+        onMouseDownCapture={(e) => e.stopPropagation()}
+      >
         <div
           className={cn(
-            'transition-opacity',
-            hovered ? 'opacity-100' : 'opacity-0',
+            'transition-opacity group-hover:opacity-100',
+            menuOpen ? 'opacity-100' : 'opacity-0',
           )}
         >
-          <DropdownMenu>
+          <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
             <DropdownMenuTrigger
               aria-label='Question options'
               className='rounded p-1 hover:bg-fill-content'
@@ -165,7 +180,7 @@ function _FormQuestionCard({
 
       <div className='flex items-center gap-1.5 pr-8'>
         <FieldTypeIcon
-          type={Number(fieldType) as FieldType}
+          type={fieldType}
           className='h-4 w-4 shrink-0 text-text-tertiary'
         />
         <h2 className='text-base font-semibold'>{name}</h2>
@@ -184,8 +199,8 @@ function _FormQuestionCard({
         Other types don't surface a helper because the affordance
         (e.g. single text input) is self-evident from the placeholder.
       */}
-      {helperText(fieldType) && (
-        <p className='mt-1 text-xs text-text-caption'>{helperText(fieldType)}</p>
+      {helper && (
+        <p className='mt-1 text-xs text-text-caption'>{helper}</p>
       )}
 
       {descriptionVisible && (
@@ -193,6 +208,12 @@ function _FormQuestionCard({
           variant='ghost'
           value={description}
           onChange={(e) => writer.setDescription(questionId, e.target.value)}
+          // The whole card is RBD's drag activator (see
+          // `DraggableQuestionList`). Without stopping mouse-down on
+          // the input, dragging across the description text starts
+          // a card reorder instead of selecting characters. Capture
+          // phase so the stop happens before RBD's sensor fires.
+          onMouseDownCapture={(e) => e.stopPropagation()}
           placeholder='Add description'
           className='mt-1 italic'
         />
@@ -205,13 +226,8 @@ function _FormQuestionCard({
           placeholders since their value space isn't authorable from
           inside the form card — RichText needs the cell, Date is a
           calendar, etc.
-
-          Comparing on `Number()` instead of `String()` so a numeric
-          `fieldType` (which is what `FormBuilderView` actually passes
-          after `String(q.fieldType)` is coerced) and a string both
-          resolve correctly.
         */}
-        {isSelectFieldType(fieldType) ? (
+        {isSelect ? (
           <FormSelectOptionsEditor fieldId={questionId} />
         ) : (
           <FormQuestionPlaceholder fieldType={fieldType} longAnswer={longAnswer} />
@@ -221,27 +237,19 @@ function _FormQuestionCard({
   );
 }
 
-function isSelectFieldType(fieldType: string): boolean {
-  const ty = Number(fieldType);
-
-  return ty === FieldType.SingleSelect || ty === FieldType.MultiSelect;
-}
-
 /// Helper subtitle shown between the question title and its body. Single-
 /// select reads "up to 1"; multi-value pickers (multi-select, relation,
 /// person) read "as many as they like". Returns `null` for types where
 /// the affordance is self-evident (text/number/date/checkbox/url/files).
-function helperText(fieldType: string): string | null {
-  const ty = Number(fieldType);
-
-  if (ty === FieldType.SingleSelect) {
+function helperText(fieldType: FieldType): string | null {
+  if (fieldType === FieldType.SingleSelect) {
     return 'Respondents can select up to 1';
   }
 
   if (
-    ty === FieldType.MultiSelect ||
-    ty === FieldType.Relation ||
-    ty === FieldType.Person
+    fieldType === FieldType.MultiSelect ||
+    fieldType === FieldType.Relation ||
+    fieldType === FieldType.Person
   ) {
     return 'Respondents can select as many as they like';
   }

@@ -1,5 +1,6 @@
 import { ArrowUpCircle, Upload } from 'lucide-react';
 
+import { FieldType } from '@/application/database-yjs/database.type';
 import { cn } from '@/lib/utils';
 
 /**
@@ -8,21 +9,19 @@ import { cn } from '@/lib/utils';
  * Mirrors the desktop's placeholder visual language so the creator can
  * verify the question's shape without filling it out.
  *
- * FieldType is the rust numeric enum; the YJS value comes through as
- * either a string ("0") or a number (0). Normalize at the boundary.
+ * `fieldType` is the typed `FieldType` enum (numeric under the hood);
+ * callers convert at the database-yjs boundary so the rest of the
+ * form-builder tree stays type-safe.
  */
 export function FormQuestionPlaceholder({
   fieldType,
   longAnswer,
 }: {
-  fieldType: string | number;
+  fieldType: FieldType;
   longAnswer: boolean;
 }) {
-  const ty =
-    typeof fieldType === 'number' ? fieldType : Number(fieldType);
-
-  switch (ty) {
-    case 0 /* RichText */:
+  switch (fieldType) {
+    case FieldType.RichText:
       return (
         <div
           className={cn(
@@ -33,21 +32,21 @@ export function FormQuestionPlaceholder({
           Respondent’s answer
         </div>
       );
-    case 1 /* Number */:
+    case FieldType.Number:
       return <Placeholder>0</Placeholder>;
-    case 2 /* DateTime */:
+    case FieldType.DateTime:
       return <Placeholder>Pick a date</Placeholder>;
-    case 3 /* SingleSelect */:
+    case FieldType.SingleSelect:
       return <Placeholder>Respondents can select up to 1</Placeholder>;
-    case 4 /* MultiSelect */:
+    case FieldType.MultiSelect:
       return <Placeholder>Respondents can select as many as they like</Placeholder>;
-    case 5 /* Checkbox */:
+    case FieldType.Checkbox:
       return (
         <div className='h-5 w-5 rounded border-2 border-line-divider' aria-hidden />
       );
-    case 6 /* URL */:
+    case FieldType.URL:
       return <Placeholder>https://…</Placeholder>;
-    case 14 /* Media */:
+    case FieldType.Media:
       // Mirror of desktop `_MediaBody` (form_question_body.dart): a
       // disabled Upload button, the workspace's per-file / file-count
       // caps, and an Upgrade affordance. F1 is authoring-only — the
