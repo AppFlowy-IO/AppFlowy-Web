@@ -114,17 +114,44 @@ export function useFormShare(): FormShareState {
 
     setIsLoading(true);
     void (async () => {
+      // GET-first path. Cheap when the desktop / another tab has
+      // already minted the token — most common case after the first
+      // session. But GET can fail for transient reasons that don't
+      // mean "the user can't share":
+      //   * The form view was just created and the cloud hasn't fully
+      //     reconciled folder state → RecordNotFound from
+      //     `check_form_view_scope`.
+      //   * Permission cache race on a freshly-joined member.
+      //   * Network glitch.
+      //
+      // For ANY GET failure we fall through to mint instead of
+      // bailing out: mint is idempotent (returns 409 if a token
+      // already exists, which we recover from below) AND carries the
+      // authoritative plan-gate error if the workspace is Free. That
+      // way the popover surface reflects the true blocker rather than
+      // a stale "couldn't load" message that we can't classify.
+      let existing: FormShareInfo | null | undefined;
+
       try {
-        const existing = await getFormShare(workspaceId, databaseId, viewId);
+        existing = await getFormShare(workspaceId, databaseId, viewId);
+      } catch (e) {
+        // Don't surface the GET error — we'll let mint speak. Log so
+        // future regressions are diagnosable from the browser console.
+        // eslint-disable-next-line no-console
+        console.debug('[useFormShare] GET failed, falling through to mint', e);
+        existing = undefined;
+      }
 
-        if (cancelled) return;
-        if (existing) {
-          setInfo(existing);
-          setError(null);
-          setErrorKind(null);
-          return;
-        }
+      if (cancelled) return;
+      if (existing) {
+        setInfo(existing);
+        setError(null);
+        setErrorKind(null);
+        setIsLoading(false);
+        return;
+      }
 
+      try {
         const minted = await mintFormShare(workspaceId, databaseId, viewId);
 
         if (cancelled) return;
@@ -135,13 +162,15 @@ export function useFormShare(): FormShareState {
         if (cancelled) return;
         const message = (e as { message?: string })?.message ?? 'load failed';
 
+        // 409 = a token already exists (race between our GET and POST).
+        // Re-fetch to pick it up.
         if (/already exists|409/i.test(message)) {
           try {
-            const existing = await getFormShare(workspaceId, databaseId, viewId);
+            const after = await getFormShare(workspaceId, databaseId, viewId);
 
             if (cancelled) return;
-            if (existing) {
-              setInfo(existing);
+            if (after) {
+              setInfo(after);
               setError(null);
               setErrorKind(null);
               return;
@@ -152,8 +181,16 @@ export function useFormShare(): FormShareState {
         }
 
         if (cancelled) return;
+        const kind = classifyError(e);
+
+        // Log the raw error shape so we can tell `plan_required` from
+        // `other` in the field. Without this the popover's generic
+        // error surface is the only signal — useful for the user but
+        // opaque to debugging.
+        // eslint-disable-next-line no-console
+        console.warn('[useFormShare] mint failed', { kind, error: e });
         setError(message);
-        setErrorKind(classifyError(e));
+        setErrorKind(kind);
       } finally {
         if (!cancelled) setIsLoading(false);
       }

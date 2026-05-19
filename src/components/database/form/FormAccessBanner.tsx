@@ -28,6 +28,12 @@ export function FormAccessBanner() {
     auth?.userWorkspaceInfo?.selectedWorkspace?.name ?? 'this workspace';
 
   const tier = share.info?.tier ?? 'workspace';
+  // Cloud `coerce_anonymous` defaults Workspace tier to anonymous=false,
+  // Public tier to anonymous=true (forced). The default echoed here
+  // matches that contract so the banner attributes are stable even
+  // before `info` arrives.
+  const anonymous = share.info?.anonymous ?? false;
+  const submissionAccess = share.info?.submission_access ?? 'none';
   const url = share.resolveShareUrl();
   const isPublic = tier === 'public';
 
@@ -56,6 +62,8 @@ export function FormAccessBanner() {
     <div
       data-testid='form-access-banner'
       data-tier={tier}
+      data-anonymous={anonymous ? 'true' : 'false'}
+      data-submission-access={submissionAccess}
       className={cn(
         'flex items-center gap-3 rounded-md border px-4 py-3 text-sm',
         isPublic

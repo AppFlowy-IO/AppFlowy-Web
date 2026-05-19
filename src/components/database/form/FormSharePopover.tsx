@@ -125,6 +125,7 @@ export function FormSharePopover({
               }
             />
             <ToggleRow
+              testId='form-share-anonymous-toggle'
               icon={<UserCheck size={14} />}
               label='Anonymous responses'
               checked={anonymous}
@@ -134,6 +135,7 @@ export function FormSharePopover({
             />
             {showSubmissionAccess && (
               <SubMenuRow
+                testId='form-share-submission-access-row'
                 icon={<FileText size={14} />}
                 label='Access to submission'
                 value={submissionAccessLabel(submissionAccess)}
@@ -245,17 +247,20 @@ function SubMenuRow({
   value,
   badge,
   submenu,
+  testId,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   badge?: React.ReactNode;
   submenu: React.ReactNode;
+  testId?: string;
 }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
         <button
+          data-testid={testId}
           type='button'
           className='flex w-full items-center gap-2 rounded px-2 py-1 text-sm hover:bg-fill-content'
         >
@@ -299,6 +304,7 @@ function ToggleRow({
   forcedOn,
   forcedTooltip,
   onChange,
+  testId,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -306,6 +312,7 @@ function ToggleRow({
   forcedOn: boolean;
   forcedTooltip: string;
   onChange: (value: boolean) => void;
+  testId?: string;
 }) {
   return (
     <div
@@ -318,6 +325,7 @@ function ToggleRow({
       <span className='text-text-tertiary'>{icon}</span>
       <span className='flex-1 whitespace-nowrap'>{label}</span>
       <Switch
+        data-testid={testId}
         checked={checked}
         disabled={forcedOn}
         onCheckedChange={(v) => onChange(!!v)}
