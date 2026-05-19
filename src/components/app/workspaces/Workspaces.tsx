@@ -39,6 +39,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { isAppFlowyHosted } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
 
 import { AccountSettings } from './AccountSettings';
@@ -49,6 +50,7 @@ export function Workspaces() {
   const currentWorkspaceId = useCurrentWorkspaceId();
   const currentUser = useCurrentUser();
   const aiEnabled = useAIEnabled();
+  const isHosted = isAppFlowyHosted();
   const [openUpgradePlan, setOpenUpgradePlan] = useState(false);
   const [openUpgradeAIMax, setOpenUpgradeAIMax] = useState(false);
   const [open, setOpen] = useState(false);
@@ -236,7 +238,7 @@ export function Workspaces() {
                 {t('button.logout')}
               </DropdownMenuItem>
             </DropdownMenuGroup>
-            {isOwner && (
+            {isOwner && isHosted && (
               <DropdownMenuGroup>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -266,7 +268,7 @@ export function Workspaces() {
         </DropdownMenu>
       </div>
 
-      {isOwner && (
+      {isOwner && isHosted && (
         <>
           <UpgradePlan
             onOpen={() => {

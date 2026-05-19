@@ -47,10 +47,15 @@ function ApproveRequestPage() {
         return;
       }
 
+      if (!isAppFlowyHosted()) {
+        setCurrentPlans([]);
+        return;
+      }
+
       const plans = await BillingService.getActiveSubscription(requestInfo.workspace.id);
 
       setCurrentPlans(plans);
-      if (plans.length === 0 && isAppFlowyHosted()) {
+      if (plans.length === 0) {
         setUpgradeModalOpen(true);
       }
       // eslint-disable-next-line
@@ -82,6 +87,9 @@ function ApproveRequestPage() {
       if (e.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED || e.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED) {
         if (isAppFlowyHosted()) {
           setUpgradeModalOpen(true);
+        } else {
+          toast.error(e.message);
+          setIsError(true);
         }
 
         return;

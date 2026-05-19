@@ -3,7 +3,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AccessLevel, IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
 import { findAncestors } from '@/components/_shared/outline/utils';
-import { useLoadMentionableUsers, useGetSubscriptions, useAppOutline, useCurrentWorkspaceId, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import {
+  useLoadMentionableUsers,
+  useGetSubscriptions,
+  useAppOutline,
+  useCurrentWorkspaceId,
+  useUserWorkspaceInfo,
+} from '@/components/app/app.hooks';
 import { CopyLink } from '@/components/app/share/CopyLink';
 import { GeneralAccess } from '@/components/app/share/GeneralAccess';
 import { InviteGuest } from '@/components/app/share/InviteGuest';
@@ -39,31 +45,34 @@ function SharePanel({ viewId }: { viewId: string }) {
     return role === Role.Member;
   }, [role]);
 
-  const loadPeople = useCallback(async (signal?: AbortSignal) => {
-    if (!currentWorkspaceId || !viewId || !currentUser) {
-      return;
-    }
-
-    const ancestorViewIds = findAncestors(outline || [], viewId)?.map((item) => item.view_id) || [];
-
-    const requestSeq = ++loadPeopleRequestSeq.current;
-
-    setIsLoading(true);
-    try {
-      const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
-
-      if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
-      setPeople(detail.shared_with);
-    } catch (error) {
-      if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
-      console.error(error);
-      setPeople([]);
-    } finally {
-      if (!signal?.aborted && requestSeq === loadPeopleRequestSeq.current) {
-        setIsLoading(false);
+  const loadPeople = useCallback(
+    async (signal?: AbortSignal) => {
+      if (!currentWorkspaceId || !viewId || !currentUser) {
+        return;
       }
-    }
-  }, [currentUser, currentWorkspaceId, viewId, outline]);
+
+      const ancestorViewIds = findAncestors(outline || [], viewId)?.map((item) => item.view_id) || [];
+
+      const requestSeq = ++loadPeopleRequestSeq.current;
+
+      setIsLoading(true);
+      try {
+        const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
+
+        if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
+        setPeople(detail.shared_with);
+      } catch (error) {
+        if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
+        console.error(error);
+        setPeople([]);
+      } finally {
+        if (!signal?.aborted && requestSeq === loadPeopleRequestSeq.current) {
+          setIsLoading(false);
+        }
+      }
+    },
+    [currentUser, currentWorkspaceId, viewId, outline]
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -111,35 +120,36 @@ function SharePanel({ viewId }: { viewId: string }) {
 
   const getSubscriptions = useGetSubscriptions();
 
-  const [activeSubscriptionPlan, setActiveSubscriptionPaln] = useState<SubscriptionPlan | null>(null);
+  const [activeSubscriptionPlan, setActiveSubscriptionPlan] = useState<SubscriptionPlan | null>(null);
+  const isHosted = useMemo(() => isAppFlowyHosted(), []);
 
   const loadSubscription = useCallback(async () => {
     try {
       const subscriptions = await getSubscriptions?.();
 
       if (!subscriptions || subscriptions.length === 0) {
-        setActiveSubscriptionPaln(SubscriptionPlan.Free);
+        setActiveSubscriptionPlan(SubscriptionPlan.Free);
 
         return;
       }
 
-      setActiveSubscriptionPaln(getProAccessPlanFromSubscriptions(subscriptions));
+      setActiveSubscriptionPlan(getProAccessPlanFromSubscriptions(subscriptions));
     } catch (e) {
-      setActiveSubscriptionPaln(SubscriptionPlan.Free);
+      setActiveSubscriptionPlan(null);
       console.error(e);
     }
   }, [getSubscriptions]);
 
   useEffect(() => {
-    if (!isAppFlowyHosted()) {
-      setActiveSubscriptionPaln(SubscriptionPlan.Pro);
+    if (!isHosted) {
+      setActiveSubscriptionPlan(null);
       return;
     }
 
     if (isOwner || isMember) {
       void loadSubscription();
     }
-  }, [isMember, isOwner, loadSubscription]);
+  }, [isHosted, isMember, isOwner, loadSubscription]);
 
   return (
     <div className='flex flex-col items-start gap-1 self-stretch py-4'>
@@ -153,9 +163,8 @@ function SharePanel({ viewId }: { viewId: string }) {
           mentionableError={mentionableError}
           onInviteSuccess={refreshPeople}
           hasFullAccess={hasFullAccess}
-          activeSubscriptionPlan={activeSubscriptionPlan}
         />
-        {isAppFlowyHosted() && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
+        {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
         <PeopleWithAccess viewId={viewId} people={people} isLoading={isLoading} onPeopleChange={refreshPeople} />
         <GeneralAccess viewId={viewId} />
         <CopyLink />
