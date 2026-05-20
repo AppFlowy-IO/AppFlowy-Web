@@ -481,6 +481,16 @@ export function signInDiscord(authUrl: string) {
   window.open(url, '_current');
 }
 
+export function signInAuthentik(authUrl: string) {
+  const provider = 'authentik';
+  const redirectTo = encodeURIComponent(authUrl);
+  const baseURL = axiosInstance?.defaults.baseURL;
+  const url = `${baseURL}/authorize?provider=${provider}&redirect_to=${redirectTo}`;
+
+  Log.info('[Auth] signInAuthentik: redirecting to Authentik OAuth');
+  window.open(url, '_current');
+}
+
 interface AxiosErrorLike {
   response?: {
     data?: { message?: string; msg?: string };

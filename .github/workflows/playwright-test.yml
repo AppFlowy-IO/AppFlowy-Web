@@ -24,7 +24,7 @@ jobs:
     name: "Build"
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -98,7 +98,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -110,15 +110,47 @@ jobs:
         with:
           version: ${{ env.PNPM_VERSION }}
 
+      - name: Check required secrets for premium E2E
+        id: prereq
+        shell: bash
+        env:
+          CI_TOKEN: ${{ secrets.CI_TOKEN }}
+          CI_OPENAI_API_KEY: ${{ secrets.CI_OPENAI_API_KEY }}
+          DOCKER_HUB_USERNAME: ${{ secrets.DOCKER_HUB_USERNAME }}
+          DOCKER_HUB_ACCESS_TOKEN: ${{ secrets.DOCKER_HUB_ACCESS_TOKEN }}
+        run: |
+          missing=()
+
+          [ -z "$CI_TOKEN" ] && missing+=("CI_TOKEN")
+          [ -z "$CI_OPENAI_API_KEY" ] && missing+=("CI_OPENAI_API_KEY")
+          [ -z "$DOCKER_HUB_USERNAME" ] && missing+=("DOCKER_HUB_USERNAME")
+          [ -z "$DOCKER_HUB_ACCESS_TOKEN" ] && missing+=("DOCKER_HUB_ACCESS_TOKEN")
+
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "missing=${missing[*]}" >> "$GITHUB_OUTPUT"
+            {
+              echo "## Playwright E2E skipped"
+              echo ""
+              echo "Missing required secrets: ${missing[*]}"
+              echo ""
+              echo "Set these repository secrets to enable this workflow in your fork."
+            } >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Checkout AppFlowy-Cloud-Premium
-        uses: actions/checkout@v4
+        if: steps.prereq.outputs.ready == 'true'
+        uses: actions/checkout@v5
         with:
           repository: AppFlowy-IO/AppFlowy-Cloud-Premium
           ref: main
-          token: ${{ secrets.CI_TOKEN }}
+          token: ${{ secrets.CI_TOKEN || github.token }}
           path: AppFlowy-Cloud-Premium
 
       - name: Setup AppFlowy Cloud
+        if: steps.prereq.outputs.ready == 'true'
         working-directory: AppFlowy-Cloud-Premium
         env:
           OPENAI_KEY: ${{ secrets.CI_OPENAI_API_KEY }}
@@ -133,6 +165,7 @@ jobs:
           echo 'APPFLOWY_PAGE_HISTORY_ENABLE=true' >> .env
 
       - name: Log in to Docker Hub
+        if: steps.prereq.outputs.ready == 'true'
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_HUB_USERNAME }}
@@ -140,6 +173,7 @@ jobs:
 
       # Overlap Docker pull (network I/O) with pnpm install + Playwright browser install
       - name: Install deps and pull Docker images (parallel)
+        if: steps.prereq.outputs.ready == 'true'
         env:
           APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
           APPFLOWY_AI_VERSION: ${{ env.CLOUD_VERSION }}
@@ -156,6 +190,7 @@ jobs:
           wait $DOCKER_PID
 
       - name: Cache Playwright browsers
+        if: steps.prereq.outputs.ready == 'true'
         id: playwright-cache
         uses: actions/cache@v4
         with:
@@ -163,23 +198,26 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('**/pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        if: steps.prereq.outputs.ready == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install --with-deps chromium
 
       - name: Install Playwright deps (cached browsers)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        if: steps.prereq.outputs.ready == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
         run: pnpm exec playwright install-deps chromium
 
       - name: Setup environment
+        if: steps.prereq.outputs.ready == 'true'
         run: cp deploy.env .env
 
       - name: Download build artifact
+        if: steps.prereq.outputs.ready == 'true'
         uses: actions/download-artifact@v4
         with:
           name: build-dist
           path: dist/
 
       - name: Start Docker services
+        if: steps.prereq.outputs.ready == 'true'
         working-directory: AppFlowy-Cloud-Premium
         env:
           APPFLOWY_CLOUD_VERSION: ${{ env.CLOUD_VERSION }}
@@ -203,14 +241,17 @@ jobs:
           )
 
       - name: Setup Bun
+        if: steps.prereq.outputs.ready == 'true'
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Install Bun SSR dependencies
+        if: steps.prereq.outputs.ready == 'true'
         run: bun install cheerio pino pino-pretty
 
       - name: Start SSR server
+        if: steps.prereq.outputs.ready == 'true'
         run: |
           pnpm run dev:server &
           echo $! > ssr-server.pid
@@ -221,13 +262,14 @@ jobs:
           done' && echo "SSR server is ready" || (echo "SSR server failed to start" && exit 1)
 
       - name: Run ${{ matrix.test-group.name }} tests
+        if: steps.prereq.outputs.ready == 'true'
         run: pnpm exec playwright test --workers=2 ${{ matrix.test-group.spec }}
         env:
           CI: true
           BASE_URL: http://localhost:3000
 
       - name: Test summary
-        if: always()
+        if: always() && steps.prereq.outputs.ready == 'true'
         run: |
           if [ ! -f playwright-report/report.json ]; then
             echo "## ${{ matrix.test-group.name }} — no report generated" >> $GITHUB_STEP_SUMMARY
@@ -271,7 +313,7 @@ jobs:
           " >> $GITHUB_STEP_SUMMARY
 
       - name: Upload test results
-        if: always()
+        if: always() && steps.prereq.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report-${{ matrix.test-group.name }}
@@ -280,7 +322,7 @@ jobs:
           retention-days: 7
 
       - name: Upload test traces
-        if: failure()
+        if: failure() && steps.prereq.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: playwright-traces-${{ matrix.test-group.name }}
@@ -289,7 +331,7 @@ jobs:
           retention-days: 3
 
       - name: Cleanup
-        if: always()
+        if: always() && steps.prereq.outputs.ready == 'true'
         run: |
           if [ -f ssr-server.pid ]; then
             kill $(cat ssr-server.pid) 2>/dev/null || true
