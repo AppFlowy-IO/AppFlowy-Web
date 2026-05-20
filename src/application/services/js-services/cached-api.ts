@@ -300,12 +300,19 @@ export async function loginAuth(url: string) {
   return finishAuthFlow('loginAuth', () => signInWithUrl(url));
 }
 
-async function finishAuthFlow(logContext: string, runAuthFlow: () => Promise<unknown>) {
+async function finishAuthFlow(
+  logContext: string,
+  runAuthFlow: () => Promise<unknown>,
+  options?: { emitSessionValid?: boolean }
+) {
   Log.info(`[Auth] ${logContext}: completing login flow`);
   try {
     await runAuthFlow();
     Log.info(`[Auth] ${logContext}: success, calling afterAuth`);
-    emit(EventType.SESSION_VALID);
+    if (options?.emitSessionValid !== false) {
+      emit(EventType.SESSION_VALID);
+    }
+
     afterAuth();
   } catch (e) {
     Log.error(`[Auth] ${logContext}: failed`, e);
@@ -453,6 +460,9 @@ export { createRow, deleteRow };
 // Auth wrapper functions (replace @withSignIn decorator)
 // ============================================================================
 
+// These low-level GoTrue functions complete provider-specific work only. UI login
+// paths should use the redirect-aware wrappers below so session events and
+// afterAuth() stay consistent across OAuth, password, signup, and OTP.
 export {
   signInWithPassword,
   signUpWithPassword,
@@ -509,5 +519,7 @@ export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email
 
 export async function signInOTPWithRedirect(params: { email: string; code: string; redirectTo: string; type?: 'magiclink' | 'recovery' | 'signup' }) {
   saveRedirectTo(params.redirectTo);
-  return finishAuthFlow('signInOTP', () => signInOTP(params));
+  return finishAuthFlow('signInOTP', () => signInOTP(params), {
+    emitSessionValid: params.type !== 'recovery',
+  });
 }

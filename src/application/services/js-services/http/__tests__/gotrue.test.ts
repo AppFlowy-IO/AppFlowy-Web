@@ -40,9 +40,12 @@ const { initGrantService, signInOTP, signInWithPassword } = require('../gotrue')
 const { verifyToken } = require('../cloud-auth') as { verifyToken: jest.Mock };
 const { saveGoTrueAuth } = require('@/application/session/token') as { saveGoTrueAuth: jest.Mock };
 
+type AuthVariant = 'password' | 'oauth' | 'otp';
+
 describe('GoTrue login token completion', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockGrantClient.post.mockReset();
     localStorage.clear();
     initGrantService('http://localhost/gotrue');
   });
@@ -136,4 +139,100 @@ describe('GoTrue login token completion', () => {
     expect(saveGoTrueAuth).toHaveBeenCalledTimes(1);
     expect(saveGoTrueAuth).toHaveBeenCalledWith(JSON.stringify(refreshedToken));
   });
+
+  it.each<AuthVariant>(['password', 'oauth', 'otp'])(
+    'rejects and skips refresh/save when AppFlowy Cloud verification fails for %s sign-in',
+    async (variant) => {
+      const initialToken = createToken(`${variant}-initial`);
+
+      queueInitialSignInResponse(variant, initialToken);
+      verifyToken.mockRejectedValueOnce({
+        code: 401,
+        message: 'Backend says no [request-id]',
+      });
+
+      await expect(runAuthVariant(variant, initialToken)).rejects.toEqual(expectedVerifyError(variant));
+      expect(refreshTokenCalls()).toHaveLength(0);
+      expect(saveGoTrueAuth).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each<AuthVariant>(['password', 'oauth', 'otp'])(
+    'clears an existing token before verifying %s sign-in',
+    async (variant) => {
+      const initialToken = createToken(`${variant}-initial`);
+      const refreshedToken = createToken(`${variant}-refreshed`);
+      const removeItemSpy = jest.spyOn(Storage.prototype, 'removeItem');
+
+      localStorage.setItem('token', 'old-token');
+      queueInitialSignInResponse(variant, initialToken);
+      queueRefreshResponse(refreshedToken);
+      verifyToken.mockResolvedValueOnce({ is_new: false });
+
+      try {
+        await runAuthVariant(variant, initialToken);
+
+        const tokenRemoveCallIndex = removeItemSpy.mock.calls.findIndex(([key]) => key === 'token');
+
+        expect(tokenRemoveCallIndex).toBeGreaterThanOrEqual(0);
+        expect(removeItemSpy.mock.invocationCallOrder[tokenRemoveCallIndex])
+          .toBeLessThan(verifyToken.mock.invocationCallOrder[0]);
+      } finally {
+        removeItemSpy.mockRestore();
+      }
+    }
+  );
 });
+
+function createToken(prefix: string) {
+  return {
+    access_token: `${prefix}-access-token`,
+    expires_at: 123,
+    refresh_token: `${prefix}-refresh-token`,
+  };
+}
+
+function queueInitialSignInResponse(variant: AuthVariant, token: ReturnType<typeof createToken>) {
+  if (variant !== 'oauth') {
+    mockGrantClient.post.mockResolvedValueOnce({ data: token });
+  }
+}
+
+function queueRefreshResponse(token: ReturnType<typeof createToken>) {
+  mockGrantClient.post.mockResolvedValueOnce({ data: token });
+}
+
+function refreshTokenCalls() {
+  return mockGrantClient.post.mock.calls.filter(([url]) => url === '/token?grant_type=refresh_token');
+}
+
+function expectedVerifyError(variant: AuthVariant) {
+  switch (variant) {
+    case 'password':
+      return { code: 401, message: 'Backend says no' };
+    case 'oauth':
+      return { code: 401, message: 'Verify token failed' };
+    case 'otp':
+      return { code: 401, message: 'Failed to create user account' };
+  }
+}
+
+function runAuthVariant(variant: AuthVariant, token: ReturnType<typeof createToken>) {
+  switch (variant) {
+    case 'password':
+      return signInWithPassword({
+        email: 'admin@example.com',
+        password: 'password',
+        redirectTo: '/app',
+      });
+    case 'oauth':
+      return signInWithUrl(
+        `http://localhost/auth/callback#access_token=${token.access_token}&refresh_token=${token.refresh_token}`
+      );
+    case 'otp':
+      return signInOTP({
+        email: 'admin@example.com',
+        code: '123456',
+      });
+  }
+}
