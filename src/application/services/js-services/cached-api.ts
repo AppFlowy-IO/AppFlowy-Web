@@ -297,15 +297,25 @@ export async function getPublishInfoCached(viewId: string) {
 }
 
 export async function loginAuth(url: string) {
-  Log.info('[Auth] loginAuth: processing OAuth callback');
+  return finishAuthFlow('loginAuth', () => signInWithUrl(url));
+}
+
+async function finishAuthFlow(
+  logContext: string,
+  runAuthFlow: () => Promise<unknown>,
+  options?: { emitSessionValid?: boolean }
+) {
+  Log.info(`[Auth] ${logContext}: completing login flow`);
   try {
-    await signInWithUrl(url);
-    Log.info('[Auth] loginAuth: success, calling afterAuth');
-    emit(EventType.SESSION_VALID);
+    await runAuthFlow();
+    Log.info(`[Auth] ${logContext}: success, calling afterAuth`);
+    if (options?.emitSessionValid !== false) {
+      emit(EventType.SESSION_VALID);
+    }
+
     afterAuth();
-    return;
   } catch (e) {
-    Log.error('[Auth] loginAuth: failed', e);
+    Log.error(`[Auth] ${logContext}: failed`, e);
     emit(EventType.SESSION_INVALID);
     return Promise.reject(e);
   }
@@ -450,6 +460,9 @@ export { createRow, deleteRow };
 // Auth wrapper functions (replace @withSignIn decorator)
 // ============================================================================
 
+// These low-level GoTrue functions complete provider-specific work only. UI login
+// paths should use the redirect-aware wrappers below so session events and
+// afterAuth() stay consistent across OAuth, password, signup, and OTP.
 export {
   signInWithPassword,
   signUpWithPassword,
@@ -491,12 +504,12 @@ export async function signInSamlWithRedirect(params: { redirectTo: string; domai
 
 export async function signInWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signInWithPassword(params);
+  return finishAuthFlow('signInWithPassword', () => signInWithPassword(params));
 }
 
 export async function signUpWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signUpWithPassword(params);
+  return finishAuthFlow('signUpWithPassword', () => signUpWithPassword(params));
 }
 
 export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email: string; redirectTo: string }) {
@@ -506,5 +519,7 @@ export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email
 
 export async function signInOTPWithRedirect(params: { email: string; code: string; redirectTo: string; type?: 'magiclink' | 'recovery' | 'signup' }) {
   saveRedirectTo(params.redirectTo);
-  return signInOTP(params);
+  return finishAuthFlow('signInOTP', () => signInOTP(params), {
+    emitSessionValid: params.type !== 'recovery',
+  });
 }
