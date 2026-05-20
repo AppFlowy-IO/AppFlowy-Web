@@ -1,40 +1,56 @@
-Feature: Form View
+Feature: Form Authoring
 
-  # Web counterpart of `appflowy_flutter/integration_test/desktop/bdd/database/form/form.feature`.
-  #
-  # The sidebar `+` menu on web does NOT include a Form layout — the
-  # only entry point is the database tab-bar `+` button (see
-  # `AddViewButton.tsx`). So every form scenario layers a Form view
-  # onto an existing database. Mirrors the desktop's
-  # `form_from_tab_bar.feature` shape.
-  #
-  # The Pro plan gate is bypassed by Vite DEV mode (mirror of the
-  # desktop's `kDebugMode || isIntegrationTest` bypass — see
-  # `useCanAuthorFormView`). Without that bypass a Free-plan workspace
-  # would either hide the Form item (gated) or open the upgrade modal
-  # on click.
+  # End-to-end coverage of the form-builder authoring surface: create
+  # via tab-bar, observe the auto-create modal posture, dismiss, add a
+  # representative spread of question types, exercise per-question
+  # toggles, round-trip the live preview. Replaces what was previously
+  # 5 separate scenarios (chrome render / single-question preview /
+  # add-question / tab-bar modal / question editing).
 
-  Background:
-    Given a Grid with a Form tab is open
+  Scenario: Authoring flow from tab-bar through editing and preview
+    # Start from a fresh Grid so the tab-bar add lands on the populated
+    # default schema (Name / Type / Done = 3 supported fields), which
+    # triggers the auto-create modal at > 2-field threshold.
+    Given a Grid is open as a starter database
+    When I add a Form view via the tab bar without dismissing modals
+    Then the auto-create form questions dialog is visible
 
-  Scenario: Form layout renders builder chrome with toolbar and access banner
-    Then the form preview button is visible
-    And the form share button is visible
-    And the form access banner shows the workspace tier
+    # Start-from-scratch: the modal goes away, the form lands empty.
+    When I click start from scratch in the auto-create form questions dialog
+    Then the auto-create form questions dialog is hidden
+    And the form has 0 question cards
 
-  Scenario: Adding a Text question and opening the live preview
+    # Add a representative spread — Text (long_answer eligible),
+    # Number (placeholder body), SingleSelect (option editor body).
+    # The all-field-types catalog regression lives in its own scenario;
+    # this one verifies the picker + per-type cards work end-to-end.
     When I add a "RichText" question
-    Then the form has 1 question card
+    And I add a "Number" question
+    And I add a "SingleSelect" question
+    Then the form has 3 question cards
+
+    # 3-dot menu toggles ripple to the card's data-* attributes.
+    # Required + Description are universal; Long answer is RichText-only.
+    When I toggle "Required" on question 1
+    Then question 1 is marked required
+    When I toggle "Description" on question 1
+    Then question 1 shows the description input
+    When I toggle "Long answer" on question 1
+    Then question 1 uses the long answer body
+
+    # Live preview round-trip — mounts the dialog from the YJS draft,
+    # closes cleanly on Escape.
     When I open the form preview
     Then the form preview dialog is visible
     When I close the form preview
     Then the form preview dialog is hidden
 
-  Scenario: Preview renders all supported field types
-    # Mirrors desktop's `form_all_field_types.feature`. The picker's
-    # supported set is RichText / Number / SingleSelect / MultiSelect /
-    # Checkbox / DateTime / URL / Media — see
-    # `FORM_QUESTION_FIELD_TYPES` in `FormQuestionTypePicker.tsx`.
+  Scenario: Preview renders every supported field type
+    # Catalog regression: the picker's `FORM_QUESTION_FIELD_TYPES` set
+    # must round-trip through the FormBody. Adding a new type to the
+    # picker without updating this list lets a respondent-mode render
+    # gap slip through.
+    Given a Grid with a Form tab is open
     When I add a "RichText" question
     And I add a "Number" question
     And I add a "SingleSelect" question

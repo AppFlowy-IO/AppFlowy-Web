@@ -1,49 +1,35 @@
 Feature: Form Share Popover
 
-  # Covers the full share-popover state machine:
+  # Pure popover-state coverage. The end-to-end submission flows
+  # exercise the same popover internals (tier picker, URL field) via
+  # the actual share contract; this feature targets the two pre-submit
+  # branches that don't reach the cloud:
   #
-  #   * Free workspace → `errorKind: 'plan_required'` → upgrade prompt
-  #     (regression image #41 — previously stuck on infinite skeleton).
-  #   * Pro workspace → share rows render, tier transitions persist,
-  #     share URL becomes copyable.
-  #
-  # Pro scenarios seed `af_workspace_subscription` via psql so the
-  # cloud's `is_workspace_on_paid_plan` gate doesn't refuse the mint.
-  # Free scenarios deliberately skip the seed to assert the upgrade
-  # path stays correct.
+  #   * Free workspace → upgrade prompt (route-mocked because debug
+  #     builds bypass the cloud's plan gate).
+  #   * Pro workspace → share rows render, popover never renders a
+  #     blank surface, share URL is reachable in the input.
 
   Scenario: Free workspace sees the upgrade prompt instead of the share rows
-    # The cloud's `is_workspace_on_paid_plan` short-circuits to true
-    # for debug builds (`plan_check.rs`), so the natural test path is
-    # gone in dev. This scenario route-mocks the form-share endpoints
-    # to return FeatureNotAvailable so the FE's `plan_required`
-    # classifier branch still has coverage.
+    # `is_workspace_on_paid_plan` short-circuits to true for debug
+    # builds (`plan_check.rs`), so the natural test path is gone in
+    # dev. Route-mock the form-share endpoints to return
+    # FeatureNotAvailable so the FE's `plan_required` classifier
+    # branch still has coverage.
     Given a Grid with a Form tab is open on a simulated Free workspace
     When I open the share popover
     Then the share popover shows the upgrade prompt
     And the share popover does not show the loading skeleton
 
-  Scenario: Share popover never renders a blank surface
-    # Regression for image #44 — the loading skeleton used a fill color
-    # that matched the popover background in dark mode, so users saw
-    # an empty rectangle for the whole retry window. This scenario
-    # opens the popover immediately after the form view is created (so
-    # the bootstrap is likely mid-retry) and asserts the popover
-    # surface always carries human-readable copy — either the loading
-    # text, the upgrade copy, the error copy, or the share controls.
+  Scenario: Pro workspace popover renders share controls with a reachable URL
+    # Three regressions in one scenario:
+    #   * image #44 — popover surface rendered visually blank because
+    #     the loading-skeleton fill matched the popover background;
+    #   * the share controls should mount on a Pro path;
+    #   * the URL the cloud composes (or the FE falls back to) is
+    #     non-empty and reachable.
     Given a Grid with a Form tab is open on a Pro workspace
     When I open the share popover
     Then the share popover surface is not blank
-
-  Scenario: Pro workspace sees the share rows after the popover bootstraps
-    Given a Grid with a Form tab is open on a Pro workspace
-    When I open the share popover
-    Then the share popover shows the share controls
-    And the share URL is non-empty
-
-  Scenario: Switching to Public tier exposes a copyable share URL
-    Given a Grid with a Form tab is open on a Pro workspace
-    When I open the share popover
-    And I switch the share tier to "public"
-    Then the access banner reflects the "public" tier
+    And the share popover shows the share controls
     And the share URL is non-empty

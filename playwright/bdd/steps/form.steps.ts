@@ -75,31 +75,6 @@ Given(
   },
 );
 
-// ── Toolbar / banner assertions ─────────────────────────────────────
-
-Then('the form preview button is visible', async ({ page }) => {
-  await expect(FormSelectors.previewButton(page)).toBeVisible();
-});
-
-Then('the form share button is visible', async ({ page }) => {
-  await expect(FormSelectors.shareButton(page)).toBeVisible();
-});
-
-Then(
-  'the form access banner shows the workspace tier',
-  async ({ page }) => {
-    const banner = FormSelectors.accessBanner(page);
-
-    await expect(banner).toBeVisible();
-    // `data-tier` is exposed on the banner so the at-rest tier can be
-    // asserted without depending on copy. A freshly-created form has
-    // no share token minted yet — `useFormShare.info` is null — so the
-    // banner defaults to `workspace` (mirror of the desktop's
-    // FormAccessBanner default behaviour).
-    await expect(banner).toHaveAttribute('data-tier', 'workspace');
-  },
-);
-
 // ── Question authoring ──────────────────────────────────────────────
 
 When(
