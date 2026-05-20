@@ -6,24 +6,22 @@ import { toast } from 'sonner';
 import { ViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as DatabaseIcon } from '@/assets/icons/database.svg';
+import { ReactComponent as NotionIcon } from '@/assets/icons/notion.svg';
 import { ReactComponent as TextIcon } from '@/assets/icons/text.svg';
-import {
-  useAppOperations,
-  useCurrentWorkspaceId,
-  useOpenPageModal,
-  useToView,
-} from '@/components/app/app.hooks';
+import { useAppOperations, useCurrentWorkspaceId, useOpenPageModal, useToView } from '@/components/app/app.hooks';
 import {
   ImportAbortError,
   importCsvAsDatabase,
+  importNotionZipToView,
   populateDocumentWithMarkdown,
   stripFileExtension,
 } from '@/components/app/import/import-service';
 
 const MARKDOWN_ACCEPT = '.md,.markdown,.txt,text/markdown,text/plain';
 const CSV_ACCEPT = '.csv,text/csv';
+const NOTION_ACCEPT = '.zip,application/zip,application/x-zip,application/x-zip-compressed';
 
-type ImportFormat = 'markdown' | 'csv';
+type ImportFormat = 'markdown' | 'csv' | 'notion';
 
 interface ImportDialogProps {
   open: boolean;
@@ -41,6 +39,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
   const [active, setActive] = useState<ImportFormat | null>(null);
   const markdownInputRef = useRef<HTMLInputElement>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  const notionInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   // Abort any in-flight import on unmount so polling doesn't keep running
@@ -84,7 +83,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
         setActive(null);
       }
     },
-    [workspaceId, addPage, parentViewId, prevViewId, openPageModal, close, t],
+    [workspaceId, addPage, parentViewId, prevViewId, openPageModal, close, t]
   );
 
   const handleCsv = useCallback(
@@ -115,7 +114,37 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
         setActive(null);
       }
     },
-    [workspaceId, parentViewId, toView, close, t],
+    [workspaceId, parentViewId, toView, close, t]
+  );
+
+  const handleNotion = useCallback(
+    async (file: File) => {
+      if (!workspaceId) return;
+      const controller = new AbortController();
+
+      abortRef.current?.abort();
+      abortRef.current = controller;
+      setActive('notion');
+      try {
+        await importNotionZipToView({
+          workspaceId,
+          parentViewId,
+          file,
+          signal: controller.signal,
+        });
+
+        toast.success(t('importPanel.notionImportStarted'));
+        close();
+        // eslint-disable-next-line
+      } catch (e: any) {
+        if (e instanceof ImportAbortError) return;
+        toast.error(e?.message ?? t('importPanel.failed'));
+      } finally {
+        if (abortRef.current === controller) abortRef.current = null;
+        setActive(null);
+      }
+    },
+    [workspaceId, parentViewId, close, t]
   );
 
   const onMarkdownPicked = useCallback(
@@ -125,7 +154,7 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       event.target.value = '';
       if (file) void handleMarkdown(file);
     },
-    [handleMarkdown],
+    [handleMarkdown]
   );
 
   const onCsvPicked = useCallback(
@@ -135,7 +164,17 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
       event.target.value = '';
       if (file) void handleCsv(file);
     },
-    [handleCsv],
+    [handleCsv]
+  );
+
+  const onNotionPicked = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+
+      event.target.value = '';
+      if (file) void handleNotion(file);
+    },
+    [handleNotion]
   );
 
   return (
@@ -186,6 +225,18 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
             <span className='text-sm'>{t('importPanel.csv')}</span>
             {active === 'csv' && <CircularProgress size={14} className='ml-auto' />}
           </button>
+
+          <button
+            type='button'
+            disabled={!!active}
+            onClick={() => notionInputRef.current?.click()}
+            className='flex items-center gap-3 rounded-300 bg-fill-content px-4 py-3 text-left text-text-primary hover:bg-fill-content-hover disabled:opacity-60'
+            data-testid='import-notion'
+          >
+            <NotionIcon className='h-5 w-5 text-icon-primary' />
+            <span className='text-sm'>{t('importPanel.notionZip')}</span>
+            {active === 'notion' && <CircularProgress size={14} className='ml-auto' />}
+          </button>
         </div>
 
         <input
@@ -203,6 +254,14 @@ export default function ImportDialog({ open, parentViewId, prevViewId, onOpenCha
           className='hidden'
           data-testid='import-csv-input'
           onChange={onCsvPicked}
+        />
+        <input
+          ref={notionInputRef}
+          type='file'
+          accept={NOTION_ACCEPT}
+          className='hidden'
+          data-testid='import-notion-input'
+          onChange={onNotionPicked}
         />
       </div>
     </Dialog>

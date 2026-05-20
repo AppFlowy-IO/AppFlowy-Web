@@ -144,6 +144,7 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
 
   const { publish, unpublish } = usePublishing();
   const getSubscriptions = useGetSubscriptions();
+  const isHosted = useMemo(() => isAppFlowyHosted(), []);
   const handlePublish = useCallback(
     async (view: View, publishName: string) => {
       if (!publish) return;
@@ -177,11 +178,6 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
 
   const [activeSubscription, setActiveSubscription] = React.useState<SubscriptionPlan | null>(null);
   const loadSubscription = useCallback(async () => {
-    if (!isAppFlowyHosted()) {
-      setActiveSubscription(SubscriptionPlan.Pro);
-      return;
-    }
-
     try {
       const subscriptions = await getSubscriptions?.();
 
@@ -197,8 +193,13 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
   }, [getSubscriptions]);
 
   useEffect(() => {
+    if (!isHosted) {
+      setActiveSubscription(null);
+      return;
+    }
+
     void loadSubscription();
-  }, [loadSubscription]);
+  }, [isHosted, loadSubscription]);
 
   useEffect(() => {
     void loadPublishNamespace();
@@ -263,17 +264,20 @@ export function PublishManage({ onClose }: { onClose?: () => void }) {
             title={
               !isOwner
                 ? t('settings.sites.error.onlyWorkspaceOwnerCanUpdateNamespace')
-                : isAppFlowyHosted() && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free)
-                  ? t('settings.sites.error.onlyProCanUpdateNamespace')
-                  : undefined
+                : isHosted && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free)
+                ? t('settings.sites.error.onlyProCanUpdateNamespace')
+                : undefined
             }
           >
             <IconButton
               size={'small'}
-              data-testid="edit-namespace-button"
+              data-testid='edit-namespace-button'
               onClick={(e) => {
                 // Block if not owner, or if on official host with Free/unloaded subscription
-                if (!isOwner || (isAppFlowyHosted() && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free))) {
+                if (
+                  !isOwner ||
+                  (isHosted && (activeSubscription === null || activeSubscription === SubscriptionPlan.Free))
+                ) {
                   return;
                 }
 

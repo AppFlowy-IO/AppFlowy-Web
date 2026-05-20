@@ -11,7 +11,15 @@ import {
   isInsideSimpleTableCell,
 } from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, FieldURLType, FileBlockData, ImageBlockData, ImageType, YjsEditorKey } from '@/application/types';
+import {
+  BlockType,
+  CollabOrigin,
+  FieldURLType,
+  FileBlockData,
+  ImageBlockData,
+  ImageType,
+  YjsEditorKey,
+} from '@/application/types';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import { FileHandler } from '@/utils/file';
 import { Log } from '@/utils/log';
@@ -369,7 +377,7 @@ function insertFragmentAsSiblings(editor: YjsEditor, fragment: Node[]): boolean 
       } else {
         insertedIds = slateContentInsertToYData(parentId, index + 1, fragment, doc);
       }
-    });
+    }, CollabOrigin.LocalManual);
 
     // Place the cursor at the end of the last inserted block so subsequent
     // edits target a valid location (not the now-deleted original block).

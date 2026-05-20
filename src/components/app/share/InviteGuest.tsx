@@ -49,7 +49,6 @@ interface InviteGuestProps {
   onInviteSuccess: () => Promise<void>;
   viewId: string;
   hasFullAccess: boolean;
-  activeSubscriptionPlan: SubscriptionPlan | null;
 }
 
 export function InviteGuest({
@@ -430,8 +429,16 @@ export function InviteGuest({
       notify.success(t('shareAction.inviteSuccess'));
       // eslint-disable-next-line
     } catch (error: any) {
-      if (error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED || error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED) {
-        setUpgradeModalOpen(true);
+      if (
+        error.code === ERROR_CODE.FREE_PLAN_GUEST_LIMIT_EXCEEDED ||
+        error.code === ERROR_CODE.PAID_PLAN_GUEST_LIMIT_EXCEEDED
+      ) {
+        if (isAppFlowyHosted()) {
+          setUpgradeModalOpen(true);
+        } else {
+          notify.error(error.message);
+        }
+
         return;
       }
 
@@ -521,8 +528,9 @@ export function InviteGuest({
           <div className='max-h-[200px] space-y-1 overflow-y-auto'>
             {allSuggestions.map((suggestion, index) => (
               <PersonSuggestionItem
-                key={`${suggestion.type}-${typeof suggestion.data === 'string' ? suggestion.data : suggestion.data.email
-                  }`}
+                key={`${suggestion.type}-${
+                  typeof suggestion.data === 'string' ? suggestion.data : suggestion.data.email
+                }`}
                 suggestion={suggestion}
                 isHovered={index === hoveredIndex}
                 onMouseEnter={() => setHoveredIndex(index)}

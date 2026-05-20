@@ -254,6 +254,7 @@
     "csv": "CSV",
     "database": "Database",
     "success": "Imported successfully",
+    "notionImportStarted": "Notion import started. Pages will appear in this view when ready.",
     "failed": "Import failed"
   },
   "teamSpace": "Team space",

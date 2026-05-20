@@ -27,24 +27,62 @@ interface CreateImportTaskRaw {
   multipart?: ImportMultipartUploadInfo | null;
 }
 
-export async function createImportTask(file: File) {
+export interface ImportUploadTask {
+  taskId: string;
+  presignedUrl: string;
+  multipart: ImportMultipartUploadInfo | null;
+}
+
+export interface CreateNotionImportTaskPayload {
+  content_length: number;
+  md5_base64: string;
+}
+
+function toImportUploadTask(data: CreateImportTaskRaw): ImportUploadTask {
+  return {
+    taskId: data.task_id,
+    presignedUrl: data.presigned_url,
+    multipart: data.multipart ?? null,
+  };
+}
+
+export async function createImportTask(file: File): Promise<ImportUploadTask> {
   const url = `/api/import/create`;
   const fileName = file.name.split('.').slice(0, -1).join('.') || crypto.randomUUID();
 
   return executeAPIRequest<CreateImportTaskRaw>(() =>
-    getAxios()?.post<APIResponse<CreateImportTaskRaw>>(url, {
-      workspace_name: fileName,
-      content_length: file.size,
-    }, {
+    getAxios()?.post<APIResponse<CreateImportTaskRaw>>(
+      url,
+      {
+        workspace_name: fileName,
+        content_length: file.size,
+      },
+      {
+        headers: {
+          'X-Host': getConfigValue('APPFLOWY_BASE_URL', ''),
+        },
+      }
+    )
+  ).then(toImportUploadTask);
+}
+
+export async function createNotionImportTask(
+  workspaceId: string,
+  parentViewId: string,
+  payload: CreateNotionImportTaskPayload
+): Promise<ImportUploadTask> {
+  const url = `/api/import/${encodeURIComponent(workspaceId)}/notion`;
+
+  return executeAPIRequest<CreateImportTaskRaw>(() =>
+    getAxios()?.post<APIResponse<CreateImportTaskRaw>>(url, payload, {
+      params: {
+        page_id: parentViewId,
+      },
       headers: {
         'X-Host': getConfigValue('APPFLOWY_BASE_URL', ''),
       },
     })
-  ).then((data) => ({
-    taskId: data.task_id,
-    presignedUrl: data.presigned_url,
-    multipart: data.multipart ?? null,
-  }));
+  ).then(toImportUploadTask);
 }
 
 export async function uploadImportFile(presignedUrl: string, file: File, onProgress: (progress: number) => void) {
@@ -77,7 +115,7 @@ export async function uploadImportFile(presignedUrl: string, file: File, onProgr
 export async function uploadImportFileMultipart(
   file: File,
   multipart: ImportMultipartUploadInfo,
-  onProgress: (progress: number) => void,
+  onProgress: (progress: number) => void
 ) {
   const MAX_CONCURRENCY = 5;
   const partCount = multipart.part_presigned_urls.length;
@@ -166,9 +204,7 @@ async function completeImportMultipart(data: {
 }) {
   const url = `/api/import/complete-multipart`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.post<APIResponse>(url, data)
-  );
+  return executeAPIVoidRequest(() => getAxios()?.post<APIResponse>(url, data));
 }
 
 export async function createDatabaseCsvImportTask(
