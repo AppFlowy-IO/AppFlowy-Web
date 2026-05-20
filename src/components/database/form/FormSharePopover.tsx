@@ -1,10 +1,9 @@
-import { Check, ChevronRight, FileText, Link as LinkIcon, Lock, Sparkles, User, UserCheck } from 'lucide-react';
+import { Check, ChevronRight, Link as LinkIcon, Lock, Sparkles, User, UserCheck } from 'lucide-react';
 import { useContext, useEffect, useRef, useState } from 'react';
 
 import {
   FormShareInfo,
   FormShareTier,
-  FormSubmissionAccess,
 } from '@/application/services/js-services/http';
 import { AuthInternalContext } from '@/components/app/contexts/AuthInternalContext';
 import { Button } from '@/components/ui/button';
@@ -37,7 +36,6 @@ export function FormSharePopover({
   onUpgradePlan,
   setTier,
   setAnonymous,
-  setSubmissionAccess,
   url,
 }: {
   trigger: React.ReactNode;
@@ -58,7 +56,10 @@ export function FormSharePopover({
   onUpgradePlan: () => void;
   setTier: (t: FormShareTier) => Promise<void>;
   setAnonymous: (v: boolean) => Promise<void>;
-  setSubmissionAccess: (a: FormSubmissionAccess) => Promise<void>;
+  // `setSubmissionAccess` removed from the surface while the
+  // submission-access row is unmounted. The data wiring on the
+  // controller stays so the prop can be re-added without a
+  // controller-layer change.
   url: string;
 }) {
   const [copied, setCopied] = useState(false);
@@ -74,8 +75,6 @@ export function FormSharePopover({
 
   const tier = info?.tier ?? 'workspace';
   const anonymous = info?.anonymous ?? true;
-  const submissionAccess = info?.submission_access ?? 'none';
-  const showSubmissionAccess = tier === 'workspace' && !anonymous;
 
   useEffect(() => {
     return () => {
@@ -139,17 +138,16 @@ export function FormSharePopover({
               forcedTooltip='Public forms always collect responses anonymously.'
               onChange={setAnonymous}
             />
-            {showSubmissionAccess && (
-              <SubMenuRow
-                testId='form-share-submission-access-row'
-                icon={<FileText size={14} />}
-                label='Access to submission'
-                value={submissionAccessLabel(submissionAccess)}
-                submenu={
-                  <AccessSubmenu current={submissionAccess} onSelect={setSubmissionAccess} />
-                }
-              />
-            )}
+            {/*
+              Submission-access row intentionally omitted. The cloud's
+              `supported_submission_access` (`share.rs:86`) hardcodes
+              the value to `None` regardless of request — shipping the
+              UI affordance was misleading because the "Can view" choice
+              never persisted. Re-introduce this block once the cloud
+              implements `view` for real. The data wiring (`info.submission_access`,
+              `setSubmissionAccess`) stays intact so the row can be
+              restored without touching the controller layer.
+            */}
             <div className='my-2 border-t border-line-divider' />
             {/*
               Notion-parity link row (matches desktop's `_LinkRow`):
@@ -406,33 +404,6 @@ function TierSubmenu({
   );
 }
 
-function AccessSubmenu({
-  current,
-  onSelect,
-}: {
-  current: FormSubmissionAccess;
-  onSelect: (a: FormSubmissionAccess) => void;
-}) {
-  return (
-    <div className='flex flex-col'>
-      <Choice
-        testId='form-share-submission-access-choice-none'
-        selected={current === 'none'}
-        title='No access'
-        subtitle="Respondents can't revisit their submission."
-        onClick={() => onSelect('none')}
-      />
-      <Choice
-        testId='form-share-submission-access-choice-view'
-        selected={current === 'view'}
-        title='Can view'
-        subtitle='Respondents can see what they submitted.'
-        onClick={() => onSelect('view')}
-      />
-    </div>
-  );
-}
-
 function Choice({
   selected,
   title,
@@ -525,11 +496,3 @@ function tierBadge(t: FormShareTier): React.ReactNode {
   }
 }
 
-function submissionAccessLabel(a: FormSubmissionAccess): string {
-  switch (a) {
-    case 'none':
-      return 'No access';
-    case 'view':
-      return 'Can view';
-  }
-}

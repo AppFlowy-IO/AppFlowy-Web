@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ERROR_CODE } from '@/application/constants';
 import { useDatabase, useDatabaseViewId } from '@/application/database-yjs';
@@ -401,14 +401,22 @@ export function useFormShare(): FormShareState {
     return `${base}/${token}`;
   }, [info, viewId]);
 
-  return {
-    info,
-    isLoading,
-    error,
-    errorKind,
-    setTier,
-    setAnonymous,
-    setSubmissionAccess,
-    resolveShareUrl,
-  };
+  // Memo the returned object so `FormShareProvider`'s context value has a
+  // stable identity across renders that didn't actually change anything.
+  // Without this, every parent re-render hands consumers a fresh object —
+  // forcing `FormShareButton`, `FormAccessBanner`, and the popover subtree
+  // to re-render even when info/setters are unchanged.
+  return useMemo(
+    () => ({
+      info,
+      isLoading,
+      error,
+      errorKind,
+      setTier,
+      setAnonymous,
+      setSubmissionAccess,
+      resolveShareUrl,
+    }),
+    [info, isLoading, error, errorKind, setTier, setAnonymous, setSubmissionAccess, resolveShareUrl],
+  );
 }

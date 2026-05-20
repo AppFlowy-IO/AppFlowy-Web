@@ -5,6 +5,7 @@ import { useDatabaseView } from '@/application/database-yjs/context';
 import {
   decodeSnapshot,
   FormLayoutSnapshot,
+  FormQuestionEntry,
   readFormLayoutSnapshot,
 } from '@/application/database-yjs/form-questions';
 
@@ -13,6 +14,29 @@ const EMPTY: FormLayoutSnapshot = Object.freeze({
   description: '',
   questions: [],
 });
+
+function questionsEqual(a: FormQuestionEntry, b: FormQuestionEntry): boolean {
+  return (
+    a.fieldId === b.fieldId &&
+    a.included === b.included &&
+    a.required === b.required &&
+    a.descriptionVisible === b.descriptionVisible &&
+    a.description === b.description &&
+    a.longAnswer === b.longAnswer &&
+    a.order === b.order
+  );
+}
+
+function snapshotsEqual(a: FormLayoutSnapshot, b: FormLayoutSnapshot): boolean {
+  if (a === b) return true;
+  if (a.decided !== b.decided) return false;
+  if (a.description !== b.description) return false;
+  if (a.questions.length !== b.questions.length) return false;
+  for (let i = 0; i < a.questions.length; i += 1) {
+    if (!questionsEqual(a.questions[i], b.questions[i])) return false;
+  }
+  return true;
+}
 
 /**
  * Subscribe to the current database view's `form_field_settings` map and
@@ -58,9 +82,16 @@ export function useFormLayoutSnapshot(): FormLayoutSnapshot {
     // AND every subsequent per-entry write, since `observeDeep`
     // propagates events from nested maps. The trade-off is firing on
     // unrelated view-level keys (name, layout_settings, etc.) — we
-    // accept the wasted decode in exchange for not maintaining a
-    // child-create watcher.
-    const observer = () => setSnapshot(readFormLayoutSnapshot(view));
+    // short-circuit those by returning the previous snapshot when the
+    // decoded value is shallow-equal, so renaming the form via
+    // `FormTitle` doesn't invalidate every downstream `useMemo` keyed
+    // on the snapshot (preview schema, resolved questions list, etc.).
+    const observer = () => {
+      setSnapshot((prev) => {
+        const next = readFormLayoutSnapshot(view);
+        return snapshotsEqual(prev, next) ? prev : next;
+      });
+    };
 
     view.observeDeep(observer);
     return () => {

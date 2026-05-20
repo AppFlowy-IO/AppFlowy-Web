@@ -87,7 +87,6 @@ export function FormAccessBanner() {
           onUpgradePlan={openUpgradePlan}
           setTier={share.setTier}
           setAnonymous={share.setAnonymous}
-          setSubmissionAccess={share.setSubmissionAccess}
           url={url}
         />
       ) : (

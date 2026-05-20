@@ -16,7 +16,6 @@ import {
   readRespondentForRowByName,
   readShareUrl,
   selectShareTier,
-  selectSubmissionAccess,
   signInAddProAndOpenForm,
   signInAndAddFormViewViaTabBar,
   toggleAnonymousSwitch,
@@ -469,17 +468,6 @@ When('I toggle the Anonymous switch', async ({ page }) => {
   await toggleAnonymousSwitch(page);
 });
 
-When(
-  'I pick {string} for submission access',
-  async ({ page }, access: string) => {
-    if (access !== 'none' && access !== 'view') {
-      throw new Error(`Unknown submission access ${access}`);
-    }
-
-    await selectSubmissionAccess(page, access as 'none' | 'view');
-  },
-);
-
 // `toHaveAttribute` polls the DOM regardless of visibility, so the
 // popover can stay open while we assert on the banner state — no
 // Escape dance needed. (Earlier iteration closed the popover here,
@@ -506,12 +494,3 @@ Then(
     );
   },
 );
-
-Then('the submission access row is not visible', async ({ page }) => {
-  // Popover is still open from prior step. The row mounts only when
-  // `tier === 'workspace' && !anonymous`; after switching to Public it
-  // should be unmounted entirely (not just hidden via CSS).
-  await expect(
-    page.getByTestId('form-share-submission-access-row'),
-  ).toBeHidden({ timeout: 5000 });
-});

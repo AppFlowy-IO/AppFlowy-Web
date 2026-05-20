@@ -66,7 +66,6 @@ export function FormShareButton() {
       onUpgradePlan={openUpgradePlan}
       setTier={share.setTier}
       setAnonymous={share.setAnonymous}
-      setSubmissionAccess={share.setSubmissionAccess}
       url={url}
     />
   );

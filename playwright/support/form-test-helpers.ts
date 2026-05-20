@@ -312,48 +312,6 @@ export async function toggleAnonymousSwitch(page: Page): Promise<void> {
 }
 
 /**
- * Open the submission-access submenu and pick a row. The row is only
- * rendered when `tier === 'workspace' && !anonymous` (mirror of cloud's
- * `coerce_submission_access`), so this helper requires the caller to
- * have left the form on Workspace / anon=false first.
- */
-export async function selectSubmissionAccess(
-  page: Page,
-  access: 'none' | 'view',
-): Promise<void> {
-  // Capture console messages so a regression in `setSubmissionAccess`
-  // (e.g., `info` null at click time → early return) surfaces in the
-  // test log instead of as a silent state mismatch.
-  const logs: string[] = [];
-  const handler = (msg: { type(): string; text(): string }) => {
-    if (msg.type() === 'warn' || msg.type() === 'error') logs.push(msg.text());
-  };
-
-  page.on('console', handler);
-  try {
-    await page.getByTestId('form-share-submission-access-row').click();
-    await page.waitForTimeout(300);
-
-    const choiceSel = `[data-testid="form-share-submission-access-choice-${access}"]`;
-    const choice = page.locator(choiceSel);
-
-    await expect(choice).toBeVisible({ timeout: 5000 });
-    // Real mouse click — Radix submenu choice has no nested popover
-    // conflict (the click target is inside the submenu portal which
-    // is the deepest open popover at this point). Pointer events fire
-    // cleanly.
-    await choice.click();
-    await page.waitForTimeout(1200);
-  } finally {
-    page.off('console', handler);
-    if (logs.length) {
-      // eslint-disable-next-line no-console
-      console.log('[selectSubmissionAccess] console logs during click:', logs);
-    }
-  }
-}
-
-/**
  * Read the share URL out of the popover's read-only input. The cloud's
  * `share_url` field is empty when `APPFLOWY_WEB_URL` isn't configured;
  * the popover's `resolveShareUrl` falls back to `${origin}/form/${token}`
