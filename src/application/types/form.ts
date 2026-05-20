@@ -16,7 +16,7 @@
 
 /** Tagged-union response from `GET /api/workspace/public-form/{token}`. */
 export type PublicFormResponse =
-  | { kind: 'active'; } & PublicFormSchema
+  | ({ kind: 'active' } & PublicFormSchema)
   | { kind: 'closed'; message: string }
   | { kind: 'auth_required'; login_url: string };
 
@@ -59,6 +59,13 @@ export interface PublicQuestion {
   max_selections?: number;
   options?: PublicOption[];
   input_style: PublicInputStyle;
+  /**
+   * Per-file size cap for `kind: 'files'` questions. Surfaced server-side so
+   * the client can short-circuit oversize files before round-tripping to S3.
+   */
+  max_bytes_per_file?: number;
+  /** Max attachments the respondent can submit for this question. */
+  max_files?: number;
 }
 
 export type PublicQuestionKind =
@@ -107,7 +114,37 @@ export type FormAnswerValue =
   | { kind: 'checkbox'; value: boolean }
   | { kind: 'single_select'; option_id: string | null }
   | { kind: 'multi_select'; option_ids: string[] }
-  | { kind: 'date'; iso: string | null };
+  | { kind: 'date'; iso: string | null }
+  | { kind: 'files'; files: FormFileAttachment[] };
+
+/**
+ * One attachment in a `kind: 'files'` answer. Before submit, Web keeps the
+ * local `File` object here; after submit-time upload, `file_id` is the opaque
+ * handle returned by the upload-url endpoint.
+ */
+export interface FormFileAttachment {
+  file_id?: string;
+  local_id?: string;
+  name: string;
+  size: number;
+  content_type?: string;
+  file?: File;
+}
+
+// ── Upload (Phase-2) ──────────────────────────────────────────────────
+
+export interface PublicFormUploadUrlRequest {
+  file_name: string;
+  content_length: number;
+  content_type?: string;
+}
+
+export interface PublicFormUploadUrlResponse {
+  file_id: string;
+  upload_url: string;
+  download_url: string;
+  expires_in_secs: number;
+}
 
 /**
  * Submit-response from the cloud. The 200 cases (success / per-field

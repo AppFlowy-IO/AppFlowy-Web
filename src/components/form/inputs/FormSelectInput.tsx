@@ -1,11 +1,11 @@
 import {
   Circle,
   CircleCheck,
-  Square,
-  SquareCheckBig,
 } from 'lucide-react';
 
 import { PublicQuestion } from '@/application/types/form';
+import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
+import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { cn } from '@/lib/utils';
 
 /**
@@ -72,14 +72,11 @@ export function FormSelectInput(props: SingleProps | MultiProps) {
   // bordered-button-with-fill variant, which read more like a button
   // group than a form picker (image #19 in the design spec).
   const isMulti = props.mode === 'multi';
-  const IndicatorOn = isMulti ? SquareCheckBig : CircleCheck;
-  const IndicatorOff = isMulti ? Square : Circle;
 
   return (
     <div className='flex flex-col gap-1'>
       {options.map((opt) => {
         const selected = isSelected(opt.id);
-        const Indicator = selected ? IndicatorOn : IndicatorOff;
 
         return (
           <button
@@ -88,14 +85,27 @@ export function FormSelectInput(props: SingleProps | MultiProps) {
             onClick={() => handleToggle(opt.id)}
             className='flex items-center gap-2 rounded px-1 py-1 text-left text-sm transition-colors hover:bg-fill-content'
           >
-            <Indicator
-              size={18}
-              className={cn(
-                'shrink-0',
-                selected ? 'text-fill-default' : 'text-text-tertiary',
-              )}
-              strokeWidth={selected ? 2.5 : 2}
-            />
+            {isMulti ? (
+              selected ? (
+                <CheckboxCheckSvg className='h-5 w-5 shrink-0 text-text-action' />
+              ) : (
+                <CheckboxUncheckSvg className='h-5 w-5 shrink-0 text-border-primary hover:text-border-primary-hover' />
+              )
+            ) : (
+              (() => {
+                const Indicator = selected ? CircleCheck : Circle;
+                return (
+                  <Indicator
+                    size={18}
+                    className={cn(
+                      'shrink-0',
+                      selected ? 'text-fill-default' : 'text-text-tertiary',
+                    )}
+                    strokeWidth={selected ? 2.5 : 2}
+                  />
+                );
+              })()
+            )}
             <span>{opt.label}</span>
           </button>
         );

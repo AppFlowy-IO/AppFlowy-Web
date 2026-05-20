@@ -112,8 +112,12 @@ export function FormBody({
     try {
       const uploadedAnswers = await uploadPendingFileAnswers(token, answers);
 
+      // Cache the uploaded shape locally so a server-side `kind: 'invalid'`
+      // retry skips the re-upload. `uploadedAnswers` is already in the wire
+      // shape (`{file_id, name, size}`) — `uploadPendingFile` strips on both
+      // its fresh-upload and replay branches — so we can post it directly.
       setAnswers(uploadedAnswers);
-      const payload: FormSubmissionPayload = { answers: stripLocalFileData(uploadedAnswers) };
+      const payload: FormSubmissionPayload = { answers: uploadedAnswers };
       const res: FormSubmitResponse = await submitPublicForm(token, payload, idempotencyKey);
 
       if (res.kind === 'invalid') {
@@ -201,11 +205,14 @@ async function uploadPendingFileAnswers(
       continue;
     }
 
-    const uploadedFiles: FormFileAttachment[] = [];
-
-    for (const attachment of answer.files) {
-      uploadedFiles.push(await uploadPendingFile(token, attachment));
-    }
+    // Files within a question are independent — parallelize. `Promise.all`
+    // preserves input order, so the form-owner-facing list reads the same
+    // as the picker order regardless of upload settle order. Cross-question
+    // ordering stays sequential to keep daily-quota errors attached to the
+    // earliest question that triggered them.
+    const uploadedFiles = await Promise.all(
+      answer.files.map((attachment) => uploadPendingFile(token, attachment))
+    );
 
     out[questionId] = { kind: 'files', files: uploadedFiles };
   }
@@ -235,23 +242,6 @@ async function uploadPendingFile(token: string, attachment: FormFileAttachment):
     name: attachment.name,
     size: attachment.file.size,
   };
-}
-
-function stripLocalFileData(answers: Record<string, FormAnswerValue>): Record<string, FormAnswerValue> {
-  const out: Record<string, FormAnswerValue> = {};
-
-  for (const [questionId, answer] of Object.entries(answers)) {
-    if (answer.kind === 'files') {
-      out[questionId] = {
-        kind: 'files',
-        files: answer.files.map(submittedFileAttachment),
-      };
-    } else {
-      out[questionId] = answer;
-    }
-  }
-
-  return out;
 }
 
 function submittedFileAttachment(attachment: FormFileAttachment): FormFileAttachment {

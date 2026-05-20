@@ -2,6 +2,8 @@ import {
   FormSubmissionPayload,
   FormSubmitResponse,
   PublicFormResponse,
+  PublicFormUploadUrlRequest,
+  PublicFormUploadUrlResponse,
 } from '@/application/types/form';
 
 import { getAxios } from './core';
@@ -93,4 +95,67 @@ export async function submitPublicForm(
     return Promise.reject({ code: -1, message: 'Malformed submit response' });
   }
   return response.data;
+}
+
+/**
+ * `POST /api/workspace/public-form/{token}/upload-url` — mint a presigned PUT
+ * URL for a single file attachment.
+ *
+ * The respondent uploads the body directly to `upload_url` (bypassing this
+ * server), then echoes `file_id` back in the matching `files`-kind answer at
+ * submit time so the server can link the upload to the new submission.
+ *
+ * Error surface (mapped from HTTP status):
+ *   - 400 → APIError with the body's `error` code (e.g. `file_too_large`)
+ *   - 401 → APIError surfaced to caller; workspace-tier forms only
+ *   - 403/404/410 → APIError; caller should redirect to the form's closed page
+ *   - 429 → APIError; caller should surface a "daily upload cap" message
+ */
+export async function requestPublicFormUploadUrl(
+  token: string,
+  request: PublicFormUploadUrlRequest,
+): Promise<PublicFormUploadUrlResponse> {
+  const axios = getAxios();
+
+  if (!axios) {
+    return Promise.reject({ code: -1, message: 'API service not initialized' });
+  }
+  const response = await axios.post<PublicFormUploadUrlResponse>(
+    `${PUBLIC_FORM_BASE}/${token}/upload-url`,
+    request,
+  );
+
+  if (!response?.data || typeof response.data !== 'object') {
+    return Promise.reject({ code: -1, message: 'Malformed upload-url response' });
+  }
+  return response.data;
+}
+
+/**
+ * Upload a file's bytes to a presigned PUT URL produced by
+ * `requestPublicFormUploadUrl`. Goes direct to object storage — no API token
+ * needed on this request. The presigned URL embeds method (PUT), expiry, and
+ * the exact `content-length` / `content-type` the server signed with, so they
+ * must match here exactly or the storage backend rejects the upload.
+ */
+export async function uploadFormFileToPresignedUrl(
+  upload_url: string,
+  file: File,
+): Promise<void> {
+  // Use plain fetch — the shared axios instance carries auth headers we don't
+  // want on a third-party (or differently-scoped) S3 endpoint.
+  const response = await fetch(upload_url, {
+    method: 'PUT',
+    body: file,
+    headers: {
+      'Content-Type': file.type || 'application/octet-stream',
+    },
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    return Promise.reject({
+      code: response.status,
+      message: `Upload failed (${response.status}): ${detail.slice(0, 200)}`,
+    });
+  }
 }

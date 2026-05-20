@@ -407,6 +407,24 @@ export const PublicFormSelectors = {
   //     leaking server internals (no testid; assert on visible copy).
   authRequiredPage: (page: Page) => page.getByTestId('public-form-auth-required'),
   closedPage: (page: Page) => page.getByTestId('public-form-closed'),
+
+  // Files question (Phase-2). The Upload button triggers a hidden file
+  // input — tests should setInputFiles on the input directly instead of
+  // clicking the button (Playwright can drive both, but the input route
+  // bypasses the OS file chooser).
+  mediaInput: (page: Page) => page.getByTestId('public-form-media-input'),
+  mediaFileInput: (page: Page) =>
+    page.getByTestId('public-form-media-file-input'),
+  mediaUploadButton: (page: Page) =>
+    page.getByTestId('public-form-media-upload-button'),
+  mediaAttachmentList: (page: Page) =>
+    page.getByTestId('public-form-media-attachments'),
+  mediaAttachments: (page: Page) =>
+    page.getByTestId('public-form-media-attachment'),
+  mediaAttachmentByName: (page: Page, name: string) =>
+    page.locator(
+      `[data-testid="public-form-media-attachment"][data-name="${name}"]`,
+    ),
 };
 
 /**

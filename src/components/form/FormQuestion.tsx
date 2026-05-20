@@ -51,16 +51,10 @@ function _FormQuestion({
             </span>
           )}
         </h2>
-        {question.description && (
-          <p className='text-sm text-text-caption'>{question.description}</p>
-        )}
+        {question.description && <p className='text-sm text-text-caption'>{question.description}</p>}
       </div>
-      <div className={cn(error && 'rounded-md ring-1 ring-fill-default/40')}>
-        <QuestionInput
-          question={question}
-          value={value}
-          onChange={(v) => onChange(question.id, v)}
-        />
+      <div className={cn(error && 'ring-fill-default/40 rounded-md ring-1')}>
+        <QuestionInput question={question} value={value} onChange={(v) => onChange(question.id, v)} />
       </div>
       {error && <p className='text-xs text-fill-default'>{error}</p>}
     </div>
@@ -115,9 +109,7 @@ function QuestionInput({
           question={question}
           mode='single'
           value={value?.kind === 'single_select' ? value.option_id : null}
-          onChange={(option_id) =>
-            onChange({ kind: 'single_select', option_id })
-          }
+          onChange={(option_id) => onChange({ kind: 'single_select', option_id })}
         />
       );
     case 'multi_select':
@@ -126,17 +118,18 @@ function QuestionInput({
           question={question}
           mode='multi'
           value={value?.kind === 'multi_select' ? value.option_ids : []}
-          onChange={(option_ids) =>
-            onChange({ kind: 'multi_select', option_ids })
-          }
+          onChange={(option_ids) => onChange({ kind: 'multi_select', option_ids })}
         />
       );
     case 'files':
-      // F1 stub — upload pipeline lands in F2. Render the Notion-style
-      // shell (button + size-limit caption) instead of a generic
-      // "unsupported" tile so the question still looks like the desktop
-      // version and the form layout doesn't shift when F2 ships.
-      return <FormMediaInput />;
+      return (
+        <FormMediaInput
+          value={value?.kind === 'files' ? value.files : []}
+          onChange={(files) => onChange({ kind: 'files', files })}
+          max_files={question.max_files}
+          max_bytes_per_file={question.max_bytes_per_file}
+        />
+      );
     case 'person':
     case 'relation':
       return <FormUnsupportedInput kind={question.kind} />;
