@@ -297,15 +297,18 @@ export async function getPublishInfoCached(viewId: string) {
 }
 
 export async function loginAuth(url: string) {
-  Log.info('[Auth] loginAuth: processing OAuth callback');
+  return finishAuthFlow('loginAuth', () => signInWithUrl(url));
+}
+
+async function finishAuthFlow(logContext: string, runAuthFlow: () => Promise<unknown>) {
+  Log.info(`[Auth] ${logContext}: completing login flow`);
   try {
-    await signInWithUrl(url);
-    Log.info('[Auth] loginAuth: success, calling afterAuth');
+    await runAuthFlow();
+    Log.info(`[Auth] ${logContext}: success, calling afterAuth`);
     emit(EventType.SESSION_VALID);
     afterAuth();
-    return;
   } catch (e) {
-    Log.error('[Auth] loginAuth: failed', e);
+    Log.error(`[Auth] ${logContext}: failed`, e);
     emit(EventType.SESSION_INVALID);
     return Promise.reject(e);
   }
@@ -491,12 +494,12 @@ export async function signInSamlWithRedirect(params: { redirectTo: string; domai
 
 export async function signInWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signInWithPassword(params);
+  return finishAuthFlow('signInWithPassword', () => signInWithPassword(params));
 }
 
 export async function signUpWithPasswordWithRedirect(params: { email: string; password: string; redirectTo: string }) {
   saveRedirectTo(params.redirectTo);
-  return signUpWithPassword(params);
+  return finishAuthFlow('signUpWithPassword', () => signUpWithPassword(params));
 }
 
 export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email: string; redirectTo: string }) {
@@ -506,5 +509,5 @@ export async function signInMagicLinkWithRedirect({ email, redirectTo }: { email
 
 export async function signInOTPWithRedirect(params: { email: string; code: string; redirectTo: string; type?: 'magiclink' | 'recovery' | 'signup' }) {
   saveRedirectTo(params.redirectTo);
-  return signInOTP(params);
+  return finishAuthFlow('signInOTP', () => signInOTP(params));
 }
