@@ -20,6 +20,8 @@ import {
   ImageType,
   YjsEditorKey,
 } from '@/application/types';
+import { extractAppFlowyClipboardFragment } from '@/components/editor/clipboard/appflowy-fragment';
+import { containsSimpleTableBlocks, extractTSVFromTableFragment } from '@/components/editor/clipboard/table-fragment';
 import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import { FileHandler } from '@/utils/file';
 import { Log } from '@/utils/log';
@@ -33,6 +35,8 @@ export const withInsertData = (editor: ReactEditor) => {
   const e = editor as YjsEditor;
 
   editor.insertData = (data: DataTransfer) => {
+    const richFragment = extractAppFlowyClipboardFragment(data);
+
     // When pasting inside a table cell, check if the fragment contains table blocks
     // and prevent nesting tables. Instead, extract text and fill adjacent cells.
     const tableCheckEntry = getBlockEntry(e);
@@ -51,24 +55,16 @@ export const withInsertData = (editor: ReactEditor) => {
 
       // Check for Slate fragment containing table blocks
       const fragment = data.getData('application/x-slate-fragment');
+      const parsedFragment = richFragment?.fragment;
 
       if (fragment) {
         try {
           const decoded = decodeURIComponent(window.atob(fragment));
           const parsed = JSON.parse(decoded) as Node[];
 
-          // Check if fragment contains table blocks
-          const hasTable = parsed.some(
-            (n: Node) =>
-              Element.isElement(n) &&
-              [BlockType.SimpleTableBlock, BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(
-                n.type as BlockType
-              )
-          );
-
-          if (hasTable) {
+          if (containsSimpleTableBlocks(parsed)) {
             // Extract text from table cells and paste as TSV
-            const texts = extractTextsFromFragment(parsed);
+            const texts = extractTSVFromTableFragment(parsed);
 
             if (texts) {
               const handled = editor.insertTextData(createTSVDataTransfer(texts));
@@ -80,6 +76,24 @@ export const withInsertData = (editor: ReactEditor) => {
           // Fall through to default handling
         }
       }
+
+      if (parsedFragment && containsSimpleTableBlocks(parsedFragment)) {
+        const texts = extractTSVFromTableFragment(parsedFragment);
+
+        if (texts) {
+          const handled = editor.insertTextData(createTSVDataTransfer(texts));
+
+          if (handled) return;
+        }
+      }
+    }
+
+    if (richFragment) {
+      const newFragment = convertSlateFragmentTo(richFragment.fragment);
+
+      if (insertFragmentAsSiblings(e, newFragment)) return;
+
+      return e.insertFragment(newFragment);
     }
 
     const rawFragment =
@@ -404,54 +418,6 @@ function insertFragmentAsSiblings(editor: YjsEditor, fragment: Node[]): boolean 
     Log.error('insertFragmentAsSiblings failed', err);
     return false;
   }
-}
-
-/**
- * Extract text content from a Slate fragment that contains table cells.
- * Returns a TSV string (tab-separated rows).
- */
-function extractTextsFromFragment(nodes: Node[]): string | null {
-  const rows: string[][] = [];
-
-  for (const node of nodes) {
-    if (Element.isElement(node)) {
-      if (node.type === BlockType.SimpleTableBlock) {
-        // Table > Row > Cell > Paragraph
-        for (const row of (node.children || []) as Element[]) {
-          const cellTexts: string[] = [];
-
-          for (const cell of (row.children || []) as Element[]) {
-            const text = Node.string(cell);
-
-            cellTexts.push(text);
-          }
-
-          if (cellTexts.length > 0) {
-            rows.push(cellTexts);
-          }
-        }
-      } else if (node.type === BlockType.SimpleTableRowBlock) {
-        const cellTexts: string[] = [];
-
-        for (const cell of (node.children || []) as Element[]) {
-          cellTexts.push(Node.string(cell));
-        }
-
-        if (cellTexts.length > 0) {
-          rows.push(cellTexts);
-        }
-      } else if (node.type === BlockType.SimpleTableCellBlock) {
-        rows.push([Node.string(node)]);
-      } else {
-        // Non-table content — just get text
-        rows.push([Node.string(node)]);
-      }
-    }
-  }
-
-  if (rows.length === 0) return null;
-
-  return rows.map((row) => row.join('\t')).join('\n');
 }
 
 /**
