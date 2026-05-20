@@ -282,11 +282,11 @@ export async function selectShareTier(
   page: Page,
   tier: 'workspace' | 'public' | 'closed',
 ): Promise<void> {
-  // Tier submenu trigger label changes with the active selection; the
-  // row's `User` icon doesn't move so we anchor by the visible label
-  // (single-line "Who can fill out").
   await page.getByRole('button', { name: /Who can fill out/i }).click();
-  await page.getByTestId(`form-share-tier-choice-${tier}`).click();
+  const choice = page.getByTestId(`form-share-tier-choice-${tier}`);
+
+  await expect(choice).toBeVisible({ timeout: 5000 });
+  await choice.click();
   // Wait briefly for the patch round-trip to settle so the next step
   // sees the new `info` and `data-tier` reflects the choice.
   await page.waitForTimeout(800);

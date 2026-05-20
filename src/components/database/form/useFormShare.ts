@@ -311,27 +311,19 @@ export function useFormShare(): FormShareState {
   const setTier = useCallback(
     async (tier: FormShareTier) => {
       if (!info) return;
-      // Anonymous coercion at tier transition:
-      //   * Public → always anonymous=true (cloud also forces).
-      //   * Public → Workspace → reset anonymous to false. The user
-      //     is explicitly opting back into identified submissions;
-      //     leaving the toggle ON would silently stamp every
-      //     workspace-member submission as Anonymous (image #48
-      //     regression). The user can re-enable anonymous via the
-      //     toggle, which auto-promotes back to Public.
-      //   * Workspace → Workspace / Closed → preserve `anonymous` so
-      //     a deliberate Workspace+Anonymous combination set on the
-      //     desktop stays intact when round-tripped through the web.
-      let anonymous: boolean;
-
-      if (tier === 'public') {
-        anonymous = true;
-      } else if (tier === 'workspace' && info.tier === 'public') {
-        anonymous = false;
-      } else {
-        anonymous = info.anonymous;
-      }
-
+      // Anonymous coercion is intentionally minimal — Notion-parity
+      // model (Image #51): the toggle controls anonymous, the picker
+      // controls tier, they do not bleed.
+      //   * Public → forces anonymous=true (cloud also forces it; the
+      //     respondent doesn't carry a session, so identity stamping
+      //     is mechanically impossible). Mirror it client-side so the
+      //     UI never shows a stale snapshot.
+      //   * Workspace / Closed → preserve `info.anonymous`. A
+      //     workspace-only form that hides respondent identity is a
+      //     valid combination (e.g. anonymous team surveys); flipping
+      //     tier through the picker must not silently re-identify
+      //     submissions.
+      const anonymous = tier === 'public' ? true : info.anonymous;
       const submission_access = coerceSubmissionAccess(
         tier,
         anonymous,
@@ -347,27 +339,20 @@ export function useFormShare(): FormShareState {
     async (value: boolean) => {
       if (!info) return;
       if (info.tier === 'public') return; // cloud forces it
-      // Auto-promote tier→Public when Anonymous flips ON under Workspace.
-      // "Anonymous" colloquially means "anyone can fill out"; without
-      // this the share link would still 401 anonymous traffic and the
-      // toggle would feel like a no-op. Mirror of the desktop
-      // `FormShareController.setAnonymous` promotion rule.
-      const promoteTier = value && info.tier === 'workspace';
-      const nextTier: FormShareTier = promoteTier ? 'public' : info.tier;
+      // No tier promotion — Notion-parity. Anonymous under Workspace
+      // tier is a first-class state (image #51: signed-in workspace
+      // members submit, but their identity is not recorded in the
+      // Respondent column). The earlier auto-promote-to-Public rule
+      // was incorrect: it surfaced a Public form for users who
+      // explicitly wanted Workspace + Anonymous (and triggered the
+      // image #48 confusion when they switched back).
       const submission_access = coerceSubmissionAccess(
-        nextTier,
+        info.tier,
         value,
         info.submission_access,
       );
-      const delta: {
-        tier?: FormShareTier;
-        anonymous: boolean;
-        submission_access: FormSubmissionAccess;
-      } = { anonymous: value, submission_access };
 
-      if (promoteTier) delta.tier = 'public';
-
-      await patch(delta);
+      await patch({ anonymous: value, submission_access });
     },
     [info, patch],
   );
