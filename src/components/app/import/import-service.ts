@@ -3,24 +3,17 @@ import * as Y from 'yjs';
 import { getCollab, updateCollab } from '@/application/services/js-services/http/collab-api';
 import {
   cancelDatabaseCsvImportTask,
+  cancelImportTask,
   createDatabaseCsvImportTask,
+  createNotionImportTask,
   getDatabaseCsvImportStatus,
+  uploadImportFile,
+  uploadImportFileMultipart,
   uploadDatabaseCsvImportFile,
 } from '@/application/services/js-services/http/import-api';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
-import {
-  deleteBlock,
-  getBlock,
-  getChildrenArray,
-  getPageId,
-} from '@/application/slate-yjs/utils/yjs';
-import {
-  DatabaseCsvImportLayout,
-  DatabaseCsvImportMode,
-  Types,
-  YjsEditorKey,
-  YSharedRoot,
-} from '@/application/types';
+import { deleteBlock, getBlock, getChildrenArray, getPageId } from '@/application/slate-yjs/utils/yjs';
+import { DatabaseCsvImportLayout, DatabaseCsvImportMode, Types, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { parsedBlockToSlateElement } from '@/components/app/import/markdown-to-blocks';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 import { calculateMd5 } from '@/utils/md5';
@@ -41,17 +34,10 @@ export function stripFileExtension(name: string): string {
  * locally with `slateContentInsertToYData`, and PUT the encoded update back via `updateCollab`.
  * The page must already exist (created via PageService.add by the caller).
  */
-export async function populateDocumentWithMarkdown(
-  workspaceId: string,
-  viewId: string,
-  file: File,
-): Promise<void> {
+export async function populateDocumentWithMarkdown(workspaceId: string, viewId: string, file: File): Promise<void> {
   // Fetch the file text and the (empty) page collab in parallel — they're independent
   // and the markdown parse is much cheaper than either round trip.
-  const [text, collab] = await Promise.all([
-    file.text(),
-    getCollab(workspaceId, viewId, Types.Document),
-  ]);
+  const [text, collab] = await Promise.all([file.text(), getCollab(workspaceId, viewId, Types.Document)]);
   const blocks = parseMarkdown(text);
 
   if (blocks.length === 0) return;
@@ -95,9 +81,21 @@ export interface ImportCsvResult {
   viewId: string;
 }
 
+export interface ImportNotionInput {
+  workspaceId: string;
+  parentViewId: string;
+  file: File;
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}
+
+export interface ImportNotionResult {
+  taskId: string;
+}
+
 export class ImportAbortError extends Error {
   constructor() {
-    super('CSV import aborted');
+    super('Import aborted');
     this.name = 'ImportAbortError';
   }
 }
@@ -164,6 +162,41 @@ export async function importCsvAsDatabase(input: ImportCsvInput): Promise<Import
     void cancelDatabaseCsvImportTask(workspaceId, task.task_id).catch(noop);
     throw err;
   }
+}
+
+/**
+ * Upload a Notion export zip into an existing workspace under the selected view.
+ * The server processes the imported workspace asynchronously after upload.
+ */
+export async function importNotionZipToView(input: ImportNotionInput): Promise<ImportNotionResult> {
+  const { workspaceId, parentViewId, file, onProgress, signal } = input;
+
+  throwIfAborted(signal);
+  const md5_base64 = await calculateMd5(file);
+
+  throwIfAborted(signal);
+  const task = await createNotionImportTask(workspaceId, parentViewId, {
+    content_length: file.size,
+    md5_base64,
+  });
+
+  try {
+    throwIfAborted(signal);
+    if (task.multipart) {
+      await uploadImportFileMultipart(file, task.multipart, onProgress ?? noopProgress);
+    } else {
+      await uploadImportFile(task.presignedUrl, file, onProgress ?? noopProgress);
+    }
+
+    return { taskId: task.taskId };
+  } catch (err) {
+    void cancelImportTask(task.taskId).catch(noop);
+    throw err;
+  }
+}
+
+function noopProgress(): void {
+  /* swallow */
 }
 
 function noop(): void {
