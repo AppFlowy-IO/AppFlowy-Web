@@ -29,6 +29,31 @@ Feature: Form Share End-to-End
     When I switch back to the authoring tab
     Then the respondent for the row with name "workspace-identified-check" is identified
 
+  Scenario: Same share link can be used to post N responses in a row
+    # Stress-test the idempotency-key rotation: a single tab on the
+    # same share URL submits 5 responses back-to-back via the
+    # "Submit another response" loop. Each click must produce a fresh
+    # row in the source grid — neither the cloud's `(token, idempotency_key)`
+    # dedup nor any local state leakage may swallow a submission.
+    #
+    # Default Grid seeds 3 rows; +5 submissions = 8 rows. The names
+    # are sequenced (`multi-submit-N`) so each row is individually
+    # verifiable.
+    When I add a "RichText" question
+    And I open the share popover
+    And I switch the share tier to "public"
+    And I copy the share URL from the popover
+    And I open the share URL in a fresh anonymous tab
+
+    Then the public form body is visible
+    When I submit the public form 5 times with name prefix "multi-submit-"
+
+    # All 5 submissions must have landed.
+    When I switch back to the authoring tab
+    Then the source grid has at least 8 rows
+    And the respondent for the row with name "multi-submit-1" is anonymous
+    And the respondent for the row with name "multi-submit-5" is anonymous
+
   Scenario: Submit another response lands a second row (idempotency key rotates)
     # Regression for the "submit again does nothing" symptom: the
     # `idempotencyKey` was initialized once on mount and reused on the

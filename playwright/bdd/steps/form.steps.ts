@@ -398,6 +398,41 @@ When('I click submit another response', async ({ page }) => {
     .click();
 });
 
+When(
+  'I submit the public form {int} times with name prefix {string}',
+  async ({ page }, count: number, prefix: string) => {
+    // Loop: fill → submit → wait for confirmation → click submit-another
+    // → fill again. On iteration N, the form body must be visible
+    // (resetSubmitState ran). On the last iteration we stop at the
+    // confirmation screen (no extra submit-another click) so subsequent
+    // assertions can read the final state.
+    const respondent = getRespondent(page);
+
+    for (let i = 1; i <= count; i += 1) {
+      const value = `${prefix}${i}`;
+      const textQuestion = PublicFormSelectors.questionByKind(respondent, 'text').first();
+
+      await expect(textQuestion).toBeVisible({ timeout: 10000 });
+      await textQuestion.locator('input, textarea').first().fill(value);
+      await PublicFormSelectors.submitButton(respondent).click();
+      await expect(PublicFormSelectors.confirmation(respondent)).toBeVisible({
+        timeout: 15000,
+      });
+
+      if (i < count) {
+        await respondent
+          .getByRole('button', { name: /Submit another response/i })
+          .click();
+        // After clicking, the form body re-mounts. Wait for the next
+        // iteration's `toBeVisible` poll to settle on the input.
+        await expect(PublicFormSelectors.body(respondent)).toBeVisible({
+          timeout: 10000,
+        });
+      }
+    }
+  },
+);
+
 When('I switch back to the authoring tab', async ({ page }) => {
   // The authoring tab is `page` itself — Playwright doesn't auto-focus
   // a new tab the way a browser would, but the WebSocket on `page` is
