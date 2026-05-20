@@ -126,3 +126,27 @@ Feature: Form Share End-to-End
     Then the access banner reflects the "closed" tier
     When I open the share URL in a fresh anonymous tab
     Then the public form shows the closed page
+
+  Scenario: Form builder with no questions yields an empty public form
+    # Regression for the "shared link still shows every database field
+    # even though the Form-builder UI says 'No questions yet'" bug.
+    #
+    # `signInAddProAndOpenForm` (used by the Background) already runs
+    # `dismissAutoCreateDialogIfPresent`, which clicks "Start from
+    # scratch" on the auto-create modal. That click writes the
+    # `__form_decided__` sentinel into the form view's
+    # `form_field_settings` map — exactly the state the user-reported
+    # bug starts from. We then NEVER call "I add a ... question".
+    #
+    # Before the cloud projection fix, the public schema fell through
+    # to the legacy default-include behavior and exposed every database
+    # property (Name / Type / Done for the default seed). After the fix,
+    # the sentinel's presence flips the projection to opt-in semantics,
+    # and the public form lands with zero question cards.
+    When I open the share popover
+    And I switch the share tier to "public"
+    And I copy the share URL from the popover
+    And I open the share URL in a fresh anonymous tab
+
+    Then the public form body is visible
+    And the public form has no question cards

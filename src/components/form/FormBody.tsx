@@ -1,9 +1,14 @@
 import { useCallback, useState } from 'react';
 import { v4 as uuid } from 'uuid';
 
-import { submitPublicForm } from '@/application/services/js-services/http';
+import {
+  requestPublicFormUploadUrl,
+  submitPublicForm,
+  uploadFormFileToPresignedUrl,
+} from '@/application/services/js-services/http';
 import {
   FormAnswerValue,
+  FormFileAttachment,
   FormSubmissionPayload,
   FormSubmitResponse,
   PublicFormSchema,
@@ -27,19 +32,25 @@ import { FormQuestion } from './FormQuestion';
 export function FormBody({
   token,
   schema,
+  previewMode = false,
 }: {
   token: string;
   schema: PublicFormSchema;
+  /**
+   * When true, the submit handler runs client-side validation and then
+   * lands on the confirmation screen WITHOUT hitting the cloud submit
+   * endpoint. Used by the form-builder Preview dialog where the
+   * caller passes a synthetic schema and a sentinel `token='preview'`
+   * — the cloud has no such token and would 404 (user-reported in
+   * Image #67). Mirrors the desktop preview's `_onSubmit` no-op that
+   * just shows a "Submission valid — looks good!" toast.
+   */
+  previewMode?: boolean;
 }) {
-  const [answers, setAnswers] = useState<Record<string, FormAnswerValue>>(
-    () => seedAnswers(schema.questions),
-  );
+  const [answers, setAnswers] = useState<Record<string, FormAnswerValue>>(() => seedAnswers(schema.questions));
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [submitState, setSubmitState] = useState<
-    | { kind: 'idle' }
-    | { kind: 'submitting' }
-    | { kind: 'submitted' }
-    | { kind: 'error'; message: string }
+    { kind: 'idle' } | { kind: 'submitting' } | { kind: 'submitted' } | { kind: 'error'; message: string }
   >({ kind: 'idle' });
 
   // Idempotency contract:
@@ -60,22 +71,19 @@ export function FormBody({
   // `handleSubmitAnother`.
   const [idempotencyKey, setIdempotencyKey] = useState(() => uuid());
 
-  const handleChange = useCallback(
-    (questionId: string, value: FormAnswerValue) => {
-      setAnswers((prev) => ({ ...prev, [questionId]: value }));
-      // Clear any inline error as the user starts editing the field —
-      // standard form pattern; avoids the "red ink lingers while typing"
-      // anti-pattern.
-      setFieldErrors((prev) => {
-        if (!(questionId in prev)) return prev;
-        const next = { ...prev };
+  const handleChange = useCallback((questionId: string, value: FormAnswerValue) => {
+    setAnswers((prev) => ({ ...prev, [questionId]: value }));
+    // Clear any inline error as the user starts editing the field —
+    // standard form pattern; avoids the "red ink lingers while typing"
+    // anti-pattern.
+    setFieldErrors((prev) => {
+      if (!(questionId in prev)) return prev;
+      const next = { ...prev };
 
-        delete next[questionId];
-        return next;
-      });
-    },
-    [],
-  );
+      delete next[questionId];
+      return next;
+    });
+  }, []);
 
   const handleSubmit = useCallback(async () => {
     // Client-side required check — runs before the network round-trip so
@@ -89,15 +97,24 @@ export function FormBody({
       return;
     }
 
+    // Preview short-circuit: validation passed, jump straight to the
+    // confirmation screen. The token in preview mode is the sentinel
+    // string `'preview'` which has no cloud row and would 404 on the
+    // submit endpoint — see the prop docstring for the bug report
+    // this guards against.
+    if (previewMode) {
+      setSubmitState({ kind: 'submitted' });
+      return;
+    }
+
     setSubmitState({ kind: 'submitting' });
-    const payload: FormSubmissionPayload = { answers };
 
     try {
-      const res: FormSubmitResponse = await submitPublicForm(
-        token,
-        payload,
-        idempotencyKey,
-      );
+      const uploadedAnswers = await uploadPendingFileAnswers(token, answers);
+
+      setAnswers(uploadedAnswers);
+      const payload: FormSubmissionPayload = { answers: stripLocalFileData(uploadedAnswers) };
+      const res: FormSubmitResponse = await submitPublicForm(token, payload, idempotencyKey);
 
       if (res.kind === 'invalid') {
         setFieldErrors(res.field_errors);
@@ -107,12 +124,11 @@ export function FormBody({
 
       setSubmitState({ kind: 'submitted' });
     } catch (err) {
-      const message =
-        (err as { message?: string })?.message ?? 'Submission failed';
+      const message = (err as { message?: string })?.message ?? 'Submission failed';
 
       setSubmitState({ kind: 'error', message });
     }
-  }, [answers, idempotencyKey, schema.questions, token]);
+  }, [answers, idempotencyKey, previewMode, schema.questions, token]);
 
   const handleSubmitAnother = useCallback(() => {
     setAnswers(seedAnswers(schema.questions));
@@ -136,10 +152,7 @@ export function FormBody({
   }
 
   return (
-    <div
-      data-testid='public-form-body'
-      className='mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10'
-    >
+    <div data-testid='public-form-body' className='mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10'>
       <header className='flex flex-col gap-2'>
         {schema.icon && (
           <div className='text-3xl' aria-hidden>
@@ -147,9 +160,7 @@ export function FormBody({
           </div>
         )}
         <h1 className='text-3xl font-bold'>{schema.title}</h1>
-        {schema.description && (
-          <p className='text-text-caption'>{schema.description}</p>
-        )}
+        {schema.description && <p className='text-text-caption'>{schema.description}</p>}
       </header>
 
       <div className='flex flex-col gap-6'>
@@ -165,57 +176,97 @@ export function FormBody({
       </div>
 
       <div className='flex flex-col items-start gap-2'>
-        {submitState.kind === 'error' && (
-          <p className='text-sm text-fill-default'>{submitState.message}</p>
-        )}
-        <Button
-          data-testid='public-form-submit'
-          onClick={handleSubmit}
-          disabled={submitState.kind === 'submitting'}
-        >
+        {submitState.kind === 'error' && <p className='text-sm text-fill-default'>{submitState.message}</p>}
+        <Button data-testid='public-form-submit' onClick={handleSubmit} disabled={submitState.kind === 'submitting'}>
           {submitState.kind === 'submitting' ? 'Submitting…' : schema.submit_label}
         </Button>
       </div>
 
-      {/*
-        Safety footer — disclaimer + abuse-report link, mirrored on the
-        desktop preview (`form_preview_page.dart::_SafetyFooter`). Always
-        rendered, regardless of `hide_branding`, since `hide_branding`
-        toggles the "Built with AppFlowy" pill, not the abuse policy.
-      */}
-      <SafetyFooter />
-
-      {!schema.hide_branding && (
-        <p className='pt-2 text-center text-xs text-text-caption'>
-          Built with AppFlowy
-        </p>
-      )}
-    </div>
-  );
-}
-
-function SafetyFooter() {
-  return (
-    <div className='flex flex-col items-start gap-1 pt-6 text-xs text-text-caption'>
-      <p>
-        Never submit sensitive personal information, like passwords, through
-        AppFlowy Forms.
+      <p className='pt-6 text-xs text-text-caption'>
+        Never submit sensitive personal information, like passwords, through AppFlowy Forms.
       </p>
-      <a
-        href='https://appflowy.com/report-abuse'
-        target='_blank'
-        rel='noopener noreferrer'
-        className='underline hover:text-text-primary'
-      >
-        Report abuse
-      </a>
     </div>
   );
 }
 
-function seedAnswers(
-  questions: PublicQuestion[],
-): Record<string, FormAnswerValue> {
+async function uploadPendingFileAnswers(
+  token: string,
+  answers: Record<string, FormAnswerValue>
+): Promise<Record<string, FormAnswerValue>> {
+  const out: Record<string, FormAnswerValue> = {};
+
+  for (const [questionId, answer] of Object.entries(answers)) {
+    if (answer.kind !== 'files') {
+      out[questionId] = answer;
+      continue;
+    }
+
+    const uploadedFiles: FormFileAttachment[] = [];
+
+    for (const attachment of answer.files) {
+      uploadedFiles.push(await uploadPendingFile(token, attachment));
+    }
+
+    out[questionId] = { kind: 'files', files: uploadedFiles };
+  }
+
+  return out;
+}
+
+async function uploadPendingFile(token: string, attachment: FormFileAttachment): Promise<FormFileAttachment> {
+  if (attachment.file_id) {
+    return submittedFileAttachment(attachment);
+  }
+
+  if (!attachment.file) {
+    throw new Error(`Attachment "${attachment.name}" is missing local file data`);
+  }
+
+  const mint = await requestPublicFormUploadUrl(token, {
+    file_name: attachment.name,
+    content_length: attachment.file.size,
+    content_type: attachment.file.type || undefined,
+  });
+
+  await uploadFormFileToPresignedUrl(mint.upload_url, attachment.file);
+
+  return {
+    file_id: mint.file_id,
+    name: attachment.name,
+    size: attachment.file.size,
+  };
+}
+
+function stripLocalFileData(answers: Record<string, FormAnswerValue>): Record<string, FormAnswerValue> {
+  const out: Record<string, FormAnswerValue> = {};
+
+  for (const [questionId, answer] of Object.entries(answers)) {
+    if (answer.kind === 'files') {
+      out[questionId] = {
+        kind: 'files',
+        files: answer.files.map(submittedFileAttachment),
+      };
+    } else {
+      out[questionId] = answer;
+    }
+  }
+
+  return out;
+}
+
+function submittedFileAttachment(attachment: FormFileAttachment): FormFileAttachment {
+  if (!attachment.file_id) {
+    throw new Error(`Attachment "${attachment.name}" was not uploaded`);
+  }
+
+  return {
+    file_id: attachment.file_id,
+    name: attachment.name,
+    size: attachment.size,
+  };
+}
+
+function seedAnswers(questions: PublicQuestion[]): Record<string, FormAnswerValue> {
   const out: Record<string, FormAnswerValue> = {};
 
   for (const q of questions) {
@@ -238,11 +289,12 @@ function defaultAnswer(q: PublicQuestion): FormAnswerValue {
     case 'date':
       return { kind: 'date', iso: null };
     case 'files':
+      return { kind: 'files', files: [] };
     case 'person':
     case 'relation':
-      // Phase-2 types render disabled inputs; the seeded value is a
-      // typed text-empty so the answer map always has a value for every
-      // question id (simpler than `undefined`).
+      // Still-unsupported respondent kinds — render disabled inputs; the
+      // seeded value is a typed text-empty so the answer map always has a
+      // value for every question id (simpler than `undefined`).
       return { kind: 'text', value: '' };
     case 'text':
     case 'url':
@@ -255,7 +307,7 @@ function defaultAnswer(q: PublicQuestion): FormAnswerValue {
 
 function collectLocalErrors(
   questions: PublicQuestion[],
-  answers: Record<string, FormAnswerValue>,
+  answers: Record<string, FormAnswerValue>
 ): Record<string, string> {
   const out: Record<string, string> = {};
 
@@ -289,6 +341,8 @@ function isEmpty(v: FormAnswerValue | undefined): boolean {
       return v.option_ids.length === 0;
     case 'date':
       return v.iso === null;
+    case 'files':
+      return v.files.length === 0;
   }
 }
 

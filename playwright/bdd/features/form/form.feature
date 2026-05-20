@@ -62,3 +62,46 @@ Feature: Form Authoring
     Then the form has 8 question cards
     When I open the form preview
     Then the form preview dialog is visible
+
+  Scenario: Submitting from the preview dialog does not hit the cloud
+    # Regression for "preview submit sends a real POST to
+    # /api/workspace/.../public-form/preview" — the synthetic schema
+    # passes `token='preview'` which has no row, so the cloud returns
+    # 404 and the FormBody surfaces "Request failed with status code
+    # 404" beside the Submit button (user-reported in Image #67).
+    #
+    # The fix passes `previewMode={true}` from FormPreviewButton into
+    # FormBody so submit short-circuits to the confirmation screen
+    # after client-side validation, with no network call. This
+    # scenario asserts both halves: (1) clicking Submit reaches the
+    # confirmation screen, and (2) no submit request leaves the page.
+    Given a Grid with a Form tab is open
+    When I add a "SingleSelect" question
+    And I open the form preview
+    Then the form preview dialog is visible
+    When I record network calls to the public-form submit endpoint
+    And I submit the form preview
+    Then the form preview confirmation is visible
+    And no public-form submit request was sent
+
+  Scenario: Adding a Form tab via "+" appends to the right of existing tabs
+    # Regression for the cloud bug where POST
+    # /page-view/{}/database-view dropped `prev_view_id` across four
+    # layers, causing `apply_add_view` to interpret the resulting
+    # `None` as "prepend at index 0". Result: every tab the web added
+    # via the `+` button reversed into the first slot, so a fresh
+    # database that started as [Grid] became [Form, Grid] after one
+    # add and [Form2, Form, Grid] after a second.
+    #
+    # This scenario exercises the public web flow (sign in → fresh
+    # Grid → add Form via tab-bar) and asserts the tab bar order from
+    # left to right matches the insertion order — Grid first (seeded),
+    # Form second (added via +). Pre-fix this would fail with the
+    # tabs in reverse order.
+    Given a Grid is open as a starter database
+    When I add a Form view via the tab bar without dismissing modals
+    And I click start from scratch in the auto-create form questions dialog
+    Then the auto-create form questions dialog is hidden
+    And the database view tab bar has 2 tabs
+    And database view tab 1 is a "Grid" layout
+    And database view tab 2 is a "Form" layout

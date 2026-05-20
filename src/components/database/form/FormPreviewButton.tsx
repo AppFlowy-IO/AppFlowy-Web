@@ -143,7 +143,7 @@ export function FormPreviewButton() {
       >
         {open && schema && (
           <div data-testid='form-preview-dialog'>
-            <FormBody token='preview' schema={schema} />
+            <FormBody token='preview' schema={schema} previewMode />
           </div>
         )}
       </Dialog>
