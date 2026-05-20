@@ -30,6 +30,21 @@ Feature: Form Share Settings (Anonymous + Submission Access)
     And the access banner reports anonymous responses as "true"
     And the access banner reports submission access as "none"
 
+  Scenario: Switching from Public back to Workspace resets anonymous to false
+    # Regression for image #48: workspace-tier forms were stamping
+    # every submission as Anonymous because the previous
+    # Public→Workspace path preserved `anonymous=true` in flight.
+    # `setTier('workspace')` must reset to identified responses so a
+    # workspace member's submission stamps with their identity.
+    When I open the share popover
+    And I toggle the Anonymous switch
+    Then the access banner reflects the "public" tier
+    And the access banner reports anonymous responses as "true"
+
+    When I switch the share tier to "workspace"
+    Then the access banner reflects the "workspace" tier
+    And the access banner reports anonymous responses as "false"
+
   Scenario: Submission access "view" is coerced to "none" by the cloud
     # The cloud's `supported_submission_access` (`share.rs:86`) currently
     # always returns `FormSubmissionAccess::None` — `view` was scoped

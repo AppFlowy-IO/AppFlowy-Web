@@ -311,7 +311,27 @@ export function useFormShare(): FormShareState {
   const setTier = useCallback(
     async (tier: FormShareTier) => {
       if (!info) return;
-      const anonymous = tier === 'public' ? true : info.anonymous;
+      // Anonymous coercion at tier transition:
+      //   * Public → always anonymous=true (cloud also forces).
+      //   * Public → Workspace → reset anonymous to false. The user
+      //     is explicitly opting back into identified submissions;
+      //     leaving the toggle ON would silently stamp every
+      //     workspace-member submission as Anonymous (image #48
+      //     regression). The user can re-enable anonymous via the
+      //     toggle, which auto-promotes back to Public.
+      //   * Workspace → Workspace / Closed → preserve `anonymous` so
+      //     a deliberate Workspace+Anonymous combination set on the
+      //     desktop stays intact when round-tripped through the web.
+      let anonymous: boolean;
+
+      if (tier === 'public') {
+        anonymous = true;
+      } else if (tier === 'workspace' && info.tier === 'public') {
+        anonymous = false;
+      } else {
+        anonymous = info.anonymous;
+      }
+
       const submission_access = coerceSubmissionAccess(
         tier,
         anonymous,

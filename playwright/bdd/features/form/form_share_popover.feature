@@ -13,7 +13,12 @@ Feature: Form Share Popover
   # path stays correct.
 
   Scenario: Free workspace sees the upgrade prompt instead of the share rows
-    Given a Grid with a Form tab is open
+    # The cloud's `is_workspace_on_paid_plan` short-circuits to true
+    # for debug builds (`plan_check.rs`), so the natural test path is
+    # gone in dev. This scenario route-mocks the form-share endpoints
+    # to return FeatureNotAvailable so the FE's `plan_required`
+    # classifier branch still has coverage.
+    Given a Grid with a Form tab is open on a simulated Free workspace
     When I open the share popover
     Then the share popover shows the upgrade prompt
     And the share popover does not show the loading skeleton

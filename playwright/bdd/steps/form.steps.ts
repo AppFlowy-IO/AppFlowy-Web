@@ -12,6 +12,8 @@ import {
   openFormPreview,
   openSharePopover,
   openSharePageInNewTab,
+  openSharePageInSameContext,
+  readRespondentForRowByName,
   readShareUrl,
   selectShareTier,
   selectSubmissionAccess,
@@ -41,6 +43,37 @@ Before(async ({ page }) => {
 Given('a Grid with a Form tab is open', async ({ page, request }) => {
   await signInAndAddFormViewViaTabBar(page, request, generateRandomEmail());
 });
+
+Given(
+  'a Grid with a Form tab is open on a simulated Free workspace',
+  async ({ page, request }) => {
+    // Intercept the form-share endpoints and return a FeatureNotAvailable
+    // envelope so the FE classifier resolves to `plan_required`. The
+    // cloud's `is_workspace_on_paid_plan` short-circuits to `Ok(true)`
+    // for debug builds (so devs aren't blocked by the gate), which is
+    // the intended dev UX but removes the natural testbed for this
+    // path. The route-mock restores it for the one scenario that
+    // needs to exercise the upgrade-prompt branch.
+    await page.route('**/form/share', async (route) => {
+      const method = route.request().method();
+
+      if (method === 'GET' || method === 'POST' || method === 'PATCH') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            code: 1067,
+            message: 'Form share authoring requires a Pro or Team plan',
+          }),
+        });
+        return;
+      }
+
+      await route.fallback();
+    });
+    await signInAndAddFormViewViaTabBar(page, request, generateRandomEmail());
+  },
+);
 
 // ── Toolbar / banner assertions ─────────────────────────────────────
 
@@ -313,6 +346,28 @@ When(
   },
 );
 
+When(
+  'I open the share URL in the same context',
+  async ({ page }) => {
+    // Same BrowserContext = same cookies = same GoTrue session, so
+    // the cloud sees the request as the authoring user. Required for
+    // Workspace-tier respondent identification — a fresh-context
+    // submission would 401 against the auth_required gate.
+    const state = sharedState.get(page);
+
+    if (!state?.capturedUrl) {
+      throw new Error('share URL was not captured before opening the tab');
+    }
+
+    const respondent = await openSharePageInSameContext(
+      page,
+      state.capturedUrl,
+    );
+
+    sharedState.set(page, { ...state, respondentPage: respondent });
+  },
+);
+
 function getRespondent(page: Page): Page {
   const r = sharedState.get(page)?.respondentPage;
 
@@ -373,6 +428,43 @@ Then(
     const count = await waitForGridRowCount(page, expected);
 
     expect(count).toBeGreaterThanOrEqual(expected);
+  },
+);
+
+Then(
+  'the respondent for the row with name {string} is identified',
+  async ({ page }, nameSubstring: string) => {
+    // Flip to the Grid tab so the submission row is in the rendered
+    // DOM (it lands on the underlying database, not the Form view's
+    // projection).
+    await DatabaseViewSelectors.viewTab(page).first().click();
+    const respondentText = await readRespondentForRowByName(
+      page,
+      nameSubstring,
+    );
+
+    // "Identified" = NOT the anonymous sentinel. We deliberately don't
+    // pin the exact display name because the GoTrue profile that
+    // signed in is whatever `generateRandomEmail()` produced for this
+    // run.
+    expect(respondentText).not.toMatch(/^[·\s]*Anonymous[·\s]*$/);
+    expect(respondentText.replace(/\s+/g, '').length).toBeGreaterThan(0);
+  },
+);
+
+Then(
+  'the respondent for the row with name {string} is anonymous',
+  async ({ page }, nameSubstring: string) => {
+    await DatabaseViewSelectors.viewTab(page).first().click();
+    const respondentText = await readRespondentForRowByName(
+      page,
+      nameSubstring,
+    );
+
+    // The Person cell renders `·Anonymous` for the nil-UUID sentinel
+    // (bullet separator + "Anonymous" label). Strip the bullet/space
+    // ornamentation to assert on the bare token.
+    expect(respondentText.replace(/[·\s]/g, '')).toBe('Anonymous');
   },
 );
 

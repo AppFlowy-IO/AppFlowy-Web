@@ -403,6 +403,27 @@ export async function openSharePageInNewTab(
 }
 
 /**
+ * Visit the public share URL in a new tab on the SAME BrowserContext
+ * so the request carries the authoring user's session cookies. This
+ * is the path that exercises identified Respondent stamping: for a
+ * Workspace-tier form with anonymous=false, the cloud reads the
+ * caller's GoTrue session, looks up the workspace member, and stamps
+ * the new submission row's Respondent column with that user's
+ * Person reference. Manual repro on /form/<token>: image #48 shows
+ * "Nathan Foo" once Anonymous toggle is OFF and the respondent is a
+ * workspace member.
+ */
+export async function openSharePageInSameContext(
+  page: Page,
+  shareUrl: string,
+): Promise<Page> {
+  const newTab = await page.context().newPage();
+
+  await newTab.goto(shareUrl, { waitUntil: 'domcontentloaded' });
+  return newTab;
+}
+
+/**
  * Switch back to the form's Responses Grid tab and return the count of
  * "real" rows (i.e. rows the user has filled — excludes the "add new
  * row" placeholder cell). Used to verify a submission ended up in the
@@ -448,4 +469,63 @@ export async function waitForGridRowCount(
     { timeout: 15000 },
   );
   return DatabaseGridSelectors.rows(page).count();
+}
+
+/**
+ * Find the grid row whose Name (first data cell) contains
+ * `nameSubstring`, read its Respondent cell text, and return it. The
+ * Respondent column is the rightmost data cell — its visible text is
+ * either `Anonymous` (nil-UUID sentinel) or the workspace member's
+ * display name doubled with the avatar initial (e.g. `NNathan Foo`).
+ *
+ * Polls up to 10s — submissions ride the YJS collab stream back to
+ * the authoring tab, which can lag a beat behind the cloud's
+ * persistence.
+ */
+export async function readRespondentForRowByName(
+  page: Page,
+  nameSubstring: string,
+): Promise<string> {
+  return page.waitForFunction(
+    (substr) => {
+      const rows = Array.from(
+        document.querySelectorAll('[data-testid^="grid-row-"]'),
+      );
+
+      for (const row of rows) {
+        const cells = row.querySelectorAll('[data-testid^="grid-cell-"]');
+
+        if (cells.length === 0) continue;
+        // Scan every cell for the submission's text — a Form-added
+        // question creates a new database field at the end of the
+        // column order, so the submission can land in any cell.
+        let matched = false;
+
+        for (let i = 0; i < cells.length; i += 1) {
+          if (cells[i].textContent?.includes(substr)) {
+            matched = true;
+            break;
+          }
+        }
+
+        if (!matched) continue;
+        // Find the Person cell within this row. The Person field
+        // type renders an inner `<div data-testid="person-cell-…">`
+        // wrapper that's unique to Person columns — the Respondent
+        // field is a Person field seeded by `make_default_form`, so
+        // there's exactly one per row. Anchoring on this testid
+        // is more robust than "last grid-cell" because additional
+        // Form question fields push Respondent out of the last
+        // position.
+        const personCell = row.querySelector('[data-testid^="person-cell-"]');
+
+        if (!personCell) continue;
+        return personCell.textContent ?? '';
+      }
+
+      return false;
+    },
+    nameSubstring,
+    { timeout: 15000 },
+  ).then((handle) => handle.jsonValue() as Promise<string>);
 }
