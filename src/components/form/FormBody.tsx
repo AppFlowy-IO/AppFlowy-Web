@@ -42,12 +42,23 @@ export function FormBody({
     | { kind: 'error'; message: string }
   >({ kind: 'idle' });
 
+  // Idempotency contract:
+  //   * One key per submission ATTEMPT — same key reused across retries
+  //     of the same attempt (network blip + automatic retry) so the
+  //     cloud's `(token, idempotency_key)` dedup returns the original
+  //     submission_id instead of creating a duplicate row.
+  //   * Fresh key on "Submit another response" — the user is explicitly
+  //     starting a new attempt; without rotation the cloud would dedup
+  //     the second submit against the first and silently drop it
+  //     (user-reported: "Submit another response" looked like it
+  //     worked but no new row appeared).
+  //
   // `useState` lazy init (not `useMemo`) — React explicitly does not
   // guarantee memo retention, so an empty-deps memo can rerun under
-  // strict mode or future React releases. State init is retained for
-  // the lifetime of the component, which is the actual guarantee we
-  // need for submit idempotency.
-  const [idempotencyKey] = useState(() => uuid());
+  // strict mode. State init is retained for the lifetime of the
+  // component except when we explicitly call `setIdempotencyKey` from
+  // `handleSubmitAnother`.
+  const [idempotencyKey, setIdempotencyKey] = useState(() => uuid());
 
   const handleChange = useCallback(
     (questionId: string, value: FormAnswerValue) => {
@@ -107,6 +118,9 @@ export function FormBody({
     setAnswers(seedAnswers(schema.questions));
     setFieldErrors({});
     setSubmitState({ kind: 'idle' });
+    // Rotate the idempotency key so the cloud treats this as a fresh
+    // submission rather than a retry of the previous one.
+    setIdempotencyKey(uuid());
   }, [schema.questions]);
 
   if (submitState.kind === 'submitted') {

@@ -386,6 +386,18 @@ Then('the public form confirmation page is visible', async ({ page }) => {
   ).toBeVisible({ timeout: 15000 });
 });
 
+When('I click submit another response', async ({ page }) => {
+  // The confirmation screen renders "Submit another response" when
+  // `schema.allow_another_response` is true (default for our forms).
+  // Anchor by visible text — there's only one such button on the
+  // confirmation surface.
+  const respondent = getRespondent(page);
+
+  await respondent
+    .getByRole('button', { name: /Submit another response/i })
+    .click();
+});
+
 When('I switch back to the authoring tab', async ({ page }) => {
   // The authoring tab is `page` itself — Playwright doesn't auto-focus
   // a new tab the way a browser would, but the WebSocket on `page` is

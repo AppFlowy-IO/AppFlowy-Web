@@ -29,6 +29,39 @@ Feature: Form Share End-to-End
     When I switch back to the authoring tab
     Then the respondent for the row with name "workspace-identified-check" is identified
 
+  Scenario: Submit another response lands a second row (idempotency key rotates)
+    # Regression for the "submit again does nothing" symptom: the
+    # `idempotencyKey` was initialized once on mount and reused on the
+    # second submit, so the cloud's `(token, idempotency_key)` dedup
+    # returned the original submission's id instead of writing a new
+    # row. `handleSubmitAnother` now rotates the key.
+    When I add a "RichText" question
+    And I open the share popover
+    And I switch the share tier to "public"
+    And I copy the share URL from the popover
+    And I open the share URL in a fresh anonymous tab
+
+    Then the public form body is visible
+    When I fill the first text input with "submit-another-first"
+    And I submit the public form
+    Then the public form confirmation page is visible
+
+    # Click "Submit another response", fill and submit again from the
+    # SAME respondent tab (same idempotency window if the key didn't
+    # rotate).
+    When I click submit another response
+    Then the public form body is visible
+    When I fill the first text input with "submit-another-second"
+    And I submit the public form
+    Then the public form confirmation page is visible
+
+    # Both submissions must have landed — the source grid had 3 default
+    # rows; +2 submissions = 5.
+    When I switch back to the authoring tab
+    Then the source grid has at least 5 rows
+    And the respondent for the row with name "submit-another-first" is anonymous
+    And the respondent for the row with name "submit-another-second" is anonymous
+
   Scenario: Public-tier anonymous submission lands as Anonymous and adds a row
     # Reciprocal of the identified path. Switching to Public forces
     # anonymous=true cloud-side; submitting from a fresh BrowserContext
