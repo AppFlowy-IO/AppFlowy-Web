@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 
 import {
+  asBool,
   FORM_DECIDED_SENTINEL,
   FORM_DESCRIPTION,
   FORM_DESCRIPTION_SENTINEL,
@@ -147,20 +148,42 @@ export function createFormWriter(view: YDatabaseView): FormWriter {
     addQuestion(fieldId) {
       txn(() => {
         const map = ensureMap(view);
+        const existing = map.get(fieldId);
 
-        if (map.get(fieldId)) return;
-        // Append-to-bottom semantics. Counting entries (the previous
-        // `currentEntryIds().length` approach) lands at index N which
-        // is correct only when existing entries have contiguous orders
-        // 0..N-1. If a desktop client wrote legacy `FORM_ORDER_LEGACY`
-        // (0xFFFFFFFF) entries or `repackOrder` hasn't run after a
-        // delete, count-based ordering can place the new entry *above*
-        // existing ones in the sorted view. Use max+1 so the new
-        // question is always strictly greater than every existing
-        // order — guaranteeing "bottom" in `decodeSnapshot`'s sort.
+        // Three cases:
+        //   * No entry yet → fall through, create one via `ensureEntry`.
+        //   * Existing entry with `included: true` → already on the form;
+        //     no-op so we don't disturb the user's current ordering.
+        //   * Existing entry with `included: false` → another client (or
+        //     a prior remove) left a stale settings row. Flip it back to
+        //     `included: true` and assign a fresh max-order so the
+        //     respondent UI re-renders it at the bottom. Without this
+        //     branch the picker would no-op silently and the user couldn't
+        //     re-add the question without manual collab editing.
+        if (existing && asBool(existing.get(FORM_INCLUDED), true)) {
+          return;
+        }
+
+        // Repack legacy entries before computing the append position.
+        // `maxExistingOrder()` deliberately ignores `FORM_ORDER_LEGACY`
+        // (0xFFFFFFFF) entries — without a repack a form composed entirely
+        // of legacy entries makes max=-1, the new question gets order=0,
+        // and `decodeSnapshot` sorts it BEFORE the legacy ones (which sort
+        // to the end via the LEGACY sentinel). Repack is gated on
+        // detecting legacy entries to keep the common (already-packed)
+        // case allocation-free.
+        if (hasLegacyOrderEntry(view)) {
+          repackOrder(view);
+        }
+
+        // Append-to-bottom semantics. Use max+1 so the new question is
+        // strictly greater than every existing order — guaranteeing
+        // "bottom" in `decodeSnapshot`'s sort even after concurrent
+        // edits from other clients.
         const order = maxExistingOrder(view) + 1;
         const entry = ensureEntry(view, fieldId);
 
+        entry.set(FORM_INCLUDED, true);
         entry.set(FORM_ORDER, order);
       });
     },
@@ -336,6 +359,38 @@ function repackOrder(view: YDatabaseView) {
 
     entry?.set(FORM_ORDER, idx);
   });
+}
+
+/// True when any non-sentinel entry carries a legacy-order marker
+/// (missing/negative/non-finite/`FORM_ORDER_LEGACY` value of `FORM_ORDER`).
+/// Used by `addQuestion` to decide whether to repack before computing
+/// the append index — without that repack, a form composed entirely of
+/// legacy entries would let the new question land at order=0 (sorting
+/// it BEFORE the legacy ones, which decode to 0xFFFFFFFF and sort to
+/// the end).
+function hasLegacyOrderEntry(view: YDatabaseView): boolean {
+  const map = view.get(YjsDatabaseKey.form_field_settings);
+
+  if (!map) return false;
+  let legacy = false;
+
+  map.forEach((value, key) => {
+    if (legacy) return;
+    if (typeof key !== 'string') return;
+    if (!(value instanceof Y.Map)) return;
+    if (key === FORM_DECIDED_SENTINEL || key === FORM_DESCRIPTION_SENTINEL) return;
+    const raw = value.get(FORM_ORDER);
+
+    if (
+      typeof raw !== 'number' ||
+      !Number.isFinite(raw) ||
+      raw < 0 ||
+      raw === 0xffff_ffff
+    ) {
+      legacy = true;
+    }
+  });
+  return legacy;
 }
 
 /// Largest `FORM_ORDER` across non-sentinel entries. Legacy entries

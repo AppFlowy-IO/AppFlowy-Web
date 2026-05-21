@@ -199,6 +199,16 @@ export function useFormShare(): FormShareState {
 
     let cancelled = false;
 
+    // Reset the prior view's state before bootstrap. Without this, switching
+    // directly between Form tabs would briefly render the previous form's
+    // token/tier in the new popover (and let the user copy/patch it) because
+    // the share controls render whenever `info !== null` — the loading
+    // spinner never gets a chance to show. Errors get cleared for the same
+    // reason: a stale "couldn't load share settings" toast must not survive
+    // a successful bootstrap of a different form.
+    setInfo(null);
+    setError(null);
+    setErrorKind(null);
     setIsLoading(true);
     void (async () => {
       // GET-first path. Cheap when another client has already minted —

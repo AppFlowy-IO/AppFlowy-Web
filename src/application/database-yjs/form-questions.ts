@@ -68,7 +68,9 @@ function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
 }
 
-function asBool(value: unknown, fallback: boolean): boolean {
+// Exported so the writer can apply the same "missing/wrong-type → default"
+// semantics when deciding whether to flip an `included` entry back on.
+export function asBool(value: unknown, fallback: boolean): boolean {
   return typeof value === 'boolean' ? value : fallback;
 }
 
@@ -80,6 +82,7 @@ function asOrder(value: unknown): number {
   if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
     return FORM_ORDER_LEGACY;
   }
+
   return value;
 }
 
@@ -116,6 +119,7 @@ export function readFormLayoutSnapshot(
 ): FormLayoutSnapshot {
   if (!view) return EMPTY_SNAPSHOT;
   const map = view.get(YjsDatabaseKey.form_field_settings);
+
   if (!map) return EMPTY_SNAPSHOT;
   return decodeSnapshot(map);
 }
@@ -142,12 +146,15 @@ export function decodeSnapshot(
       decided = true;
       return;
     }
+
     if (key === FORM_DESCRIPTION_SENTINEL) {
       description = asString(value.get(FORM_DESCRIPTION));
       return;
     }
+
     if (isSentinel(key)) return;
     const entry = decodeEntry(key, value);
+
     if (!entry.included) return;
     entries.push(entry);
   });

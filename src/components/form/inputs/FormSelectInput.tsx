@@ -94,6 +94,7 @@ export function FormSelectInput(props: SingleProps | MultiProps) {
             ) : (
               (() => {
                 const Indicator = selected ? CircleCheck : Circle;
+
                 return (
                   <Indicator
                     size={18}

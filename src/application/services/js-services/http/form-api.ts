@@ -1,3 +1,5 @@
+import axios from 'axios';
+
 import {
   FormSubmissionPayload,
   FormSubmitResponse,
@@ -6,7 +8,7 @@ import {
   PublicFormUploadUrlResponse,
 } from '@/application/types/form';
 
-import { getAxios } from './core';
+import { getAxios, handleAPIError } from './core';
 
 /**
  * Public form HTTP surface — mirror of the actix scope
@@ -43,20 +45,29 @@ export async function getPublicFormSchema(
 ): Promise<PublicFormResponse> {
   // The cloud's public-form endpoints return the schema body directly
   // (not wrapped in the workspace-API `{code, data}` envelope), so we
-  // can't route through `executeAPIRequest`. Validate-and-throw here.
+  // can't route through `executeAPIRequest`. Validate-and-throw here,
+  // but normalize axios failures via `handleAPIError` so callers see an
+  // `APIError` with the real HTTP status — FormView depends on `code`
+  // being 404/410 to render the NotFound/Gone branch.
   const axios = getAxios();
 
   if (!axios) {
     return Promise.reject({ code: -1, message: 'API service not initialized' });
   }
-  const response = await axios.get<PublicFormResponse>(
-    `${PUBLIC_FORM_BASE}/${token}`,
-  );
 
-  if (!response?.data || typeof response.data !== 'object') {
-    return Promise.reject({ code: -1, message: 'Malformed form schema response' });
+  try {
+    const response = await axios.get<PublicFormResponse>(
+      `${PUBLIC_FORM_BASE}/${token}`,
+    );
+
+    if (!response?.data || typeof response.data !== 'object') {
+      return Promise.reject({ code: -1, message: 'Malformed form schema response' });
+    }
+
+    return response.data;
+  } catch (err) {
+    return Promise.reject(handleAPIError(err));
   }
-  return response.data;
 }
 
 /**
@@ -74,27 +85,82 @@ export async function submitPublicForm(
   payload: FormSubmissionPayload,
   idempotencyKey: string,
 ): Promise<FormSubmitResponse> {
-  // Same wire-shape mismatch as `getPublicFormSchema` — body returns the
-  // tagged-union response directly, not the workspace-API envelope.
-  const axios = getAxios();
+  // The cloud's `/public-form/{token}/submit` endpoint emits two distinct
+  // shapes the caller has to disambiguate:
+  //
+  //   * 200 → `{ submission_id, status }` (no `kind` field on the wire) —
+  //     map onto the typed-union's `submitted` variant.
+  //   * 400 → `{ error: 'missing_required_answers', question_ids: [...] }`
+  //     — translate into `{kind: 'invalid', field_errors}` so the UI can
+  //     surface per-question "Required" markers without a second request.
+  //   * Any other non-2xx → reject with `handleAPIError` (preserves
+  //     retry-after on 429, status on 404/410, etc.).
+  //
+  // The 400 path is the reason this can't route through `executeAPIRequest`:
+  // a 400 must NOT propagate as an error; the answer is in the body.
+  const client = getAxios();
 
-  if (!axios) {
+  if (!client) {
     return Promise.reject({ code: -1, message: 'API service not initialized' });
   }
-  const response = await axios.post<FormSubmitResponse>(
-    `${PUBLIC_FORM_BASE}/${token}/submit`,
-    payload,
-    {
-      headers: {
-        'Idempotency-Key': idempotencyKey,
-      },
-    },
-  );
 
-  if (!response?.data || typeof response.data !== 'object') {
-    return Promise.reject({ code: -1, message: 'Malformed submit response' });
+  try {
+    const response = await client.post<{ submission_id?: string; status?: string }>(
+      `${PUBLIC_FORM_BASE}/${token}/submit`,
+      payload,
+      {
+        headers: {
+          'Idempotency-Key': idempotencyKey,
+        },
+      },
+    );
+
+    if (!response?.data || typeof response.data !== 'object') {
+      return Promise.reject({ code: -1, message: 'Malformed submit response' });
+    }
+
+    const { submission_id, status } = response.data;
+
+    if (typeof submission_id !== 'string' || typeof status !== 'string') {
+      return Promise.reject({ code: -1, message: 'Malformed submit response' });
+    }
+
+    return { kind: 'submitted', submission_id, status };
+  } catch (err) {
+    const invalid = tryParseInvalidPayloadError(err);
+
+    if (invalid) return invalid;
+    return Promise.reject(handleAPIError(err));
   }
-  return response.data;
+}
+
+/**
+ * Recognize the cloud's `400 missing_required_answers` response and turn
+ * it into a typed `invalid` variant. Returns `null` for anything else so
+ * the caller can fall through to the generic `handleAPIError` path.
+ *
+ * The cloud body is `{ error: 'missing_required_answers', question_ids: [...] }`;
+ * we surface a generic per-question "Required" message because that's all
+ * the server tells us today. Richer messages can flow through later if
+ * the wire grows them.
+ */
+function tryParseInvalidPayloadError(err: unknown): FormSubmitResponse | null {
+  if (!axios.isAxiosError(err) || err.response?.status !== 400) return null;
+  const body = err.response.data as
+    | { error?: string; question_ids?: unknown }
+    | undefined;
+
+  if (body?.error !== 'missing_required_answers') return null;
+  const ids = Array.isArray(body.question_ids) ? body.question_ids : [];
+  const field_errors: Record<string, string> = {};
+
+  for (const id of ids) {
+    if (typeof id === 'string' && id.length > 0) {
+      field_errors[id] = 'Required';
+    }
+  }
+
+  return { kind: 'invalid', field_errors };
 }
 
 /**
@@ -120,15 +186,21 @@ export async function requestPublicFormUploadUrl(
   if (!axios) {
     return Promise.reject({ code: -1, message: 'API service not initialized' });
   }
-  const response = await axios.post<PublicFormUploadUrlResponse>(
-    `${PUBLIC_FORM_BASE}/${token}/upload-url`,
-    request,
-  );
 
-  if (!response?.data || typeof response.data !== 'object') {
-    return Promise.reject({ code: -1, message: 'Malformed upload-url response' });
+  try {
+    const response = await axios.post<PublicFormUploadUrlResponse>(
+      `${PUBLIC_FORM_BASE}/${token}/upload-url`,
+      request,
+    );
+
+    if (!response?.data || typeof response.data !== 'object') {
+      return Promise.reject({ code: -1, message: 'Malformed upload-url response' });
+    }
+
+    return response.data;
+  } catch (err) {
+    return Promise.reject(handleAPIError(err));
   }
-  return response.data;
 }
 
 /**
@@ -151,8 +223,10 @@ export async function uploadFormFileToPresignedUrl(
       'Content-Type': file.type || 'application/octet-stream',
     },
   });
+
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
+
     return Promise.reject({
       code: response.status,
       message: `Upload failed (${response.status}): ${detail.slice(0, 200)}`,

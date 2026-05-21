@@ -147,10 +147,18 @@ export interface PublicFormUploadUrlResponse {
 }
 
 /**
- * Submit-response from the cloud. The 200 cases (success / per-field
- * validation errors) are surfaced as a tagged union; HTTP errors
- * (410 revoked, 429 rate-limited) bubble out as `APIError`.
+ * Submit-response from `submitPublicForm`. Two variants:
+ *
+ *   * `submitted` — the cloud accepted the row (HTTP 200). `status` is the
+ *     processing state of the async worker handoff (`queued` /
+ *     `processing` / `accepted` / `failed`).
+ *   * `invalid` — the cloud rejected the payload with `400` and a
+ *     `missing_required_answers` body. The HTTP layer parses the
+ *     server's `question_ids` array into per-question error strings.
+ *
+ * Other HTTP errors (410 revoked, 429 rate-limited, 503 busy, …)
+ * bubble out as `APIError`.
  */
 export type FormSubmitResponse =
-  | { kind: 'submitted'; row_id: string; submission_id: string }
+  | { kind: 'submitted'; submission_id: string; status: string }
   | { kind: 'invalid'; field_errors: Record<string, string> };

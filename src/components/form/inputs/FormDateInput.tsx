@@ -27,7 +27,13 @@ export function FormDateInput({
   onChange: (iso: string | null) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const date = value ? new Date(value) : undefined;
+  // Parse with dayjs so a date-only `YYYY-MM-DD` value is read as the local
+  // calendar day. `new Date('YYYY-MM-DD')` interprets the string as UTC
+  // midnight, which displays/selects the day-before for any user west of
+  // UTC and would round-trip the wrong date on subsequent edits. dayjs's
+  // default ISO parser treats date-only strings as local time (no plugin
+  // needed) — that's the whole reason we use dayjs here instead of `Date`.
+  const date = value ? dayjs(value).toDate() : undefined;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>

@@ -31,7 +31,10 @@ Feature: Form Files & Media upload (Phase-2)
     And the public form shows the Files question
 
     When I attach the file "smoke-test.txt" with content "hello-files"
-    Then the public form attachments list shows "smoke-test.txt" as "uploaded"
+    # Pre-submit the row reads `selected` — the actual upload-url mint + S3
+    # PUT runs from `FormBody.handleSubmit`, so `file_id` (and therefore the
+    # `uploaded` status) only lands after the submit click below.
+    Then the public form attachments list shows "smoke-test.txt" as "selected"
 
     When I submit the public form
     Then the public form confirmation page is visible

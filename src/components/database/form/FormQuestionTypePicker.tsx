@@ -1,3 +1,4 @@
+import { TFunction } from 'i18next';
 import { PlusCircle } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -202,7 +203,12 @@ function SectionHeader({ label }: { label: string }) {
  * lockstep with the rest of the app.
  */
 function fieldTypeLabel(
-  t: ReturnType<typeof useTranslation>['t'],
+  // Plain `TFunction` instead of `ReturnType<typeof useTranslation>['t']`
+  // — the latter forces TypeScript 4.9 to fully expand the typed
+  // i18next key union and `pnpm type-check` aborts with
+  // `RangeError: Map maximum size exceeded`. Same call-signature at the
+  // use site, but with a tractable type.
+  t: TFunction,
   ty: FieldType,
 ): string {
   switch (ty) {

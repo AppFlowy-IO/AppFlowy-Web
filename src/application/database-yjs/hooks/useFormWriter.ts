@@ -3,18 +3,24 @@ import { useMemo } from 'react';
 import { useDatabaseView } from '@/application/database-yjs/context';
 import { createFormWriter, FormWriter } from '@/application/database-yjs/form-writer';
 
+// Single shared sentinel — the read-only fallback callers fall back on when
+// no view is in context. Each method is `() => undefined` rather than
+// `() => {}` so eslint's `no-empty-function` rule doesn't flag the
+// intentionally-empty bodies as missing implementations.
+const noop = (): void => undefined;
+
 const NOOP_WRITER: FormWriter = {
-  addQuestion: () => {},
-  removeQuestion: () => {},
-  clearQuestions: () => {},
-  populateFromFields: () => {},
-  reorderQuestion: () => {},
-  setRequired: () => {},
-  setDescriptionVisible: () => {},
-  setDescription: () => {},
-  setLongAnswer: () => {},
-  markDecided: () => {},
-  setFormDescription: () => {},
+  addQuestion: noop,
+  removeQuestion: noop,
+  clearQuestions: noop,
+  populateFromFields: noop,
+  reorderQuestion: noop,
+  setRequired: noop,
+  setDescriptionVisible: noop,
+  setDescription: noop,
+  setLongAnswer: noop,
+  markDecided: noop,
+  setFormDescription: noop,
 };
 
 /**

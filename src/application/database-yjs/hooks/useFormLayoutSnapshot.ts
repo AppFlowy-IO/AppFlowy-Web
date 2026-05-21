@@ -35,6 +35,7 @@ function snapshotsEqual(a: FormLayoutSnapshot, b: FormLayoutSnapshot): boolean {
   for (let i = 0; i < a.questions.length; i += 1) {
     if (!questionsEqual(a.questions[i], b.questions[i])) return false;
   }
+
   return true;
 }
 
@@ -89,6 +90,7 @@ export function useFormLayoutSnapshot(): FormLayoutSnapshot {
     const observer = () => {
       setSnapshot((prev) => {
         const next = readFormLayoutSnapshot(view);
+
         return snapshotsEqual(prev, next) ? prev : next;
       });
     };
