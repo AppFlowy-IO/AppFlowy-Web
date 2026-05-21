@@ -31,6 +31,22 @@ import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 import { PasteAsMenuType } from './constants';
 import type { PasteAsMenuPayload } from './constants';
 
+const PASTE_AS_PANEL_WIDTH = 260;
+const PASTE_AS_PANEL_VERTICAL_PADDING = 16;
+const PASTE_AS_PANEL_HEADER_HEIGHT = 24;
+const PASTE_AS_PANEL_OPTION_HEIGHT = 36;
+const PASTE_AS_PANEL_GAP = 4;
+const PASTE_AS_PANEL_EDGE_OFFSET = 16;
+
+function getPasteAsPanelHeight(optionCount: number) {
+  return (
+    PASTE_AS_PANEL_VERTICAL_PADDING +
+    PASTE_AS_PANEL_HEADER_HEIGHT +
+    optionCount * PASTE_AS_PANEL_OPTION_HEIGHT +
+    optionCount * PASTE_AS_PANEL_GAP
+  );
+}
+
 function isValidPasteRange(editor: YjsEditor, payload: PasteAsMenuPayload) {
   const { range, url } = payload;
 
@@ -181,10 +197,16 @@ export function PasteAsPanel() {
   useEffect(() => {
     if (!open || !panelPosition) return;
 
-    const origins = calculateOptimalOrigins(panelPosition, 260, 184, undefined, 16);
+    const origins = calculateOptimalOrigins(
+      panelPosition,
+      PASTE_AS_PANEL_WIDTH,
+      getPasteAsPanelHeight(options.length),
+      undefined,
+      PASTE_AS_PANEL_EDGE_OFFSET
+    );
 
     setTransformOrigin(origins.transformOrigin);
-  }, [open, panelPosition]);
+  }, [open, options.length, panelPosition]);
 
   useEffect(() => {
     if (!open) return;
@@ -239,7 +261,7 @@ export function PasteAsPanel() {
       open={open}
       transformOrigin={transformOrigin}
     >
-      <div className={'flex w-[260px] flex-col gap-1 p-2'}>
+      <div className={'flex flex-col gap-1 p-2'} style={{ width: PASTE_AS_PANEL_WIDTH }}>
         <div className={'px-2 py-1 text-xs font-medium text-text-secondary'}>
           {t('document.plugins.urlPreview.pasteAs.title', { defaultValue: 'Paste as' })}
         </div>

@@ -694,6 +694,15 @@
         "toContinue": "per continuar",
         "newDatabase": "Nova base de dades",
         "linkToDatabase": "Enllaç a la base de dades"
+      },
+      "urlPreview": {
+        "pasteAs": {
+          "title": "Enganxa com a",
+          "mention": "Menció",
+          "url": "URL",
+          "bookmark": "Marcador",
+          "embed": "Incrustació"
+        }
       }
     },
     "textBlock": {

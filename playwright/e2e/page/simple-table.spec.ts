@@ -167,8 +167,9 @@ async function getTableWidth(page: Page, tableIndex = 0) {
 }
 
 async function pastePlainText(page: Page, text: string, html?: string) {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
   if (html) {
-    await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.evaluate(async ({ plainText, htmlText }) => {
       await navigator.clipboard.write([
         new ClipboardItem({
@@ -181,29 +182,10 @@ async function pastePlainText(page: Page, text: string, html?: string) {
     return;
   }
 
-  await page.evaluate(({ plainText, htmlText }) => {
-    const target = document.querySelector('[data-slate-editor="true"]') as HTMLElement | null;
-
-    if (!target) throw new Error('No slate editor found');
-
-    const clipboardData = new DataTransfer();
-
-    clipboardData.setData('text/plain', plainText);
-    if (htmlText) {
-      clipboardData.setData('text/html', htmlText);
-    }
-
-    const pasteEvent = new ClipboardEvent('paste', {
-      bubbles: true,
-      cancelable: true,
-    });
-
-    Object.defineProperty(pasteEvent, 'clipboardData', {
-      value: clipboardData,
-    });
-
-    target.dispatchEvent(pasteEvent);
-  }, { plainText: text, htmlText: html });
+  await page.evaluate(async (plainText) => {
+    await navigator.clipboard.writeText(plainText);
+  }, text);
+  await page.keyboard.press(`${MOD_KEY}+V`);
 }
 
 // ============================================================================

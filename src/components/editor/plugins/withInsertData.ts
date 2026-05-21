@@ -26,7 +26,7 @@ import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import { FileHandler } from '@/utils/file';
 import { Log } from '@/utils/log';
 import { createPendingUploadId } from '@/utils/pending-upload';
-import { processUrl } from '@/utils/url';
+import { isSingleURLText } from '@/utils/url';
 
 type BlockElement = Element & { blockId?: string };
 
@@ -75,7 +75,7 @@ export const withInsertData = (editor: ReactEditor) => {
             const texts = extractTSVFromTableFragment(parsed);
 
             if (texts) {
-              const handled = editor.insertTextData(createTSVDataTransfer(texts));
+              const handled = editor.insertTextData(createTextDataTransfer(texts));
 
               if (handled) return;
             }
@@ -89,7 +89,7 @@ export const withInsertData = (editor: ReactEditor) => {
         const texts = extractTSVFromTableFragment(parsedFragment);
 
         if (texts) {
-          const handled = editor.insertTextData(createTSVDataTransfer(texts));
+          const handled = editor.insertTextData(createTextDataTransfer(texts));
 
           if (handled) return;
         }
@@ -290,12 +290,6 @@ export const withInsertData = (editor: ReactEditor) => {
   return editor;
 };
 
-function isSingleURLText(text: string): boolean {
-  if (text.split(/\r\n|\r|\n/).filter(Boolean).length !== 1) return false;
-
-  return Boolean(processUrl(text));
-}
-
 function getSingleURLTextFromClipboard(data: DataTransfer): string | undefined {
   const plainText = data.getData('text/plain')?.trim();
 
@@ -457,13 +451,6 @@ function insertFragmentAsSiblings(editor: YjsEditor, fragment: Node[]): boolean 
     Log.error('insertFragmentAsSiblings failed', err);
     return false;
   }
-}
-
-/**
- * Create a DataTransfer object with TSV text data.
- */
-function createTSVDataTransfer(tsv: string): DataTransfer {
-  return createTextDataTransfer(tsv);
 }
 
 function createTextDataTransfer(text: string, html?: string): DataTransfer {

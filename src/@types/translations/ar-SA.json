@@ -1399,7 +1399,16 @@
         "paste": "لصق"
       },
       "action": "أجراءات",
-      "autoCompletionMenuItemName": "عنصر قائمة الإكمال التلقائي"
+      "autoCompletionMenuItemName": "عنصر قائمة الإكمال التلقائي",
+      "urlPreview": {
+        "pasteAs": {
+          "title": "لصق كـ",
+          "mention": "إشارة",
+          "url": "URL",
+          "bookmark": "إشارة مرجعية",
+          "embed": "تضمين"
+        }
+      }
     },
     "textBlock": {
       "placeholder": "اكتب \"/\" للأوامر"

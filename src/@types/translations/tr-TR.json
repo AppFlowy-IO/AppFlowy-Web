@@ -1578,7 +1578,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "Bağlantı panoya kopyalandı",
-        "convertToLink": "Gömülü bağlantıya dönüştür"
+        "convertToLink": "Gömülü bağlantıya dönüştür",
+        "pasteAs": {
+          "title": "Şu olarak yapıştır",
+          "mention": "Bahsetme",
+          "url": "URL",
+          "bookmark": "Yer imi",
+          "embed": "Yerleştir"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "İçindekiler tablosu oluşturmak için başlıklar ekleyin.",

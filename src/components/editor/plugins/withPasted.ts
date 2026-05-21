@@ -3,6 +3,7 @@ import { ReactEditor } from 'slate-react';
 import isURL from 'validator/lib/isURL';
 
 import { YjsEditor } from '@/application/slate-yjs';
+import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
 import { getBlockEntry, getSharedRoot, getParentSimpleTableCellBlockId, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
@@ -16,7 +17,7 @@ import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste
 import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
-import { processUrl } from '@/utils/url';
+import { isSingleURLText, processUrl } from '@/utils/url';
 import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 
 /**
@@ -132,12 +133,6 @@ function extractCellTextsFromHTML(html: string): string[][] {
   } catch {
     return [];
   }
-}
-
-function isSingleURLText(text: string): boolean {
-  if (text.split(/\r\n|\r|\n/).filter(Boolean).length !== 1) return false;
-
-  return Boolean(processUrl(text));
 }
 
 /**
@@ -523,11 +518,13 @@ function insertLinkedURLTextAndShowPasteAsMenu(editor: ReactEditor, url: string)
 
   if (!point) return false;
 
-  Transforms.insertNodes(editor, { text: url, href }, { at: point, select: true, voids: false });
+  editor.insertText(url);
 
   const insertedRange = getInsertedURLRange(editor, url, point);
 
   if (insertedRange) {
+    Transforms.select(editor, insertedRange);
+    editor.addMark(EditorMarkFormat.Href, href);
     Transforms.select(editor, insertedRange);
     Transforms.collapse(editor, { edge: 'end' });
     dispatchPasteAsMenuEvent(editor, { url, range: insertedRange });
