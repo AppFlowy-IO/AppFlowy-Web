@@ -132,6 +132,11 @@ Feature: Editor editing
     When I press "Escape"
     Then the slash menu is hidden
 
+  Scenario: Question mark does not open the slash menu
+    When I type "?" in the editor
+    Then the editor contains "?"
+    And the slash menu is hidden
+
   Scenario: Slash menu desktop grouping and aliases work
     When I open the slash menu
     Then the slash menu group "Basic blocks" is visible

@@ -276,7 +276,7 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       if (!(target instanceof Node) || !slateDom.contains(target)) return;
 
       if (!openRef.current) {
-        const panelType = panelTypeByTrigger[key] ?? (e.code === 'Slash' ? PanelType.Slash : undefined);
+        const panelType = panelTypeByTrigger[key];
 
         if (!panelType || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
 
