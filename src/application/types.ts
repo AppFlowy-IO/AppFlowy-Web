@@ -109,8 +109,14 @@ export interface MathEquationBlockData extends BlockData {
   formula?: string;
 }
 
+export enum LinkPreviewType {
+  Bookmark = 'bookmark',
+  Embed = 'embed',
+}
+
 export interface LinkPreviewBlockData extends BlockData {
   url?: string;
+  preview_type?: LinkPreviewType;
 }
 
 export enum FieldURLType {

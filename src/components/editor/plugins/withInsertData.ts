@@ -26,6 +26,7 @@ import { convertSlateFragmentTo } from '@/components/editor/utils/fragment';
 import { FileHandler } from '@/utils/file';
 import { Log } from '@/utils/log';
 import { createPendingUploadId } from '@/utils/pending-upload';
+import { processUrl } from '@/utils/url';
 
 type BlockElement = Element & { blockId?: string };
 
@@ -45,10 +46,17 @@ export const withInsertData = (editor: ReactEditor) => {
     if (tableCheckBlockId && isInsideSimpleTableCell(e, tableCheckBlockId)) {
       // Check plain text for TSV (tab-separated values)
       const plainText = data.getData('text/plain')?.trim();
+      const singleURLText = getSingleURLTextFromClipboard(data);
 
       if (plainText && plainText.includes('\t')) {
         // Delegate to insertTextData which has our TSV handler
         const handled = editor.insertTextData(data);
+
+        if (handled) return;
+      }
+
+      if (singleURLText) {
+        const handled = editor.insertTextData(createTextDataTransfer(singleURLText, data.getData('text/html')));
 
         if (handled) return;
       }
@@ -282,6 +290,37 @@ export const withInsertData = (editor: ReactEditor) => {
   return editor;
 };
 
+function isSingleURLText(text: string): boolean {
+  if (text.split(/\r\n|\r|\n/).filter(Boolean).length !== 1) return false;
+
+  return Boolean(processUrl(text));
+}
+
+function getSingleURLTextFromClipboard(data: DataTransfer): string | undefined {
+  const plainText = data.getData('text/plain')?.trim();
+
+  if (plainText && isSingleURLText(plainText)) return plainText;
+
+  const html = data.getData('text/html')?.trim();
+
+  if (!html) return undefined;
+
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const textContent = doc.body.textContent?.trim();
+
+    if (textContent && isSingleURLText(textContent)) return textContent;
+
+    const href = doc.querySelector('a[href]')?.getAttribute('href')?.trim();
+
+    if (href && isSingleURLText(href)) return href;
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
 /**
  * When Slate copies content, it encodes the full Slate fragment as a base64
  * blob in the `data-slate-fragment` HTML attribute. The system clipboard
@@ -424,8 +463,17 @@ function insertFragmentAsSiblings(editor: YjsEditor, fragment: Node[]): boolean 
  * Create a DataTransfer object with TSV text data.
  */
 function createTSVDataTransfer(tsv: string): DataTransfer {
+  return createTextDataTransfer(tsv);
+}
+
+function createTextDataTransfer(text: string, html?: string): DataTransfer {
   const dt = new DataTransfer();
 
-  dt.setData('text/plain', tsv);
+  dt.setData('text/plain', text);
+
+  if (html) {
+    dt.setData('text/html', html);
+  }
+
   return dt;
 }

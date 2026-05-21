@@ -7,6 +7,7 @@ import { getRangeRect } from '@/components/editor/components/toolbar/selection-t
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
 
 import { MentionPanel } from './mention-panel';
+import { PasteAsPanel } from './paste-as-panel';
 import { SlashPanel } from './slash-panel';
 
 function Panels () {
@@ -41,6 +42,7 @@ function Panels () {
   return (
     <>
       <MentionPanel />
+      <PasteAsPanel />
       <SlashPanel setEmojiPosition={setEmojiPosition} />
       {createPortal(<CustomIconPopover
         onOpenChange={open => {

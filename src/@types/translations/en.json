@@ -2268,7 +2268,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "The link has been copied to the clipboard",
-        "convertToLink": "Convert to embed link"
+        "convertToLink": "Convert to embed link",
+        "pasteAs": {
+          "title": "Paste as",
+          "mention": "Mention",
+          "url": "URL",
+          "bookmark": "Bookmark",
+          "embed": "Embed"
+        }
       },
       "outline": {
         "outlineBlock": "Table of Contents",
