@@ -1,6 +1,5 @@
 import { BasePoint, Editor, Element, Range, Text, Transforms } from 'slate';
 import { ReactEditor } from 'slate-react';
-import isURL from 'validator/lib/isURL';
 
 import { YjsEditor } from '@/application/slate-yjs';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
@@ -19,6 +18,8 @@ import { getRangeRect } from '@/components/editor/components/toolbar/selection-t
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
 import { isSingleURLText, processUrl } from '@/utils/url';
 import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
+
+import { getSingleURLTextFromClipboardData, parseAppFlowyBlockLink } from './appflowy-block-link';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -53,6 +54,7 @@ export const withPasted = (editor: ReactEditor) => {
 
     const html = data.getData('text/html');
     const text = data.getData('text/plain');
+    const clipboardURL = getSingleURLTextFromClipboardData(data);
 
     // Priority 0: If pasting tabular content (TSV/multi-cell) inside a table cell,
     // fill adjacent cells instead of inserting as blocks
@@ -82,6 +84,10 @@ export const withPasted = (editor: ReactEditor) => {
           return handleURLPaste(editor, plainText);
         }
       }
+    }
+
+    if (clipboardURL && parseAppFlowyBlockLink(clipboardURL)) {
+      return handleURLPaste(editor, clipboardURL);
     }
 
     // Priority 1: HTML (if available)
@@ -380,34 +386,26 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
  */
 function handleURLPaste(editor: ReactEditor, url: string): boolean {
   // Check for AppFlowy internal links
-  const isAppFlowyLinkUrl = isURL(url, {
-    host_whitelist: [window.location.hostname],
-  });
+  const blockLink = parseAppFlowyBlockLink(url);
 
-  if (isAppFlowyLinkUrl) {
-    const urlObj = new URL(url);
-    const blockId = urlObj.searchParams.get('blockId');
+  if (blockLink) {
+    const point = editor.selection?.anchor as BasePoint;
 
-    if (blockId) {
-      const pageId = urlObj.pathname.split('/').pop();
-      const point = editor.selection?.anchor as BasePoint;
-
-      if (point) {
-        Transforms.insertNodes(
-          editor,
-          {
-            text: '@',
-            mention: {
-              type: MentionType.PageRef,
-              page_id: pageId,
-              block_id: blockId,
-            },
+    if (point) {
+      Transforms.insertNodes(
+        editor,
+        {
+          text: '@',
+          mention: {
+            type: MentionType.PageRef,
+            page_id: blockLink.pageId,
+            block_id: blockLink.blockId,
           },
-          { at: point, select: true, voids: false }
-        );
+        },
+        { at: point, select: true, voids: false }
+      );
 
-        return true;
-      }
+      return true;
     }
   }
 
