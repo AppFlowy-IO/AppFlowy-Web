@@ -23,13 +23,13 @@ export function isGoogleDriveUrl(rawUrl: string) {
 
   if (!url) return false;
 
-  const host = url.host.toLowerCase();
-  const matchesHost =
-    supportedGoogleDriveHosts.some((supportedHost) => host === supportedHost) || host.endsWith('google.com');
+  const host = url.hostname.toLowerCase();
+  const matchesHost = supportedGoogleDriveHosts.some((supportedHost) => host === supportedHost);
 
   if (!matchesHost) return false;
 
   const path = url.pathname.toLowerCase();
+  const hasDriveQueryId = host === 'drive.google.com' && Boolean(url.searchParams.get('id'));
 
   return (
     path.includes('/document/') ||
@@ -37,7 +37,8 @@ export function isGoogleDriveUrl(rawUrl: string) {
     path.includes('/presentation/') ||
     path.includes('/forms/') ||
     path.includes('/file/') ||
-    path.includes('/folders/')
+    path.includes('/folders/') ||
+    hasDriveQueryId
   );
 }
 
@@ -92,36 +93,48 @@ export function buildGoogleDriveEmbeddedUrl(rawUrl: string) {
 
   if (!url) return rawUrl;
 
-  const host = url.host.toLowerCase();
+  const host = url.hostname.toLowerCase();
   const segments = url.pathname.split('/').filter(Boolean);
   const id = extractGoogleDriveId(url, segments);
 
   if (!id) return processUrl(rawUrl) || rawUrl;
 
   const base = `${url.protocol}//${url.host}`;
+  const resourcekey = url.searchParams.get('resourcekey');
+  const resourceKeyQuery = resourcekey ? `resourcekey=${encodeURIComponent(resourcekey)}` : '';
+  const appendResourceKey = (target: string) => {
+    if (!resourceKeyQuery) return target;
 
-  if (host.includes('docs.google.com')) {
+    const hashIndex = target.indexOf('#');
+    const head = hashIndex === -1 ? target : target.slice(0, hashIndex);
+    const tail = hashIndex === -1 ? '' : target.slice(hashIndex);
+    const separator = head.includes('?') ? '&' : '?';
+
+    return `${head}${separator}${resourceKeyQuery}${tail}`;
+  };
+
+  if (host === 'docs.google.com') {
     const type = segments[0] || '';
 
     switch (type) {
       case 'document':
       case 'spreadsheets':
-        return `${base}/${type}/d/${id}/preview`;
+        return appendResourceKey(`${base}/${type}/d/${id}/preview`);
       case 'presentation':
-        return `${base}/presentation/d/${id}/embed?start=false&loop=false`;
+        return appendResourceKey(`${base}/presentation/d/${id}/embed?start=false&loop=false`);
       case 'forms':
-        return `${base}/forms/d/e/${id}/viewform?embedded=true`;
+        return appendResourceKey(`${base}/forms/d/e/${id}/viewform?embedded=true`);
       default:
-        return `https://drive.google.com/file/d/${id}/preview`;
+        return appendResourceKey(`https://drive.google.com/file/d/${id}/preview`);
     }
   }
 
-  if (host.includes('drive.google.com')) {
+  if (host === 'drive.google.com') {
     if (segments.includes('folders')) {
-      return `https://drive.google.com/embeddedfolderview?id=${id}#grid`;
+      return appendResourceKey(`https://drive.google.com/embeddedfolderview?id=${id}#grid`);
     }
 
-    return `https://drive.google.com/file/d/${id}/preview`;
+    return appendResourceKey(`https://drive.google.com/file/d/${id}/preview`);
   }
 
   return processUrl(rawUrl) || rawUrl;

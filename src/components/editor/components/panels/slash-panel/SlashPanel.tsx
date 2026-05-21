@@ -413,6 +413,7 @@ export function SlashPanel({
       }
 
       if (
+        newBlockId &&
         [
           BlockType.FileBlock,
           BlockType.AudioBlock,
@@ -425,16 +426,7 @@ export function SlashPanel({
           BlockType.PDFBlock,
         ].includes(type)
       ) {
-        setTimeout(() => {
-          if (!newBlockId) return;
-          const entry = findSlateEntryByBlockId(editor, newBlockId);
-
-          if (!entry) return;
-          const [node] = entry;
-          const dom = ReactEditor.toDOMNode(editor, node);
-
-          openPopover(newBlockId, type, dom);
-        }, 50);
+        openPopover(newBlockId, type);
       }
     },
     [editor, openPopover]

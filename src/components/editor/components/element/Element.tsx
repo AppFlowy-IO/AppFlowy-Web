@@ -40,6 +40,7 @@ import { Text } from '@/components/editor/components/blocks/text';
 import { VideoBlock } from '@/components/editor/components/blocks/video';
 import { handleBlockDrop } from '@/components/editor/components/drag-drop/handleBlockDrop';
 import { useBlockDrop } from '@/components/editor/components/drag-drop/useBlockDrop';
+import { usePopoverMountSignal } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { BlockNotFound } from '@/components/editor/components/element/BlockNotFound';
 import { EditorElementProps, TextNode } from '@/components/editor/editor.type';
 import { useEditorContext, useEditorLocalState } from '@/components/editor/EditorContext';
@@ -61,6 +62,8 @@ export const Element = ({
   const { selectedBlockIds } = useEditorLocalState();
 
   const { blockId, type } = node;
+
+  usePopoverMountSignal(blockId);
   const isSelected = useSelected();
   const selected = useMemo(() => {
     if (blockId && selectedBlockIds?.includes(blockId)) {

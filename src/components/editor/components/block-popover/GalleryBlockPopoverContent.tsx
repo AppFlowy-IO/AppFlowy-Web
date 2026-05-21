@@ -11,6 +11,7 @@ import { ALLOWED_IMAGE_EXTENSIONS, Unsplash } from '@/components/_shared/image-u
 import EmbedLink from '@/components/_shared/image-upload/EmbedLink';
 import { TabPanel, ViewTab, ViewTabs } from '@/components/_shared/tabs/ViewTabs';
 import { useEditorContext } from '@/components/editor/EditorContext';
+import { processUrl } from '@/utils/url';
 
 function GalleryBlockPopoverContent({ blockId, onClose }: { blockId: string; onClose: () => void }) {
   const editor = useSlateStatic() as YjsEditor;
@@ -79,12 +80,10 @@ function GalleryBlockPopoverContent({ blockId, onClose }: { blockId: string; onC
 
   const handleInsertEmbedLink = useCallback(
     (url: string, type?: ImageType) => {
-      appendImages([
-        {
-          url,
-          type: type ?? ImageType.External,
-        },
-      ]);
+      const resolvedType = type ?? ImageType.External;
+      const normalizedUrl = resolvedType === ImageType.External ? processUrl(url) || url : url;
+
+      appendImages([{ url: normalizedUrl, type: resolvedType }]);
     },
     [appendImages]
   );

@@ -1,4 +1,4 @@
-import React, { createContext, useState, useCallback, useContext, useMemo } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { ReactEditor } from 'slate-react';
 
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
@@ -10,7 +10,8 @@ export interface BlockPopoverContextType {
   anchorEl?: HTMLElement | null;
   open: boolean;
   close: () => void;
-  openPopover: (blockId: string, type: BlockType, anchorEl: HTMLElement) => void;
+  openPopover: (blockId: string, type: BlockType, anchorEl?: HTMLElement | null) => void;
+  notifyMount: (blockId: string) => void;
   isOpen: (type: BlockType) => boolean;
 }
 
@@ -26,47 +27,90 @@ export function usePopoverContext() {
   return context;
 }
 
+export function usePopoverMountSignal(blockId: string | undefined) {
+  const { notifyMount } = usePopoverContext();
+
+  useEffect(() => {
+    if (!blockId) return;
+    notifyMount(blockId);
+  }, [blockId, notifyMount]);
+}
+
 export const BlockPopoverProvider = ({ children, editor }: { children: React.ReactNode; editor: ReactEditor }) => {
   const [type, setType] = useState<BlockType | undefined>();
   const [blockId, setBlockId] = useState<string | undefined>();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
+  const pendingRef = useRef<{ blockId: string; type: BlockType } | null>(null);
   const open = Boolean(anchorEl);
 
   const close = useCallback(() => {
     setAnchorEl(null);
     setBlockId(undefined);
     setType(undefined);
+    pendingRef.current = null;
   }, []);
 
-  const openPopover = useCallback((blockId: string, type: BlockType) => {
-    const entry = findSlateEntryByBlockId(editor, blockId);
+  const resolveAnchor = useCallback(
+    (targetBlockId: string): HTMLElement | null => {
+      const entry = findSlateEntryByBlockId(editor, targetBlockId);
 
-    if (!entry) {
-      console.error('Block not found');
-      return;
-    }
+      if (!entry) return null;
 
-    const [node] = entry;
-    const dom = ReactEditor.toDOMNode(editor, node);
+      try {
+        return ReactEditor.toDOMNode(editor, entry[0]);
+      } catch {
+        return null;
+      }
+    },
+    [editor]
+  );
 
-    setBlockId(blockId);
-    setType(type);
-    setAnchorEl(dom);
-  }, [editor]);
+  const openPopover = useCallback(
+    (targetBlockId: string, targetType: BlockType) => {
+      const dom = resolveAnchor(targetBlockId);
 
-  const isOpen = useCallback((popover: BlockType) => {
-    return popover === type;
-  }, [type]);
+      if (dom) {
+        pendingRef.current = null;
+        setBlockId(targetBlockId);
+        setType(targetType);
+        setAnchorEl(dom);
+        return;
+      }
+
+      pendingRef.current = { blockId: targetBlockId, type: targetType };
+    },
+    [resolveAnchor]
+  );
+
+  const notifyMount = useCallback(
+    (mountedBlockId: string) => {
+      const pending = pendingRef.current;
+
+      if (!pending || pending.blockId !== mountedBlockId) return;
+
+      const dom = resolveAnchor(pending.blockId);
+
+      if (!dom) return;
+
+      pendingRef.current = null;
+      setBlockId(pending.blockId);
+      setType(pending.type);
+      setAnchorEl(dom);
+    },
+    [resolveAnchor]
+  );
+
+  const isOpen = useCallback(
+    (popover: BlockType) => {
+      return popover === type;
+    },
+    [type]
+  );
 
   const contextValue = useMemo(
-    () => ({ blockId, type, anchorEl, open, close, openPopover, isOpen }),
-    [blockId, type, anchorEl, open, close, openPopover, isOpen]
+    () => ({ blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen }),
+    [blockId, type, anchorEl, open, close, openPopover, notifyMount, isOpen]
   );
 
-  return (
-    <BlockPopoverContext.Provider value={contextValue}>
-      {children}
-    </BlockPopoverContext.Provider>
-  );
-
+  return <BlockPopoverContext.Provider value={contextValue}>{children}</BlockPopoverContext.Provider>;
 };
