@@ -7,7 +7,12 @@ import { ReactEditor, RenderElementProps, useSelected, useSlateStatic } from 'sl
 import { YjsEditor } from '@/application/slate-yjs';
 import { CONTAINER_BLOCK_TYPES, SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockData, BlockType, ColumnNodeData, YjsEditorKey } from '@/application/types';
-import { AIMeetingBlock, AIMeetingSection, AIMeetingSpeakerBlock } from '@/components/editor/components/blocks/ai-meeting';
+import {
+  AIMeetingBlock,
+  AIMeetingSection,
+  AIMeetingSpeakerBlock,
+} from '@/components/editor/components/blocks/ai-meeting';
+import { AudioBlock } from '@/components/editor/components/blocks/audio';
 import { BulletedList } from '@/components/editor/components/blocks/bulleted-list';
 import { Callout } from '@/components/editor/components/blocks/callout';
 import { CodeBlock } from '@/components/editor/components/blocks/code';
@@ -16,6 +21,7 @@ import { DatabaseBlock } from '@/components/editor/components/blocks/database';
 import { DividerNode } from '@/components/editor/components/blocks/divider';
 import { FileBlock } from '@/components/editor/components/blocks/file';
 import { GalleryBlock } from '@/components/editor/components/blocks/gallery';
+import { GoogleDriveBlock } from '@/components/editor/components/blocks/google-drive';
 import { Heading } from '@/components/editor/components/blocks/heading';
 import { ImageBlock } from '@/components/editor/components/blocks/image';
 import { LinkPreview } from '@/components/editor/components/blocks/link-preview';
@@ -51,11 +57,7 @@ export const Element = ({
 }: RenderElementProps & {
   element: EditorElementProps['node'];
 }) => {
-  const {
-    jumpBlockId,
-    onJumpedBlockId,
-    readOnly,
-  } = useEditorContext();
+  const { jumpBlockId, onJumpedBlockId, readOnly } = useEditorContext();
   const { selectedBlockIds } = useEditorLocalState();
 
   const { blockId, type } = node;
@@ -65,14 +67,16 @@ export const Element = ({
       return true;
     }
 
-    if ([
-      ...CONTAINER_BLOCK_TYPES,
-      ...SOFT_BREAK_TYPES,
-      BlockType.HeadingBlock,
-      BlockType.TableBlock,
-      BlockType.TableCell,
-      BlockType.SimpleTableBlock,
-    ].includes(type as BlockType)) {
+    if (
+      [
+        ...CONTAINER_BLOCK_TYPES,
+        ...SOFT_BREAK_TYPES,
+        BlockType.HeadingBlock,
+        BlockType.TableBlock,
+        BlockType.TableCell,
+        BlockType.SimpleTableBlock,
+      ].includes(type as BlockType)
+    ) {
       return false;
     }
 
@@ -92,14 +96,17 @@ export const Element = ({
     return ![BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(blockType);
   }, [node.type, readOnly, type]);
 
-  const scrollAndHighlight = useCallback(async (element: HTMLElement) => {
-    element.scrollIntoView({ block: 'start' });
-    element.className += ' highlight-block';
-    highlightTimeoutRef.current = setTimeout(() => {
-      element.className = element.className.replace('highlight-block', '');
-    }, 5000);
-    onJumpedBlockId?.();
-  }, [onJumpedBlockId]);
+  const scrollAndHighlight = useCallback(
+    async (element: HTMLElement) => {
+      element.scrollIntoView({ block: 'start' });
+      element.className += ' highlight-block';
+      highlightTimeoutRef.current = setTimeout(() => {
+        element.className = element.className.replace('highlight-block', '');
+      }, 5000);
+      onJumpedBlockId?.();
+    },
+    [onJumpedBlockId]
+  );
 
   useLayoutEffect(() => {
     if (!jumpBlockId || node.blockId !== jumpBlockId) {
@@ -153,7 +160,7 @@ export const Element = ({
   );
 
   const { isDraggingOver, dropEdge } = useBlockDrop({
-    blockId: allowBlockDrop ? (blockId ?? undefined) : undefined,
+    blockId: allowBlockDrop ? blockId ?? undefined : undefined,
     element: allowBlockDrop ? blockElement : null,
     onDrop: onDropBlock,
   });
@@ -212,6 +219,10 @@ export const Element = ({
         return SimpleTableCell;
       case BlockType.VideoBlock:
         return VideoBlock;
+      case BlockType.AudioBlock:
+        return AudioBlock;
+      case BlockType.GoogleDriveBlock:
+        return GoogleDriveBlock;
       case BlockType.ColumnsBlock:
         return Columns;
       case BlockType.ColumnBlock:
@@ -288,9 +299,7 @@ export const Element = ({
 
   const fallbackRender = useMemo(() => {
     return (props: FallbackProps) => {
-      return (
-        <ElementFallbackRender {...props} description={JSON.stringify(node)} />
-      );
+      return <ElementFallbackRender {...props} description={JSON.stringify(node)} />;
     };
   }, [node]);
 
@@ -304,10 +313,7 @@ export const Element = ({
 
   if ([BlockType.SimpleTableRowBlock, BlockType.SimpleTableCellBlock].includes(node.type as BlockType)) {
     return (
-      <Component
-        node={node}
-        {...attributes}
-      >
+      <Component node={node} {...attributes}>
         {children}
       </Component>
     );
@@ -321,19 +327,11 @@ export const Element = ({
         className={`${className} ${allowBlockDrop && isDraggingOver ? 'block-drop-target' : ''}`}
         style={blockStyle}
       >
-        {allowBlockDrop && isDraggingOver && dropEdge === 'top' && (
-          <DropIndicator edge="top" gap="8px" />
-        )}
-        <Component
-          style={style}
-          className={`flex w-full flex-col`}
-          node={node}
-        >
+        {allowBlockDrop && isDraggingOver && dropEdge === 'top' && <DropIndicator edge='top' gap='8px' />}
+        <Component style={style} className={`flex w-full flex-col`} node={node}>
           {children}
         </Component>
-        {allowBlockDrop && isDraggingOver && dropEdge === 'bottom' && (
-          <DropIndicator edge="bottom" gap="8px" />
-        )}
+        {allowBlockDrop && isDraggingOver && dropEdge === 'bottom' && <DropIndicator edge='bottom' gap='8px' />}
       </div>
     </ErrorBoundary>
   );
