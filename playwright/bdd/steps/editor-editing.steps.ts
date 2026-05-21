@@ -199,13 +199,11 @@ When('I redo the editor change {int} times', async ({ page }, count: number) => 
 
 When('I open the slash menu', async ({ page }) => {
   await focusEditor(page);
-  await page.keyboard.type('/');
-  await expect(SlashCommandSelectors.slashPanel(page)).toBeVisible({ timeout: 10000 });
+  await openSlashMenuAtCurrentSelection(page);
 });
 
 When('I type slash in the editor', async ({ page }) => {
-  await page.keyboard.type('/');
-  await expect(SlashCommandSelectors.slashPanel(page)).toBeVisible({ timeout: 10000 });
+  await openSlashMenuAtCurrentSelection(page);
 });
 
 When('I search the slash menu for {string}', async ({ page }, searchTerm: string) => {
@@ -223,7 +221,8 @@ When('I select slash command {string}', async ({ page }, command: string) => {
 
 When('I choose slash command {string}', async ({ page }, command: string) => {
   await focusEditor(page);
-  await page.keyboard.type(`/${slashCommandSearch(command)}`, { delay: 50 });
+  await openSlashMenuAtCurrentSelection(page);
+  await page.keyboard.type(slashCommandSearch(command), { delay: 50 });
 
   const commandItem = page.getByTestId(`slash-menu-${command}`);
 
@@ -244,6 +243,14 @@ When('I toggle the toggle list icon', async ({ page }) => {
 
 When('I press the toggle block shortcut', async ({ page }) => {
   await page.keyboard.press(`${modKey}+Enter`);
+  await page.waitForTimeout(300);
+});
+
+When('I focus simple table cell {int}, {int}', async ({ page }, rowIndex: number, cellIndex: number) => {
+  const cell = page.locator(`td[data-row-index="${rowIndex}"][data-cell-index="${cellIndex}"]`).first();
+
+  await expect(cell).toBeVisible({ timeout: 10000 });
+  await cell.click({ force: true });
   await page.waitForTimeout(300);
 });
 
@@ -368,6 +375,18 @@ Then('the slash menu command {string} is visible', async ({ page }, command: str
   await expect(page.getByTestId(`slash-menu-${command}`)).toBeVisible();
 });
 
+Then('the slash menu command {string} is available', async ({ page }, command: string) => {
+  await expect(page.getByTestId(`slash-menu-${command}`)).toHaveCount(1);
+});
+
+Then('the slash menu command {string} is hidden', async ({ page }, command: string) => {
+  await expect(page.getByTestId(`slash-menu-${command}`)).toHaveCount(0);
+});
+
+Then('the slash menu group {string} is visible', async ({ page }, groupName: string) => {
+  await expect(SlashCommandSelectors.slashPanel(page).getByText(groupName, { exact: true })).toBeVisible();
+});
+
 Then('the slash menu has {int} visible command', async ({ page }, count: number) => {
   await expect(SlashCommandSelectors.slashPanel(page).locator('[data-testid^="slash-menu-"]:visible')).toHaveCount(
     count
@@ -430,6 +449,13 @@ async function focusEditor(page: Page) {
   await expect(editor).toBeVisible({ timeout: 15000 });
   await editor.click({ force: true });
   await page.waitForTimeout(200);
+}
+
+async function openSlashMenuAtCurrentSelection(page: Page) {
+  const slashPanel = SlashCommandSelectors.slashPanel(page);
+
+  await page.keyboard.type('/');
+  await expect(slashPanel).toBeVisible({ timeout: 10000 });
 }
 
 async function undoEditorChange(page: Page) {

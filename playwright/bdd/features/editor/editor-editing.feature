@@ -132,6 +132,40 @@ Feature: Editor editing
     When I press "Escape"
     Then the slash menu is hidden
 
+  Scenario: Slash menu desktop grouping and aliases work
+    When I open the slash menu
+    Then the slash menu group "Basic blocks" is visible
+    And the slash menu group "Media" is visible
+    And the slash menu group "Database" is visible
+    When I search the slash menu for "heading 1"
+    Then the slash menu command "heading1" is visible
+    When I press "Escape"
+    And I open the slash menu
+    And I search the slash menu for "hr"
+    Then the slash menu command "divider" is visible
+
+  Scenario: Slash menu inside simple table follows desktop restrictions
+    When I choose slash command "simpleTable"
+    And I focus simple table cell 0, 0
+    And I type slash in the editor
+    Then the slash menu command "text" is visible
+    And the slash menu command "pdf" is available
+    And the slash menu command "dateOrReminder" is available
+    And the slash menu command "simpleTable" is hidden
+    And the slash menu command "grid" is hidden
+    And the slash menu command "linkedGrid" is hidden
+    And the slash menu command "chart" is hidden
+    And the slash menu command "linkedChart" is hidden
+    And the slash menu command "outline" is hidden
+
+  Scenario: Slash menu no-result state tolerates keyboard navigation
+    When I open the slash menu
+    And I search the slash menu for "zzzz-not-found"
+    Then the slash menu has 0 visible command
+    When I press "Tab"
+    And I press "ArrowDown"
+    Then the slash menu is visible
+
   Scenario: Keyboard Enter selects a filtered slash command
     When I open the slash menu
     And I search the slash menu for "quote"

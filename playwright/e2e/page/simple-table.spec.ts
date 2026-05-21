@@ -695,6 +695,16 @@ test.describe('SimpleTable', () => {
     const slashMenu = page.getByRole('button', { name: 'Text' });
 
     await expect(slashMenu).toBeVisible({ timeout: 3000 });
+    await expect(page.getByTestId('slash-menu-simpleTable')).toHaveCount(0);
+    await expect(page.getByTestId('slash-menu-grid')).toHaveCount(0);
+    await expect(page.getByTestId('slash-menu-linkedGrid')).toHaveCount(0);
+    await expect(page.getByTestId('slash-menu-board')).toHaveCount(0);
+    await expect(page.getByTestId('slash-menu-calendar')).toHaveCount(0);
+    await expect(page.getByTestId('slash-menu-chart')).toHaveCount(0);
+    await expect(page.getByTestId('slash-menu-linkedChart')).toHaveCount(0);
+    await expect(page.getByTestId('slash-menu-outline')).toHaveCount(0);
+    await expect(page.getByTestId('slash-menu-pdf')).toHaveCount(1);
+    await expect(page.getByTestId('slash-menu-dateOrReminder')).toHaveCount(1);
 
     // Press Escape to dismiss
     await page.keyboard.press('Escape');

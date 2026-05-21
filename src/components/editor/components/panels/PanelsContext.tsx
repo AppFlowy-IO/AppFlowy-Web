@@ -30,7 +30,30 @@ export interface PanelContextType {
 
 export const PanelContext = createContext<PanelContextType | undefined>(undefined);
 
-const panelTypeChars = ['/', '@', '+'];
+const panelTypeByTrigger: Record<string, PanelType> = {
+  '/': PanelType.Slash,
+  '+': PanelType.PageReference,
+  '@': PanelType.Mention,
+};
+
+const panelTypeChars = Object.keys(panelTypeByTrigger);
+
+function getPanelPosition(editor: ReactEditor, selection: BaseRange) {
+  const rect = getRangeRect();
+
+  if (rect) return { top: rect.top, left: rect.left };
+
+  try {
+    const domRange = ReactEditor.toDOMRange(editor, selection);
+    const domRect = domRange.getBoundingClientRect();
+
+    return { top: domRect.top, left: domRect.left };
+  } catch {
+    const editorRect = ReactEditor.toDOMNode(editor, editor).getBoundingClientRect();
+
+    return { top: editorRect.top, left: editorRect.left };
+  }
+}
 
 export const PanelProvider = ({ children, editor }: { children: React.ReactNode; editor: ReactEditor }) => {
   const [activePanel, setActivePanel] = useState<PanelType | undefined>(undefined);
@@ -48,6 +71,8 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
   }, [activePanel]);
 
   const closePanel = useCallback(() => {
+    openRef.current = false;
+    activePanelRef.current = undefined;
     setActivePanel(undefined);
     startSelection.current = null;
     endSelection.current = null;
@@ -77,6 +102,8 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
 
   const openPanel = useCallback(
     (panel: PanelType, position: { top: number; left: number }) => {
+      openRef.current = true;
+      activePanelRef.current = panel;
       setActivePanel(panel);
       setPanelPosition(position);
       pasteAsPayloadRef.current = undefined;
@@ -87,6 +114,47 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       endSelection.current = editor.selection;
     },
     [editor]
+  );
+
+  const isSlashPanelBlocked = useCallback(
+    (selection: BaseRange) => {
+      const inNonPanelBlock = Editor.above(editor, {
+        at: selection,
+        match: (n) =>
+          !Editor.isEditor(n) &&
+          Element.isElement(n) &&
+          (SOFT_BREAK_TYPES.includes(n.type as BlockType) ||
+            n.type === BlockType.AIMeetingTranscriptionBlock ||
+            n.type === BlockType.AIMeetingSpeakerBlock),
+      });
+
+      return Boolean(inNonPanelBlock);
+    },
+    [editor]
+  );
+
+  const openTriggerPanel = useCallback(
+    (panelType: PanelType, triggerLength = 1) => {
+      const { selection } = editor;
+
+      if (!selection) return;
+      if (panelType === PanelType.Slash && isSlashPanelBlocked(selection)) return;
+
+      const position = getPanelPosition(editor, selection);
+
+      if (!position) return;
+
+      openPanel(panelType, position);
+      startSelection.current = {
+        anchor: {
+          path: selection.anchor.path,
+          offset: Math.max(0, selection.anchor.offset - triggerLength),
+        },
+        focus: selection.focus,
+      };
+      endSelection.current = editor.selection;
+    },
+    [editor, isSlashPanelBlocked, openPanel]
   );
 
   useEffect(() => {
@@ -137,38 +205,10 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       if (openRef.current) return;
 
       if (panelTypeChars.includes(text)) {
-        const position = getRangeRect();
-
-        if (!position) return;
-
-        const panelType = { '/': PanelType.Slash, '+': PanelType.PageReference, '@': PanelType.Mention }[text];
+        const panelType = panelTypeByTrigger[text];
 
         if (!panelType) return;
-
-        if (panelType === PanelType.Slash && selection) {
-          const inNonPanelBlock = Editor.above(editor, {
-            at: selection,
-            match: (n) =>
-              !Editor.isEditor(n) &&
-              Element.isElement(n) &&
-              (SOFT_BREAK_TYPES.includes(n.type as BlockType) ||
-                n.type === BlockType.AIMeetingTranscriptionBlock ||
-                n.type === BlockType.AIMeetingSpeakerBlock),
-          });
-
-          if (inNonPanelBlock) return;
-        }
-
-        openPanel(panelType, { top: position.top, left: position.left });
-
-        startSelection.current = {
-          anchor: {
-            path: selection.anchor.path,
-            offset: selection.anchor.offset - 1,
-          },
-          focus: selection.focus,
-        };
-        endSelection.current = editor.selection;
+        openTriggerPanel(panelType);
         return;
       }
 
@@ -181,26 +221,14 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       });
 
       if (rangeText === '[[') {
-        const position = getRangeRect();
-
-        if (!position) return;
-
-        openPanel(PanelType.PageReference, { top: position.top, left: position.left });
-        startSelection.current = {
-          anchor: {
-            path: selection.anchor.path,
-            offset: selection.anchor.offset - 2,
-          },
-          focus: selection.focus,
-        };
-        endSelection.current = editor.selection;
+        openTriggerPanel(PanelType.PageReference, 2);
       }
     };
 
     return () => {
       editor.insertText = insertText;
     };
-  }, [editor, openPanel]);
+  }, [editor, openTriggerPanel]);
 
   useEffect(() => {
     const { onChange } = editor;
@@ -240,28 +268,31 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
   }, [editor, closePanel]);
 
   useEffect(() => {
+    const slateDom = ReactEditor.toDOMNode(editor, editor);
     const handleKeyDown = (e: KeyboardEvent) => {
       const { key } = e;
+      const target = e.target;
 
-      if (!openRef.current) return;
+      if (!(target instanceof Node) || !slateDom.contains(target)) return;
+
+      if (!openRef.current) {
+        const panelType = panelTypeByTrigger[key] ?? (e.code === 'Slash' ? PanelType.Slash : undefined);
+
+        if (!panelType || e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+
+        window.setTimeout(() => {
+          if (!openRef.current) {
+            openTriggerPanel(panelType);
+          }
+        }, 0);
+        return;
+      }
 
       switch (key) {
         case 'Escape':
           e.stopPropagation();
           closePanel();
           break;
-        case 'ArrowLeft':
-        case 'ArrowRight': {
-          // Allow Shift+Arrow for text selection even when panel is open
-          if (e.shiftKey) {
-            // Let the browser handle Shift+Arrow for text selection
-            return;
-          }
-
-          e.preventDefault();
-          break;
-        }
-
         case 'Backspace': {
           const { selection } = editor;
 
@@ -283,14 +314,12 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       }
     };
 
-    const slateDom = ReactEditor.toDOMNode(editor, editor);
-
-    slateDom.addEventListener('keydown', handleKeyDown);
+    document.addEventListener('keydown', handleKeyDown, true);
 
     return () => {
-      slateDom.removeEventListener('keydown', handleKeyDown);
+      document.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [closePanel, editor]);
+  }, [closePanel, editor, openTriggerPanel]);
 
   const contextValue = useMemo(
     () => ({
