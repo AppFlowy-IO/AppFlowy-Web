@@ -888,7 +888,14 @@
       },
       "urlPreview": {
         "copiedToPasteBoard": "Il link è stato copiato negli appunti",
-        "convertToLink": "Convertire in link da incorporare"
+        "convertToLink": "Convertire in link da incorporare",
+        "pasteAs": {
+          "title": "Incolla come",
+          "mention": "Menzione",
+          "url": "URL",
+          "bookmark": "Segnalibro",
+          "embed": "Incorpora"
+        }
       },
       "outline": {
         "addHeadingToCreateOutline": "Aggiungi intestazioni per creare un sommario.",

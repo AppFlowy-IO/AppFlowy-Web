@@ -42,6 +42,9 @@ const SimpleTable = memo(
         return { width, bgColor };
       });
     }, [columnCount, column_colors, column_widths]);
+    const tableWidth = useMemo(() => {
+      return columns.reduce((sum, column) => sum + column.width, 0);
+    }, [columns]);
     const colGroup = useMemo(() => {
       if (!columns) return null;
       return <colgroup>
@@ -108,7 +111,7 @@ const SimpleTable = memo(
         <SimpleTableContext.Provider value={contextValue}>
           <div className="simple-table-root-wrapper">
             <div className="simple-table-scroll-container">
-              <table>
+              <table style={tableWidth ? { width: `${tableWidth}px` } : undefined}>
                 {colGroup}
                 <tbody>
                 {children}

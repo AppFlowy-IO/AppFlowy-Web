@@ -27,6 +27,12 @@ interface EditorInlineAttributes {
     date?: string;
     reminder_id?: string;
     reminder_option?: string;
+    include_time?: boolean;
+    // external link
+    url?: string;
+    // mention person
+    person_id?: string;
+    person_name?: string;
   };
   af_text_color?: string;
   af_background_color?: string;

@@ -15,6 +15,15 @@ export function isValidUrl(input: string) {
   return isURL(input, { require_protocol: true, require_host: false });
 }
 
+export function isSingleURLText(input: string) {
+  const trimmed = input.trim();
+
+  if (!trimmed) return false;
+  if (trimmed.split(/\r\n|\r|\n/).filter(Boolean).length !== 1) return false;
+
+  return Boolean(processUrl(trimmed));
+}
+
 // Process the URL to make sure it's a valid URL
 // If it's not a valid URL(eg: 'appflowy.io' or '192.168.1.2'), we'll add 'https://' to the URL
 export function processUrl(input: string) {

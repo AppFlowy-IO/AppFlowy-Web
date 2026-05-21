@@ -5,12 +5,15 @@ import { ReactEditor } from 'slate-react';
 
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { BlockType } from '@/application/types';
+import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
+import type { PasteAsMenuPayload } from '@/components/editor/components/panels/paste-as-panel/constants';
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 
 export enum PanelType {
   Slash = 'slash',
   Mention = 'mention',
   PageReference = 'pageReference',
+  PasteAs = 'pasteAs',
 }
 
 export interface PanelContextType {
@@ -22,6 +25,7 @@ export interface PanelContextType {
   isPanelOpen: (panel: PanelType) => boolean;
   searchText?: string;
   removeContent: () => void;
+  getPasteAsPayload: () => PasteAsMenuPayload | undefined;
 }
 
 export const PanelContext = createContext<PanelContextType | undefined>(undefined);
@@ -35,15 +39,19 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
   const endSelection = useRef<BaseRange | null>(null);
   const [searchText, setSearchText] = useState('');
   const openRef = useRef(false);
+  const activePanelRef = useRef<PanelType | undefined>(undefined);
+  const pasteAsPayloadRef = useRef<PasteAsMenuPayload | undefined>(undefined);
 
   useEffect(() => {
     openRef.current = activePanel !== undefined;
+    activePanelRef.current = activePanel;
   }, [activePanel]);
 
   const closePanel = useCallback(() => {
     setActivePanel(undefined);
     startSelection.current = null;
     endSelection.current = null;
+    pasteAsPayloadRef.current = undefined;
     setSearchText('');
   }, []);
 
@@ -71,6 +79,7 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
     (panel: PanelType, position: { top: number; left: number }) => {
       setActivePanel(panel);
       setPanelPosition(position);
+      pasteAsPayloadRef.current = undefined;
       const { selection } = editor;
 
       if (!selection) return;
@@ -80,12 +89,42 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
     [editor]
   );
 
+  useEffect(() => {
+    const slateDom = ReactEditor.toDOMNode(editor, editor);
+    const handlePasteAsMenu = (event: Event) => {
+      const detail = (event as CustomEvent<PasteAsMenuPayload>).detail;
+
+      if (!detail) return;
+
+      const rect = detail.position ?? getRangeRect();
+
+      if (!rect) return;
+
+      pasteAsPayloadRef.current = detail;
+      setActivePanel(PanelType.PasteAs);
+      setPanelPosition({ top: rect.top, left: rect.left });
+      setSearchText('');
+      startSelection.current = detail.range;
+      endSelection.current = detail.range;
+    };
+
+    slateDom.addEventListener(PASTE_AS_MENU_EVENT, handlePasteAsMenu);
+
+    return () => {
+      slateDom.removeEventListener(PASTE_AS_MENU_EVENT, handlePasteAsMenu);
+    };
+  }, [editor]);
+
   const isPanelOpen = useCallback(
     (panel: PanelType) => {
       return activePanel === panel;
     },
     [activePanel]
   );
+
+  const getPasteAsPayload = useCallback(() => {
+    return pasteAsPayloadRef.current;
+  }, []);
 
   useEffect(() => {
     const { insertText } = editor;
@@ -169,6 +208,7 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
     editor.onChange = () => {
       onChange();
       if (!openRef.current) return;
+      if (activePanelRef.current === PanelType.PasteAs) return;
       const { selection } = editor;
       let start = startSelection.current?.focus;
 
@@ -262,6 +302,7 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       panelPosition,
       searchText,
       removeContent,
+      getPasteAsPayload,
     }),
     [
       activePanel,
@@ -271,6 +312,7 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       panelPosition,
       searchText,
       removeContent,
+      getPasteAsPayload,
     ]
   );
 

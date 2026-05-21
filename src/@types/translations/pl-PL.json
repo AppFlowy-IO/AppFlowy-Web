@@ -756,7 +756,16 @@
         "cut": "Wytnij",
         "paste": "Wklej"
       },
-      "action": "Akcje"
+      "action": "Akcje",
+      "urlPreview": {
+        "pasteAs": {
+          "title": "Wklej jako",
+          "mention": "Wzmianka",
+          "url": "URL",
+          "bookmark": "Zakładka",
+          "embed": "Osadź"
+        }
+      }
     },
     "textBlock": {
       "placeholder": "Wpisz „/” dla poleceń"

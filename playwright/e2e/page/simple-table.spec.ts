@@ -166,6 +166,28 @@ async function getTableWidth(page: Page, tableIndex = 0) {
   return getTableEl(page, tableIndex).evaluate(el => el.getBoundingClientRect().width);
 }
 
+async function pastePlainText(page: Page, text: string, html?: string) {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+
+  if (html) {
+    await page.evaluate(async ({ plainText, htmlText }) => {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          'text/plain': new Blob([plainText], { type: 'text/plain' }),
+          'text/html': new Blob([htmlText], { type: 'text/html' }),
+        }),
+      ]);
+    }, { plainText: text, htmlText: html });
+    await page.keyboard.press(`${MOD_KEY}+V`);
+    return;
+  }
+
+  await page.evaluate(async (plainText) => {
+    await navigator.clipboard.writeText(plainText);
+  }, text);
+  await page.keyboard.press(`${MOD_KEY}+V`);
+}
+
 // ============================================================================
 // Tests
 // ============================================================================
@@ -202,6 +224,106 @@ test.describe('SimpleTable', () => {
     await page.waitForTimeout(300);
 
     await expect(getCell(page, 0, 0)).toContainText('Hello');
+  });
+
+  test('should show paste-as layouts for pasted URLs in table cells', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+
+    const cell = getCell(page, 0, 0);
+    const url = 'https://github.com/AppFlowy-IO/AppFlowy-Web/issues/53';
+
+    await cell.click();
+    const initialCellWidth = await cell.evaluate(el => el.getBoundingClientRect().width);
+
+    await pastePlainText(page, url);
+
+    const pasteAsPanel = page.getByTestId('paste-as-panel');
+
+    await expect(pasteAsPanel).toBeVisible({ timeout: 5000 });
+    await expect(page.getByTestId('paste-as-mention')).toBeVisible();
+    await expect(page.getByTestId('paste-as-url')).toBeVisible();
+    await expect(page.getByTestId('paste-as-bookmark')).toBeVisible();
+    await expect(page.getByTestId('paste-as-embed')).toBeVisible();
+    await expect(cell).toContainText(url);
+    await expect(cell.locator('.link-preview-card')).toHaveCount(0);
+
+    await page.getByTestId('paste-as-bookmark').click();
+    await expect(pasteAsPanel).toBeHidden({ timeout: 5000 });
+
+    const card = cell.locator('.link-preview-card-bookmark').first();
+
+    await expect(card).toBeVisible({ timeout: 5000 });
+
+    const metrics = await card.evaluate((cardEl) => {
+      const cellEl = cardEl.closest('td[data-block-type="simple_table_cell"]') as HTMLElement | null;
+
+      if (!cellEl) throw new Error('No table cell found for link preview');
+
+      const cardRect = cardEl.getBoundingClientRect();
+      const cellRect = cellEl.getBoundingClientRect();
+      const cellStyle = getComputedStyle(cellEl);
+      const cellContentWidth =
+        cellRect.width - parseFloat(cellStyle.paddingLeft) - parseFloat(cellStyle.paddingRight);
+
+      return {
+        cardLeft: cardRect.left,
+        cardRight: cardRect.right,
+        cardWidth: cardRect.width,
+        cellLeft: cellRect.left,
+        cellRight: cellRect.right,
+        cellWidth: cellRect.width,
+        cellContentWidth,
+      };
+    });
+
+    expect(metrics.cardLeft).toBeGreaterThanOrEqual(metrics.cellLeft - 1);
+    expect(metrics.cardRight).toBeLessThanOrEqual(metrics.cellRight + 1);
+    expect(metrics.cardWidth).toBeLessThanOrEqual(metrics.cellContentWidth + 1);
+    expect(metrics.cellWidth).toBeLessThanOrEqual(initialCellWidth + 1);
+
+    const urlCell = getCell(page, 0, 1);
+    const plainUrl = 'https://appflowy.io/simple-table-url-layout';
+
+    await urlCell.click();
+    await pastePlainText(page, plainUrl);
+    await expect(pasteAsPanel).toBeVisible({ timeout: 5000 });
+    await page.getByTestId('paste-as-url').click();
+    await expect(pasteAsPanel).toBeHidden({ timeout: 5000 });
+    await expect(urlCell).toContainText(plainUrl);
+    await expect(urlCell.locator('.link-preview-card')).toHaveCount(0);
+
+  });
+
+  test('should convert pasted URLs to mentions in table cells', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+
+    const mentionCell = getCell(page, 0, 0);
+    const mentionUrl = 'https://appflowy.io/simple-table-mention-layout';
+
+    await mentionCell.click();
+    await pastePlainText(page, mentionUrl);
+    const pasteAsPanel = page.getByTestId('paste-as-panel');
+
+    await expect(pasteAsPanel).toBeVisible({ timeout: 5000 });
+    await page.getByTestId('paste-as-mention').click();
+    await expect(pasteAsPanel).toBeHidden({ timeout: 5000 });
+    await expect(mentionCell.locator('.mention')).toBeVisible({ timeout: 5000 });
+  });
+
+  test('should show paste-as for HTML links in table cells', async ({ page }) => {
+    await insertTableViaSlashCommand(page);
+
+    const embedCell = getCell(page, 0, 0);
+    const embedUrl = 'https://appflowy.io/simple-table-embed-layout';
+
+    await embedCell.click();
+    await pastePlainText(page, embedUrl, `<a href="${embedUrl}">${embedUrl}</a>`);
+    const pasteAsPanel = page.getByTestId('paste-as-panel');
+
+    await expect(pasteAsPanel).toBeVisible({ timeout: 5000 });
+    await page.getByTestId('paste-as-embed').click();
+    await expect(pasteAsPanel).toBeHidden({ timeout: 5000 });
+    await expect(embedCell.locator('.link-preview-card-embed')).toBeVisible({ timeout: 5000 });
   });
 
   // ==========================================================================

@@ -16,9 +16,7 @@ import { testLog } from '../../../support/test-helpers';
 /**
  * Paste content into the Slate editor by calling insertData directly.
  */
-async function pasteContent(page: Page, html: string, plainText: string) {
-  await expect(EditorSelectors.slateEditor(page).first()).toBeVisible({ timeout: 10000 });
-
+async function getDocumentEditorIndex(page: Page) {
   const editors = EditorSelectors.slateEditor(page);
   const editorCount = await editors.count();
 
@@ -39,8 +37,13 @@ async function pasteContent(page: Page, html: string, plainText: string) {
     throw new Error('No editor found');
   }
 
-  await editors.nth(targetIndex).click({ force: true });
-  await page.waitForTimeout(300);
+  return targetIndex;
+}
+
+async function pasteContent(page: Page, html: string, plainText: string) {
+  await expect(EditorSelectors.slateEditor(page).first()).toBeVisible({ timeout: 10000 });
+
+  const targetIndex = await getDocumentEditorIndex(page);
 
   await page.evaluate(
     ({ html, plainText, idx }) => {
@@ -97,10 +100,25 @@ async function pasteContent(page: Page, html: string, plainText: string) {
  * Call this between sequential pastes so each paste starts in its own block.
  */
 async function moveCursorToEnd(page: Page) {
-  const isMac = process.platform === 'darwin';
-  await page.keyboard.press(isMac ? 'Meta+ArrowDown' : 'Control+End');
-  await page.waitForTimeout(200);
-  await page.keyboard.press('Enter');
+  const editor = EditorSelectors.slateEditor(page).nth(await getDocumentEditorIndex(page));
+  const box = await editor.boundingBox();
+
+  if (!box) {
+    const isMac = process.platform === 'darwin';
+
+    await page.keyboard.press(isMac ? 'Meta+ArrowDown' : 'Control+End');
+    await page.waitForTimeout(200);
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    return;
+  }
+
+  const x = box.x + Math.min(320, box.width / 2);
+  const y = box.y + box.height - 196;
+
+  await page.mouse.click(x, y);
+  await page.waitForTimeout(300);
+  await page.mouse.click(x, y);
   await page.waitForTimeout(300);
 }
 
@@ -115,7 +133,7 @@ async function createTestPage(page: Page, request: import('@playwright/test').AP
   await page.waitForTimeout(2000);
 
   await createDocumentPageAndNavigate(page);
-  await EditorSelectors.firstEditor(page).click({ force: true });
+  await EditorSelectors.slateEditor(page).nth(await getDocumentEditorIndex(page)).click({ force: true });
   await page.waitForTimeout(500);
 }
 
