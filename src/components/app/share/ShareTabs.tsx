@@ -7,6 +7,7 @@ import { useAppView } from '@/components/app/app.hooks';
 import PublishPanel from '@/components/app/share/PublishPanel';
 import SharePanel from '@/components/app/share/SharePanel';
 import TemplatePanel from '@/components/app/share/TemplatePanel';
+import { useShareAccessDetails } from '@/components/app/share/useShareAccessDetails';
 import { useCurrentUser } from '@/components/main/app.hooks';
 import { Separator } from '@/components/ui/separator';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -36,6 +37,8 @@ function ShareTabs({
   const view = useAppView(viewId);
   const [value, setValue] = React.useState<TabKey>(TabKey.SHARE);
   const currentUser = useCurrentUser();
+  const { people, isLoadingPeople, loadPeople, currentUserAccessLevel, hasFullAccess, sectionType } =
+    useShareAccessDetails(viewId, opened);
 
   const options = useMemo(() => {
     return [
@@ -62,19 +65,17 @@ function ShareTabs({
           icon: <Templates className={'mb-0 h-5 w-5'} />,
           Panel: TemplatePanel,
         },
-    ].filter(Boolean) as Array<
-      {
-        value: TabKey;
-        label: string;
-        icon?: React.JSX.Element;
-        Panel: React.FC<{
-          viewId: string;
-          onClose: () => void;
-          opened: boolean;
-          onOpenPublishManage?: () => void;
-        }>;
-      }
-    >;
+    ].filter(Boolean) as Array<{
+      value: TabKey;
+      label: string;
+      icon?: React.JSX.Element;
+      Panel: React.FC<{
+        viewId: string;
+        onClose: () => void;
+        opened: boolean;
+        onOpenPublishManage?: () => void;
+      }>;
+    }>;
   }, [currentUser?.email, t, view?.is_published]);
 
   useEffect(() => {
@@ -103,12 +104,32 @@ function ShareTabs({
       {options.map((option) => (
         <TabsContent key={option.value} value={option.value}>
           <Suspense fallback={null}>
-            <option.Panel
-              viewId={viewId}
-              onClose={onClose}
-              opened={opened}
-              onOpenPublishManage={onOpenPublishManage}
-            />
+            {option.value === TabKey.SHARE ? (
+              <SharePanel
+                viewId={viewId}
+                people={people}
+                isLoadingPeople={isLoadingPeople}
+                onPeopleChange={loadPeople}
+                hasFullAccess={hasFullAccess}
+                sectionType={sectionType}
+              />
+            ) : option.value === TabKey.PUBLISH ? (
+              <PublishPanel
+                viewId={viewId}
+                onClose={onClose}
+                opened={opened}
+                onOpenPublishManage={onOpenPublishManage}
+                currentUserAccessLevel={currentUserAccessLevel}
+                shareDetailsLoading={isLoadingPeople}
+              />
+            ) : (
+              <option.Panel
+                viewId={viewId}
+                onClose={onClose}
+                opened={opened}
+                onOpenPublishManage={onOpenPublishManage}
+              />
+            )}
           </Suspense>
         </TabsContent>
       ))}

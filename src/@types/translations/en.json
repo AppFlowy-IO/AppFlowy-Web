@@ -223,6 +223,7 @@
     "upgradeText": " to the Pro plan to invite guests to this page",
     "pendingTooltip": "Invitation not yet accepted",
     "onlyFullAccess": "Only user with full access can invite others",
+    "readOnlyPublishTooltip": "You don't have permission to publish this page. Contact the page owner for access.",
     "onlyProCanInvite": "Please upgrade to the Pro plan to invite others",
     "upgradeConfirmTitle": "Upgrade to invite guest editors",
     "upgradeConfirmDescription": "Upgrade to Pro to collaborate with non-members on this page"
