@@ -11,6 +11,7 @@ import { assertDocExists, getBlock, getChildrenArray, getText } from '@/applicat
 import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, VideoType, YjsEditorKey } from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
+import { parsePlainTextFragments } from '@/components/editor/parsers/paste-fragment-detectors';
 import { parseTSVTable } from '@/components/editor/parsers/table-parser';
 import { ParsedBlock } from '@/components/editor/parsers/types';
 import { PASTE_AS_MENU_EVENT } from '@/components/editor/components/panels/paste-as-panel/constants';
@@ -323,6 +324,12 @@ function handlePlainTextPaste(editor: ReactEditor, text: string): boolean {
     return false;
   }
 
+  const fragmentBlocks = parsePlainTextFragments(text);
+
+  if (fragmentBlocks) {
+    return insertParsedBlocks(editor, fragmentBlocks);
+  }
+
   // Multi-line text: Check if it's Markdown
   if (detectMarkdown(text)) {
     return handleMarkdownPaste(editor, text);
@@ -538,7 +545,8 @@ function insertLinkedURLTextAndShowPasteAsMenu(editor: ReactEditor, url: string)
  */
 function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean {
   const blocks = lines
-    .filter(Boolean)
+    .map((line) => line.replace(/\uFEFF/g, ''))
+    .filter((line) => line.trim().length > 0)
     .map((line) => ({
       type: BlockType.Paragraph,
       data: {},

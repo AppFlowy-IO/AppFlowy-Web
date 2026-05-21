@@ -79,6 +79,7 @@ describe('block-converters', () => {
 
       const block = parseParagraph(node);
 
+      if (Array.isArray(block)) throw new Error('Expected one paragraph block');
       expect(block.type).toBe(BlockType.Paragraph);
       expect(block.text).toBe('Simple paragraph text');
       expect(block.formats).toEqual([]);
@@ -109,6 +110,7 @@ describe('block-converters', () => {
 
       const block = parseParagraph(node);
 
+      if (Array.isArray(block)) throw new Error('Expected one paragraph block');
       expect(block.text).toBe('Text with bold and italic');
       expect(block.formats).toHaveLength(2);
     });
@@ -131,12 +133,108 @@ describe('block-converters', () => {
 
       const block = parseParagraph(node);
 
+      if (Array.isArray(block)) throw new Error('Expected one paragraph block');
       expect(block.text).toBe('Visit our site');
       expect(block.formats).toHaveLength(1);
       expect(block.formats[0]).toMatchObject({
         type: 'link',
         data: { href: 'https://example.com' },
       });
+    });
+
+    it('should split br-separated clipboard lines into readable paragraphs', () => {
+      const node: HastElement = {
+        type: 'element',
+        tagName: 'div',
+        properties: {},
+        children: [
+          { type: 'text', value: 'Overview' },
+          { type: 'element', tagName: 'br', properties: {}, children: [] },
+          { type: 'text', value: 'Desktop checklist' },
+          { type: 'element', tagName: 'br', properties: {}, children: [] },
+          { type: 'text', value: ' Mobile checklist' },
+        ],
+      };
+
+      const blocks = parseParagraph(node);
+
+      expect(blocks).toEqual([
+        expect.objectContaining({ type: BlockType.Paragraph, text: 'Overview' }),
+        expect.objectContaining({ type: BlockType.Paragraph, text: 'Desktop checklist' }),
+        expect.objectContaining({ type: BlockType.Paragraph, text: ' Mobile checklist' }),
+      ]);
+    });
+
+    it('should split nested div clipboard lines into readable paragraphs', () => {
+      const node: HastElement = {
+        type: 'element',
+        tagName: 'div',
+        properties: {},
+        children: [
+          {
+            type: 'element',
+            tagName: 'div',
+            properties: {},
+            children: [{ type: 'text', value: 'Summary' }],
+          },
+          {
+            type: 'element',
+            tagName: 'div',
+            properties: {},
+            children: [{ type: 'text', value: 'Owner: Alex' }],
+          },
+          {
+            type: 'element',
+            tagName: 'div',
+            properties: {},
+            children: [{ type: 'text', value: 'Status: ready' }],
+          },
+        ],
+      };
+
+      const blocks = parseParagraph(node);
+
+      expect(blocks).toEqual([
+        expect.objectContaining({ type: BlockType.Paragraph, text: 'Summary' }),
+        expect.objectContaining({ type: BlockType.Paragraph, text: 'Owner: Alex' }),
+        expect.objectContaining({ type: BlockType.Paragraph, text: 'Status: ready' }),
+      ]);
+    });
+
+    it('should preserve inline formats when splitting clipboard lines', () => {
+      const node: HastElement = {
+        type: 'element',
+        tagName: 'div',
+        properties: {},
+        children: [
+          {
+            type: 'element',
+            tagName: 'strong',
+            properties: {},
+            children: [{ type: 'text', value: 'Important' }],
+          },
+          { type: 'element', tagName: 'br', properties: {}, children: [] },
+          {
+            type: 'element',
+            tagName: 'em',
+            properties: {},
+            children: [{ type: 'text', value: 'Follow up' }],
+          },
+        ],
+      };
+
+      const blocks = parseParagraph(node);
+
+      expect(blocks).toEqual([
+        expect.objectContaining({
+          text: 'Important',
+          formats: [{ start: 0, end: 9, type: 'bold', data: undefined }],
+        }),
+        expect.objectContaining({
+          text: 'Follow up',
+          formats: [{ start: 0, end: 9, type: 'italic', data: undefined }],
+        }),
+      ]);
     });
   });
 
