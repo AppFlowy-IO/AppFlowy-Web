@@ -273,7 +273,7 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       const { key } = e;
       const target = e.target;
 
-      if (!(target instanceof Node) || !slateDom.contains(target)) return;
+      if (!(target instanceof Node) || !ReactEditor.hasEditableTarget(editor, target)) return;
 
       if (!openRef.current) {
         const panelType = panelTypeByTrigger[key];
@@ -314,10 +314,10 @@ export const PanelProvider = ({ children, editor }: { children: React.ReactNode;
       }
     };
 
-    document.addEventListener('keydown', handleKeyDown, true);
+    slateDom.addEventListener('keydown', handleKeyDown, true);
 
     return () => {
-      document.removeEventListener('keydown', handleKeyDown, true);
+      slateDom.removeEventListener('keydown', handleKeyDown, true);
     };
   }, [closePanel, editor, openTriggerPanel]);
 

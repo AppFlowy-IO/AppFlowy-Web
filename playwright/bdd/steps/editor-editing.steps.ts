@@ -254,6 +254,32 @@ When('I focus simple table cell {int}, {int}', async ({ page }, rowIndex: number
   await page.waitForTimeout(300);
 });
 
+When('I focus a native input inside the editor', async ({ page }) => {
+  await EditorSelectors.slateEditor(page).evaluate((editorElement) => {
+    let wrapper = editorElement.querySelector<HTMLElement>('[data-testid="nested-native-input-wrapper"]');
+    let input = editorElement.querySelector<HTMLInputElement>('[data-testid="nested-native-input"]');
+
+    if (!wrapper || !input) {
+      wrapper = document.createElement('div');
+      wrapper.setAttribute('contenteditable', 'false');
+      wrapper.setAttribute('data-testid', 'nested-native-input-wrapper');
+      input = document.createElement('input');
+      input.setAttribute('data-testid', 'nested-native-input');
+      wrapper.appendChild(input);
+      editorElement.appendChild(wrapper);
+    }
+
+    input.value = '';
+  });
+
+  await page.getByTestId('nested-native-input').focus();
+});
+
+When('I type {string} in the nested native input', async ({ page }, text: string) => {
+  await page.keyboard.type(text);
+  await page.waitForTimeout(300);
+});
+
 Then('the editor contains {string}', async ({ page }, text: string) => {
   await expect(EditorSelectors.slateEditor(page)).toContainText(text);
 });
@@ -391,6 +417,10 @@ Then('the slash menu has {int} visible command', async ({ page }, count: number)
   await expect(SlashCommandSelectors.slashPanel(page).locator('[data-testid^="slash-menu-"]:visible')).toHaveCount(
     count
   );
+});
+
+Then('the nested native input contains {string}', async ({ page }, value: string) => {
+  await expect(page.getByTestId('nested-native-input')).toHaveValue(value);
 });
 
 Then(

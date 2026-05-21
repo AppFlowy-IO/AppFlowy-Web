@@ -1549,6 +1549,7 @@ export function SlashPanel({
   ]);
 
   const optionGroups = useMemo(() => groupSlashMenuOptions(options), [options]);
+  const orderedOptions = useMemo(() => optionGroups.flatMap(({ options }) => options), [optionGroups]);
 
   useEffect(() => {
     selectedOptionRef.current = selectedOption;
@@ -1578,11 +1579,11 @@ export function SlashPanel({
     if (!open) return;
 
     setSelectedOption((current) => {
-      if (options.length === 0) return null;
-      if (current && options.some((option) => option.key === current)) return current;
-      return options[0].key;
+      if (orderedOptions.length === 0) return null;
+      if (current && orderedOptions.some((option) => option.key === current)) return current;
+      return orderedOptions[0].key;
     });
-  }, [open, options]);
+  }, [open, orderedOptions]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -1594,9 +1595,9 @@ export function SlashPanel({
         case 'NumpadEnter': {
           e.stopPropagation();
           e.preventDefault();
-          if (options.length === 0) return;
+          if (orderedOptions.length === 0) return;
 
-          const item = options.find((option) => option.key === selectedOptionRef.current) ?? options[0];
+          const item = orderedOptions.find((option) => option.key === selectedOptionRef.current) ?? orderedOptions[0];
 
           handleSelectOption(item.key);
           item.onClick?.();
@@ -1609,16 +1610,16 @@ export function SlashPanel({
         case 'Tab': {
           e.stopPropagation();
           e.preventDefault();
-          if (options.length === 0) return;
+          if (orderedOptions.length === 0) return;
 
-          const index = options.findIndex((option) => option.key === selectedOptionRef.current);
+          const index = orderedOptions.findIndex((option) => option.key === selectedOptionRef.current);
           const currentIndex = index >= 0 ? index : 0;
           const moveToPrevious = key === 'ArrowUp' || (key === 'Tab' && e.shiftKey);
           const nextIndex = moveToPrevious
-            ? (currentIndex - 1 + options.length) % options.length
-            : (currentIndex + 1) % options.length;
+            ? (currentIndex - 1 + orderedOptions.length) % orderedOptions.length
+            : (currentIndex + 1) % orderedOptions.length;
 
-          setSelectedOption(options[nextIndex].key);
+          setSelectedOption(orderedOptions[nextIndex].key);
           break;
         }
 
@@ -1634,7 +1635,7 @@ export function SlashPanel({
     return () => {
       slateDom.removeEventListener('keydown', handleKeyDown);
     };
-  }, [closePanel, editor, open, options, handleSelectOption]);
+  }, [closePanel, editor, open, orderedOptions, handleSelectOption]);
 
   useEffect(() => {
     if (open && panelPosition) {
