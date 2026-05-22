@@ -1402,7 +1402,7 @@ export interface ViewComponentProps {
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
-  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   variant?: UIVariant;
   isTemplateThumb?: boolean;
@@ -1450,6 +1450,14 @@ export interface DuplicatePageOptions {
   includeChildren?: boolean;
   suffix?: string;
   source?: number;
+}
+
+export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
+  /**
+   * Client-only lifecycle hook. Runs after the pre-duplicate collab sync and
+   * before the duplicate API request; it is not sent to the server.
+   */
+  afterPreSync?: () => Promise<void>;
 }
 
 export interface CreateDatabaseViewPayload {

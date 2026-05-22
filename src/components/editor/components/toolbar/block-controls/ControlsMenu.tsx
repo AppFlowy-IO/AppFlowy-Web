@@ -2,8 +2,10 @@ import { Button, Divider } from '@mui/material';
 import { PopoverProps } from '@mui/material/Popover';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Path, Transforms } from 'slate';
 import { ReactEditor, useSlateStatic } from 'slate-react';
 
+import { prefetchDatabaseBlobDiff } from '@/application/database-blob';
 import { ViewService } from '@/application/services/domains';
 import { getAxios, executeAPIRequest, APIResponse } from '@/application/services/js-services/http/core';
 import { getView } from '@/application/services/js-services/http/view-api';
@@ -58,6 +60,22 @@ const popoverProps: Partial<PopoverProps> = {
   disableRestoreFocus: true,
   disableEnforceFocus: true,
 };
+
+function selectPathStartSafely(editor: YjsEditor, path: Path) {
+  try {
+    const point = editor.start(path);
+
+    if (!ReactEditor.hasRange(editor, { anchor: point, focus: point })) {
+      Transforms.deselect(editor);
+      return;
+    }
+
+    Transforms.select(editor, point);
+    ReactEditor.focus(editor);
+  } catch {
+    Transforms.deselect(editor);
+  }
+}
 
 function ControlsMenu({
   open,
@@ -191,6 +209,11 @@ function ControlsMenu({
         includeChildren: true,
         suffix: duplicateCopySuffix,
         source: 0,
+        afterPreSync: async () => {
+          await prefetchDatabaseBlobDiff(workspaceId, databaseId, {
+            forceFullSync: true,
+          });
+        },
       });
 
       let duplicatedContainerView;
@@ -326,16 +349,16 @@ function ControlsMenu({
       notify.success(t('button.duplicateSuccessfully'));
     }
 
-    ReactEditor.focus(editor);
-    const entry = findSlateEntryByBlockId(editor, newBlockIds[0]);
-
-    if (!entry) {
+    if (hasDatabaseBlock) {
+      Transforms.deselect(editor);
       return;
     }
 
-    const [, path] = entry;
+    const entry = findSlateEntryByBlockId(editor, newBlockIds[0]);
 
-    editor.select(editor.start(path));
+    if (entry) {
+      selectPathStartSafely(editor, entry[1]);
+    }
   }, [duplicateDatabaseBlock, editor, selectedBlockIds, t]);
 
   const options = useMemo(() => {
@@ -387,8 +410,7 @@ function ControlsMenu({
 
         if (path) {
           window.getSelection()?.removeAllRanges();
-          ReactEditor.focus(editor);
-          editor.select(editor.start(path));
+          selectPathStartSafely(editor, path);
         }
 
         onClose();
