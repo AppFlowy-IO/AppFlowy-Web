@@ -75,6 +75,25 @@ Feature: Seeded role matrix private page permissions
     Then the seeded page title is visible
     And the page title is editable
 
+  # Expected result: a workspace member can open a page in a public space while it is public.
+  # After the owner changes that space to Private in the web UI, the same member loses access to
+  # the page and sees the no-access screen instead of the private-space content.
+  Scenario: Member loses access when a public space becomes private
+    Given I sign in as seeded "owner"
+    And I create a temporary public space page in the seeded workspace
+    When I open the temporary seeded page
+    Then the temporary seeded page title is visible
+    When I sign in as seeded "member"
+    And I open the temporary seeded page
+    Then the temporary seeded page title is visible
+    When I sign in as seeded "owner"
+    And I change the temporary seeded space permission to "Private"
+    And I sign in as seeded "member"
+    And I open the temporary seeded page
+    Then the no access page is shown
+    And the temporary seeded space is hidden from the sidebar
+    And the temporary seeded page editor is not visible
+
   # Expected result: a guest with no explicit share cannot open workspace pages or another guest's shared private page.
   Scenario: Guest with no page share cannot open seeded pages
     Given I sign in as seeded "guest no share"

@@ -120,7 +120,13 @@ function SharePanel({
           hasFullAccess={hasFullAccess}
         />
         {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
-        <PeopleWithAccess viewId={viewId} people={people} isLoading={isLoadingPeople} onPeopleChange={refreshPeople} />
+        <PeopleWithAccess
+          viewId={viewId}
+          people={people}
+          isLoading={isLoadingPeople}
+          onPeopleChange={refreshPeople}
+          hasFullAccess={hasFullAccess}
+        />
         <GeneralAccess sectionType={sectionType} />
         <CopyLink />
       </div>

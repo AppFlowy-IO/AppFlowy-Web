@@ -157,6 +157,7 @@
     "removeAccess": "移除访问权限",
     "canViewDescription": "无法进行更改",
     "canEditDescription": "可以进行任何更改",
+    "fullAccessDescription": "可以编辑并与他人共享",
     "turnIntoMember": "转为成员",
     "notInvitedToPage": "未邀请到页面",
     "keepTypingEmail": "继续输入邮箱以邀请",

@@ -203,6 +203,7 @@
     "removeAccess": "Remove access",
     "canViewDescription": "Can’t make changes",
     "canEditDescription": "Can make any changes",
+    "fullAccessDescription": "Can edit and share with others",
     "turnIntoMember": "Turn into member",
     "notInvitedToPage": "Not invited to page",
     "keepTypingEmail": "Keep typing an email to invite",
