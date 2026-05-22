@@ -3663,6 +3663,8 @@
       "haveBeenInvited": "You've been invited to Join this workspace with the contact information below.",
       "invalid": "The invitation code has expired",
       "invalidMessage": "Please ask your collaborators to resend the invite.",
+      "memberLimitTitle": "Workspace member limit reached",
+      "memberLimitDescription": "{{workspaceName}} has reached the Free plan member limit. Ask the workspace owner to upgrade their plan or remove a member, then try joining again.",
       "joining": "Joining...",
       "hasJoined": "You've joined to\n<workspace />"
     },

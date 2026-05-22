@@ -1972,6 +1972,12 @@
     "removeRelatedTemplate": "移除相关模板",
     "label": "模板"
   },
+  "landingPage": {
+    "inviteCode": {
+      "memberLimitTitle": "工作区成员数量已达上限",
+      "memberLimitDescription": "{{workspaceName}} 已达到免费计划的成员数量上限。请联系工作区所有者升级计划或移除成员，然后再尝试加入。"
+    }
+  },
   "time": {
     "justNow": "刚刚",
     "seconds": {
