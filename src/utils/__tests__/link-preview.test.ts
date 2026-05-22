@@ -286,6 +286,63 @@ describe('link preview providers', () => {
     expect(mockedAxios.get).not.toHaveBeenCalled();
   });
 
+  it('prefers universal metadata for GitHub URLs so page preview images are preserved', async () => {
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        statusCode: 200,
+        data: {
+          title: 'Issue title from metadata',
+          description: 'Issue description from metadata',
+          image: { url: 'https://opengraph.githubassets.com/hash/AppFlowy-IO/AppFlowy-Web/issues/53' },
+        },
+      },
+    });
+
+    await expect(fetchLinkPreviewData('https://github.com/AppFlowy-IO/AppFlowy-Web/issues/53')).resolves.toEqual({
+      title: 'Issue title from metadata',
+      description: 'Issue description from metadata',
+      image: { url: 'https://opengraph.githubassets.com/hash/AppFlowy-IO/AppFlowy-Web/issues/53' },
+    });
+    expect(mockedAxios.get).toHaveBeenCalledTimes(1);
+    expect(mockedAxios.get).toHaveBeenCalledWith('https://api.microlink.io/', {
+      params: { url: 'https://github.com/AppFlowy-IO/AppFlowy-Web/issues/53' },
+      signal: undefined,
+      timeout: 10000,
+    });
+  });
+
+  it('falls back to the GitHub API when universal metadata is unavailable', async () => {
+    mockedAxios.get.mockRejectedValueOnce(new Error('metadata provider unavailable'));
+    mockedAxios.get.mockResolvedValueOnce({
+      data: {
+        body: 'Issue body',
+        html_url: 'https://github.com/AppFlowy-IO/AppFlowy-Web/issues/53',
+        number: 53,
+        title: 'Issue title',
+        user: {
+          avatar_url: 'https://avatars.githubusercontent.com/u/1?v=4',
+        },
+      },
+    });
+
+    await expect(fetchLinkPreviewData('https://github.com/AppFlowy-IO/AppFlowy-Web/issues/53')).resolves.toEqual({
+      title: 'Issue title - AppFlowy-IO/AppFlowy-Web#53',
+      description: 'Issue body',
+      image: { url: 'https://avatars.githubusercontent.com/u/1?v=4' },
+    });
+    expect(mockedAxios.get).toHaveBeenCalledTimes(2);
+    expect(mockedAxios.get).toHaveBeenLastCalledWith(
+      'https://api.github.com/repos/AppFlowy-IO/AppFlowy-Web/issues/53',
+      {
+        headers: {
+          Accept: 'application/vnd.github+json',
+        },
+        signal: undefined,
+        timeout: 10000,
+      }
+    );
+  });
+
   it('keeps default providers available after custom providers', () => {
     const cleanup = registerLinkPreviewProvider({
       id: 'custom-noop',
@@ -299,8 +356,8 @@ describe('link preview providers', () => {
 
     expect(getLinkPreviewProviders().map((provider) => provider.id)).toEqual([
       'custom-noop',
-      'github',
       'microlink',
+      'github',
       'url-fallback',
     ]);
   });
@@ -318,8 +375,8 @@ describe('link preview providers', () => {
     cleanupCallbacks.push(cleanup);
 
     expect(getLinkPreviewProviders().map((provider) => provider.id)).toEqual([
-      'github',
       'microlink',
+      'github',
       'late-custom',
       'url-fallback',
     ]);
