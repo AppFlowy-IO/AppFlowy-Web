@@ -28,6 +28,8 @@ import {
   SimpleTableData,
   VideoBlockData,
   ColumnNodeData,
+  AudioBlockData,
+  GoogleDriveBlockData,
 } from '@/application/types';
 
 export interface BlockNode extends Element {
@@ -128,6 +130,18 @@ export interface VideoBlockNode extends BlockNode {
   type: BlockType.VideoBlock;
   blockId: string;
   data: VideoBlockData;
+}
+
+export interface AudioBlockNode extends BlockNode {
+  type: BlockType.AudioBlock;
+  blockId: string;
+  data: AudioBlockData;
+}
+
+export interface GoogleDriveBlockNode extends BlockNode {
+  type: BlockType.GoogleDriveBlock;
+  blockId: string;
+  data: GoogleDriveBlockData;
 }
 
 export interface GalleryBlockNode extends BlockNode {

@@ -1,10 +1,15 @@
 import axios from 'axios';
-import { forwardRef, memo, useEffect, useState } from 'react';
-import { useReadOnly } from 'slate-react';
+import { forwardRef, memo, useCallback, useEffect, useRef, useState } from 'react';
+import { Element } from 'slate';
+import { useReadOnly, useSlateStatic } from 'slate-react';
 
-import { LinkPreviewType } from '@/application/types';
+import { YjsEditor } from '@/application/slate-yjs';
+import { BlockType, LinkPreviewType } from '@/application/types';
+import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import emptyImageSrc from '@/assets/images/empty.png';
+import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import { EditorElementProps, LinkPreviewNode } from '@/components/editor/editor.type';
+import { openUrl } from '@/utils/url';
 
 export const LinkPreview = memo(
   forwardRef<HTMLDivElement, EditorElementProps<LinkPreviewNode>>(({ node, children, ...attributes }, ref) => {
@@ -17,6 +22,10 @@ export const LinkPreview = memo(
     const url = node.data.url;
     const previewType = node.data.preview_type ?? LinkPreviewType.Bookmark;
     const isEmbed = previewType === LinkPreviewType.Embed;
+    const editor = useSlateStatic() as YjsEditor;
+    const readOnly = useReadOnly() || editor.isElementReadOnly(node as unknown as Element);
+    const emptyRef = useRef<HTMLDivElement>(null);
+    const { openPopover } = usePopoverContext();
 
     useEffect(() => {
       if (!url) return;
@@ -40,14 +49,22 @@ export const LinkPreview = memo(
         }
       })();
     }, [url]);
-    const readOnly = useReadOnly();
     const imageUrl = data?.image?.url;
+    const handleClick = useCallback(() => {
+      if (!url) {
+        if (!readOnly && emptyRef.current) {
+          openPopover(node.blockId, BlockType.LinkPreview, emptyRef.current);
+        }
+
+        return;
+      }
+
+      void openUrl(url, '_blank');
+    }, [node.blockId, openPopover, readOnly, url]);
 
     return (
       <div
-        onClick={() => {
-          window.open(url, '_blank');
-        }}
+        onClick={handleClick}
         contentEditable={readOnly ? false : undefined}
         {...attributes}
         ref={ref}
@@ -59,7 +76,12 @@ export const LinkPreview = memo(
           }`}
           contentEditable={false}
         >
-          {notFound ? (
+          {!url ? (
+            <div ref={emptyRef} className={'flex w-full min-w-0 items-center gap-3 text-text-secondary'}>
+              <LinkIcon className={'h-6 w-6 flex-none'} />
+              <div className={'truncate'}>{isEmbed ? 'Paste a link to embed' : 'Paste a link to create a bookmark'}</div>
+            </div>
+          ) : notFound ? (
             <div className={`link-preview-not-found flex w-full min-w-0 ${isEmbed ? 'flex-col' : 'items-center'}`}>
               {!isEmbed && (
                 <div

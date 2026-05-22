@@ -33,6 +33,8 @@ export enum BlockType {
   DividerBlock = 'divider',
   ImageBlock = 'image',
   VideoBlock = 'video',
+  AudioBlock = 'audio',
+  GoogleDriveBlock = 'google_drive',
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
@@ -170,6 +172,32 @@ export interface VideoBlockData extends BlockData {
   video_type?: VideoType;
   url_type?: DesktopVideoUrlType;
   name?: string;
+}
+
+export enum AudioUrlType {
+  Local = 'local',
+  Network = 'network',
+  Cloud = 'cloud',
+}
+
+export interface AudioBlockData extends BlockData {
+  url?: string;
+  url_type?: AudioUrlType | string;
+  name?: string;
+  uploaded_at?: number;
+  uploaded_by?: string;
+  duration_in_second?: number;
+  retry_local_url?: string;
+  pending_upload_id?: string;
+}
+
+export interface GoogleDriveBlockData extends BlockData {
+  url?: string;
+  name?: string;
+  email?: string;
+  uploaded_at?: number;
+  width_factor?: number;
+  height_factor?: number;
 }
 
 export interface AIMeetingBlockData extends BlockData {
