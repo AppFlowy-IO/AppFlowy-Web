@@ -6,9 +6,21 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { EditorMarkFormat } from '@/application/slate-yjs/types';
 import { SOFT_BREAK_TYPES } from '@/application/slate-yjs/command/const';
 import { slateContentInsertToYData } from '@/application/slate-yjs/utils/convert';
-import { getBlockEntry, getSharedRoot, getParentSimpleTableCellBlockId, isInsideSimpleTableCell } from '@/application/slate-yjs/utils/editor';
+import {
+  getBlockEntry,
+  getSharedRoot,
+  getParentSimpleTableCellBlockId,
+  isInsideSimpleTableCell,
+} from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray, getText } from '@/application/slate-yjs/utils/yjs';
-import { BlockType, LinkPreviewBlockData, MentionType, VideoBlockData, VideoType, YjsEditorKey } from '@/application/types';
+import {
+  BlockType,
+  LinkPreviewBlockData,
+  MentionType,
+  VideoBlockData,
+  VideoType,
+  YjsEditorKey,
+} from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 import { parsePlainTextFragments } from '@/components/editor/parsers/paste-fragment-detectors';
@@ -73,7 +85,7 @@ export const withPasted = (editor: ReactEditor) => {
           const cellTexts = extractCellTextsFromHTML(html);
 
           if (cellTexts.length > 0) {
-            const tsvText = cellTexts.map(row => row.join('\t')).join('\n');
+            const tsvText = cellTexts.map((row) => row.join('\t')).join('\n');
 
             return handlePasteIntoTableCells(editor as YjsEditor, blockId, tsvText);
           }
@@ -117,11 +129,11 @@ function extractCellTextsFromHTML(html: string): string[][] {
 
     const result: string[][] = [];
 
-    rows.forEach(row => {
+    rows.forEach((row) => {
       const cells = row.querySelectorAll('td, th');
       const rowTexts: string[] = [];
 
-      cells.forEach(cell => {
+      cells.forEach((cell) => {
         rowTexts.push(cell.textContent?.trim() ?? '');
       });
 
@@ -170,7 +182,7 @@ function handlePasteIntoTableCells(editor: YjsEditor, blockId: string, text: str
     if (cellIndex === -1) return false;
 
     // Parse TSV: split by tabs for columns, newlines for rows
-    const rows = text.split('\n').filter(line => line.length > 0);
+    const rows = text.split('\n').filter((line) => line.length > 0);
 
     if (rows.length === 0) return false;
 
@@ -466,7 +478,9 @@ function getInsertedURLRange(editor: ReactEditor, url: string, insertionPoint: B
     return cloneRange(selection);
   }
 
-  const end = selection ? Range.end(selection) : { path: insertionPoint.path, offset: insertionPoint.offset + url.length };
+  const end = selection
+    ? Range.end(selection)
+    : { path: insertionPoint.path, offset: insertionPoint.offset + url.length };
   const start = {
     path: [...end.path],
     offset: Math.max(0, end.offset - url.length),
@@ -616,6 +630,14 @@ function insertBlock(editor: ReactEditor, block: { type: BlockType; data: object
 function parsedBlockToSlateElement(block: ParsedBlock): Element {
   const { type, data, children } = block;
 
+  if (SIMPLE_TABLE_CONTAINER_BLOCK_TYPES.includes(type)) {
+    return {
+      type,
+      data,
+      children: children.map(parsedBlockToSlateElement),
+    } as Element;
+  }
+
   // Convert text + formats to Slate text nodes
   const textNodes = parsedBlockToTextNodes(block);
 
@@ -631,6 +653,12 @@ function parsedBlockToSlateElement(block: ParsedBlock): Element {
     children: slateChildren,
   } as Element;
 }
+
+const SIMPLE_TABLE_CONTAINER_BLOCK_TYPES = [
+  BlockType.SimpleTableBlock,
+  BlockType.SimpleTableRowBlock,
+  BlockType.SimpleTableCellBlock,
+];
 
 /**
  * Converts ParsedBlock text to Slate text nodes with formats
@@ -735,8 +763,8 @@ function insertParsedBlocks(editor: ReactEditor, blocks: ParsedBlock[]): boolean
 
     if (insideTable) {
       // Split blocks: text-like blocks go inside the cell, table blocks go after the parent table
-      const cellBlocks = blocks.filter(b => !TABLE_BLOCK_TYPES.includes(b.type));
-      const tableBlocks = blocks.filter(b => TABLE_BLOCK_TYPES.includes(b.type));
+      const cellBlocks = blocks.filter((b) => !TABLE_BLOCK_TYPES.includes(b.type));
+      const tableBlocks = blocks.filter((b) => TABLE_BLOCK_TYPES.includes(b.type));
 
       // Insert text blocks inside the cell
       if (cellBlocks.length > 0) {

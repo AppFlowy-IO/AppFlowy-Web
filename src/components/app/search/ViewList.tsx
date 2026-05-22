@@ -12,11 +12,13 @@ function ViewList({
   views,
   onClose,
   loading,
+  header,
 }: {
   title: string;
   views?: View[];
   onClose: () => void;
   loading: boolean;
+  header?: React.ReactNode;
 }) {
   const { t } = useTranslation();
   const [selectedView, setSelectedView] = React.useState<string>('');
@@ -71,6 +73,7 @@ function ViewList({
 
   return (
     <div ref={ref} className={'flex flex-col'}>
+      {header}
       <div className={'flex items-center gap-4 px-4 pb-2 pt-5'}>
         {!loading && views && views.length === 0 ? (
           t('noSearchResults')
