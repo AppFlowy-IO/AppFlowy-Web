@@ -3,31 +3,28 @@ export interface AppFlowyBlockLink {
   blockId: string;
 }
 
-const UUID_PATTERN = '[0-9a-fA-F-]{36}';
-const APPFLOWY_BLOCK_LINK_PATTERN = new RegExp(
-  `^https?://[^/]+/app/(${UUID_PATTERN})/(${UUID_PATTERN})(?:[?#][^\\s]*)?$`
-);
-
-export function parseAppFlowyBlockLink(url: string): AppFlowyBlockLink | null {
-  const trimmed = url.trim();
-  const match = APPFLOWY_BLOCK_LINK_PATTERN.exec(trimmed);
-
-  if (!match) return null;
-
+export function parseAppFlowyBlockLink(raw: string, expectedHostname?: string): AppFlowyBlockLink | null {
   let parsedUrl: URL;
 
   try {
-    parsedUrl = new URL(trimmed);
+    parsedUrl = new URL(raw.trim());
   } catch {
     return null;
   }
+
+  if (!isHttpUrl(parsedUrl)) return null;
+  if (expectedHostname && parsedUrl.hostname !== expectedHostname) return null;
+
+  const segments = parsedUrl.pathname.split('/').filter(Boolean);
+
+  if (segments.length !== 3 || segments[0] !== 'app') return null;
 
   const blockId = parsedUrl.searchParams.get('blockId');
 
   if (!blockId) return null;
 
   return {
-    pageId: match[2],
+    pageId: segments[2],
     blockId,
   };
 }
@@ -49,23 +46,11 @@ function getClipboardData(data: Pick<DataTransfer, 'getData'>, type: string): st
 }
 
 function getSingleURLText(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-
-  if (!trimmed) return undefined;
-  if (trimmed.split(/\r\n|\r|\n/).filter(Boolean).length !== 1) return undefined;
-
-  return isHTTPURL(trimmed) ? trimmed : undefined;
+  return pickSingleHttpUrl(value?.split(/\r\n|\r|\n/));
 }
 
 function getSingleURLTextFromUriList(value: string | undefined): string | undefined {
-  const urls = value
-    ?.split(/\r\n|\r|\n/)
-    .map((line) => line.trim())
-    .filter((line) => line && !line.startsWith('#'));
-
-  if (!urls || urls.length !== 1) return undefined;
-
-  return isHTTPURL(urls[0]) ? urls[0] : undefined;
+  return pickSingleHttpUrl(value?.split(/\r\n|\r|\n/).filter((line) => !line.trim().startsWith('#')));
 }
 
 function getSingleURLTextFromHTML(html: string | undefined): string | undefined {
@@ -75,24 +60,38 @@ function getSingleURLTextFromHTML(html: string | undefined): string | undefined 
 
   try {
     const doc = new DOMParser().parseFromString(trimmed, 'text/html');
-    const text = getSingleURLText(doc.body.textContent ?? undefined);
+    const text = pickSingleHttpUrl(doc.body.textContent?.split(/\r\n|\r|\n/));
 
     if (text) return text;
 
     const href = doc.querySelector('a[href]')?.getAttribute('href')?.trim();
 
-    return getSingleURLText(href);
+    return pickSingleHttpUrl(href ? [href] : undefined);
   } catch {
     return undefined;
   }
 }
 
-function isHTTPURL(value: string): boolean {
+function pickSingleHttpUrl(lines: string[] | undefined): string | undefined {
+  const normalized = lines?.map((line) => line.trim()).filter(Boolean);
+
+  if (!normalized || normalized.length !== 1) return undefined;
+
+  return tryParseHttpUrl(normalized[0]) ? normalized[0] : undefined;
+}
+
+function tryParseHttpUrl(value: string | undefined): URL | null {
+  if (!value) return null;
+
   try {
     const url = new URL(value);
 
-    return url.protocol === 'http:' || url.protocol === 'https:';
+    return isHttpUrl(url) ? url : null;
   } catch {
-    return false;
+    return null;
   }
+}
+
+function isHttpUrl(url: URL): boolean {
+  return url.protocol === 'http:' || url.protocol === 'https:';
 }

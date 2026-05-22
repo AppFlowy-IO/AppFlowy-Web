@@ -20,6 +20,7 @@ import { isSingleURLText, processUrl } from '@/utils/url';
 import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 
 import { getSingleURLTextFromClipboardData, parseAppFlowyBlockLink } from './appflowy-block-link';
+import type { AppFlowyBlockLink } from './appflowy-block-link';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -55,6 +56,7 @@ export const withPasted = (editor: ReactEditor) => {
     const html = data.getData('text/html');
     const text = data.getData('text/plain');
     const clipboardURL = getSingleURLTextFromClipboardData(data);
+    const clipboardBlockLink = clipboardURL ? parseAppFlowyBlockLink(clipboardURL, window.location.hostname) : null;
 
     // Priority 0: If pasting tabular content (TSV/multi-cell) inside a table cell,
     // fill adjacent cells instead of inserting as blocks
@@ -86,8 +88,8 @@ export const withPasted = (editor: ReactEditor) => {
       }
     }
 
-    if (clipboardURL && parseAppFlowyBlockLink(clipboardURL)) {
-      return handleURLPaste(editor, clipboardURL);
+    if (clipboardURL && clipboardBlockLink) {
+      return handleURLPaste(editor, clipboardURL, clipboardBlockLink);
     }
 
     // Priority 1: HTML (if available)
@@ -384,9 +386,9 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
 /**
  * Handles URL paste (link previews, videos, page references)
  */
-function handleURLPaste(editor: ReactEditor, url: string): boolean {
+function handleURLPaste(editor: ReactEditor, url: string, parsedBlockLink?: AppFlowyBlockLink): boolean {
   // Check for AppFlowy internal links
-  const blockLink = parseAppFlowyBlockLink(url);
+  const blockLink = parsedBlockLink ?? parseAppFlowyBlockLink(url, window.location.hostname);
 
   if (blockLink) {
     const point = editor.selection?.anchor as BasePoint;

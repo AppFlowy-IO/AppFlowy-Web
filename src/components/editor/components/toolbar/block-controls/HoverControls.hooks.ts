@@ -24,15 +24,11 @@ export function getTableHoverControlsRoot(blockElement: HTMLElement) {
 }
 
 export function shouldShowHoverControlsForBlock(node: Element, blockElement: HTMLElement) {
-  for (const type of TABLE_ROOT_TYPES) {
-    const tableRoot = blockElement.closest(`[data-block-type="${type}"]`);
+  const tableRoot = getTableHoverControlsRoot(blockElement);
 
-    if (tableRoot && node.type !== type) {
-      return false;
-    }
-  }
+  if (!tableRoot) return true;
 
-  return true;
+  return tableRoot.getAttribute('data-block-type') === node.type;
 }
 
 export function useHoverControls({ disabled }: { disabled: boolean }) {
