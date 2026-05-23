@@ -92,6 +92,7 @@ function BestMatch({
 
         setSearchResults(res);
         setViews(views);
+        setLoading(false);
 
         if (aiEnabled && res.some((item) => item.content)) {
           setSummaryLoading(true);
@@ -100,6 +101,10 @@ function BestMatch({
 
             if (searchSeqRef.current === searchSeq) {
               setSummary(summaryResult.summaries[0] || null);
+            }
+          } catch {
+            if (searchSeqRef.current === searchSeq) {
+              setSummary(null);
             }
           } finally {
             if (searchSeqRef.current === searchSeq) {
