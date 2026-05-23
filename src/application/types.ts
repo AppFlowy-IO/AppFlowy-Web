@@ -33,6 +33,8 @@ export enum BlockType {
   DividerBlock = 'divider',
   ImageBlock = 'image',
   VideoBlock = 'video',
+  AudioBlock = 'audio',
+  GoogleDriveBlock = 'google_drive',
   GridBlock = 'grid',
   BoardBlock = 'board',
   CalendarBlock = 'calendar',
@@ -170,6 +172,32 @@ export interface VideoBlockData extends BlockData {
   video_type?: VideoType;
   url_type?: DesktopVideoUrlType;
   name?: string;
+}
+
+export enum AudioUrlType {
+  Local = 'local',
+  Network = 'network',
+  Cloud = 'cloud',
+}
+
+export interface AudioBlockData extends BlockData {
+  url?: string;
+  url_type?: AudioUrlType | string;
+  name?: string;
+  uploaded_at?: number;
+  uploaded_by?: string;
+  duration_in_second?: number;
+  retry_local_url?: string;
+  pending_upload_id?: string;
+}
+
+export interface GoogleDriveBlockData extends BlockData {
+  url?: string;
+  name?: string;
+  email?: string;
+  uploaded_at?: number;
+  width_factor?: number;
+  height_factor?: number;
 }
 
 export interface AIMeetingBlockData extends BlockData {
@@ -1374,7 +1402,7 @@ export interface ViewComponentProps {
   updatePage?: (viewId: string, data: UpdatePagePayload) => Promise<void>;
   addPage?: (parentId: string, payload: CreatePagePayload) => Promise<CreatePageResponse>;
   deletePage?: (viewId: string) => Promise<void>;
-  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   openPageModal?: (viewId: string) => void;
   variant?: UIVariant;
   isTemplateThumb?: boolean;
@@ -1422,6 +1450,14 @@ export interface DuplicatePageOptions {
   includeChildren?: boolean;
   suffix?: string;
   source?: number;
+}
+
+export interface DuplicatePageOperationOptions extends DuplicatePageOptions {
+  /**
+   * Client-only lifecycle hook. Runs after the pre-duplicate collab sync and
+   * before the duplicate API request; it is not sent to the server.
+   */
+  afterPreSync?: () => Promise<void>;
 }
 
 export interface CreateDatabaseViewPayload {

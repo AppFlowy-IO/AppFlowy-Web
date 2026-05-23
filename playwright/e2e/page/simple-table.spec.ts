@@ -281,6 +281,18 @@ test.describe('SimpleTable', () => {
     expect(metrics.cardWidth).toBeLessThanOrEqual(metrics.cellContentWidth + 1);
     expect(metrics.cellWidth).toBeLessThanOrEqual(initialCellWidth + 1);
 
+    const layout = await card.evaluate((cardEl) => {
+      const title = cardEl.querySelector('.link-preview-title');
+
+      return {
+        flexDirection: getComputedStyle(cardEl).flexDirection,
+        titleWhiteSpace: title ? getComputedStyle(title).whiteSpace : '',
+      };
+    });
+
+    expect(layout.flexDirection).toBe('column');
+    expect(layout.titleWhiteSpace).toBe('normal');
+
     const urlCell = getCell(page, 0, 1);
     const plainUrl = 'https://appflowy.io/simple-table-url-layout';
 

@@ -16,12 +16,19 @@ import {
 import { getBlockIndex, getParent } from '@/application/slate-yjs/utils/yjs';
 import {
   AlignType,
+  AudioBlockData,
+  AudioUrlType,
   BlockData,
   BlockType,
   CalloutBlockData,
   CodeBlockData,
+  GalleryBlockData,
+  GalleryLayout,
+  GoogleDriveBlockData,
   HeadingBlockData,
   ImageBlockData,
+  LinkPreviewBlockData,
+  LinkPreviewType,
   SubpageNodeData,
   ToggleListBlockData,
   VideoBlockData,
@@ -33,6 +40,7 @@ import {
 import { ReactComponent as EmojiIcon } from '@/assets/icons/add_emoji.svg';
 import { ReactComponent as AddPageIcon } from '@/assets/icons/add_to_page.svg';
 import { ReactComponent as AskAIIcon } from '@/assets/icons/ai.svg';
+import { ReactComponent as AudioIcon } from '@/assets/icons/audio.svg';
 import { ReactComponent as BoardIcon } from '@/assets/icons/board.svg';
 import { ReactComponent as BulletedListIcon } from '@/assets/icons/bulleted_list.svg';
 import { ReactComponent as CalendarIcon } from '@/assets/icons/calendar.svg';
@@ -44,6 +52,7 @@ import { ReactComponent as DividerIcon } from '@/assets/icons/divider.svg';
 import { ReactComponent as OutlineIcon } from '@/assets/icons/doc.svg';
 import { ReactComponent as FileIcon } from '@/assets/icons/file.svg';
 import { ReactComponent as FormulaIcon } from '@/assets/icons/formula.svg';
+import { ReactComponent as GalleryIcon } from '@/assets/icons/gallery.svg';
 import { ReactComponent as GridIcon } from '@/assets/icons/grid.svg';
 import { ReactComponent as SimpleTableIcon } from '@/assets/icons/table.svg';
 import { ReactComponent as Heading1Icon } from '@/assets/icons/h1.svg';
@@ -51,6 +60,7 @@ import { ReactComponent as Heading2Icon } from '@/assets/icons/h2.svg';
 import { ReactComponent as Heading3Icon } from '@/assets/icons/h3.svg';
 import { ReactComponent as ImageIcon } from '@/assets/icons/image.svg';
 import { ReactComponent as CodeIcon } from '@/assets/icons/inline_code.svg';
+import { ReactComponent as LinkIcon } from '@/assets/icons/link.svg';
 import { ReactComponent as NumberedListIcon } from '@/assets/icons/numbered_list.svg';
 import { ReactComponent as DocumentIcon } from '@/assets/icons/page.svg';
 import { ReactComponent as PDFIcon } from '@/assets/icons/pdf.svg';
@@ -63,6 +73,7 @@ import { ReactComponent as ToggleHeading2Icon } from '@/assets/icons/toggle_h2.s
 import { ReactComponent as ToggleHeading3Icon } from '@/assets/icons/toggle_h3.svg';
 import { ReactComponent as ChevronRight, ReactComponent as ToggleListIcon } from '@/assets/icons/toggle_list.svg';
 import { ReactComponent as VideoIcon } from '@/assets/icons/video.svg';
+import { ReactComponent as GoogleIcon } from '@/assets/login/google.svg';
 import { notify } from '@/components/_shared/notify';
 import { calculateOptimalOrigins, Popover } from '@/components/_shared/popover';
 import PageIcon from '@/components/_shared/view-icon/PageIcon';
@@ -402,24 +413,20 @@ export function SlashPanel({
       }
 
       if (
+        newBlockId &&
         [
           BlockType.FileBlock,
+          BlockType.AudioBlock,
           BlockType.ImageBlock,
+          BlockType.LinkPreview,
+          BlockType.GalleryBlock,
+          BlockType.GoogleDriveBlock,
           BlockType.EquationBlock,
           BlockType.VideoBlock,
           BlockType.PDFBlock,
         ].includes(type)
       ) {
-        setTimeout(() => {
-          if (!newBlockId) return;
-          const entry = findSlateEntryByBlockId(editor, newBlockId);
-
-          if (!entry) return;
-          const [node] = entry;
-          const dom = ReactEditor.toDOMNode(editor, node);
-
-          openPopover(newBlockId, type, dom);
-        }, 50);
+        openPopover(newBlockId, type);
       }
     },
     [editor, openPopover]
@@ -816,6 +823,19 @@ export function SlashPanel({
         },
       },
       {
+        label: t('document.slashMenu.name.photoGallery', { defaultValue: 'Photo gallery' }),
+        key: 'photoGallery',
+        icon: <GalleryIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['photo', 'gallery', 'image gallery', 'photo gallery', 'browser'],
+        onClick: () => {
+          turnInto(BlockType.GalleryBlock, {
+            images: [],
+            layout: GalleryLayout.Carousel,
+          } as GalleryBlockData);
+        },
+      },
+      {
         label: t('embedVideo'),
         key: 'video',
         icon: <VideoIcon />,
@@ -829,6 +849,19 @@ export function SlashPanel({
         },
       },
       {
+        label: t('document.slashMenu.name.audio', { defaultValue: 'Audio' }),
+        key: 'audio',
+        icon: <AudioIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['audio', 'music', 'sound', 'media'],
+        onClick: () => {
+          turnInto(BlockType.AudioBlock, {
+            url: '',
+            url_type: AudioUrlType.Network,
+          } as AudioBlockData);
+        },
+      },
+      {
         label: t('document.slashMenu.name.pdf', { defaultValue: 'PDF' }),
         key: 'pdf',
         icon: <PDFIcon />,
@@ -836,6 +869,34 @@ export function SlashPanel({
         keywords: ['pdf', 'file', 'document', 'embed'],
         onClick: () => {
           turnInto(BlockType.PDFBlock, {});
+        },
+      },
+      {
+        label: t('document.slashMenu.name.googleDrive', { defaultValue: 'Google Drive' }),
+        key: 'googleDrive',
+        icon: <GoogleIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['drive', 'google drive', 'google', 'docs', 'sheets', 'slides'],
+        onClick: () => {
+          turnInto(BlockType.GoogleDriveBlock, {
+            url: '',
+            uploaded_at: Date.now(),
+            width_factor: 1,
+            height_factor: 1,
+          } as GoogleDriveBlockData);
+        },
+      },
+      {
+        label: t('document.slashMenu.name.bookmark', { defaultValue: 'Web bookmark' }),
+        key: 'bookmark',
+        icon: <LinkIcon />,
+        group: SlashMenuGroupKey.Media,
+        keywords: ['bookmark', 'web bookmark', 'link card', 'url card', 'link', 'bm'],
+        onClick: () => {
+          turnInto(BlockType.LinkPreview, {
+            url: '',
+            preview_type: LinkPreviewType.Bookmark,
+          } as LinkPreviewBlockData);
         },
       },
       {

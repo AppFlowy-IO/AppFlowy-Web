@@ -5,9 +5,13 @@ import { YjsEditor } from '@/application/slate-yjs';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { BlockType } from '@/application/types';
 import { calculateOptimalOrigins, Origins, Popover } from '@/components/_shared/popover';
+import AudioBlockPopoverContent from '@/components/editor/components/block-popover/AudioBlockPopoverContent';
 import { usePopoverContext } from '@/components/editor/components/block-popover/BlockPopoverContext';
 import FileBlockPopoverContent from '@/components/editor/components/block-popover/FileBlockPopoverContent';
+import GalleryBlockPopoverContent from '@/components/editor/components/block-popover/GalleryBlockPopoverContent';
+import GoogleDriveBlockPopoverContent from '@/components/editor/components/block-popover/GoogleDriveBlockPopoverContent';
 import ImageBlockPopoverContent from '@/components/editor/components/block-popover/ImageBlockPopoverContent';
+import LinkPreviewPopoverContent from '@/components/editor/components/block-popover/LinkPreviewPopoverContent';
 import PDFBlockPopoverContent from '@/components/editor/components/block-popover/PDFBlockPopoverContent';
 import { useEditorLocalState } from '@/components/editor/EditorContext';
 
@@ -37,7 +41,7 @@ function BlockPopover() {
 
     const entry = findSlateEntryByBlockId(editor, blockId);
 
-    if(!entry) return;
+    if (!entry) return;
 
     const [, path] = entry;
 
@@ -59,6 +63,14 @@ function BlockPopover() {
         return <MathEquationPopoverContent blockId={blockId} onClose={handleClose} />;
       case BlockType.VideoBlock:
         return <VideoBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.LinkPreview:
+        return <LinkPreviewPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.GalleryBlock:
+        return <GalleryBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.AudioBlock:
+        return <AudioBlockPopoverContent blockId={blockId} onClose={handleClose} />;
+      case BlockType.GoogleDriveBlock:
+        return <GoogleDriveBlockPopoverContent blockId={blockId} onClose={handleClose} />;
       default:
         return null;
     }
@@ -89,7 +101,15 @@ function BlockPopover() {
           left: panelPosition.left,
         },
         400,
-        type === BlockType.ImageBlock || type === BlockType.VideoBlock ? 366 : 200,
+        [
+          BlockType.ImageBlock,
+          BlockType.VideoBlock,
+          BlockType.GalleryBlock,
+          BlockType.AudioBlock,
+          BlockType.GoogleDriveBlock,
+        ].includes(type as BlockType)
+          ? 366
+          : 200,
         defaultOrigins,
         16
       );

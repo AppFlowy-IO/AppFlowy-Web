@@ -100,6 +100,9 @@ export async function collabFullSyncBatch(
       'device-id': deviceId,
     },
     responseType: 'arraybuffer',
+    // Axios' default transform sends typed-array `.buffer`, which can include
+    // protobufjs' pooled zero padding beyond this Uint8Array view.
+    transformRequest: [(data: Uint8Array) => data],
     validateStatus: (status) => status === 200 || status === 429 || status === 503,
   });
 

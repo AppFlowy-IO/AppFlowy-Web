@@ -5,7 +5,7 @@ import { SyncContext } from '@/application/services/js-services/sync-protocol';
 import {
   CreateDatabaseViewPayload,
   CreateDatabaseViewResponse,
-  DuplicatePageOptions,
+  DuplicatePageOperationOptions,
   CreatePagePayload,
   CreatePageResponse,
   CreateRow,
@@ -69,7 +69,7 @@ export interface AppOperationsContextType {
   /** Soft-delete a page (move to trash). */
   deletePage?: (viewId: string) => Promise<void>;
   /** Duplicate a page, optionally refreshing its parent children in the outline. */
-  duplicatePage?: (viewId: string, options?: DuplicatePageOptions) => Promise<void>;
+  duplicatePage?: (viewId: string, options?: DuplicatePageOperationOptions) => Promise<void>;
   /** Update page properties (name, cover, etc.). */
   updatePage?: (viewId: string, payload: UpdatePagePayload) => Promise<void>;
   /** Update just the page icon. */

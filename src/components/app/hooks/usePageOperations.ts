@@ -11,7 +11,7 @@ import {
 } from '@/application/services/js-services/http/publish-api';
 import {
   CreateDatabaseViewPayload,
-  DuplicatePageOptions,
+  DuplicatePageOperationOptions,
   CreatePagePayload,
   CreateSpacePayload,
   Role,
@@ -154,10 +154,12 @@ export function usePageOperations({
   );
 
   const duplicatePage = useCallback(
-    async (viewId: string, options: DuplicatePageOptions = {}) => {
+    async (viewId: string, options: DuplicatePageOperationOptions = {}) => {
       if (!currentWorkspaceId) {
         throw new Error('No workspace or service found');
       }
+
+      const { afterPreSync, ...duplicateOptions } = options;
 
       try {
         // Sync all collab documents to the server via HTTP API before duplicating.
@@ -174,12 +176,14 @@ export function usePageOperations({
           await flushAllSync?.();
         }
 
-        await PageService.duplicate(currentWorkspaceId, viewId, options);
+        await afterPreSync?.();
+
+        await PageService.duplicate(currentWorkspaceId, viewId, duplicateOptions);
         await loadOutline?.(currentWorkspaceId, false);
 
-        if (options.parentViewId) {
-          ViewService.invalidateCache(currentWorkspaceId, options.parentViewId);
-          await loadViewChildren?.(options.parentViewId);
+        if (duplicateOptions.parentViewId) {
+          ViewService.invalidateCache(currentWorkspaceId, duplicateOptions.parentViewId);
+          await loadViewChildren?.(duplicateOptions.parentViewId);
         }
       } catch (e) {
         return Promise.reject(e);
