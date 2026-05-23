@@ -43,6 +43,22 @@ const SimpleTable = memo(
 
         return firstRow.children.filter(isSimpleTableCellNode).length;
       }, [rowNodes]);
+      const cellPositionById = useMemo(() => {
+        const positions = new Map<string, { row: number; col: number }>();
+
+        rowNodes.forEach((row, rowIndex) => {
+          let colIndex = 0;
+
+          row.children.forEach((child) => {
+            if (!isSimpleTableCellNode(child)) return;
+
+            positions.set(child.blockId, { row: rowIndex, col: colIndex });
+            colIndex += 1;
+          });
+        });
+
+        return positions;
+      }, [rowNodes]);
 
       const columns = useMemo(() => {
         return Array.from({ length: columnCount }, (_, index) => {
@@ -102,6 +118,9 @@ const SimpleTable = memo(
       const contextValue = useMemo<SimpleTableContextValue>(
         () => ({
           tableNode: node,
+          cellPositionById,
+          rowCount: rowNodes.length,
+          columnCount,
           isHoveringTable,
           hoveringCell,
           readOnly,
@@ -109,7 +128,7 @@ const SimpleTable = memo(
           isMenuOpen,
           setIsMenuOpen,
         }),
-        [node, isHoveringTable, hoveringCell, readOnly, isMenuOpen]
+        [node, cellPositionById, rowNodes.length, columnCount, isHoveringTable, hoveringCell, readOnly, isMenuOpen]
       );
 
       return (

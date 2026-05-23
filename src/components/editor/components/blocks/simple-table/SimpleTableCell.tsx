@@ -1,5 +1,4 @@
 import { Children, forwardRef, useCallback, useMemo } from 'react';
-import { ReactEditor, useSlate } from 'slate-react';
 
 import { BlockType, YjsEditorKey } from '@/application/types';
 import { DEFAULT_COLUMN_WIDTH, MIN_WIDTH } from '@/components/editor/components/blocks/simple-table/const';
@@ -8,53 +7,19 @@ import { renderColor } from '@/utils/color';
 
 import { SimpleTableColumnResizer } from './SimpleTableColumnResizer';
 import { useSimpleTableContext } from './SimpleTableContext';
-import { getSlateNodeType, isSimpleTableCellNode, isSimpleTableRowNode } from './simple-table.utils';
+import { getSlateNodeType } from './simple-table.utils';
 
 const SimpleTableCell = forwardRef<HTMLTableCellElement, EditorElementProps<SimpleTableCellBlockNode>>(
   ({ node, children, ...attributes }, ref) => {
     const { blockId } = node;
-    const editor = useSlate();
     const context = useSimpleTableContext();
     const readOnly = context?.readOnly ?? true;
-
-    // Use ReactEditor.findPath directly — always returns current path
-    let rowIndex = 0;
-    let colIndex = 0;
-
-    try {
-      const path = ReactEditor.findPath(editor as ReactEditor, node);
-
-      // Path structure: [..., tableIndex, rowIndex, cellIndex]
-      if (path.length >= 2) {
-        colIndex = path[path.length - 1];
-        rowIndex = path[path.length - 2];
-      }
-    } catch {
-      // fallback to 0,0
-    }
+    const cellPosition = context?.cellPositionById.get(blockId);
+    const rowIndex = cellPosition?.row ?? 0;
+    const colIndex = cellPosition?.col ?? 0;
 
     // Read styling from context (always up-to-date)
     const tableData = context?.tableNode?.data;
-    const tableRows = useMemo(
-      () => context?.tableNode.children.filter(isSimpleTableRowNode) ?? [],
-      [context?.tableNode.children]
-    );
-    const rowNode = useMemo(
-      () => tableRows.find((row) => row.children.filter(isSimpleTableCellNode).some((cell) => cell.blockId === blockId)),
-      [blockId, tableRows]
-    );
-    const semanticRowIndex = rowNode ? tableRows.findIndex((row) => row.blockId === rowNode.blockId) : -1;
-    const semanticColIndex = rowNode
-      ? rowNode.children.filter(isSimpleTableCellNode).findIndex((cell) => cell.blockId === blockId)
-      : -1;
-
-    if (semanticRowIndex >= 0) {
-      rowIndex = semanticRowIndex;
-    }
-
-    if (semanticColIndex >= 0) {
-      colIndex = semanticColIndex;
-    }
 
     const renderedChildren = useMemo(
       () =>
