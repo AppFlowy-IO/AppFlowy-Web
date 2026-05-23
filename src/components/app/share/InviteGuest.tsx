@@ -13,6 +13,7 @@ import {
   SubscriptionPlan,
 } from '@/application/types';
 import { ReactComponent as ArrowDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { ReactComponent as CrownIcon } from '@/assets/icons/crown.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as ViewIcon } from '@/assets/icons/show.svg';
 import { notify } from '@/components/_shared/notify';
@@ -309,6 +310,8 @@ export function InviteGuest({
   const getAccessLevelText = useCallback(
     (accessLevel: AccessLevel) => {
       switch (accessLevel) {
+        case AccessLevel.FullAccess:
+          return t('shareAction.fullAccess');
         case AccessLevel.ReadAndWrite:
           return t('shareAction.canEdit');
         case AccessLevel.ReadOnly:
@@ -376,6 +379,20 @@ export function InviteGuest({
               </div>
             </div>
             {selectedAccessLevel === AccessLevel.ReadAndWrite && <DropdownMenuItemTick />}
+          </div>
+          <div
+            onMouseDown={(e) => e.preventDefault()}
+            className={cn(dropdownMenuItemVariants({ variant: 'default' }))}
+            onClick={() => handleAccessLevelSelect(AccessLevel.FullAccess)}
+          >
+            <div className='flex items-center gap-2'>
+              <CrownIcon className='h-4 w-4' />
+              <div className='flex flex-col'>
+                <div className='text-sm text-text-primary'>{t('shareAction.fullAccess')}</div>
+                <div className='text-xs text-text-tertiary'>{t('shareAction.fullAccessDescription')}</div>
+              </div>
+            </div>
+            {selectedAccessLevel === AccessLevel.FullAccess && <DropdownMenuItemTick />}
           </div>
         </PopoverContent>
       </Popover>
@@ -613,7 +630,7 @@ export function InviteGuest({
           onMouseDown={(e) => e.preventDefault()}
           onClick={handleSendInvites}
           loading={inviteLoading}
-          disabled={emailTags.length === 0 || isLoading}
+          disabled={canNotInvite || emailTags.length === 0 || isLoading}
         >
           {inviteLoading && <Progress />}
           {t('shareAction.invite')}

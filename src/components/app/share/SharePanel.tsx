@@ -1,85 +1,40 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { AccessLevel, IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
+import { IPeopleWithAccessType, MentionablePerson, Role, SubscriptionPlan } from '@/application/types';
 import { notify } from '@/components/_shared/notify';
-import { findAncestors } from '@/components/_shared/outline/utils';
-import {
-  useLoadMentionableUsers,
-  useGetSubscriptions,
-  useAppOutline,
-  useCurrentWorkspaceId,
-  useUserWorkspaceInfo,
-} from '@/components/app/app.hooks';
+import { useLoadMentionableUsers, useGetSubscriptions, useUserWorkspaceInfo } from '@/components/app/app.hooks';
 import { CopyLink } from '@/components/app/share/CopyLink';
 import { GeneralAccess } from '@/components/app/share/GeneralAccess';
 import { InviteGuest } from '@/components/app/share/InviteGuest';
 import { PeopleWithAccess } from '@/components/app/share/PeopleWithAccess';
+import { ShareSectionType } from '@/components/app/share/shareSectionType';
 import { UpgradeBanner } from '@/components/app/share/UpgradeBanner';
-import { AccessService } from '@/application/services/domains';
-import { useCurrentUser } from '@/components/main/app.hooks';
 import { getProAccessPlanFromSubscriptions, isAppFlowyHosted } from '@/utils/subscription';
 
-function SharePanel({ viewId }: { viewId: string }) {
-  const currentUser = useCurrentUser();
-  const currentWorkspaceId = useCurrentWorkspaceId();
+function SharePanel({
+  viewId,
+  people,
+  isLoadingPeople,
+  onPeopleChange,
+  hasFullAccess,
+  sectionType,
+}: {
+  viewId: string;
+  people: IPeopleWithAccessType[];
+  isLoadingPeople: boolean;
+  onPeopleChange: () => Promise<void>;
+  hasFullAccess: boolean;
+  sectionType: ShareSectionType;
+}) {
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
   const role = selectedWorkspace?.role;
   const loadMentionableUsers = useLoadMentionableUsers();
-  const [people, setPeople] = useState<IPeopleWithAccessType[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [mentionable, setMentionable] = useState<MentionablePerson[]>([]);
   const [isLoadingMentionable, setIsLoadingMentionable] = useState(false);
   const [mentionableError, setMentionableError] = useState<string | null>(null);
-  const loadPeopleRequestSeq = useRef(0);
-  const outline = useAppOutline();
-  const hasFullAccess = useMemo(() => {
-    return people.find((p) => p.email === currentUser?.email)?.access_level === AccessLevel.FullAccess;
-  }, [people, currentUser?.email]);
-
-  const isOwner = useMemo(() => {
-    return role === Role.Owner;
-  }, [role]);
-
-  const isMember = useMemo(() => {
-    return role === Role.Member;
-  }, [role]);
-
-  const loadPeople = useCallback(
-    async (signal?: AbortSignal) => {
-      if (!currentWorkspaceId || !viewId || !currentUser) {
-        return;
-      }
-
-      const ancestorViewIds = findAncestors(outline || [], viewId)?.map((item) => item.view_id) || [];
-
-      const requestSeq = ++loadPeopleRequestSeq.current;
-
-      setIsLoading(true);
-      try {
-        const detail = await AccessService.getShareDetail(currentWorkspaceId, viewId, ancestorViewIds, signal);
-
-        if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
-        setPeople(detail.shared_with);
-      } catch (error) {
-        if (signal?.aborted || requestSeq !== loadPeopleRequestSeq.current) return;
-        console.error(error);
-        setPeople([]);
-      } finally {
-        if (!signal?.aborted && requestSeq === loadPeopleRequestSeq.current) {
-          setIsLoading(false);
-        }
-      }
-    },
-    [currentUser, currentWorkspaceId, viewId, outline]
-  );
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    void loadPeople(controller.signal);
-    return () => controller.abort();
-  }, [loadPeople]);
+  const isOwner = role === Role.Owner;
+  const isMember = role === Role.Member;
 
   // Load mentionable users
   const loadMentionableData = useCallback(async () => {
@@ -111,12 +66,12 @@ function SharePanel({ viewId }: { viewId: string }) {
   const refreshPeople = useCallback(async () => {
     try {
       await loadMentionableData();
-      await loadPeople();
+      await onPeopleChange();
       // eslint-disable-next-line
     } catch (error: any) {
       notify.error(error.message);
     }
-  }, [loadPeople, loadMentionableData]);
+  }, [onPeopleChange, loadMentionableData]);
 
   const getSubscriptions = useGetSubscriptions();
 
@@ -157,7 +112,7 @@ function SharePanel({ viewId }: { viewId: string }) {
         <InviteGuest
           viewId={viewId}
           sharedPeople={people}
-          isLoadingPeople={isLoading}
+          isLoadingPeople={isLoadingPeople}
           mentionable={mentionable}
           isLoadingMentionable={isLoadingMentionable}
           mentionableError={mentionableError}
@@ -165,8 +120,14 @@ function SharePanel({ viewId }: { viewId: string }) {
           hasFullAccess={hasFullAccess}
         />
         {isHosted && <UpgradeBanner activeSubscriptionPlan={activeSubscriptionPlan} />}
-        <PeopleWithAccess viewId={viewId} people={people} isLoading={isLoading} onPeopleChange={refreshPeople} />
-        <GeneralAccess viewId={viewId} />
+        <PeopleWithAccess
+          viewId={viewId}
+          people={people}
+          isLoading={isLoadingPeople}
+          onPeopleChange={refreshPeople}
+          hasFullAccess={hasFullAccess}
+        />
+        <GeneralAccess sectionType={sectionType} />
         <CopyLink />
       </div>
     </div>

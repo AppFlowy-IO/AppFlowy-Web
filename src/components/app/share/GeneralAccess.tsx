@@ -1,23 +1,18 @@
-import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { ReactComponent as LockIcon } from '@/assets/icons/lock.svg';
-import { findView } from '@/components/_shared/outline/utils';
-import { useAppOutline, useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { useUserWorkspaceInfo } from '@/components/app/app.hooks';
+import { ShareSectionType } from '@/components/app/share/shareSectionType';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Label } from '@/components/ui/label';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-export function GeneralAccess({ viewId }: { viewId: string }) {
+export function GeneralAccess({ sectionType }: { sectionType: ShareSectionType }) {
   const { t } = useTranslation();
   const userWorkspaceInfo = useUserWorkspaceInfo();
 
   const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
-  const outline = useAppOutline();
-
-  const isPrivateView = useMemo(() => {
-    return findView(outline || [], viewId)?.is_private;
-  }, [outline, viewId]);
+  const isRestricted = sectionType !== ShareSectionType.Public;
 
   if (!selectedWorkspace) {
     return null;
@@ -32,7 +27,7 @@ export function GeneralAccess({ viewId }: { viewId: string }) {
         <TooltipTrigger asChild>
           <div className='flex w-full items-center rounded-300 px-2 py-1.5 hover:bg-fill-content-hover'>
             <div className='flex w-full flex-row items-center justify-between gap-2'>
-              {isPrivateView ? (
+              {isRestricted ? (
                 <Avatar shape={'square'}>
                   <AvatarFallback
                     style={{
@@ -58,7 +53,7 @@ export function GeneralAccess({ viewId }: { viewId: string }) {
               )}
 
               <div className='flex w-full flex-1 flex-col gap-0.5 overflow-hidden'>
-                {isPrivateView ? (
+                {isRestricted ? (
                   <>
                     <div className='truncate text-sm text-text-primary'>{t('shareAction.restricted')}</div>
                     <div className='text-xs text-text-secondary'>{t('shareAction.restrictedDescription')}</div>
@@ -76,7 +71,7 @@ export function GeneralAccess({ viewId }: { viewId: string }) {
                 )}
               </div>
 
-              {!isPrivateView && (
+              {!isRestricted && (
                 <div className='mr-2 px-3 py-1.5 text-sm text-text-secondary'>{t('shareAction.fullAccess')}</div>
               )}
             </div>

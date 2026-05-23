@@ -203,6 +203,7 @@
     "removeAccess": "Remove access",
     "canViewDescription": "Can’t make changes",
     "canEditDescription": "Can make any changes",
+    "fullAccessDescription": "Can edit and share with others",
     "turnIntoMember": "Turn into member",
     "notInvitedToPage": "Not invited to page",
     "keepTypingEmail": "Keep typing an email to invite",
@@ -223,6 +224,7 @@
     "upgradeText": " to the Pro plan to invite guests to this page",
     "pendingTooltip": "Invitation not yet accepted",
     "onlyFullAccess": "Only user with full access can invite others",
+    "readOnlyPublishTooltip": "You don't have permission to publish this page. Contact the page owner for access.",
     "onlyProCanInvite": "Please upgrade to the Pro plan to invite others",
     "upgradeConfirmTitle": "Upgrade to invite guest editors",
     "upgradeConfirmDescription": "Upgrade to Pro to collaborate with non-members on this page"
@@ -3661,6 +3663,8 @@
       "haveBeenInvited": "You've been invited to Join this workspace with the contact information below.",
       "invalid": "The invitation code has expired",
       "invalidMessage": "Please ask your collaborators to resend the invite.",
+      "memberLimitTitle": "Workspace member limit reached",
+      "memberLimitDescription": "{{workspaceName}} has reached the Free plan member limit. Ask the workspace owner to upgrade their plan or remove a member, then try joining again.",
       "joining": "Joining...",
       "hasJoined": "You've joined to\n<workspace />"
     },

@@ -22,7 +22,11 @@ import {
   expandSpaceByName,
   insertLinkedDatabaseViaSlash,
 } from '../../../support/page-utils';
-import { insertInlineGridViaSlash } from '../../../support/duplicate-test-helpers';
+import {
+  editFirstGridCell,
+  firstGridCellText,
+  insertInlineGridViaSlash,
+} from '../../../support/duplicate-test-helpers';
 
 const spaceName = 'General';
 const sourceDatabaseName = 'Block Database';
@@ -159,21 +163,6 @@ async function createStandaloneGridDatabase(page: Page, name: string): Promise<v
   await page.waitForTimeout(2000);
 }
 
-async function focusAndReplaceCellText(page: Page, gridBlock: Locator, text: string): Promise<void> {
-  const firstCell = gridBlock.locator('[data-testid^="grid-cell-"]').first();
-  await expect(firstCell).toBeVisible({ timeout: 15000 });
-  await firstCell.click({ force: true });
-  await page.waitForTimeout(500);
-  await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
-  await page.keyboard.type(text);
-  await page.keyboard.press('Enter');
-  await page.waitForTimeout(1000);
-}
-
-async function firstCellText(gridBlock: Locator): Promise<string> {
-  return (await gridBlock.locator('[data-testid^="grid-cell-"]').first().innerText()).trim();
-}
-
 async function hoverDatabaseBlock(page: Page, gridBlock: Locator): Promise<void> {
   await gridBlock.scrollIntoViewIfNeeded();
   await expect
@@ -238,8 +227,8 @@ test.describe('Embedded Database Block Duplication', () => {
     await ensurePageExpandedByViewId(page, docViewId);
     await expect(databaseBlocks(editor)).toHaveCount(1, { timeout: 30000 });
 
-    await focusAndReplaceCellText(page, databaseBlocks(editor).nth(0), 'inline original');
-    await expect(await firstCellText(databaseBlocks(editor).nth(0))).toContain('inline original');
+    await editFirstGridCell(page, databaseBlocks(editor).nth(0), 'inline original');
+    await expect(await firstGridCellText(databaseBlocks(editor).nth(0))).toContain('inline original');
 
     await duplicateDatabaseBlockAt(page, editor, 0);
     await expect(databaseBlocks(editor)).toHaveCount(2, { timeout: 30000 });
@@ -254,8 +243,8 @@ test.describe('Embedded Database Block Duplication', () => {
         .first()
     ).toBeVisible({ timeout: 30000 });
 
-    await focusAndReplaceCellText(page, databaseBlocks(editor).nth(1), 'inline dup edit');
-    await expect(await firstCellText(databaseBlocks(editor).nth(0))).toContain('inline original');
+    await editFirstGridCell(page, databaseBlocks(editor).nth(1), 'inline dup edit');
+    await expect(await firstGridCellText(databaseBlocks(editor).nth(0))).toContain('inline original');
   });
 
   test('duplicates linked database blocks as shared views of the same database', async ({ page, request }) => {
@@ -267,7 +256,7 @@ test.describe('Embedded Database Block Duplication', () => {
 
     await createStandaloneGridDatabase(page, sourceDatabaseName);
     await expect(DatabaseGridSelectors.grid(page)).toBeVisible({ timeout: 30000 });
-    await focusAndReplaceCellText(page, DatabaseGridSelectors.grid(page), 'linked shared');
+    await editFirstGridCell(page, DatabaseGridSelectors.grid(page), 'linked shared');
 
     const docViewId = await createDocumentPageAndNavigate(page);
     await page.waitForTimeout(1000);
@@ -287,7 +276,7 @@ test.describe('Embedded Database Block Duplication', () => {
     await ensurePageExpandedByViewId(page, docViewId);
     await expect(directChildPageItems(page, docViewId)).toHaveCount(2, { timeout: 30000 });
 
-    await focusAndReplaceCellText(page, databaseBlocks(editor).nth(1), 'linked duplicate edit');
-    await expect(await firstCellText(databaseBlocks(editor).nth(0))).toContain('linked duplicate edit');
+    await editFirstGridCell(page, databaseBlocks(editor).nth(1), 'linked duplicate edit');
+    await expect(await firstGridCellText(databaseBlocks(editor).nth(0))).toContain('linked duplicate edit');
   });
 });
