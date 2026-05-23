@@ -19,6 +19,12 @@ export interface SearchDocumentResponseItem {
   database_row_id?: string | null;
 }
 
+export interface SearchDocumentPageResponse {
+  items: SearchDocumentResponseItem[];
+  next_offset?: number | null;
+  has_more: boolean;
+}
+
 export interface SearchResult {
   object_id: string;
   content: string;
@@ -46,6 +52,23 @@ export async function searchWorkspaceDocuments(workspaceId: string, query: strin
   return executeAPIRequest<SearchDocumentResponseItem[]>(() =>
     getAxios()?.get<APIResponse<SearchDocumentResponseItem[]>>(url, {
       params: { query, limit: SEARCH_RESULT_LIMIT, preview_size: SEARCH_PREVIEW_SIZE },
+      headers: { 'x-request-time': Date.now().toString() },
+    })
+  );
+}
+
+export async function searchWorkspaceDocumentPage(workspaceId: string, query: string, offset = 0) {
+  const url = `/api/search/${workspaceId}/page`;
+
+  return executeAPIRequest<SearchDocumentPageResponse>(() =>
+    getAxios()?.get<APIResponse<SearchDocumentPageResponse>>(url, {
+      params: {
+        query,
+        limit: SEARCH_RESULT_LIMIT,
+        offset,
+        preview_size: SEARCH_PREVIEW_SIZE,
+        mode: 'keyword',
+      },
       headers: { 'x-request-time': Date.now().toString() },
     })
   );
@@ -85,20 +108,11 @@ export async function generateSearchSummary(
   };
   const headers = { 'x-request-time': Date.now().toString() };
 
-  try {
-    return await executeAPIRequest<SearchSummaryResult>(() =>
-      getAxios()?.post<APIResponse<SearchSummaryResult>>(url, payload, {
-        headers,
-      })
-    );
-  } catch {
-    return executeAPIRequest<SearchSummaryResult>(() =>
-      getAxios()?.get<APIResponse<SearchSummaryResult>>(url, {
-        data: payload,
-        headers,
-      })
-    );
-  }
+  return executeAPIRequest<SearchSummaryResult>(() =>
+    getAxios()?.post<APIResponse<SearchSummaryResult>>(url, payload, {
+      headers,
+    })
+  );
 }
 
 export async function getChatMessages(workspaceId: string, chatId: string, limit?: number | undefined) {
@@ -129,11 +143,13 @@ export async function generateAITranslateForRow(workspaceId: string, payload: Ge
       [key: string]: string;
     }[];
   }>(() =>
-    getAxios()?.post<APIResponse<{
-      items: {
-        [key: string]: string;
-      }[];
-    }>>(url, {
+    getAxios()?.post<
+      APIResponse<{
+        items: {
+          [key: string]: string;
+        }[];
+      }>
+    >(url, {
       workspace_id: workspaceId,
       data: payload,
     })
@@ -158,10 +174,12 @@ export async function getQuickNoteList(
     quick_notes: QuickNote[];
     has_more: boolean;
   }>(() =>
-    getAxios()?.get<APIResponse<{
-      quick_notes: QuickNote[];
-      has_more: boolean;
-    }>>(url, {
+    getAxios()?.get<
+      APIResponse<{
+        quick_notes: QuickNote[];
+        has_more: boolean;
+      }>
+    >(url, {
       params: {
         offset: params.offset,
         limit: params.limit,
@@ -179,17 +197,13 @@ export async function getQuickNoteList(
 export async function createQuickNote(workspaceId: string, payload: QuickNoteEditorData[]): Promise<QuickNote> {
   const url = `/api/workspace/${workspaceId}/quick-note`;
 
-  return executeAPIRequest<QuickNote>(() =>
-    getAxios()?.post<APIResponse<QuickNote>>(url, { data: payload })
-  );
+  return executeAPIRequest<QuickNote>(() => getAxios()?.post<APIResponse<QuickNote>>(url, { data: payload }));
 }
 
 export async function updateQuickNote(workspaceId: string, noteId: string, payload: QuickNoteEditorData[]) {
   const url = `/api/workspace/${workspaceId}/quick-note/${noteId}`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.put<APIResponse>(url, { data: payload })
-  );
+  return executeAPIVoidRequest(() => getAxios()?.put<APIResponse>(url, { data: payload }));
 }
 
 export async function deleteQuickNote(workspaceId: string, noteId: string) {

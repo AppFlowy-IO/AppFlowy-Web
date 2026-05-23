@@ -15,6 +15,8 @@ export interface SearchOverviewSource {
   id: string;
   name: string;
   targetViewId: string;
+  targetRowId?: string | null;
+  ragId: string;
   view?: View;
 }
 
@@ -157,7 +159,7 @@ function ReferenceSources({
             onClick={() => {
               onClosePopover();
               onCloseSearch();
-              void navigateToView(source.targetViewId);
+              void navigateToView(source.targetViewId, source.targetRowId || undefined);
             }}
           >
             <span className='flex h-5 w-5 shrink-0 items-center justify-center'>
@@ -252,7 +254,7 @@ export function SearchAIOverview({
           'mt-3 inline-flex h-8 w-36 items-center justify-center gap-1.5 rounded-[16px] border border-border-primary px-3 py-1.5 text-sm font-medium leading-[22px] text-text-primary',
           'hover:bg-fill-content-hover disabled:cursor-default disabled:opacity-60'
         )}
-        onClick={() => onAskAI(sources.map((source) => source.targetViewId))}
+        onClick={() => onAskAI(sources.map((source) => source.ragId))}
       >
         <ChatAIPageIcon className='h-5 w-5 shrink-0 text-icon-primary' />
         {t('commandPalette.aiAskFollowUp', { defaultValue: 'Ask follow-up' })}

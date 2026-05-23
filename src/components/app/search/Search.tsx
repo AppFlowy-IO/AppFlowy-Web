@@ -31,6 +31,12 @@ function getAIChatParent(outline: View[] | undefined, currentViewId: string | un
   return currentSpace || outline.find((view) => view.extra?.is_space) || outline[0];
 }
 
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Something went wrong';
+}
+
 export function Search() {
   const [open, setOpen] = React.useState<boolean>(false);
   const { t } = useTranslation();
@@ -66,29 +72,43 @@ export function Search() {
           prev_view_id: parent.children?.[parent.children.length - 1]?.view_id,
         });
         const uniqueSourceIds = Array.from(new Set(sourceIds || [])).filter(Boolean);
+        let settingsError: unknown;
 
         if (uniqueSourceIds.length > 0 || query) {
-          const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
-            import('@/components/chat/request'),
-            import('@/application/services/js-services/http'),
-          ]);
-          const axiosInstance = getAxiosInstance();
+          try {
+            const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
+              import('@/components/chat/request'),
+              import('@/application/services/js-services/http'),
+            ]);
+            const axiosInstance = getAxiosInstance();
 
-          if (axiosInstance) {
+            if (!axiosInstance) {
+              throw new Error('Missing axios instance');
+            }
+
             const request = new ChatRequest(currentWorkspaceId, created.view_id, axiosInstance);
 
             await request.updateChatSettings({
               ...(uniqueSourceIds.length > 0 ? { rag_ids: uniqueSourceIds } : {}),
               ...(query ? { metadata: { initial_prompt: query } } : {}),
             });
+          } catch (error) {
+            settingsError = error;
           }
+        }
+
+        if (settingsError) {
+          notify.error(
+            t('search.updateAIChatSettingsFailed', {
+              defaultValue: 'AI chat was created, but the context could not be attached',
+            })
+          );
         }
 
         await toView(created.view_id);
         handleClose();
-        // eslint-disable-next-line
-      } catch (e: any) {
-        notify.error(e.message);
+      } catch (error) {
+        notify.error(getErrorMessage(error));
       } finally {
         setAskingAI(false);
       }
