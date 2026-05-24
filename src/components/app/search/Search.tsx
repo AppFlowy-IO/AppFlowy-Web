@@ -2,23 +2,119 @@ import { Dialog, InputBase } from '@mui/material';
 import React, { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
-import { useAppRecent } from '@/components/app/app.hooks';
+import { notify } from '@/components/_shared/notify';
+import { findAncestors } from '@/components/_shared/outline/utils';
+import {
+  useAIEnabled,
+  useAppOperations,
+  useAppOutline,
+  useAppRecent,
+  useAppViewId,
+  useCurrentWorkspaceId,
+  useToView,
+} from '@/components/app/app.hooks';
 import BestMatch from '@/components/app/search/BestMatch';
 import RecentViews from '@/components/app/search/RecentViews';
 import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { createHotkey, createHotKeyLabel, HOT_KEY_NAME } from '@/utils/hotkeys';
 
+function getAIChatParent(outline: View[] | undefined, currentViewId: string | undefined) {
+  if (!outline?.length) return;
+
+  const currentPath = currentViewId ? findAncestors(outline, currentViewId) : undefined;
+  const currentSpace = currentPath?.find((view) => view.extra?.is_space);
+
+  return currentSpace || outline.find((view) => view.extra?.is_space) || outline[0];
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (typeof error === 'string') return error;
+  return 'Something went wrong';
+}
+
 export function Search() {
   const [open, setOpen] = React.useState<boolean>(false);
   const { t } = useTranslation();
   const [searchValue, setSearchValue] = React.useState<string>('');
-  const handleClose = () => {
+  const [askingAI, setAskingAI] = React.useState<boolean>(false);
+  const outline = useAppOutline();
+  const currentViewId = useAppViewId();
+  const currentWorkspaceId = useCurrentWorkspaceId();
+  const aiEnabled = useAIEnabled();
+  const { addPage } = useAppOperations();
+  const toView = useToView();
+  const handleClose = useCallback(() => {
     setOpen(false);
     setSearchValue('');
-  };
+  }, []);
+
+  const handleAskAI = useCallback(
+    async (query: string, sourceIds?: string[]) => {
+      if (!aiEnabled || !addPage || !currentWorkspaceId) return;
+
+      const parent = getAIChatParent(outline, currentViewId);
+
+      if (!parent) {
+        notify.error(t('search.createAIChatFailed', { defaultValue: 'Unable to create an AI chat here' }));
+        return;
+      }
+
+      setAskingAI(true);
+      try {
+        const created = await addPage(parent.view_id, {
+          layout: ViewLayout.AIChat,
+          name: query || t('chat.newChat', { defaultValue: 'New chat' }),
+          prev_view_id: parent.children?.[parent.children.length - 1]?.view_id,
+        });
+        const uniqueSourceIds = Array.from(new Set(sourceIds || [])).filter(Boolean);
+        let settingsError: unknown;
+
+        if (uniqueSourceIds.length > 0 || query) {
+          try {
+            const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
+              import('@/components/chat/request'),
+              import('@/application/services/js-services/http'),
+            ]);
+            const axiosInstance = getAxiosInstance();
+
+            if (!axiosInstance) {
+              throw new Error('Missing axios instance');
+            }
+
+            const request = new ChatRequest(currentWorkspaceId, created.view_id, axiosInstance);
+
+            await request.updateChatSettings({
+              ...(uniqueSourceIds.length > 0 ? { rag_ids: uniqueSourceIds } : {}),
+              ...(query ? { metadata: { initial_prompt: query } } : {}),
+            });
+          } catch (error) {
+            settingsError = error;
+          }
+        }
+
+        if (settingsError) {
+          notify.error(
+            t('search.updateAIChatSettingsFailed', {
+              defaultValue: 'AI chat was created, but the context could not be attached',
+            })
+          );
+        }
+
+        await toView(created.view_id);
+        handleClose();
+      } catch (error) {
+        notify.error(getErrorMessage(error));
+      } finally {
+        setAskingAI(false);
+      }
+    },
+    [addPage, aiEnabled, currentViewId, currentWorkspaceId, handleClose, outline, t, toView]
+  );
 
   const onKeyDown = useCallback((e: KeyboardEvent) => {
     switch (true) {
@@ -112,7 +208,7 @@ export function Search() {
         {!searchValue ? (
           <RecentViews loading={loadingRecentViews} recentViews={recentViews} onClose={handleClose} />
         ) : (
-          <BestMatch searchValue={searchValue} onClose={handleClose} />
+          <BestMatch askingAI={askingAI} searchValue={searchValue} onAskAI={handleAskAI} onClose={handleClose} />
         )}
       </Dialog>
     </>

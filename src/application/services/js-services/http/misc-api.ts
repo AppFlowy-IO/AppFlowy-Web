@@ -8,20 +8,111 @@ import { RepeatedChatMessage } from '@/components/chat';
 
 import { APIResponse, executeAPIRequest, executeAPIVoidRequest, getAxios } from './core';
 
-export async function searchWorkspace(workspaceId: string, query: string) {
+export interface SearchDocumentResponseItem {
+  object_id: string;
+  workspace_id: string;
+  score: number;
+  content: string;
+  preview?: string | null;
+  database_view_id?: string | null;
+  database_id?: string | null;
+  database_row_id?: string | null;
+}
+
+export interface SearchDocumentPageResponse {
+  items: SearchDocumentResponseItem[];
+  next_offset?: number | null;
+  has_more: boolean;
+}
+
+export interface SearchResult {
+  object_id: string;
+  content: string;
+  database_view_id?: string | null;
+  database_id?: string | null;
+  database_row_id?: string | null;
+}
+
+export interface SearchSummary {
+  content: string;
+  highlights?: string;
+  sources: string[];
+}
+
+export interface SearchSummaryResult {
+  summaries: SearchSummary[];
+}
+
+const SEARCH_RESULT_LIMIT = 10;
+const SEARCH_PREVIEW_SIZE = 80;
+
+export async function searchWorkspaceDocuments(workspaceId: string, query: string) {
   const url = `/api/search/${workspaceId}`;
-  const payload = await executeAPIRequest<
-    {
-      object_id: string;
-    }[]
-  >(() =>
-    getAxios()?.get<APIResponse<{ object_id: string }[]>>(url, {
-      params: { query },
+
+  return executeAPIRequest<SearchDocumentResponseItem[]>(() =>
+    getAxios()?.get<APIResponse<SearchDocumentResponseItem[]>>(url, {
+      params: { query, limit: SEARCH_RESULT_LIMIT, preview_size: SEARCH_PREVIEW_SIZE },
       headers: { 'x-request-time': Date.now().toString() },
     })
   );
+}
+
+export async function searchWorkspaceDocumentPage(workspaceId: string, query: string, offset = 0) {
+  const url = `/api/search/${workspaceId}/page`;
+
+  return executeAPIRequest<SearchDocumentPageResponse>(() =>
+    getAxios()?.get<APIResponse<SearchDocumentPageResponse>>(url, {
+      params: {
+        query,
+        limit: SEARCH_RESULT_LIMIT,
+        offset,
+        preview_size: SEARCH_PREVIEW_SIZE,
+        mode: 'keyword',
+      },
+      headers: { 'x-request-time': Date.now().toString() },
+    })
+  );
+}
+
+export async function searchWorkspace(workspaceId: string, query: string) {
+  const payload = await searchWorkspaceDocuments(workspaceId, query);
 
   return payload.map((item) => item.object_id);
+}
+
+export async function generateSearchSummary(
+  workspaceId: string,
+  query: string,
+  searchResults: SearchDocumentResponseItem[]
+) {
+  const url = `/api/search/${workspaceId}/summary`;
+  const search_results: SearchResult[] = searchResults
+    .filter((item) => item.content)
+    .slice(0, SEARCH_RESULT_LIMIT)
+    .map((item) => ({
+      object_id: item.object_id,
+      content: item.content,
+      ...(item.database_view_id ? { database_view_id: item.database_view_id } : {}),
+      ...(item.database_id ? { database_id: item.database_id } : {}),
+      ...(item.database_row_id ? { database_row_id: item.database_row_id } : {}),
+    }));
+
+  if (search_results.length === 0) {
+    return { summaries: [] };
+  }
+
+  const payload = {
+    query,
+    search_results,
+    only_context: true,
+  };
+  const headers = { 'x-request-time': Date.now().toString() };
+
+  return executeAPIRequest<SearchSummaryResult>(() =>
+    getAxios()?.post<APIResponse<SearchSummaryResult>>(url, payload, {
+      headers,
+    })
+  );
 }
 
 export async function getChatMessages(workspaceId: string, chatId: string, limit?: number | undefined) {
@@ -52,11 +143,13 @@ export async function generateAITranslateForRow(workspaceId: string, payload: Ge
       [key: string]: string;
     }[];
   }>(() =>
-    getAxios()?.post<APIResponse<{
-      items: {
-        [key: string]: string;
-      }[];
-    }>>(url, {
+    getAxios()?.post<
+      APIResponse<{
+        items: {
+          [key: string]: string;
+        }[];
+      }>
+    >(url, {
       workspace_id: workspaceId,
       data: payload,
     })
@@ -81,10 +174,12 @@ export async function getQuickNoteList(
     quick_notes: QuickNote[];
     has_more: boolean;
   }>(() =>
-    getAxios()?.get<APIResponse<{
-      quick_notes: QuickNote[];
-      has_more: boolean;
-    }>>(url, {
+    getAxios()?.get<
+      APIResponse<{
+        quick_notes: QuickNote[];
+        has_more: boolean;
+      }>
+    >(url, {
       params: {
         offset: params.offset,
         limit: params.limit,
@@ -102,17 +197,13 @@ export async function getQuickNoteList(
 export async function createQuickNote(workspaceId: string, payload: QuickNoteEditorData[]): Promise<QuickNote> {
   const url = `/api/workspace/${workspaceId}/quick-note`;
 
-  return executeAPIRequest<QuickNote>(() =>
-    getAxios()?.post<APIResponse<QuickNote>>(url, { data: payload })
-  );
+  return executeAPIRequest<QuickNote>(() => getAxios()?.post<APIResponse<QuickNote>>(url, { data: payload }));
 }
 
 export async function updateQuickNote(workspaceId: string, noteId: string, payload: QuickNoteEditorData[]) {
   const url = `/api/workspace/${workspaceId}/quick-note/${noteId}`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.put<APIResponse>(url, { data: payload })
-  );
+  return executeAPIVoidRequest(() => getAxios()?.put<APIResponse>(url, { data: payload }));
 }
 
 export async function deleteQuickNote(workspaceId: string, noteId: string) {
