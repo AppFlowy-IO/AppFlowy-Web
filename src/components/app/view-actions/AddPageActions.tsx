@@ -5,7 +5,14 @@ import { toast } from 'sonner';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as UploadIcon } from '@/assets/icons/upload.svg';
 import { ViewIcon } from '@/components/_shared/view-icon';
-import { useAIEnabled, useAppOperations, useOpenPageModal, useToView } from '@/components/app/app.hooks';
+import { buildInitialAIChatSettings } from '@/components/ai-chat/chat-settings';
+import {
+  useAIEnabled,
+  useAppOperations,
+  useCurrentWorkspaceId,
+  useOpenPageModal,
+  useToView,
+} from '@/components/app/app.hooks';
 import { DropdownMenuGroup, DropdownMenuItem } from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
@@ -15,17 +22,48 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
   const openPageModal = useOpenPageModal();
   const toView = useToView();
   const aiEnabled = useAIEnabled();
+  const currentWorkspaceId = useCurrentWorkspaceId();
   const lastChildViewId = view.children?.[view.children.length - 1]?.view_id;
 
   const handleAddPage = useCallback(
     async (layout: ViewLayout, name?: string) => {
       if (!addPage) return;
       if (layout === ViewLayout.AIChat && !aiEnabled) return;
-      toast.loading(t('document.creating'));
+
+      const loadingToastId = toast.loading(t('document.creating'));
+
       try {
         // Append after the last child so the new page appears at the bottom.
         // When prev_view_id is omitted the backend prepends (inserts at index 0).
         const response = await addPage(view.view_id, { layout, name, prev_view_id: lastChildViewId });
+
+        if (layout === ViewLayout.AIChat && currentWorkspaceId) {
+          const initialSettings = buildInitialAIChatSettings({ parent: view });
+
+          if (Object.keys(initialSettings).length > 0) {
+            try {
+              const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
+                import('@/components/chat/request'),
+                import('@/application/services/js-services/http'),
+              ]);
+              const axiosInstance = getAxiosInstance();
+
+              if (!axiosInstance) {
+                throw new Error('Missing axios instance');
+              }
+
+              const request = new ChatRequest(currentWorkspaceId, response.view_id, axiosInstance);
+
+              await request.updateChatSettings(initialSettings);
+            } catch {
+              toast.error(
+                t('search.updateAIChatSettingsFailed', {
+                  defaultValue: 'AI chat was created, but the context could not be attached',
+                })
+              );
+            }
+          }
+        }
 
         if (layout === ViewLayout.Document) {
           void openPageModal?.(response.view_id);
@@ -33,13 +71,14 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void toView(response.view_id);
         }
 
-        toast.dismiss();
+        toast.dismiss(loadingToastId);
         // eslint-disable-next-line
       } catch (e: any) {
+        toast.dismiss(loadingToastId);
         toast.error(e.message);
       }
     },
-    [addPage, aiEnabled, openPageModal, t, toView, view.view_id, lastChildViewId]
+    [addPage, aiEnabled, currentWorkspaceId, openPageModal, t, toView, view, lastChildViewId]
   );
 
   const actions: {
@@ -80,16 +119,18 @@ function AddPageActions({ view, onImportClick }: { view: View; onImportClick?: (
           void handleAddPage(ViewLayout.Calendar, t('document.plugins.database.newDatabase'));
         },
       },
-      ...(aiEnabled ? [
-        {
-          label: t('chat.newChat'),
-          icon: <ViewIcon layout={ViewLayout.AIChat} size={'small'} />,
-          testId: 'add-ai-chat-button',
-          onSelect: () => {
-            void handleAddPage(ViewLayout.AIChat, t('menuAppHeader.defaultNewPageName'));
-          },
-        },
-      ] : []),
+      ...(aiEnabled
+        ? [
+            {
+              label: t('chat.newChat'),
+              icon: <ViewIcon layout={ViewLayout.AIChat} size={'small'} />,
+              testId: 'add-ai-chat-button',
+              onSelect: () => {
+                void handleAddPage(ViewLayout.AIChat, t('menuAppHeader.defaultNewPageName'));
+              },
+            },
+          ]
+        : []),
       {
         label: t('chart.menuName'),
         icon: <ViewIcon layout={ViewLayout.Chart} size={'small'} />,

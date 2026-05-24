@@ -101,6 +101,7 @@ export interface ChatSettings {
   name: string;
   rag_ids: string[];
   metadata: Record<string, unknown>;
+  full_workspace?: boolean;
   web_search_enabled: boolean;
 }
 
