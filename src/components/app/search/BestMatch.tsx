@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { View } from '@/application/types';
 import { getDatabaseIdFromExtra } from '@/application/view-utils';
-import { SearchService } from '@/application/services/domains';
+import { SearchService, ViewService } from '@/application/services/domains';
 import type {
   SearchDocumentPageResponse,
   SearchDocumentResponseItem,
@@ -36,6 +36,25 @@ function resolveSearchResultView(outline: View[], item: SearchDocumentResponseIt
     (item.database_view_id ? findView(outline, item.database_view_id) : undefined) ||
     findViewByDatabaseId(outline, item.database_id)
   );
+}
+
+function getSearchResultViewIdCandidates(item: SearchDocumentResponseItem): string[] {
+  return Array.from(new Set([item.object_id, item.database_view_id, item.database_id].filter(Boolean) as string[]));
+}
+
+async function loadSearchResultView(
+  item: SearchDocumentResponseItem,
+  currentWorkspaceId: string
+): Promise<View | undefined> {
+  const workspaceId = item.workspace_id || currentWorkspaceId;
+
+  for (const viewId of getSearchResultViewIdCandidates(item)) {
+    try {
+      return await ViewService.get(workspaceId, viewId);
+    } catch {
+      // Search can return database/object ids that are not view ids. Try the next candidate.
+    }
+  }
 }
 
 function previewLines(text?: string | null, limit = 2): string | undefined {
@@ -101,14 +120,19 @@ function BestMatch({
   const searchSeqRef = useRef(0);
 
   const buildSearchItems = useCallback(
-    (results: SearchDocumentResponseItem[]) => {
-      if (!outline) return [];
+    async (results: SearchDocumentResponseItem[]) => {
+      if (!outline || !currentWorkspaceId) return [];
 
       const seenTargets = new Set<string>();
       const items: SearchViewListItem[] = [];
+      const resolvedViews = await Promise.all(
+        results.map(
+          async (item) => resolveSearchResultView(outline, item) || loadSearchResultView(item, currentWorkspaceId)
+        )
+      );
 
-      for (const item of results) {
-        const view = resolveSearchResultView(outline, item);
+      for (const [index, item] of results.entries()) {
+        const view = resolvedViews[index];
         const rowId = item.database_row_id || undefined;
 
         if (!view || view.extra?.is_space) continue;
@@ -133,7 +157,7 @@ function BestMatch({
 
       return items;
     },
-    [outline, t]
+    [currentWorkspaceId, outline, t]
   );
 
   const handleSearch = useCallback(
@@ -169,9 +193,12 @@ function BestMatch({
 
         const res = mergeSearchResults([], page.items || []);
         const shouldGenerateSummary = aiEnabled && res.some((item) => item.content);
+        const searchItems = await buildSearchItems(res);
+
+        if (searchSeqRef.current !== searchSeq) return;
 
         setSearchResults(res);
-        setItems(buildSearchItems(res));
+        setItems(searchItems);
         setHasMore(canLoadMoreSearchResults(page, 0));
         setNextOffset(page.next_offset ?? null);
         setSummaryLoading(shouldGenerateSummary);
@@ -227,9 +254,12 @@ function BestMatch({
       if (searchSeqRef.current !== searchSeq) return;
 
       const mergedResults = mergeSearchResults(searchResults, page.items || []);
+      const searchItems = await buildSearchItems(mergedResults);
+
+      if (searchSeqRef.current !== searchSeq) return;
 
       setSearchResults(mergedResults);
-      setItems(buildSearchItems(mergedResults));
+      setItems(searchItems);
       setHasMore(canLoadMoreSearchResults(page, nextOffset));
       setNextOffset(page.next_offset ?? null);
       // eslint-disable-next-line

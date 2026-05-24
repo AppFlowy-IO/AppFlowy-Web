@@ -45,13 +45,19 @@ export interface SearchSummaryResult {
 
 const SEARCH_RESULT_LIMIT = 10;
 const SEARCH_PREVIEW_SIZE = 80;
+const SEARCH_SCORE_THRESHOLD = 0.2;
 
 export async function searchWorkspaceDocuments(workspaceId: string, query: string) {
   const url = `/api/search/${workspaceId}`;
 
   return executeAPIRequest<SearchDocumentResponseItem[]>(() =>
     getAxios()?.get<APIResponse<SearchDocumentResponseItem[]>>(url, {
-      params: { query, limit: SEARCH_RESULT_LIMIT, preview_size: SEARCH_PREVIEW_SIZE },
+      params: {
+        query,
+        limit: SEARCH_RESULT_LIMIT,
+        preview_size: SEARCH_PREVIEW_SIZE,
+        score: SEARCH_SCORE_THRESHOLD,
+      },
       headers: { 'x-request-time': Date.now().toString() },
     })
   );
@@ -68,6 +74,7 @@ export async function searchWorkspaceDocumentPage(workspaceId: string, query: st
         offset,
         preview_size: SEARCH_PREVIEW_SIZE,
         mode: 'keyword',
+        score: SEARCH_SCORE_THRESHOLD,
       },
       headers: { 'x-request-time': Date.now().toString() },
     })
