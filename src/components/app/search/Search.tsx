@@ -7,6 +7,7 @@ import { ReactComponent as CloseIcon } from '@/assets/icons/close.svg';
 import { ReactComponent as SearchIcon } from '@/assets/icons/search.svg';
 import { notify } from '@/components/_shared/notify';
 import { findAncestors } from '@/components/_shared/outline/utils';
+import { buildInitialAIChatSettings } from '@/components/ai-chat/chat-settings';
 import {
   useAIEnabled,
   useAppOperations,
@@ -71,10 +72,10 @@ export function Search() {
           name: query || t('chat.newChat', { defaultValue: 'New chat' }),
           prev_view_id: parent.children?.[parent.children.length - 1]?.view_id,
         });
-        const uniqueSourceIds = Array.from(new Set(sourceIds || [])).filter(Boolean);
+        const initialSettings = buildInitialAIChatSettings({ parent, query, sourceIds });
         let settingsError: unknown;
 
-        if (uniqueSourceIds.length > 0 || query) {
+        if (Object.keys(initialSettings).length > 0) {
           try {
             const [{ ChatRequest }, { getAxiosInstance }] = await Promise.all([
               import('@/components/chat/request'),
@@ -88,10 +89,7 @@ export function Search() {
 
             const request = new ChatRequest(currentWorkspaceId, created.view_id, axiosInstance);
 
-            await request.updateChatSettings({
-              ...(uniqueSourceIds.length > 0 ? { rag_ids: uniqueSourceIds } : {}),
-              ...(query ? { metadata: { initial_prompt: query } } : {}),
-            });
+            await request.updateChatSettings(initialSettings);
           } catch (error) {
             settingsError = error;
           }

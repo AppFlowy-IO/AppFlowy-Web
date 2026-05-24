@@ -21,7 +21,6 @@ export interface SearchOverviewSource {
 }
 
 interface SearchAIOverviewProps {
-  aiEnabled: boolean;
   askingAI: boolean;
   loading: boolean;
   query: string;
@@ -202,7 +201,6 @@ function AskAIButton({ askingAI, query, onAskAI }: { askingAI: boolean; query: s
 }
 
 export function SearchAIOverview({
-  aiEnabled,
   askingAI,
   loading,
   query,
@@ -212,8 +210,6 @@ export function SearchAIOverview({
   onClose,
 }: SearchAIOverviewProps) {
   const { t } = useTranslation();
-
-  if (!aiEnabled) return null;
 
   if (loading) {
     return (

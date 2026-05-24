@@ -298,16 +298,17 @@ function BestMatch({
       onClose={onClose}
       onLoadMore={handleLoadMore}
       header={
-        <SearchAIOverview
-          aiEnabled={aiEnabled}
-          askingAI={askingAI}
-          loading={loading || summaryLoading}
-          query={searchValue}
-          sources={overviewSources}
-          summary={summary}
-          onClose={onClose}
-          onAskAI={(sourceIds) => onAskAI(searchValue, sourceIds)}
-        />
+        aiEnabled ? (
+          <SearchAIOverview
+            askingAI={askingAI}
+            loading={loading || summaryLoading}
+            query={searchValue}
+            sources={overviewSources}
+            summary={summary}
+            onClose={onClose}
+            onAskAI={(sourceIds) => onAskAI(searchValue, sourceIds)}
+          />
+        ) : undefined
       }
     />
   );
