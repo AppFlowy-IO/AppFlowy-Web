@@ -2,6 +2,7 @@ import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useStat
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 
+import { ViewService } from '@/application/services/domains';
 import { View, ViewLayout } from '@/application/types';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
@@ -15,8 +16,10 @@ import {
   useLoadViewChildrenBatch,
   useLoadViewChildren,
   useMarkViewChildrenStale,
+  useSidebarSelectedViewId,
 } from '@/components/app/app.hooks';
 import { Favorite } from '@/components/app/favorite';
+import { resolveAncestorViewIds } from '@/components/app/hooks/resolveAncestorViewIds';
 import SpaceItem from '@/components/app/outline/SpaceItem';
 import { ShareWithMe } from '@/components/app/share-with-me';
 import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
@@ -50,6 +53,7 @@ function collectSubtreeViewIds(rootView: View): string[] {
 export function Outline({ width }: { width: number }) {
   const outline = useAppOutline();
   const currentWorkspaceId = useCurrentWorkspaceId();
+  const selectedViewId = useSidebarSelectedViewId();
   const loadedViewIds = useLoadedViewIds();
   const loadViewChildren = useLoadViewChildren();
   const loadViewChildrenBatch = useLoadViewChildrenBatch();
@@ -80,6 +84,16 @@ export function Outline({ width }: { width: number }) {
     if (!open) setImportTarget(undefined);
   }, []);
 
+  const revealedViewIdRef = useRef<string | undefined>(undefined);
+  // Latest outline, read by the async reveal walk below. Kept in a ref so the
+  // walk isn't torn down every time the outline updates (e.g. as it lazy-loads
+  // the very branch the walk is populating).
+  const outlineRef = useRef(outline);
+
+  useEffect(() => {
+    outlineRef.current = outline;
+  });
+
   const loadingViewIdsRef = useRef<Set<string>>(new Set());
   const autoLoadRetryAfterRef = useRef<Map<string, number>>(new Map());
   const validatingRestoreIdsRef = useRef<Set<string>>(new Set());
@@ -99,8 +113,79 @@ export function Outline({ width }: { width: number }) {
     autoLoadRetryAfterRef.current = new Map();
     validatingRestoreIdsRef.current = new Set();
     validatedExistingRestoreIdsRef.current = new Set();
+    revealedViewIdRef.current = undefined;
     setLoadingRevision((r) => r + 1);
   }, [currentWorkspaceId]);
+
+  // Expand the given ancestor ids and route them through the startup auto-load
+  // path. Expanding alone only flips the UI flag — queuing them in
+  // pendingAutoLoadIds is what makes the existing cascade fetch + merge each
+  // node's children top-down, so an unloaded branch actually renders.
+  const expandAncestors = useCallback((ancestorIds: string[]) => {
+    if (ancestorIds.length === 0) return;
+
+    // Persist expand state outside the state updaters below — updater functions
+    // must stay pure (React may invoke them more than once). setOutlineExpands
+    // is idempotent, so writing every ancestor (not only newly-added ones) is
+    // safe, and it mirrors how toggleExpandView persists expand state.
+    ancestorIds.forEach((id) => setOutlineExpands(id, true));
+
+    setExpandViewIds((prev) => {
+      const prevSet = new Set(prev);
+      const missing = ancestorIds.filter((id) => !prevSet.has(id));
+
+      return missing.length === 0 ? prev : [...prev, ...missing];
+    });
+
+    setPendingAutoLoadIds((prev) => {
+      const prevSet = new Set(prev);
+      const missing = ancestorIds.filter((id) => !prevSet.has(id));
+
+      return missing.length === 0 ? prev : [...prev, ...missing];
+    });
+  }, []);
+
+  // Reveal the active view in the sidebar by expanding its ancestor folders.
+  // This is what makes the tree open to the page you land on — e.g. the
+  // last-viewed page that `/app` auto-redirects to on load.
+  //
+  // Fast path: the whole ancestor chain is already in the loaded tree.
+  // Slow path: the view (or part of its branch) isn't in the shallow (depth=1)
+  // outline — walk parent_view_id from remote to resolve the chain, then expand
+  // + lazy-load down to it. If a node can't be resolved (deleted / no access),
+  // we leave the sidebar as-is rather than forcing it open.
+  //
+  // The ref gate keeps this to once per selected view: it runs on navigation,
+  // not on every outline change, so a folder the user manually collapses while
+  // staying on the same page won't snap back open.
+  useEffect(() => {
+    if (!selectedViewId || !currentWorkspaceId) return;
+    if (revealedViewIdRef.current === selectedViewId) return;
+
+    let cancelled = false;
+
+    void resolveAncestorViewIds({
+      selectedViewId,
+      workspaceId: currentWorkspaceId,
+      outline: outlineRef.current || [],
+      fetchView: (workspaceId, viewId) => ViewService.get(workspaceId, viewId),
+    }).then((ancestorIds) => {
+      if (cancelled) return;
+
+      // Mark revealed only once the walk finishes, so a transient unmount
+      // (e.g. StrictMode's mount → unmount → mount) doesn't cancel the only
+      // walk and then gate the retry. null means the chain couldn't be
+      // resolved — leave the sidebar as-is; an empty array means nothing to
+      // expand.
+      revealedViewIdRef.current = selectedViewId;
+      if (!ancestorIds) return;
+      expandAncestors(ancestorIds);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedViewId, currentWorkspaceId, expandAncestors]);
 
   // Validate restored expanded IDs that are not in the current tree and prune only truly stale IDs.
   // This avoids keeping deleted/moved IDs forever, while preserving valid deep IDs.
