@@ -1,7 +1,8 @@
+import { unfurl } from './_lib/unfurl';
+import { isAllowedHttpUrl } from './_lib/url-safety';
+
 import type { IncomingMessage, ServerResponse } from 'http';
 
-import { isAllowedHttpUrl } from './_lib/url-safety';
-import { unfurl } from './_lib/unfurl';
 
 // Cache successful previews at the edge so repeat loads are cheap, mirroring the
 // desktop LinkInfoCache.
@@ -9,9 +10,11 @@ const CACHE_CONTROL = 'public, s-maxage=600, stale-while-revalidate=86400';
 
 export default async function handler(req: IncomingMessage, res: ServerResponse): Promise<void> {
   const target = readUrlParam(req);
+
   if (!target) return sendJson(res, 400, { error: 'Missing "url" query parameter' });
 
   let parsed: URL;
+
   try {
     parsed = new URL(target);
   } catch {
@@ -28,6 +31,7 @@ export default async function handler(req: IncomingMessage, res: ServerResponse)
 
   try {
     const data = await unfurl(parsed.toString());
+
     res.setHeader('Cache-Control', CACHE_CONTROL);
     return sendJson(res, 200, data);
   } catch {

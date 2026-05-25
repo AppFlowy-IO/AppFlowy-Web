@@ -45,12 +45,14 @@ export async function unfurl(rawUrl: string): Promise<UnfurlResult> {
   }
 
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
+
   if (!isHtml(contentType)) {
     void response.body?.cancel().catch(() => undefined);
     return nonHtmlResult(url, host, contentType);
   }
 
   const head = await readHead(response);
+
   return extractMetadata(head, url, host);
 }
 
@@ -112,6 +114,7 @@ function isHtml(contentType: string): boolean {
 // Read only up to </head> (or 50KB) to keep the function fast and cheap.
 async function readHead(response: Response): Promise<string> {
   const reader = response.body?.getReader();
+
   if (!reader) return response.text();
 
   const decoder = new TextDecoder('utf-8');
@@ -120,11 +123,13 @@ async function readHead(response: Response): Promise<string> {
 
   while (received < MAX_HTML_BYTES) {
     const { done, value } = await reader.read();
+
     if (done) break;
     received += value.byteLength;
     html += decoder.decode(value, { stream: true });
 
     const headEnd = html.toLowerCase().indexOf('</head>');
+
     if (headEnd !== -1) {
       html = html.slice(0, headEnd + '</head>'.length);
       break;
@@ -157,17 +162,21 @@ function extractMetadata(head: string, url: URL, host: string): UnfurlResult {
 
 function extractFavicon(links: Array<Record<string, string>>, url: URL): string | undefined {
   const rels = ['icon', 'shortcut icon', 'apple-touch-icon', 'apple-touch-icon-precomposed'];
+
   for (const rel of rels) {
     const href = links.find((attrs) => (attrs.rel ?? '').toLowerCase() === rel)?.href;
+
     if (href) return resolveOptional(url, href);
   }
 
   const anyIcon = links.find((attrs) => (attrs.rel ?? '').toLowerCase().includes('icon'))?.href;
+
   return anyIcon ? resolveOptional(url, anyIcon) : undefined;
 }
 
 function matchTags(html: string, tag: 'meta' | 'link'): Array<Record<string, string>> {
   const regex = new RegExp(`<${tag}\\b[^>]*>`, 'gi');
+
   return (html.match(regex) ?? []).map(parseAttributes);
 }
 
@@ -191,6 +200,7 @@ function extractTitleTag(html: string): string | undefined {
 
 function nonHtmlResult(url: URL, host: string, contentType: string): UnfurlResult {
   const filename = url.pathname.split('/').filter(Boolean).pop() || host;
+
   return {
     title: decodeURIComponentSafe(filename),
     description: contentType ? `Type: ${contentType}` : '',
@@ -206,6 +216,7 @@ function resolveOptional(base: URL, href?: string): string | undefined {
   if (!href) return undefined;
 
   const decoded = decodeEntities(href).trim();
+
   if (!decoded) return undefined;
 
   try {
@@ -248,6 +259,7 @@ function decodeEntities(value: string): string {
     if (entity[0] === '#') {
       const isHex = entity[1] === 'x' || entity[1] === 'X';
       const code = isHex ? parseInt(entity.slice(2), 16) : parseInt(entity.slice(1), 10);
+
       return Number.isFinite(code) ? String.fromCodePoint(code) : match;
     }
 

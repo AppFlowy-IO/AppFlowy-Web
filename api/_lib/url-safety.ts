@@ -8,6 +8,7 @@ export function isBlockedHost(hostname: string): boolean {
   }
 
   const v4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
+
   if (v4) {
     const a = Number(v4[1]);
     const b = Number(v4[2]);
