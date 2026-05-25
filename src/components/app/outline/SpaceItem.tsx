@@ -1,10 +1,22 @@
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { Tooltip } from '@mui/material';
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 
 import { View } from '@/application/types';
 import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import ViewItem from '@/components/app/outline/ViewItem';
+import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
+import { cn } from '@/lib/utils';
+
+type SpaceDragState =
+  | { type: 'idle' }
+  | { type: 'dragging' }
+  | { type: 'over'; closestEdge: Edge | null };
+
+const idleState: SpaceDragState = { type: 'idle' };
 
 function SpaceItem({
   view,
@@ -16,6 +28,8 @@ function SpaceItem({
   onClickSpace,
   loadingViewIds,
   loadedViewIds,
+  canReorder,
+  dragInstanceId,
 }: {
   view: View;
   width: number;
@@ -26,10 +40,90 @@ function SpaceItem({
   onClickSpace?: (viewId: string) => void;
   loadingViewIds?: Set<string>;
   loadedViewIds?: Set<string>;
+  canReorder?: boolean;
+  dragInstanceId?: symbol;
 }) {
   const [hovered, setHovered] = React.useState<boolean>(false);
+  const [dragState, setDragState] = React.useState<SpaceDragState>(idleState);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const suppressClickRef = useRef(false);
+  const suppressClickTimeoutRef = useRef<number>();
   const isExpanded = expandIds.includes(view.view_id);
   const isPrivate = view.is_private;
+
+  useEffect(() => {
+    return () => {
+      if (suppressClickTimeoutRef.current !== undefined) {
+        window.clearTimeout(suppressClickTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const element = rowRef.current;
+
+    if (!canReorder || !dragInstanceId || !element) return;
+
+    const data = {
+      type: 'space',
+      instanceId: dragInstanceId,
+      id: view.view_id,
+    };
+
+    return combine(
+      draggable({
+        element,
+        getInitialData: () => data,
+        onDragStart() {
+          suppressClickRef.current = true;
+          if (suppressClickTimeoutRef.current !== undefined) {
+            window.clearTimeout(suppressClickTimeoutRef.current);
+            suppressClickTimeoutRef.current = undefined;
+          }
+
+          setDragState({ type: 'dragging' });
+        },
+        onDrop() {
+          suppressClickTimeoutRef.current = window.setTimeout(() => {
+            suppressClickRef.current = false;
+            suppressClickTimeoutRef.current = undefined;
+          }, 0);
+
+          setDragState(idleState);
+        },
+      }),
+      dropTargetForElements({
+        element,
+        canDrop: ({ source }) =>
+          source.data.type === 'space' &&
+          source.data.instanceId === dragInstanceId &&
+          source.data.id !== view.view_id,
+        getIsSticky: () => true,
+        getData({ input }) {
+          return attachClosestEdge(data, {
+            element,
+            input,
+            allowedEdges: ['top', 'bottom'],
+          });
+        },
+        onDrag({ self }) {
+          const closestEdge = extractClosestEdge(self.data);
+
+          setDragState((current) => {
+            if (current.type === 'over' && current.closestEdge === closestEdge) return current;
+            return { type: 'over', closestEdge };
+          });
+        },
+        onDragLeave() {
+          setDragState(idleState);
+        },
+        onDrop() {
+          setDragState(idleState);
+        },
+      })
+    );
+  }, [canReorder, dragInstanceId, view.view_id]);
+
   const renderItem = useMemo(() => {
     if (!view) return null;
     const extra = view?.extra;
@@ -37,20 +131,32 @@ function SpaceItem({
 
     return (
       <div
+        ref={rowRef}
         data-testid={`space-${view.view_id}`}
         data-expanded={isExpanded}
         style={{
           width,
         }}
         onClick={() => {
+          if (suppressClickRef.current) {
+            suppressClickRef.current = false;
+            if (suppressClickTimeoutRef.current !== undefined) {
+              window.clearTimeout(suppressClickTimeoutRef.current);
+              suppressClickTimeoutRef.current = undefined;
+            }
+
+            return;
+          }
+
           toggleExpand(view.view_id, !isExpanded);
           onClickSpace?.(view.view_id);
         }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        className={
-          'flex min-h-[30px] w-full cursor-pointer select-none items-center gap-0.5 truncate rounded-[8px] px-1 py-0.5  text-sm hover:bg-fill-content-hover focus:bg-fill-content-hover focus:outline-none'
-        }
+        className={cn(
+          'relative flex min-h-[30px] w-full cursor-pointer select-none items-center gap-0.5 truncate rounded-[8px] px-1 py-0.5 text-sm hover:bg-fill-content-hover focus:bg-fill-content-hover focus:outline-none',
+          dragState.type === 'dragging' && 'opacity-40'
+        )}
       >
         <SpaceIcon
           className={'icon mr-1.5 !h-5 !w-5 !min-w-5'}
@@ -70,9 +176,10 @@ function SpaceItem({
           </div>
         </Tooltip>
         {renderExtra && renderExtra({ hovered, view })}
+        {dragState.type === 'over' ? <DropRowIndicator edge={dragState.closestEdge} /> : null}
       </div>
     );
-  }, [hovered, isExpanded, isPrivate, onClickSpace, renderExtra, toggleExpand, view, width]);
+  }, [dragState, hovered, isExpanded, isPrivate, onClickSpace, renderExtra, toggleExpand, view, width]);
 
   const isLoading = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
 

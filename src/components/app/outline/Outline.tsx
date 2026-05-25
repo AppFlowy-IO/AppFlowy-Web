@@ -1,9 +1,16 @@
+import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
+import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
+import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
+import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
+import { extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
+import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 
-import { ViewService } from '@/application/services/domains';
-import { View, ViewLayout } from '@/application/types';
+import { PageService, ViewService } from '@/application/services/domains';
+import { Role, View, ViewLayout } from '@/application/types';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
 import { findView, getOutlineExpands, setOutlineExpands } from '@/components/_shared/outline/utils';
@@ -16,7 +23,9 @@ import {
   useLoadViewChildrenBatch,
   useLoadViewChildren,
   useMarkViewChildrenStale,
+  useRefreshOutline,
   useSidebarSelectedViewId,
+  useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
 import { Favorite } from '@/components/app/favorite';
 import { resolveAncestorViewIds } from '@/components/app/hooks/resolveAncestorViewIds';
@@ -58,6 +67,123 @@ export function Outline({ width }: { width: number }) {
   const loadViewChildren = useLoadViewChildren();
   const loadViewChildrenBatch = useLoadViewChildrenBatch();
   const markViewChildrenStale = useMarkViewChildrenStale();
+  const refreshOutline = useRefreshOutline();
+  const userWorkspaceInfo = useUserWorkspaceInfo();
+  const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
+  const [spaceDragInstanceId] = useState(() => Symbol('space-drag-instance'));
+  const spaceListRef = useRef<HTMLDivElement>(null);
+  const visibleSpacesFromOutline = useMemo(
+    () => outline?.filter((view) => !view.extra?.is_hidden_space) ?? [],
+    [outline]
+  );
+  const [optimisticSpaceIds, setOptimisticSpaceIds] = useState<string[] | null>(null);
+  const visibleSpaces = useMemo(() => {
+    if (!optimisticSpaceIds) return visibleSpacesFromOutline;
+
+    const spaceById = new Map(visibleSpacesFromOutline.map((space) => [space.view_id, space]));
+    const orderedSpaces = optimisticSpaceIds
+      .map((spaceId) => spaceById.get(spaceId))
+      .filter((space): space is View => Boolean(space));
+    const orderedSpaceIds = new Set(orderedSpaces.map((space) => space.view_id));
+
+    return [
+      ...orderedSpaces,
+      ...visibleSpacesFromOutline.filter((space) => !orderedSpaceIds.has(space.view_id)),
+    ];
+  }, [optimisticSpaceIds, visibleSpacesFromOutline]);
+  const visibleSpacesRef = useRef<View[]>(visibleSpaces);
+  const spaceReorderRequestSeqRef = useRef(0);
+
+  useEffect(() => {
+    visibleSpacesRef.current = visibleSpaces;
+  }, [visibleSpaces]);
+
+  useEffect(() => {
+    setOptimisticSpaceIds(null);
+    spaceReorderRequestSeqRef.current += 1;
+  }, [currentWorkspaceId]);
+
+  const reorderSpaces = useCallback(
+    async (sourceId: string, targetId: string, closestEdgeOfTarget: Edge | null) => {
+      if (!currentWorkspaceId || !canReorderSpaces) return;
+
+      const currentSpaces = visibleSpacesRef.current;
+      const startIndex = currentSpaces.findIndex((space) => space.view_id === sourceId);
+      const indexOfTarget = currentSpaces.findIndex((space) => space.view_id === targetId);
+
+      if (startIndex < 0 || indexOfTarget < 0) return;
+
+      const finishIndex = getReorderDestinationIndex({
+        startIndex,
+        indexOfTarget,
+        closestEdgeOfTarget,
+        axis: 'vertical',
+      });
+
+      if (finishIndex === startIndex) return;
+
+      const nextSpaces = reorder({
+        list: currentSpaces,
+        startIndex,
+        finishIndex,
+      });
+      const requestSeq = ++spaceReorderRequestSeqRef.current;
+      const movedSpace = currentSpaces[startIndex];
+      const prevViewId = finishIndex > 0 ? nextSpaces[finishIndex - 1]?.view_id : null;
+
+      visibleSpacesRef.current = nextSpaces;
+      setOptimisticSpaceIds(nextSpaces.map((space) => space.view_id));
+
+      try {
+        await PageService.moveTo(currentWorkspaceId, movedSpace.view_id, currentWorkspaceId, prevViewId);
+        await refreshOutline?.();
+        if (spaceReorderRequestSeqRef.current === requestSeq) {
+          setOptimisticSpaceIds(null);
+        }
+      } catch (error) {
+        if (spaceReorderRequestSeqRef.current !== requestSeq) return;
+
+        setOptimisticSpaceIds(null);
+        toast.error('Failed to reorder spaces');
+        Log.error('[Outline] Failed to reorder spaces', error);
+      }
+    },
+    [canReorderSpaces, currentWorkspaceId, refreshOutline]
+  );
+
+  useEffect(() => {
+    const element = spaceListRef.current;
+
+    if (!canReorderSpaces || !element) return;
+
+    function canRespond({ source }: { source: { data: Record<string, unknown> } }) {
+      return source.data.type === 'space' && source.data.instanceId === spaceDragInstanceId;
+    }
+
+    return combine(
+      monitorForElements({
+        canMonitor: canRespond,
+        onDrop({ location, source }) {
+          const target = location.current.dropTargets[0];
+
+          if (!target) return;
+
+          const sourceId = String(source.data.id ?? '');
+          const targetId = String(target.data.id ?? '');
+
+          if (!sourceId || !targetId || sourceId === targetId) return;
+
+          const closestEdgeOfTarget = extractClosestEdge(target.data);
+
+          void reorderSpaces(sourceId, targetId, closestEdgeOfTarget);
+        },
+      }),
+      autoScrollForElements({
+        canScroll: canRespond,
+        element,
+      })
+    );
+  }, [canReorderSpaces, reorderSpaces, spaceDragInstanceId]);
 
   const [menuProps, setMenuProps] = useState<
     | {
@@ -481,7 +607,7 @@ export function Outline({ width }: { width: number }) {
 
   return (
     <>
-      <div className={'folder-views flex w-full flex-1 flex-col px-[8px] pb-[10px] pt-1'}>
+      <div ref={spaceListRef} className={'folder-views flex w-full flex-1 flex-col px-[8px] pb-[10px] pt-1'}>
         <Favorite />
         <ShareWithMe width={width - 20} />
         {!outline || outline.length === 0 ? (
@@ -493,21 +619,21 @@ export function Outline({ width }: { width: number }) {
             <DirectoryStructure />
           </div>
         ) : (
-          outline
-            .filter((view) => !view.extra?.is_hidden_space)
-            .map((view) => (
-              <SpaceItem
-                view={view}
-                key={view.view_id}
-                width={width - 20}
-                renderExtra={renderActions}
-                expandIds={expandViewIds}
-                toggleExpand={toggleExpandView}
-                onClickView={onClickView}
-                loadingViewIds={loadingViewIds}
-                loadedViewIds={loadedViewIds}
-              />
-            ))
+          visibleSpaces.map((view) => (
+            <SpaceItem
+              view={view}
+              key={view.view_id}
+              width={width - 20}
+              renderExtra={renderActions}
+              expandIds={expandViewIds}
+              toggleExpand={toggleExpandView}
+              onClickView={onClickView}
+              loadingViewIds={loadingViewIds}
+              loadedViewIds={loadedViewIds}
+              canReorder={canReorderSpaces && visibleSpaces.length > 1}
+              dragInstanceId={spaceDragInstanceId}
+            />
+          ))
         )}
       </div>
       {menuProps &&
