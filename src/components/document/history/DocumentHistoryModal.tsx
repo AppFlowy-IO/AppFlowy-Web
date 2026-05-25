@@ -1,4 +1,5 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Dialog, DialogContent, DialogTitle } from '@mui/material';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
@@ -18,7 +19,6 @@ import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan'
 import { Editor } from '@/components/editor';
 import { EditorContextState } from '@/components/editor/EditorContext';
 import { useCurrentUser } from '@/components/main/app.hooks';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
 import { Log } from '@/utils/log';
 
@@ -26,12 +26,7 @@ import { VersionList } from './DocumentHistoryVersionList';
 
 type PreviewEditorProps = Pick<
   EditorContextState,
-  | 'loadViewMeta'
-  | 'createRow'
-  | 'eventEmitter'
-  | 'getMentionUser'
-  | 'getViewIdFromDatabaseId'
-  | 'loadDatabaseRelations'
+  'loadViewMeta' | 'createRow' | 'eventEmitter' | 'getMentionUser' | 'getViewIdFromDatabaseId' | 'loadDatabaseRelations'
 >;
 
 type VersionPreviewBodyProps = {
@@ -63,7 +58,7 @@ const VersionPreviewBody = memo(function VersionPreviewBody({
   }
 
   return (
-    <div style={{ pointerEvents: 'none' }}>
+    <div className='appflowy-scroller h-full overflow-y-auto overflow-x-hidden'>
       <Editor
         workspaceId={workspaceId || ''}
         viewId={viewId}
@@ -91,11 +86,7 @@ export function DocumentHistoryModal({
     icon: ViewIcon | null;
   };
 }) {
-  const {
-    loadViewMeta,
-    createRow,
-    getViewIdFromDatabaseId,
-  } = useAppOperations();
+  const { loadViewMeta, createRow, getViewIdFromDatabaseId } = useAppOperations();
   const { getCollabHistory, previewCollabVersion, revertCollabVersion } = useCollabHistory();
   const getSubscriptions = useGetSubscriptions();
   const eventEmitter = useEventEmitter();
@@ -105,6 +96,7 @@ export function DocumentHistoryModal({
   const currentUser = useCurrentUser();
   const { isPro } = useSubscriptionPlan(getSubscriptions);
   const { t } = useTranslation();
+  const titleId = useId();
   const [versions, setVersions] = useState<CollabVersionRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -321,20 +313,29 @@ export function DocumentHistoryModal({
   }, [clearPreviewDocs]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        data-testid="version-history-modal"
-        className={cn(
-          'flex !h-full !w-full rounded-2xl bg-surface-layer-02 p-0',
-          '!max-h-[min(920px,_calc(100vh-160px))] !min-h-[min(689px,_calc(100vh-40px))] !min-w-[min(984px,_calc(100vw-40px))] !max-w-[min(1680px,_calc(100vw-240px))] '
-        )}
-        showCloseButton={false}
-      >
-        <div className='order-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
-          <DialogHeader className='border-b border-border px-6 py-4'>
-            <DialogTitle>{view?.name || t('untitled')}</DialogTitle>
-          </DialogHeader>
-          <div className='flex-1 overflow-hidden'>
+    <Dialog
+      open={open}
+      onClose={() => onOpenChange(false)}
+      aria-labelledby={titleId}
+      fullWidth
+      maxWidth={false}
+      keepMounted={false}
+      disableAutoFocus={false}
+      disableEnforceFocus={false}
+      disableRestoreFocus
+      PaperProps={{
+        className: cn(
+          'flex !h-full !w-full overflow-hidden rounded-2xl bg-surface-layer-02',
+          '!max-h-[min(920px,_calc(100vh-160px))] !min-h-[min(689px,_calc(100vh-40px))] !min-w-[min(984px,_calc(100vw-40px))] !max-w-[min(1680px,_calc(100vw-240px))]'
+        ),
+      }}
+    >
+      <DialogContent data-testid='version-history-modal' className='flex h-full w-full overflow-hidden p-0'>
+        <div className='order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
+          <DialogTitle id={titleId} className='border-b border-border px-6 py-4 text-base font-bold text-text-primary'>
+            {view?.name || t('untitled')}
+          </DialogTitle>
+          <div className='min-h-0 flex-1 overflow-hidden'>
             <VersionPreviewBody
               loading={loading}
               error={error}

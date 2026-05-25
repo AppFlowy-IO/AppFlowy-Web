@@ -161,13 +161,21 @@ export function useImageWithRetry(
       // The pending-promotion timer checks this so we don't briefly flash the
       // "still uploading…" UI between fetch success and <img> decode.
       let settled = false;
+      // Latest non-ok result, read by the pending-promotion timer below. Only an
+      // explicit "upload pipeline still in flight" signal (425/503 → 'not-ready')
+      // should surface the "Waiting for upload to finish…" copy. A slow or failing
+      // *remote* image is not an upload, so it must stay in 'loading'.
+      let latestResult: CheckImageResult | null = null;
 
       setPhase('loading');
       setLastError(null);
 
-      // Promote loading → pending if we cross the threshold without success.
+      // Promote loading → pending only when the server says the upload is still
+      // finishing. Otherwise keep the plain loading spinner — a slow or broken
+      // remote/external image must not be mislabeled as "waiting for upload".
       scheduleTimer(() => {
         if (controller.signal.aborted || settled) return;
+        if (latestResult?.errorKind !== 'not-ready') return;
         setPhase((p) => (p === 'loading' ? 'pending' : p));
       }, PENDING_AFTER_MS);
 
@@ -241,6 +249,7 @@ export function useImageWithRetry(
         }
 
         setLastError(result);
+        latestResult = result;
 
         const schedule = backoffSchedule(result.errorKind);
         const exhausted = attempt >= schedule.length;
@@ -251,6 +260,13 @@ export function useImageWithRetry(
           settled = true;
           controllersRef.current.delete(controller);
           return;
+        }
+
+        // If the upload pipeline reports "not ready" only after we've already
+        // waited past the threshold, surface the "Waiting for upload to finish…"
+        // copy now — the one-shot timer above may have fired earlier without it.
+        if (result.errorKind === 'not-ready' && elapsed >= PENDING_AFTER_MS) {
+          setPhase((p) => (p === 'loading' ? 'pending' : p));
         }
 
         await sleep(jitter(schedule[attempt]));

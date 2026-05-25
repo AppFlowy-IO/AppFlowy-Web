@@ -70,7 +70,11 @@ export async function getServerInfo(): Promise<ServerInfo> {
 
   try {
     return await executeAPIRequest<ServerInfo>(() =>
-      getAxios()?.get<APIResponse<ServerInfo>>(url)
+      getAxios()?.get<APIResponse<ServerInfo>>(url, {
+        headers: {
+          'x-platform': 'web',
+        },
+      })
     );
   } catch (error) {
     console.warn('Server info API returned error:', (error as APIError)?.message);
