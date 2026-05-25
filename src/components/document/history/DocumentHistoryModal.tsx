@@ -1,5 +1,5 @@
 import { Dialog, DialogContent, DialogTitle } from '@mui/material';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import * as Y from 'yjs';
 
@@ -96,6 +96,7 @@ export function DocumentHistoryModal({
   const currentUser = useCurrentUser();
   const { isPro } = useSubscriptionPlan(getSubscriptions);
   const { t } = useTranslation();
+  const titleId = useId();
   const [versions, setVersions] = useState<CollabVersionRecord[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -315,6 +316,7 @@ export function DocumentHistoryModal({
     <Dialog
       open={open}
       onClose={() => onOpenChange(false)}
+      aria-labelledby={titleId}
       fullWidth
       maxWidth={false}
       keepMounted={false}
@@ -330,7 +332,7 @@ export function DocumentHistoryModal({
     >
       <DialogContent data-testid='version-history-modal' className='flex h-full w-full overflow-hidden p-0'>
         <div className='order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
-          <DialogTitle className='border-b border-border px-6 py-4 text-base font-bold text-text-primary'>
+          <DialogTitle id={titleId} className='border-b border-border px-6 py-4 text-base font-bold text-text-primary'>
             {view?.name || t('untitled')}
           </DialogTitle>
           <div className='min-h-0 flex-1 overflow-hidden'>

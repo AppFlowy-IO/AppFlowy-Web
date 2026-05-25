@@ -1,4 +1,5 @@
 import { unfurl } from '../unfurl';
+import { isAllowedHttpUrl } from '../url-safety';
 
 const originalFetch = global.fetch;
 
@@ -64,6 +65,18 @@ describe('unfurl', () => {
     expect(global.fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects redirects to IPv4-mapped IPv6 private hosts before fetching the redirect target', async () => {
+    global.fetch = jest.fn().mockResolvedValue(
+      mockResponse({
+        status: 302,
+        headers: { location: 'http://[::ffff:127.0.0.1]/admin' },
+      })
+    ) as unknown as typeof fetch;
+
+    await expect(unfurl('https://example.com/redirect')).rejects.toThrow('Blocked redirect target');
+    expect(global.fetch).toHaveBeenCalledTimes(1);
+  });
+
   it('follows allowed redirects and extracts metadata from the final response', async () => {
     global.fetch = jest
       .fn()
@@ -96,5 +109,17 @@ describe('unfurl', () => {
       'https://redirected.example/final',
       expect.objectContaining({ redirect: 'manual' })
     );
+  });
+});
+
+describe('url safety', () => {
+  it('blocks IPv4-mapped IPv6 private address literals', () => {
+    expect(isAllowedHttpUrl(new URL('http://[::ffff:127.0.0.1]/'))).toBe(false);
+    expect(isAllowedHttpUrl(new URL('http://[::ffff:7f00:1]/'))).toBe(false);
+    expect(isAllowedHttpUrl(new URL('http://[::ffff:c0a8:101]/'))).toBe(false);
+  });
+
+  it('allows public IPv4-mapped IPv6 address literals', () => {
+    expect(isAllowedHttpUrl(new URL('http://[::ffff:0808:0808]/'))).toBe(true);
   });
 });

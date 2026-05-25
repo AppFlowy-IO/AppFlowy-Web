@@ -31,7 +31,9 @@ const MentionExternalLink = memo(function MentionExternalLink ({
   // eager fetching where IntersectionObserver is unavailable.
   useEffect(() => {
     if (isVisible) return;
-    if (!anchor || typeof IntersectionObserver === 'undefined') {
+    if (!anchor) return;
+
+    if (typeof IntersectionObserver === 'undefined') {
       setIsVisible(true);
       return;
     }
