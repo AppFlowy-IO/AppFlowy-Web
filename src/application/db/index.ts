@@ -352,6 +352,7 @@ const pendingRowOpens = new Map<string, Promise<CachedProviderEntry>>();
 const DATABASE_BLOB_RID_PREFIX = 'af_database_blob_rid:';
 const SHARED_COLLAB_COMPACT_UPDATE_THRESHOLD = 200;
 const SHARED_COLLAB_COMPACT_MAX_RETRIES = 3;
+const DELETE_INDEXEDDB_BLOCKED_TIMEOUT_MS = 2000;
 
 type CollabPersistenceProvider = IndexeddbPersistence | SharedIndexeddbPersistence;
 type SharedCollabOpenOptions = { awaitSync?: boolean; expectedVersion?: string; forceReset?: boolean; skipCache?: boolean };
@@ -759,21 +760,46 @@ async function disposeRowProvider(name: string, options: { destroyDoc?: boolean 
   return disposed;
 }
 
-async function deleteIndexedDBDatabase(name: string) {
+async function deleteIndexedDBDatabase(
+  name: string,
+  options: { blockedTimeoutMs?: number } = {}
+) {
   if (typeof indexedDB === 'undefined') return true;
 
   return new Promise<boolean>((resolve) => {
     const request = indexedDB.deleteDatabase(name);
+    let settled = false;
+    let blockedTimeout: ReturnType<typeof setTimeout> | undefined;
 
-    request.onsuccess = () => resolve(true);
+    const resolveOnce = (deleted: boolean) => {
+      if (settled) return;
+
+      settled = true;
+
+      if (blockedTimeout) {
+        clearTimeout(blockedTimeout);
+      }
+
+      resolve(deleted);
+    };
+
+    request.onsuccess = () => resolveOnce(true);
     request.onerror = () => {
       Log.warn('[DB] failed to delete collab IndexedDB database', { name, error: request.error });
-      resolve(false);
+      resolveOnce(false);
     };
 
     request.onblocked = () => {
       Log.warn('[DB] delete collab IndexedDB database blocked', { name });
-      resolve(false);
+
+      if (blockedTimeout) {
+        clearTimeout(blockedTimeout);
+      }
+
+      blockedTimeout = setTimeout(() => {
+        Log.warn('[DB] delete collab IndexedDB database timed out after blocked', { name });
+        resolveOnce(false);
+      }, options.blockedTimeoutMs ?? DELETE_INDEXEDDB_BLOCKED_TIMEOUT_MS);
     };
   });
 }
@@ -1259,6 +1285,7 @@ export async function clearData() {
 export const __dbTestUtils = {
   createCachedProviderEntry,
   clearBlobRidCheckpointsForDeletedDatabases,
+  deleteIndexedDBDatabase,
   destroyProviderEntry,
   readSharedCollabRecordsForSync,
   waitForProviderEntry,
