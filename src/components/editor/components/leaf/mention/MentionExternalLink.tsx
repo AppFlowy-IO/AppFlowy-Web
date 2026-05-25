@@ -1,7 +1,9 @@
 import { debounce } from 'lodash-es';
-import { type MouseEvent, memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { type MouseEvent, memo, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
+import { ReactComponent as EarthIcon } from '@/assets/icons/earth.svg';
 import { MentionLinkPreviewCard } from '@/components/editor/components/leaf/mention/MentionLinkPreviewCard';
+import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { Popover, PopoverAnchor, PopoverContent } from '@/components/ui/popover';
 import { buildFallbackLinkPreviewData, fetchLinkPreviewData, LinkPreviewData } from '@/utils/link-preview';
 import { openUrl } from '@/utils/url';
@@ -19,12 +21,14 @@ const MentionExternalLink = memo(function MentionExternalLink ({
 }: {
   url: string;
 }) {
+  const isDark = useContext(ThemeModeContext)?.isDark ?? false;
   const fallbackData = useMemo(() => buildFallbackLinkPreviewData(url), [url]);
   const [remotePreview, setRemotePreview] = useState<RemoteLinkPreviewData | null>(null);
   const data = remotePreview && remotePreview.url === url ? remotePreview.data : fallbackData;
   const [open, setOpen] = useState(false);
   const [anchor, setAnchor] = useState<HTMLSpanElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
 
   // Defer the preview fetch until the chip is near the viewport so a document
   // with many link mentions doesn't fire N requests up front. Falls back to
@@ -104,7 +108,12 @@ const MentionExternalLink = memo(function MentionExternalLink ({
     debounceHide();
   }, [debounceShow, debounceHide]);
 
-  const imageUrl = data.logo?.url || data.image?.url;
+  const imageUrl = (isDark ? data.logoDark?.url : undefined) || data.logo?.url || data.image?.url;
+  // Mirror the desktop buildIconWidget: always show an icon, falling back to a
+  // globe when the favicon is missing or fails to load (e.g. a 404 favicon).
+  // Derive the error state from the URL that failed so it resets during render
+  // when `imageUrl` changes — no effect, no extra render, no stale-error flash.
+  const iconError = imageUrl !== undefined && imageUrl === failedIconUrl;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -114,12 +123,20 @@ const MentionExternalLink = memo(function MentionExternalLink ({
           onClick={handleOpenLink}
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
-          className={'cursor-pointer inline-flex gap-1.5 text-text-primary hover:underline'}
+          className={'cursor-pointer inline-flex items-center gap-1 text-text-primary hover:underline'}
         >
-          {imageUrl ? (
-            <span className={'mt-0.5'}>
-              <img className={'object-cover w-5 h-5'} src={imageUrl} alt={data.title} />
-            </span>
+          {imageUrl && !iconError ? (
+            <img
+              className={'h-[18px] w-[18px] flex-none rounded-sm object-contain'}
+              src={imageUrl}
+              alt={''}
+              onError={() => setFailedIconUrl(imageUrl ?? null)}
+            />
+          ) : (
+            <EarthIcon className={'h-[18px] w-[18px] flex-none text-text-secondary'} />
+          )}
+          {data.siteName ? (
+            <span className={'leading-[24px] text-text-secondary'}>{data.siteName}</span>
           ) : null}
           <span className={'leading-[24px]'}>{data.title || url}</span>
         </span>

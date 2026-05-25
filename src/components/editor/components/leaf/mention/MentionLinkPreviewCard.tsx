@@ -1,5 +1,7 @@
-import { memo } from 'react';
+import { memo, useContext } from 'react';
 
+import { ReactComponent as EarthIcon } from '@/assets/icons/earth.svg';
+import { ThemeModeContext } from '@/components/main/useAppThemeMode';
 import { LinkPreviewData } from '@/utils/link-preview';
 
 const WWW_PREFIX = /^www\./;
@@ -26,8 +28,9 @@ export const MentionLinkPreviewCard = memo(function MentionLinkPreviewCard({
   data: LinkPreviewData;
   onOpen: () => void;
 }) {
+  const isDark = useContext(ThemeModeContext)?.isDark ?? false;
   const image = data.image?.url;
-  const favicon = data.logo?.url;
+  const favicon = (isDark ? data.logoDark?.url : undefined) || data.logo?.url;
 
   return (
     <div onClick={onOpen} contentEditable={false} className={'flex cursor-pointer flex-col'}>
@@ -43,8 +46,12 @@ export const MentionLinkPreviewCard = memo(function MentionLinkPreviewCard({
           </div>
         ) : null}
         <div className={'mt-2 flex items-center gap-1.5'}>
-          {favicon ? <img src={favicon} alt={''} className={'h-4 w-4 flex-none rounded-sm object-contain'} /> : null}
-          <span className={'truncate text-xs font-bold text-text-primary'}>{hostLabel(url)}</span>
+          {favicon ? (
+            <img src={favicon} alt={''} className={'h-4 w-4 flex-none rounded-sm object-contain'} />
+          ) : (
+            <EarthIcon className={'h-4 w-4 flex-none text-text-secondary'} />
+          )}
+          <span className={'truncate text-xs font-bold text-text-primary'}>{data.siteName || hostLabel(url)}</span>
         </div>
       </div>
     </div>

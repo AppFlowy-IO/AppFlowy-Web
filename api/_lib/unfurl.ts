@@ -25,8 +25,20 @@ export interface UnfurlImage {
 export interface UnfurlResult {
   title: string;
   description: string;
+  siteName?: string;
   image?: UnfurlImage;
   logo?: UnfurlImage;
+  // A favicon variant for dark themes. Some sites (notably GitHub) ship a
+  // near-black monochrome favicon that is invisible on a dark background; the
+  // client picks this when in dark mode. Mirrors the desktop parser's
+  // darkFaviconUrl.
+  logoDark?: UnfurlImage;
+}
+
+const GITHUB_DARK_FAVICON = 'https://github.githubassets.com/favicons/favicon-dark.png';
+
+function isGithubHost(host: string): boolean {
+  return host === 'github.com' || host.endsWith('.github.com');
 }
 
 interface FetchedHtml {
@@ -39,11 +51,11 @@ export async function unfurl(rawUrl: string): Promise<UnfurlResult> {
   const { response, url } = await fetchHtml(initialUrl);
   const host = url.hostname.replace(/^www\./, '');
 
-  if (!response.ok) {
-    void response.body?.cancel().catch(() => undefined);
-    throw new Error(`Failed to fetch link preview: ${response.status}`);
-  }
-
+  // Parse the response body regardless of HTTP status. Many sites return useful
+  // Open Graph metadata on non-2xx responses (login walls, soft 404s, etc.), and
+  // this mirrors the desktop DefaultParser, which never inspects the status code.
+  // When the body carries no metadata, extractMetadata still falls back to the
+  // host title + favicon.
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
 
   if (!isHtml(contentType)) {
@@ -149,14 +161,17 @@ function extractMetadata(head: string, url: URL, host: string): UnfurlResult {
 
   const title = clean(og('og:title')) || clean(extractTitleTag(head)) || clean(named('title')) || host;
   const description = clean(og('og:description')) || clean(named('description'));
+  const siteName = clean(og('og:site_name'));
   const image = resolveOptional(url, og('og:image'));
   const favicon = extractFavicon(links, url) ?? defaultFavicon(host);
 
   return {
     title,
     description: truncate(description),
+    ...(siteName ? { siteName } : {}),
     ...(image ? { image: { url: image } } : {}),
     logo: { url: favicon },
+    ...(isGithubHost(host) ? { logoDark: { url: GITHUB_DARK_FAVICON } } : {}),
   };
 }
 

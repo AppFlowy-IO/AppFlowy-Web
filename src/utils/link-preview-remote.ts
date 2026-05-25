@@ -34,8 +34,10 @@ export const appflowyLinkPreviewProvider: LinkPreviewProvider = {
     return {
       title: data.title,
       description: data.description ?? '',
+      ...(data.siteName ? { siteName: data.siteName } : {}),
       ...(data.image?.url ? { image: { url: data.image.url } } : {}),
       ...(data.logo?.url ? { logo: { url: data.logo.url } } : {}),
+      ...(data.logoDark?.url ? { logoDark: { url: data.logoDark.url } } : {}),
     };
   },
 };
