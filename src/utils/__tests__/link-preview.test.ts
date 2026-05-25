@@ -328,6 +328,7 @@ describe('link preview providers', () => {
     await expect(fetchLinkPreviewData('https://github.com/AppFlowy-IO/AppFlowy-Web/issues/53')).resolves.toEqual({
       title: 'Issue title - AppFlowy-IO/AppFlowy-Web#53',
       description: 'Issue body',
+      siteName: 'GitHub',
       image: { url: 'https://avatars.githubusercontent.com/u/1?v=4' },
     });
     expect(mockedAxios.get).toHaveBeenCalledTimes(2);

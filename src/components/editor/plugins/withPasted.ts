@@ -13,14 +13,7 @@ import {
   isInsideSimpleTableCell,
 } from '@/application/slate-yjs/utils/editor';
 import { assertDocExists, getBlock, getChildrenArray, getText } from '@/application/slate-yjs/utils/yjs';
-import {
-  BlockType,
-  LinkPreviewBlockData,
-  MentionType,
-  VideoBlockData,
-  VideoType,
-  YjsEditorKey,
-} from '@/application/types';
+import { BlockType, MentionType, YjsEditorKey } from '@/application/types';
 import { parseHTML } from '@/components/editor/parsers/html-parser';
 import { parseMarkdown } from '@/components/editor/parsers/markdown-parser';
 import { parsePlainTextFragments } from '@/components/editor/parsers/paste-fragment-detectors';
@@ -31,7 +24,6 @@ import type { PasteAsMenuPayload } from '@/components/editor/components/panels/p
 import { getRangeRect } from '@/components/editor/components/toolbar/selection-toolbar/utils';
 import { detectMarkdown, detectTSV } from '@/components/editor/utils/markdown-detector';
 import { isSingleURLText, processUrl } from '@/utils/url';
-import { isValidVideoUrl, videoTypeData } from '@/utils/video-url';
 
 /**
  * Enhances Slate editor with improved paste handling
@@ -395,7 +387,12 @@ function handleMarkdownPaste(editor: ReactEditor, markdown: string): boolean {
 }
 
 /**
- * Handles URL paste (link previews, videos, page references)
+ * Handles URL paste.
+ *
+ * Internal AppFlowy links that point at a specific block are inserted as a
+ * page-reference mention directly. Every other URL is pasted as an inline link
+ * and the "Paste as" menu (Mention / URL / Bookmark / Embed) is shown so the
+ * user can choose how to render it — matching the desktop app's behavior.
  */
 function handleURLPaste(editor: ReactEditor, url: string): boolean {
   // Check for AppFlowy internal links
@@ -430,32 +427,9 @@ function handleURLPaste(editor: ReactEditor, url: string): boolean {
     }
   }
 
-  if (isPastingInsideSimpleTableCell(editor)) {
-    return insertLinkedURLTextAndShowPasteAsMenu(editor, url);
-  }
-
-  // Check for video URLs
-  const isVideoUrl = isValidVideoUrl(url);
-
-  if (isVideoUrl) {
-    return insertBlock(editor, {
-      type: BlockType.VideoBlock,
-      data: { url: processUrl(url) || url, ...videoTypeData(VideoType.External) } as VideoBlockData,
-    });
-  }
-
-  // Default: Link preview
-  return insertBlock(editor, {
-    type: BlockType.LinkPreview,
-    data: { url } as LinkPreviewBlockData,
-  });
-}
-
-function isPastingInsideSimpleTableCell(editor: ReactEditor): boolean {
-  const entry = getBlockEntry(editor as YjsEditor);
-  const blockId = entry?.[0].blockId;
-
-  return Boolean(blockId && isInsideSimpleTableCell(editor as YjsEditor, blockId));
+  // Insert the URL as an inline link and show the "Paste as" menu so the user
+  // can convert it to a Mention / Bookmark / Embed (matches desktop behavior).
+  return insertLinkedURLTextAndShowPasteAsMenu(editor, url);
 }
 
 function cloneRange(range: Range): Range {
@@ -570,58 +544,6 @@ function handleMultiLinePlainText(editor: ReactEditor, lines: string[]): boolean
     }));
 
   return insertParsedBlocks(editor, blocks);
-}
-
-/**
- * Helper to insert a single block (for URL handlers).
- *
- * Writes directly to Yjs via slateContentInsertToYData rather than going
- * through Transforms.insertNodes — Slate's applyInsertNode binding short-
- * circuits for non-text nodes (see applyToYjs.ts), so embed blocks like
- * LinkPreview/VideoBlock would render in Slate's local state but never
- * persist to the Y.Doc. The block was lost as soon as the editor unmounted
- * (e.g. closing a database row card right after pasting a URL).
- */
-function insertBlock(editor: ReactEditor, block: { type: BlockType; data: object }): boolean {
-  const point = editor.selection?.anchor;
-
-  if (!point) return false;
-
-  try {
-    const entry = getBlockEntry(editor as YjsEditor, point);
-
-    if (!entry) return false;
-
-    const [node] = entry;
-    const blockId = (node as { blockId?: string }).blockId;
-
-    if (!blockId) return false;
-
-    const sharedRoot = getSharedRoot(editor as YjsEditor);
-    const currentBlock = getBlock(blockId, sharedRoot);
-    const parentId = currentBlock.get(YjsEditorKey.block_parent);
-    const parent = getBlock(parentId, sharedRoot);
-    const parentChildren = getChildrenArray(parent.get(YjsEditorKey.block_children), sharedRoot);
-    const index = parentChildren.toArray().findIndex((id) => id === blockId);
-    const doc = assertDocExists(sharedRoot);
-
-    // slateContentInsertToYData expects Slate Element shape; the data
-    // payload becomes the Yjs block's `data` field as-is.
-    const slateNode: Element = {
-      type: block.type,
-      data: block.data,
-      children: [{ text: '' }],
-    } as unknown as Element;
-
-    doc.transact(() => {
-      slateContentInsertToYData(parentId, index + 1, [slateNode], doc);
-    });
-
-    return true;
-  } catch (error) {
-    console.error('Error inserting block:', error);
-    return false;
-  }
 }
 
 /**

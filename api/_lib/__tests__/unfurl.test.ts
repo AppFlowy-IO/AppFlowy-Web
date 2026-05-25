@@ -47,10 +47,31 @@ describe('unfurl', () => {
     await expect(unfurl('https://example.com/path')).rejects.toThrow('network error');
   });
 
-  it('rejects non-OK responses so lower-priority providers can run', async () => {
+  it('parses metadata from non-OK responses instead of rejecting (mirrors the desktop parser)', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        htmlResponse(
+          '<head><meta property="og:title" content="Sign in"><meta property="og:site_name" content="Example"></head>',
+          404
+        )
+      ) as unknown as typeof fetch;
+
+    await expect(unfurl('https://example.com/private')).resolves.toMatchObject({
+      title: 'Sign in',
+      siteName: 'Example',
+      logo: { url: 'https://www.google.com/s2/favicons?domain=example.com&sz=128' },
+    });
+  });
+
+  it('falls back to the host title for non-OK responses without metadata', async () => {
     global.fetch = jest.fn().mockResolvedValue(htmlResponse('', 403)) as unknown as typeof fetch;
 
-    await expect(unfurl('https://example.com/blocked')).rejects.toThrow('Failed to fetch link preview: 403');
+    await expect(unfurl('https://example.com/blocked')).resolves.toMatchObject({
+      title: 'example.com',
+      description: '',
+      logo: { url: 'https://www.google.com/s2/favicons?domain=example.com&sz=128' },
+    });
   });
 
   it('rejects redirects to blocked hosts before fetching the redirect target', async () => {
@@ -109,6 +130,19 @@ describe('unfurl', () => {
       'https://redirected.example/final',
       expect.objectContaining({ redirect: 'manual' })
     );
+  });
+
+  it('adds a dark-mode favicon for GitHub hosts so the icon stays visible on dark UI', async () => {
+    global.fetch = jest
+      .fn()
+      .mockResolvedValue(
+        htmlResponse('<head><meta property="og:title" content="GitHub repo"></head>')
+      ) as unknown as typeof fetch;
+
+    await expect(unfurl('https://github.com/AppFlowy-IO/AppFlowy')).resolves.toMatchObject({
+      title: 'GitHub repo',
+      logoDark: { url: 'https://github.githubassets.com/favicons/favicon-dark.png' },
+    });
   });
 });
 

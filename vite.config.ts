@@ -1,7 +1,8 @@
 import react from '@vitejs/plugin-react';
+import type { IncomingMessage, ServerResponse } from 'http';
 import path from 'path';
 import { visualizer } from 'rollup-plugin-visualizer';
-import { defineConfig } from 'vite';
+import { defineConfig, type ViteDevServer } from 'vite';
 import istanbul from 'vite-plugin-istanbul';
 import svgr from 'vite-plugin-svgr';
 import { totalBundleSize } from 'vite-plugin-total-bundle-size';
@@ -73,11 +74,47 @@ function namespaceRedirectPlugin() {
   };
 }
 
+// Runs the /api/link-preview serverless function in dev. Vite does not execute
+// the Vercel functions under `api/`, so without this the link-preview unfurler
+// only works in production and every pasted URL degrades to its raw text
+// locally (no favicon / title / image). The handler uses Node's IncomingMessage
+// / ServerResponse, which is exactly what the connect dev-server middleware
+// passes, so we can invoke it directly.
+function linkPreviewApiPlugin() {
+  return {
+    name: 'link-preview-api',
+    apply: 'serve' as const,
+    configureServer(server: ViteDevServer) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url || !req.url.startsWith('/api/link-preview')) {
+          return next();
+        }
+
+        server
+          .ssrLoadModule('/api/link-preview.ts')
+          .then((mod) =>
+            (mod.default as (req: IncomingMessage, res: ServerResponse) => Promise<void>)(
+              req as IncomingMessage,
+              res as ServerResponse
+            )
+          )
+          .catch((error: unknown) => {
+            server.config.logger.error(`[link-preview] ${error instanceof Error ? error.message : String(error)}`);
+            res.statusCode = 502;
+            res.setHeader('Content-Type', 'application/json; charset=utf-8');
+            res.end(JSON.stringify({ error: 'Failed to fetch link preview' }));
+          });
+      });
+    },
+  };
+}
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [
     react(),
     isDev ? namespaceRedirectPlugin() : undefined,
+    isDev ? linkPreviewApiPlugin() : undefined,
     // Strip data-testid attributes in production builds
     isProd ? stripTestIdPlugin() : undefined,
     svgr({

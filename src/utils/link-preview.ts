@@ -18,8 +18,12 @@ export interface LinkPreviewImageData {
 export interface LinkPreviewData {
   image?: LinkPreviewImageData;
   logo?: LinkPreviewImageData;
+  // Favicon variant for dark themes (e.g. GitHub's light octocat), used when the
+  // default favicon is a near-black monochrome icon that vanishes on dark UI.
+  logoDark?: LinkPreviewImageData;
   title: string;
   description: string;
+  siteName?: string;
 }
 
 export interface LinkPreviewProviderContext {
@@ -138,6 +142,7 @@ const githubProvider: LinkPreviewProvider = {
       return {
         title,
         description,
+        siteName: 'GitHub',
         ...(issue.user?.avatar_url ? { image: { url: issue.user.avatar_url } } : {}),
       };
     }
@@ -151,6 +156,7 @@ const githubProvider: LinkPreviewProvider = {
     return {
       title: repository.full_name || `${target.owner}/${target.repo}`,
       description: truncateDescription(repository.description || repository.html_url || ''),
+      siteName: 'GitHub',
       ...(repository.owner?.avatar_url ? { image: { url: repository.owner.avatar_url } } : {}),
     };
   },
