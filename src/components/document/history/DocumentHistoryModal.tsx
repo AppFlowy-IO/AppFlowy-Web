@@ -58,7 +58,7 @@ const VersionPreviewBody = memo(function VersionPreviewBody({
   }
 
   return (
-    <div style={{ pointerEvents: 'none' }}>
+    <div className='appflowy-scroller h-full overflow-y-auto overflow-x-hidden'>
       <Editor
         workspaceId={workspaceId || ''}
         viewId={viewId}
@@ -328,12 +328,12 @@ export function DocumentHistoryModal({
         ),
       }}
     >
-      <DialogContent data-testid='version-history-modal' className='flex h-full w-full p-0'>
-        <div className='order-2 flex min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
+      <DialogContent data-testid='version-history-modal' className='flex h-full w-full overflow-hidden p-0'>
+        <div className='order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
           <DialogTitle className='border-b border-border px-6 py-4 text-base font-bold text-text-primary'>
             {view?.name || t('untitled')}
           </DialogTitle>
-          <div className='flex-1 overflow-hidden'>
+          <div className='min-h-0 flex-1 overflow-hidden'>
             <VersionPreviewBody
               loading={loading}
               error={error}
