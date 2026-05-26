@@ -37,6 +37,27 @@
     --bg-body: #1a202c;
     --bg-base: #232b38;
     --bg-mask: #000000b2;
+
+    /* AppFlowy desktop semantic surface tokens (dark) */
+    --surface-primary: #272930;
+    --surface-primary-hover: #32343f;
+    --surface-layer-01: #272930;
+    --surface-layer-01-hover: #32343f;
+    --surface-layer-02: #2b2d37;
+    --surface-layer-02-hover: #3d404f;
+    --surface-layer-03: #32343f;
+    --surface-layer-03-hover: #3d404f;
+    --surface-layer-04: #363845;
+    --surface-layer-04-hover: #3d404f;
+    --surface-inverse: #3d404f;
+    --surface-overlay: #00000099;
+    --surface-container-layer-00: #272930;
+    --surface-container-layer-01: #32343f;
+    --surface-container-layer-02: #3d404f;
+    --surface-container-layer-03: #54596e;
+    --desktop-background-primary: #21232a;
+    --desktop-border-primary: #3d404f;
+    --desktop-border-primary-hover: #54596e;
     --bg-tips: #005174;
     --bg-brand: #2c144b;
     --function-error: #d32772;

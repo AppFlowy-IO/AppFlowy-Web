@@ -12,6 +12,27 @@ module.exports = {
     'header': 'var(--bg-header)',
     'footer': 'var(--bg-footer)',
   },
+  // AppFlowy desktop semantic surface tokens
+  'surface': {
+    'primary': 'var(--surface-primary)',
+    'primary-hover': 'var(--surface-primary-hover)',
+    'layer-01': 'var(--surface-layer-01)',
+    'layer-01-hover': 'var(--surface-layer-01-hover)',
+    'layer-02': 'var(--surface-layer-02)',
+    'layer-02-hover': 'var(--surface-layer-02-hover)',
+    'layer-03': 'var(--surface-layer-03)',
+    'layer-03-hover': 'var(--surface-layer-03-hover)',
+    'layer-04': 'var(--surface-layer-04)',
+    'layer-04-hover': 'var(--surface-layer-04-hover)',
+    'inverse': 'var(--surface-inverse)',
+    'overlay': 'var(--surface-overlay)',
+  },
+  'surface-container': {
+    'layer-00': 'var(--surface-container-layer-00)',
+    'layer-01': 'var(--surface-container-layer-01)',
+    'layer-02': 'var(--surface-container-layer-02)',
+    'layer-03': 'var(--surface-container-layer-03)',
+  },
   'line': {
     'border': 'var(--line-border)',
     'divider': 'var(--line-divider)',

@@ -35,7 +35,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
     <Dialog
       classes={{
         paper:
-          'w-[860px] h-[640px] max-w-[92vw] max-h-[90vh] flex flex-row overflow-hidden bg-bg-base',
+          'w-[860px] h-[640px] max-w-[92vw] max-h-[90vh] flex flex-row overflow-hidden bg-surface-primary',
       }}
       open={open}
       onClose={onClose}
