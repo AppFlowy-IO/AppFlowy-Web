@@ -8,7 +8,6 @@ import { Workspace } from '@/application/types';
 import { ReactComponent as UpgradeAIMaxIcon } from '@/assets/icons/ai.svg';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
 import { ReactComponent as TipIcon } from '@/assets/icons/help.svg';
-import { ReactComponent as AddUserIcon } from '@/assets/icons/invite_user.svg';
 import { ReactComponent as LogoutIcon } from '@/assets/icons/logout.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
 import { ReactComponent as ImportIcon } from '@/assets/icons/save_as.svg';
@@ -20,7 +19,6 @@ import { useAIEnabled, useAppOperations, useCurrentWorkspaceId, useUserWorkspace
 import CurrentWorkspace from '@/components/app/workspaces/CurrentWorkspace';
 import DeleteWorkspace from '@/components/app/workspaces/DeleteWorkspace';
 import EditWorkspace from '@/components/app/workspaces/EditWorkspace';
-import InviteMember from '@/components/app/workspaces/InviteMember';
 import LeaveWorkspace from '@/components/app/workspaces/LeaveWorkspace';
 import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
 import WorkspaceList from '@/components/app/workspaces/WorkspaceList';
@@ -42,7 +40,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { isAppFlowyHosted } from '@/utils/subscription';
 import { openUrl } from '@/utils/url';
 
-import { AccountSettings } from './AccountSettings';
+import { SettingsDialog } from '@/components/app/settings';
 
 export function Workspaces() {
   const { t } = useTranslation();
@@ -66,13 +64,12 @@ export function Workspaces() {
 
   const { onChangeWorkspace: handleSelectedWorkspace } = useAppOperations();
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | undefined>(undefined);
-  const [openInviteMember, setOpenInviteMember] = useState(false);
   const [openCreateWorkspace, setOpenCreateWorkspace] = useState(false);
   const [openRenameWorkspace, setOpenRenameWorkspace] = useState<Workspace | null>(null);
   const [openDeleteWorkspace, setOpenDeleteWorkspace] = useState<Workspace | null>(null);
   const [openLeaveWorkspace, setOpenLeaveWorkspace] = useState<Workspace | null>(null);
   const [openLogoutConfirm, setOpenLogoutConfirm] = useState(false);
-  const [openAccountSettings, setOpenAccountSettings] = useState(false);
+  const [openSettings, setOpenSettings] = useState(false);
 
   const isOwner = currentWorkspace?.owner?.uid.toString() === currentUser?.uid.toString();
 
@@ -197,16 +194,6 @@ export function Workspaces() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              {currentWorkspace && isOwner && (
-                <DropdownMenuItem
-                  onSelect={() => {
-                    setOpenInviteMember(true);
-                  }}
-                >
-                  <AddUserIcon />
-                  {t('settings.appearance.members.inviteMembers')}
-                </DropdownMenuItem>
-              )}
               <DropdownMenuItem onSelect={handleOpenImport}>
                 <ImportIcon />
                 <div className={'flex-1 text-left'}>{t('web.importNotion')}</div>
@@ -229,9 +216,9 @@ export function Workspaces() {
 
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem data-testid='account-settings-button' onSelect={() => setOpenAccountSettings(true)}>
+              <DropdownMenuItem data-testid='settings-button' onSelect={() => setOpenSettings(true)}>
                 <SettingsIcon />
-                <div className={'flex-1 text-left'}>{t('web.accountSettings')}</div>
+                <div className={'flex-1 text-left'}>{t('web.settings')}</div>
               </DropdownMenuItem>
               <DropdownMenuItem data-testid='logout-menu-item' onSelect={() => setOpenLogoutConfirm(true)}>
                 <LogoutIcon />
@@ -300,10 +287,6 @@ export function Workspaces() {
         />
       )}
 
-      {currentWorkspace && (
-        <InviteMember open={openInviteMember} openOnChange={setOpenInviteMember} workspace={currentWorkspace} />
-      )}
-
       {openRenameWorkspace && (
         <EditWorkspace
           open={Boolean(openRenameWorkspace)}
@@ -333,7 +316,11 @@ export function Workspaces() {
         />
       )}
 
-      <AccountSettings open={openAccountSettings} onClose={() => setOpenAccountSettings(false)} />
+      <SettingsDialog
+        open={openSettings}
+        onClose={() => setOpenSettings(false)}
+        onRequestOpen={() => setOpenSettings(true)}
+      />
       <LogoutConfirm open={openLogoutConfirm} onClose={() => setOpenLogoutConfirm(false)} onConfirm={handleSignOut} />
     </>
   );

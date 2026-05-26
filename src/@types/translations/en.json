@@ -820,7 +820,27 @@
     },
     "accountPage": {
       "menuLabel": "My account",
+      "menuLabelAccountApp": "Account & App",
+      "menuLabelProfile": "Profile",
+      "profile": {
+        "title": "Profile",
+        "displayName": "Display name",
+        "aboutMe": "About me",
+        "aboutMePlaceholder": "Briefly introduce yourself..."
+      },
       "title": "My account",
+      "accountAndApp": "Account & App",
+      "dateTime": {
+        "title": "Date & Time Format"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "password": {
+        "title": "Password",
+        "description": "Your account password for signing in.",
+        "setupButton": "Setup password"
+      },
       "general": {
         "title": "Account name & profile image",
         "changeProfilePicture": "Change profile picture"
@@ -1520,6 +1540,7 @@
         "label": "Members",
         "user": "User",
         "role": "Role",
+        "email": "Email",
         "removeFromWorkspace": "Remove from Workspace",
         "removeFromWorkspaceSuccess": "Remove from workspace successfully",
         "removeFromWorkspaceFailed": "Remove from workspace failed",
@@ -3193,6 +3214,7 @@
     "addMessagesToPage": "Add messages to page",
     "addMessagesToPageDisabled": "No messages available",
     "accountSettings": "Account settings",
+    "settings": "Settings",
     "startWeekOn": "Start week on"
   },
   "globalComment": {
