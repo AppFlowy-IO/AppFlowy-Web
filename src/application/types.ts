@@ -1299,6 +1299,8 @@ export interface WorkspaceMember {
   email: string;
   avatar_url: string;
   role: Role;
+  joined_at?: string | null;
+  is_pending_invitation?: boolean;
 }
 
 export interface GetRequestAccessInfoResponse {

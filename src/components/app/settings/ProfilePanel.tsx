@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { UserService } from '@/application/services/domains';
+import { MentionablePerson } from '@/application/types';
 import { useCurrentWorkspaceId } from '@/components/app/app.hooks';
 import { useAppConfig } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -17,9 +18,11 @@ export function ProfilePanel() {
   const currentWorkspaceId = useCurrentWorkspaceId();
 
   const [name, setName] = useState(currentUser?.name ?? '');
+  const [profile, setProfile] = useState<MentionablePerson | null>(null);
   const initializedRef = useRef(false);
   const currentUserRef = useRef(currentUser);
   const updateCurrentUserRef = useRef(updateCurrentUser);
+  const profileRef = useRef<MentionablePerson | null>(null);
 
   useEffect(() => {
     currentUserRef.current = currentUser;
@@ -27,15 +30,20 @@ export function ProfilePanel() {
   }, [currentUser, updateCurrentUser]);
 
   useEffect(() => {
+    profileRef.current = profile;
+  }, [profile]);
+
+  useEffect(() => {
     if (!currentWorkspaceId) return;
     let cancelled = false;
 
     void (async () => {
       try {
-        const profile = await UserService.getWorkspaceMemberProfile(currentWorkspaceId);
+        const fetched = await UserService.getWorkspaceMemberProfile(currentWorkspaceId);
 
         if (cancelled || initializedRef.current) return;
-        setName(profile.name ?? currentUserRef.current?.name ?? '');
+        setProfile(fetched);
+        setName(fetched.name ?? currentUserRef.current?.name ?? '');
         initializedRef.current = true;
       } catch (e) {
         if (!cancelled) toast.error(getErrorMessage(e));
@@ -49,9 +57,19 @@ export function ProfilePanel() {
 
   const debouncedSave = useMemo(
     () =>
+      // Preserve sibling profile fields — the backend upsert overwrites every
+      // column, so omitting avatar_url/description/etc. would null them out.
       debounce(async (workspaceId: string, payload: { name: string }) => {
         try {
-          await UserService.updateWorkspaceMemberProfile(workspaceId, payload);
+          const current = profileRef.current;
+
+          await UserService.updateWorkspaceMemberProfile(workspaceId, {
+            name: payload.name,
+            avatar_url: current?.avatar_url ?? undefined,
+            cover_image_url: current?.cover_image_url ?? undefined,
+            custom_image_url: current?.custom_image_url ?? undefined,
+            description: current?.description ?? undefined,
+          });
           const u = currentUserRef.current;
 
           if (u) {
@@ -94,7 +112,7 @@ export function ProfilePanel() {
         <div className='flex flex-col gap-6'>
           <div className='flex items-center gap-4'>
             <Avatar size='xl'>
-              <AvatarImage src={currentUser.avatar ?? ''} alt={name} />
+              <AvatarImage src={profile?.avatar_url ?? currentUser.avatar ?? ''} alt={name} />
               <AvatarFallback name={name}>{initial}</AvatarFallback>
             </Avatar>
             <div className='flex flex-1 flex-col gap-1'>

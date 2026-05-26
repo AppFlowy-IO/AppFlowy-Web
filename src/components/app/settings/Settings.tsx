@@ -39,6 +39,7 @@ export function SettingsDialog({ open, onClose, onRequestOpen }: SettingsDialogP
       }}
       open={open}
       onClose={onClose}
+      PaperProps={{ 'data-testid': 'settings-dialog' }}
     >
       <SettingMenu onSelectItem={setSelectedItem} selectedItem={selectedItem} />
       <div className='flex min-h-0 flex-1 flex-col overflow-hidden'>

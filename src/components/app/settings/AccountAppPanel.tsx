@@ -11,6 +11,8 @@ import { UserService } from '@/application/services/domains';
 import { DateFormat, TimeFormat } from '@/application/types';
 import { MetadataKey } from '@/application/user-metadata';
 import { ReactComponent as ChevronDownIcon } from '@/assets/icons/alt_arrow_down.svg';
+import { NormalModal } from '@/components/_shared/modal';
+import { HIDDEN_BUTTON_PROPS, MODAL_CLASSES } from '@/components/app/workspaces/modal-props';
 import LogoutConfirm from '@/components/app/workspaces/LogoutConfirm';
 import { useAppConfig } from '@/components/main/app.hooks';
 import { Button } from '@/components/ui/button';
@@ -110,6 +112,9 @@ export function AccountAppPanel() {
   );
   const [openSetupPassword, setOpenSetupPassword] = useState(false);
   const [openLogoutConfirm, setOpenLogoutConfirm] = useState(false);
+  const [openDeleteAccount, setOpenDeleteAccount] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const deletingAccountRef = useRef(false);
 
   const metadataUpdateRef = useRef<Record<string, unknown> | null>(null);
   const userTouchedRef = useRef(false);
@@ -167,9 +172,16 @@ export function AccountAppPanel() {
       setDateFormat(Number(user.metadata?.[MetadataKey.DateFormat] as DateFormat) || DateFormat.Local);
       setTimeFormat(Number(user.metadata?.[MetadataKey.TimeFormat] as TimeFormat) || TimeFormat.TwelveHour);
       setStartWeekOn(Number(user.metadata?.[MetadataKey.StartWeekOn]) || 0);
-      const lang = (user.metadata?.[MetadataKey.Language] as string) || i18nInstance.language || 'en';
+      const savedLang = user.metadata?.[MetadataKey.Language] as string | undefined;
+      const lang = savedLang || i18nInstance.language || 'en';
 
       setLanguage(lang);
+      // useAppLanguage forces i18n to navigator.language on mount, so apply the
+      // persisted choice here once we have it.
+      if (savedLang && savedLang !== i18nInstance.language) {
+        void i18nInstance.changeLanguage(savedLang);
+      }
+
       metadataUpdateRef.current = { ...user.metadata };
     })();
 
@@ -216,6 +228,31 @@ export function AccountAppPanel() {
     invalidToken();
     navigate('/login?force=true');
   }, [navigate]);
+
+  const handleDeleteAccount = useCallback(async () => {
+    if (deletingAccountRef.current) return;
+    deletingAccountRef.current = true;
+    setDeletingAccount(true);
+    // Cancel any pending metadata save so it doesn't fire against a deleted account.
+    debouncedUpdateProfile.cancel();
+    let success = false;
+
+    try {
+      await UserService.deleteAccount();
+      success = true;
+      toast.success(t('settings.accountPage.deleteAccount.success'));
+      clearRedirectTo();
+      invalidToken();
+      navigate('/login?force=true');
+    } catch (e) {
+      toast.error(getErrorMessage(e, t('settings.accountPage.deleteAccount.failed')));
+    } finally {
+      deletingAccountRef.current = false;
+      // Keep the confirm dialog open on failure so the user can retry; only
+      // reset the loading flag. Cancel/Escape still closes it.
+      if (!success) setDeletingAccount(false);
+    }
+  }, [debouncedUpdateProfile, navigate, t]);
 
   if (!currentUser) return null;
 
@@ -275,8 +312,13 @@ export function AccountAppPanel() {
           <Divider />
 
           <Row>
-            <div className='text-sm font-semibold text-text-primary'>
-              {t('settings.accountPage.login.title')}
+            <div className='flex flex-col gap-1'>
+              <div className='text-sm font-semibold text-text-primary'>
+                {t('settings.accountPage.login.title')}
+              </div>
+              <div className='text-xs text-text-secondary'>
+                {t('settings.accountPage.login.description')}
+              </div>
             </div>
             <Button
               variant='outline'
@@ -285,6 +327,28 @@ export function AccountAppPanel() {
               data-testid='settings-logout-button'
             >
               {t('settings.accountPage.login.logoutLabel')}
+            </Button>
+          </Row>
+
+          <Divider />
+
+          <Row>
+            <div className='flex flex-col gap-1'>
+              <div className='text-sm font-semibold text-text-primary'>
+                {t('settings.accountPage.deleteAccount.title')}
+              </div>
+              <div className='text-xs text-text-secondary'>
+                {t('settings.accountPage.deleteAccount.description')}
+              </div>
+            </div>
+            <Button
+              variant='destructive-outline'
+              size='default'
+              onClick={() => setOpenDeleteAccount(true)}
+              disabled={deletingAccount}
+              data-testid='delete-account-button'
+            >
+              {t('settings.accountPage.deleteAccount.title')}
             </Button>
           </Row>
         </div>
@@ -296,9 +360,64 @@ export function AccountAppPanel() {
         onClose={() => setOpenLogoutConfirm(false)}
         onConfirm={handleSignOut}
       />
+      <DeleteAccountConfirm
+        open={openDeleteAccount}
+        loading={deletingAccount}
+        onClose={() => setOpenDeleteAccount(false)}
+        onConfirm={handleDeleteAccount}
+      />
     </div>
   );
 }
+
+function DeleteAccountConfirm({
+  open,
+  loading,
+  onClose,
+  onConfirm,
+}: {
+  open: boolean;
+  loading: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <NormalModal
+      open={open}
+      onClose={onClose}
+      title={<div style={{ textAlign: 'left' }}>{t('settings.accountPage.deleteAccount.title')}</div>}
+      classes={MODAL_CLASSES}
+      PaperProps={DELETE_ACCOUNT_PAPER_PROPS}
+      okButtonProps={HIDDEN_BUTTON_PROPS}
+      cancelButtonProps={HIDDEN_BUTTON_PROPS}
+    >
+      <div className='flex flex-col gap-4'>
+        <div className='text-sm text-text-secondary'>
+          {t('settings.accountPage.deleteAccount.confirmDescription')}
+        </div>
+        <div className='flex justify-end gap-3'>
+          <Button variant='outline' size='default' onClick={onClose} disabled={loading}>
+            {t('button.cancel')}
+          </Button>
+          <Button
+            variant='destructive'
+            size='default'
+            onClick={onConfirm}
+            disabled={loading}
+            loading={loading}
+            data-testid='delete-account-confirm'
+          >
+            {t('settings.accountPage.deleteAccount.title')}
+          </Button>
+        </div>
+      </div>
+    </NormalModal>
+  );
+}
+
+const DELETE_ACCOUNT_PAPER_PROPS = { sx: { width: 440 } } as const;
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (

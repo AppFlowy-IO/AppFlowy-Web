@@ -29,9 +29,9 @@
   --text-waring-light: #db7e21bf;
   --text-warning-hover: #ffa02e;
   --text-warning-on-fill: #ffe4ab;
-  --text-error: #ff5050;
+  --text-error: #ff7d87;
   --text-error-light: #ff6250bf;
-  --text-error-hover: #ff7d87;
+  --text-error-hover: #ffa5b4;
   --text-error-on-fill: #ffa5b4;
   --text-featured: #e1b3ff;
   --text-featured-hover: #d185ff;
@@ -46,8 +46,8 @@
   --icon-success-thick-hover: #248569;
   --icon-warning-thick: #db7e21;
   --icon-warning-thick-hover: #ffa02e;
-  --icon-error-thick: #ff5050;
-  --icon-error-thick-hover: #ff7d87;
+  --icon-error-thick: #ff7d87;
+  --icon-error-thick-hover: #ffa5b4;
   --icon-featured-thick: #9327ff;
   --icon-featured-thick-hover: #bc58ff;
   --icon-on-fill: #ffffff;
@@ -65,8 +65,8 @@
   --border-success-thick-hover: #48a982;
   --border-warning-thick: #db7e21;
   --border-warning-thick-hover: #ffa02e;
-  --border-error-thick: #f33641;
-  --border-error-thick-hover: #ff5050;
+  --border-error-thick: #ff7d87;
+  --border-error-thick-hover: #ffa5b4;
   --border-featured-thick: #9327ff;
   --border-featured-thick-hover: #bc58ff;
   --fill-primary: #272930;
@@ -106,9 +106,9 @@
   --fill-featured-thick: #9327ff;
   --fill-featured-thick-hover: #bc58ff;
   --surface-primary: #272930;
-  --surface-primary-hover: #3d404f;
+  --surface-primary-hover: #32343f;
   --surface-layer-01: #272930;
-  --surface-layer-01-hover: #3d404f;
+  --surface-layer-01-hover: #32343f;
   --surface-layer-02: #2b2d37;
   --surface-layer-02-hover: #3d404f;
   --surface-layer-03: #32343f;

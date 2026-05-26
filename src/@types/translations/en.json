@@ -851,8 +851,16 @@
       },
       "login": {
         "title": "Account login",
+        "description": "Log out from your current session.",
         "loginLabel": "Log in",
         "logoutLabel": "Log out"
+      },
+      "deleteAccount": {
+        "title": "Delete account",
+        "description": "Permanently delete your account and remove access from all workspaces.",
+        "confirmDescription": "This will permanently delete your account, your data, and remove access from all workspaces. This action cannot be undone.",
+        "success": "Account deleted",
+        "failed": "Failed to delete account"
       }
     },
     "workspacePage": {
@@ -1539,6 +1547,17 @@
         "user": "User",
         "role": "Role",
         "email": "Email",
+        "pending": "Pending",
+        "joinedOn": "Joined on",
+        "invite": "Invite",
+        "inviteLinkTitle": "Invite link to add member",
+        "inviteLinkHintPrefix": "Click to copy link or",
+        "generateNewLink": "generate a new link",
+        "copyLink": "Copy link",
+        "inviteLinkGenerated": "Invite link generated",
+        "inviteByEmailTitle": "Invite member by email",
+        "inviteByEmailPlaceholder": "Invite by email",
+        "noMembers": "No members yet",
         "removeFromWorkspace": "Remove from Workspace",
         "removeFromWorkspaceSuccess": "Remove from workspace successfully",
         "removeFromWorkspaceFailed": "Remove from workspace failed",

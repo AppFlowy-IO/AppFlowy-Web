@@ -56,10 +56,10 @@ async function updateWorkspaceMemberAvatar(
 async function openAccountSettings(page: import('@playwright/test').Page) {
   await WorkspaceSelectors.dropdownTrigger(page).click();
   await page.waitForTimeout(1000);
-  const settingsButton = page.getByTestId('account-settings-button');
+  const settingsButton = page.getByTestId('settings-button');
   await expect(settingsButton).toBeVisible();
   await settingsButton.click();
-  await expect(page.getByTestId('account-settings-dialog')).toBeVisible();
+  await expect(page.getByTestId('settings-dialog')).toBeVisible();
 }
 
 /** Helper: reload page and open account settings */

@@ -35,7 +35,7 @@ function DropdownMenuContent({ className, sideOffset = 4, container, forceMount,
         avoidCollisions
         className={cn(
           // Base colors and appearance
-          'border border-border-primary bg-background-primary text-text-primary',
+          'border border-border-primary bg-surface-primary text-text-primary',
           'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
 
           // Size constraints and overflow behavior
@@ -241,7 +241,7 @@ const DropdownMenuSubContent = forwardRef<HTMLDivElement, React.ComponentProps<t
         data-slot='dropdown-menu-sub-content'
         className={cn(
           // Base colors and appearance
-          'bg-background-primary text-text-primary',
+          'bg-surface-primary text-text-primary',
           'z-50 min-w-[240px] rounded-400 p-2 shadow-menu',
           'origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden',
 
