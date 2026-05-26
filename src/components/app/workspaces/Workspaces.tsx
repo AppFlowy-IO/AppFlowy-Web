@@ -53,6 +53,7 @@ export function Workspaces() {
   const [open, setOpen] = useState(false);
   const [hoveredHeader, setHoveredHeader] = useState<boolean>(false);
   const ref = useRef<HTMLDivElement | null>(null);
+  const workspaceListScrollRef = useRef<HTMLDivElement | null>(null);
   const [changeLoading, setChangeLoading] = useState<string | null>(null);
   const { onChangeWorkspace: handleSelectedWorkspace } = useAppOperations();
   const [currentWorkspace, setCurrentWorkspace] = useState<Workspace | undefined>(undefined);
@@ -162,19 +163,23 @@ export function Workspaces() {
             <DropdownMenuLabel className='w-full overflow-hidden'>
               <span className='truncate'>{currentUser?.email}</span>
             </DropdownMenuLabel>
-            <DropdownMenuGroup
-              data-testid='workspace-list'
-              className={'appflowy-scroller max-h-[200px] flex-1 overflow-y-auto overflow-x-hidden'}
-            >
-              <WorkspaceList
-                defaultWorkspaces={userWorkspaceInfo?.workspaces}
-                currentWorkspaceId={currentWorkspaceId}
-                onChange={handleChange}
-                changeLoading={changeLoading || undefined}
-                onUpdate={setOpenRenameWorkspace}
-                onDelete={setOpenDeleteWorkspace}
-                onLeave={setOpenLeaveWorkspace}
-              />
+            <DropdownMenuGroup>
+              <div
+                ref={workspaceListScrollRef}
+                data-testid='workspace-list'
+                className={'appflowy-scroller max-h-[200px] flex-1 overflow-y-auto overflow-x-hidden'}
+              >
+                <WorkspaceList
+                  defaultWorkspaces={userWorkspaceInfo?.workspaces}
+                  currentWorkspaceId={currentWorkspaceId}
+                  onChange={handleChange}
+                  changeLoading={changeLoading || undefined}
+                  onUpdate={setOpenRenameWorkspace}
+                  onDelete={setOpenDeleteWorkspace}
+                  onLeave={setOpenLeaveWorkspace}
+                  autoScrollContainerRef={workspaceListScrollRef}
+                />
+              </div>
             </DropdownMenuGroup>
             <DropdownMenuItem
               onSelect={() => {
