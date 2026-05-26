@@ -1,9 +1,10 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
 import { View, ViewIconType, ViewLayout } from '@/application/types';
 import {
+  canReorderWithinParent,
   getFirstChildView,
   isDatabaseContainer,
   isDatabaseLayout,
@@ -15,9 +16,14 @@ import PageIcon from '@/components/_shared/view-icon/PageIcon';
 import {
   useAIEnabled,
   useAppOperations,
+  useCurrentWorkspaceIdOptional,
   useSidebarHighlightedViewIds,
   useSidebarSelectedViewId,
 } from '@/components/app/app.hooks';
+import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
+import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
+import DropRowLine from '@/components/database/components/drag-and-drop/DropRowLine';
+import { cn } from '@/lib/utils';
 
 function ViewItem({
   view,
@@ -30,6 +36,9 @@ function ViewItem({
   parentView,
   loadingViewIds,
   loadedViewIds,
+  reorderInstanceId,
+  canReorder,
+  reorderChildren,
 }: {
   view: View;
   width: number;
@@ -41,6 +50,17 @@ function ViewItem({
   parentView?: View;
   loadingViewIds?: Set<string>;
   loadedViewIds?: Set<string>;
+  /** Drag instance of the sibling group this row belongs to (from the parent owner). */
+  reorderInstanceId?: symbol;
+  /** Whether this row can be picked up to reorder within its parent. */
+  canReorder?: boolean;
+  /**
+   * Whether this view lives in a reorderable outline tree (the workspace
+   * sidebar). When true, this view enables drag-to-reorder for its own children
+   * and propagates the flag down. Left false for trees that should not be
+   * reordered (e.g. the Shared-with-me section).
+   */
+  reorderChildren?: boolean;
 }) {
   const { t } = useTranslation();
   const selectedViewId = useSidebarSelectedViewId();
@@ -58,6 +78,29 @@ function ViewItem({
     if (aiEnabled) return view.children;
     return view.children?.filter((child) => child.layout !== ViewLayout.AIChat);
   }, [aiEnabled, view.children]);
+
+  const rowRef = useRef<HTMLDivElement>(null);
+  const workspaceId = useCurrentWorkspaceIdOptional();
+
+  // This row can be dragged to reorder within the group its parent owns.
+  const { dragState, shouldSuppressClick } = useReorderableItem({
+    elementRef: rowRef,
+    id: viewId,
+    dragType: 'sidebar-view',
+    instanceId: reorderInstanceId,
+    canDrag: Boolean(canReorder),
+  });
+
+  // This view's own children form a reorderable sibling group (database-container
+  // views or nested pages), reordered within this view as their parent.
+  const { orderedItems: orderedChildren, instanceId: childReorderInstanceId } = useReorderableSidebarList({
+    items: visibleChildren ?? [],
+    parentId: viewId,
+    workspaceId,
+    dragType: 'sidebar-view',
+    enabled: Boolean(reorderChildren) && (visibleChildren?.length ?? 0) > 1,
+    errorMessage: 'Failed to reorder pages',
+  });
 
   const handleChangeIcon = useCallback(
     async (icon: { ty: ViewIconType; value: string }) => {
@@ -146,6 +189,7 @@ function ViewItem({
 
     return (
       <div
+        ref={rowRef}
         data-testid={`page-${view.view_id}`}
         data-selected={selected}
         style={{
@@ -158,13 +202,16 @@ function ViewItem({
           setHovered(false);
         }}
         onClick={() => {
+          if (shouldSuppressClick()) return;
+
           const firstChild = getFirstChildView(view);
 
           onClickView?.(firstChild?.view_id ?? viewId);
         }}
-        className={
-          'my-[1px] flex min-h-[30px] w-full cursor-pointer select-none items-center gap-1 overflow-hidden rounded-[8px] px-0.5 py-0.5 text-sm hover:bg-fill-content-hover focus:outline-none'
-        }
+        className={cn(
+          'relative my-[1px] flex min-h-[30px] w-full cursor-pointer select-none items-center gap-1 rounded-[8px] px-0.5 py-0.5 text-sm hover:bg-fill-content-hover focus:outline-none',
+          dragState.type === 'dragging' && 'opacity-40'
+        )}
       >
         {renderLeftIcon()}
 
@@ -210,6 +257,9 @@ function ViewItem({
           </div>
         </div>
         {renderExtra && renderExtra({ hovered, view })}
+        {dragState.type === 'over' ? (
+          <DropRowLine edge={dragState.closestEdge} style={{ left: `${leftPadding}px` }} />
+        ) : null}
       </div>
     );
   }, [
@@ -230,6 +280,8 @@ function ViewItem({
     viewId,
     handleChangeIcon,
     loadedViewIds,
+    dragState,
+    shouldSuppressClick,
   ]);
 
   const isLoadingChildren = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
@@ -264,7 +316,7 @@ function ViewItem({
             ))}
           </div>
         ) : (
-          visibleChildren?.map((child) => (
+          orderedChildren.map((child) => (
             <ViewItem
               level={level + 1}
               key={child.view_id}
@@ -277,6 +329,9 @@ function ViewItem({
               parentView={view}
               loadingViewIds={loadingViewIds}
               loadedViewIds={loadedViewIds}
+              reorderChildren={reorderChildren}
+              reorderInstanceId={childReorderInstanceId}
+              canReorder={canReorderWithinParent(child, view)}
             />
           ))
         )}
@@ -292,7 +347,9 @@ function ViewItem({
     level,
     renderExtra,
     view,
-    visibleChildren,
+    orderedChildren,
+    reorderChildren,
+    childReorderInstanceId,
     width,
     loadingViewIds,
     loadedViewIds,

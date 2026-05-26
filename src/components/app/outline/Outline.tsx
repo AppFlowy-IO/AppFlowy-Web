@@ -1,15 +1,8 @@
-import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
-import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { reorder } from '@atlaskit/pragmatic-drag-and-drop/reorder';
-import { autoScrollForElements } from '@atlaskit/pragmatic-drag-and-drop-auto-scroll/element';
-import { extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
-import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import React, { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
-import { toast } from 'sonner';
 
-import { PageService, ViewService } from '@/application/services/domains';
+import { ViewService } from '@/application/services/domains';
 import { Role, View, ViewLayout } from '@/application/types';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as PlusIcon } from '@/assets/icons/plus.svg';
@@ -23,12 +16,12 @@ import {
   useLoadViewChildrenBatch,
   useLoadViewChildren,
   useMarkViewChildrenStale,
-  useRefreshOutline,
   useSidebarSelectedViewId,
   useUserWorkspaceInfo,
 } from '@/components/app/app.hooks';
 import { Favorite } from '@/components/app/favorite';
 import { resolveAncestorViewIds } from '@/components/app/hooks/resolveAncestorViewIds';
+import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
 import SpaceItem from '@/components/app/outline/SpaceItem';
 import { ShareWithMe } from '@/components/app/share-with-me';
 import ViewActionsPopover from '@/components/app/view-actions/ViewActionsPopover';
@@ -67,123 +60,22 @@ export function Outline({ width }: { width: number }) {
   const loadViewChildren = useLoadViewChildren();
   const loadViewChildrenBatch = useLoadViewChildrenBatch();
   const markViewChildrenStale = useMarkViewChildrenStale();
-  const refreshOutline = useRefreshOutline();
   const userWorkspaceInfo = useUserWorkspaceInfo();
   const canReorderSpaces = userWorkspaceInfo?.selectedWorkspace.role === Role.Owner;
-  const [spaceDragInstanceId] = useState(() => Symbol('space-drag-instance'));
   const spaceListRef = useRef<HTMLDivElement>(null);
   const visibleSpacesFromOutline = useMemo(
     () => outline?.filter((view) => !view.extra?.is_hidden_space) ?? [],
     [outline]
   );
-  const [optimisticSpaceIds, setOptimisticSpaceIds] = useState<string[] | null>(null);
-  const visibleSpaces = useMemo(() => {
-    if (!optimisticSpaceIds) return visibleSpacesFromOutline;
-
-    const spaceById = new Map(visibleSpacesFromOutline.map((space) => [space.view_id, space]));
-    const orderedSpaces = optimisticSpaceIds
-      .map((spaceId) => spaceById.get(spaceId))
-      .filter((space): space is View => Boolean(space));
-    const orderedSpaceIds = new Set(orderedSpaces.map((space) => space.view_id));
-
-    return [
-      ...orderedSpaces,
-      ...visibleSpacesFromOutline.filter((space) => !orderedSpaceIds.has(space.view_id)),
-    ];
-  }, [optimisticSpaceIds, visibleSpacesFromOutline]);
-  const visibleSpacesRef = useRef<View[]>(visibleSpaces);
-  const spaceReorderRequestSeqRef = useRef(0);
-
-  useEffect(() => {
-    visibleSpacesRef.current = visibleSpaces;
-  }, [visibleSpaces]);
-
-  useEffect(() => {
-    setOptimisticSpaceIds(null);
-    spaceReorderRequestSeqRef.current += 1;
-  }, [currentWorkspaceId]);
-
-  const reorderSpaces = useCallback(
-    async (sourceId: string, targetId: string, closestEdgeOfTarget: Edge | null) => {
-      if (!currentWorkspaceId || !canReorderSpaces) return;
-
-      const currentSpaces = visibleSpacesRef.current;
-      const startIndex = currentSpaces.findIndex((space) => space.view_id === sourceId);
-      const indexOfTarget = currentSpaces.findIndex((space) => space.view_id === targetId);
-
-      if (startIndex < 0 || indexOfTarget < 0) return;
-
-      const finishIndex = getReorderDestinationIndex({
-        startIndex,
-        indexOfTarget,
-        closestEdgeOfTarget,
-        axis: 'vertical',
-      });
-
-      if (finishIndex === startIndex) return;
-
-      const nextSpaces = reorder({
-        list: currentSpaces,
-        startIndex,
-        finishIndex,
-      });
-      const requestSeq = ++spaceReorderRequestSeqRef.current;
-      const movedSpace = currentSpaces[startIndex];
-      const prevViewId = finishIndex > 0 ? nextSpaces[finishIndex - 1]?.view_id : null;
-
-      visibleSpacesRef.current = nextSpaces;
-      setOptimisticSpaceIds(nextSpaces.map((space) => space.view_id));
-
-      try {
-        await PageService.moveTo(currentWorkspaceId, movedSpace.view_id, currentWorkspaceId, prevViewId);
-        await refreshOutline?.();
-        if (spaceReorderRequestSeqRef.current === requestSeq) {
-          setOptimisticSpaceIds(null);
-        }
-      } catch (error) {
-        if (spaceReorderRequestSeqRef.current !== requestSeq) return;
-
-        setOptimisticSpaceIds(null);
-        toast.error('Failed to reorder spaces');
-        Log.error('[Outline] Failed to reorder spaces', error);
-      }
-    },
-    [canReorderSpaces, currentWorkspaceId, refreshOutline]
-  );
-
-  useEffect(() => {
-    const element = spaceListRef.current;
-
-    if (!canReorderSpaces || !element) return;
-
-    function canRespond({ source }: { source: { data: Record<string, unknown> } }) {
-      return source.data.type === 'space' && source.data.instanceId === spaceDragInstanceId;
-    }
-
-    return combine(
-      monitorForElements({
-        canMonitor: canRespond,
-        onDrop({ location, source }) {
-          const target = location.current.dropTargets[0];
-
-          if (!target) return;
-
-          const sourceId = String(source.data.id ?? '');
-          const targetId = String(target.data.id ?? '');
-
-          if (!sourceId || !targetId || sourceId === targetId) return;
-
-          const closestEdgeOfTarget = extractClosestEdge(target.data);
-
-          void reorderSpaces(sourceId, targetId, closestEdgeOfTarget);
-        },
-      }),
-      autoScrollForElements({
-        canScroll: canRespond,
-        element,
-      })
-    );
-  }, [canReorderSpaces, reorderSpaces, spaceDragInstanceId]);
+  const { orderedItems: visibleSpaces, instanceId: spaceDragInstanceId } = useReorderableSidebarList({
+    items: visibleSpacesFromOutline,
+    parentId: currentWorkspaceId,
+    workspaceId: currentWorkspaceId,
+    dragType: 'space',
+    enabled: canReorderSpaces && visibleSpacesFromOutline.length > 1,
+    autoScrollElementRef: spaceListRef,
+    errorMessage: 'Failed to reorder spaces',
+  });
 
   const [menuProps, setMenuProps] = useState<
     | {
@@ -461,68 +353,71 @@ export function Outline({ width }: { width: number }) {
     });
   }, [fetchableAutoLoadIds, loadViewChildren, loadViewChildrenBatch]);
 
-  const toggleExpandView = useCallback((id: string, isExpanded: boolean) => {
-    const collapsedSubtreeIds = !isExpanded
-      ? (() => {
-          const rootView = findView(outline ?? [], id);
+  const toggleExpandView = useCallback(
+    (id: string, isExpanded: boolean) => {
+      const collapsedSubtreeIds = !isExpanded
+        ? (() => {
+            const rootView = findView(outline ?? [], id);
 
-          return rootView ? collectSubtreeViewIds(rootView) : [id];
-        })()
-      : [id];
-    const collapsedSubtreeSet = new Set(collapsedSubtreeIds);
+            return rootView ? collectSubtreeViewIds(rootView) : [id];
+          })()
+        : [id];
+      const collapsedSubtreeSet = new Set(collapsedSubtreeIds);
 
-    // Manual interaction should not be handled by startup auto-load path.
-    setPendingAutoLoadIds((prev) => {
-      const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
-
-      return next.length === prev.length ? prev : next;
-    });
-
-    if (isExpanded) {
-      setOutlineExpands(id, true);
-      setExpandViewIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
-    } else {
-      collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false));
-      setExpandViewIds((prev) => {
+      // Manual interaction should not be handled by startup auto-load path.
+      setPendingAutoLoadIds((prev) => {
         const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
 
         return next.length === prev.length ? prev : next;
       });
-      Log.debug('[Outline] [manual-expand] collapse node', {
-        viewId: id,
-        collapsedSubtreeIds,
-      });
-      markViewChildrenStale?.(id);
-    }
 
-    // Lazy load children when expanding a view that hasn't been loaded yet
-    if (isExpanded && loadViewChildren) {
-      const alreadyLoaded = loadedViewIds?.has(id) ?? false;
+      if (isExpanded) {
+        setOutlineExpands(id, true);
+        setExpandViewIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      } else {
+        collapsedSubtreeIds.forEach((viewId) => setOutlineExpands(viewId, false));
+        setExpandViewIds((prev) => {
+          const next = prev.filter((viewId) => !collapsedSubtreeSet.has(viewId));
 
-      Log.debug('[Outline] [manual-expand] expand node', {
-        viewId: id,
-        alreadyLoaded,
-      });
+          return next.length === prev.length ? prev : next;
+        });
+        Log.debug('[Outline] [manual-expand] collapse node', {
+          viewId: id,
+          collapsedSubtreeIds,
+        });
+        markViewChildrenStale?.(id);
+      }
 
-      if (alreadyLoaded) return;
+      // Lazy load children when expanding a view that hasn't been loaded yet
+      if (isExpanded && loadViewChildren) {
+        const alreadyLoaded = loadedViewIds?.has(id) ?? false;
 
-      Log.debug('[Outline] [manual-expand] requesting single subtree', {
-        viewId: id,
-        depth: 1,
-      });
+        Log.debug('[Outline] [manual-expand] expand node', {
+          viewId: id,
+          alreadyLoaded,
+        });
 
-      // Call loadViewChildren first — it adds to loadingViewIdsRef synchronously
-      // before the first await. Adding here *before* the call would trip its
-      // in-flight dedup guard and silently skip the API request.
-      void loadViewChildren(id).finally(() => {
-        loadingViewIdsRef.current.delete(id);
+        if (alreadyLoaded) return;
+
+        Log.debug('[Outline] [manual-expand] requesting single subtree', {
+          viewId: id,
+          depth: 1,
+        });
+
+        // Call loadViewChildren first — it adds to loadingViewIdsRef synchronously
+        // before the first await. Adding here *before* the call would trip its
+        // in-flight dedup guard and silently skip the API request.
+        void loadViewChildren(id).finally(() => {
+          loadingViewIdsRef.current.delete(id);
+          setLoadingRevision((r) => r + 1);
+        });
+
+        // Trigger shimmer UI — loadViewChildren has already set loadingViewIdsRef.
         setLoadingRevision((r) => r + 1);
-      });
-
-      // Trigger shimmer UI — loadViewChildren has already set loadingViewIdsRef.
-      setLoadingRevision((r) => r + 1);
-    }
-  }, [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]);
+      }
+    },
+    [loadViewChildren, loadedViewIds, markViewChildrenStale, outline]
+  );
   const { t } = useTranslation();
 
   const renderActions = useCallback(

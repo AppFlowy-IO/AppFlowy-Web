@@ -22,6 +22,8 @@ jest.mock('@/components/app/app.hooks', () => ({
     updatePage: jest.fn(),
     uploadFile: jest.fn(),
   }),
+  useCurrentWorkspaceIdOptional: () => 'test-workspace',
+  useRefreshOutline: () => jest.fn(),
 }));
 
 jest.mock('@/components/_shared/cutsom-icon', () => ({

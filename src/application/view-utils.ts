@@ -18,11 +18,7 @@ import { View, ViewLayout } from './types';
  * Check if a layout is a database layout (Grid, Board, or Calendar)
  */
 export function isDatabaseLayout(layout: ViewLayout): boolean {
-  return (
-    layout === ViewLayout.Grid ||
-    layout === ViewLayout.Board ||
-    layout === ViewLayout.Calendar
-  );
+  return layout === ViewLayout.Grid || layout === ViewLayout.Board || layout === ViewLayout.Calendar;
 }
 
 /**
@@ -74,10 +70,7 @@ export function getDatabaseIdFromExtra(view: View | null | undefined): string | 
  * @param parentView The parent view (optional)
  * @returns true if this is a referenced database view
  */
-export function isReferencedDatabaseView(
-  view: View | null | undefined,
-  parentView: View | null | undefined
-): boolean {
+export function isReferencedDatabaseView(view: View | null | undefined, parentView: View | null | undefined): boolean {
   if (!parentView || !view) {
     return false;
   }
@@ -156,10 +149,7 @@ export function isLinkedDatabaseViewUnderDocument(
  * @param parentView The parent view
  * @returns true if the view can be moved
  */
-export function canBeMoved(
-  view: View | null | undefined,
-  parentView: View | null | undefined
-): boolean {
+export function canBeMoved(view: View | null | undefined, parentView: View | null | undefined): boolean {
   // Case 1: Referenced database views
   if (isReferencedDatabaseView(view, parentView)) {
     return false;
@@ -171,6 +161,53 @@ export function canBeMoved(
   }
 
   // Case 3: Linked database views under documents
+  if (isLinkedDatabaseViewUnderDocument(view, parentView)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Check if a view can be reordered within its current parent (sidebar drag).
+ *
+ * Unlike `canBeMoved`, which governs moving a view to a *different* parent,
+ * reordering keeps the view inside its existing parent and only changes its
+ * position among its siblings. This is intentionally more permissive than the
+ * desktop `canBeDragged` rule (which blocks database-container children from
+ * being dragged at all): on web we allow reordering database views *within*
+ * their container while still preventing them from escaping it (escaping is
+ * impossible because a reorder never leaves the sibling group).
+ *
+ * Returns true for:
+ * - Database container children (reorder database views within the container),
+ * - Regular pages within a space or document.
+ *
+ * Returns false for views that are managed elsewhere and should not be picked
+ * up, even though they remain valid drop neighbours:
+ * - Referenced database views (database inside another database view),
+ * - Linked database views embedded under a document.
+ *
+ * @param view The view being dragged
+ * @param parentView The parent the view currently lives under
+ * @returns true if the view can be reordered among its siblings
+ */
+export function canReorderWithinParent(view: View | null | undefined, parentView: View | null | undefined): boolean {
+  if (!view || !parentView) {
+    return false;
+  }
+
+  // Database container children are reorderable within the container.
+  if (isDatabaseContainer(parentView)) {
+    return true;
+  }
+
+  // Referenced/linked database views are managed by another view; don't allow
+  // picking them up (they can still be drop neighbours for sibling pages).
+  if (isReferencedDatabaseView(view, parentView)) {
+    return false;
+  }
+
   if (isLinkedDatabaseViewUnderDocument(view, parentView)) {
     return false;
   }
@@ -194,9 +231,7 @@ export function getDatabaseTabViewIds(currentViewId: string, containerView: View
     return [currentViewId];
   }
 
-  const nonEmbeddedChildIds = children
-    .filter((child) => !isEmbeddedView(child))
-    .map((child) => child.view_id);
+  const nonEmbeddedChildIds = children.filter((child) => !isEmbeddedView(child)).map((child) => child.view_id);
 
   const displayViewIds = nonEmbeddedChildIds.length > 0 ? nonEmbeddedChildIds : childViewIds;
 
@@ -213,6 +248,32 @@ export function getDatabaseTabViewIds(currentViewId: string, containerView: View
 
   // Otherwise, treat it as opening the container (or a stale route param).
   return displayViewIds;
+}
+
+export function resolveActiveDatabaseViewId({
+  databasePageId,
+  tabViewId,
+  visibleViewIds,
+}: {
+  databasePageId?: string;
+  tabViewId?: string | null;
+  visibleViewIds?: string[];
+}): string | undefined {
+  const hasAuthoritativeVisibleViews = Boolean(visibleViewIds && visibleViewIds.length > 0);
+
+  if (tabViewId && (!hasAuthoritativeVisibleViews || visibleViewIds?.includes(tabViewId))) {
+    return tabViewId;
+  }
+
+  if (!databasePageId) {
+    return visibleViewIds?.[0];
+  }
+
+  if (hasAuthoritativeVisibleViews && !visibleViewIds?.includes(databasePageId)) {
+    return visibleViewIds?.[0] ?? databasePageId;
+  }
+
+  return databasePageId;
 }
 
 /**
