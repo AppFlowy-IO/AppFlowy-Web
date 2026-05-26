@@ -24,9 +24,9 @@ import {
 } from '@/application/types';
 import { Log } from '@/utils/log';
 
-// UUID namespace OID (same as Rust's Uuid::NAMESPACE_OID)
-// Note: 6ba7b812 (not 6ba7b810 which is NAMESPACE_DNS)
-const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
+const RUST_NANOID_SAFE_ALPHABET = '_-0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ';
+const DEFAULT_ID_LEN = 10;
+const DEFAULT_DOCUMENT_INIT_CLIENT_ROLE = 'default-document-init-client';
 
 /**
  * Generate a deterministic page_id from document_id.
@@ -34,8 +34,9 @@ const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
  *
  * ```rust
  * pub fn page_id_from_document_id(document_id: &str) -> Option<String> {
- *   let doc_id = document_id_from_any_string(document_id);
- *   Some(Uuid::new_v5(&doc_id, PAGE.as_bytes()).to_string())
+ *   Uuid::parse_str(document_id)
+ *     .ok()
+ *     .map(|doc_id| Uuid::new_v5(&doc_id, PAGE.as_bytes()).to_string())
  * }
  * ```
  *
@@ -43,23 +44,47 @@ const UUID_NAMESPACE_OID = '6ba7b812-9dad-11d1-80b4-00c04fd430c8';
  * @returns The page_id as a UUID string
  */
 export function pageIdFromDocumentId(documentId: string): string {
-  // If documentId is a valid UUID, use it directly as the namespace
-  // Otherwise, generate a deterministic UUID from the string (same as document_id_from_any_string)
-  const docUuid = uuidValidate(documentId)
-    ? documentId
-    : uuidv5(documentId, UUID_NAMESPACE_OID);
+  if (!uuidValidate(documentId)) {
+    throw new Error('documentId must be a valid UUID string');
+  }
 
   // Generate page_id as UUID v5 with document_id as namespace and "page" as name
-  const pageId = uuidv5('page', docUuid);
+  const pageId = uuidv5('page', documentId);
 
   Log.debug('[pageIdFromDocumentId]', {
     documentId,
-    isValidUuid: uuidValidate(documentId),
-    docUuid,
     pageId,
   });
 
   return pageId;
+}
+
+function idFromDocumentId(documentId: string, role: string): string {
+  if (!uuidValidate(documentId)) {
+    throw new Error('documentId must be a valid UUID string');
+  }
+
+  return uuidv5(role, documentId);
+}
+
+function nanoidFromDocumentId(documentId: string, role: string): string {
+  const uuid = idFromDocumentId(documentId, role).replace(/-/g, '');
+  let id = '';
+
+  for (let i = 0; i < DEFAULT_ID_LEN; i += 1) {
+    const byte = parseInt(uuid.slice(i * 2, i * 2 + 2), 16);
+
+    id += RUST_NANOID_SAFE_ALPHABET[byte & 0x3f];
+  }
+
+  return id;
+}
+
+export function defaultDocumentInitClientId(documentId: string): number {
+  const uuid = idFromDocumentId(documentId, DEFAULT_DOCUMENT_INIT_CLIENT_ROLE).replace(/-/g, '');
+  const clientId = parseInt(uuid.slice(0, 8), 16);
+
+  return Math.max(clientId, 1);
 }
 
 export function getTextMap(sharedRoot: YSharedRoot) {
@@ -328,6 +353,7 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
     documentId,
     pageId,
     includeInitialParagraph,
+    initClientId: documentId ? defaultDocumentInitClientId(documentId) : undefined,
   });
   const meta = new Y.Map();
   const childrenMap = new Y.Map() as YChildrenMap;
@@ -357,27 +383,41 @@ export function initializeDocumentStructure(doc: YDoc, includeInitialParagraph =
   if (includeInitialParagraph) {
     // Create an empty paragraph block as child of page
     // The Slate editor requires at least one text block to render properly
-    const paragraphId = nanoid(8);
+    const paragraphId = documentId ? nanoidFromDocumentId(documentId, 'block') : nanoid(8);
+    const paragraphChildrenId = documentId ? nanoidFromDocumentId(documentId, 'children') : paragraphId;
+    const paragraphTextId = documentId ? nanoidFromDocumentId(documentId, 'text') : paragraphId;
     const paragraphBlock = new Y.Map();
 
     paragraphBlock.set(YjsEditorKey.block_id, paragraphId);
     paragraphBlock.set(YjsEditorKey.block_type, BlockType.Paragraph);
-    paragraphBlock.set(YjsEditorKey.block_children, paragraphId);
-    paragraphBlock.set(YjsEditorKey.block_external_id, paragraphId);
+    paragraphBlock.set(YjsEditorKey.block_children, paragraphChildrenId);
+    paragraphBlock.set(YjsEditorKey.block_external_id, paragraphTextId);
     paragraphBlock.set(YjsEditorKey.block_external_type, YjsEditorKey.text);
     paragraphBlock.set(YjsEditorKey.block_data, '{}');
     paragraphBlock.set(YjsEditorKey.block_parent, pageId);
     blocks.set(paragraphId, paragraphBlock);
 
     pageChildren.push([paragraphId]);
-    childrenMap.set(paragraphId, new Y.Array());
-    textMap.set(paragraphId, new Y.Text());
+    childrenMap.set(paragraphChildrenId, new Y.Array());
+    textMap.set(paragraphTextId, new Y.Text());
   }
 
   childrenMap.set(pageId, pageChildren);
   textMap.set(pageId, new Y.Text());
 
-  sharedRoot.set(YjsEditorKey.document, document);
+  const originalClientId = doc.clientID;
+
+  if (documentId) {
+    doc.clientID = defaultDocumentInitClientId(documentId);
+  }
+
+  try {
+    sharedRoot.set(YjsEditorKey.document, document);
+  } finally {
+    if (documentId) {
+      doc.clientID = originalClientId;
+    }
+  }
 
   Log.debug('[initializeDocumentStructure] completed', {
     docGuid: doc.guid,
@@ -450,6 +490,8 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
   const meta = document.get(YjsEditorKey.meta) as YMeta;
   const childrenMap = meta.get(YjsEditorKey.children_map) as YChildrenMap;
   const textMap = meta.get(YjsEditorKey.text_map) as YTextMap;
+  const blockChildrenId = block.get(YjsEditorKey.block_children);
+  const blockExternalId = block.get(YjsEditorKey.block_external_id);
 
   const parent = getBlock(parentId, sharedRoot);
 
@@ -467,8 +509,8 @@ export function deleteBlock(sharedRoot: YSharedRoot, blockId: string) {
   }
 
   blocks.delete(blockId);
-  childrenMap.delete(blockId);
-  textMap.delete(blockId);
+  childrenMap.delete(blockChildrenId);
+  textMap.delete(blockExternalId);
 
   // delete parent if it's empty column block
   if (parentType === BlockType.ColumnBlock && afterDeletedLength === 0) {

@@ -3,8 +3,11 @@ import * as Y from 'yjs';
 
 import {
   pageIdFromDocumentId,
+  defaultDocumentInitClientId,
   initializeDocumentStructure,
   createEmptyDocument,
+  deleteBlock,
+  getDocument,
 } from '../utils/yjs';
 import { YjsEditorKey, BlockType, YSharedRoot } from '@/application/types';
 
@@ -19,11 +22,12 @@ describe('pageIdFromDocumentId', () => {
 
     // Should be a valid UUID format
     expect(pageId1).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+    expect(pageId1).toBe('69d1e3fb-c2f3-5156-b8e3-636273bad252');
   });
 
   it('should generate different page_ids for different document_ids', () => {
     const documentId1 = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
-    const documentId2 = '7f02259c-f53b-67c2-c1b1-69gcbb42663e';
+    const documentId2 = '7f02259c-f53b-67c2-a1b1-69fcbb42663e';
 
     const pageId1 = pageIdFromDocumentId(documentId1);
     const pageId2 = pageIdFromDocumentId(documentId2);
@@ -31,15 +35,12 @@ describe('pageIdFromDocumentId', () => {
     expect(pageId1).not.toBe(pageId2);
   });
 
-  it('should handle non-UUID strings by generating UUID first', () => {
-    const nonUuidString = 'some-random-string';
-    const pageId = pageIdFromDocumentId(nonUuidString);
+  it('should reject non-UUID document ids', () => {
+    expect(() => pageIdFromDocumentId('vxWayiyi2Q')).toThrow('documentId must be a valid UUID string');
+  });
 
-    // Should still produce a valid UUID
-    expect(pageId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
-
-    // Should be deterministic
-    expect(pageIdFromDocumentId(nonUuidString)).toBe(pageId);
+  it('should generate deterministic initial Yjs client id from document id', () => {
+    expect(defaultDocumentInitClientId('6e91148b-e42a-56b1-b9a0-58fbaa31552d')).toBe(2957736978);
   });
 });
 
@@ -110,6 +111,93 @@ describe('initializeDocumentStructure', () => {
     // Page ID should match what pageIdFromDocumentId returns
     const expectedPageId = pageIdFromDocumentId(documentId);
     expect(pageId).toBe(expectedPageId);
+  });
+
+  it('should use document-scoped initial paragraph ids when documentId is provided', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+    initializeDocumentStructure(doc, true, documentId);
+
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const document = sharedRoot.get(YjsEditorKey.document);
+    const pageId = document.get(YjsEditorKey.page_id);
+    const blocks = document.get(YjsEditorKey.blocks);
+    const meta = document.get(YjsEditorKey.meta);
+    const childrenMap = meta.get(YjsEditorKey.children_map);
+    const textMap = meta.get(YjsEditorKey.text_map);
+    const pageChildren = childrenMap.get(pageId);
+    const paragraphId = pageChildren.get(0);
+    const paragraphBlock = blocks.get(paragraphId);
+
+    expect(paragraphId).toBe('TdtM1tmgqJ');
+    expect(paragraphBlock.get(YjsEditorKey.block_children)).toBe('NyYr0DfnAu');
+    expect(paragraphBlock.get(YjsEditorKey.block_external_id)).toBe('VbaxI-lEf5');
+    expect(childrenMap.has('NyYr0DfnAu')).toBe(true);
+    expect(textMap.has('VbaxI-lEf5')).toBe(true);
+  });
+
+  it('should merge edits from two independently initialized default documents', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+    const first = new Y.Doc();
+    const second = new Y.Doc();
+    const firstClientId = first.clientID;
+    const secondClientId = second.clientID;
+
+    initializeDocumentStructure(first, true, documentId);
+    initializeDocumentStructure(second, true, documentId);
+
+    expect(first.clientID).toBe(firstClientId);
+    expect(second.clientID).toBe(secondClientId);
+
+    const firstRoot = first.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const secondRoot = second.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const firstTextMap = getDocument(firstRoot).get(YjsEditorKey.meta).get(YjsEditorKey.text_map);
+    const secondTextMap = getDocument(secondRoot).get(YjsEditorKey.meta).get(YjsEditorKey.text_map);
+    const firstText = firstTextMap.get('VbaxI-lEf5') as Y.Text;
+    const secondText = secondTextMap.get('VbaxI-lEf5') as Y.Text;
+
+    firstText.insert(0, 'client one');
+    for (let i = 0; i < 25; i += 1) {
+      secondText.insert(secondText.length, ` b${i}`);
+    }
+
+    Y.applyUpdate(first, Y.encodeStateAsUpdate(second));
+    Y.applyUpdate(second, Y.encodeStateAsUpdate(first));
+    Y.applyUpdate(first, Y.encodeStateAsUpdate(second));
+
+    const firstFinalText = (firstTextMap.get('VbaxI-lEf5') as Y.Text).toString();
+    const secondFinalText = (secondTextMap.get('VbaxI-lEf5') as Y.Text).toString();
+
+    expect(firstFinalText).toBe(secondFinalText);
+    expect(firstFinalText).toContain('client one');
+    for (let i = 0; i < 25; i += 1) {
+      expect(firstFinalText).toContain(` b${i}`);
+    }
+  });
+
+  it('should clean up document-scoped paragraph children and text ids when deleted', () => {
+    const documentId = '6e91148b-e42a-56b1-b9a0-58fbaa31552d';
+
+    initializeDocumentStructure(doc, true, documentId);
+
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot;
+    const document = sharedRoot.get(YjsEditorKey.document);
+    const pageId = document.get(YjsEditorKey.page_id);
+    const blocks = document.get(YjsEditorKey.blocks);
+    const meta = document.get(YjsEditorKey.meta);
+    const childrenMap = meta.get(YjsEditorKey.children_map);
+    const textMap = meta.get(YjsEditorKey.text_map);
+    const pageChildren = childrenMap.get(pageId);
+    const paragraphId = pageChildren.get(0);
+    const paragraphBlock = blocks.get(paragraphId);
+    const paragraphChildrenId = paragraphBlock.get(YjsEditorKey.block_children);
+    const paragraphTextId = paragraphBlock.get(YjsEditorKey.block_external_id);
+
+    deleteBlock(sharedRoot, paragraphId);
+
+    expect(blocks.has(paragraphId)).toBe(false);
+    expect(childrenMap.has(paragraphChildrenId)).toBe(false);
+    expect(textMap.has(paragraphTextId)).toBe(false);
+    expect(pageChildren.toArray()).toEqual([]);
   });
 
   it('should skip initialization if document already exists', () => {
