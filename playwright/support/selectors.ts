@@ -166,6 +166,7 @@ export const ShareSelectors = {
 export const WorkspaceSelectors = {
   dropdownTrigger: (page: Page) => page.getByTestId('workspace-dropdown-trigger'),
   dropdownContent: (page: Page) => page.getByTestId('workspace-dropdown-content'),
+  list: (page: Page) => page.getByTestId('workspace-list'),
   item: (page: Page) => page.getByTestId('workspace-item'),
   itemName: (page: Page) => page.getByTestId('workspace-item-name'),
   memberCount: (page: Page) => page.getByTestId('workspace-member-count'),
