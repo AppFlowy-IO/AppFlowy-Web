@@ -18,4 +18,5 @@ export {
   approveTurnGuestToMember,
   addRecentPages,
   updatePublishNamespace,
+  reorderWorkspaces as reorder,
 } from '../js-services/http/workspace-api';

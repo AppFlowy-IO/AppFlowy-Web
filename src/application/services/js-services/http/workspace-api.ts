@@ -275,3 +275,13 @@ export async function updatePublishNamespace(workspaceId: string, payload: Uploa
     getAxios()?.put<APIResponse>(url, payload)
   );
 }
+
+export async function reorderWorkspaces(workspaceIds: string[]) {
+  const url = `/api/workspace/reorder`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.put<APIResponse>(url, {
+      workspace_ids: workspaceIds,
+    })
+  );
+}
