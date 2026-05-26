@@ -9,7 +9,6 @@ import { useAppConfig } from '@/components/main/app.hooks';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { getErrorMessage } from '@/utils/errors';
 
 export function ProfilePanel() {
@@ -18,7 +17,6 @@ export function ProfilePanel() {
   const currentWorkspaceId = useCurrentWorkspaceId();
 
   const [name, setName] = useState(currentUser?.name ?? '');
-  const [description, setDescription] = useState('');
   const initializedRef = useRef(false);
   const currentUserRef = useRef(currentUser);
   const updateCurrentUserRef = useRef(updateCurrentUser);
@@ -38,7 +36,6 @@ export function ProfilePanel() {
 
         if (cancelled || initializedRef.current) return;
         setName(profile.name ?? currentUserRef.current?.name ?? '');
-        setDescription(profile.description ?? '');
         initializedRef.current = true;
       } catch (e) {
         if (!cancelled) toast.error(getErrorMessage(e));
@@ -52,7 +49,7 @@ export function ProfilePanel() {
 
   const debouncedSave = useMemo(
     () =>
-      debounce(async (workspaceId: string, payload: { name: string; description: string }) => {
+      debounce(async (workspaceId: string, payload: { name: string }) => {
         try {
           await UserService.updateWorkspaceMemberProfile(workspaceId, payload);
           const u = currentUserRef.current;
@@ -73,41 +70,13 @@ export function ProfilePanel() {
     };
   }, [debouncedSave]);
 
-  const nameRef = useRef(name);
-  const descriptionRef = useRef(description);
-
-  useEffect(() => {
-    nameRef.current = name;
-    descriptionRef.current = description;
-  }, [name, description]);
-
-  const persist = useCallback(
-    (next: { name?: string; description?: string }) => {
-      if (!currentWorkspaceId) return;
-      const payload = {
-        name: next.name ?? nameRef.current,
-        description: next.description ?? descriptionRef.current,
-      };
-
-      void debouncedSave(currentWorkspaceId, payload);
-    },
-    [currentWorkspaceId, debouncedSave]
-  );
-
   const handleNameChange = useCallback(
     (value: string) => {
       setName(value);
-      persist({ name: value });
+      if (!currentWorkspaceId) return;
+      void debouncedSave(currentWorkspaceId, { name: value });
     },
-    [persist]
-  );
-
-  const handleDescriptionChange = useCallback(
-    (value: string) => {
-      setDescription(value);
-      persist({ description: value });
-    },
-    [persist]
+    [currentWorkspaceId, debouncedSave]
   );
 
   if (!currentUser) return null;
@@ -139,23 +108,6 @@ export function ProfilePanel() {
                 data-testid='profile-display-name-input'
               />
             </div>
-          </div>
-
-          <div className='flex flex-col gap-1'>
-            <Label htmlFor='profile-about-me'>
-              {t('settings.accountPage.profile.aboutMe')}
-            </Label>
-            <TextareaAutosize
-              id='profile-about-me'
-              size='md'
-              minRows={4}
-              maxRows={10}
-              className='py-2'
-              value={description}
-              placeholder={t('settings.accountPage.profile.aboutMePlaceholder')}
-              onChange={(e) => handleDescriptionChange(e.target.value)}
-              data-testid='profile-about-me-textarea'
-            />
           </div>
         </div>
       </div>

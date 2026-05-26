@@ -824,9 +824,7 @@
       "menuLabelProfile": "Profile",
       "profile": {
         "title": "Profile",
-        "displayName": "Display name",
-        "aboutMe": "About me",
-        "aboutMePlaceholder": "Briefly introduce yourself..."
+        "displayName": "Display name"
       },
       "title": "My account",
       "accountAndApp": "Account & App",
@@ -3202,11 +3200,15 @@
       "retry": "Retry"
     },
     "importNotion": "Import from Notion",
+    "importWorkspace": "Import workspace",
+    "importFromAppFlowy": "Import from AppFlowy",
+    "importFromNotion": "Import from Notion",
     "import": "Import",
     "importSuccess": "Uploaded successfully",
     "importSuccessMessage": "We'll notify you when the import is complete. After that, you can view your imported pages in the sidebar.",
     "importFailed": "Import failed, please check the file format",
     "dropNotionFile": "Drop your Notion zip file here to upload, or click to browse",
+    "dropAppFlowyFile": "Drop your AppFlowy zip file here to upload, or click to browse",
     "error": {
       "pageNameIsEmpty": "The page name is empty, please try another one"
     },
