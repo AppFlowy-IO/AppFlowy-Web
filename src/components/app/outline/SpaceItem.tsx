@@ -1,22 +1,19 @@
-import { combine } from '@atlaskit/pragmatic-drag-and-drop/combine';
-import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { attachClosestEdge, extractClosestEdge, type Edge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/closest-edge';
 import { Tooltip } from '@mui/material';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useMemo, useRef } from 'react';
 
 import { View } from '@/application/types';
+import { canReorderWithinParent } from '@/application/view-utils';
 import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
+import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
+import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
+import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
 import ViewItem from '@/components/app/outline/ViewItem';
-import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
+import DropRowLine from '@/components/database/components/drag-and-drop/DropRowLine';
 import { cn } from '@/lib/utils';
 
-type SpaceDragState =
-  | { type: 'idle' }
-  | { type: 'dragging' }
-  | { type: 'over'; closestEdge: Edge | null };
-
-const idleState: SpaceDragState = { type: 'idle' };
+// Static, so hoisted out of render to avoid re-allocating the style object.
+const DROP_LINE_STYLE: React.CSSProperties = { left: 4 };
 
 function SpaceItem({
   view,
@@ -44,85 +41,29 @@ function SpaceItem({
   dragInstanceId?: symbol;
 }) {
   const [hovered, setHovered] = React.useState<boolean>(false);
-  const [dragState, setDragState] = React.useState<SpaceDragState>(idleState);
   const rowRef = useRef<HTMLDivElement>(null);
-  const suppressClickRef = useRef(false);
-  const suppressClickTimeoutRef = useRef<number>();
+  const workspaceId = useCurrentWorkspaceIdOptional();
   const isExpanded = expandIds.includes(view.view_id);
   const isPrivate = view.is_private;
 
-  useEffect(() => {
-    return () => {
-      if (suppressClickTimeoutRef.current !== undefined) {
-        window.clearTimeout(suppressClickTimeoutRef.current);
-      }
-    };
-  }, []);
+  const { dragState, shouldSuppressClick } = useReorderableItem({
+    elementRef: rowRef,
+    id: view.view_id,
+    dragType: 'space',
+    instanceId: dragInstanceId,
+    canDrag: Boolean(canReorder),
+  });
 
-  useEffect(() => {
-    const element = rowRef.current;
-
-    if (!canReorder || !dragInstanceId || !element) return;
-
-    const data = {
-      type: 'space',
-      instanceId: dragInstanceId,
-      id: view.view_id,
-    };
-
-    return combine(
-      draggable({
-        element,
-        getInitialData: () => data,
-        onDragStart() {
-          suppressClickRef.current = true;
-          if (suppressClickTimeoutRef.current !== undefined) {
-            window.clearTimeout(suppressClickTimeoutRef.current);
-            suppressClickTimeoutRef.current = undefined;
-          }
-
-          setDragState({ type: 'dragging' });
-        },
-        onDrop() {
-          suppressClickTimeoutRef.current = window.setTimeout(() => {
-            suppressClickRef.current = false;
-            suppressClickTimeoutRef.current = undefined;
-          }, 0);
-
-          setDragState(idleState);
-        },
-      }),
-      dropTargetForElements({
-        element,
-        canDrop: ({ source }) =>
-          source.data.type === 'space' &&
-          source.data.instanceId === dragInstanceId &&
-          source.data.id !== view.view_id,
-        getIsSticky: () => true,
-        getData({ input }) {
-          return attachClosestEdge(data, {
-            element,
-            input,
-            allowedEdges: ['top', 'bottom'],
-          });
-        },
-        onDrag({ self }) {
-          const closestEdge = extractClosestEdge(self.data);
-
-          setDragState((current) => {
-            if (current.type === 'over' && current.closestEdge === closestEdge) return current;
-            return { type: 'over', closestEdge };
-          });
-        },
-        onDragLeave() {
-          setDragState(idleState);
-        },
-        onDrop() {
-          setDragState(idleState);
-        },
-      })
-    );
-  }, [canReorder, dragInstanceId, view.view_id]);
+  // The space's direct children can be reordered within the space.
+  const spaceChildren = useMemo(() => view?.children ?? [], [view?.children]);
+  const { orderedItems: orderedChildren, instanceId: childDragInstanceId } = useReorderableSidebarList({
+    items: spaceChildren,
+    parentId: view.view_id,
+    workspaceId,
+    dragType: 'sidebar-view',
+    enabled: spaceChildren.length > 1,
+    errorMessage: 'Failed to reorder pages',
+  });
 
   const renderItem = useMemo(() => {
     if (!view) return null;
@@ -138,15 +79,7 @@ function SpaceItem({
           width,
         }}
         onClick={() => {
-          if (suppressClickRef.current) {
-            suppressClickRef.current = false;
-            if (suppressClickTimeoutRef.current !== undefined) {
-              window.clearTimeout(suppressClickTimeoutRef.current);
-              suppressClickTimeoutRef.current = undefined;
-            }
-
-            return;
-          }
+          if (shouldSuppressClick()) return;
 
           toggleExpand(view.view_id, !isExpanded);
           onClickSpace?.(view.view_id);
@@ -154,7 +87,7 @@ function SpaceItem({
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         className={cn(
-          'relative flex min-h-[30px] w-full cursor-pointer select-none items-center gap-0.5 truncate rounded-[8px] px-1 py-0.5 text-sm hover:bg-fill-content-hover focus:bg-fill-content-hover focus:outline-none',
+          'relative flex min-h-[30px] w-full cursor-pointer select-none items-center gap-0.5 rounded-[8px] px-1 py-0.5 text-sm hover:bg-fill-content-hover focus:bg-fill-content-hover focus:outline-none',
           dragState.type === 'dragging' && 'opacity-40'
         )}
       >
@@ -166,7 +99,9 @@ function SpaceItem({
         />
         <Tooltip title={name} disableInteractive={true}>
           <div className={'flex flex-1 items-center justify-start gap-1 overflow-hidden text-sm'}>
-            <div data-testid="space-name" className={'truncate font-medium'}>{name}</div>
+            <div data-testid='space-name' className={'truncate font-medium'}>
+              {name}
+            </div>
 
             {isPrivate && (
               <div className={'min-h-5 min-w-5 text-base text-text-primary opacity-80'}>
@@ -176,10 +111,21 @@ function SpaceItem({
           </div>
         </Tooltip>
         {renderExtra && renderExtra({ hovered, view })}
-        {dragState.type === 'over' ? <DropRowIndicator edge={dragState.closestEdge} /> : null}
+        {dragState.type === 'over' ? <DropRowLine edge={dragState.closestEdge} style={DROP_LINE_STYLE} /> : null}
       </div>
     );
-  }, [dragState, hovered, isExpanded, isPrivate, onClickSpace, renderExtra, toggleExpand, view, width]);
+  }, [
+    dragState,
+    hovered,
+    isExpanded,
+    isPrivate,
+    onClickSpace,
+    renderExtra,
+    shouldSuppressClick,
+    toggleExpand,
+    view,
+    width,
+  ]);
 
   const isLoading = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
 
@@ -194,14 +140,18 @@ function SpaceItem({
         {isLoading ? (
           <div className={'flex flex-col'}>
             {[96, 72, 88].map((w, i) => (
-              <div key={i} className={'flex min-h-[30px] items-center gap-1.5 py-1 px-0.5'} style={{ paddingLeft: '16px' }}>
+              <div
+                key={i}
+                className={'flex min-h-[30px] items-center gap-1.5 px-0.5 py-1'}
+                style={{ paddingLeft: '16px' }}
+              >
                 <div className={'h-4 w-4 animate-pulse rounded bg-fill-content-hover'} />
                 <div className={`h-4 animate-pulse rounded bg-fill-content-hover`} style={{ width: `${w}px` }} />
               </div>
             ))}
           </div>
         ) : (
-          view?.children?.map((child) => (
+          orderedChildren.map((child) => (
             <ViewItem
               key={child.view_id}
               view={child}
@@ -210,14 +160,31 @@ function SpaceItem({
               expandIds={expandIds}
               toggleExpand={toggleExpand}
               onClickView={onClickView}
+              parentView={view}
               loadingViewIds={loadingViewIds}
               loadedViewIds={loadedViewIds}
+              reorderChildren
+              reorderInstanceId={childDragInstanceId}
+              canReorder={canReorderWithinParent(child, view)}
             />
           ))
         )}
       </div>
     );
-  }, [onClickView, isExpanded, isLoading, view?.children, width, renderExtra, expandIds, toggleExpand, loadingViewIds, loadedViewIds]);
+  }, [
+    onClickView,
+    isExpanded,
+    isLoading,
+    orderedChildren,
+    childDragInstanceId,
+    view,
+    width,
+    renderExtra,
+    expandIds,
+    toggleExpand,
+    loadingViewIds,
+    loadedViewIds,
+  ]);
 
   return (
     <div className={'flex h-fit w-full flex-col'} data-testid='space-item'>

@@ -1,10 +1,12 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { flushSync } from 'react-dom';
 import { ErrorBoundary } from 'react-error-boundary';
+import { toast } from 'sonner';
 
 import { useDatabase, useDatabaseContext, useDatabaseViewsSelector } from '@/application/database-yjs';
 import { FilterType } from '@/application/database-yjs/database.type';
 import { DatabaseViewLayout, YjsDatabaseKey } from '@/application/types';
+import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
 import { Board } from '@/components/database/board';
 import { Chart } from '@/components/database/chart';
 import { DatabaseConditionsContext } from '@/components/database/components/conditions/context';
@@ -23,6 +25,7 @@ import {
   selectStableViewOrder,
   writeStoredViewOrder,
 } from '@/utils/database-view-order';
+import { Log } from '@/utils/log';
 
 import DatabaseConditions from 'src/components/database/components/conditions/DatabaseConditions';
 
@@ -35,6 +38,7 @@ function DatabaseViews({
   visibleViewIds,
   fixedHeight,
   onViewIdsChanged,
+  onReorderViews,
 }: {
   onChangeView: (viewId: string) => void;
   /**
@@ -60,6 +64,13 @@ function DatabaseViews({
    * Used to update the block data in embedded database blocks.
    */
   onViewIdsChanged?: (viewIds: string[]) => void;
+  /**
+   * Durably persist a tab reorder by moving the view within its folder
+   * container. Provided only when the database is backed by a sidebar
+   * container (app mode); omitted for embedded/published databases, which
+   * fall back to the local (localStorage) tab order.
+   */
+  onReorderViews?: (movedViewId: string, prevViewId: string | null) => void | Promise<void>;
 }) {
   const { childViews, viewIds } = useDatabaseViewsSelector(databasePageId, visibleViewIds);
   const { isDocumentBlock, variant } = useDatabaseContext();
@@ -72,6 +83,7 @@ function DatabaseViews({
   const pendingViewCreationRef = useRef(false);
   const pendingExpectedViewIdsRef = useRef<string[] | null>(null);
   const pendingViewAppendBaseRef = useRef<string[] | null>(null);
+  const tabReorderRequestSeqRef = useRef(0);
   const hasAuthoritativeVisibleOrder = Boolean(visibleViewIds && visibleViewIds.length > 0);
 
   const [layout, setLayout] = useState<DatabaseViewLayout | null>(null);
@@ -295,6 +307,37 @@ function DatabaseViews({
     [databaseId, fallbackViewIds, onViewAdded]
   );
 
+  const handleReorderTabs = useCallback(
+    ({ nextIds, movedId, prevId }: ReorderResult) => {
+      const previousIds = orderedViewIdsRef.current.length > 0 ? orderedViewIdsRef.current : viewIds;
+      const requestSeq = ++tabReorderRequestSeqRef.current;
+
+      // Optimistically apply the new tab order and persist it locally.
+      orderedViewIdsRef.current = nextIds;
+      setOrderedViewIds(nextIds);
+      writeStoredViewOrder(databaseId, nextIds);
+
+      if (!onReorderViews) return;
+
+      // For container-backed databases, also move the view within the folder so
+      // the order is durable and stays in sync with the sidebar.
+      void (async () => {
+        try {
+          await onReorderViews(movedId, prevId);
+        } catch (error) {
+          if (tabReorderRequestSeqRef.current !== requestSeq) return;
+
+          orderedViewIdsRef.current = previousIds;
+          setOrderedViewIds(previousIds);
+          writeStoredViewOrder(databaseId, previousIds);
+          toast.error('Failed to reorder database views');
+          Log.error('[DatabaseViews] Failed to reorder tabs', error);
+        }
+      })();
+    },
+    [databaseId, onReorderViews, viewIds]
+  );
+
   const displayedViewIds = orderedViewIds.length > 0 ? orderedViewIds : viewIds;
 
   // Render the appropriate view component based on layout
@@ -333,15 +376,7 @@ function DatabaseViews({
       isAdvancedMode,
       setAdvancedMode,
     }),
-    [
-      conditionsExpanded,
-      toggleExpanded,
-      setExpanded,
-      openFilterId,
-      setOpenFilterId,
-      isAdvancedMode,
-      setAdvancedMode,
-    ]
+    [conditionsExpanded, toggleExpanded, setExpanded, openFilterId, setOpenFilterId, isAdvancedMode, setAdvancedMode]
   );
 
   return (
@@ -357,6 +392,7 @@ function DatabaseViews({
           onBeforeViewAddedToDatabase={handleBeforeViewAddedToDatabase}
           onAfterViewAddedToDatabase={handleAfterViewAddedToDatabase}
           onViewIdsChanged={onViewIdsChanged}
+          onReorderTabs={handleReorderTabs}
         />
 
         <DatabaseConditions />
@@ -366,19 +402,11 @@ function DatabaseViews({
             'relative flex w-full flex-col',
             shouldUseFixedViewport ? 'h-full min-h-0 flex-1 overflow-hidden' : 'overflow-visible'
           )}
-          style={
-            fixedHeight !== undefined
-              ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` }
-              : undefined
-          }
+          style={fixedHeight !== undefined ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` } : undefined}
         >
           <div
             className={cn('w-full', shouldUseFixedViewport && 'flex h-full min-h-0 flex-col')}
-            style={
-              fixedHeight !== undefined
-                ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` }
-                : undefined
-            }
+            style={fixedHeight !== undefined ? { height: `${fixedHeight}px`, maxHeight: `${fixedHeight}px` } : undefined}
           >
             <Suspense fallback={null}>
               <ErrorBoundary fallbackRender={ElementFallbackRender}>{view}</ErrorBoundary>

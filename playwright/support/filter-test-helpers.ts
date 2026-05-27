@@ -320,10 +320,23 @@ export async function getFieldIdByName(page: Page, fieldName: string): Promise<s
  * Create a select option in the current cell/popover
  */
 export async function createSelectOption(page: Page, optionName: string): Promise<void> {
-  const input = page.locator('[data-radix-popper-content-wrapper]').last().locator('input').first();
+  const menu = page.getByTestId('select-option-menu');
+  await expect(menu).toBeVisible({ timeout: 5000 });
+
+  const input = menu.locator('input').first();
   await input.clear();
   await input.fill(optionName);
-  await page.keyboard.press('Enter');
+
+  const createOption = menu
+    .locator('div')
+    .filter({ hasText: new RegExp(`^\\s*Create\\s*${optionName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*$`) })
+    .last();
+
+  await expect(createOption).toBeVisible({ timeout: 5000 });
+  await createOption.click({ force: true });
+  await expect(menu.locator('[data-testid^="select-option-"]').filter({ hasText: optionName }).first()).toBeVisible({
+    timeout: 5000,
+  });
   await page.waitForTimeout(500);
 }
 

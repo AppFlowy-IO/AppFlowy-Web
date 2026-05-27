@@ -21,6 +21,8 @@ declare global {
 jest.mock('@/components/app/app.hooks', () => ({
   useAppOutline: () => global.__databaseViewTestState?.outline,
   useBreadcrumb: () => global.__databaseViewTestState?.breadcrumbs,
+  useCurrentWorkspaceIdOptional: () => 'test-workspace',
+  useRefreshOutline: () => jest.fn(),
 }));
 
 jest.mock('@/components/database', () => ({
@@ -156,6 +158,82 @@ describe('DatabaseView database container', () => {
     expect(metaProps?.name).toBe('New Database');
   });
 
+  it('uses the first visible child as the active view when the route opens a database container', () => {
+    const containerId = 'container-id';
+    const gridViewId = 'grid-view-id';
+    const boardViewId = 'board-view-id';
+
+    const gridView: View = {
+      view_id: gridViewId,
+      name: 'Grid',
+      icon: null,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false },
+      children: [],
+      is_published: false,
+      is_private: false,
+      parent_view_id: containerId,
+    };
+
+    const boardView: View = {
+      view_id: boardViewId,
+      name: 'Board',
+      icon: null,
+      layout: ViewLayout.Board,
+      extra: { is_space: false },
+      children: [],
+      is_published: false,
+      is_private: false,
+      parent_view_id: containerId,
+    };
+
+    const containerView: View = {
+      view_id: containerId,
+      name: 'New Database',
+      icon: null,
+      layout: ViewLayout.Grid,
+      extra: { is_space: false, is_database_container: true },
+      children: [gridView, boardView],
+      is_published: false,
+      is_private: false,
+    };
+
+    global.__databaseViewTestState = { outline: [containerView] };
+
+    const viewMeta: ViewMetaProps = {
+      viewId: containerId,
+      name: containerView.name,
+      layout: containerView.layout,
+      icon: undefined,
+      extra: containerView.extra,
+      workspaceId: 'workspace-id',
+      visibleViewIds: [],
+    };
+
+    render(
+      <MemoryRouter initialEntries={['/app/workspace-id/container-id']}>
+        <DatabaseView
+          doc={createDatabaseDoc('db-1', [gridViewId, boardViewId])}
+          workspaceId={'workspace-id'}
+          readOnly={false}
+          viewMeta={viewMeta}
+          updatePage={jest.fn()}
+          updatePageIcon={jest.fn()}
+          updatePageName={jest.fn()}
+          onRendered={jest.fn()}
+        />
+      </MemoryRouter>
+    );
+
+    const databaseProps = global.__databaseViewTestState?.capturedDatabaseProps as
+      | { databasePageId?: string; activeViewId?: string; visibleViewIds?: string[] }
+      | undefined;
+
+    expect(databaseProps?.databasePageId).toBe(containerId);
+    expect(databaseProps?.activeViewId).toBe(gridViewId);
+    expect(databaseProps?.visibleViewIds).toEqual([gridViewId, boardViewId]);
+  });
+
   it('uses parent container metadata when the active child is missing from a shallow outline', () => {
     const containerId = 'container-id';
     const gridViewId = 'grid-view-id';
@@ -237,17 +315,20 @@ describe('DatabaseView database container', () => {
 
     global.__databaseViewTestState = {
       outline: [],
-      breadcrumbs: [containerView, {
-        view_id: gridViewId,
-        name: 'Grid',
-        icon: null,
-        layout: ViewLayout.Grid,
-        extra: { is_space: false, database_id: 'db-1' },
-        children: [],
-        is_published: false,
-        is_private: false,
-        parent_view_id: containerId,
-      }],
+      breadcrumbs: [
+        containerView,
+        {
+          view_id: gridViewId,
+          name: 'Grid',
+          icon: null,
+          layout: ViewLayout.Grid,
+          extra: { is_space: false, database_id: 'db-1' },
+          children: [],
+          is_published: false,
+          is_private: false,
+          parent_view_id: containerId,
+        },
+      ],
     };
 
     // viewMeta lacks parentViewId and database_id (simulating a fallback view
@@ -277,9 +358,7 @@ describe('DatabaseView database container', () => {
       </MemoryRouter>
     );
 
-    const databaseProps = global.__databaseViewTestState?.capturedDatabaseProps as
-      | { databaseName: string }
-      | undefined;
+    const databaseProps = global.__databaseViewTestState?.capturedDatabaseProps as { databaseName: string } | undefined;
     const metaProps = global.__databaseViewTestState?.capturedViewMetaProps as
       | { viewId?: string; name?: string }
       | undefined;

@@ -670,14 +670,15 @@ export const DatabaseRowSubDocument = memo(({ rowId }: { rowId: string }) => {
           return;
         }
 
-        // Document is empty - just open locally without creating on server.
-        // The server document will be created when user actually edits (via handleDocUpdate).
-        Log.debug('[DatabaseRowSubDocument] row meta says empty; opening local doc only (no API call)', {
+        // Document is empty, but the editor must still bind to a server-side
+        // collab before accepting edits. Otherwise a paste-and-close flow can
+        // enqueue the first update before the orphaned collab exists, then a
+        // fast reopen loads the still-empty server state over the local cache.
+        Log.debug('[DatabaseRowSubDocument] row meta says empty; creating row doc before opening editor', {
           rowId,
           documentId,
         });
-        await openLocalDocument(documentId);
-        setLoading(false);
+        await handleCreateDocument(documentId, false);
 
         return;
       }
