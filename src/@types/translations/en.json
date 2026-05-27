@@ -820,7 +820,25 @@
     },
     "accountPage": {
       "menuLabel": "My account",
+      "menuLabelAccountApp": "Account & App",
+      "menuLabelProfile": "Profile",
+      "profile": {
+        "title": "Profile",
+        "displayName": "Display name"
+      },
       "title": "My account",
+      "accountAndApp": "Account & App",
+      "dateTime": {
+        "title": "Date & Time Format"
+      },
+      "language": {
+        "title": "Language"
+      },
+      "password": {
+        "title": "Password",
+        "description": "Your account password for signing in.",
+        "setupButton": "Setup password"
+      },
       "general": {
         "title": "Account name & profile image",
         "changeProfilePicture": "Change profile picture"
@@ -833,8 +851,16 @@
       },
       "login": {
         "title": "Account login",
+        "description": "Log out from your current session.",
         "loginLabel": "Log in",
         "logoutLabel": "Log out"
+      },
+      "deleteAccount": {
+        "title": "Delete account",
+        "description": "Permanently delete your account and remove access from all workspaces.",
+        "confirmDescription": "This will permanently delete your account, your data, and remove access from all workspaces. This action cannot be undone.",
+        "success": "Account deleted",
+        "failed": "Failed to delete account"
       }
     },
     "workspacePage": {
@@ -1520,6 +1546,18 @@
         "label": "Members",
         "user": "User",
         "role": "Role",
+        "email": "Email",
+        "pending": "Pending",
+        "joinedOn": "Joined on",
+        "invite": "Invite",
+        "inviteLinkTitle": "Invite link to add member",
+        "inviteLinkHintPrefix": "Click to copy link or",
+        "generateNewLink": "generate a new link",
+        "copyLink": "Copy link",
+        "inviteLinkGenerated": "Invite link generated",
+        "inviteByEmailTitle": "Invite member by email",
+        "inviteByEmailPlaceholder": "Invite by email",
+        "noMembers": "No members yet",
         "removeFromWorkspace": "Remove from Workspace",
         "removeFromWorkspaceSuccess": "Remove from workspace successfully",
         "removeFromWorkspaceFailed": "Remove from workspace failed",
@@ -3181,11 +3219,15 @@
       "retry": "Retry"
     },
     "importNotion": "Import from Notion",
+    "importWorkspace": "Import workspace",
+    "importFromAppFlowy": "Import from AppFlowy",
+    "importFromNotion": "Import from Notion",
     "import": "Import",
     "importSuccess": "Uploaded successfully",
     "importSuccessMessage": "We'll notify you when the import is complete. After that, you can view your imported pages in the sidebar.",
     "importFailed": "Import failed, please check the file format",
     "dropNotionFile": "Drop your Notion zip file here to upload, or click to browse",
+    "dropAppFlowyFile": "Drop your AppFlowy zip file here to upload, or click to browse",
     "error": {
       "pageNameIsEmpty": "The page name is empty, please try another one"
     },
@@ -3193,6 +3235,7 @@
     "addMessagesToPage": "Add messages to page",
     "addMessagesToPageDisabled": "No messages available",
     "accountSettings": "Account settings",
+    "settings": "Settings",
     "startWeekOn": "Start week on"
   },
   "globalComment": {

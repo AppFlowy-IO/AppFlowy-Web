@@ -455,7 +455,6 @@ export const AuthSelectors = {
   passwordInput: (page: Page) => page.getByTestId('password-input'),
   passwordSubmitButton: (page: Page) => page.getByTestId('password-submit-button'),
   createAccountButton: (page: Page) => page.getByTestId('login-create-account-button'),
-  logoutMenuItem: (page: Page) => page.getByTestId('logout-menu-item'),
   logoutConfirmButton: (page: Page) => page.getByTestId('logout-confirm-button'),
 };
 
@@ -474,8 +473,9 @@ export const SignUpSelectors = {
  * Account settings selectors
  */
 export const AccountSelectors = {
-  settingsButton: (page: Page) => page.getByTestId('account-settings-button'),
-  settingsDialog: (page: Page) => page.getByTestId('account-settings-dialog'),
+  settingsButton: (page: Page) => page.getByTestId('settings-button'),
+  settingsDialog: (page: Page) => page.getByTestId('settings-dialog'),
+  logoutButton: (page: Page) => page.getByTestId('settings-logout-button'),
   dateFormatDropdown: (page: Page) => page.getByTestId('date-format-dropdown'),
   dateFormatOptionYearMonthDay: (page: Page) => page.getByTestId('date-format-1'),
   timeFormatDropdown: (page: Page) => page.getByTestId('time-format-dropdown'),

@@ -90,6 +90,14 @@ export async function updateWorkspaceMemberProfile(
   );
 }
 
+export async function deleteUser(): Promise<void> {
+  const url = '/api/user';
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.delete<APIResponse>(url)
+  );
+}
+
 interface AFWorkspace {
   workspace_id: string;
   owner_uid: number;
