@@ -470,6 +470,28 @@ export const CustomEditor = {
   },
 
   toggleToggleList(editor: YjsEditor, blockId: string) {
+    // The published view renders with a static Slate editor that has no Yjs
+    // shared root. Toggle the collapsed state directly on the Slate node so the
+    // block can still be expanded/collapsed in read-only mode.
+    if (!editor.sharedRoot) {
+      const entry = findSlateEntryByBlockId(editor, blockId);
+
+      if (!entry) {
+        Log.warn('Toggle list block not found', blockId);
+        return;
+      }
+
+      const [node, path] = entry;
+      const data = (node.data || {}) as ToggleListBlockData;
+
+      Transforms.setNodes(
+        editor,
+        { data: { ...data, collapsed: !data.collapsed } } as Partial<Element>,
+        { at: path }
+      );
+      return;
+    }
+
     const sharedRoot = getSharedRoot(editor);
     const data = dataStringTOJson(getBlock(blockId, sharedRoot).get(YjsEditorKey.block_data)) as ToggleListBlockData;
     const { selection } = editor;
