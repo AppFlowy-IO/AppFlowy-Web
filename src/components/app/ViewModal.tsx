@@ -324,11 +324,13 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     );
   }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView]);
 
-  // Check if view is in shareWithMe and determine readonly status
+  // Check if view is in shareWithMe and determine readonly status.
+  // `resolvedView` includes the server-fetched fallback, so locked pages opened
+  // before their outline branch is loaded still flip the editor to read-only.
   const isReadOnly = useMemo(() => {
     if (!effectiveViewId) return false;
-    return getViewReadOnlyStatus(effectiveViewId, outline);
-  }, [getViewReadOnlyStatus, effectiveViewId, outline]);
+    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
+  }, [getViewReadOnlyStatus, effectiveViewId, outline, resolvedView]);
 
   const View = useMemo(() => {
     switch (layout) {

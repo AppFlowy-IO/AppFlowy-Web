@@ -1201,6 +1201,8 @@ export interface View {
   has_children?: boolean;
   is_published: boolean;
   is_private: boolean;
+  /** Whether the page is locked (read-only) for everyone until unlocked. Synced via the folder. */
+  is_locked?: boolean;
   last_edited_time?: string;
   favorited_at?: string;
   last_viewed_at?: string;
@@ -1341,6 +1343,7 @@ export interface UpdatePagePayload {
     value: string;
   };
   extra?: Partial<ViewExtra>;
+  is_locked?: boolean;
 }
 
 export type ViewMetaCover = ViewCover;

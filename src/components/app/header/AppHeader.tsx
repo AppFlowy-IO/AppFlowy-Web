@@ -8,6 +8,7 @@ import { useOutlinePopover } from '@/components/_shared/outline/outline.hooks';
 import OutlinePopover from '@/components/_shared/outline/OutlinePopover';
 import BreadcrumbSkeleton from '@/components/_shared/skeleton/BreadcrumbSkeleton';
 import { useAppRendered, useToView, useBreadcrumb } from '@/components/app/app.hooks';
+import LockedBadge from '@/components/app/header/LockedBadge';
 import Recent from '@/components/app/recent/Recent';
 
 const RightMenu = lazy(() => import('@/components/app/header/RightMenu'));
@@ -85,6 +86,7 @@ export function AppHeader({ onOpenDrawer, openDrawer, onCloseDrawer }: AppHeader
             <Breadcrumb toView={toView} variant={UIVariant.App} crumbs={crumbs} />
           )}
         </div>
+        <LockedBadge />
         {rendered && (
           <Suspense fallback={null}>
             <RightMenu />

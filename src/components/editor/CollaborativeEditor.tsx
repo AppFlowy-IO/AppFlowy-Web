@@ -8,6 +8,7 @@ import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
 import { BlockType, CollabOrigin, YDoc } from '@/application/types';
+import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
 import EditorEditable from '@/components/editor/Editable';
 import { useEditorContext } from '@/components/editor/EditorContext';
 import { withPlugins } from '@/components/editor/plugins';
@@ -321,7 +322,9 @@ function CollaborativeEditor({
 
   return (
     <Slate key={key} editor={editor} initialValue={defaultInitialValue} onChange={handleSlateChange}>
-      <EditorEditable />
+      <FindReplaceProvider>
+        <EditorEditable />
+      </FindReplaceProvider>
     </Slate>
   );
 }

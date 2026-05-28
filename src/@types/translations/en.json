@@ -153,6 +153,7 @@
   },
   "shareAction": {
     "buttonText": "Share",
+    "findAndReplace": "Find and replace",
     "workInProgress": "Coming soon",
     "markdown": "Markdown",
     "html": "HTML",
@@ -265,6 +266,7 @@
     "rename": "Rename",
     "delete": "Delete",
     "duplicate": "Duplicate",
+    "lockPage": "Lock page",
     "unfavorite": "Remove from Favorites",
     "favorite": "Add to Favorites",
     "openNewTab": "Open in a new tab",
@@ -2821,14 +2823,33 @@
   },
   "findAndReplace": {
     "find": "Find",
+    "findAndReplace": "Find & replace",
     "previousMatch": "Previous match",
     "nextMatch": "Next match",
     "close": "Close",
     "replace": "Replace",
     "replaceAll": "Replace all",
+    "all": "All",
     "noResult": "No results",
     "caseSensitive": "Case sensitive",
-    "searchMore": "Search to find more results"
+    "matchCase": "Match case",
+    "searchMore": "Search to find more results",
+    "findTextfieldHint": "Find text on page...",
+    "replaceTextfieldHint": "Replace with...",
+    "switchFindHint": "Switch to Find",
+    "switchFindAndReplaceHint": "Switch to Find & Replace",
+    "replacedMoreThanOneSuccessfully": "Replaced {} matches",
+    "replacedOneSuccessfully": "Replaced 1 match",
+    "noPermissionHint": "Replace is disabled while in read-only or locked mode",
+    "noMoreResultToast": "No more results found, looping around"
+  },
+  "lockPage": {
+    "lockPage": "Locked",
+    "reLockPage": "Re-lock",
+    "lockTooltip": "Page locked to prevent accidental editing. Click to unlock.",
+    "pageLockedToast": "Page locked. Editing is disabled until someone unlocks it.",
+    "pageUnlockedToast": "Page unlocked. Editing is enabled.",
+    "lockedOperationTooltip": "Page locked to prevent accidental editing."
   },
   "error": {
     "weAreSorry": "We're sorry",
@@ -3858,7 +3879,7 @@
     "comingSoonToWeb": "Coming soon to the web 👋. You can use this feature right now on our desktop or mobile app."
   },
   "versionHistory": {
-    "versionHistory": "Page History",
+    "versionHistory": "Version history",
     "all": "All",
     "last7Days": "Last 7 days",
     "last30Days": "Last 30 days",

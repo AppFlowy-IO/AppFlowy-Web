@@ -616,6 +616,17 @@ span[data-slate-placeholder="true"]:not(.inline-block-content) {
   }
 }
 
+// Find & replace search match highlighting. Applied as a Slate leaf class via
+// the editor decorate function (see FindReplaceContext).
+.search-match-highlight {
+  border-radius: 2px;
+  background-color: rgba(250, 204, 21, 0.4);
+}
+
+.search-match-highlight-current {
+  background-color: rgba(249, 115, 22, 0.7);
+}
+
 #appflowy-ai-writer {
   @apply bg-background-primary;
   #appflowy-editor > div {

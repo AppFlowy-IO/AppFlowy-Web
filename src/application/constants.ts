@@ -75,4 +75,7 @@ export const APP_EVENTS = {
   FOLDER_VIEW_CHANGED: 'folder-view-changed',             // Granular folder view change (sidebar update)
   INBOX_NOTIFICATION: 'inbox-notification',               // Inbox notification push for notification center refresh
   COLLAB_DOC_RESET: 'collab-doc-reset',                   // Collab version reset replaced active Y.Doc instance
+
+  // Editor events
+  FIND_AND_REPLACE: 'find-and-replace',                   // Open the in-document find & replace panel for a view
 };
