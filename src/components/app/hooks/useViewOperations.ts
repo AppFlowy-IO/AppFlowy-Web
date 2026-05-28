@@ -26,15 +26,34 @@ import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 import { useDatabaseIdentity } from './useDatabaseIdentity';
 
-export function getViewReadOnlyStatus(viewId: string, outline?: View[]) {
+/**
+ * Determine whether the editor should be read-only for the given view.
+ *
+ * `fallbackView` is the resolved view object the page hosts already have
+ * (e.g. AppPage's `outlineView ?? fallbackView`, ViewModal's `resolvedView`).
+ * It's checked first so that locked pages remain read-only even when the page
+ * is opened before the outline branch loads — in that case `findView(outline)`
+ * misses the view and a lock check against the outline alone would let edits
+ * through.
+ */
+export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
   const isMobile = getPlatform().isMobile;
 
   if (isMobile) return true; // Mobile has highest priority - always readonly
+
+  // Lock check uses the resolved view first, falling back to the outline so
+  // direct-URL loads (before outline arrives) still honor the lock.
+  if (fallbackView?.view_id === viewId && fallbackView.is_locked) return true;
 
   if (!outline) return false;
 
   // Check if view exists in shareWithMe
   const shareWithMeView = findViewInShareWithMe(outline, viewId);
+
+  // A locked page is read-only for everyone until it is unlocked.
+  const view = findView(outline, viewId) ?? shareWithMeView;
+
+  if (view?.is_locked) return true;
 
   if (shareWithMeView?.access_level !== undefined) {
     // If found in shareWithMe, check access level
@@ -89,9 +108,12 @@ export function useViewOperations() {
   });
 
   // Check if view should be readonly based on access permissions
-  const getViewReadOnlyStatusFromOutline = useCallback((viewId: string, outline?: View[]) => {
-    return getViewReadOnlyStatus(viewId, outline);
-  }, []);
+  const getViewReadOnlyStatusFromOutline = useCallback(
+    (viewId: string, outline?: View[], fallbackView?: View | null) => {
+      return getViewReadOnlyStatus(viewId, outline, fallbackView);
+    },
+    []
+  );
 
   /**
    * Load view document WITHOUT binding sync.
