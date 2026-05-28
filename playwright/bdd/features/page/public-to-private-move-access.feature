@@ -1,7 +1,8 @@
 @public-to-private-move-access
 Feature: Public page moved under private page access
   The ptp0527 server-side fixture provides one owner and three workspace members.
-  The scenario creates temporary pages so the fixed fixture membership is not mutated.
+  The scenario creates a temporary public page and moves it under the seeded
+  private target so fixed membership/share relationships are not mutated.
 
   Background:
     Given the seeded ptp0527 public-to-private fixture exists
@@ -12,7 +13,7 @@ Feature: Public page moved under private page access
   Scenario: Moving a public space page under a private page refreshes access
     Given I sign in as seeded public-to-private "owner"
     And I create a temporary public-to-private public space page
-    And I create a temporary public-to-private private target page shared with "member 1"
+    And I use the seeded public-to-private private target page shared with "member 1"
     When I open the temporary public-to-private movable page
     Then the temporary public-to-private movable page title is visible
     When I open the public-to-private share panel

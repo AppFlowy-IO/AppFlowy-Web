@@ -2,11 +2,7 @@ import { APIRequestContext, expect, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
-import {
-  PageSelectors,
-  ShareSelectors,
-  SidebarSelectors,
-} from '../../support/selectors';
+import { PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { Given, When, Then, Before, After } = createBdd();
@@ -16,6 +12,10 @@ const SPACE_PERMISSION_PUBLIC = 0;
 const SPACE_PERMISSION_PRIVATE = 1;
 const ACCESS_LEVEL_READ_ONLY = 10;
 const VIEW_LAYOUT_DOCUMENT = 0;
+const SEEDED_PRIVATE_SPACE_ID = 'a93fc48d-db30-4a0f-8bec-a6f0ff2b071c';
+const SEEDED_PRIVATE_TARGET_PAGE_ID = '0574b0b2-5cd7-4893-8c2d-7b23c66a6c56';
+const SEEDED_PRIVATE_SPACE_NAME = 'ptp0527 BDD Seeded Private Space';
+const SEEDED_PRIVATE_TARGET_PAGE_NAME = 'ptp0527 BDD Seeded Private Target Page';
 
 const SEEDED_ACCOUNTS = {
   owner: 'ptp0527-own@appflowy.local',
@@ -32,6 +32,7 @@ type ScenarioState = {
   ownerToken?: string;
   movablePage?: TemporaryView;
   privateTarget?: TemporaryView;
+  privateTargetIsSeeded?: boolean;
 };
 
 type TemporaryView = {
@@ -50,6 +51,12 @@ type ApiResponse<T> = {
 type Workspace = {
   workspace_id: string;
   role?: string;
+};
+
+type FolderView = {
+  view_id: string;
+  name: string;
+  children?: FolderView[];
 };
 
 const stateByPage = new WeakMap<Page, ScenarioState>();
@@ -96,6 +103,9 @@ Given('I create a temporary public-to-private public space page', async ({ page,
   const ownerToken = requireOwnerToken(state);
   const spaceName = `ptp0527 BDD Public Space ${state.runId}`;
   const pageTitle = `ptp0527 BDD Movable Public Page ${state.runId}`;
+
+  await cleanupStaleTemporaryViews(request, ownerToken, workspaceId);
+
   const space = await postApi<{ view_id: string }>(request, ownerToken, `/api/workspace/${workspaceId}/space`, {
     name: spaceName,
     space_icon: 'icon',
@@ -162,6 +172,30 @@ Given(
   }
 );
 
+Given(
+  'I use the seeded public-to-private private target page shared with {string}',
+  async ({ page, request }, accountAliasValue: string) => {
+    const state = getState(page);
+    const workspaceId = requireWorkspaceId(state);
+    const ownerToken = requireOwnerToken(state);
+    const sharedEmail = accountEmail(accountAliasValue);
+
+    if (sharedEmail !== SEEDED_ACCOUNTS['member 1']) {
+      throw new Error(`The seeded public-to-private target is shared only with member 1, got ${accountAliasValue}`);
+    }
+
+    await getApi(request, ownerToken, `/api/workspace/${workspaceId}/page-view/${SEEDED_PRIVATE_TARGET_PAGE_ID}`);
+
+    state.privateTarget = {
+      spaceId: SEEDED_PRIVATE_SPACE_ID,
+      spaceName: SEEDED_PRIVATE_SPACE_NAME,
+      pageId: SEEDED_PRIVATE_TARGET_PAGE_ID,
+      pageTitle: SEEDED_PRIVATE_TARGET_PAGE_NAME,
+    };
+    state.privateTargetIsSeeded = true;
+  }
+);
+
 When('I open the temporary public-to-private movable page', async ({ page }) => {
   const state = getState(page);
   const workspaceId = requireWorkspaceId(state);
@@ -187,15 +221,10 @@ When('I move the temporary public-to-private page under the private target page'
   const movablePage = requireMovablePage(state);
   const privateTarget = requirePrivateTarget(state);
 
-  await postVoidApi(
-    request,
-    ownerToken,
-    `/api/workspace/${workspaceId}/page-view/${movablePage.pageId}/move`,
-    {
-      new_parent_view_id: privateTarget.pageId,
-      prev_view_id: null,
-    }
-  );
+  await postVoidApi(request, ownerToken, `/api/workspace/${workspaceId}/page-view/${movablePage.pageId}/move`, {
+    new_parent_view_id: privateTarget.pageId,
+    prev_view_id: null,
+  });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
 });
@@ -228,14 +257,17 @@ Then('the public-to-private share panel only shows {string}', async ({ page }, a
   }
 });
 
-Then('the public-to-private share panel shows {string} with {string}', async ({ page }, aliasValue: string, accessText: string) => {
-  const email = accountEmail(aliasValue);
-  const row = sharePersonRow(page, email);
+Then(
+  'the public-to-private share panel shows {string} with {string}',
+  async ({ page }, aliasValue: string, accessText: string) => {
+    const email = accountEmail(aliasValue);
+    const row = sharePersonRow(page, email);
 
-  await expect(row).toBeVisible({ timeout: 15000 });
-  await expect(row.getByText(email, { exact: true }).first()).toBeVisible();
-  await expect(row.getByText(accessText, { exact: true }).first()).toBeVisible();
-});
+    await expect(row).toBeVisible({ timeout: 15000 });
+    await expect(row.getByText(email, { exact: true }).first()).toBeVisible();
+    await expect(row.getByText(accessText, { exact: true }).first()).toBeVisible();
+  }
+);
 
 Then('the public-to-private share panel does not show {string}', async ({ page }, aliasValue: string) => {
   const email = accountEmail(aliasValue);
@@ -316,7 +348,9 @@ function sharePersonRow(page: Page, email: string) {
 }
 
 function sharePeopleRows(page: Page) {
-  return ShareSelectors.sharePopover(page).locator('.group').filter({ hasText: /@appflowy\.local/ });
+  return ShareSelectors.sharePopover(page)
+    .locator('.group')
+    .filter({ hasText: /@appflowy\.local/ });
 }
 
 function parseAccountAliases(aliasesValue: string): SeededAccountAlias[] {
@@ -349,9 +383,8 @@ async function cleanupTemporaryViews(request: APIRequestContext, state: Scenario
 
   const viewIds = [
     state.movablePage?.pageId,
-    state.privateTarget?.pageId,
     state.movablePage?.spaceId,
-    state.privateTarget?.spaceId,
+    ...(state.privateTargetIsSeeded ? [] : [state.privateTarget?.pageId, state.privateTarget?.spaceId]),
   ].filter((viewId): viewId is string => Boolean(viewId));
 
   for (const viewId of viewIds) {
@@ -364,11 +397,52 @@ async function cleanupTemporaryViews(request: APIRequestContext, state: Scenario
   }
 }
 
-async function getApi<T>(
+async function cleanupStaleTemporaryViews(
   request: APIRequestContext,
-  token: string,
-  path: string
-): Promise<T> {
+  ownerToken: string,
+  workspaceId: string
+): Promise<void> {
+  const root = await getApi<FolderView>(
+    request,
+    ownerToken,
+    `/api/workspace/${workspaceId}/view/${workspaceId}?depth=50`
+  );
+  const staleViewIds = collectTemporaryViewIds(root);
+
+  for (const viewId of staleViewIds) {
+    await postVoidApiAllowFailure(
+      request,
+      ownerToken,
+      `/api/workspace/${workspaceId}/page-view/${viewId}/move-to-trash`,
+      `move stale public-to-private view ${viewId} to trash`
+    );
+  }
+}
+
+function collectTemporaryViewIds(view: FolderView): string[] {
+  const childIds = (view.children ?? []).flatMap(collectTemporaryViewIds);
+
+  if (isTemporaryView(view)) {
+    return [...childIds, view.view_id];
+  }
+
+  return childIds;
+}
+
+function isTemporaryView(view: FolderView): boolean {
+  if (view.view_id === SEEDED_PRIVATE_SPACE_ID || view.view_id === SEEDED_PRIVATE_TARGET_PAGE_ID) {
+    return false;
+  }
+
+  return [
+    'ptp0527 BDD Public Space ',
+    'ptp0527 BDD Movable Public Page ',
+    'ptp0527 BDD Private Space ',
+    'ptp0527 BDD Private Target Page ',
+  ].some((prefix) => view.name.startsWith(prefix));
+}
+
+async function getApi<T>(request: APIRequestContext, token: string, path: string): Promise<T> {
   const response = await request.get(`${TestConfig.apiUrl}${path}`, {
     headers: {
       Authorization: `Bearer ${token}`,
