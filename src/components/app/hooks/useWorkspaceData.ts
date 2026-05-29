@@ -17,6 +17,10 @@ import {
   updateViewInOutline,
 } from '@/components/_shared/outline/mergeOutline';
 import { findView, findViewByLayout } from '@/components/_shared/outline/utils';
+import {
+  limitSidebarOutlineExpandedViewIds,
+  type SidebarOutlineRevalidationResult,
+} from '@/components/app/outline/sidebarRevalidation';
 import { notification } from '@/proto/messages';
 import { createDeduplicatedNoArgsRequest, createDeduplicatedRequest } from '@/utils/deduplicateRequest';
 import { Log } from '@/utils/log';
@@ -57,7 +61,7 @@ function buildViewIndex(views: View[]): Map<string, View> {
 export function preserveLoadedChildren(
   newOutline: View[],
   oldOutline: View[],
-  prevLoadedIds: Set<string>,
+  prevLoadedIds: Set<string>
 ): { outline: View[]; loadedIds: Set<string> } {
   if (prevLoadedIds.size === 0) {
     return { outline: newOutline, loadedIds: new Set() };
@@ -91,12 +95,7 @@ export function preserveLoadedChildren(
     }
 
     // Graft old children back into the new shallow tree
-    finalOutline = mergeChildrenIntoOutline(
-      finalOutline,
-      loadedId,
-      oldView.children,
-      oldView.has_children,
-    );
+    finalOutline = mergeChildrenIntoOutline(finalOutline, loadedId, oldView.children, oldView.has_children);
     nextLoadedIds.add(loadedId);
   }
 
@@ -162,7 +161,10 @@ export function useWorkspaceData() {
 
   const [outline, setOutline] = useState<View[]>();
   const stableOutlineRef = useRef<View[]>([]);
+  // Global folder ordering can advance from lazy subtree fetches. Root polling
+  // must compare against the root/sidebar outline snapshot we actually applied.
   const lastFolderRidRef = useRef<FolderRid | null>(null);
+  const lastAppliedRootOutlineRidRef = useRef<FolderRid | null>(null);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
@@ -192,7 +194,7 @@ export function useWorkspaceData() {
     const { outline: mergedOutline, loadedIds: nextLoadedIds } = preserveLoadedChildren(
       newOutline,
       prevOutline,
-      prevLoadedIds,
+      prevLoadedIds
     );
 
     stableOutlineRef.current = mergedOutline;
@@ -214,6 +216,21 @@ export function useWorkspaceData() {
     }
   }, []);
 
+  const updateAppliedRootOutlineRid = useCallback(
+    (next: FolderRid | null) => {
+      if (!next) return;
+
+      updateLastFolderRid(next);
+
+      const current = lastAppliedRootOutlineRidRef.current;
+
+      if (!current || compareFolderRid(next, current) > 0) {
+        lastAppliedRootOutlineRidRef.current = next;
+      }
+    },
+    [updateLastFolderRid]
+  );
+
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
       try {
@@ -233,8 +250,6 @@ export function useWorkspaceData() {
         // Append shareWithMe data as hidden space if available
         const nextFolderRid = parseFolderRid(res.folderRid);
 
-        updateLastFolderRid(nextFolderRid);
-
         let outlineWithShareWithMe = res.outline;
 
         if (shareWithMeResult && shareWithMeResult.children && shareWithMeResult.children.length > 0) {
@@ -252,6 +267,8 @@ export function useWorkspaceData() {
         }
 
         const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
+
+        updateAppliedRootOutlineRid(nextFolderRid);
 
         if (eventEmitter) {
           eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
@@ -315,9 +332,7 @@ export function useWorkspaceData() {
 
           // With shallow outlines, fetch all visible spaces in one batch and
           // search for a navigable child in original space order.
-          const spaces = outlineWithShareWithMe.filter(
-            (v) => v.extra?.is_space && !v.extra?.is_hidden_space
-          );
+          const spaces = outlineWithShareWithMe.filter((v) => v.extra?.is_space && !v.extra?.is_hidden_space);
 
           if (spaces.length > 0) {
             try {
@@ -378,7 +393,7 @@ export function useWorkspaceData() {
         }
       }
     },
-    [navigate, eventEmitter, updateLastFolderRid, userWorkspaceInfo?.userId, replaceOutlinePreservingChildren]
+    [navigate, eventEmitter, updateAppliedRootOutlineRid, userWorkspaceInfo?.userId, replaceOutlinePreservingChildren]
   );
 
   // Load children for a single view (lazy expand)
@@ -411,12 +426,7 @@ export function useWorkspaceData() {
         const children = viewData?.children ?? [];
 
         // Merge into outline
-        const nextOutline = mergeChildrenIntoOutline(
-          stableOutlineRef.current,
-          viewId,
-          children,
-          viewData?.has_children
-        );
+        const nextOutline = mergeChildrenIntoOutline(stableOutlineRef.current, viewId, children, viewData?.has_children);
 
         if (nextOutline !== stableOutlineRef.current) {
           stableOutlineRef.current = nextOutline;
@@ -446,9 +456,7 @@ export function useWorkspaceData() {
     async (viewIds: string[]): Promise<View[]> => {
       if (!currentWorkspaceId || viewIds.length === 0) return [];
 
-      const uniqueIds = Array.from(new Set(viewIds)).filter(
-        (viewId) => !loadingViewIdsRef.current.has(viewId)
-      );
+      const uniqueIds = Array.from(new Set(viewIds)).filter((viewId) => !loadingViewIdsRef.current.has(viewId));
 
       if (uniqueIds.length === 0) return [];
 
@@ -486,12 +494,7 @@ export function useWorkspaceData() {
           if (!viewId) continue;
 
           const children = viewData.children ?? [];
-          const mergedOutline = mergeChildrenIntoOutline(
-            nextOutline,
-            viewId,
-            children,
-            viewData?.has_children
-          );
+          const mergedOutline = mergeChildrenIntoOutline(nextOutline, viewId, children, viewData?.has_children);
 
           if (mergedOutline !== nextOutline) {
             nextOutline = mergedOutline;
@@ -524,70 +527,94 @@ export function useWorkspaceData() {
     [currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
   );
 
-  const markViewChildrenStale = useCallback((viewId: string) => {
-    const subtreeRoot = findView(stableOutlineRef.current, viewId);
-    const subtreeIds: string[] = [];
+  const markViewChildrenStale = useCallback(
+    (viewId: string) => {
+      const subtreeRoot = findView(stableOutlineRef.current, viewId);
+      const subtreeIds: string[] = [];
 
-    if (subtreeRoot) {
-      const stack: View[] = [subtreeRoot];
+      if (subtreeRoot) {
+        const stack: View[] = [subtreeRoot];
 
-      while (stack.length > 0) {
-        const current = stack.pop();
+        while (stack.length > 0) {
+          const current = stack.pop();
 
-        if (!current) continue;
-        subtreeIds.push(current.view_id);
-        current.children?.forEach((child) => stack.push(child));
-      }
-    } else {
-      subtreeIds.push(viewId);
-    }
-
-    let changed = false;
-
-    subtreeIds.forEach((id) => {
-      if (loadedViewIdsRef.current.delete(id)) {
-        changed = true;
+          if (!current) continue;
+          subtreeIds.push(current.view_id);
+          current.children?.forEach((child) => stack.push(child));
+        }
+      } else {
+        subtreeIds.push(viewId);
       }
 
-      loadingViewIdsRef.current.delete(id);
-    });
+      let changed = false;
 
-    if (!changed) return;
-
-    // Also invalidate the HTTP cache for the root view so the next
-    // loadViewChildren call makes a fresh API request instead of
-    // returning stale cached data.
-    if (currentWorkspaceId) {
-      ViewService.invalidateCache(currentWorkspaceId, viewId);
-    }
-
-    Log.debug('[Outline] [cache] Marked view subtree stale', { viewId, clearedIds: subtreeIds.length });
-    setLoadedViewIdsRevision((r) => r + 1);
-  }, [stableOutlineRef, currentWorkspaceId]);
-
-  // Load trash list
-  const loadTrash = useCallback(
-    async (currentWorkspaceId: string) => {
-      const requestSeq = ++trashRequestSeqRef.current;
-
-      try {
-        const res = await ViewService.getTrash(currentWorkspaceId);
-
-        if (!res) {
-          throw new Error('App trash not found');
+      subtreeIds.forEach((id) => {
+        if (loadedViewIdsRef.current.delete(id)) {
+          changed = true;
         }
 
-        if (requestSeq !== trashRequestSeqRef.current) {
-          return;
-        }
+        loadingViewIdsRef.current.delete(id);
+      });
 
-        setTrashList(sortBy(uniqBy(res, 'view_id') as unknown as View[], 'last_edited_time').reverse());
-      } catch (e) {
-        return Promise.reject('App trash not found');
+      if (!changed) return;
+
+      // Also invalidate the HTTP cache for the root view so the next
+      // loadViewChildren call makes a fresh API request instead of
+      // returning stale cached data.
+      if (currentWorkspaceId) {
+        ViewService.invalidateCache(currentWorkspaceId, viewId);
       }
+
+      Log.debug('[Outline] [cache] Marked view subtree stale', { viewId, clearedIds: subtreeIds.length });
+      setLoadedViewIdsRevision((r) => r + 1);
+    },
+    [stableOutlineRef, currentWorkspaceId]
+  );
+
+  const markCachedFolderSubtreesStale = useCallback(
+    (workspaceId: string, staleViewIds = Array.from(loadedViewIdsRef.current), resetLoadedState = true) => {
+      if (staleViewIds.length === 0) return 0;
+
+      for (const viewId of staleViewIds) {
+        ViewService.invalidateCache(workspaceId, viewId);
+        loadingViewIdsRef.current.delete(viewId);
+      }
+
+      if (resetLoadedState) {
+        loadedViewIdsRef.current = new Set();
+        setLoadedViewIdsRevision((r) => r + 1);
+      }
+
+      Log.debug('[Outline] [periodic-revalidate] marked cached subtrees stale', {
+        workspaceId,
+        staleCount: staleViewIds.length,
+      });
+
+      return staleViewIds.length;
     },
     []
   );
+
+  // Load trash list
+  const loadTrash = useCallback(async (currentWorkspaceId: string) => {
+    const requestSeq = ++trashRequestSeqRef.current;
+
+    try {
+      const res = await ViewService.getTrash(currentWorkspaceId);
+
+      if (!res) {
+        throw new Error('App trash not found');
+      }
+
+      if (requestSeq !== trashRequestSeqRef.current) {
+        return;
+      }
+
+      setTrashList(sortBy(uniqBy(res, 'view_id') as unknown as View[], 'last_edited_time').reverse());
+    } catch (e) {
+      return Promise.reject('App trash not found');
+    }
+  }, []);
 
   // Remote delete/restore arrives as folder changes. Keep the app-level trash
   // state fresh because deleted-page routing is derived from `trashList`.
@@ -598,6 +625,80 @@ export function useWorkspaceData() {
       Log.warn('[Trash] Failed to refresh trash list after folder change', error);
     });
   }, [currentWorkspaceId, loadTrash]);
+
+  const revalidateSidebarOutline = useCallback(
+    async (expandedViewIds: string[] = []): Promise<SidebarOutlineRevalidationResult> => {
+      if (!currentWorkspaceId) return 'unchanged';
+
+      const workspaceId = currentWorkspaceId;
+      const res = await ViewService.getOutline(workspaceId);
+
+      if (!res) {
+        throw new Error('App outline not found');
+      }
+
+      const nextFolderRid = parseFolderRid(res.folderRid);
+      const currentRid = lastAppliedRootOutlineRidRef.current;
+
+      if (nextFolderRid && currentRid && compareFolderRid(nextFolderRid, currentRid) <= 0) {
+        Log.debug('[Outline] [periodic-revalidate] skipped unchanged outline', {
+          workspaceId,
+          folderRid: res.folderRid,
+        });
+        return 'unchanged';
+      }
+
+      const existingShareWithMe = stableOutlineRef.current.find((view) => view.extra?.is_hidden_space);
+      const nextOutline = existingShareWithMe ? [...res.outline, existingShareWithMe] : res.outline;
+      const staleLoadedViewIds = Array.from(loadedViewIdsRef.current);
+
+      markCachedFolderSubtreesStale(workspaceId, staleLoadedViewIds, false);
+
+      const mergedOutline = replaceOutlinePreservingChildren(nextOutline);
+
+      if (staleLoadedViewIds.length > 0) {
+        loadedViewIdsRef.current = new Set();
+        setLoadedViewIdsRevision((r) => r + 1);
+      }
+
+      refreshTrashListInBackground();
+
+      if (eventEmitter) {
+        eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
+      }
+
+      const refreshViewIds = limitSidebarOutlineExpandedViewIds(expandedViewIds);
+
+      if (refreshViewIds.length === 0 || !loadViewChildrenBatch) {
+        updateAppliedRootOutlineRid(nextFolderRid);
+        return 'changed';
+      }
+
+      try {
+        await loadViewChildrenBatch(refreshViewIds);
+      } catch (error) {
+        Log.warn('[Outline] [periodic-revalidate] failed to refresh expanded sidebar roots', {
+          workspaceId,
+          refreshViewIds,
+          error,
+        });
+        throw error;
+      }
+
+      updateAppliedRootOutlineRid(nextFolderRid);
+      return 'changed';
+    },
+    [
+      currentWorkspaceId,
+      eventEmitter,
+      loadViewChildrenBatch,
+      markCachedFolderSubtreesStale,
+      replaceOutlinePreservingChildren,
+      refreshTrashListInBackground,
+      stableOutlineRef,
+      updateAppliedRootOutlineRid,
+    ]
+  );
 
   useEffect(() => {
     const handleShareViewsChanged = () => {
@@ -672,8 +773,7 @@ export function useWorkspaceData() {
       let patchedOutline: View[] | null = null;
 
       const firstOp = patch[0];
-      const fastReplace =
-        patch.length === 1 && firstOp?.op === 'replace' && firstOp?.path === '/outline';
+      const fastReplace = patch.length === 1 && firstOp?.op === 'replace' && firstOp?.path === '/outline';
 
       if (fastReplace && firstOp?.op === 'replace') {
         const replaceOp = firstOp as ReplaceOperation<View[]>;
@@ -725,16 +825,12 @@ export function useWorkspaceData() {
       // JSON-patch (computed against the old server state) then inserts it again.
       patchedOutline = deduplicateOutlineChildren(patchedOutline);
 
-      const existingShareWithMe = stableOutlineRef.current.find(
-        (view) => view.extra?.is_hidden_space
-      );
-      const nextOutline = existingShareWithMe
-        ? [...patchedOutline, existingShareWithMe]
-        : patchedOutline;
+      const existingShareWithMe = stableOutlineRef.current.find((view) => view.extra?.is_hidden_space);
+      const nextOutline = existingShareWithMe ? [...patchedOutline, existingShareWithMe] : patchedOutline;
 
       const mergedOutline = replaceOutlinePreservingChildren(nextOutline);
 
-      updateLastFolderRid(patchRid);
+      updateAppliedRootOutlineRid(patchRid);
 
       if (eventEmitter) {
         eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
@@ -757,6 +853,7 @@ export function useWorkspaceData() {
     refreshTrashListInBackground,
     replaceOutlinePreservingChildren,
     stableOutlineRef,
+    updateAppliedRootOutlineRid,
     updateLastFolderRid,
   ]);
 
@@ -942,30 +1039,33 @@ export function useWorkspaceData() {
   }, []);
 
   // Internal helper to fetch and update database relations
-  const fetchAndUpdateDatabaseRelations = useCallback(async (silent = false) => {
-    if (!currentWorkspaceId) {
-      return;
-    }
-
-    const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
-
-    if (!selectedWorkspace) return;
-
-    try {
-      const res = await ViewService.getDatabaseRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
-
-      if (res) {
-        workspaceDatabasesRef.current = res;
-        setWorkspaceDatabases(res);
+  const fetchAndUpdateDatabaseRelations = useCallback(
+    async (silent = false) => {
+      if (!currentWorkspaceId) {
+        return;
       }
 
-      return res;
-    } catch (e) {
-      if (!silent) {
-        console.error(e);
+      const selectedWorkspace = userWorkspaceInfo?.selectedWorkspace;
+
+      if (!selectedWorkspace) return;
+
+      try {
+        const res = await ViewService.getDatabaseRelations(currentWorkspaceId, selectedWorkspace.databaseStorageId);
+
+        if (res) {
+          workspaceDatabasesRef.current = res;
+          setWorkspaceDatabases(res);
+        }
+
+        return res;
+      } catch (e) {
+        if (!silent) {
+          console.error(e);
+        }
       }
-    }
-  }, [currentWorkspaceId, userWorkspaceInfo?.selectedWorkspace]);
+    },
+    [currentWorkspaceId, userWorkspaceInfo?.selectedWorkspace]
+  );
 
   // Load database relations (returns cached if available, fetches otherwise).
   // Pass `{ refresh: true }` to bypass the cache — needed by flows like the
@@ -1070,6 +1170,8 @@ export function useWorkspaceData() {
   // Load data when workspace changes
   useEffect(() => {
     if (!currentWorkspaceId) return;
+    lastFolderRidRef.current = null;
+    lastAppliedRootOutlineRidRef.current = null;
     setOutline([]);
     loadedViewIdsRef.current = new Set();
     setLoadedViewIdsRevision((r) => r + 1);
@@ -1118,7 +1220,6 @@ export function useWorkspaceData() {
     void enhancedLoadDatabaseRelations();
   }, [enhancedLoadDatabaseRelations]);
 
-
   return {
     outline,
     favoriteViews,
@@ -1141,5 +1242,6 @@ export function useWorkspaceData() {
     loadViewChildren,
     loadViewChildrenBatch,
     markViewChildrenStale,
+    revalidateSidebarOutline,
   };
 }

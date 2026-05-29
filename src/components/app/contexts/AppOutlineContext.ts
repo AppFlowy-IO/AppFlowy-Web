@@ -1,6 +1,7 @@
 import { createContext } from 'react';
 
 import { DatabaseRelations, MentionablePerson, UIVariant, View } from '@/application/types';
+import type { SidebarOutlineRevalidationResult } from '@/components/app/outline/sidebarRevalidation';
 
 /**
  * Outline / sidebar state context — changes on folder mutations, not on page navigation.
@@ -47,6 +48,8 @@ export interface AppOutlineContextType {
   loadViewChildrenBatch?: (viewIds: string[]) => Promise<View[]>;
   /** Mark a view's cached children as stale so the next access re-fetches them. */
   markViewChildrenStale?: (viewId: string) => void;
+  /** Revalidate the root sidebar outline and refresh currently expanded sidebar subtrees. */
+  revalidateSidebarOutline?: (expandedViewIds?: string[]) => Promise<SidebarOutlineRevalidationResult>;
   /** Fetch the user's favorite views. */
   loadFavoriteViews?: () => Promise<View[] | undefined>;
   /** Fetch the user's recently visited views. */

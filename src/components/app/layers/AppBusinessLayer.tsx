@@ -106,6 +106,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     loadViewChildren,
     loadViewChildrenBatch,
     markViewChildrenStale,
+    revalidateSidebarOutline,
   } = useWorkspaceData();
 
   const breadcrumbViewId = useMemo(() => {
@@ -496,6 +497,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       loadViewChildren,
       loadViewChildrenBatch,
       markViewChildrenStale,
+      revalidateSidebarOutline,
       loadFavoriteViews,
       loadRecentViews,
       loadTrash,
@@ -507,7 +509,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     }),
     [
       outline, favoriteViews, recentViews, trashList, loadedViewIds,
-      loadViewChildren, loadViewChildrenBatch, markViewChildrenStale,
+      loadViewChildren, loadViewChildrenBatch, markViewChildrenStale, revalidateSidebarOutline,
       loadFavoriteViews, loadRecentViews, loadTrash, loadViews,
       refreshOutline, loadDatabaseRelations, getMentionUser, loadMentionableUsers,
     ]
