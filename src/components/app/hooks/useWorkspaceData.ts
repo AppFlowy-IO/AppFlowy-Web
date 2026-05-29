@@ -189,8 +189,11 @@ export function useWorkspaceData() {
   const replaceOutlinePreservingChildren = useCallback((newOutline: View[]) => {
     const prevOutline = stableOutlineRef.current;
     const prevLoadedIds = new Set(loadedViewIdsRef.current);
+    // Harden against duplicate sibling references in the server outline (see
+    // deduplicateOutlineChildren) so they never render as two identical rows.
+    const dedupedOutline = deduplicateOutlineChildren(newOutline);
     const { outline: mergedOutline, loadedIds: nextLoadedIds } = preserveLoadedChildren(
-      newOutline,
+      dedupedOutline,
       prevOutline,
       prevLoadedIds,
     );

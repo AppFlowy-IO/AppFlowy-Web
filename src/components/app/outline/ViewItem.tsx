@@ -304,7 +304,7 @@ function ViewItem({
     // slides in via AnimatedCollapse once it's ready.
     return (
       <AnimatedCollapse expanded={isExpanded && childrenPresent} className={'w-full'}>
-        <div className={'flex w-full transform flex-col'}>
+        <div className={'flex w-full flex-col'}>
           {orderedChildren.map((child) => (
             <ViewItem
               level={level + 1}
