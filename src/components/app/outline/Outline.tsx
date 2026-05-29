@@ -114,8 +114,8 @@ export function Outline({ width }: { width: number }) {
   const [loadingRevision, setLoadingRevision] = useState(0);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const loadingViewIds = useMemo(() => loadingViewIdsRef.current, [loadingRevision]); // eslint-disable-line react-hooks/exhaustive-deps
-  const [expandViewIds, setExpandViewIds] = React.useState<string[]>(Object.keys(getOutlineExpands()));
-  const [pendingAutoLoadIds, setPendingAutoLoadIds] = useState<string[]>(Object.keys(getOutlineExpands()));
+  const [expandViewIds, setExpandViewIds] = React.useState<string[]>(() => Object.keys(getOutlineExpands()));
+  const [pendingAutoLoadIds, setPendingAutoLoadIds] = useState<string[]>(() => Object.keys(getOutlineExpands()));
   const expandViewIdsRef = useRef(expandViewIds);
   const sidebarRevalidationStateRef = useRef(createSidebarOutlineRevalidationScheduleState());
   const rescheduleSidebarRevalidationRef = useRef<() => void>(() => undefined);

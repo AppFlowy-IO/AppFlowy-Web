@@ -4,7 +4,7 @@ import { View } from '@/application/types';
 import { APIResponse, executeAPIRequest, getAxios } from './core';
 
 const MAX_WORKSPACE_VIEW_SUBTREES_GET_URL_BYTES = 4096;
-const WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE = 100;
+const WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE = 50;
 
 export async function getAppOutline(workspaceId: string): Promise<AppOutlineResponse> {
   const url = `/api/workspace/${workspaceId}/view/${workspaceId}?depth=2`;
@@ -25,15 +25,11 @@ export async function getViews(workspaceId: string, viewIds: string[], depth: nu
   if (viewIds.length === 0) return [];
 
   const url = `/api/workspace/${workspaceId}/views`;
-  const views: View[] = [];
+  const viewChunks = await Promise.all(
+    chunkViewIds(viewIds, WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE).map((chunk) => getViewsChunk(url, chunk, depth))
+  );
 
-  for (const chunk of chunkViewIds(viewIds, WORKSPACE_VIEW_SUBTREES_BATCH_CHUNK_SIZE)) {
-    const data = await getViewsChunk(url, chunk, depth);
-
-    views.push(...data);
-  }
-
-  return views;
+  return viewChunks.flat();
 }
 
 async function getViewsChunk(url: string, viewIds: string[], depth: number): Promise<View[]> {
@@ -48,13 +44,11 @@ async function getViewsChunk(url: string, viewIds: string[], depth: number): Pro
       throw error;
     }
 
-    const views: View[] = [];
+    const viewChunks = await Promise.all(
+      workspaceViewSubtreesGetChunks(url, viewIds, depth).map((chunk) => getViewsByGet(url, chunk, depth))
+    );
 
-    for (const chunk of workspaceViewSubtreesGetChunks(url, viewIds, depth)) {
-      views.push(...(await getViewsByGet(url, chunk, depth)));
-    }
-
-    return views;
+    return viewChunks.flat();
   }
 }
 
