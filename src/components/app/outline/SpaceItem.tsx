@@ -7,6 +7,7 @@ import { ReactComponent as PrivateIcon } from '@/assets/icons/lock.svg';
 import SpaceIcon from '@/components/_shared/view-icon/SpaceIcon';
 import { useCurrentWorkspaceIdOptional } from '@/components/app/app.hooks';
 import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
+import AnimatedCollapse from '@/components/app/outline/AnimatedCollapse';
 import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
 import ViewItem from '@/components/app/outline/ViewItem';
 import DropRowLine from '@/components/database/components/drag-and-drop/DropRowLine';
@@ -127,31 +128,18 @@ function SpaceItem({
     width,
   ]);
 
-  const isLoading = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
+  // Gate the open animation on actual child presence (not a loading flag) so the
+  // Collapse opens against real content and animates on the first expand.
+  const childrenPresent = orderedChildren.length > 0;
 
   const renderChildren = useMemo(() => {
+    // No loading shimmer here: a fixed-height placeholder spikes then collapses
+    // (a visible flicker). The content just slides in via AnimatedCollapse once
+    // it's ready.
     return (
-      <div
-        className={'flex transform flex-col gap-2 transition-all'}
-        style={{
-          display: isExpanded ? 'block' : 'none',
-        }}
-      >
-        {isLoading ? (
-          <div className={'flex flex-col'}>
-            {[96, 72, 88].map((w, i) => (
-              <div
-                key={i}
-                className={'flex min-h-[30px] items-center gap-1.5 px-0.5 py-1'}
-                style={{ paddingLeft: '16px' }}
-              >
-                <div className={'h-4 w-4 animate-pulse rounded bg-fill-content-hover'} />
-                <div className={`h-4 animate-pulse rounded bg-fill-content-hover`} style={{ width: `${w}px` }} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          orderedChildren.map((child) => (
+      <AnimatedCollapse expanded={isExpanded && childrenPresent}>
+        <div className={'flex transform flex-col gap-2'}>
+          {orderedChildren.map((child) => (
             <ViewItem
               key={child.view_id}
               view={child}
@@ -167,14 +155,14 @@ function SpaceItem({
               reorderInstanceId={childDragInstanceId}
               canReorder={canReorderWithinParent(child, view)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      </AnimatedCollapse>
     );
   }, [
     onClickView,
     isExpanded,
-    isLoading,
+    childrenPresent,
     orderedChildren,
     childDragInstanceId,
     view,

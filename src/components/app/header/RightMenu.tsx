@@ -10,6 +10,7 @@ import { openOrDownload } from '@/utils/open_schema';
 
 import ShareButton from 'src/components/app/share/ShareButton';
 
+import FavoriteButton from './FavoriteButton';
 import MoreActions from './MoreActions';
 import { Users } from './Users';
 
@@ -32,6 +33,7 @@ function RightMenu() {
     <div className={'flex items-center gap-2'}>
       <Users viewId={routeViewId} />
       {actionViewId && <ShareButton viewId={actionViewId} />}
+      {actionViewId && <FavoriteButton viewId={actionViewId} />}
       {actionViewId && <MoreActions viewId={actionViewId} />}
 
       <Divider orientation={'vertical'} className={'mx-2'} flexItem />
