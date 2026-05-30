@@ -880,6 +880,7 @@ export function useWorkspaceData() {
       const baseOutline = stableOutlineRef.current.filter((view) => !view.extra?.is_hidden_space);
       const baseDocument = { outline: baseOutline };
       let patchedOutline: View[] | null = null;
+      let usedRelaxedPatch = false;
 
       const firstOp = patch[0];
       const fastReplace = patch.length === 1 && firstOp?.op === 'replace' && firstOp?.path === '/outline';
@@ -911,6 +912,7 @@ export function useWorkspaceData() {
 
             if (Array.isArray(nextOutline)) {
               patchedOutline = nextOutline as View[];
+              usedRelaxedPatch = true;
             }
           } catch (retryError) {
             Log.warn('[Outline] [FolderOutlineChanged] Relaxed patch also failed, reloading outline', retryError);
@@ -939,7 +941,11 @@ export function useWorkspaceData() {
 
       const mergedOutline = replaceOutlinePreservingChildren(nextOutline);
 
-      updateAppliedRootOutlineSnapshot(patchRid, nextOutline);
+      if (usedRelaxedPatch) {
+        updateLastFolderRid(patchRid);
+      } else {
+        updateAppliedRootOutlineSnapshot(patchRid, nextOutline);
+      }
 
       if (eventEmitter) {
         eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);

@@ -391,6 +391,56 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.outline?.[0]?.name).toBe('server space');
   });
 
+  it('repairs relaxed outline patches with same-rid root revalidation', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      children: [],
+      has_children: true,
+    });
+    const childA = createView('child-a');
+    const childB = createView('child-b');
+    const serverRoot = createView('space-id', {
+      children: [childA, childB],
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: [root], folderRid: '1-1' })
+      .mockResolvedValueOnce({ outline: [serverRoot], folderRid: '2-1' });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.view_id).toBe('space-id');
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        folderRid: '2-1',
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'add',
+            path: '/outline/0/children/1',
+            value: childB,
+          },
+        ]),
+      });
+    });
+
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-b']);
+
+    let revalidationResult: string | undefined;
+
+    await act(async () => {
+      revalidationResult = await result.current.revalidateSidebarOutline?.([]);
+    });
+
+    expect(revalidationResult).toBe('changed');
+    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-a', 'child-b']);
+  });
+
   it('resets root folder rid state when the workspace changes', async () => {
     const eventEmitter = new EventEmitter();
     const workspaceA = 'workspace-a';
