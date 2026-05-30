@@ -1077,6 +1077,13 @@ export function useWorkspaceData() {
     loadedViewIdsRef.current = new Set();
     setLoadedViewIdsRevision((r) => r + 1);
     loadingViewIdsRef.current = new Set();
+    // Clear workspace-scoped lists when switching workspaces to prevent
+    // cross-workspace data contamination. Resetting favorites/recents back to
+    // `undefined` (the unloaded state) also lets lazy consumers — e.g. the
+    // header FavoriteButton — detect the stale state and refetch for the new
+    // workspace instead of rendering the previous workspace's favorites.
+    setFavoriteViews(undefined);
+    setRecentViews(undefined);
     // Clear database relations cache when switching workspaces to prevent
     // cross-workspace data contamination
     workspaceDatabasesRef.current = undefined;

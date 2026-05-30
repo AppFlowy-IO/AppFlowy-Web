@@ -138,7 +138,7 @@ function SpaceItem({
     // it's ready.
     return (
       <AnimatedCollapse expanded={isExpanded && childrenPresent}>
-        <div className={'flex flex-col gap-2'}>
+        <div className={'flex flex-col'}>
           {orderedChildren.map((child) => (
             <ViewItem
               key={child.view_id}

@@ -37,6 +37,31 @@ export function viewIdFromPageTestId(testId: string | null | undefined): string 
 }
 
 /**
+ * Sidebar children (space/page items) render inside a MUI `<Collapse>` (the
+ * expand/collapse animation). That nests child rows under
+ * `.MuiCollapse-root > .MuiCollapse-wrapper > .MuiCollapse-wrapperInner > <flex div>`
+ * instead of as direct children of the item. These helpers select the *direct*
+ * child page-items, traversing that wrapper with direct-child combinators so
+ * nested collapses (grandchildren) are excluded.
+ *
+ * The container element (an item's last / `nth-child(2)` div child) IS the
+ * `.MuiCollapse-root`, so use:
+ * - {@link itemDirectChildPageItems} from a sidebar item (space-item/page-item)
+ * - {@link collapseChildPageItems} from a children-container (the collapse root)
+ */
+const COLLAPSE_INNER = '.MuiCollapse-wrapper > .MuiCollapse-wrapperInner > div';
+
+/** Direct child page-items relative to a sidebar item element. */
+export function itemDirectChildPageItems(visible = false): string {
+  return `:scope > .MuiCollapse-root > ${COLLAPSE_INNER} > [data-testid="page-item"]${visible ? ':visible' : ''}`;
+}
+
+/** Direct child page-items relative to a children-container (the MUI Collapse root). */
+export function collapseChildPageItems(visible = false): string {
+  return `:scope > ${COLLAPSE_INNER} > [data-testid="page-item"]${visible ? ':visible' : ''}`;
+}
+
+/**
  * Page-related selectors
  */
 export const PageSelectors = {
