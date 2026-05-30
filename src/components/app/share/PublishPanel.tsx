@@ -49,11 +49,28 @@ function PublishPanel({
   const [visibleViewId, setVisibleViewId] = React.useState<string[] | undefined>(undefined);
   const [commentEnabled, setCommentEnabled] = React.useState<boolean | undefined>(undefined);
   const [duplicateEnabled, setDuplicateEnabled] = React.useState<boolean | undefined>(undefined);
+  // Remember the last known custom publish path name so it survives an
+  // unpublish -> republish round-trip. After unpublishing, loadPublishInfo
+  // clears publishInfo (the view is no longer published), which would otherwise
+  // make republish fall back to a freshly generated default name and break the
+  // custom URL people have saved for reference.
+  const lastPublishNameRef = React.useRef<string | undefined>(undefined);
 
   // Reset session-local overrides when the target view changes
   useEffect(() => {
     setPublishedOverride(undefined);
+    lastPublishNameRef.current = undefined;
   }, [viewId]);
+
+  // Capture the current publish name while it is available so it can be reused
+  // when republishing after an unpublish has cleared publishInfo. Kept in a ref
+  // (not state) because it is only read inside the publish handler and should
+  // not trigger re-renders.
+  useEffect(() => {
+    if (publishInfoViewId === viewId && publishInfo?.publishName) {
+      lastPublishNameRef.current = publishInfo.publishName;
+    }
+  }, [publishInfo, publishInfoViewId, viewId]);
 
   useEffect(() => {
     if (opened) {
@@ -73,7 +90,7 @@ function PublishPanel({
       if (!publish || !view) return;
 
       setPublishLoading(true);
-      const newPublishName = publishName || publishInfo?.publishName || undefined;
+      const newPublishName = publishName || publishInfo?.publishName || lastPublishNameRef.current || undefined;
 
       try {
         await publish(view, newPublishName, visibleViewId);
