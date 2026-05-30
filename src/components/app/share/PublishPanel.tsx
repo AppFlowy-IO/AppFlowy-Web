@@ -163,6 +163,7 @@ function PublishPanel({
                 void updatePublishConfig({ comments_enabled: e.target.checked, view_id: viewId });
               }}
               size={'small'}
+              inputProps={{ 'data-testid': 'publish-comments-switch' } as React.InputHTMLAttributes<HTMLInputElement>}
             />
           </div>
           <div className={'flex  items-center justify-between gap-4 p-1.5 text-sm'}>

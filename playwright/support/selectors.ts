@@ -178,6 +178,7 @@ export const ShareSelectors = {
   confirmUnpublishButton: (page: Page) => page.getByTestId('confirm-unpublish-button'),
   publishConfirmButton: (page: Page) => page.getByTestId('publish-confirm-button'),
   visitSiteButton: (page: Page) => page.getByTestId('visit-site-button'),
+  publishCommentsSwitch: (page: Page) => page.getByTestId('publish-comments-switch'),
   publishManageModal: (page: Page) => page.getByTestId('publish-manage-modal'),
   publishManagePanel: (page: Page) => page.getByTestId('publish-manage-panel'),
   editNamespaceButton: (page: Page) => page.getByTestId('edit-namespace-button'),
