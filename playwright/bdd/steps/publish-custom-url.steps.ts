@@ -17,7 +17,10 @@ async function ensurePublishPanelOpen(page: Page) {
     await page.waitForTimeout(1000);
   }
 
-  const publishTab = popover.getByText('Publish', { exact: true });
+  // Select the Publish tab by its test id. Text-based matching is ambiguous here:
+  // the unpublished panel's confirm button also reads "Publish", so getByText
+  // would match both the tab and the button.
+  const publishTab = popover.getByTestId('publish-tab');
 
   if (await publishTab.isVisible().catch(() => false)) {
     await publishTab.click({ force: true });
