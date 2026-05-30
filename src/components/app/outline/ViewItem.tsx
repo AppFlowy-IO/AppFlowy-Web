@@ -21,6 +21,7 @@ import {
   useSidebarSelectedViewId,
 } from '@/components/app/app.hooks';
 import { useReorderableItem } from '@/components/_shared/reorder/useReorderableItem';
+import AnimatedCollapse from '@/components/app/outline/AnimatedCollapse';
 import { useReorderableSidebarList } from '@/components/app/outline/reorder/useReorderableSidebarList';
 import DropRowLine from '@/components/database/components/drag-and-drop/DropRowLine';
 import { cn } from '@/lib/utils';
@@ -284,7 +285,10 @@ function ViewItem({
     shouldSuppressClick,
   ]);
 
-  const isLoadingChildren = loadingViewIds?.has(view.view_id) && (!view.children || view.children.length === 0);
+  // Children are present in the DOM only once the lazy load has populated them.
+  // Gate the open animation on actual presence (not a loading flag) so the
+  // Collapse opens against real content and animates on the first expand.
+  const childrenPresent = orderedChildren.length > 0;
 
   const renderChildren = useMemo(() => {
     if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
@@ -295,28 +299,13 @@ function ViewItem({
     const parentIsContainer = isDatabaseContainer(view);
     const childRenderExtra = parentIsDatabaseLayout || parentIsContainer ? undefined : renderExtra;
 
+    // No loading shimmer here: lazy child loads are fast, and a fixed-height
+    // placeholder spikes then collapses (a visible flicker). The content just
+    // slides in via AnimatedCollapse once it's ready.
     return (
-      <div
-        className={'flex w-full transform flex-col overflow-hidden transition-all'}
-        style={{
-          display: isExpanded ? 'block' : 'none',
-        }}
-      >
-        {isLoadingChildren ? (
-          <div className={'flex flex-col'}>
-            {[96, 72, 88].map((w, i) => (
-              <div
-                key={i}
-                className={'flex min-h-[30px] items-center gap-1.5 px-0.5 py-1'}
-                style={{ paddingLeft: `${(level + 1) * 16}px` }}
-              >
-                <div className={'h-4 w-4 animate-pulse rounded bg-fill-content-hover'} />
-                <div className={`h-4 animate-pulse rounded bg-fill-content-hover`} style={{ width: `${w}px` }} />
-              </div>
-            ))}
-          </div>
-        ) : (
-          orderedChildren.map((child) => (
+      <AnimatedCollapse expanded={isExpanded && childrenPresent} className={'w-full'}>
+        <div className={'flex w-full flex-col'}>
+          {orderedChildren.map((child) => (
             <ViewItem
               level={level + 1}
               key={child.view_id}
@@ -333,16 +322,16 @@ function ViewItem({
               reorderInstanceId={childReorderInstanceId}
               canReorder={canReorderWithinParent(child, view)}
             />
-          ))
-        )}
-      </div>
+          ))}
+        </div>
+      </AnimatedCollapse>
     );
   }, [
     aiEnabled,
     toggleExpand,
     onClickView,
     isExpanded,
-    isLoadingChildren,
+    childrenPresent,
     expandIds,
     level,
     renderExtra,

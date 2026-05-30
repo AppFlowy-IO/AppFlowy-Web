@@ -16,6 +16,7 @@ import {
   pageNamesByCopyText,
 } from '../../../support/duplicate-test-helpers';
 import { currentViewIdFromUrl } from '../../../support/page-utils';
+import { itemDirectChildPageItems } from '../../../support/selectors';
 
 const DUPLICATE_USER_EMAIL = 'duplicate@appflowy.io';
 const DUPLICATE_USER_PASSWORD = 'AppFlowy!@123';
@@ -70,7 +71,7 @@ test.describe('Cloud Duplicate Document With Linked And Inline Database', () => 
         '[data-testid="page-item"]:visible:has(> div:first-child [data-testid="page-name"]:text-is("Document with linked database"))'
       )
       .first()
-      .locator(':scope > div:nth-child(2) > [data-testid="page-item"]:visible')
+      .locator(itemDirectChildPageItems(true))
       .count();
     expect(originalChildPageCount).toBeGreaterThanOrEqual(3);
 

@@ -44,6 +44,19 @@ export async function updatePage(workspaceId: string, viewId: string, data: Upda
   return executeAPIVoidRequest(() => getAxios()?.patch<APIResponse>(url, data));
 }
 
+export async function favoritePageView(
+  workspaceId: string,
+  viewId: string,
+  isFavorite: boolean,
+  isPinned: boolean = false
+): Promise<void> {
+  const url = `/api/workspace/${workspaceId}/page-view/${viewId}/favorite`;
+
+  return executeAPIVoidRequest(() =>
+    getAxios()?.post<APIResponse>(url, { is_favorite: isFavorite, is_pinned: isPinned })
+  );
+}
+
 export async function updatePageIcon(
   workspaceId: string,
   viewId: string,

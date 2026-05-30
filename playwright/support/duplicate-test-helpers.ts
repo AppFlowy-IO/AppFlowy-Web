@@ -3,6 +3,7 @@ import {
   AddPageSelectors,
   BlockSelectors,
   HeaderSelectors,
+  itemDirectChildPageItems,
   ModalSelectors,
   PageSelectors,
   SlashCommandSelectors,
@@ -45,9 +46,7 @@ export function pageItemByExactText(page: Page, pageName: string, last: boolean 
 }
 
 export function directChildPageItems(page: Page, pageName: string, last: boolean = false): Locator {
-  return pageItemByExactText(page, pageName, last).locator(
-    ':scope > div:nth-child(2) > [data-testid="page-item"]:visible'
-  );
+  return pageItemByExactText(page, pageName, last).locator(itemDirectChildPageItems(true));
 }
 
 async function navigateToSidebarPageItem(
@@ -313,6 +312,30 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
   const blockCount = await blocks.count();
   const slashPanel = SlashCommandSelectors.slashPanel(page);
 
+  // Type "/" and wait for the slash panel, retrying the keystroke on slow CI
+  // where the first "/" can race editor focus and silently fail to open the
+  // menu. Each retry strips the stray "/" and re-focuses before trying again.
+  const typeSlashUntilPanel = async (): Promise<void> => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      await page.keyboard.type('/', { delay: 50 });
+
+      if (
+        await slashPanel
+          .first()
+          .isVisible({ timeout: 2500 })
+          .catch(() => false)
+      ) {
+        return;
+      }
+
+      await page.keyboard.press('Backspace').catch(() => undefined);
+      await page.waitForTimeout(300);
+      await focusEditorForSlash(page, editor);
+    }
+
+    await expect(slashPanel).toBeVisible({ timeout: 10000 });
+  };
+
   if (line > 0 && blockCount > 0) {
     // Position cursor after the last database block by clicking below it,
     // pressing End to go to the end of the line, then Enter to create a
@@ -332,41 +355,12 @@ async function openSlashMenuInEditor(page: Page, editor: Locator, line: number =
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await page.waitForTimeout(300);
-    await page.keyboard.type('/', { delay: 50 });
-
-    if (
-      !(await slashPanel
-        .first()
-        .isVisible()
-        .catch(() => false))
-    ) {
-      await page.waitForTimeout(300);
-      await page.keyboard.type('/', { delay: 50 });
-    }
-
-    await expect(slashPanel).toBeVisible({ timeout: 10000 });
-    return;
   } else {
     await focusEditorForSlash(page, editor);
+    await page.waitForTimeout(300);
   }
 
-  await page.waitForTimeout(300);
-  await page.keyboard.type('/', { delay: 50 });
-
-  if (
-    (await slashPanel.count()) === 0 ||
-    !(await slashPanel
-      .first()
-      .isVisible()
-      .catch(() => false))
-  ) {
-    await page.keyboard.press('Enter');
-    await page.waitForTimeout(200);
-    await focusEditorForSlash(page, editor);
-    await page.keyboard.type('/', { delay: 50 });
-  }
-
-  await expect(slashPanel).toBeVisible({ timeout: 10000 });
+  await typeSlashUntilPanel();
 }
 
 export async function insertInlineGridViaSlash(page: Page, docViewId: string, line: number = 0): Promise<void> {
