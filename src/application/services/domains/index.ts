@@ -9,6 +9,7 @@ export * as TemplateService from './template';
 export * as BillingService from './billing';
 export * as AccessService from './access';
 export * as FileService from './file';
+export * as ExportService from './export';
 export * as SearchService from './search';
 export * as AIService from './ai';
 export * as QuickNoteService from './quick-note';

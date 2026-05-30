@@ -820,6 +820,25 @@
         "removeHomePageSuccess": "Remove homepage successfully"
       }
     },
+    "manageData": {
+      "menuLabel": "Manage data",
+      "title": "Manage data",
+      "description": "Manage your AppFlowy workspace data",
+      "importWorkspace": {
+        "title": "Import your workspace",
+        "tooltip": "Import your workspace from an AppFlowy backup ZIP file",
+        "button": "Import",
+        "success": "Import started. We will send a confirmation email once the import is complete.",
+        "failed": "Failed to import workspace"
+      },
+      "backupWorkspace": {
+        "title": "Backup your workspace",
+        "tooltip": "Back up your AppFlowy workspace to a ZIP file",
+        "button": "Backup",
+        "started": "Backup started. We will send an email with a download link once the export is complete.",
+        "failed": "Failed to back up workspace"
+      }
+    },
     "accountPage": {
       "menuLabel": "My account",
       "menuLabelAccountApp": "Account & App",

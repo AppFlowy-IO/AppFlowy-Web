@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { SettingMenuItem } from '@/application/types';
+import { ReactComponent as ManageDataIcon } from '@/assets/icons/database.svg';
 import { ReactComponent as MembersIcon } from '@/assets/icons/users.svg';
 import { ReactComponent as ProfileIcon } from '@/assets/icons/person.svg';
 import { ReactComponent as PersonIcon } from '@/assets/icons/user.svg';
@@ -30,6 +31,11 @@ function SettingMenu({ selectedItem, onSelectItem }: SettingMenuProps) {
         value: SettingMenuItem.MEMBERS,
         label: t('settings.appearance.members.label'),
         IconComponent: MembersIcon,
+      },
+      {
+        value: SettingMenuItem.MANAGE_DATA,
+        label: t('settings.manageData.menuLabel'),
+        IconComponent: ManageDataIcon,
       },
     ];
   }, [t]);
