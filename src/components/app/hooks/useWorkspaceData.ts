@@ -191,6 +191,8 @@ export function useWorkspaceData() {
   const lastFolderRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
+  const currentWorkspaceIdRef = useRef(currentWorkspaceId);
+  const workspaceRevisionRef = useRef(0);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
@@ -200,6 +202,11 @@ export function useWorkspaceData() {
   const trashRequestSeqRef = useRef(0);
 
   const mentionableUsersRef = useRef<MentionablePerson[]>([]);
+
+  if (currentWorkspaceIdRef.current !== currentWorkspaceId) {
+    currentWorkspaceIdRef.current = currentWorkspaceId;
+    workspaceRevisionRef.current += 1;
+  }
 
   // Lazy-loading state: tracks which views have had their children fetched.
   // Uses a stable ref + revision counter to avoid creating new Set references
@@ -264,6 +271,10 @@ export function useWorkspaceData() {
     },
     [updateAppliedRootOutlineRid]
   );
+
+  const isStaleWorkspaceRequest = useCallback((workspaceId: string, workspaceRevision: number) => {
+    return currentWorkspaceIdRef.current !== workspaceId || workspaceRevisionRef.current !== workspaceRevision;
+  }, []);
 
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
@@ -441,10 +452,13 @@ export function useWorkspaceData() {
     async (viewId: string): Promise<View[]> => {
       if (!currentWorkspaceId) return [];
 
+      const workspaceId = currentWorkspaceId;
+      const workspaceRevision = workspaceRevisionRef.current;
+
       // Dedup concurrent fetches
       if (loadingViewIdsRef.current.has(viewId)) {
         Log.debug('[Outline] [loadViewChildren] skip in-flight request', {
-          workspaceId: currentWorkspaceId,
+          workspaceId,
           viewId,
         });
         return [];
@@ -454,16 +468,19 @@ export function useWorkspaceData() {
 
       try {
         Log.debug('[Outline] [loadViewChildren] requesting single subtree', {
-          workspaceId: currentWorkspaceId,
+          workspaceId,
           viewId,
           depth: 1,
         });
 
-        const viewData = await ViewService.get(currentWorkspaceId, viewId);
+        const viewData = await ViewService.get(workspaceId, viewId);
+        const children = viewData?.children ?? [];
+
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          return children;
+        }
 
         updateLastFolderRid(parseFolderRid(viewData?.folder_rid));
-
-        const children = viewData?.children ?? [];
 
         // Merge into outline
         const nextOutline = mergeChildrenIntoOutline(stableOutlineRef.current, viewId, children, viewData?.has_children);
@@ -483,19 +500,27 @@ export function useWorkspaceData() {
 
         return children;
       } catch (e) {
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          return [];
+        }
+
         Log.error('[Outline] [loadViewChildren] Failed to load children for', viewId, e);
         return [];
       } finally {
-        loadingViewIdsRef.current.delete(viewId);
+        if (!isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          loadingViewIdsRef.current.delete(viewId);
+        }
       }
     },
-    [currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
+    [currentWorkspaceId, stableOutlineRef, eventEmitter, isStaleWorkspaceRequest, updateLastFolderRid]
   );
 
   const loadViewChildrenBatch = useCallback(
     async (viewIds: string[]): Promise<View[]> => {
       if (!currentWorkspaceId || viewIds.length === 0) return [];
 
+      const workspaceId = currentWorkspaceId;
+      const workspaceRevision = workspaceRevisionRef.current;
       const uniqueIds = Array.from(new Set(viewIds)).filter((viewId) => !loadingViewIdsRef.current.has(viewId));
 
       if (uniqueIds.length === 0) return [];
@@ -513,12 +538,16 @@ export function useWorkspaceData() {
         });
 
         Log.debug('[Outline] [loadViewChildrenBatch] requesting subtree views', {
-          workspaceId: currentWorkspaceId,
+          workspaceId,
           depth: 1,
           requestViewMeta,
         });
 
-        const views = await ViewService.getMultiple(currentWorkspaceId, uniqueIds, 1);
+        const views = await ViewService.getMultiple(workspaceId, uniqueIds, 1);
+
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          return views;
+        }
 
         views.forEach((view) => {
           updateLastFolderRid(parseFolderRid(view?.folder_rid));
@@ -558,13 +587,19 @@ export function useWorkspaceData() {
 
         return views;
       } catch (e) {
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          return [];
+        }
+
         Log.error('[Outline] [loadViewChildrenBatch] Failed to load children for', uniqueIds, e);
         throw e;
       } finally {
-        uniqueIds.forEach((viewId) => loadingViewIdsRef.current.delete(viewId));
+        if (!isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          uniqueIds.forEach((viewId) => loadingViewIdsRef.current.delete(viewId));
+        }
       }
     },
-    [currentWorkspaceId, stableOutlineRef, eventEmitter, updateLastFolderRid]
+    [currentWorkspaceId, stableOutlineRef, eventEmitter, isStaleWorkspaceRequest, updateLastFolderRid]
   );
 
   const markViewChildrenStale = useCallback(
@@ -671,10 +706,18 @@ export function useWorkspaceData() {
       if (!currentWorkspaceId) return 'unchanged';
 
       const workspaceId = currentWorkspaceId;
+      const workspaceRevision = workspaceRevisionRef.current;
       const res = await ViewService.getOutline(workspaceId);
 
       if (!res) {
         throw new Error('App outline not found');
+      }
+
+      if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        Log.debug('[Outline] [periodic-revalidate] skipped stale workspace response', {
+          workspaceId,
+        });
+        return 'unchanged';
       }
 
       const nextFolderRid = parseFolderRid(res.folderRid);
@@ -726,6 +769,14 @@ export function useWorkspaceData() {
       try {
         await loadViewChildrenBatch(refreshViewIds);
       } catch (error) {
+        if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+          Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh error', {
+            workspaceId,
+            refreshViewIds,
+          });
+          return 'unchanged';
+        }
+
         Log.warn('[Outline] [periodic-revalidate] failed to refresh expanded sidebar roots', {
           workspaceId,
           refreshViewIds,
@@ -734,12 +785,21 @@ export function useWorkspaceData() {
         throw error;
       }
 
+      if (isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        Log.debug('[Outline] [periodic-revalidate] skipped stale expanded refresh response', {
+          workspaceId,
+          refreshViewIds,
+        });
+        return 'unchanged';
+      }
+
       updateAppliedRootOutlineSnapshot(nextFolderRid, nextOutline);
       return 'changed';
     },
     [
       currentWorkspaceId,
       eventEmitter,
+      isStaleWorkspaceRequest,
       loadViewChildrenBatch,
       markCachedFolderSubtreesStale,
       replaceOutlinePreservingChildren,

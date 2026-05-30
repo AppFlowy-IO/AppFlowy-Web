@@ -114,6 +114,21 @@ function createWrapper(eventEmitter: EventEmitter, getWorkspaceId = () => worksp
   };
 }
 
+function createDeferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+
+  return {
+    promise,
+    reject,
+    resolve,
+  };
+}
+
 describe('useWorkspaceData sidebar outline revalidation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -426,6 +441,70 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
 
     expect(revalidationResult).toBe('changed');
     expect(result.current.outline?.[0]?.name).toBe('workspace b new');
+  });
+
+  it('ignores stale revalidation results after the workspace changes', async () => {
+    const eventEmitter = new EventEmitter();
+    const workspaceA = 'workspace-a';
+    const workspaceB = 'workspace-b';
+    const staleWorkspaceAResponse = createDeferred<{ outline: View[]; folderRid: string }>();
+    let activeWorkspaceId = workspaceA;
+    let workspaceAOutlineCalls = 0;
+
+    (ViewService.getOutline as jest.Mock).mockImplementation(async (requestedWorkspaceId: string) => {
+      if (requestedWorkspaceId === workspaceA) {
+        workspaceAOutlineCalls += 1;
+
+        if (workspaceAOutlineCalls === 1) {
+          return {
+            outline: [createView('space-a', { name: 'workspace a' })],
+            folderRid: '1-1',
+          };
+        }
+
+        return staleWorkspaceAResponse.promise;
+      }
+
+      return {
+        outline: [createView('space-b', { name: 'workspace b' })],
+        folderRid: '1-1',
+      };
+    });
+
+    const { result, rerender } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter, () => activeWorkspaceId),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('workspace a');
+    });
+
+    let revalidationPromise: Promise<string | undefined> = Promise.resolve(undefined);
+
+    act(() => {
+      revalidationPromise = result.current.revalidateSidebarOutline?.([]) ?? Promise.resolve(undefined);
+    });
+
+    activeWorkspaceId = workspaceB;
+    rerender();
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.name).toBe('workspace b');
+    });
+
+    let revalidationResult: string | undefined;
+
+    await act(async () => {
+      staleWorkspaceAResponse.resolve({
+        outline: [createView('space-a', { name: 'stale workspace a' })],
+        folderRid: '2-1',
+      });
+      revalidationResult = await revalidationPromise;
+    });
+
+    expect(revalidationResult).toBe('unchanged');
+    expect(result.current.outline?.[0]?.name).toBe('workspace b');
+    expect(result.current.outline?.[0]?.view_id).toBe('space-b');
   });
 
   it('invalidates loaded subtree caches that are dropped by a changed root outline', async () => {
