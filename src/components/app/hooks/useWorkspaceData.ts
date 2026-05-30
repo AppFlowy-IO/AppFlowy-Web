@@ -142,6 +142,31 @@ function compareFolderRid(a: FolderRid, b: FolderRid): number {
   return a.seqNo - b.seqNo;
 }
 
+function normalizeRootOutlineForComparison(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(normalizeRootOutlineForComparison);
+  }
+
+  if (value && typeof value === 'object') {
+    const source = value as Record<string, unknown>;
+    const normalized: Record<string, unknown> = {};
+
+    for (const key of Object.keys(source).sort()) {
+      if (key === 'folder_rid' || source[key] === undefined) continue;
+
+      normalized[key] = normalizeRootOutlineForComparison(source[key]);
+    }
+
+    return normalized;
+  }
+
+  return value;
+}
+
+function createRootOutlineFingerprint(views: View[]): string {
+  return JSON.stringify(normalizeRootOutlineForComparison(views));
+}
+
 const OUTLINE_NON_VISUAL_FIELDS = new Set(['/last_edited_time', '/last_edited_by']);
 
 function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
@@ -165,6 +190,7 @@ export function useWorkspaceData() {
   // must compare against the root/sidebar outline snapshot we actually applied.
   const lastFolderRidRef = useRef<FolderRid | null>(null);
   const lastAppliedRootOutlineRidRef = useRef<FolderRid | null>(null);
+  const lastAppliedRootOutlineFingerprintRef = useRef<string | null>(null);
   const [favoriteViews, setFavoriteViews] = useState<View[]>();
   const [recentViews, setRecentViews] = useState<View[]>();
   const [trashList, setTrashList] = useState<View[]>();
@@ -231,6 +257,14 @@ export function useWorkspaceData() {
     [updateLastFolderRid]
   );
 
+  const updateAppliedRootOutlineSnapshot = useCallback(
+    (nextRid: FolderRid | null, nextOutline: View[]) => {
+      updateAppliedRootOutlineRid(nextRid);
+      lastAppliedRootOutlineFingerprintRef.current = createRootOutlineFingerprint(nextOutline);
+    },
+    [updateAppliedRootOutlineRid]
+  );
+
   const loadOutline = useCallback(
     async (workspaceId: string, force = true) => {
       try {
@@ -268,7 +302,7 @@ export function useWorkspaceData() {
 
         const mergedOutline = replaceOutlinePreservingChildren(outlineWithShareWithMe);
 
-        updateAppliedRootOutlineRid(nextFolderRid);
+        updateAppliedRootOutlineSnapshot(nextFolderRid, outlineWithShareWithMe);
 
         if (eventEmitter) {
           eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
@@ -393,7 +427,13 @@ export function useWorkspaceData() {
         }
       }
     },
-    [navigate, eventEmitter, updateAppliedRootOutlineRid, userWorkspaceInfo?.userId, replaceOutlinePreservingChildren]
+    [
+      navigate,
+      eventEmitter,
+      updateAppliedRootOutlineSnapshot,
+      userWorkspaceInfo?.userId,
+      replaceOutlinePreservingChildren,
+    ]
   );
 
   // Load children for a single view (lazy expand)
@@ -650,6 +690,15 @@ export function useWorkspaceData() {
 
       const existingShareWithMe = stableOutlineRef.current.find((view) => view.extra?.is_hidden_space);
       const nextOutline = existingShareWithMe ? [...res.outline, existingShareWithMe] : res.outline;
+      const nextRootOutlineFingerprint = createRootOutlineFingerprint(nextOutline);
+
+      if (!nextFolderRid && lastAppliedRootOutlineFingerprintRef.current === nextRootOutlineFingerprint) {
+        Log.debug('[Outline] [periodic-revalidate] skipped unchanged outline without folder rid', {
+          workspaceId,
+        });
+        return 'unchanged';
+      }
+
       const staleLoadedViewIds = Array.from(loadedViewIdsRef.current);
 
       markCachedFolderSubtreesStale(workspaceId, staleLoadedViewIds, false);
@@ -670,7 +719,7 @@ export function useWorkspaceData() {
       const refreshViewIds = limitSidebarOutlineExpandedViewIds(expandedViewIds);
 
       if (refreshViewIds.length === 0 || !loadViewChildrenBatch) {
-        updateAppliedRootOutlineRid(nextFolderRid);
+        updateAppliedRootOutlineSnapshot(nextFolderRid, nextOutline);
         return 'changed';
       }
 
@@ -685,7 +734,7 @@ export function useWorkspaceData() {
         throw error;
       }
 
-      updateAppliedRootOutlineRid(nextFolderRid);
+      updateAppliedRootOutlineSnapshot(nextFolderRid, nextOutline);
       return 'changed';
     },
     [
@@ -696,7 +745,7 @@ export function useWorkspaceData() {
       replaceOutlinePreservingChildren,
       refreshTrashListInBackground,
       stableOutlineRef,
-      updateAppliedRootOutlineRid,
+      updateAppliedRootOutlineSnapshot,
     ]
   );
 
@@ -830,7 +879,7 @@ export function useWorkspaceData() {
 
       const mergedOutline = replaceOutlinePreservingChildren(nextOutline);
 
-      updateAppliedRootOutlineRid(patchRid);
+      updateAppliedRootOutlineSnapshot(patchRid, nextOutline);
 
       if (eventEmitter) {
         eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, mergedOutline || []);
@@ -853,7 +902,7 @@ export function useWorkspaceData() {
     refreshTrashListInBackground,
     replaceOutlinePreservingChildren,
     stableOutlineRef,
-    updateAppliedRootOutlineRid,
+    updateAppliedRootOutlineSnapshot,
     updateLastFolderRid,
   ]);
 
@@ -1172,6 +1221,7 @@ export function useWorkspaceData() {
     if (!currentWorkspaceId) return;
     lastFolderRidRef.current = null;
     lastAppliedRootOutlineRidRef.current = null;
+    lastAppliedRootOutlineFingerprintRef.current = null;
     setOutline([]);
     loadedViewIdsRef.current = new Set();
     setLoadedViewIdsRevision((r) => r + 1);

@@ -153,6 +153,35 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(ViewService.invalidateCache).not.toHaveBeenCalled();
   });
 
+  it('skips revalidation when folder rid is missing and the root outline is unchanged', async () => {
+    const eventEmitter = new EventEmitter();
+    const root = createView('space-id', {
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({ outline: [root] })
+      .mockResolvedValueOnce({ outline: [createView('space-id', { has_children: true })] });
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.map((view) => view.view_id)).toEqual(['space-id']);
+    });
+
+    let revalidationResult: string | undefined;
+
+    await act(async () => {
+      revalidationResult = await result.current.revalidateSidebarOutline?.(['space-id']);
+    });
+
+    expect(revalidationResult).toBe('unchanged');
+    expect(ViewService.getMultiple).not.toHaveBeenCalled();
+    expect(ViewService.invalidateCache).not.toHaveBeenCalled();
+  });
+
   it('marks cached subtrees stale and refreshes only 20 expanded roots', async () => {
     const eventEmitter = new EventEmitter();
     const root = createView('space-id', {
