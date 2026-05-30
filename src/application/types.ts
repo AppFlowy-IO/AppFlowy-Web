@@ -1575,6 +1575,7 @@ export enum SettingMenuItem {
   PROFILE = 'PROFILE',
   WORKSPACE = 'WORKSPACE',
   MEMBERS = 'MEMBERS',
+  MANAGE_DATA = 'MANAGE_DATA',
   SITES = 'SITES',
 }
 
