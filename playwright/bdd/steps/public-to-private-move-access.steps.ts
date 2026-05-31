@@ -2,7 +2,7 @@ import { APIRequestContext, expect, Page } from '@playwright/test';
 import { createBdd } from 'playwright-bdd';
 
 import { signInWithPasswordViaUi } from '../../support/auth-flow-helpers';
-import { PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
+import { EditorSelectors, PageSelectors, ShareSelectors, SidebarSelectors } from '../../support/selectors';
 import { setupPageErrorHandling, TestConfig } from '../../support/test-config';
 
 const { Given, When, Then, Before, After } = createBdd();
@@ -73,7 +73,7 @@ After(async ({ page, request }) => {
 
 Given('the seeded ptp0527 public-to-private fixture exists', async () => {
   // Created by AppFlowy-Cloud-Premium:
-  // PUBLIC_TO_PRIVATE_WEB_PREFIX=ptp0527 cargo test --test public_to_private_access_seed ...
+  // cargo test --test public_to_private_access_seed seed_public_to_private_move_web_suite -- --ignored
 });
 
 Given('I sign in as seeded public-to-private {string}', async ({ page, request }, accountAliasValue: string) => {
@@ -233,6 +233,34 @@ Then('the temporary public-to-private movable page title is visible', async ({ p
   const movablePage = requireMovablePage(getState(page));
 
   await expect(page.getByText(movablePage.pageTitle, { exact: true }).first()).toBeVisible({ timeout: 30000 });
+});
+
+Then('the temporary public-to-private movable page editor is read-only', async ({ page }) => {
+  // A View-only member viewing a page inside a private space must not be able
+  // to edit it. Slate renders the editor with contenteditable="false" when the
+  // page resolves to read-only, so assert the inherited access is enforced.
+  const editor = EditorSelectors.firstEditor(page);
+
+  await expect(editor).toBeVisible({ timeout: 30000 });
+  await expect(editor).toHaveAttribute('contenteditable', 'false');
+});
+
+Then('typing in the temporary public-to-private movable page editor has no effect', async ({ page }) => {
+  // Prove the read-only gate actually rejects edits: focus the editor, type a
+  // sentinel, and assert it never lands in the document content.
+  const sentinel = 'PTP_READONLY_EDIT_ATTEMPT';
+  const editor = EditorSelectors.firstEditor(page);
+
+  await expect(editor).toBeVisible({ timeout: 30000 });
+
+  const before = (await editor.textContent()) ?? '';
+
+  await editor.click({ position: { x: 40, y: 20 } }).catch(() => undefined);
+  await page.keyboard.type(sentinel);
+  await page.waitForTimeout(500);
+
+  await expect(editor).not.toContainText(sentinel);
+  await expect(editor).toHaveText(before);
 });
 
 Then('the public-to-private share panel only shows {string}', async ({ page }, aliasesValue: string) => {

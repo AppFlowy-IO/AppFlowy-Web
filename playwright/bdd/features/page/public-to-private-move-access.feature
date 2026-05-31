@@ -32,6 +32,8 @@ Feature: Public page moved under private page access
     When I sign in as seeded public-to-private "member 1"
     And I open the temporary public-to-private movable page
     Then the temporary public-to-private movable page title is visible
+    And the temporary public-to-private movable page editor is read-only
+    And typing in the temporary public-to-private movable page editor has no effect
     When I sign in as seeded public-to-private "member 2"
     And I open the temporary public-to-private movable page
     Then the public-to-private no access page is shown
