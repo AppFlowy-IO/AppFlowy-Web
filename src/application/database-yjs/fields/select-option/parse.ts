@@ -1,11 +1,12 @@
+import { FieldType } from '@/application/database-yjs/database.type';
 import { YDatabaseField, YjsDatabaseKey } from '@/application/types';
 
 import { getTypeOptions } from '../type_option';
 
 import { SelectTypeOption } from './select_option.type';
 
-export function parseSelectOptionTypeOptions(field: YDatabaseField) {
-  const content = getTypeOptions(field)?.get(YjsDatabaseKey.content);
+export function parseSelectOptionTypeOptions(field: YDatabaseField, fieldType?: FieldType) {
+  const content = getTypeOptions(field, fieldType)?.get(YjsDatabaseKey.content);
 
   if (!content)
     return {

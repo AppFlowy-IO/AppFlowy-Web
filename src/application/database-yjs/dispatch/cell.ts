@@ -186,6 +186,11 @@ function writeCellToRow({
       }
 
       cell.set(YjsDatabaseKey.field_type, fieldType);
+      // The data is now written in the current field type's format, so any
+      // lingering source-type marker from an earlier conversion is stale.
+      // Clearing it makes the cell native again (mirrors desktop, where a real
+      // write updates the cell's written-at type).
+      cell.delete(YjsDatabaseKey.source_field_type);
       cell.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
     }
 
