@@ -328,6 +328,17 @@ export function useMarkViewChildrenStale() {
   return context.markViewChildrenStale;
 }
 
+/** Revalidate the root sidebar outline and refresh currently expanded sidebar subtrees. */
+export function useRevalidateSidebarOutline() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useRevalidateSidebarOutline must be used within an AppProvider');
+  }
+
+  return context.revalidateSidebarOutline;
+}
+
 /** Memoized `{ loadFavoriteViews, favoriteViews }`. Only re-renders when favorites change. */
 export function useAppFavorites() {
   const context = useContext(AppOutlineContext);

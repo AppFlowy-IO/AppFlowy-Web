@@ -159,6 +159,49 @@ describe('useWorkspaceData trash refresh', () => {
     });
   });
 
+  it('refreshes stale trash state when polling applies a changed outline', async () => {
+    const eventEmitter = new EventEmitter();
+    const restoredView = createView(restoredViewId);
+    let trashResponse: View[] = [restoredView];
+
+    (ViewService.getOutline as jest.Mock)
+      .mockResolvedValueOnce({
+        outline: [],
+        folderRid: '1-1',
+      })
+      .mockResolvedValueOnce({
+        outline: [createView('space-id')],
+        folderRid: '2-1',
+      });
+
+    (ViewService.getTrash as jest.Mock).mockImplementation(async () => trashResponse);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.trashList?.map((view) => view.view_id)).toEqual([restoredViewId]);
+    });
+
+    const initialTrashRequestCount = (ViewService.getTrash as jest.Mock).mock.calls.length;
+
+    trashResponse = [];
+
+    let revalidationResult: string | undefined;
+
+    await act(async () => {
+      revalidationResult = await result.current.revalidateSidebarOutline?.([]);
+    });
+
+    expect(revalidationResult).toBe('changed');
+
+    await waitFor(() => {
+      expect(ViewService.getTrash).toHaveBeenCalledTimes(initialTrashRequestCount + 1);
+      expect(result.current.trashList).toEqual([]);
+    });
+  });
+
   it('ignores stale trash refresh responses from overlapping folder notifications', async () => {
     const eventEmitter = new EventEmitter();
     const restoredView = createView(restoredViewId);
