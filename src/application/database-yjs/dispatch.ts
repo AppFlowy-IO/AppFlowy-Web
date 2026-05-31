@@ -2367,13 +2367,56 @@ export function useSwitchPropertyType() {
                 const cells = row.get(YjsDatabaseKey.cells);
                 const cell = cells.get(fieldId);
 
+                // Created/LastEditedTime fields have no cell data of their own —
+                // the timestamp lives on the row meta. Materialize it into the
+                // cell so the value survives the switch (desktop parity:
+                // switch_to_field_type writes row.created_at / row.modified_at
+                // into the cell before transforming).
+                if (oldFieldType === FieldType.CreatedTime || oldFieldType === FieldType.LastEditedTime) {
+                  const timestamp =
+                    oldFieldType === FieldType.CreatedTime
+                      ? row.get(YjsDatabaseKey.created_at)
+                      : row.get(YjsDatabaseKey.last_modified);
+                  const materialized = cell ?? (new Y.Map() as YDatabaseCell);
+
+                  if (!cell) {
+                    cells.set(fieldId, materialized);
+                  }
+
+                  materialized.set(YjsDatabaseKey.source_field_type, String(oldFieldType));
+                  materialized.set(YjsDatabaseKey.field_type, fieldType);
+                  materialized.set(
+                    YjsDatabaseKey.data,
+                    timestamp !== undefined && timestamp !== null ? String(timestamp) : ''
+                  );
+                  materialized.set(YjsDatabaseKey.last_modified, String(dayjs().unix()));
+
+                  return;
+                }
+
                 // Update each cell lazily: preserve existing data, record source type, update target type only.
                 if (cell) {
                   const data = cell.get(YjsDatabaseKey.data);
                   const oldCellType = Number(cell.get(YjsDatabaseKey.field_type));
 
-                  // Remember the original type so rendering can decode on demand.
-                  cell.set(YjsDatabaseKey.source_field_type, String(oldCellType));
+                  // Preserve the TRUE origin type across chained conversions
+                  // (mirrors desktop, where a cell's written-at type is never
+                  // overwritten by a switch). The data is still in the origin
+                  // type's format, so the origin is the existing source_field_type
+                  // if present, otherwise the cell's current type.
+                  const existingSource = cell.get(YjsDatabaseKey.source_field_type);
+                  const originType = existingSource !== undefined ? Number(existingSource) : oldCellType;
+
+                  if (originType === fieldType) {
+                    // Switched back to the type the data was written at — the
+                    // cell is native again, so drop the source marker.
+                    cell.delete(YjsDatabaseKey.source_field_type);
+                  } else if (existingSource === undefined) {
+                    // First divergence from the written-at type: record the origin.
+                    cell.set(YjsDatabaseKey.source_field_type, String(oldCellType));
+                  }
+                  // else: keep the already-recorded origin (do NOT overwrite it
+                  // with the intermediate hop — that is what hid the values).
 
                   // Move the cell to the new type without mutating data.
                   cell.set(YjsDatabaseKey.field_type, fieldType);
