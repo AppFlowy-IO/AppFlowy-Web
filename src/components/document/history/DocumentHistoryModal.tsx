@@ -26,7 +26,14 @@ import { VersionList } from './DocumentHistoryVersionList';
 
 type PreviewEditorProps = Pick<
   EditorContextState,
-  'loadViewMeta' | 'createRow' | 'eventEmitter' | 'getMentionUser' | 'getViewIdFromDatabaseId' | 'loadDatabaseRelations'
+  | 'loadView'
+  | 'bindViewSync'
+  | 'loadViewMeta'
+  | 'createRow'
+  | 'eventEmitter'
+  | 'getMentionUser'
+  | 'getViewIdFromDatabaseId'
+  | 'loadDatabaseRelations'
 >;
 
 type VersionPreviewBodyProps = {
@@ -72,6 +79,15 @@ const VersionPreviewBody = memo(function VersionPreviewBody({
   );
 });
 
+// Static, so hoist it out of render: avoids recreating the object (and re-running
+// `cn`) on every render and handing MUI's Dialog a fresh `PaperProps` each time.
+const DIALOG_PAPER_PROPS = {
+  className: cn(
+    'flex !h-full !w-full overflow-hidden rounded-2xl bg-surface-layer-02',
+    '!max-h-[min(920px,_calc(100vh-160px))] !min-h-[min(689px,_calc(100vh-40px))] !min-w-[min(984px,_calc(100vw-40px))] !max-w-[min(1680px,_calc(100vw-240px))]'
+  ),
+};
+
 export function DocumentHistoryModal({
   open,
   onOpenChange,
@@ -86,7 +102,7 @@ export function DocumentHistoryModal({
     icon: ViewIcon | null;
   };
 }) {
-  const { loadViewMeta, createRow, getViewIdFromDatabaseId } = useAppOperations();
+  const { loadViewMeta, createRow, getViewIdFromDatabaseId, loadView, bindViewSync } = useAppOperations();
   const { getCollabHistory, previewCollabVersion, revertCollabVersion } = useCollabHistory();
   const getSubscriptions = useGetSubscriptions();
   const eventEmitter = useEventEmitter();
@@ -178,10 +194,6 @@ export function DocumentHistoryModal({
       }
     }
   }, [viewId, getCollabHistory]);
-
-  const handleSetDateFilter = useCallback((filter: 'all' | 'last7Days' | 'last30Days' | 'last60Days') => {
-    setDateFilter(filter);
-  }, []);
 
   const clearPreviewDocs = useCallback(() => {
     previewYDocRef.current.forEach((doc) => {
@@ -315,7 +327,7 @@ export function DocumentHistoryModal({
   return (
     <Dialog
       open={open}
-      onClose={() => onOpenChange(false)}
+      onClose={handleClose}
       aria-labelledby={titleId}
       fullWidth
       maxWidth={false}
@@ -323,12 +335,7 @@ export function DocumentHistoryModal({
       disableAutoFocus={false}
       disableEnforceFocus={false}
       disableRestoreFocus
-      PaperProps={{
-        className: cn(
-          'flex !h-full !w-full overflow-hidden rounded-2xl bg-surface-layer-02',
-          '!max-h-[min(920px,_calc(100vh-160px))] !min-h-[min(689px,_calc(100vh-40px))] !min-w-[min(984px,_calc(100vw-40px))] !max-w-[min(1680px,_calc(100vw-240px))]'
-        ),
-      }}
+      PaperProps={DIALOG_PAPER_PROPS}
     >
       <DialogContent data-testid='version-history-modal' className='flex h-full w-full overflow-hidden p-0'>
         <div className='order-2 flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-t-2xl md:order-1 md:rounded-l-2xl md:rounded-tr-none'>
@@ -342,6 +349,8 @@ export function DocumentHistoryModal({
               activeDoc={activeDoc}
               workspaceId={workspaceId}
               viewId={viewId}
+              loadView={loadView}
+              bindViewSync={bindViewSync}
               loadViewMeta={loadViewMeta}
               createRow={createRow}
               eventEmitter={eventEmitter}
@@ -358,7 +367,7 @@ export function DocumentHistoryModal({
             onSelect={setSelectedVersionId}
             dateFilter={dateFilter}
             onlyShowMine={onlyShowMine}
-            onDateFilterChange={handleSetDateFilter}
+            onDateFilterChange={setDateFilter}
             onOnlyShowMineChange={setOnlyShowMine}
             onRestoreClicked={handleRestore}
             isRestoring={isRestoring}
