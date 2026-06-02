@@ -43,7 +43,7 @@ import {
   reorderRow,
   updateTableData,
 } from '@/application/slate-yjs/utils/simple-table-operations';
-import { findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
+import { ensureValidSelection, findNearestValidSelection, isValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import {
   dataStringTOJson,
   deepCopyBlock,
@@ -470,6 +470,8 @@ export const CustomEditor = {
   },
 
   toggleToggleList(editor: YjsEditor, blockId: string) {
+    ensureValidSelection(editor);
+
     // The published view renders with a static Slate editor that has no Yjs
     // shared root. Toggle the collapsed state directly on the Slate node so the
     // block can still be expanded/collapsed in read-only mode.
