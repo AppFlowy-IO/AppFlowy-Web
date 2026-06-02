@@ -7,6 +7,7 @@ import * as Y from 'yjs';
 import { CustomEditor } from '@/application/slate-yjs/command';
 import { withYHistory } from '@/application/slate-yjs/plugins/withHistory';
 import { withYjs, YjsEditor } from '@/application/slate-yjs/plugins/withYjs';
+import { ensureValidSelection } from '@/application/slate-yjs/utils/transformSelection';
 import { BlockType, CollabOrigin, YDoc } from '@/application/types';
 import { FindReplaceProvider } from '@/components/editor/components/find-replace/FindReplaceContext';
 import EditorEditable from '@/components/editor/Editable';
@@ -251,6 +252,7 @@ function CollaborativeEditor({
   );
 
   const handleSlateChange = useCallback(() => {
+    ensureValidSelection(editor);
     handleDatabaseBlockLifecycle(editor);
   }, [editor, handleDatabaseBlockLifecycle]);
 
