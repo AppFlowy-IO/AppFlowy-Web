@@ -1216,6 +1216,17 @@ export interface View {
   workspace_id?: string;
 }
 
+export interface ObjectPermission {
+  object_id: string;
+  collab_type: Types;
+  governing_view_id: string;
+  access_level?: AccessLevel | null;
+  can_read: boolean;
+  can_write: boolean;
+  can_comment: boolean;
+  can_share: boolean;
+}
+
 export interface UpdatePublishConfigPayload {
   comments_enabled?: boolean;
   duplicate_enabled?: boolean;

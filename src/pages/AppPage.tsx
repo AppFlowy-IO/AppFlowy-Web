@@ -26,7 +26,7 @@ import {
   useScheduleDeferredCleanup,
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
-import { getViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
+import { useViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
 import { RevertedDialog } from '@/components/app/RevertedDialog';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -454,13 +454,7 @@ function AppPage() {
 
   const requestInstance = getAxiosInstance();
 
-  // Check if view is in shareWithMe and determine readonly status.
-  // `view` is the merged outline-or-fallback object, so the lock check honors
-  // pages opened by direct URL before the outline branch has loaded.
-  const isReadOnly = useMemo(() => {
-    if (!viewId) return false;
-    return getViewReadOnlyStatus(viewId, outline, view);
-  }, [viewId, outline, view]);
+  const permissionReadOnly = useViewReadOnlyStatus(viewId, outline, view);
 
   const viewDom = useMemo(() => {
     // Check if doc belongs to current viewId (handles race condition when doc from old view arrives after navigation)
@@ -492,7 +486,7 @@ function AppPage() {
           requestInstance={requestInstance}
           workspaceId={workspaceId}
           doc={docForCurrentView}
-          readOnly={isReadOnly}
+          readOnly={permissionReadOnly}
           viewMeta={viewMeta}
           navigateToView={toView}
           loadViewMeta={loadViewMeta}
@@ -536,7 +530,7 @@ function AppPage() {
         requestInstance={requestInstance}
         workspaceId={workspaceId}
         doc={docForCurrentView}
-        readOnly={isReadOnly}
+        readOnly={permissionReadOnly}
         viewMeta={viewMeta}
         navigateToView={toView}
         loadViewMeta={loadViewMeta}
@@ -579,7 +573,7 @@ function AppPage() {
     viewMeta,
     workspaceId,
     requestInstance,
-    isReadOnly,
+    permissionReadOnly,
     toView,
     loadViewMeta,
     createRow,

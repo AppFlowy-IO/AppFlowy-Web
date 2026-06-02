@@ -2,6 +2,7 @@ import { toBase64 } from 'lib0/buffer';
 
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import {
+  ObjectPermission,
   RowId,
   Types,
   User,
@@ -168,6 +169,24 @@ export async function getCollab(workspaceId: string, objectId: string, collabTyp
   return {
     data: new Uint8Array(data.doc_state),
   };
+}
+
+export async function getObjectPermission(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types = Types.Document,
+  signal?: AbortSignal
+) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
+
+  return executeAPIRequest<ObjectPermission>(() =>
+    getAxios()?.get<APIResponse<ObjectPermission>>(url, {
+      params: {
+        collab_type: collabType,
+      },
+      signal,
+    })
+  );
 }
 
 export async function getPageCollab(workspaceId: string, viewId: string) {
