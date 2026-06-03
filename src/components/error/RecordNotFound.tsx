@@ -60,15 +60,14 @@ function RecordNotFound({
   if (error) {
     switch (error.type) {
       case ErrorType.PageNotFound:
+        // No "Go to homepage" action: /app redirects back to the last opened
+        // view, which is this missing page, so the button just loops here. The
+        // sidebar and the footer's "login with a different account" link remain.
         return (
           <EmbeddedLandingPage
             Logo={WarningIcon}
             title={t('landingPage.pageNotFound.title')}
             description={t('landingPage.pageNotFound.description')}
-            primaryAction={{
-              onClick: goToHomepage,
-              label: t('landingPage.pageNotFound.goToHomepage'),
-            }}
           />
         );
 
