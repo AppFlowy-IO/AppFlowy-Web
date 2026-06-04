@@ -6,6 +6,28 @@ import { extractClosestEdge } from '@atlaskit/pragmatic-drag-and-drop-hitbox/clo
 import { getReorderDestinationIndex } from '@atlaskit/pragmatic-drag-and-drop-hitbox/util/get-reorder-destination-index';
 import React, { useEffect, useRef } from 'react';
 
+const SCROLLABLE_OVERFLOW = /(auto|scroll|overlay)/;
+
+/**
+ * Walk up from `element` to the nearest ancestor that is actually a scroll
+ * container. `autoScrollForElements` warns ("attached to an element that appears
+ * not to be scrollable") and does nothing when handed an element with
+ * `overflow: visible`. A reorderable list is typically a non-scrolling flex
+ * column whose scrolling is owned by an ancestor (e.g. the sidebar's AFScroller),
+ * so resolve that ancestor here. Returns null when nothing scrollable is found.
+ */
+function getClosestScrollableElement(element: HTMLElement | null): HTMLElement | null {
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    const { overflowX, overflowY } = window.getComputedStyle(node);
+
+    if (SCROLLABLE_OVERFLOW.test(overflowY) || SCROLLABLE_OVERFLOW.test(overflowX)) {
+      return node;
+    }
+  }
+
+  return null;
+}
+
 export interface ReorderResult {
   /** The dragged item's id. */
   movedId: string;
@@ -102,7 +124,7 @@ export function useReorderMonitor({
       }),
     ];
 
-    const autoScrollElement = autoScrollElementRef?.current;
+    const autoScrollElement = getClosestScrollableElement(autoScrollElementRef?.current ?? null);
 
     if (autoScrollElement) {
       cleanups.push(
