@@ -99,21 +99,10 @@ type PermissionObjectIdentity = {
   collabType: Types;
 };
 
-function getPermissionObjectIdentity(
-  viewId: string,
-  outline?: View[],
-  fallbackView?: View | null
-): PermissionObjectIdentity {
-  const view =
-    (fallbackView?.view_id === viewId ? fallbackView : undefined) ?? (outline ? findView(outline, viewId) : undefined);
-
-  if (view && isDatabaseLayout(view.layout)) {
-    return {
-      objectId: getDatabaseIdFromExtra(view) ?? viewId,
-      collabType: Types.Database,
-    };
-  }
-
+function getPermissionObjectIdentity(viewId: string): PermissionObjectIdentity {
+  // Page UI permission is scoped to the opened folder view. Database data still
+  // syncs through the canonical database collab id, but one database can have
+  // multiple folder views with different inherited access.
   return {
     objectId: viewId,
     collabType: Types.Document,
@@ -140,8 +129,8 @@ export function useViewReadOnlyStatus(viewId: string | undefined, outline?: View
   }, [viewId, outline, fallbackView]);
   const permissionIdentity = useMemo(() => {
     if (!viewId) return null;
-    return getPermissionObjectIdentity(viewId, outline, fallbackView);
-  }, [viewId, outline, fallbackView]);
+    return getPermissionObjectIdentity(viewId);
+  }, [viewId]);
   const permissionObjectId = permissionIdentity?.objectId;
   const permissionCollabType = permissionIdentity?.collabType;
 

@@ -37,3 +37,37 @@ Feature: Public page moved under private page access
     When I sign in as seeded public-to-private "member 2"
     And I open the temporary public-to-private movable page
     Then the public-to-private no access page is shown
+
+  # Expected result: moving a page between private subtrees stops using the old subtree's
+  # inherited access and starts using the new subtree's inherited access.
+  Scenario: Moving a page between differently shared private spaces swaps access
+    Given I sign in as seeded public-to-private "owner"
+    And I create a temporary private source shared with "member 1" and private target shared with "member 2"
+    When I sign in as seeded public-to-private "member 1"
+    And I open the temporary public-to-private movable page
+    Then the temporary public-to-private movable page title is visible
+    And the temporary public-to-private movable page editor is read-only
+    When I sign in as seeded public-to-private "member 2"
+    And I open the temporary public-to-private movable page
+    Then the public-to-private no access page is shown
+    When I move the temporary public-to-private page under the private target page
+    And I sign in as seeded public-to-private "member 1"
+    And I open the temporary public-to-private movable page
+    Then the public-to-private no access page is shown
+    When I sign in as seeded public-to-private "member 2"
+    And I open the temporary public-to-private movable page
+    Then the temporary public-to-private movable page title is visible
+    And the temporary public-to-private movable page editor is read-only
+
+  # Expected result: changing a private space to Public refreshes the client so a workspace
+  # member without an explicit share can open and edit the page.
+  Scenario: Member gains access when a private space becomes public
+    Given I sign in as seeded public-to-private "owner"
+    And I create a temporary private source shared with "member 1" and private target shared with "member 2"
+    When I sign in as seeded public-to-private "member 2"
+    And I open the temporary public-to-private movable page
+    Then the public-to-private no access page is shown
+    When I change the temporary private source space permission to "Public"
+    And I open the temporary public-to-private movable page
+    Then the temporary public-to-private movable page title is visible
+    And the temporary public-to-private movable page title is editable
