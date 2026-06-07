@@ -1,24 +1,30 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useDatabaseViewId } from '@/application/database-yjs';
-import { useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
+import { useBoardLayoutSettings, useDatabaseViewId } from '@/application/database-yjs';
+import { useToggleShowColorColumns, useUpdateDatabaseLayout } from '@/application/database-yjs/dispatch';
 import { DatabaseViewLayout } from '@/application/types';
 import { ReactComponent as LayoutIcon } from '@/assets/icons/layout.svg';
+import { ReactComponent as PaletteIcon } from '@/assets/icons/palette.svg';
 import {
   DropdownMenuItem,
   DropdownMenuItemTick,
   DropdownMenuPortal,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Switch } from '@/components/ui/switch';
 
 function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
   const { t } = useTranslation();
 
   const viewId = useDatabaseViewId();
   const updateLayout = useUpdateDatabaseLayout(viewId);
+  const toggleColorColumns = useToggleShowColorColumns();
+  const { showColorColumns } = useBoardLayoutSettings();
+  const isBoardLayout = currentLayout === DatabaseViewLayout.Board;
   const options = useMemo(
     () => [
       {
@@ -61,6 +67,22 @@ function Layout({ currentLayout }: { currentLayout: DatabaseViewLayout }) {
               {currentLayout === option.value && <DropdownMenuItemTick />}
             </DropdownMenuItem>
           ))}
+          {isBoardLayout && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                className={'w-full'}
+                onSelect={(e) => {
+                  e.preventDefault();
+                  toggleColorColumns(!showColorColumns);
+                }}
+              >
+                <PaletteIcon />
+                {t('board.column.colorColumns')}
+                <Switch className={'ml-auto'} checked={showColorColumns} />
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>

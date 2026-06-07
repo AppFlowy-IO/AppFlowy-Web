@@ -1,17 +1,42 @@
 import { ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { Row } from '@/application/database-yjs';
-import { useToggleHiddenGroupColumnDispatch } from '@/application/database-yjs/dispatch';
+import { GroupColorOption, Row } from '@/application/database-yjs';
+import {
+  useToggleHiddenGroupColumnDispatch,
+  useUpdateGroupColumnColorDispatch,
+} from '@/application/database-yjs/dispatch';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
+import {
+  BOARD_COLUMN_COLOR_OPTIONS,
+  getBoardColumnColorLabelKey,
+  getBoardColumnColorStyle,
+} from '@/components/database/components/board/column/boardColumnColor';
 import ColumnDeleteConfirm from '@/components/database/components/board/column/ColumnDeleteConfirm';
 import ColumnRename from '@/components/database/components/board/column/ColumnRename';
-import { dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
+import { DropdownMenuItemTick, dropdownMenuItemVariants } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
+
+function ColorSwatch({ color }: { color?: string }) {
+  if (!color || color === 'transparent') {
+    return <span className='h-5 w-5 rounded-[4px] border border-border-primary' />;
+  }
+
+  return (
+    <span className='flex h-5 w-5 items-center justify-center rounded-[4px] border border-border-primary'>
+      <span
+        className='h-3 w-3 rounded-[2px] border border-border-primary'
+        style={{
+          backgroundColor: color,
+        }}
+      />
+    </span>
+  );
+}
 
 export function ColumnMenu({
   children,
@@ -22,6 +47,8 @@ export function ColumnMenu({
   fieldId,
   groupId,
   getCards,
+  showColorColumns,
+  currentColorOption,
 }: {
   children: ReactNode;
   groupId: string;
@@ -31,13 +58,30 @@ export function ColumnMenu({
   deleteEnabled: boolean;
   hideEnabled?: boolean;
   getCards: (id: string) => Row[];
+  showColorColumns?: boolean;
+  currentColorOption?: GroupColorOption;
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const toggleHidden = useToggleHiddenGroupColumnDispatch(groupId, fieldId);
+  const updateColor = useUpdateGroupColumnColorDispatch(groupId);
 
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
+  const canUpdateColor = showColorColumns && id !== fieldId;
+  const selectColor = (option: GroupColorOption) => {
+    updateColor(id, option);
+    setOpen(false);
+  };
+
+  const colorOptions = useMemo(() => {
+    return BOARD_COLUMN_COLOR_OPTIONS.map((option) => ({
+      option,
+      label: t(getBoardColumnColorLabelKey(option)),
+      swatchColor: getBoardColumnColorStyle(option)?.paletteColor || 'transparent',
+    }));
+  }, [t]);
+
   const options = useMemo(() => {
     return [
       renameEnabled && {
@@ -91,11 +135,15 @@ export function ColumnMenu({
       content.push(t('board.column.deleteColumn'));
     }
 
+    if (canUpdateColor) {
+      content.push(t('board.column.color'));
+    }
+
     return content
       .join(', ')
       .toLowerCase()
       .replace(/(^\w{1})/g, (letter) => letter.toUpperCase());
-  }, [renameEnabled, hideEnabled, deleteEnabled, t]);
+  }, [renameEnabled, hideEnabled, deleteEnabled, canUpdateColor, t]);
 
   return (
     <>
@@ -108,7 +156,7 @@ export function ColumnMenu({
           </TooltipTrigger>
           <TooltipContent>{tooltipContent}</TooltipContent>
         </Tooltip>
-        <PopoverContent align={'start'} onCloseAutoFocus={(e) => e.preventDefault()}>
+        <PopoverContent align={'start'} className='w-[240px]' onCloseAutoFocus={(e) => e.preventDefault()}>
           <div className='flex flex-col p-2'>
             {options.map((option) => (
               <div
@@ -124,6 +172,36 @@ export function ColumnMenu({
                 {option.label}
               </div>
             ))}
+            {canUpdateColor && (
+              <>
+                {options.length > 0 && <div className='-mx-2 my-2 border-t border-border-primary' />}
+                <div className='flex min-h-8 items-center px-2 py-1 text-xs font-medium text-text-tertiary'>
+                  {t('pageStyle.colors')}
+                </div>
+                {colorOptions.map((color) => (
+                  <button
+                    key={color.option}
+                    type='button'
+                    className={cn(dropdownMenuItemVariants(), 'w-full text-left')}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'Enter' && event.key !== ' ') return;
+                      event.preventDefault();
+                      event.stopPropagation();
+                      selectColor(color.option);
+                    }}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      selectColor(color.option);
+                    }}
+                  >
+                    <ColorSwatch color={color.swatchColor} />
+                    <span className='truncate'>{color.label}</span>
+                    {currentColorOption === color.option && <DropdownMenuItemTick />}
+                  </button>
+                ))}
+              </>
+            )}
           </div>
         </PopoverContent>
       </Popover>

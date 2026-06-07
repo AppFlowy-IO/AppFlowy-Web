@@ -1,8 +1,9 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import type React from 'react';
 import * as Y from 'yjs';
 
-import { DatabaseContext, DatabaseContextState, FieldType, useGroup } from '@/application/database-yjs';
+import { DatabaseContext, DatabaseContextState, FieldType, GroupColorOption, useGroup } from '@/application/database-yjs';
+import { useUpdateGroupColumnColorDispatch } from '@/application/database-yjs/dispatch';
 import { YDoc, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 
 jest.mock('@/utils/runtime-config', () => ({
@@ -14,11 +15,13 @@ function createDatabaseDoc({
   groupId,
   groupColumns,
   viewId,
+  fieldType = FieldType.SingleSelect,
 }: {
   fieldId: string;
   groupId: string;
   groupColumns: unknown[];
   viewId: string;
+  fieldType?: FieldType;
 }): YDoc {
   const doc = new Y.Doc() as unknown as YDoc;
   const sharedRoot = doc.getMap(YjsEditorKey.data_section);
@@ -32,13 +35,13 @@ function createDatabaseDoc({
   const columns = new Y.Array();
 
   field.set(YjsDatabaseKey.id, fieldId);
-  field.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+  field.set(YjsDatabaseKey.type, fieldType);
   fields.set(fieldId, field);
 
   columns.push(groupColumns);
   group.set(YjsDatabaseKey.id, groupId);
   group.set(YjsDatabaseKey.field_id, fieldId);
-  group.set(YjsDatabaseKey.type, FieldType.SingleSelect);
+  group.set(YjsDatabaseKey.type, fieldType);
   group.set(YjsDatabaseKey.groups, columns);
   groups.push([group]);
 
@@ -51,6 +54,31 @@ function createDatabaseDoc({
   sharedRoot.set(YjsEditorKey.database, database);
 
   return doc;
+}
+
+function getPersistedColumns(databaseDoc: YDoc, viewId: string, groupId: string) {
+  const database = databaseDoc.getMap(YjsEditorKey.data_section).get(YjsEditorKey.database);
+  const view = database?.get(YjsDatabaseKey.views)?.get(viewId);
+  const group = view
+    ?.get(YjsDatabaseKey.groups)
+    ?.toArray()
+    .find((group) => group.get(YjsDatabaseKey.id) === groupId);
+
+  return group?.get(YjsDatabaseKey.groups)?.toArray() ?? [];
+}
+
+function toColumnData(column: unknown) {
+  if (column && typeof column === 'object' && 'get' in column && typeof column.get === 'function') {
+    const mapColumn = column as { get: (key: YjsDatabaseKey) => unknown };
+
+    return {
+      id: mapColumn.get(YjsDatabaseKey.id),
+      visible: mapColumn.get(YjsDatabaseKey.visible),
+      group_color: mapColumn.get(YjsDatabaseKey.group_color),
+    };
+  }
+
+  return column;
 }
 
 function createWrapper(databaseDoc: YDoc, activeViewId: string) {
@@ -117,5 +145,65 @@ describe('useGroup', () => {
     });
 
     expect(result.current.columns).toEqual([{ id: optionId, visible: false }]);
+  });
+
+  it('persists fallback columns before updating a column color', async () => {
+    const fieldId = 'checkbox-field-id';
+    const groupId = 'group-id';
+    const viewId = 'board-view-id';
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [],
+      viewId,
+      fieldType: FieldType.Checkbox,
+    });
+
+    const { result } = renderHook(() => useUpdateGroupColumnColorDispatch(groupId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => {
+      result.current('Yes', GroupColorOption.Camellia);
+    });
+
+    expect(getPersistedColumns(databaseDoc, viewId, groupId)).toEqual([
+      { id: 'Yes', visible: true, group_color: GroupColorOption.Camellia },
+      { id: 'No', visible: true },
+    ]);
+  });
+
+  it('updates color on persisted Y.Map group columns', async () => {
+    const fieldId = 'checkbox-field-id';
+    const groupId = 'group-id';
+    const viewId = 'board-view-id';
+    const yesColumn = new Y.Map();
+    const noColumn = new Y.Map();
+
+    yesColumn.set(YjsDatabaseKey.id, 'Yes');
+    yesColumn.set(YjsDatabaseKey.visible, true);
+    noColumn.set(YjsDatabaseKey.id, 'No');
+    noColumn.set(YjsDatabaseKey.visible, true);
+
+    const databaseDoc = createDatabaseDoc({
+      fieldId,
+      groupId,
+      groupColumns: [yesColumn, noColumn],
+      viewId,
+      fieldType: FieldType.Checkbox,
+    });
+
+    const { result } = renderHook(() => useUpdateGroupColumnColorDispatch(groupId), {
+      wrapper: createWrapper(databaseDoc, viewId),
+    });
+
+    act(() => {
+      result.current('Yes', GroupColorOption.Olive);
+    });
+
+    expect(getPersistedColumns(databaseDoc, viewId, groupId).map(toColumnData)).toEqual([
+      { id: 'Yes', visible: true, group_color: GroupColorOption.Olive },
+      { id: 'No', visible: true, group_color: undefined },
+    ]);
   });
 });

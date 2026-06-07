@@ -1,6 +1,7 @@
 import { memo, useCallback, useMemo } from 'react';
 
 import { Row, useReadOnly } from '@/application/database-yjs';
+import { useBoardColumnColor } from '@/components/database/components/board/column/boardColumnColor';
 import CardList, { CardType, RenderCard } from '@/components/database/components/board/column/CardList';
 import ColumnHeaderPrimitive from '@/components/database/components/board/column/ColumnHeaderPrimitive';
 import { useCardsDrag } from '@/components/database/components/board/column/useCardsDrag';
@@ -15,6 +16,8 @@ export interface ColumnProps {
   fieldId: string;
   addCardBefore: (id: string) => void;
   groupId: string;
+  groupColor?: string;
+  showColorColumns: boolean;
 }
 
 function areRowsEqual(prevRows: Row[], nextRows: Row[]) {
@@ -38,14 +41,22 @@ function areColumnPropsEqual(prev: ColumnProps, next: ColumnProps) {
     prev.id === next.id &&
     prev.fieldId === next.fieldId &&
     prev.groupId === next.groupId &&
+    prev.groupColor === next.groupColor &&
+    prev.showColorColumns === next.showColorColumns &&
     prev.addCardBefore === next.addCardBefore &&
     areRowsEqual(prev.rows, next.rows)
   );
 }
 
 export const Column = memo(
-  ({ id, rows, fieldId, addCardBefore, groupId }: ColumnProps) => {
+  ({ id, rows, fieldId, addCardBefore, groupId, groupColor, showColorColumns }: ColumnProps) => {
     const readOnly = useReadOnly();
+    const { style: colorStyle, option: colorOption } = useBoardColumnColor({
+      id,
+      fieldId,
+      groupColor,
+      showColorColumns,
+    });
 
     const data: RenderCard[] = useMemo(() => {
       const cards = rows.map((row) => ({
@@ -75,14 +86,15 @@ export const Column = memo(
 
     return (
       <ColumnDragContext.Provider value={contextValue}>
-        <div data-column-id={id} className={'relative flex h-full min-h-0 w-[256px]'} ref={columnInnerRef}>
+        <div data-column-id={id} className={'relative flex h-full min-h-0 w-[256px] items-start'} ref={columnInnerRef}>
           <div
             style={{
               opacity: isDragging ? 0.4 : 1,
               pointerEvents: isDragging ? 'none' : undefined,
+              backgroundColor: colorStyle?.backgroundColor,
             }}
             ref={columnRef}
-            className={'flex h-full min-h-0 w-[256px] min-w-[256px] flex-col items-center pt-2'}
+            className={'flex max-h-full w-[256px] min-w-[256px] flex-col items-center overflow-hidden rounded-[8px] pt-2'}
           >
             <ColumnHeaderPrimitive
               rowCount={rows.length}
@@ -95,13 +107,12 @@ export const Column = memo(
               addCardBefore={addCardBefore}
               getCards={getCards}
               groupId={groupId}
+              colorStyle={colorStyle}
+              colorOption={colorOption}
+              showColorColumns={showColorColumns}
             />
 
-            <CardList
-              columnId={id}
-              data={data}
-              fieldId={fieldId}
-            />
+            <CardList columnId={id} data={data} fieldId={fieldId} />
           </div>
           {state.type === StateType.IS_COLUMN_OVER && state.closestEdge && (
             <DropColumnIndicator edge={state.closestEdge} />

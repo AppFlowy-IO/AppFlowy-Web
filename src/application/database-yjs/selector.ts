@@ -947,6 +947,7 @@ export function useGroupsSelector() {
 export interface GroupColumn {
   id: string;
   visible: boolean;
+  group_color?: string;
 }
 
 function normalizeGroupColumn(column: unknown): GroupColumn | null {
@@ -963,6 +964,7 @@ function normalizeGroupColumn(column: unknown): GroupColumn | null {
     return {
       id,
       visible: parseVisible(mapColumn.get(YjsDatabaseKey.visible)),
+      group_color: mapColumn.get(YjsDatabaseKey.group_color) as string | undefined,
     };
   }
 
@@ -973,6 +975,7 @@ function normalizeGroupColumn(column: unknown): GroupColumn | null {
   return {
     id: plainColumn.id,
     visible: parseVisible(plainColumn.visible),
+    group_color: plainColumn.group_color,
   };
 }
 
@@ -1035,6 +1038,7 @@ export function useBoardLayoutSettings() {
   const layoutSetting = view?.get(YjsDatabaseKey.layout_settings)?.get('1');
   const [isCollapsed, setIsCollapsed] = useState(true);
   const [hideUnGroup, setHideUnGroup] = useState(false);
+  const [showColorColumns, setShowColorColumns] = useState(false);
   const groups = view?.get(YjsDatabaseKey.groups);
   const [fieldId, setFieldId] = useState<string | null>(null);
 
@@ -1044,6 +1048,7 @@ export function useBoardLayoutSettings() {
     const observerEvent = () => {
       setIsCollapsed(Boolean(layoutSetting?.get(YjsDatabaseKey.collapse_hidden_groups)));
       setHideUnGroup(Boolean(layoutSetting?.get(YjsDatabaseKey.hide_ungrouped_column)));
+      setShowColorColumns(Boolean(layoutSetting?.get(YjsDatabaseKey.show_color_columns)));
     };
 
     observerEvent();
@@ -1076,6 +1081,7 @@ export function useBoardLayoutSettings() {
   return {
     isCollapsed,
     hideUnGroup,
+    showColorColumns,
     fieldId,
   };
 }

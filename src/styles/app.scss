@@ -177,9 +177,20 @@ body {
 }
 
 .board-card {
-  @apply border-border-primary border-[1px];
   border-radius: 6px;
   background: var(--background-primary);
+  border: 1px solid rgb(31 35 41 / 12%);
+  box-shadow:
+    0 0 4px rgb(31 35 41 / 2%),
+    0 0 4px -2px rgb(31 35 41 / 2%);
+}
+
+:root[data-dark-mode='true'] .board-card {
+  border-color: #59647a;
+}
+
+.board-card.board-card-selected {
+  border-color: var(--border-theme-thick);
 }
 
 .no-scrollbar::-webkit-scrollbar {

@@ -10,23 +10,23 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-  DropdownMenuItem, DropdownMenuLabel, DropdownMenuItemTick, DropdownMenuSeparator,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuItemTick,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import { Switch } from '@/components/ui/switch';
 
-function BoardSettingGroup () {
+function BoardSettingGroup() {
   const { t } = useTranslation();
-  const {
-    hideUnGroup,
-    fieldId,
-  } = useBoardLayoutSettings();
+  const { hideUnGroup, fieldId } = useBoardLayoutSettings();
   const fieldType = useFieldType(fieldId || '');
   const toggle = useToggleHideUnGrouped();
   const groupBy = useGroupByFieldDispatch();
 
   const { properties: allProperties } = usePropertiesSelector(true);
   const properties = useMemo(() => {
-    return allProperties.filter(property => {
+    return allProperties.filter((property) => {
       const type = property.type;
 
       return [
@@ -47,9 +47,7 @@ function BoardSettingGroup () {
         {t('grid.settings.group')}
       </DropdownMenuSubTrigger>
       <DropdownMenuPortal>
-        <DropdownMenuSubContent
-          className={'max-w-[240px] appflowy-scroller overflow-y-auto'}
-        >
+        <DropdownMenuSubContent className={'appflowy-scroller max-w-[240px] overflow-y-auto'}>
           {fieldType !== FieldType.Checkbox && (
             <>
               <DropdownMenuItem
@@ -60,18 +58,14 @@ function BoardSettingGroup () {
                 }}
               >
                 {t('board.showUngrouped')}
-                <Switch
-                  className={'ml-auto'}
-                  checked={!hideUnGroup}
-                />
-
+                <Switch className={'ml-auto'} checked={!hideUnGroup} />
               </DropdownMenuItem>
               <DropdownMenuSeparator />
             </>
           )}
 
           <DropdownMenuLabel>{t('board.groupBy')}</DropdownMenuLabel>
-          {properties.map(property => (
+          {properties.map((property) => (
             <DropdownMenuItem
               key={property.id}
               className={'w-full'}
@@ -82,10 +76,8 @@ function BoardSettingGroup () {
             >
               <FieldDisplay fieldId={property.id} />
               {fieldId === property.id && <DropdownMenuItemTick />}
-
             </DropdownMenuItem>
           ))}
-
         </DropdownMenuSubContent>
       </DropdownMenuPortal>
     </DropdownMenuSub>

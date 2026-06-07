@@ -8,45 +8,63 @@ import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { Tag } from '@/components/_shared/tag';
+import { BoardColumnColorStyle } from '@/components/database/components/board/column/boardColumnColor';
+import { getBoardColumnName } from '@/components/database/components/board/column/columnName';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 
-export function useRenderColumn(id: string, fieldId: string) {
+function BoardColumnLabel({ label, colorStyle }: { label: string; colorStyle: BoardColumnColorStyle }) {
+  return (
+    <div
+      className='flex min-w-[22px] max-w-full items-center justify-center truncate rounded-[6px] px-2 py-[1px] text-[0.75rem] leading-[1.5]'
+      style={{
+        backgroundColor: colorStyle.labelBackgroundColor,
+        color: colorStyle.textColor,
+      }}
+    >
+      <div className='truncate'>{label}</div>
+    </div>
+  );
+}
+
+export function useRenderColumn(id: string, fieldId: string, colorStyle?: BoardColumnColorStyle) {
   const { field, clock } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
-  const fieldName = field?.get(YjsDatabaseKey.name) || '';
   const { t } = useTranslation();
+  const label = getBoardColumnName({ id, fieldId, field, fieldType, t });
   const header = useMemo(() => {
     if (!field) return null;
     if (fieldType === FieldType.Checkbox)
       return (
-        <div className={'flex items-center gap-2'}>
+        <div className={'flex items-center gap-2'} style={{ color: colorStyle?.textColor }}>
           {getChecked(id) ? (
             <>
               <CheckboxCheckSvg className={'h-5 w-5'} />
-              {t('button.checked')}
+              {label}
             </>
           ) : (
             <>
               {' '}
               <CheckboxUncheckSvg className={'h-5 w-5 text-border-primary hover:text-border-primary-hover'} />
-              {t('button.unchecked')}
+              {label}
             </>
           )}
         </div>
       );
     if ([FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
       const option = parseSelectOptionTypeOptions(field)?.options.find((option) => option?.id === id);
-      const isFieldId = fieldId === id;
-      const label = isFieldId ? `${t('button.no')} ${fieldName}` : option?.name || '';
 
       return (
         <Tooltip title={label} enterNextDelay={1000} enterDelay={1000}>
           <span>
-            <Tag
-              label={label}
-              textColor={option?.color ? SelectOptionFgColorMap[option?.color] : 'text-text-primary'}
-              bgColor={option?.color ? SelectOptionColorMap[option?.color] : 'transparent'}
-            />
+            {colorStyle ? (
+              <BoardColumnLabel label={label} colorStyle={colorStyle} />
+            ) : (
+              <Tag
+                label={label}
+                textColor={option?.color ? SelectOptionFgColorMap[option?.color] : 'text-text-primary'}
+                bgColor={option?.color ? SelectOptionColorMap[option?.color] : 'transparent'}
+              />
+            )}
           </span>
         </Tooltip>
       );
@@ -54,7 +72,7 @@ export function useRenderColumn(id: string, fieldId: string) {
 
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field, clock, fieldType, id, fieldName, t]);
+  }, [field, clock, fieldType, id, label, colorStyle]);
 
   const renameEnabled = useMemo(() => {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);
