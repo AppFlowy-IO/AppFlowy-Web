@@ -1,26 +1,25 @@
 import { useMemo } from 'react';
 
 import {
-  GROUP_COLOR_OPTIONS,
-  GroupColorOption,
-  groupColorOptionByName,
-  groupColorOptionFromName,
+  FieldType,
+  parseSelectOptionTypeOptions,
+  SelectOption,
+  SelectOptionColor,
+  useFieldSelector,
 } from '@/application/database-yjs';
-import { ColorEnum, renderColor, toBlockColor } from '@/utils/color';
-
-import { useBoardColumnName } from './columnName';
+import { YjsDatabaseKey } from '@/application/types';
+import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 
 export interface BoardColumnColorStyle {
   backgroundColor: string;
-  labelBackgroundColor: string;
+  highlightColor: string;
   paletteColor: string;
   textColor: string;
 }
 
-export const BOARD_COLUMN_COLOR_OPTIONS = GROUP_COLOR_OPTIONS;
+export const BOARD_COLUMN_COLOR_OPTIONS = Object.values(SelectOptionColor);
 
 export type BoardColumnColorLabelKey =
-  | 'colors.default'
   | 'colors.mauve'
   | 'colors.lilac'
   | 'colors.camellia'
@@ -30,82 +29,105 @@ export type BoardColumnColorLabelKey =
   | 'colors.grass'
   | 'colors.jade'
   | 'colors.azure'
-  | 'colors.gray';
+  | 'colors.iron'
+  | 'colors.mauveEmphasized'
+  | 'colors.lavenderEmphasized'
+  | 'colors.camelliaEmphasized'
+  | 'colors.papayaEmphasized'
+  | 'colors.mangoEmphasized'
+  | 'colors.oliveEmphasized'
+  | 'colors.grassEmphasized'
+  | 'colors.jadeEmphasized'
+  | 'colors.azureEmphasized'
+  | 'colors.ironEmphasized';
 
-const GROUP_COLOR_TO_TINT: Partial<Record<GroupColorOption, ColorEnum>> = {
-  [GroupColorOption.Mauve]: ColorEnum.Tint1,
-  [GroupColorOption.Lilac]: ColorEnum.Tint2,
-  [GroupColorOption.Camellia]: ColorEnum.Tint3,
-  [GroupColorOption.Papaya]: ColorEnum.Tint4,
-  [GroupColorOption.Mango]: ColorEnum.Tint5,
-  [GroupColorOption.Olive]: ColorEnum.Tint6,
-  [GroupColorOption.Grass]: ColorEnum.Tint7,
-  [GroupColorOption.Jade]: ColorEnum.Tint8,
-  [GroupColorOption.Azure]: ColorEnum.Tint9,
-  [GroupColorOption.Iron]: ColorEnum.Tint10,
+const BOARD_COLUMN_COLOR_LABEL_KEYS: Record<SelectOptionColor, BoardColumnColorLabelKey> = {
+  [SelectOptionColor.OptionColor1]: 'colors.mauve',
+  [SelectOptionColor.OptionColor2]: 'colors.lilac',
+  [SelectOptionColor.OptionColor3]: 'colors.camellia',
+  [SelectOptionColor.OptionColor4]: 'colors.papaya',
+  [SelectOptionColor.OptionColor5]: 'colors.mango',
+  [SelectOptionColor.OptionColor6]: 'colors.olive',
+  [SelectOptionColor.OptionColor7]: 'colors.grass',
+  [SelectOptionColor.OptionColor8]: 'colors.jade',
+  [SelectOptionColor.OptionColor9]: 'colors.azure',
+  [SelectOptionColor.OptionColor10]: 'colors.iron',
+  [SelectOptionColor.OptionColor11]: 'colors.mauveEmphasized',
+  [SelectOptionColor.OptionColor12]: 'colors.lavenderEmphasized',
+  [SelectOptionColor.OptionColor13]: 'colors.camelliaEmphasized',
+  [SelectOptionColor.OptionColor14]: 'colors.papayaEmphasized',
+  [SelectOptionColor.OptionColor15]: 'colors.mangoEmphasized',
+  [SelectOptionColor.OptionColor16]: 'colors.oliveEmphasized',
+  [SelectOptionColor.OptionColor17]: 'colors.grassEmphasized',
+  [SelectOptionColor.OptionColor18]: 'colors.jadeEmphasized',
+  [SelectOptionColor.OptionColor19]: 'colors.azureEmphasized',
+  [SelectOptionColor.OptionColor20]: 'colors.ironEmphasized',
 };
 
-const GROUP_COLOR_LABEL_KEYS: Record<GroupColorOption, BoardColumnColorLabelKey> = {
-  [GroupColorOption.DefaultOption]: 'colors.default',
-  [GroupColorOption.Mauve]: 'colors.mauve',
-  [GroupColorOption.Lilac]: 'colors.lilac',
-  [GroupColorOption.Camellia]: 'colors.camellia',
-  [GroupColorOption.Papaya]: 'colors.papaya',
-  [GroupColorOption.Mango]: 'colors.mango',
-  [GroupColorOption.Olive]: 'colors.olive',
-  [GroupColorOption.Grass]: 'colors.grass',
-  [GroupColorOption.Jade]: 'colors.jade',
-  [GroupColorOption.Azure]: 'colors.azure',
-  [GroupColorOption.Iron]: 'colors.gray',
-};
+function cssVar(token?: string) {
+  return token ? `var(${token})` : undefined;
+}
 
-export function getBoardColumnColorStyle(option: GroupColorOption | undefined): BoardColumnColorStyle | undefined {
-  if (!option || option === GroupColorOption.DefaultOption) return undefined;
+function withColorOpacity(color: string, opacity: number) {
+  return `color-mix(in srgb, ${color} ${opacity * 100}%, transparent)`;
+}
 
-  const tint = GROUP_COLOR_TO_TINT[option];
+export function getBoardColumnColorStyle(color: SelectOptionColor | undefined): BoardColumnColorStyle | undefined {
+  if (!color) return undefined;
 
-  if (!tint) return undefined;
+  const optionColor = cssVar(SelectOptionColorMap[color]);
+  const textColor = cssVar(SelectOptionFgColorMap[color]);
 
-  const blockColor = toBlockColor(tint);
+  if (!optionColor || !textColor) return undefined;
+
+  const translucentOptionColor = withColorOpacity(optionColor, 0.4);
 
   return {
-    backgroundColor: renderColor(blockColor.bg),
-    labelBackgroundColor: renderColor(blockColor.border),
-    paletteColor: renderColor(tint),
-    textColor: renderColor(blockColor.text),
+    backgroundColor: translucentOptionColor,
+    highlightColor: translucentOptionColor,
+    paletteColor: optionColor,
+    textColor,
   };
 }
 
-export function getBoardColumnColorLabelKey(option: GroupColorOption) {
-  return GROUP_COLOR_LABEL_KEYS[option];
+export function getBoardColumnColorLabelKey(color: SelectOptionColor) {
+  return BOARD_COLUMN_COLOR_LABEL_KEYS[color];
 }
 
 export function useBoardColumnColor({
   id,
   fieldId,
-  groupColor,
   showColorColumns,
 }: {
   id: string;
   fieldId: string;
-  groupColor?: string;
   showColorColumns: boolean;
-}) {
-  const columnName = useBoardColumnName(id, fieldId);
+}): { option: SelectOption | undefined; style: BoardColumnColorStyle | undefined } {
+  const { field, clock } = useFieldSelector(fieldId);
 
   return useMemo(() => {
-    if (!showColorColumns || id === fieldId) {
+    if (!showColorColumns || id === fieldId || !field) {
       return {
         option: undefined,
         style: undefined,
       };
     }
 
-    const option = groupColorOptionFromName(groupColor) ?? groupColorOptionByName(columnName || id);
+    const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+    if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) {
+      return {
+        option: undefined,
+        style: undefined,
+      };
+    }
+
+    const option = parseSelectOptionTypeOptions(field)?.options.find((option) => option?.id === id);
 
     return {
       option,
-      style: getBoardColumnColorStyle(option),
+      style: getBoardColumnColorStyle(option?.color),
     };
-  }, [columnName, fieldId, groupColor, id, showColorColumns]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clock, field, fieldId, id, showColorColumns]);
 }

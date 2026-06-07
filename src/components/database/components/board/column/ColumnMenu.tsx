@@ -1,14 +1,20 @@
 import { ReactNode, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { GroupColorOption, Row } from '@/application/database-yjs';
 import {
-  useToggleHiddenGroupColumnDispatch,
-  useUpdateGroupColumnColorDispatch,
-} from '@/application/database-yjs/dispatch';
+  FieldType,
+  parseSelectOptionTypeOptions,
+  Row,
+  SelectOptionColor,
+  useDatabaseContext,
+  useFieldSelector,
+} from '@/application/database-yjs';
+import { useToggleHiddenGroupColumnDispatch, useUpdateSelectOption } from '@/application/database-yjs/dispatch';
+import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as DeleteIcon } from '@/assets/icons/delete.svg';
 import { ReactComponent as EditIcon } from '@/assets/icons/edit.svg';
 import { ReactComponent as HideIcon } from '@/assets/icons/hide.svg';
+import { useSubscriptionPlan } from '@/components/app/hooks/useSubscriptionPlan';
 import {
   BOARD_COLUMN_COLOR_OPTIONS,
   getBoardColumnColorLabelKey,
@@ -48,7 +54,6 @@ export function ColumnMenu({
   groupId,
   getCards,
   showColorColumns,
-  currentColorOption,
 }: {
   children: ReactNode;
   groupId: string;
@@ -59,28 +64,47 @@ export function ColumnMenu({
   hideEnabled?: boolean;
   getCards: (id: string) => Row[];
   showColorColumns?: boolean;
-  currentColorOption?: GroupColorOption;
 }) {
   const [renameOpen, setRenameOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const toggleHidden = useToggleHiddenGroupColumnDispatch(groupId, fieldId);
-  const updateColor = useUpdateGroupColumnColorDispatch(groupId);
+  const updateSelectOption = useUpdateSelectOption(fieldId);
+  const { getSubscriptions } = useDatabaseContext();
+  const { isPro } = useSubscriptionPlan(getSubscriptions);
+  const { field, clock } = useFieldSelector(fieldId);
 
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const canUpdateColor = showColorColumns && id !== fieldId;
-  const selectColor = (option: GroupColorOption) => {
-    updateColor(id, option);
+
+  const selectOption = useMemo(() => {
+    if (!field) return;
+
+    const fieldType = Number(field.get(YjsDatabaseKey.type)) as FieldType;
+
+    if (![FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType)) return;
+
+    return parseSelectOptionTypeOptions(field)?.options.find((option) => option?.id === id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clock, field, id]);
+
+  const canUpdateColor = Boolean(showColorColumns && selectOption);
+  const selectColor = (color: SelectOptionColor) => {
+    if (!selectOption) return;
+
+    updateSelectOption(selectOption.id, {
+      ...selectOption,
+      color,
+    });
     setOpen(false);
   };
 
   const colorOptions = useMemo(() => {
-    return BOARD_COLUMN_COLOR_OPTIONS.map((option) => ({
-      option,
-      label: t(getBoardColumnColorLabelKey(option)),
-      swatchColor: getBoardColumnColorStyle(option)?.paletteColor || 'transparent',
+    return BOARD_COLUMN_COLOR_OPTIONS.filter((_, index) => isPro || index < 10).map((color) => ({
+      color,
+      label: t(getBoardColumnColorLabelKey(color)),
+      swatchColor: getBoardColumnColorStyle(color)?.paletteColor || 'transparent',
     }));
-  }, [t]);
+  }, [isPro, t]);
 
   const options = useMemo(() => {
     return [
@@ -180,24 +204,24 @@ export function ColumnMenu({
                 </div>
                 {colorOptions.map((color) => (
                   <button
-                    key={color.option}
+                    key={color.color}
                     type='button'
                     className={cn(dropdownMenuItemVariants(), 'w-full text-left')}
                     onKeyDown={(event) => {
                       if (event.key !== 'Enter' && event.key !== ' ') return;
                       event.preventDefault();
                       event.stopPropagation();
-                      selectColor(color.option);
+                      selectColor(color.color);
                     }}
                     onClick={(event) => {
                       event.preventDefault();
                       event.stopPropagation();
-                      selectColor(color.option);
+                      selectColor(color.color);
                     }}
                   >
                     <ColorSwatch color={color.swatchColor} />
                     <span className='truncate'>{color.label}</span>
-                    {currentColorOption === color.option && <DropdownMenuItemTick />}
+                    {selectOption?.color === color.color && <DropdownMenuItemTick />}
                   </button>
                 ))}
               </>

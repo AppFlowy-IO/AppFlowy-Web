@@ -45,7 +45,6 @@ const GroupHeader = forwardRef<
           rowCount={groupResult.get(data.id)?.length || 0}
           addCardBefore={addCardBefore}
           groupId={groupId}
-          groupColor={data.group_color}
           showColorColumns={showColorColumns}
         />
       ))}

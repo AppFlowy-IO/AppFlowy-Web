@@ -189,8 +189,9 @@ body {
   border-color: #59647a;
 }
 
-.board-card.board-card-selected {
-  border-color: var(--border-theme-thick);
+.board-card.board-card-selected,
+:root[data-dark-mode='true'] .board-card.board-card-selected {
+  border-color: var(--board-card-highlight-color, var(--border-theme-thick));
 }
 
 .no-scrollbar::-webkit-scrollbar {

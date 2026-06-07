@@ -468,7 +468,6 @@ export enum YjsDatabaseKey {
   format = 'format',
   filter_type = 'filter_type',
   visible = 'visible',
-  group_color = 'group_color',
   collapsed_group_ids = 'collapsed_group_ids',
   hide_ungrouped_column = 'hide_ungrouped_column',
   collapse_hidden_groups = 'collapse_hidden_groups',
@@ -799,14 +798,12 @@ export interface YDatabaseGroup extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.collapsed_group_ids): Y.Array<string> | string[] | undefined;
 }
 
-export type YDatabaseGroupColumns = Y.Array<{ id: string; visible: boolean; group_color?: string }>;
+export type YDatabaseGroupColumns = Y.Array<{ id: string; visible: boolean }>;
 
 export interface YDatabaseGroupColumn extends Y.Map<unknown> {
   get(key: YjsDatabaseKey.id): string;
 
   get(key: YjsDatabaseKey.visible): boolean;
-
-  get(key: YjsDatabaseKey.group_color): string | undefined;
 }
 
 export interface YDatabaseSort extends Y.Map<unknown> {

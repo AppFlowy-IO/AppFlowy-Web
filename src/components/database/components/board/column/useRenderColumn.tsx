@@ -8,25 +8,10 @@ import { YjsDatabaseKey } from '@/application/types';
 import { ReactComponent as CheckboxCheckSvg } from '@/assets/icons/check_filled.svg';
 import { ReactComponent as CheckboxUncheckSvg } from '@/assets/icons/uncheck.svg';
 import { Tag } from '@/components/_shared/tag';
-import { BoardColumnColorStyle } from '@/components/database/components/board/column/boardColumnColor';
 import { getBoardColumnName } from '@/components/database/components/board/column/columnName';
 import { SelectOptionColorMap, SelectOptionFgColorMap } from '@/components/database/components/cell/cell.const';
 
-function BoardColumnLabel({ label, colorStyle }: { label: string; colorStyle: BoardColumnColorStyle }) {
-  return (
-    <div
-      className='flex min-w-[22px] max-w-full items-center justify-center truncate rounded-[6px] px-2 py-[1px] text-[0.75rem] leading-[1.5]'
-      style={{
-        backgroundColor: colorStyle.labelBackgroundColor,
-        color: colorStyle.textColor,
-      }}
-    >
-      <div className='truncate'>{label}</div>
-    </div>
-  );
-}
-
-export function useRenderColumn(id: string, fieldId: string, colorStyle?: BoardColumnColorStyle) {
+export function useRenderColumn(id: string, fieldId: string) {
   const { field, clock } = useFieldSelector(fieldId);
   const fieldType = Number(field?.get(YjsDatabaseKey.type)) as FieldType;
   const { t } = useTranslation();
@@ -35,7 +20,7 @@ export function useRenderColumn(id: string, fieldId: string, colorStyle?: BoardC
     if (!field) return null;
     if (fieldType === FieldType.Checkbox)
       return (
-        <div className={'flex items-center gap-2'} style={{ color: colorStyle?.textColor }}>
+        <div className={'flex items-center gap-2'}>
           {getChecked(id) ? (
             <>
               <CheckboxCheckSvg className={'h-5 w-5'} />
@@ -56,15 +41,11 @@ export function useRenderColumn(id: string, fieldId: string, colorStyle?: BoardC
       return (
         <Tooltip title={label} enterNextDelay={1000} enterDelay={1000}>
           <span>
-            {colorStyle ? (
-              <BoardColumnLabel label={label} colorStyle={colorStyle} />
-            ) : (
-              <Tag
-                label={label}
-                textColor={option?.color ? SelectOptionFgColorMap[option?.color] : 'text-text-primary'}
-                bgColor={option?.color ? SelectOptionColorMap[option?.color] : 'transparent'}
-              />
-            )}
+            <Tag
+              label={label}
+              textColor={option?.color ? SelectOptionFgColorMap[option?.color] : 'text-text-primary'}
+              bgColor={option?.color ? SelectOptionColorMap[option?.color] : 'transparent'}
+            />
           </span>
         </Tooltip>
       );
@@ -72,7 +53,7 @@ export function useRenderColumn(id: string, fieldId: string, colorStyle?: BoardC
 
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [field, clock, fieldType, id, label, colorStyle]);
+  }, [field, clock, fieldType, id, label]);
 
   const renameEnabled = useMemo(() => {
     return [FieldType.SingleSelect, FieldType.MultiSelect].includes(fieldType);

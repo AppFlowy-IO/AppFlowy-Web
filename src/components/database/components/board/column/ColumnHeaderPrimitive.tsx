@@ -1,10 +1,9 @@
 import { forwardRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { GroupColorOption, Row, useReadOnly } from '@/application/database-yjs';
+import { Row, useReadOnly } from '@/application/database-yjs';
 import { ReactComponent as MoreIcon } from '@/assets/icons/more.svg';
 import { ReactComponent as AddIcon } from '@/assets/icons/plus.svg';
-import { BoardColumnColorStyle } from '@/components/database/components/board/column/boardColumnColor';
 import { ColumnMenu } from '@/components/database/components/board/column/ColumnMenu';
 import { useRenderColumn } from '@/components/database/components/board/column/useRenderColumn';
 import { Button } from '@/components/ui/button';
@@ -20,8 +19,6 @@ function ColumnHeaderPrimitive(
     addCardBefore,
     getCards,
     groupId,
-    colorStyle,
-    colorOption,
     showColorColumns,
     ...props
   }: {
@@ -31,13 +28,11 @@ function ColumnHeaderPrimitive(
     getCards: (id: string) => Row[];
     addCardBefore: (id: string) => void;
     groupId: string;
-    colorStyle?: BoardColumnColorStyle;
-    colorOption?: GroupColorOption;
     showColorColumns?: boolean;
   } & React.HTMLAttributes<HTMLDivElement>,
   ref: React.Ref<HTMLDivElement>
 ) {
-  const { header, renameEnabled, deleteEnabled, hideEnabled } = useRenderColumn(id, fieldId, colorStyle);
+  const { header, renameEnabled, deleteEnabled, hideEnabled } = useRenderColumn(id, fieldId);
   const { t } = useTranslation();
   const readOnly = useReadOnly();
 
@@ -65,7 +60,6 @@ function ColumnHeaderPrimitive(
             hideEnabled={hideEnabled}
             getCards={getCards}
             showColorColumns={Boolean(showColorColumns)}
-            currentColorOption={colorOption}
           >
             <Button variant={'ghost'} size={'icon-sm'} className={'text-icon-secondary'}>
               <MoreIcon className={'h-5 w-5'} />

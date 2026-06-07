@@ -11,7 +11,6 @@ function ColumnHeader({
   addCardBefore,
   getCards,
   groupId,
-  groupColor,
   showColorColumns,
 }: {
   id: string;
@@ -20,15 +19,13 @@ function ColumnHeader({
   addCardBefore: (id: string) => void;
   getCards: (id: string) => Row[];
   groupId: string;
-  groupColor?: string;
   showColorColumns: boolean;
 }) {
   const { columnRef, headerRef, state, isDragging } = useColumnHeaderDrag(id);
   const readOnly = useReadOnly();
-  const { style: colorStyle, option: colorOption } = useBoardColumnColor({
+  const { style: colorStyle } = useBoardColumnColor({
     id,
     fieldId,
-    groupColor,
     showColorColumns,
   });
 
@@ -54,8 +51,6 @@ function ColumnHeader({
         }}
         getCards={getCards}
         groupId={groupId}
-        colorStyle={colorStyle}
-        colorOption={colorOption}
         showColorColumns={showColorColumns}
       />
       {state.type === StateType.IS_COLUMN_OVER && state.closestEdge && <DropColumnIndicator edge={state.closestEdge} />}

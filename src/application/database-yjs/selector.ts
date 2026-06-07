@@ -947,7 +947,6 @@ export function useGroupsSelector() {
 export interface GroupColumn {
   id: string;
   visible: boolean;
-  group_color?: string;
 }
 
 function normalizeGroupColumn(column: unknown): GroupColumn | null {
@@ -964,7 +963,6 @@ function normalizeGroupColumn(column: unknown): GroupColumn | null {
     return {
       id,
       visible: parseVisible(mapColumn.get(YjsDatabaseKey.visible)),
-      group_color: mapColumn.get(YjsDatabaseKey.group_color) as string | undefined,
     };
   }
 
@@ -975,7 +973,6 @@ function normalizeGroupColumn(column: unknown): GroupColumn | null {
   return {
     id: plainColumn.id,
     visible: parseVisible(plainColumn.visible),
-    group_color: plainColumn.group_color,
   };
 }
 

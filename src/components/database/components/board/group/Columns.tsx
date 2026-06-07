@@ -64,7 +64,6 @@ const Columns = forwardRef<
           id={data.id}
           fieldId={fieldId}
           rows={data.rows}
-          groupColor={data.group_color}
           showColorColumns={showColorColumns}
           {...props}
         />
