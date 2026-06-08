@@ -12,7 +12,7 @@ import { database_blob } from '@/proto/database_blob';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
-import { APIResponse, APIError, executeAPIRequest, executeAPIVoidRequest, getAxios, parseRetryAfterSecs } from './core';
+import { APIResponse, APIError, executeAPIRequest, executeAPIVoidRequest, getAxios, parseRetryAfterSecs, withRetry } from './core';
 
 export interface CollabFullSyncBatchResult {
   objectId: string;
@@ -337,45 +337,51 @@ export async function createCollabVersion(
   const snapshot = toBase64(ySnapshot);
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
 
-  return executeAPIRequest<string>(() =>
-    getAxios()?.post<APIResponse<string>>(url, {
-      snapshot,
-      name,
-      collab_type: collabType,
-    })
+  return withRetry(() =>
+    executeAPIRequest<string>(() =>
+      getAxios()?.post<APIResponse<string>>(url, {
+        snapshot,
+        name,
+        collab_type: collabType,
+      })
+    )
   );
 }
 
 export async function deleteCollabVersion(workspaceId: string, objectId: string, version: string) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/history`;
 
-  return executeAPIVoidRequest(() =>
-    getAxios()?.delete<APIResponse>(url, {
-      data: JSON.stringify(version),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+  return withRetry(() =>
+    executeAPIVoidRequest(() =>
+      getAxios()?.delete<APIResponse>(url, {
+        data: JSON.stringify(version),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      })
+    )
   );
 }
 
 export async function revertCollabVersion(workspaceId: string, objectId: string, collabType: Types, version: string) {
   const url = `/api/workspace/${workspaceId}/collab/${objectId}/revert`;
-  const data = await executeAPIRequest<{
-    state_vector: number[];
-    doc_state: number[];
-    collab_version: string | null;
-    version: number; // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
-  }>(() =>
-    getAxios()?.post<APIResponse<{
+  const data = await withRetry(() =>
+    executeAPIRequest<{
       state_vector: number[];
       doc_state: number[];
       collab_version: string | null;
       version: number;
-    }>>(url, {
-      version,
-      collab_type: collabType,
-    })
+    }>(() =>
+      getAxios()?.post<APIResponse<{
+        state_vector: number[];
+        doc_state: number[];
+        collab_version: string | null;
+        version: number;
+      }>>(url, {
+        version,
+        collab_type: collabType,
+      })
+    )
   );
 
   return {

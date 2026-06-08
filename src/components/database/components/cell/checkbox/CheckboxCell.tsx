@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 
 import { CellProps, CheckboxCell as CheckboxCellType } from '@/application/database-yjs/cell.type';
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
@@ -17,17 +17,12 @@ export function CheckboxCell({
   setEditing,
 }: CellProps<CheckboxCellType>) {
   const onUpdateCell = useUpdateCellDispatch(rowId, fieldId);
-
-  const checkedRef = useRef<boolean>(getChecked(cell?.data));
-
-  useEffect(() => {
-    checkedRef.current = getChecked(cell?.data);
-  }, [cell?.data]);
+  const checked = getChecked(cell?.data);
 
   useEffect(() => {
     if (readOnly) return;
     if (editing) {
-      if (checkedRef.current) {
+      if (checked) {
         onUpdateCell('No');
       } else {
         onUpdateCell('Yes');
@@ -35,15 +30,15 @@ export function CheckboxCell({
 
       setEditing?.(false);
     }
-  }, [editing, onUpdateCell, setEditing, readOnly]);
+  }, [checked, editing, onUpdateCell, setEditing, readOnly]);
   return (
     <div
       style={style}
       data-testid={`checkbox-cell-${rowId}-${fieldId}`}
-      data-checked={checkedRef.current}
+      data-checked={checked}
       className={cn('relative flex h-full w-full text-lg text-text-action', readOnly ? '' : 'cursor-pointer')}
     >
-      {checkedRef.current ? (
+      {checked ? (
         <CheckboxCheckSvg className={'h-5 w-5'} data-testid="checkbox-checked-icon" />
       ) : (
         <CheckboxUncheckSvg className={'h-5 w-5 text-border-primary hover:text-border-primary-hover'} data-testid="checkbox-unchecked-icon" />

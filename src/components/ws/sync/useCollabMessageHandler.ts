@@ -16,6 +16,8 @@ import { isCollabVersionId, RegisterSyncContext, SyncDocMeta, versionChanged } f
 
 import ICollabMessage = collab.ICollabMessage;
 
+const MAX_QUEUED_MESSAGES_BEFORE_CONTEXT = 50;
+
 export function useCollabMessageHandler(
   refs: SyncRefs,
   wsCollabMessage: ICollabMessage | undefined | null,
@@ -26,6 +28,31 @@ export function useCollabMessageHandler(
 ) {
   const lastHandledWsMessageRef = useRef<ICollabMessage | null>(null);
   const lastHandledBcMessageRef = useRef<ICollabMessage | null>(null);
+
+  const queueMessageBeforeContext = useCallback((message: ICollabMessage) => {
+    const objectId = message.objectId;
+
+    if (!objectId) {
+      return false;
+    }
+
+    const queued = refs.queuedMessagesBeforeContext.current.get(objectId) ?? [];
+
+    queued.push(message);
+    while (queued.length > MAX_QUEUED_MESSAGES_BEFORE_CONTEXT) {
+      queued.shift();
+    }
+
+    refs.queuedMessagesBeforeContext.current.set(objectId, queued);
+    Log.debug('[sync] queued collab message until context registers', {
+      objectId,
+      collabType: message.collabType,
+      queueLength: queued.length,
+      hasUpdate: Boolean(message.update),
+      hasSyncRequest: Boolean(message.syncRequest),
+    });
+    return true;
+  }, [refs]);
 
   const applyCollabMessage = useCallback(
     async (
@@ -62,6 +89,18 @@ export function useCollabMessageHandler(
       }
 
       Log.debug(`[Version] context lookup: objectId=${objectId}, hasContext=${!!context}, docVersion=${JSON.stringify(context?.doc?.version)}, isCollabVersionId(docVersion)=${context ? isCollabVersionId(context.doc.version) : 'N/A'}`);
+
+      if (!context) {
+        if (queueMessageBeforeContext(message)) {
+          return;
+        }
+
+        Log.debug('[sync] skipped collab message without active context', {
+          objectId,
+          collabType: message.collabType,
+        });
+        return;
+      }
 
       if (context) {
         let messageHandled = false;
@@ -238,7 +277,7 @@ export function useCollabMessageHandler(
 
       Log.debug('Received collab message:', message.collabType, message);
     },
-    [refs, eventEmitter, registerSyncContext, scheduleDeferredCleanup]
+    [refs, eventEmitter, registerSyncContext, scheduleDeferredCleanup, queueMessageBeforeContext]
   );
 
   const processIncomingMessageQueueForObject = useCallback(async (objectId: string) => {
@@ -311,6 +350,35 @@ export function useCollabMessageHandler(
     },
     [refs, processIncomingMessageQueueForObject]
   );
+
+  const replayMessagesQueuedBeforeContext = useCallback((objectId: string) => {
+    const queued = refs.queuedMessagesBeforeContext.current.get(objectId);
+
+    if (!queued || queued.length === 0) {
+      return;
+    }
+
+    refs.queuedMessagesBeforeContext.current.delete(objectId);
+    const pending = refs.incomingMessageQueuesRef.current.get(objectId) ?? [];
+
+    refs.incomingMessageQueuesRef.current.set(objectId, [...queued, ...pending]);
+    Log.debug('[sync] replaying collab messages queued before context registration', {
+      objectId,
+      queued: queued.length,
+      pending: pending.length,
+    });
+    void processIncomingMessageQueueForObject(objectId);
+  }, [refs, processIncomingMessageQueueForObject]);
+
+  useEffect(() => {
+    refs.onContextRegisteredRef.current = replayMessagesQueuedBeforeContext;
+
+    return () => {
+      if (refs.onContextRegisteredRef.current === replayMessagesQueuedBeforeContext) {
+        refs.onContextRegisteredRef.current = undefined;
+      }
+    };
+  }, [refs, replayMessagesQueuedBeforeContext]);
 
   useEffect(() => {
     const message = wsCollabMessage;

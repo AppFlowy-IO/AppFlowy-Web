@@ -137,6 +137,16 @@ export type SyncRefs = {
   queuedMessagesDuringReset: React.MutableRefObject<Map<string, ICollabMessage[]>>;
 
   /**
+   * Database-row messages received before the row's sync context exists.
+   *
+   * The database collab can reveal a new row before Web has mounted and
+   * registered that row's own collab context. Without this short-lived queue,
+   * the row-content update is lost and the grid keeps rendering the loading
+   * placeholder until a reload or blob refresh rehydrates the row.
+   */
+  queuedMessagesBeforeContext: React.MutableRefObject<Map<string, ICollabMessage[]>>;
+
+  /**
    * Transient per-tab "latest seen" incoming version, keyed by `objectId`.
    *
    * Updated at the top of `applyCollabMessage` for every message that carries a
@@ -177,6 +187,15 @@ export type SyncRefs = {
   processingObjectIdsRef: React.MutableRefObject<Set<string>>;
 
   /**
+   * Optional callback installed by `useCollabMessageHandler`.
+   *
+   * `useSyncContextLifecycle` calls this after registering a context so any
+   * messages queued in `queuedMessagesBeforeContext` can be replayed through
+   * the normal per-object FIFO processor.
+   */
+  onContextRegisteredRef: React.MutableRefObject<((objectId: string) => void) | undefined>;
+
+  /**
    * Snapshot of the latest `currentUser` value from React context.
    *
    * Kept in a ref so that async callbacks (e.g. the message queue processor)
@@ -211,11 +230,13 @@ export function useSyncRefs(): SyncRefs {
   const pendingCleanups = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const resettingObjectIds = useRef<Set<string>>(new Set());
   const queuedMessagesDuringReset = useRef<Map<string, ICollabMessage[]>>(new Map());
+  const queuedMessagesBeforeContext = useRef<Map<string, ICollabMessage[]>>(new Map());
   const latestIncomingVersionRef = useRef<Map<string, string>>(new Map());
 
   // ── 4. Message queue & lifecycle ─────────────────────────────────────
   const incomingMessageQueuesRef = useRef<Map<string, ICollabMessage[]>>(new Map());
   const processingObjectIdsRef = useRef<Set<string>>(new Set());
+  const onContextRegisteredRef = useRef<((objectId: string) => void) | undefined>(undefined);
   const latestUserRef = useRef<User | undefined>(undefined);
   const isDisposedRef = useRef(false);
 
@@ -232,9 +253,11 @@ export function useSyncRefs(): SyncRefs {
     pendingCleanups,
     resettingObjectIds,
     queuedMessagesDuringReset,
+    queuedMessagesBeforeContext,
     latestIncomingVersionRef,
     incomingMessageQueuesRef,
     processingObjectIdsRef,
+    onContextRegisteredRef,
     latestUserRef,
     isDisposedRef,
   }), []);

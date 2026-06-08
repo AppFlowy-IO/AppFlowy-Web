@@ -380,6 +380,50 @@ describe('useSync deferred cleanup', () => {
     outboxMock.clearDrainConfig();
     unmount();
   });
+
+  it('replays unknown-typed row update received before the row context registers', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const databaseId = '33333333-3333-4333-8333-333333333334';
+    const rowId = '33333333-3333-4333-8333-333333333335';
+    const serverDoc = createDatabaseRowDoc(rowId, databaseId, { field_a: 'desktop value' });
+    const localDoc = createDoc(rowId);
+    const update = Y.encodeStateAsUpdate(serverDoc);
+    const message = {
+      objectId: rowId,
+      collabType: Types.Unknown,
+      update: {
+        flags: 0,
+        payload: update,
+      },
+    };
+
+    const { result, rerender, unmount } = renderHook(() =>
+      useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId)
+    );
+
+    act(() => {
+      ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await flushPromises();
+    expect(mockedHandleMessage).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.registerSyncContext({ doc: localDoc, collabType: Types.DatabaseRow });
+    });
+
+    await waitFor(() => {
+      expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(mockedHandleMessage.mock.calls[0]?.[0].doc).toBe(localDoc);
+    expect(mockedHandleMessage.mock.calls[0]?.[1]).toBe(message);
+
+    unmount();
+    serverDoc.destroy();
+    localDoc.destroy();
+  });
 });
 
 describe('useSync version-gated message handling', () => {
@@ -468,6 +512,41 @@ describe('useSync version-gated message handling', () => {
     unmount();
     doc.destroy();
     nextDoc.destroy();
+  });
+
+  it('does not reset unknown local version on sync request without remote version', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '55555555-5555-4555-8555-555555555554';
+    const doc = createDoc(objectId) as Y.Doc & { version?: string };
+    const { result, rerender, unmount } = renderHook(() =>
+      useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId)
+    );
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.DatabaseRow });
+    });
+
+    const message = {
+      objectId,
+      collabType: Types.DatabaseRow,
+      syncRequest: {},
+    };
+
+    act(() => {
+      ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(mockedHandleMessage).toHaveBeenCalledTimes(1);
+    });
+    expect(mockedHandleMessage.mock.calls[0]?.[0].doc).toBe(doc);
+    expect(mockedHandleMessage.mock.calls[0]?.[1]).toBe(message);
+    expect(mockedOpenCollabDB).not.toHaveBeenCalled();
+
+    unmount();
+    doc.destroy();
   });
 
   it('resets unknown local version on sync request with known remote version', async () => {

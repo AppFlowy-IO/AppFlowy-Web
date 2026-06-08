@@ -290,6 +290,6 @@ describe('collabTypeToDBType', () => {
     expect(collabTypeToDBType(Types.WorkspaceDatabase)).toBe('databases');
     expect(collabTypeToDBType(Types.DatabaseRow)).toBe('database_row');
     expect(collabTypeToDBType(Types.UserAwareness)).toBe('user_awareness');
-    expect(collabTypeToDBType(Types.Empty)).toBe('');
+    expect(collabTypeToDBType(Types.Unknown)).toBe('');
   });
 });

@@ -1897,7 +1897,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     return () => {
       cell?.unobserveDeep(observerEvent);
     };
-  }, [cell, field, rowId, fieldId]);
+  }, [cell, field, fieldClock, rowId, fieldId]);
 
   useEffect(() => {
     if (!cells) return;
@@ -1920,7 +1920,7 @@ export function useCellSelector({ rowId, fieldId }: { rowId: string; fieldId: st
     return () => {
       cells.unobserve(observerEvent);
     };
-  }, [cells, fieldId, field, rowId]);
+  }, [cells, fieldId, field, fieldClock, rowId]);
 
   if (fieldType === FieldType.Rollup) {
     return rollupCell;

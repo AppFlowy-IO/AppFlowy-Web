@@ -2,6 +2,7 @@ import EventEmitter from 'events';
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 
+import { ERROR_CODE } from '@/application/constants';
 import { AccessLevel, ObjectPermission, Types, View, ViewExtra, ViewLayout } from '@/application/types';
 import { AuthInternalContext, AuthInternalContextType } from '@/components/app/contexts/AuthInternalContext';
 import { SyncInternalContext, SyncInternalContextType } from '@/components/app/contexts/SyncInternalContext';
@@ -113,11 +114,11 @@ describe('useViewReadOnlyStatus permission API', () => {
     expect(getObjectPermission).toHaveBeenCalledWith('workspace-id', 'view-id', 0, expect.any(AbortSignal));
   });
 
-  it('queries database views by database collab identity', async () => {
+  it('queries database views by folder view permission identity', async () => {
     getObjectPermission.mockResolvedValue(
       createPermission({
-        object_id: 'database-id',
-        collab_type: Types.Database,
+        object_id: 'database-view-id',
+        collab_type: Types.Document,
         governing_view_id: 'database-view-id',
       })
     );
@@ -134,8 +135,8 @@ describe('useViewReadOnlyStatus permission API', () => {
     await waitFor(() => {
       expect(getObjectPermission).toHaveBeenCalledWith(
         'workspace-id',
-        'database-id',
-        Types.Database,
+        'database-view-id',
+        Types.Document,
         expect.any(AbortSignal)
       );
     });
@@ -172,7 +173,7 @@ describe('useViewReadOnlyStatus permission API', () => {
     expect(getObjectPermission).toHaveBeenCalledTimes(2);
   });
 
-  it('refetches database permission when notification targets the database object', async () => {
+  it('refetches database view permission when notification targets the folder view', async () => {
     const eventEmitter = new EventEmitter();
     const databaseView = createView({
       view_id: 'database-view-id',
@@ -183,15 +184,15 @@ describe('useViewReadOnlyStatus permission API', () => {
     getObjectPermission
       .mockResolvedValueOnce(
         createPermission({
-          object_id: 'database-id',
-          collab_type: Types.Database,
+          object_id: 'database-view-id',
+          collab_type: Types.Document,
           governing_view_id: 'database-view-id',
         })
       )
       .mockResolvedValueOnce(
         createPermission({
-          object_id: 'database-id',
-          collab_type: Types.Database,
+          object_id: 'database-view-id',
+          collab_type: Types.Document,
           governing_view_id: 'database-view-id',
           access_level: AccessLevel.ReadOnly,
           can_write: false,
@@ -208,18 +209,20 @@ describe('useViewReadOnlyStatus permission API', () => {
     });
 
     act(() => {
-      eventEmitter.emit('permission-changed', { objectId: 'database-id' });
+      eventEmitter.emit('permission-changed', { objectId: 'database-view-id' });
     });
 
-    expect(result.current).toBe(true);
+    await waitFor(() => {
+      expect(result.current).toBe(true);
+    });
 
     await waitFor(() => {
       expect(getObjectPermission).toHaveBeenCalledTimes(2);
     });
     expect(getObjectPermission).toHaveBeenLastCalledWith(
       'workspace-id',
-      'database-id',
-      Types.Database,
+      'database-view-id',
+      Types.Document,
       expect.any(AbortSignal)
     );
     expect(result.current).toBe(true);
@@ -247,7 +250,61 @@ describe('useViewReadOnlyStatus permission API', () => {
     await waitFor(() => {
       expect(getObjectPermission).toHaveBeenCalledTimes(2);
     });
-    expect(result.current).toBe(true);
+    await waitFor(() => {
+      expect(result.current).toBe(true);
+    });
+  });
+
+  it('retries a permission refresh after the server returns too many requests', async () => {
+    const eventEmitter = new EventEmitter();
+
+    getObjectPermission
+      .mockResolvedValueOnce(createPermission())
+      .mockRejectedValueOnce({
+        code: ERROR_CODE.TOO_MANY_REQUESTS,
+        message: 'permission resolver is busy',
+        retryAfterSecs: 1,
+      })
+      .mockResolvedValueOnce(createPermission());
+
+    const { result } = renderHook(() => useViewReadOnlyStatus('view-id', []), {
+      wrapper: wrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current).toBe(false);
+    });
+
+    jest.useFakeTimers();
+    try {
+      act(() => {
+        eventEmitter.emit('permission-changed', { objectId: 'view-id' });
+      });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      await waitFor(() => {
+        expect(result.current).toBe(true);
+      });
+      expect(getObjectPermission).toHaveBeenCalledTimes(2);
+
+      act(() => {
+        jest.advanceTimersByTime(999);
+      });
+      expect(getObjectPermission).toHaveBeenCalledTimes(2);
+
+      await act(async () => {
+        jest.advanceTimersByTime(1);
+        await Promise.resolve();
+      });
+
+      expect(getObjectPermission).toHaveBeenCalledTimes(3);
+      expect(result.current).toBe(false);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 
   it('ignores older permission responses after a newer refresh resolves', async () => {
@@ -265,7 +322,9 @@ describe('useViewReadOnlyStatus permission API', () => {
       eventEmitter.emit('permission-changed', { objectId: 'view-id' });
     });
 
-    expect(result.current).toBe(true);
+    await waitFor(() => {
+      expect(result.current).toBe(true);
+    });
 
     await act(async () => {
       second.resolve(
@@ -314,7 +373,9 @@ describe('useViewReadOnlyStatus permission API', () => {
       eventEmitter.emit('permission-changed', { objectId: 'parent-view-id' });
     });
 
-    expect(result.current).toBe(true);
+    await waitFor(() => {
+      expect(result.current).toBe(true);
+    });
 
     await waitFor(() => {
       expect(getObjectPermission).toHaveBeenCalledTimes(2);

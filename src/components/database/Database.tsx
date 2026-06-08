@@ -293,13 +293,24 @@ function Database(props: Database2Props) {
       }
 
       syncedRowKeysRef.current.add(rowKey);
-      void createRow(rowKey).catch((e) => {
-        console.error('[Database] registerRowSync failed', rowKey, e);
-        // Remove from set so it can be retried
-        syncedRowKeysRef.current.delete(rowKey);
-      });
+      void createRow(rowKey)
+        .then((rowDoc) => {
+          const [rowKeyDatabaseId, rowId] = rowKey.split('_rows_');
+
+          if (!rowDoc || !rowId || rowKeyDatabaseId !== getDatabaseId()) return;
+
+          setRowMap((prev) => {
+            if (prev[rowId]) return prev;
+            return { ...prev, [rowId]: rowDoc };
+          });
+        })
+        .catch((e) => {
+          console.error('[Database] registerRowSync failed', rowKey, e);
+          // Remove from set so it can be retried
+          syncedRowKeysRef.current.delete(rowKey);
+        });
     },
-    [createRow]
+    [createRow, getDatabaseId]
   );
 
   const bindRowSync = useCallback(

@@ -929,7 +929,7 @@ export enum Types {
   Folder = 3,
   DatabaseRow = 4,
   UserAwareness = 5,
-  Empty = 6,
+  Unknown = 6,
 }
 
 export enum CollabOrigin {

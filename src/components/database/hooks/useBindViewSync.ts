@@ -35,7 +35,7 @@ export function useBindViewSync() {
       const objectId = docWithMeta.object_id;
       const viewId = docWithMeta.view_id ?? objectId;
 
-      // Use explicit undefined check for collabType since Types.Document = 0 is falsy
+      // Use explicit undefined check so zero-valued collab types remain valid.
       if (collabType === undefined || !objectId || !viewId) {
         Log.warn('[useBindViewSync] failed - missing metadata', {
           hasCollabType: collabType !== undefined,

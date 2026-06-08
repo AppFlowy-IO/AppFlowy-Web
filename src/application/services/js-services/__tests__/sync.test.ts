@@ -96,6 +96,80 @@ const mockSync = (clientCount: number, tracer = defaultTracer): SyncContext[] =>
   return clients;
 };
 
+describe('database row hydration sync', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  it('responds to row sync requests with full row state', () => {
+    const doc = new Y.Doc({ guid: random.uuidv4() });
+    const text = doc.getText('cell');
+    const emit = jest.fn();
+    const context: SyncContext = {
+      doc,
+      emit,
+      collabType: Types.DatabaseRow,
+    };
+
+    text.insert(0, 'row-value');
+
+    handleMessage(context, {
+      objectId: doc.guid,
+      collabType: Types.DatabaseRow,
+      syncRequest: {
+        stateVector: Y.encodeStateVector(doc),
+        lastMessageId: { timestamp: 0, counter: 0 },
+      },
+    });
+
+    const payload = emit.mock.calls[0]?.[0].collabMessage?.update?.payload;
+    const mirror = new Y.Doc();
+
+    Y.applyUpdate(mirror, payload);
+    expect(mirror.getText('cell').toString()).toBe('row-value');
+  });
+
+  it('sends follow-up sync requests for rendered database rows', () => {
+    jest.useFakeTimers();
+
+    const doc = new Y.Doc({ guid: random.uuidv4() });
+    const emit = jest.fn();
+    const context: SyncContext = {
+      doc,
+      emit,
+      collabType: Types.DatabaseRow,
+    };
+
+    const { cleanup } = initSync(context);
+
+    expect(emit).toHaveBeenCalledTimes(1);
+    expect(emit.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({
+        collabMessage: expect.objectContaining({
+          objectId: doc.guid,
+          collabType: Types.DatabaseRow,
+          syncRequest: expect.any(Object),
+        }),
+      })
+    );
+
+    jest.advanceTimersByTime(749);
+    expect(emit).toHaveBeenCalledTimes(1);
+
+    jest.advanceTimersByTime(1);
+    expect(emit).toHaveBeenCalledTimes(2);
+
+    jest.advanceTimersByTime(1750);
+    expect(emit).toHaveBeenCalledTimes(3);
+
+    cleanup();
+    jest.advanceTimersByTime(5000);
+    expect(emit).toHaveBeenCalledTimes(3);
+
+    doc.destroy();
+  });
+});
+
 interface QueuedSyncBus {
   clients: SyncContext[];
   online: boolean[];
