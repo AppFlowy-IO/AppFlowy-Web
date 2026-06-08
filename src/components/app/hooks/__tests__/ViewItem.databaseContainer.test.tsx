@@ -30,7 +30,15 @@ jest.mock('@/components/_shared/cutsom-icon', () => ({
   CustomIconPopover: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-jest.mock('@/components/_shared/outline/OutlineIcon', () => () => null);
+jest.mock('@/components/_shared/outline/OutlineIcon', () => ({
+  __esModule: true,
+  default: ({ isExpanded, setIsExpanded }: { isExpanded: boolean; setIsExpanded: (isExpanded: boolean) => void }) => (
+    <button
+      data-testid={isExpanded ? 'outline-toggle-collapse' : 'outline-toggle-expand'}
+      onClick={() => setIsExpanded(!isExpanded)}
+    />
+  ),
+}));
 jest.mock('@/components/_shared/view-icon/PageIcon', () => () => null);
 
 describe('ViewItem database container', () => {
@@ -197,5 +205,35 @@ describe('ViewItem database container', () => {
     expect(within(screen.getByTestId(`page-${containerView.view_id}`)).queryByTestId('page-icon')).not.toBeNull();
     expect(within(screen.getByTestId(`page-${firstChildView.view_id}`)).queryByTestId('page-icon')).toBeNull();
     expect(within(screen.getByTestId(`page-${secondChildView.view_id}`)).queryByTestId('page-icon')).toBeNull();
+  });
+
+  it('keeps an expanded unloaded row retryable when children are still absent', () => {
+    const documentView: View = {
+      view_id: 'document-view-id',
+      name: 'Untitled',
+      icon: null,
+      layout: ViewLayout.Document,
+      extra: null,
+      children: [],
+      has_children: true,
+      is_published: false,
+      is_private: false,
+    };
+    const toggleExpand = jest.fn();
+
+    render(
+      <ViewItem
+        view={documentView}
+        width={240}
+        expandIds={[documentView.view_id]}
+        toggleExpand={toggleExpand}
+        onClickView={jest.fn()}
+        loadedViewIds={new Set()}
+      />
+    );
+
+    fireEvent.click(within(screen.getByTestId(`page-${documentView.view_id}`)).getByTestId('outline-toggle-expand'));
+
+    expect(toggleExpand).toHaveBeenCalledWith(documentView.view_id, true);
   });
 });

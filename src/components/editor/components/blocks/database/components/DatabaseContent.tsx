@@ -6,8 +6,6 @@ import { getPublishedDatabaseRenderRowMap } from '@/application/publish-snapshot
 import { LoadView, LoadViewMeta, UIVariant, YDoc } from '@/application/types';
 import { Database } from '@/components/database';
 
-const EMBEDDED_DATABASE_FIXED_HEIGHT = 600;
-
 interface DatabaseContentProps {
   /**
    * The base/primary view ID for the embedded database.
@@ -64,7 +62,7 @@ export const DatabaseContent = ({
   onViewAdded,
   onViewIdsChanged,
   context,
-  fixedHeight = EMBEDDED_DATABASE_FIXED_HEIGHT,
+  fixedHeight,
   onRendered,
 }: DatabaseContentProps) => {
   const { t } = useTranslation();
@@ -124,14 +122,8 @@ export const DatabaseContent = ({
   const showError = notFound || deletionStatus === 'inTrash' || deletionStatus === 'deleted';
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4">
-      {showError ? (
-        <div className="text-base font-medium">
-          {getNotFoundMessage()}
-        </div>
-      ) : (
-        <CircularProgress size={20} />
-      )}
+    <div className='flex h-full w-full flex-col items-center justify-center gap-2 rounded bg-background-primary px-16 py-10 text-text-secondary max-md:px-4'>
+      {showError ? <div className='text-base font-medium'>{getNotFoundMessage()}</div> : <CircularProgress size={20} />}
     </div>
   );
 };

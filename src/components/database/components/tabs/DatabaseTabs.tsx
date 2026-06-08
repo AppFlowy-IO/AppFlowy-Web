@@ -64,6 +64,8 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
     const [renameViewId, setRenameViewId] = useState<string | null>(null);
     const [menuViewId, setMenuViewId] = useState<string | null>(null);
+    const embeddedTitle = context.isDocumentBlock && meta ? (meta.name || _viewName || '').trim() : '';
+    const embeddedTitleViewId = context.isDocumentBlock ? meta?.view_id : undefined;
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
@@ -233,6 +235,24 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           paddingRight: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
         }}
       >
+        {embeddedTitle ? (
+          <div className={'mb-2 flex min-h-8 w-full items-center'}>
+            <button
+              type={'button'}
+              disabled={readOnly || !embeddedTitleViewId}
+              className={
+                'max-w-full truncate rounded px-0 py-1 text-left text-xl font-semibold leading-8 text-text-title outline-none hover:text-text-primary disabled:cursor-default disabled:text-text-title'
+              }
+              onClick={() => {
+                if (!embeddedTitleViewId) return;
+                setRenameViewId(embeddedTitleViewId);
+              }}
+            >
+              {embeddedTitle}
+            </button>
+          </div>
+        ) : null}
+
         <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
           <DatabaseViewTabs
             viewIds={viewIds}

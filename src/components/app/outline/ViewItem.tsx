@@ -102,6 +102,12 @@ function ViewItem({
     enabled: Boolean(reorderChildren) && (visibleChildren?.length ?? 0) > 1,
     errorMessage: 'Failed to reorder pages',
   });
+  const isLoaded = loadedViewIds?.has(viewId) ?? false;
+  const isLoading = loadingViewIds?.has(viewId) ?? false;
+  // If a previous lazy-load failed, the row can remain expanded with no
+  // children. Keep the toggle in "expand" mode so clicking it retries.
+  const childrenPresent = orderedChildren.length > 0;
+  const showExpandedToggle = isExpanded && (childrenPresent || isLoaded || isLoading);
 
   const handleChangeIcon = useCallback(
     async (icon: { ty: ViewIconType; value: string }) => {
@@ -129,14 +135,14 @@ function ViewItem({
       <span className={'flex h-full w-5 items-center justify-end text-sm'}>
         <OutlineIcon
           level={level}
-          isExpanded={isExpanded}
+          isExpanded={showExpandedToggle}
           setIsExpanded={(status) => {
             toggleExpand(viewId, status);
           }}
         />
       </span>
     );
-  }, [isExpanded, level, toggleExpand, viewId]);
+  }, [level, showExpandedToggle, toggleExpand, viewId]);
 
   // Dot icon for referenced database views (like desktop)
   const getDotIcon = useCallback(() => {
@@ -164,7 +170,6 @@ function ViewItem({
     // Determine which left icon to show
     // Use the utility function which properly handles database containers
     const isRefDatabaseView = isRefDbView(view, parentView);
-    const isLoaded = loadedViewIds?.has(view.view_id) ?? false;
     const hasConfirmedChildren = Boolean(visibleChildren?.length);
     // Use server-provided has_children when available; fall back to heuristic for old servers
     const hasChildren =
@@ -267,6 +272,7 @@ function ViewItem({
     aiEnabled,
     view,
     visibleChildren,
+    isLoaded,
     selected,
     level,
     getIcon,
@@ -280,7 +286,6 @@ function ViewItem({
     onClickView,
     viewId,
     handleChangeIcon,
-    loadedViewIds,
     dragState,
     shouldSuppressClick,
   ]);
@@ -288,8 +293,6 @@ function ViewItem({
   // Children are present in the DOM only once the lazy load has populated them.
   // Gate the open animation on actual presence (not a loading flag) so the
   // Collapse opens against real content and animates on the first expand.
-  const childrenPresent = orderedChildren.length > 0;
-
   const renderChildren = useMemo(() => {
     if (!aiEnabled && view.layout === ViewLayout.AIChat) return null;
 

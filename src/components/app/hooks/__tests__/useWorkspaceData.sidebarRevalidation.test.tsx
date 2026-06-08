@@ -391,7 +391,7 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     expect(result.current.outline?.[0]?.name).toBe('server space');
   });
 
-  it('repairs relaxed outline patches with same-rid root revalidation', async () => {
+  it('loads the target subtree instead of relaxed-applying out-of-bounds child patches', async () => {
     const eventEmitter = new EventEmitter();
     const root = createView('space-id', {
       children: [],
@@ -399,14 +399,15 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     });
     const childA = createView('child-a');
     const childB = createView('child-b');
-    const serverRoot = createView('space-id', {
-      children: [childA, childB],
-      has_children: true,
-    });
 
-    (ViewService.getOutline as jest.Mock)
-      .mockResolvedValueOnce({ outline: [root], folderRid: '1-1' })
-      .mockResolvedValueOnce({ outline: [serverRoot], folderRid: '2-1' });
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValueOnce([
+      createView('space-id', {
+        children: [childA, childB],
+        folder_rid: '2-1',
+        has_children: true,
+      }),
+    ]);
 
     const { result } = renderHook(() => useWorkspaceData(), {
       wrapper: createWrapper(eventEmitter),
@@ -429,16 +430,74 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
       });
     });
 
-    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-b']);
+    await waitFor(() => {
+      expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, ['space-id'], 1);
+      expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-a', 'child-b']);
+    });
+  });
 
-    let revalidationResult: string | undefined;
-
-    await act(async () => {
-      revalidationResult = await result.current.revalidateSidebarOutline?.([]);
+  it('loads the target subtree when a patch addresses unloaded nested children', async () => {
+    const eventEmitter = new EventEmitter();
+    const documentId = 'document-id';
+    const existingEmbeddedA = createView('existing-embedded-a');
+    const existingEmbeddedB = createView('existing-embedded-b');
+    const newEmbedded = createView('new-embedded', {
+      extra: {
+        database_id: 'database-id',
+        embedded: true,
+        is_database_container: true,
+      },
+      has_children: true,
+      name: 'New Database',
+    });
+    const root = createView('space-id', {
+      children: [
+        createView(documentId, {
+          children: [],
+          has_children: true,
+        }),
+      ],
+      has_children: true,
     });
 
-    expect(revalidationResult).toBe('changed');
-    expect(result.current.outline?.[0]?.children.map((view) => view.view_id)).toEqual(['child-a', 'child-b']);
+    (ViewService.getOutline as jest.Mock).mockResolvedValueOnce({ outline: [root], folderRid: '1-1' });
+    (ViewService.getMultiple as jest.Mock).mockResolvedValueOnce([
+      createView(documentId, {
+        children: [existingEmbeddedA, existingEmbeddedB, newEmbedded],
+        folder_rid: '2-1',
+        has_children: true,
+      }),
+    ]);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.[0]?.children[0]?.view_id).toBe(documentId);
+    });
+
+    await act(async () => {
+      eventEmitter.emit(APP_EVENTS.FOLDER_OUTLINE_CHANGED, {
+        folderRid: '2-1',
+        outlineDiffJson: JSON.stringify([
+          {
+            op: 'add',
+            path: '/outline/0/children/0/children/2',
+            value: newEmbedded,
+          },
+        ]),
+      });
+    });
+
+    await waitFor(() => {
+      expect(ViewService.getMultiple).toHaveBeenCalledWith(workspaceId, [documentId], 1);
+      expect(result.current.outline?.[0]?.children[0]?.children.map((view) => view.view_id)).toEqual([
+        existingEmbeddedA.view_id,
+        existingEmbeddedB.view_id,
+        newEmbedded.view_id,
+      ]);
+    });
   });
 
   it('resets root folder rid state when the workspace changes', async () => {
