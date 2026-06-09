@@ -1,9 +1,14 @@
-import React, { forwardRef, memo, useState } from 'react';
+import React, { forwardRef, memo, useEffect, useState } from 'react';
 
 import { useUpdateCellDispatch } from '@/application/database-yjs/dispatch';
 import { FieldId } from '@/application/types';
 import { TextareaAutosize } from '@/components/ui/textarea-autosize';
 import { createHotkey, HOT_KEY_NAME } from '@/utils/hotkeys';
+
+const isEnterHotkey = createHotkey(HOT_KEY_NAME.ENTER);
+const isEscapeHotkey = createHotkey(HOT_KEY_NAME.ESCAPE);
+const isUndoHotkey = createHotkey(HOT_KEY_NAME.UNDO);
+const isRedoHotkey = createHotkey(HOT_KEY_NAME.REDO);
 
 function TextCellEditing(
   {
@@ -27,6 +32,10 @@ function TextCellEditing(
 
   const [inputValue, setInputValue] = useState<string>(defaultValue);
 
+  useEffect(() => {
+    setInputValue(defaultValue);
+  }, [defaultValue]);
+
   return (
     <TextareaAutosize
       ref={ref}
@@ -40,8 +49,13 @@ function TextCellEditing(
         onChange?.(e.target.value);
       }}
       onKeyDown={(e) => {
-        e.stopPropagation();
-        if (createHotkey(HOT_KEY_NAME.ENTER)(e.nativeEvent) || createHotkey(HOT_KEY_NAME.ESCAPE)(e.nativeEvent)) {
+        const isHistoryHotkey = isUndoHotkey(e.nativeEvent) || isRedoHotkey(e.nativeEvent);
+
+        if (!isHistoryHotkey || inputValue !== defaultValue) {
+          e.stopPropagation();
+        }
+
+        if (isEnterHotkey(e.nativeEvent) || isEscapeHotkey(e.nativeEvent)) {
           if (inputValue !== defaultValue) {
             onUpdateCell(inputValue);
           }

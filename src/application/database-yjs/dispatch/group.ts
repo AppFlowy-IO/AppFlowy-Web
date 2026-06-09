@@ -17,8 +17,8 @@ import * as Y from 'yjs';
 import { useDatabase, useDatabaseView, useSharedRoot } from '@/application/database-yjs/context';
 import { DateGroupCondition, FieldType } from '@/application/database-yjs/database.type';
 import { parseSelectOptionTypeOptions } from '@/application/database-yjs/fields';
+import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
 import { useBoardLayoutSettings, useFieldType } from '@/application/database-yjs/selector';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
   YDatabaseBoardLayoutSetting,
   YDatabaseField,

@@ -12,6 +12,7 @@ import * as Y from 'yjs';
 
 import { useDatabaseContext } from '@/application/database-yjs/context';
 import { FieldType } from '@/application/database-yjs/database.type';
+import { runDatabaseRowAction } from '@/application/database-yjs/history';
 import { useFieldSelector } from '@/application/database-yjs/selector';
 import { YDatabaseCell, YDatabaseCells, YDatabaseRow, YDoc, YjsDatabaseKey, YjsEditorKey, YSharedRoot } from '@/application/types';
 import { Log } from '@/utils/log';
@@ -145,6 +146,7 @@ function writeCellToRow({
   cells,
   fieldId,
   fieldType,
+  rowId,
   data,
   dateOpts,
 }: {
@@ -153,12 +155,13 @@ function writeCellToRow({
   cells: YDatabaseCells;
   fieldId: string;
   fieldType: number;
+  rowId: string;
   data: CellUpdateData;
   dateOpts?: DateCellOptions;
 }) {
   const cell = cells.get(fieldId);
 
-  rowDoc.transact(() => {
+  runDatabaseRowAction(rowDoc, { type: 'cell.update', rowId, fieldId, fieldType }, () => {
     if (!cell) {
       const newCell = new Y.Map() as YDatabaseCell;
 
@@ -232,6 +235,7 @@ export function useUpdateCellDispatch(rowId: string, fieldId: string) {
           cells: target.cells,
           fieldId,
           fieldType: Number(field.get(YjsDatabaseKey.type)),
+          rowId,
           data,
           dateOpts,
         });
@@ -264,7 +268,7 @@ export function useUpdateStartEndTimeCell() {
 
         const writableTarget = target;
 
-        rowDoc.transact(() => {
+        runDatabaseRowAction(rowDoc, { type: 'cell.update-date-range', rowId, fieldId, fieldType: FieldType.DateTime }, () => {
           let cell = writableTarget.cells.get(fieldId);
 
           if (!cell) {

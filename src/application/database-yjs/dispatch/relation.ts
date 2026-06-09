@@ -15,9 +15,9 @@ import { FieldType, FieldVisibility } from '@/application/database-yjs/database.
 import { normalizeRelationTypeOption, parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit, RelationTypeOption } from '@/application/database-yjs/fields/relation/relation.type';
 import { createRelationField, setRelationTypeOptionValues } from '@/application/database-yjs/fields/relation/utils';
+import { executeDatabaseOperations as executeOperations, runDatabaseAction, runDatabaseRowAction } from '@/application/database-yjs/history';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { getRowKey } from '@/application/database-yjs/row_meta';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
 import {
   FieldId,
   RowId,
@@ -191,7 +191,7 @@ export function applyRelationCellChangeset(
 }
 
 function setRelationCellRowIds(rowDoc: YDoc, fieldId: FieldId, rowIds: RowId[]) {
-  rowDoc.transact(() => {
+  runDatabaseRowAction(rowDoc, { type: 'relation.update-cell', fieldId, fieldType: FieldType.Relation }, () => {
     const row = getRowFromDoc(rowDoc);
     const cell = getOrCreateRelationCell(rowDoc, fieldId);
 
@@ -432,7 +432,7 @@ export async function deleteReciprocalRelationField(args: {
 
   if (!relatedDoc || !relatedDatabase) return;
 
-  relatedDoc.transact(() => {
+  runDatabaseAction(relatedDoc, { type: 'relation.delete-reciprocal-field', policy: 'skip' }, () => {
     deleteFieldFromDatabase(relatedDatabase, relationOption.reciprocal_field_id as FieldId);
   });
 }
@@ -454,7 +454,9 @@ async function clearRelationCells(args: {
       createRow: args.createRow,
     });
 
-    rowDoc?.transact(() => {
+    if (!rowDoc) return;
+
+    runDatabaseRowAction(rowDoc, { type: 'relation.clear-cell', fieldId: args.fieldId, fieldType: FieldType.Relation }, () => {
       const row = getRowFromDoc(rowDoc);
 
       row?.get(YjsDatabaseKey.cells)?.delete(args.fieldId);
@@ -704,7 +706,10 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
         const oldRelatedDatabase = oldRelatedDoc ? getDatabaseFromDoc(oldRelatedDoc) : null;
 
         if (oldRelatedDatabase) {
-          oldRelatedDoc?.transact(() => deleteFieldFromDatabase(oldRelatedDatabase, oldOption.reciprocal_field_id as FieldId));
+          oldRelatedDoc &&
+            runDatabaseAction(oldRelatedDoc, { type: 'relation.delete-reciprocal-field', policy: 'skip' }, () =>
+              deleteFieldFromDatabase(oldRelatedDatabase, oldOption.reciprocal_field_id as FieldId)
+            );
         }
       }
 
@@ -749,7 +754,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
             target_limit: RelationLimit.NoLimit,
           });
 
-          relatedDoc.transact(() => {
+          runDatabaseAction(relatedDoc, { type: 'relation.create-reciprocal-field', policy: 'skip' }, () => {
             relatedDatabase.get(YjsDatabaseKey.fields)?.set(reciprocalFieldId, reciprocalField);
             addFieldToAllViews(relatedDatabase, reciprocalFieldId);
           });
@@ -815,7 +820,7 @@ export function useUpdateRelationTypeOption(fieldId: FieldId) {
         if (relatedDoc && reciprocalField) {
           const reciprocalOption = parseRelationTypeOption(reciprocalField);
 
-          relatedDoc.transact(() => {
+          runDatabaseAction(relatedDoc, { type: 'relation.update-reciprocal-field', policy: 'skip' }, () => {
             setRelationTypeOption(reciprocalField, {
               ...reciprocalOption,
               database_id: sourceDatabaseId,
@@ -863,7 +868,7 @@ export async function createRowInRelatedDatabase(args: {
   const rowKey = getRowKey(args.relatedDatabaseDoc.guid, rowId);
   const rowDoc = await args.createRow(rowKey);
 
-  rowDoc.transact(() => {
+  runDatabaseRowAction(rowDoc, { type: 'relation.create-related-row-primary-cell', fieldId: args.primaryFieldId }, () => {
     initialDatabaseRow(rowId, databaseId, rowDoc);
     const rowSharedRoot = rowDoc.getMap(YjsEditorKey.data_section) as Y.Map<unknown>;
     const row = rowSharedRoot.get(YjsEditorKey.database_row) as YDatabaseRow | undefined;
@@ -886,7 +891,7 @@ export async function createRowInRelatedDatabase(args: {
 
   // Add the new row to every view's row_orders so it shows up in any open
   // grid/board/calendar of the target database.
-  args.relatedDatabaseDoc.transact(() => {
+  runDatabaseAction(args.relatedDatabaseDoc, { type: 'relation.create-related-row-order', policy: 'skip' }, () => {
     const views = relatedDatabase.get(YjsDatabaseKey.views);
 
     if (!views) return;

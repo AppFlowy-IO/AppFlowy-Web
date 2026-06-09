@@ -27,21 +27,18 @@ import {
   useSharedRoot,
 } from '@/application/database-yjs/context';
 import { FieldType, RowMetaKey } from '@/application/database-yjs/database.type';
-import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
-import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
-import { deleteOutboxByObjectId } from '@/application/sync-outbox';
-import { Log } from '@/utils/log';
 import { createCheckboxCell } from '@/application/database-yjs/fields/checkbox/utils';
-import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { parseRelationTypeOption } from '@/application/database-yjs/fields/relation/parse';
 import { RelationLimit } from '@/application/database-yjs/fields/relation/relation.type';
+import { createSelectOptionCell } from '@/application/database-yjs/fields/select-option/utils';
 import { dateFilterFillData, filterFillData, relationFilterFillData } from '@/application/database-yjs/filter';
-import { applyRelationReciprocalInserts } from './relation';
+import { executeDatabaseOperations as executeOperations, runDatabaseRowAction } from '@/application/database-yjs/history';
 import { initialDatabaseRow } from '@/application/database-yjs/row';
 import { generateRowMeta, getMetaIdMap, getMetaJSON, getRowKey } from '@/application/database-yjs/row_meta';
 import { useDatabaseViewLayout, useCalendarLayoutSetting } from '@/application/database-yjs/selector';
-import { executeOperationWithAllViews } from './utils';
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
+import { deleteCollabDB, getCachedProviderDoc, openCollabDB } from '@/application/db';
+import { getCachedRowSubDoc } from '@/application/services/js-services/cache';
+import { deleteOutboxByObjectId } from '@/application/sync-outbox';
 import {
   BlockType,
   DatabaseViewLayout,
@@ -54,6 +51,10 @@ import {
   YjsEditorKey,
   YSharedRoot,
 } from '@/application/types';
+import { Log } from '@/utils/log';
+
+import { applyRelationReciprocalInserts } from './relation';
+import { executeOperationWithAllViews } from './utils';
 
 /**
  * Helper: Reorder a row within a view's row_orders
@@ -825,7 +826,7 @@ export function useUpdateRowMetaDispatch(rowId: string) {
         return;
       }
 
-      rowDoc.transact(() => {
+      runDatabaseRowAction(rowDoc, { type: 'row.update-meta', rowId }, () => {
         if (value === undefined) {
           meta.delete(keyId);
         } else {

@@ -2,7 +2,7 @@
  * Shared dispatch utilities used across multiple category files
  */
 
-import { executeOperations } from '@/application/slate-yjs/utils/yjs';
+import { executeDatabaseOperations as executeOperations } from '@/application/database-yjs/history';
 import { YDatabase, YDatabaseView, YjsDatabaseKey, YSharedRoot } from '@/application/types';
 
 /**
