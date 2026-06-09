@@ -105,7 +105,7 @@ describe('collab history APIs', () => {
     mockWithRetry.mockImplementation((fn: () => unknown) => fn());
   });
 
-  it('retries permission-backpressured history mutations through the shared retry wrapper', async () => {
+  it('does not retry non-idempotent history mutations', async () => {
     const post = jest.fn();
     const deleteRequest = jest.fn();
 
@@ -132,7 +132,7 @@ describe('collab history APIs', () => {
     await deleteCollabVersion('workspace-id', 'object-id', 'version-id');
     await revertCollabVersion('workspace-id', 'object-id', Types.Document, 'version-id');
 
-    expect(mockWithRetry).toHaveBeenCalledTimes(3);
+    expect(mockWithRetry).not.toHaveBeenCalled();
     expect(post).toHaveBeenCalledWith('/api/workspace/workspace-id/collab/object-id/history', {
       snapshot: expect.any(String),
       name: 'snapshot',

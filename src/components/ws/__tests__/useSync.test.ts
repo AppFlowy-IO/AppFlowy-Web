@@ -424,6 +424,44 @@ describe('useSync deferred cleanup', () => {
     serverDoc.destroy();
     localDoc.destroy();
   });
+
+  it('does not replay access changes received before a context registers', async () => {
+    const ws = createWs();
+    const bc = createBroadcastChannel();
+    const objectId = '33333333-3333-4333-8333-333333333336';
+    const doc = createDoc(objectId);
+    const message = {
+      objectId,
+      collabType: Types.Document,
+      accessChanged: {
+        canRead: false,
+        canWrite: false,
+        reason: 0,
+      },
+    };
+
+    const { result, rerender, unmount } = renderHook(() =>
+      useSync(ws, bc, defaultEventEmitter, defaultWorkspaceId)
+    );
+
+    act(() => {
+      ws.lastMessage = { collabMessage: message } as AppflowyWebSocketType['lastMessage'];
+      rerender();
+    });
+
+    await flushPromises();
+    expect(mockedHandleMessage).not.toHaveBeenCalled();
+
+    act(() => {
+      result.current.registerSyncContext({ doc, collabType: Types.Document });
+    });
+
+    await flushPromises();
+    expect(mockedHandleMessage).not.toHaveBeenCalled();
+
+    unmount();
+    doc.destroy();
+  });
 });
 
 describe('useSync version-gated message handling', () => {

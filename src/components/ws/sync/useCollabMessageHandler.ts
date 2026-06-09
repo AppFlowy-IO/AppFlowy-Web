@@ -5,7 +5,7 @@ import * as Y from 'yjs';
 
 import { deleteCollabDB, openCollabDB } from '@/application/db';
 import { handleMessage, SyncContext } from '@/application/services/js-services/sync-protocol';
-import { User, YDoc } from '@/application/types';
+import { Types, User, YDoc } from '@/application/types';
 import { collab } from '@/proto/messages';
 import { Log } from '@/utils/log';
 
@@ -17,6 +17,13 @@ import { isCollabVersionId, RegisterSyncContext, SyncDocMeta, versionChanged } f
 import ICollabMessage = collab.ICollabMessage;
 
 const MAX_QUEUED_MESSAGES_BEFORE_CONTEXT = 50;
+
+function shouldQueueMessageBeforeContext(message: ICollabMessage) {
+  const hasStateMessage = Boolean(message.update || message.syncRequest);
+  const isRowMessage = message.collabType === Types.DatabaseRow || message.collabType === Types.Unknown;
+
+  return Boolean(message.objectId && hasStateMessage && isRowMessage);
+}
 
 export function useCollabMessageHandler(
   refs: SyncRefs,
@@ -32,7 +39,7 @@ export function useCollabMessageHandler(
   const queueMessageBeforeContext = useCallback((message: ICollabMessage) => {
     const objectId = message.objectId;
 
-    if (!objectId) {
+    if (!objectId || !shouldQueueMessageBeforeContext(message)) {
       return false;
     }
 

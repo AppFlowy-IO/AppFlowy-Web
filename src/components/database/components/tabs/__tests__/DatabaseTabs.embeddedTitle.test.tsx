@@ -31,10 +31,31 @@ jest.mock('@/components/database/components/conditions', () => ({
 
 jest.mock('@/components/app/view-actions/RenameModal', () => ({
   __esModule: true,
-  default: ({ open, view, viewId }: { open: boolean; view: View; viewId: string }) =>
+  default: ({
+    open,
+    view,
+    viewId,
+    updatePage,
+  }: {
+    open: boolean;
+    view: View;
+    viewId: string;
+    updatePage: (viewId: string, payload: { name: string; icon: unknown; extra: unknown }) => Promise<void>;
+  }) =>
     open ? (
       <div data-testid='rename-modal'>
         {viewId}:{view.name}
+        <button
+          type='button'
+          data-testid='rename-modal-save'
+          onClick={() =>
+            updatePage(viewId, {
+              name: 'Renamed Database',
+              icon: view.icon,
+              extra: view.extra,
+            })
+          }
+        />
       </div>
     ) : null,
 }));
@@ -64,10 +85,11 @@ describe('DatabaseTabs embedded title', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseDatabase.mockReturnValue({ get: jest.fn() } as never);
-    mockUseUpdateDatabaseView.mockReturnValue(jest.fn() as never);
   });
 
   it('renders the database container name for document blocks', async () => {
+    const updateDatabaseView = jest.fn();
+    const updatePage = jest.fn();
     const childView = createView({
       view_id: 'grid-view-id',
       name: 'Grid',
@@ -91,12 +113,14 @@ describe('DatabaseTabs embedded title', () => {
       return null;
     });
 
+    mockUseUpdateDatabaseView.mockReturnValue(updateDatabaseView as never);
     mockUseDatabaseContext.mockReturnValue({
       readOnly: false,
       databasePageId: childView.view_id,
       activeViewId: childView.view_id,
       workspaceId: 'workspace-id',
       loadViewMeta,
+      updatePage,
       isDocumentBlock: true,
       showActions: false,
     } as never);
@@ -120,5 +144,17 @@ describe('DatabaseTabs embedded title', () => {
     await waitFor(() => {
       expect(screen.getByTestId('rename-modal').textContent).toBe('container-view-id:New Database');
     });
+
+    fireEvent.click(screen.getByTestId('rename-modal-save'));
+
+    await waitFor(() => {
+      expect(updatePage).toHaveBeenCalledWith(
+        containerView.view_id,
+        expect.objectContaining({
+          name: 'Renamed Database',
+        })
+      );
+    });
+    expect(updateDatabaseView).not.toHaveBeenCalled();
   });
 });
