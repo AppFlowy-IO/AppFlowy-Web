@@ -3,7 +3,7 @@ import { forwardRef, useCallback, useEffect, useMemo, useState } from 'react';
 import { APP_EVENTS } from '@/application/constants';
 import { useDatabase, useDatabaseContext } from '@/application/database-yjs';
 import { useUpdateDatabaseView } from '@/application/database-yjs/dispatch';
-import { DatabaseViewLayout, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
+import { DatabaseViewLayout, UpdatePagePayload, View, ViewLayout, YDatabaseView, YjsDatabaseKey } from '@/application/types';
 import { isDatabaseContainer } from '@/application/view-utils';
 import { findView } from '@/components/_shared/outline/utils';
 import { type ReorderResult } from '@/components/_shared/reorder/useReorderMonitor';
@@ -57,13 +57,16 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
   ) => {
     const views = useDatabase()?.get(YjsDatabaseKey.views);
     const context = useDatabaseContext();
-    const { loadViewMeta, navigateToView, readOnly, showActions = true, eventEmitter } = context;
-    const updatePage = useUpdateDatabaseView();
+    const { loadViewMeta, navigateToView, readOnly, showActions = true, eventEmitter, updatePage } = context;
+    const updateDatabaseView = useUpdateDatabaseView();
     const [meta, setMeta] = useState<View | null>(null);
     const scrollLeftPadding = context.paddingStart;
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState<string | null>(null);
     const [renameViewId, setRenameViewId] = useState<string | null>(null);
     const [menuViewId, setMenuViewId] = useState<string | null>(null);
+    const embeddedTitle = context.isDocumentBlock && meta ? (meta.name || _viewName || '').trim() : '';
+    const embeddedTitleViewId = context.isDocumentBlock ? meta?.view_id : undefined;
+    const embeddedTitleUsesPageUpdate = Boolean(context.isDocumentBlock && meta && isDatabaseContainer(meta));
 
     // Used to trigger a scroll in the child component
     const [pendingScrollToViewId, setPendingScrollToViewId] = useState<string | null>(null);
@@ -195,6 +198,23 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
       };
     }, [meta]);
 
+    const handleRenameView = useCallback(
+      async (viewId: string, payload: UpdatePagePayload) => {
+        if (embeddedTitleUsesPageUpdate && viewId === embeddedTitleViewId) {
+          if (!updatePage) {
+            throw new Error('Page update is unavailable');
+          }
+
+          await updatePage(viewId, payload);
+        } else {
+          await updateDatabaseView(viewId, payload);
+        }
+
+        void reloadView();
+      },
+      [embeddedTitleUsesPageUpdate, embeddedTitleViewId, reloadView, updateDatabaseView, updatePage]
+    );
+
     useEffect(() => {
       void reloadView();
     }, [reloadView]);
@@ -233,6 +253,24 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
           paddingRight: scrollLeftPadding === undefined ? 96 : scrollLeftPadding,
         }}
       >
+        {embeddedTitle ? (
+          <div className={'mb-2 flex min-h-8 w-full items-center'}>
+            <button
+              type={'button'}
+              disabled={readOnly || !embeddedTitleViewId || (embeddedTitleUsesPageUpdate && !updatePage)}
+              className={
+                'max-w-full truncate rounded px-0 py-1 text-left text-xl font-semibold leading-8 text-text-title outline-none hover:text-text-primary disabled:cursor-default disabled:text-text-title'
+              }
+              onClick={() => {
+                if (!embeddedTitleViewId) return;
+                setRenameViewId(embeddedTitleViewId);
+              }}
+            >
+              {embeddedTitle}
+            </button>
+          </div>
+        ) : null}
+
         <div className={`database-tabs flex w-full items-center gap-1.5 overflow-hidden border-b border-border-primary`}>
           <DatabaseViewTabs
             viewIds={viewIds}
@@ -295,10 +333,7 @@ export const DatabaseTabs = forwardRef<HTMLDivElement, DatabaseTabBarProps>(
               setRenameViewId(null);
             }}
             view={renameView}
-            updatePage={async (viewId, payload) => {
-              await updatePage(viewId, payload);
-              void reloadView();
-            }}
+            updatePage={handleRenameView}
             viewId={renameViewId || ''}
           />
         )}

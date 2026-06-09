@@ -178,6 +178,71 @@ function isOnlyNonVisualOutlineChange(patch: JsonPatchOperation[]): boolean {
   });
 }
 
+function decodeJsonPointerSegment(segment: string): string {
+  return segment.replace(/~1/g, '/').replace(/~0/g, '~');
+}
+
+function getViewAtOutlinePath(outline: View[], pathSegments: string[]): View | null {
+  let cursor: View[] | View | undefined = outline;
+
+  for (const segment of pathSegments) {
+    const key = decodeJsonPointerSegment(segment);
+
+    if (key === 'outline') {
+      cursor = outline;
+      continue;
+    }
+
+    if (key === 'children') {
+      if (!cursor || Array.isArray(cursor)) return null;
+      cursor = cursor.children ?? [];
+      continue;
+    }
+
+    const index = Number(key);
+
+    if (!Number.isInteger(index) || index < 0 || !Array.isArray(cursor)) {
+      return null;
+    }
+
+    cursor = cursor[index];
+  }
+
+  return cursor && !Array.isArray(cursor) ? cursor : null;
+}
+
+function findPatchParentsRequiringChildReload(outline: View[], patch: JsonPatchOperation[]): string[] {
+  const parentIds = new Set<string>();
+
+  for (const op of patch) {
+    if (op.op !== 'add' || !op.path) continue;
+
+    const segments = op.path.split('/').slice(1);
+    const childrenSegmentIndex = segments.length - 2;
+
+    if (childrenSegmentIndex < 0 || segments[childrenSegmentIndex] !== 'children') continue;
+
+    const childIndexRaw = decodeJsonPointerSegment(segments[segments.length - 1]);
+    const childIndex = Number(childIndexRaw);
+
+    if (!Number.isInteger(childIndex) || childIndex < 0) continue;
+
+    const parentView = getViewAtOutlinePath(outline, segments.slice(0, childrenSegmentIndex));
+
+    if (!parentView) continue;
+
+    const childCount = parentView.children?.length ?? 0;
+    const childrenAreUnloaded = parentView.has_children === true && childCount === 0;
+    const patchSkipsLocalChildren = childIndex > childCount;
+
+    if (childrenAreUnloaded || patchSkipsLocalChildren) {
+      parentIds.add(parentView.view_id);
+    }
+  }
+
+  return Array.from(parentIds);
+}
+
 // Hook for managing workspace data (outline, favorites, recent, trash)
 export function useWorkspaceData() {
   const { currentWorkspaceId, userWorkspaceInfo } = useAuthInternal();
@@ -882,6 +947,20 @@ export function useWorkspaceData() {
 
       const baseOutline = stableOutlineRef.current.filter((view) => !view.extra?.is_hidden_space);
       const baseDocument = { outline: baseOutline };
+      const childReloadParentIds = findPatchParentsRequiringChildReload(baseOutline, patch);
+
+      if (childReloadParentIds.length > 0) {
+        Log.debug('[Outline] [FolderOutlineChanged] patch targets unloaded children, loading parent subtrees', {
+          parentViewIds: childReloadParentIds,
+        });
+        updateLastFolderRid(patchRid);
+        void loadViewChildrenBatch(childReloadParentIds).catch((error) => {
+          Log.warn('[Outline] [FolderOutlineChanged] Failed to load patch target subtrees, reloading outline', error);
+          void loadOutline(currentWorkspaceId, false);
+        });
+        return;
+      }
+
       let patchedOutline: View[] | null = null;
       let usedRelaxedPatch = false;
 
@@ -967,6 +1046,7 @@ export function useWorkspaceData() {
   }, [
     currentWorkspaceId,
     eventEmitter,
+    loadViewChildrenBatch,
     loadOutline,
     refreshTrashListInBackground,
     replaceOutlinePreservingChildren,

@@ -5,7 +5,7 @@ import { VirtualItem } from '@tanstack/react-virtual';
 import { uniqBy } from 'lodash-es';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
+import { useDatabaseContext, useReadOnly, useRowData, useSortsSelector } from '@/application/database-yjs';
 import { YjsDatabaseKey } from '@/application/types';
 import { DropRowIndicator } from '@/components/database/components/drag-and-drop/DropRowIndicator';
 import {
@@ -48,6 +48,7 @@ function GridVirtualRow({
   const rowId = data[rowIndex].rowId as string;
   const rowType = data[rowIndex].type;
   const { setHoverRowId, setResizeRow } = useGridContext();
+  const { bindRowSync } = useDatabaseContext();
   const databaseRow = useRowData(rowId);
   const cells = databaseRow?.get(YjsDatabaseKey.cells);
   const cellsCount = cells?.size;
@@ -68,6 +69,12 @@ function GridVirtualRow({
   );
 
   const isRegularRow = rowType === RenderRowType.Row;
+
+  useEffect(() => {
+    if (!isRegularRow) return;
+
+    bindRowSync?.(rowId);
+  }, [bindRowSync, isRegularRow, rowId]);
 
   useEffect(() => {
     const element = innerRef.current;

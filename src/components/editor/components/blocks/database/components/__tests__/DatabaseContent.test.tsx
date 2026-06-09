@@ -10,7 +10,7 @@ import { Database } from '@/components/database';
 import { DatabaseContent } from '../DatabaseContent';
 
 jest.mock('@/components/database', () => ({
-  Database: jest.fn(() => <div data-testid="database" />),
+  Database: jest.fn(() => <div data-testid='database' />),
 }));
 
 jest.mock('react-i18next', () => ({
@@ -48,12 +48,12 @@ describe('DatabaseContent', () => {
         selectedViewId={snapshot.database.activeViewId}
         hasDatabase={true}
         notFound={false}
-        deletionStatus="none"
+        deletionStatus='none'
         paddingStart={0}
         paddingEnd={0}
         width={800}
         doc={doc}
-        workspaceId="publish"
+        workspaceId='publish'
         onOpenRowPage={jest.fn()}
         loadViewMeta={jest.fn()}
         databaseName={snapshot.view.name}
@@ -67,9 +67,57 @@ describe('DatabaseContent', () => {
     expect((Database as jest.Mock).mock.calls[0][0]).toEqual(
       expect.objectContaining({
         doc,
+        embeddedHeight: undefined,
         initialRowMap: rowMap,
         activeViewId: snapshot.database.activeViewId,
         variant: UIVariant.Publish,
+      })
+    );
+  });
+
+  it('passes an embedded height only when the caller provides one', () => {
+    const snapshot = normalizePublishedPageSnapshot(publishedDatabasePayload);
+
+    if (snapshot.kind !== 'database') {
+      throw new Error('Expected database snapshot fixture');
+    }
+
+    const { doc } = createDatabaseYjsRenderDocsFromSnapshot(snapshot);
+    const context = {
+      readOnly: true,
+      databaseDoc: doc,
+      databasePageId: snapshot.view.viewId,
+      activeViewId: snapshot.database.activeViewId,
+      rowMap: null,
+      workspaceId: 'publish',
+      variant: UIVariant.Publish,
+    } as DatabaseContextState;
+
+    render(
+      <DatabaseContent
+        baseViewId={snapshot.view.viewId}
+        selectedViewId={snapshot.database.activeViewId}
+        hasDatabase={true}
+        notFound={false}
+        deletionStatus='none'
+        paddingStart={0}
+        paddingEnd={0}
+        width={800}
+        doc={doc}
+        workspaceId='publish'
+        onOpenRowPage={jest.fn()}
+        loadViewMeta={jest.fn()}
+        databaseName={snapshot.view.name}
+        visibleViewIds={snapshot.database.visibleViewIds}
+        onChangeView={jest.fn()}
+        context={context}
+        fixedHeight={420}
+      />
+    );
+
+    expect((Database as jest.Mock).mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        embeddedHeight: 420,
       })
     );
   });

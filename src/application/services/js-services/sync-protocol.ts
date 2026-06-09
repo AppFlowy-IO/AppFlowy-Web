@@ -76,7 +76,9 @@ export enum UpdateFlags {
 const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void => {
   const { doc, emit } = ctx;
   const stateVector = message.stateVector && message.stateVector.length > 0 ? message.stateVector : undefined;
-  const update = Y.encodeStateAsUpdate(doc, stateVector);
+  const update = ctx.collabType === Types.DatabaseRow
+    ? Y.encodeStateAsUpdate(doc)
+    : Y.encodeStateAsUpdate(doc, stateVector);
 
   Log.debug('[sync] responding to sync request from server', {
     objectId: doc.guid,
@@ -97,6 +99,20 @@ const handleSyncRequest = (ctx: SyncContext, message: collab.ISyncRequest): void
     },
   });
   ctx.onManifestSync?.(doc.guid);
+};
+
+const emitSyncRequest = (ctx: SyncContext): void => {
+  ctx.emit({
+    collabMessage: {
+      objectId: ctx.doc.guid,
+      collabType: ctx.collabType,
+      syncRequest: {
+        stateVector: Y.encodeStateVector(ctx.doc),
+        lastMessageId: ctx.lastMessageId || { timestamp: 0, counter: 0 },
+        version: ctx.doc.version,
+      },
+    },
+  });
 };
 
 const handleAccessChanged = (ctx: SyncContext, message: collab.IAccessChanged): void => {
@@ -185,6 +201,8 @@ export const initSync = (ctx: SyncContext) => {
   }
 
   let onAwarenessChange: ((event: AwarenessEvent, origin: string) => void) | undefined;
+  const rowHydrationTimers: ReturnType<typeof setTimeout>[] = [];
+  let disposed = false;
 
   // Persist every local update synchronously to the sync_outbox, then let the
   // background drain loop push it over the WebSocket. Survives refresh, tab
@@ -221,17 +239,24 @@ export const initSync = (ctx: SyncContext) => {
 
   // emit initial sync request to the server
   Log.debug('[Version] initSync sending initial syncRequest: objectId=%s, version=%s', ctx.doc.guid, ctx.doc.version);
-  emit({
-    collabMessage: {
-      objectId: ctx.doc.guid,
-      collabType: ctx.collabType,
-      syncRequest: {
-        stateVector: Y.encodeStateVector(ctx.doc),
-        lastMessageId: lastMessageId || { timestamp: 0, counter: 0 },
-        version: ctx.doc.version,
-      },
-    },
-  });
+  ctx.lastMessageId = lastMessageId || ctx.lastMessageId;
+  emitSyncRequest(ctx);
+
+  if (collabType === Types.DatabaseRow) {
+    for (const delayMs of [750, 2500]) {
+      rowHydrationTimers.push(
+        setTimeout(() => {
+          if (disposed) return;
+
+          Log.debug('[Database] row hydration sync retry', {
+            rowId: doc.guid,
+            delayMs,
+          });
+          emitSyncRequest(ctx);
+        }, delayMs)
+      );
+    }
+  }
 
   if (awareness) {
     onAwarenessChange = ({ added, updated, removed }: AwarenessEvent, _: string) => {
@@ -270,8 +295,10 @@ export const initSync = (ctx: SyncContext) => {
   // detaches listeners. Outbox deletion is caller-driven via
   // discardPendingUpdates() (version reset/revert paths only).
   const cleanup = () => {
+    disposed = true;
     doc.off('update', onUpdate);
     doc.off('destroy', onDestroy);
+    rowHydrationTimers.forEach((timer) => clearTimeout(timer));
     if (awareness && onAwarenessChange) {
       awareness.off('change', onAwarenessChange);
     }

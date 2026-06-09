@@ -2,6 +2,7 @@ import { toBase64 } from 'lib0/buffer';
 
 import { getOrCreateDeviceId } from '@/application/services/js-services/device-id';
 import {
+  ObjectPermission,
   RowId,
   Types,
   User,
@@ -168,6 +169,24 @@ export async function getCollab(workspaceId: string, objectId: string, collabTyp
   return {
     data: new Uint8Array(data.doc_state),
   };
+}
+
+export async function getObjectPermission(
+  workspaceId: string,
+  objectId: string,
+  collabType: Types = Types.Document,
+  signal?: AbortSignal
+) {
+  const url = `/api/workspace/${workspaceId}/collab/${objectId}/permission`;
+
+  return executeAPIRequest<ObjectPermission>(() =>
+    getAxios()?.get<APIResponse<ObjectPermission>>(url, {
+      params: {
+        collab_type: collabType,
+      },
+      signal,
+    })
+  );
 }
 
 export async function getPageCollab(workspaceId: string, viewId: string) {
@@ -346,7 +365,7 @@ export async function revertCollabVersion(workspaceId: string, objectId: string,
     state_vector: number[];
     doc_state: number[];
     collab_version: string | null;
-    version: number; // this is encoder version (lib0 v1 encoding is 0, while lib0 v2 encoding is 1, we only use 0 atm.)
+    version: number;
   }>(() =>
     getAxios()?.post<APIResponse<{
       state_vector: number[];

@@ -1,6 +1,7 @@
 export {
   updateCollab as update,
   getCollab as get,
+  getObjectPermission,
   getPageCollab,
   collabFullSyncBatch as fullSyncBatch,
   databaseBlobDiff,

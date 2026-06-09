@@ -1,6 +1,7 @@
 import axios, { AxiosError, AxiosInstance, AxiosResponse } from 'axios';
 import dayjs from 'dayjs';
 
+import { ERROR_CODE } from '@/application/constants';
 import { AFCloudConfig } from '@/application/services/services.type';
 import { getTokenParsed, invalidToken } from '@/application/session/token';
 import { Log } from '@/utils/log';
@@ -248,7 +249,11 @@ export async function withRetry<T>(
       // handleAPIError handles AxiosError (string codes like "ERR_NETWORK"),
       // raw Error, and unknown shapes — always returns { code, message }.
       const normalized = handleAPIError(error);
-      const isRetryable = normalized.code === -1 || normalized.code >= 500 || normalized.code === 429;
+      const isRetryable =
+        normalized.code === -1 ||
+        normalized.code >= 500 ||
+        normalized.code === 429 ||
+        normalized.code === ERROR_CODE.TOO_MANY_REQUESTS;
 
       if (!isRetryable) break;
 

@@ -391,10 +391,18 @@ export const DatabaseBlock = memo(
   (prevProps, nextProps) => {
     const prevViewIds = getViewIds(prevProps.node.data);
     const nextViewIds = getViewIds(nextProps.node.data);
+    const prevData = prevProps.node.data || {};
+    const nextData = nextProps.node.data || {};
+    const hasSameViewIds =
+      prevViewIds.length === nextViewIds.length &&
+      prevViewIds.every((id, index) => id === nextViewIds[index]);
 
     return (
-      prevViewIds.length === nextViewIds.length &&
-      prevViewIds.every((id, index) => id === nextViewIds[index])
+      prevProps.node.type === nextProps.node.type &&
+      prevData.view_id === nextData.view_id &&
+      prevData.database_id === nextData.database_id &&
+      prevData.parent_id === nextData.parent_id &&
+      hasSameViewIds
     );
   }
 );

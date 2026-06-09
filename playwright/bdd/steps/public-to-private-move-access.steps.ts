@@ -31,6 +31,7 @@ type ScenarioState = {
   workspaceId?: string;
   ownerToken?: string;
   movablePage?: TemporaryView;
+  privateSource?: TemporaryView;
   privateTarget?: TemporaryView;
   privateTargetIsSeeded?: boolean;
 };
@@ -196,6 +197,99 @@ Given(
   }
 );
 
+Given(
+  'I create a temporary private source shared with {string} and private target shared with {string}',
+  async ({ page, request }, sourceAliasValue: string, targetAliasValue: string) => {
+    const state = getState(page);
+    const workspaceId = requireWorkspaceId(state);
+    const ownerToken = requireOwnerToken(state);
+    const sourceEmail = accountEmail(sourceAliasValue);
+    const targetEmail = accountEmail(targetAliasValue);
+    const sourceSpaceName = `ptp0527 BDD Private Source Space ${state.runId}`;
+    const sourcePageTitle = `ptp0527 BDD Private Source Page ${state.runId}`;
+    const targetSpaceName = `ptp0527 BDD Private Target Space ${state.runId}`;
+    const targetPageTitle = `ptp0527 BDD Private Target Page ${state.runId}`;
+    const movableTitle = `ptp0527 BDD Private Movable Page ${state.runId}`;
+
+    await cleanupStaleTemporaryViews(request, ownerToken, workspaceId);
+
+    const sourceSpace = await postApi<{ view_id: string }>(request, ownerToken, `/api/workspace/${workspaceId}/space`, {
+      name: sourceSpaceName,
+      space_icon: 'lock',
+      space_icon_color: '#555555',
+      space_permission: SPACE_PERMISSION_PRIVATE,
+    });
+    const sourcePage = await postApi<{ view_id: string }>(
+      request,
+      ownerToken,
+      `/api/workspace/${workspaceId}/page-view`,
+      {
+        parent_view_id: sourceSpace.view_id,
+        layout: VIEW_LAYOUT_DOCUMENT,
+        name: sourcePageTitle,
+      }
+    );
+
+    const targetSpace = await postApi<{ view_id: string }>(request, ownerToken, `/api/workspace/${workspaceId}/space`, {
+      name: targetSpaceName,
+      space_icon: 'lock',
+      space_icon_color: '#555555',
+      space_permission: SPACE_PERMISSION_PRIVATE,
+    });
+    const targetPage = await postApi<{ view_id: string }>(
+      request,
+      ownerToken,
+      `/api/workspace/${workspaceId}/page-view`,
+      {
+        parent_view_id: targetSpace.view_id,
+        layout: VIEW_LAYOUT_DOCUMENT,
+        name: targetPageTitle,
+      }
+    );
+    const movablePage = await postApi<{ view_id: string }>(
+      request,
+      ownerToken,
+      `/api/workspace/${workspaceId}/page-view`,
+      {
+        parent_view_id: sourcePage.view_id,
+        layout: VIEW_LAYOUT_DOCUMENT,
+        name: movableTitle,
+      }
+    );
+
+    await putVoidApi(request, ownerToken, `/api/sharing/workspace/${workspaceId}/view`, {
+      view_id: sourcePage.view_id,
+      emails: [sourceEmail],
+      access_level: ACCESS_LEVEL_READ_ONLY,
+    });
+    await putVoidApi(request, ownerToken, `/api/sharing/workspace/${workspaceId}/view`, {
+      view_id: targetPage.view_id,
+      emails: [targetEmail],
+      access_level: ACCESS_LEVEL_READ_ONLY,
+    });
+
+    state.privateSource = {
+      spaceId: sourceSpace.view_id,
+      spaceName: sourceSpaceName,
+      pageId: sourcePage.view_id,
+      pageTitle: sourcePageTitle,
+    };
+    state.privateTarget = {
+      spaceId: targetSpace.view_id,
+      spaceName: targetSpaceName,
+      pageId: targetPage.view_id,
+      pageTitle: targetPageTitle,
+    };
+    state.privateTargetIsSeeded = false;
+    state.movablePage = {
+      spaceId: sourceSpace.view_id,
+      spaceName: sourceSpaceName,
+      pageId: movablePage.view_id,
+      pageTitle: movableTitle,
+    };
+  }
+);
+
 When('I open the temporary public-to-private movable page', async ({ page }) => {
   const state = getState(page);
   const workspaceId = requireWorkspaceId(state);
@@ -229,10 +323,38 @@ When('I move the temporary public-to-private page under the private target page'
   await expect(SidebarSelectors.pageHeader(page)).toBeVisible({ timeout: 30000 });
 });
 
+When(
+  'I change the temporary private source space permission to {string}',
+  async ({ page, request }, permission: string) => {
+    const state = getState(page);
+    const workspaceId = requireWorkspaceId(state);
+    const ownerToken = requireOwnerToken(state);
+    const privateSource = requirePrivateSource(state);
+    const nextPermission = permission === 'Public' ? SPACE_PERMISSION_PUBLIC : SPACE_PERMISSION_PRIVATE;
+
+    if (permission !== 'Public' && permission !== 'Private') {
+      throw new Error(`Unsupported public-to-private source space permission: ${permission}`);
+    }
+
+    await patchVoidApi(request, ownerToken, `/api/workspace/${workspaceId}/space/${privateSource.spaceId}`, {
+      name: privateSource.spaceName,
+      space_icon: 'lock',
+      space_icon_color: '#555555',
+      space_permission: nextPermission,
+    });
+
+    await page.waitForTimeout(1500);
+  }
+);
+
 Then('the temporary public-to-private movable page title is visible', async ({ page }) => {
   const movablePage = requireMovablePage(getState(page));
 
   await expect(page.getByText(movablePage.pageTitle, { exact: true }).first()).toBeVisible({ timeout: 30000 });
+});
+
+Then('the temporary public-to-private movable page title is editable', async ({ page }) => {
+  await expect(PageSelectors.titleInput(page).first()).toBeVisible({ timeout: 15000 });
 });
 
 Then('the temporary public-to-private movable page editor is read-only', async ({ page }) => {
@@ -363,6 +485,14 @@ function requireMovablePage(state: ScenarioState): TemporaryView {
   return state.movablePage;
 }
 
+function requirePrivateSource(state: ScenarioState): TemporaryView {
+  if (!state.privateSource) {
+    throw new Error('No temporary public-to-private private source page has been created for this scenario');
+  }
+
+  return state.privateSource;
+}
+
 function requirePrivateTarget(state: ScenarioState): TemporaryView {
   if (!state.privateTarget) {
     throw new Error('No temporary public-to-private private target page has been created for this scenario');
@@ -409,11 +539,17 @@ async function cleanupTemporaryViews(request: APIRequestContext, state: Scenario
     return;
   }
 
-  const viewIds = [
-    state.movablePage?.pageId,
-    state.movablePage?.spaceId,
-    ...(state.privateTargetIsSeeded ? [] : [state.privateTarget?.pageId, state.privateTarget?.spaceId]),
-  ].filter((viewId): viewId is string => Boolean(viewId));
+  const viewIds = Array.from(
+    new Set(
+      [
+        state.movablePage?.pageId,
+        state.movablePage?.spaceId,
+        state.privateSource?.pageId,
+        state.privateSource?.spaceId,
+        ...(state.privateTargetIsSeeded ? [] : [state.privateTarget?.pageId, state.privateTarget?.spaceId]),
+      ].filter((viewId): viewId is string => Boolean(viewId))
+    )
+  );
 
   for (const viewId of viewIds) {
     await postVoidApiAllowFailure(
@@ -465,8 +601,12 @@ function isTemporaryView(view: FolderView): boolean {
   return [
     'ptp0527 BDD Public Space ',
     'ptp0527 BDD Movable Public Page ',
+    'ptp0527 BDD Private Source Space ',
+    'ptp0527 BDD Private Source Page ',
+    'ptp0527 BDD Private Movable Page ',
     'ptp0527 BDD Private Space ',
     'ptp0527 BDD Private Target Page ',
+    'ptp0527 BDD Private Target Space ',
   ].some((prefix) => view.name.startsWith(prefix));
 }
 
@@ -538,6 +678,27 @@ async function putVoidApi(
   data: Record<string, unknown>
 ): Promise<void> {
   const response = await request.put(`${TestConfig.apiUrl}${path}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    data,
+    failOnStatusCode: false,
+  });
+  const body = (await response.json().catch(() => null)) as ApiResponse<unknown> | null;
+
+  if (!response.ok() || body?.code !== 0) {
+    throw new Error(`API request failed for ${path}: HTTP ${response.status()} ${JSON.stringify(body)}`);
+  }
+}
+
+async function patchVoidApi(
+  request: APIRequestContext,
+  token: string,
+  path: string,
+  data: Record<string, unknown>
+): Promise<void> {
+  const response = await request.patch(`${TestConfig.apiUrl}${path}`, {
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',

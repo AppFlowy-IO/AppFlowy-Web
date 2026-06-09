@@ -70,6 +70,59 @@ Feature: FullAccess private page share panel controls
     Then the full access seeded page title is visible
     And the full access page title cannot be edited to "fa0522 Read Guest Rename Probe"
 
+  # Expected result: a guest who already has the page open as Can view receives the permission
+  # update, becomes editable without relogin/reopen, and can persist a title change.
+  Scenario: Read guest can edit after owner upgrades open page access
+    Given I sign in as full access seeded "read guest"
+    When I open the full access seeded "guest read only private page"
+    Then the full access seeded page title is visible
+    And the full access page title is read-only
+    When the full access owner grants seeded "read guest" "Can edit" on the current page
+    Then the full access page title is editable
+    When I rename the full access page title to "fa0522 Read Guest Upgrade Rename Probe"
+    Then the full access page title is "fa0522 Read Guest Upgrade Rename Probe"
+
+  # Expected result: a guest who already has an editable page open receives the downgrade,
+  # loses edit controls, and stale local typing does not persist.
+  Scenario: Edit guest loses write access after owner downgrades open page access
+    Given I sign in as full access seeded "edit guest"
+    When I open the full access seeded "guest edit private page"
+    Then the full access seeded page title is visible
+    And the full access page title is editable
+    When the full access owner grants seeded "edit guest" "Can view" on the current page
+    Then the full access page title is read-only
+    And the full access page title cannot be edited to "fa0522 Downgraded Guest Stale Rename Probe"
+
+  # Expected result: revocation of an already-open page removes document access and clears the editor
+  # instead of allowing cached client state to keep rendering private content.
+  Scenario: Edit guest loses open page after owner revokes access
+    Given I sign in as full access seeded "edit guest"
+    When I open the full access seeded "guest edit private page"
+    Then the full access seeded page title is visible
+    When the full access owner revokes seeded "edit guest" on the current page
+    Then the full access no access page is shown
+
+  # Expected result: database permission uses the database object, not just the page shell.
+  # A Can view guest can open the database but cannot add rows/properties or edit cells.
+  Scenario: Read guest cannot mutate a database shared as Can view
+    Given I sign in as full access seeded "owner"
+    And I create a temporary full access grid database shared with seeded "read guest" as "Can view"
+    Given I sign in as full access seeded "read guest"
+    And I open the temporary full access database
+    Then the temporary full access database is read-only
+    And typing in the temporary full access database first cell has no effect
+
+  # Expected result: row document permission follows the database permission. A Can view guest can
+  # inspect the first row document but cannot mutate its embedded document body.
+  Scenario: Read guest cannot mutate a database row document shared as Can view
+    Given I sign in as full access seeded "owner"
+    And I create a temporary full access grid database shared with seeded "read guest" as "Can view"
+    Given I sign in as full access seeded "read guest"
+    And I open the temporary full access database
+    When I open the temporary full access database first row document
+    Then the temporary full access database row document is read-only
+    And typing in the temporary full access database row document has no effect
+
   # Expected result: a guest with Can edit can change the private page title.
   Scenario: Edit guest can edit a private page title
     Given I sign in as full access seeded "edit guest"

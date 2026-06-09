@@ -25,7 +25,7 @@ import {
 } from '@/components/app/app.hooks';
 import DatabaseView from '@/components/app/DatabaseView';
 import MoreActions from '@/components/app/header/MoreActions';
-import { useViewOperations } from '@/components/app/hooks/useViewOperations';
+import { useViewReadOnlyStatus } from '@/components/app/hooks/useViewOperations';
 import MovePagePopover from '@/components/app/view-actions/MovePagePopover';
 import { Document } from '@/components/document';
 import RecordNotFound from '@/components/error/RecordNotFound';
@@ -71,7 +71,6 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
 
   const outline = useAppOutline();
   const requestInstance = getAxiosInstance();
-  const { getViewReadOnlyStatus } = useViewOperations();
 
   // Document state
   const [doc, setDoc] = useState<{ id: string; doc: YDoc } | undefined>(undefined);
@@ -324,13 +323,7 @@ function ViewModal({ viewId, open, onClose }: { viewId?: string; open: boolean; 
     );
   }, [effectiveViewId, handleClose, movePageOpen, outline, t, toView]);
 
-  // Check if view is in shareWithMe and determine readonly status.
-  // `resolvedView` includes the server-fetched fallback, so locked pages opened
-  // before their outline branch is loaded still flip the editor to read-only.
-  const isReadOnly = useMemo(() => {
-    if (!effectiveViewId) return false;
-    return getViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
-  }, [getViewReadOnlyStatus, effectiveViewId, outline, resolvedView]);
+  const isReadOnly = useViewReadOnlyStatus(effectiveViewId, outline, resolvedView);
 
   const View = useMemo(() => {
     switch (layout) {

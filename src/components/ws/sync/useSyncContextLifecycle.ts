@@ -224,6 +224,7 @@ export function useSyncContextLifecycle(
       const refCount = incrementContextRefCount(syncContext.doc.guid);
 
       Log.debug(`Registered sync context for objectId ${syncContext.doc.guid}; owner count=${refCount}`);
+      refs.onContextRegisteredRef.current?.(syncContext.doc.guid);
 
       return syncContext;
     },

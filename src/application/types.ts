@@ -929,7 +929,7 @@ export enum Types {
   Folder = 3,
   DatabaseRow = 4,
   UserAwareness = 5,
-  Empty = 6,
+  Unknown = 6,
 }
 
 export enum CollabOrigin {
@@ -1214,6 +1214,17 @@ export interface View {
   parent_view_id?: string;
   access_level?: AccessLevel;
   workspace_id?: string;
+}
+
+export interface ObjectPermission {
+  object_id: string;
+  collab_type: Types;
+  governing_view_id: string;
+  access_level?: AccessLevel | null;
+  can_read: boolean;
+  can_write: boolean;
+  can_comment: boolean;
+  can_share: boolean;
 }
 
 export interface UpdatePublishConfigPayload {

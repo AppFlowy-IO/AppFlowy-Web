@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Awareness } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 
-import { APP_EVENTS } from '@/application/constants';
+import { APP_EVENTS, ERROR_CODE } from '@/application/constants';
 import { CollabService, ViewService, WorkspaceService } from '@/application/services/domains';
 import {
   AccessLevel,
   LoadViewOptions,
+  ObjectPermission,
   Types,
   View,
   ViewLayout,
@@ -15,7 +16,12 @@ import {
   YDocWithMeta,
 } from '@/application/types';
 import { openView } from '@/application/view-loader';
-import { getDatabaseIdFromExtra, getFirstChildView, isDatabaseContainer, isDatabaseLayout } from '@/application/view-utils';
+import {
+  getDatabaseIdFromExtra,
+  getFirstChildView,
+  isDatabaseContainer,
+  isDatabaseLayout,
+} from '@/application/view-utils';
 import { findSharedAccessLevel, findView } from '@/components/_shared/outline/utils';
 import { CollabDocResetPayload } from '@/components/ws/sync/types';
 import { Log } from '@/utils/log';
@@ -25,6 +31,40 @@ import { useAuthInternal } from '../contexts/AuthInternalContext';
 import { useSyncInternal } from '../contexts/SyncInternalContext';
 
 import { useDatabaseIdentity } from './useDatabaseIdentity';
+
+const PERMISSION_RETRY_BASE_DELAY_MS = 5_000;
+const PERMISSION_RETRY_MAX_DELAY_MS = 60_000;
+const PERMISSION_RETRY_MAX_ATTEMPTS = 5;
+
+function readNumber(error: unknown, key: string): number | undefined {
+  if (typeof error === 'object' && error !== null && key in error) {
+    const value = (error as Record<string, unknown>)[key];
+
+    if (typeof value === 'number') return value;
+  }
+
+  return undefined;
+}
+
+// Respect the server's `Retry-After` when present; otherwise back off
+// exponentially from the base delay, capped so retries never loop too tightly.
+function permissionRetryDelayMs(error: unknown, attempt: number) {
+  const retryAfterSecs = readNumber(error, 'retryAfterSecs');
+
+  if (retryAfterSecs !== undefined && retryAfterSecs > 0) {
+    return Math.min(retryAfterSecs * 1000, PERMISSION_RETRY_MAX_DELAY_MS);
+  }
+
+  const backoff = PERMISSION_RETRY_BASE_DELAY_MS * 2 ** attempt;
+
+  return Math.min(backoff, PERMISSION_RETRY_MAX_DELAY_MS);
+}
+
+function isTooManyRequests(error: unknown) {
+  const code = readNumber(error, 'code');
+
+  return code === 429 || code === ERROR_CODE.TOO_MANY_REQUESTS;
+}
 
 /**
  * Determine whether the editor should be read-only for the given view.
@@ -66,6 +106,201 @@ export function getViewReadOnlyStatus(viewId: string, outline?: View[], fallback
 
   // If not part of the shared-with-me space, default is false (editable)
   return false;
+}
+
+function getViewLocalReadOnlyStatus(viewId: string, outline?: View[], fallbackView?: View | null) {
+  const isMobile = getPlatform().isMobile;
+
+  if (isMobile) return true;
+
+  if (fallbackView?.view_id === viewId && fallbackView.is_locked) return true;
+
+  if (!outline) return false;
+
+  const view = findView(outline, viewId);
+
+  return Boolean(view?.is_locked);
+}
+
+type PermissionReadOnlyState = {
+  key: string | null;
+  permission: ObjectPermission | null;
+  failClosed: boolean;
+};
+
+type PermissionObjectIdentity = {
+  objectId: string;
+  collabType: Types;
+};
+
+function getPermissionObjectIdentity(viewId: string): PermissionObjectIdentity {
+  // Page UI permission is scoped to the opened folder view. Database data still
+  // syncs through the canonical database collab id, but one database can have
+  // multiple folder views with different inherited access.
+  return {
+    objectId: viewId,
+    collabType: Types.Document,
+  };
+}
+
+export function useViewReadOnlyStatus(viewId: string | undefined, outline?: View[], fallbackView?: View | null) {
+  const { currentWorkspaceId } = useAuthInternal();
+  const { eventEmitter } = useSyncInternal();
+  const [permissionState, setPermissionState] = useState<PermissionReadOnlyState>({
+    key: null,
+    permission: null,
+    failClosed: false,
+  });
+  const permissionRequestSeqRef = useRef(0);
+  const permissionAbortRef = useRef<AbortController | null>(null);
+  const permissionRetryTimeoutRef = useRef<number | null>(null);
+  const clearPermissionRetryTimeout = useCallback(() => {
+    if (permissionRetryTimeoutRef.current === null) return;
+    window.clearTimeout(permissionRetryTimeoutRef.current);
+    permissionRetryTimeoutRef.current = null;
+  }, []);
+  const fallbackReadOnly = useMemo(() => {
+    if (!viewId) return false;
+    return getViewReadOnlyStatus(viewId, outline, fallbackView);
+  }, [viewId, outline, fallbackView]);
+  const localReadOnly = useMemo(() => {
+    if (!viewId) return false;
+    return getViewLocalReadOnlyStatus(viewId, outline, fallbackView);
+  }, [viewId, outline, fallbackView]);
+  const permissionIdentity = useMemo(() => {
+    if (!viewId) return null;
+    return getPermissionObjectIdentity(viewId);
+  }, [viewId]);
+  const permissionObjectId = permissionIdentity?.objectId;
+  const permissionCollabType = permissionIdentity?.collabType;
+
+  const fetchPermission = useCallback(
+    async (options?: { failClosed?: boolean; attempt?: number }) => {
+      if (!currentWorkspaceId || !viewId || !permissionObjectId || permissionCollabType === undefined) return;
+
+      const attempt = options?.attempt ?? 0;
+
+      const key = `${currentWorkspaceId}:${permissionCollabType}:${permissionObjectId}`;
+      const requestSeq = permissionRequestSeqRef.current + 1;
+
+      clearPermissionRetryTimeout();
+      permissionRequestSeqRef.current = requestSeq;
+      permissionAbortRef.current?.abort();
+
+      const controller = new AbortController();
+
+      permissionAbortRef.current = controller;
+      setPermissionState({
+        key,
+        permission: null,
+        failClosed: options?.failClosed ?? false,
+      });
+
+      try {
+        const nextPermission = await CollabService.getObjectPermission(
+          currentWorkspaceId,
+          permissionObjectId,
+          permissionCollabType,
+          controller.signal
+        );
+
+        if (controller.signal.aborted || requestSeq !== permissionRequestSeqRef.current) return;
+        setPermissionState({
+          key,
+          permission: nextPermission,
+          failClosed: false,
+        });
+      } catch (error) {
+        if (controller.signal.aborted || requestSeq !== permissionRequestSeqRef.current) return;
+        Log.debug('[useViewReadOnlyStatus] failed to fetch object permission', {
+          workspaceId: currentWorkspaceId,
+          viewId,
+          objectId: permissionObjectId,
+          collabType: permissionCollabType,
+          error,
+        });
+        setPermissionState({
+          key,
+          permission: null,
+          failClosed: options?.failClosed ?? false,
+        });
+
+        if (isTooManyRequests(error) && attempt < PERMISSION_RETRY_MAX_ATTEMPTS) {
+          const retryDelayMs = permissionRetryDelayMs(error, attempt);
+
+          permissionRetryTimeoutRef.current = window.setTimeout(() => {
+            permissionRetryTimeoutRef.current = null;
+            void fetchPermission({ failClosed: options?.failClosed ?? false, attempt: attempt + 1 });
+          }, retryDelayMs);
+        }
+      }
+    },
+    [clearPermissionRetryTimeout, currentWorkspaceId, permissionCollabType, permissionObjectId, viewId]
+  );
+
+  useEffect(() => {
+    if (!currentWorkspaceId || !viewId || !permissionObjectId || permissionCollabType === undefined) {
+      clearPermissionRetryTimeout();
+      permissionAbortRef.current?.abort();
+      setPermissionState({
+        key: null,
+        permission: null,
+        failClosed: false,
+      });
+      return;
+    }
+
+    void fetchPermission({ failClosed: false });
+
+    return () => {
+      clearPermissionRetryTimeout();
+      permissionAbortRef.current?.abort();
+    };
+  }, [clearPermissionRetryTimeout, currentWorkspaceId, viewId, permissionObjectId, permissionCollabType, fetchPermission]);
+
+  const activePermissionKey =
+    permissionObjectId && permissionCollabType !== undefined
+      ? `${currentWorkspaceId}:${permissionCollabType}:${permissionObjectId}`
+      : null;
+  const activePermission = permissionState.key === activePermissionKey ? permissionState.permission : null;
+  const shouldRefreshPermission = useCallback(
+    (changedObjectId?: string | null) => {
+      return (
+        !changedObjectId ||
+        changedObjectId === viewId ||
+        changedObjectId === permissionObjectId ||
+        changedObjectId === activePermission?.governing_view_id
+      );
+    },
+    [activePermission?.governing_view_id, permissionObjectId, viewId]
+  );
+
+  useEffect(() => {
+    if (!viewId) return;
+
+    const handlePermissionChanged = (payload?: { objectId?: string | null }) => {
+      if (!shouldRefreshPermission(payload?.objectId)) return;
+      void fetchPermission({ failClosed: true });
+    };
+
+    const handleShareViewsChanged = (payload?: { viewId?: string | null }) => {
+      if (!shouldRefreshPermission(payload?.viewId)) return;
+      void fetchPermission({ failClosed: true });
+    };
+
+    eventEmitter.on(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
+    eventEmitter.on(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
+
+    return () => {
+      eventEmitter.off(APP_EVENTS.PERMISSION_CHANGED, handlePermissionChanged);
+      eventEmitter.off(APP_EVENTS.SHARE_VIEWS_CHANGED, handleShareViewsChanged);
+    };
+  }, [eventEmitter, fetchPermission, shouldRefreshPermission, viewId]);
+
+  if (localReadOnly) return true;
+  if (permissionState.key === activePermissionKey && permissionState.failClosed) return true;
+  if (activePermission) return !activePermission.can_write;
+  return fallbackReadOnly;
 }
 
 // Hook for managing view-related operations
@@ -174,20 +409,13 @@ export function useViewOperations() {
         const layout = isSubDocument ? ViewLayout.Document : view?.layout;
         const databaseIdHint = !isSubDocument
           ? options?.databaseId ??
-            (
-              layout !== undefined && isDatabaseLayout(layout)
-                ? getDatabaseIdFromExtra(view)
-                : undefined
-            )
+            (layout !== undefined && isDatabaseLayout(layout) ? getDatabaseIdFromExtra(view) : undefined)
           : undefined;
 
         // Use view-loader to open document (handles cache vs fetch)
-        let { doc, collabType: detectedCollabType } = await openView(
-          currentWorkspaceId,
-          viewId,
-          layout,
-          { databaseId: databaseIdHint }
-        );
+        let { doc, collabType: detectedCollabType } = await openView(currentWorkspaceId, viewId, layout, {
+          databaseId: databaseIdHint,
+        });
 
         // Use detected collab type, or override for sub-documents
         let collabType = isSubDocument ? Types.Document : detectedCollabType;
@@ -275,7 +503,7 @@ export function useViewOperations() {
       const objectId = docWithMeta.object_id;
       const viewId = docWithMeta.view_id ?? objectId;
 
-      // Use explicit undefined check for collabType since Types.Document = 0 is falsy
+      // Use explicit undefined check so zero-valued collab types remain valid.
       if (collabType === undefined || !objectId || !viewId) {
         console.warn('[useViewOperations] bindViewSync failed - missing metadata', {
           hasCollabType: collabType !== undefined,
@@ -458,17 +686,14 @@ export function useViewOperations() {
 
           doc.version = versionId;
 
-          Y.transact(
-            doc,
-            () => {
-              try {
-                Y.applyUpdate(doc, docState);
-              } catch (e) {
-                Log.error('Error applying Yjs update for document version preview', e);
-                throw e;
-              }
+          Y.transact(doc, () => {
+            try {
+              Y.applyUpdate(doc, docState);
+            } catch (e) {
+              Log.error('Error applying Yjs update for document version preview', e);
+              throw e;
             }
-          );
+          });
 
           return doc;
         }

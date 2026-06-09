@@ -57,7 +57,6 @@ const collabSharedRootKeyMap = {
   [Types.WorkspaceDatabase]: YjsEditorKey.workspace_database,
   [Types.DatabaseRow]: YjsEditorKey.database_row,
   [Types.UserAwareness]: YjsEditorKey.user_awareness,
-  [Types.Empty]: YjsEditorKey.empty,
 };
 
 export function hasCollabCache(doc: YDoc) {

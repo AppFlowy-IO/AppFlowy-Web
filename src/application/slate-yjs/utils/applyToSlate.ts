@@ -5,7 +5,7 @@ import { YEvent, YMapEvent, YTextEvent } from 'yjs';
 import { YjsEditor } from '@/application/slate-yjs';
 import { BlockJson } from '@/application/slate-yjs/types';
 import { applyTextYEvent } from '@/application/slate-yjs/utils/applyTextToSlate';
-import { blockToSlateNode, deltaInsertToSlateNode } from '@/application/slate-yjs/utils/convert';
+import { blockToSlateNode, deltaInsertToSlateNode, traverseBlock } from '@/application/slate-yjs/utils/convert';
 import { findSlateEntryByBlockId } from '@/application/slate-yjs/utils/editor';
 import { dataStringTOJson, getBlock, getChildrenArray, getPageId, getText } from '@/application/slate-yjs/utils/yjs';
 import { YBlock, YjsEditorKey } from '@/application/types';
@@ -77,6 +77,8 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
   const { target } = event;
   const block = target as YBlock;
   const newData = dataStringTOJson(block.get(YjsEditorKey.block_data));
+  const newType = block.get(YjsEditorKey.block_type);
+  const newRelationId = block.get(YjsEditorKey.block_children);
   const entry = findSlateEntryByBlockId(editor, blockId);
 
   if (!entry) {
@@ -89,22 +91,58 @@ function applyUpdateBlockYEvent(editor: YjsEditor, blockId: string, event: YMapE
   }
 
   const [node, path] = entry;
-  const oldData = node.data as Record<string, unknown>;
+  const oldData = (node.data || {}) as Record<string, unknown>;
+  const oldType = node.type;
+  const oldRelationId = node.relationId;
+  const structuralUpdate =
+    event.keysChanged.has(YjsEditorKey.block_type) ||
+    event.keysChanged.has(YjsEditorKey.block_children) ||
+    event.keysChanged.has(YjsEditorKey.block_external_id);
 
-  Log.debug(`✅ Updating block data for blockId: ${blockId}`, {
+  Log.debug(`✅ Updating block for blockId: ${blockId}`, {
     path,
+    oldType,
+    newType,
     oldDataKeys: Object.keys(oldData),
     newDataKeys: Object.keys(newData),
   });
+
+  if (structuralUpdate) {
+    const replacement = traverseBlock(blockId, editor.sharedRoot);
+
+    if (!replacement) {
+      Log.error(`❌ Failed to rebuild structurally updated block: ${blockId}`);
+      return [];
+    }
+
+    Editor.withoutNormalizing(editor, () => {
+      editor.apply({
+        type: 'remove_node',
+        path,
+        node,
+      });
+      editor.apply({
+        type: 'insert_node',
+        path,
+        node: replacement,
+      });
+    });
+
+    return;
+  }
 
   editor.apply({
     type: 'set_node',
     path,
     newProperties: {
       data: newData,
+      relationId: newRelationId,
+      type: newType,
     },
     properties: {
       data: oldData,
+      relationId: oldRelationId,
+      type: oldType,
     },
   });
 }
