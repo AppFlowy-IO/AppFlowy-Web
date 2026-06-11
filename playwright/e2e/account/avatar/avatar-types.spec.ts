@@ -52,6 +52,22 @@ async function updateWorkspaceMemberAvatar(
   });
 }
 
+/** Helper: get current user's workspace member profile via API */
+async function getWorkspaceMemberProfile(
+  page: import('@playwright/test').Page,
+  request: import('@playwright/test').APIRequestContext,
+  workspaceId: string
+) {
+  const accessToken = await getAccessToken(page);
+  return request.get(`${TestConfig.apiUrl}/api/workspace/${workspaceId}/workspace-profile`, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    failOnStatusCode: false,
+  });
+}
+
 /** Helper: open workspace dropdown then account settings */
 async function openAccountSettings(page: import('@playwright/test').Page) {
   await WorkspaceSelectors.dropdownTrigger(page).click();
@@ -62,11 +78,20 @@ async function openAccountSettings(page: import('@playwright/test').Page) {
   await expect(page.getByTestId('settings-dialog')).toBeVisible();
 }
 
-/** Helper: reload page and open account settings */
-async function reloadAndOpenAccountSettings(page: import('@playwright/test').Page) {
-  await page.reload();
-  await page.waitForTimeout(3000);
+/** Helper: open the Profile panel inside settings */
+async function openProfileSettings(page: import('@playwright/test').Page) {
   await openAccountSettings(page);
+  const dialog = page.getByTestId('settings-dialog');
+  await dialog.getByTestId('settings-menu-profile').click();
+  await expect(dialog.getByTestId('profile-display-name-input')).toBeVisible();
+  return dialog;
+}
+
+/** Helper: reload page and open profile settings */
+async function reloadAndOpenProfileSettings(page: import('@playwright/test').Page) {
+  await page.reload();
+  await expect(page.locator('.appflowy-top-bar')).toBeVisible();
+  return openProfileSettings(page);
 }
 
 test.describe('Avatar Types', () => {
@@ -83,10 +108,7 @@ test.describe('Avatar Types', () => {
     await page.setViewportSize({ width: 1280, height: 720 });
   });
 
-  test('should handle HTTPS avatar URL', async ({
-    page,
-    request,
-  }) => {
+  test('should handle HTTPS avatar URL', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
     const httpsAvatar = 'https://api.dicebear.com/7.x/avataaars/svg?seed=https';
 
@@ -97,18 +119,20 @@ test.describe('Avatar Types', () => {
     const workspaceId = await getCurrentWorkspaceId(page);
     expect(workspaceId).not.toBeNull();
 
-    const response = await updateWorkspaceMemberAvatar(
-      page,
-      request,
-      workspaceId!,
-      httpsAvatar
-    );
+    const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, httpsAvatar);
     expect(response.status()).toBe(200);
 
-    await page.waitForTimeout(2000);
-    await reloadAndOpenAccountSettings(page);
+    await expect
+      .poll(async () => {
+        const profileResponse = await getWorkspaceMemberProfile(page, request, workspaceId!);
+        if (profileResponse.status() !== 200) return null;
+        const body = await profileResponse.json();
+        return body?.data?.avatar_url ?? null;
+      })
+      .toBe(httpsAvatar);
 
-    const avatarImage = page.locator('[data-testid="avatar-image"]');
+    const dialog = await reloadAndOpenProfileSettings(page);
+    const avatarImage = dialog.getByTestId('avatar-image');
     await expect(avatarImage).toBeAttached();
     await expect(avatarImage).toHaveAttribute('src', httpsAvatar);
   });
@@ -125,20 +149,22 @@ test.describe('Avatar Types', () => {
     expect(workspaceId).not.toBeNull();
 
     for (const emoji of emojiAvatars) {
-      const response = await updateWorkspaceMemberAvatar(
-        page,
-        request,
-        workspaceId!,
-        emoji
-      );
+      const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, emoji);
       expect(response.status()).toBe(200);
 
-      await page.waitForTimeout(2000);
-      await reloadAndOpenAccountSettings(page);
+      await expect
+        .poll(async () => {
+          const profileResponse = await getWorkspaceMemberProfile(page, request, workspaceId!);
+          if (profileResponse.status() !== 200) return null;
+          const body = await profileResponse.json();
+          return body?.data?.avatar_url ?? null;
+        })
+        .toBe(emoji);
 
-      // Emoji should be displayed in fallback, not as image
-      const avatarFallback = page.locator('[data-slot="avatar-fallback"]');
-      await expect(avatarFallback.first()).toContainText(emoji);
+      await page.reload();
+      const topBar = page.locator('.appflowy-top-bar');
+      await expect(topBar).toBeVisible();
+      await expect(topBar).toContainText(emoji);
     }
   });
 });

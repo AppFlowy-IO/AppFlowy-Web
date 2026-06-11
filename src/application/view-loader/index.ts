@@ -31,6 +31,7 @@ export interface ViewLoaderResult {
 
 export interface OpenViewOptions {
   databaseId?: string | null;
+  forceFetch?: boolean;
 }
 
 // ============================================================================
@@ -90,11 +91,21 @@ function detectCollabType(doc: YDoc, layout?: ViewLayout): Types {
 }
 
 function isDatabaseLayout(layout?: ViewLayout): boolean {
-  return (
-    layout === ViewLayout.Grid ||
-    layout === ViewLayout.Board ||
-    layout === ViewLayout.Calendar
-  );
+  return layout === ViewLayout.Grid || layout === ViewLayout.Board || layout === ViewLayout.Calendar;
+}
+
+function databaseDocContainsView(doc: YDoc, viewId: string): boolean | null {
+  try {
+    const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
+    const database = sharedRoot?.get(YjsEditorKey.database);
+    const views = database?.get(YjsDatabaseKey.views);
+
+    if (!views) return null;
+
+    return views.has(viewId);
+  } catch {
+    return null;
+  }
 }
 
 async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, targetDoc: YDoc): Promise<boolean> {
@@ -149,7 +160,7 @@ async function mergeLegacyDatabaseViewCache(viewId: string, databaseId: string, 
 }
 
 async function openCollabDocForView(viewId: string, layout?: ViewLayout, options: OpenViewOptions = {}): Promise<YDoc> {
-  const databaseId = (layout === undefined || isDatabaseLayout(layout)) ? options.databaseId ?? undefined : undefined;
+  const databaseId = layout === undefined || isDatabaseLayout(layout) ? options.databaseId ?? undefined : undefined;
 
   if (!databaseId) {
     return openCollabDB(viewId);
@@ -243,7 +254,7 @@ export async function openView(
 
   // Step 2: Check cache — also detect empty-shell documents that were cached
   // during a previous load when the server hadn't finished duplication yet.
-  let fromCache = hasCollabCache(doc);
+  let fromCache = options.forceFetch ? false : hasCollabCache(doc);
 
   if (fromCache) {
     const sharedRoot = doc.getMap(YjsEditorKey.data_section) as YSharedRoot | undefined;
@@ -271,9 +282,22 @@ export async function openView(
     }
   }
 
+  if (fromCache && options.databaseId && viewId !== options.databaseId) {
+    const containsLinkedView = databaseDocContainsView(doc, viewId);
+
+    if (containsLinkedView === false) {
+      Log.debug('[ViewLoader] cached database is missing linked view, re-fetching', {
+        viewId,
+        databaseId: options.databaseId,
+      });
+      fromCache = false;
+    }
+  }
+
   Log.debug('[ViewLoader] cache check', {
     viewId,
     fromCache,
+    forceFetch: options.forceFetch ?? false,
     durationMs: Date.now() - startedAt,
   });
 
@@ -347,10 +371,7 @@ export function getDatabaseIdFromDoc(doc: YDoc): string | null {
  * @param workspaceId - The workspace ID
  * @param documentId - The row sub-document ID
  */
-export async function openRowSubDocument(
-  workspaceId: string,
-  documentId: string
-): Promise<ViewLoaderResult> {
+export async function openRowSubDocument(workspaceId: string, documentId: string): Promise<ViewLoaderResult> {
   const startedAt = Date.now();
 
   Log.debug('[ViewLoader] openRowSubDocument start', { workspaceId, documentId });

@@ -542,16 +542,37 @@ export async function firstGridCellText(gridBlock: Locator): Promise<string> {
   return (await gridBlock.locator('[data-testid^="grid-cell-"]').first().innerText()).trim();
 }
 
-export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
-  await gridBlock.getByTestId('database-actions-filter').click({ force: true });
+async function selectFilterFieldForBlock(page: Page, gridBlock: Locator, fieldName: string): Promise<void> {
+  const fieldPattern = new RegExp(`^\\s*${escapeRegExp(fieldName)}\\s*$`);
 
-  const popoverContent = page.locator('[data-slot="popover-content"]').last();
-  await expect(popoverContent).toBeVisible({ timeout: 10000 });
-  await popoverContent
-    .locator('[data-item-id]')
-    .filter({ hasText: /^Name$/ })
-    .first()
-    .click({ force: true });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    await expect(gridBlock.getByTestId('database-grid')).toBeVisible({ timeout: 30000 });
+    await gridBlock.getByTestId('database-actions-filter').click({ force: true });
+
+    const popoverContent = page.locator('[data-slot="popover-content"]').last();
+    await expect(popoverContent).toBeVisible({ timeout: 10000 });
+
+    const fieldItem = popoverContent.locator('[data-item-id]').filter({ hasText: fieldPattern }).first();
+
+    if (
+      await expect(fieldItem)
+        .toBeVisible({ timeout: 10000 })
+        .then(() => true)
+        .catch(() => false)
+    ) {
+      await fieldItem.click({ force: true });
+      return;
+    }
+
+    await page.keyboard.press('Escape').catch(() => undefined);
+    await page.waitForTimeout(1000);
+  }
+
+  throw new Error(`Filter field "${fieldName}" did not appear in the property picker`);
+}
+
+export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
+  await selectFilterFieldForBlock(page, gridBlock, 'Name');
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });
@@ -562,15 +583,7 @@ export async function addNameIsNotEmptyFilterToBlock(page: Page, gridBlock: Loca
 }
 
 export async function addDoneCheckedFilterToBlock(page: Page, gridBlock: Locator): Promise<void> {
-  await gridBlock.getByTestId('database-actions-filter').click({ force: true });
-
-  const popoverContent = page.locator('[data-slot="popover-content"]').last();
-  await expect(popoverContent).toBeVisible({ timeout: 10000 });
-  await popoverContent
-    .locator('[data-item-id]')
-    .filter({ hasText: /^Done$/ })
-    .first()
-    .click({ force: true });
+  await selectFilterFieldForBlock(page, gridBlock, 'Done');
   await page.waitForTimeout(1000);
 
   await expect(gridBlock.getByTestId('database-filter-condition').first()).toBeVisible({ timeout: 10000 });
