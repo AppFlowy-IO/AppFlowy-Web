@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { WorkspaceSelectors } from '../../../support/selectors';
+import { PageSelectors, SpaceSelectors, WorkspaceSelectors } from '../../../support/selectors';
 import { generateRandomEmail, TestConfig } from '../../../support/test-config';
 import { signInAndWaitForApp } from '../../../support/auth-flow-helpers';
 import { testLog } from '../../../support/test-helpers';
@@ -94,6 +94,46 @@ async function reloadAndOpenProfileSettings(page: import('@playwright/test').Pag
   return openProfileSettings(page);
 }
 
+/** Helper: open a page and type in the editor so the header awareness avatar is rendered */
+async function openFirstPageAndTriggerAwareness(page: import('@playwright/test').Page) {
+  const firstSpace = SpaceSelectors.items(page).first();
+
+  await firstSpace.waitFor({ state: 'visible', timeout: 10000 });
+
+  const expanded = firstSpace.getByTestId('space-expanded');
+  const isExpanded = await expanded.getAttribute('data-expanded');
+
+  if (isExpanded !== 'true') {
+    await firstSpace.getByTestId('space-name').first().click();
+  }
+
+  await expect(PageSelectors.names(page).first()).toBeVisible({ timeout: 10000 });
+  await PageSelectors.names(page).first().click({ force: true });
+  await page.waitForTimeout(2000);
+
+  const editors = page.locator('[contenteditable="true"]');
+  const editorCount = await editors.count();
+
+  for (let index = 0; index < editorCount; index += 1) {
+    const editor = editors.nth(index);
+    const testId = await editor.getAttribute('data-testid');
+    const className = await editor.getAttribute('class');
+
+    if (testId?.includes('title') || className?.includes('editor-title')) {
+      continue;
+    }
+
+    await editor.click({ force: true });
+    await editor.type(' ', { delay: 50 });
+    return;
+  }
+
+  if (editorCount > 0) {
+    await editors.last().click({ force: true });
+    await editors.last().type(' ', { delay: 50 });
+  }
+}
+
 test.describe('Avatar Types', () => {
   test.beforeEach(async ({ page }) => {
     page.on('pageerror', (err) => {
@@ -162,9 +202,15 @@ test.describe('Avatar Types', () => {
         .toBe(emoji);
 
       await page.reload();
-      const topBar = page.locator('.appflowy-top-bar');
-      await expect(topBar).toBeVisible();
-      await expect(topBar).toContainText(emoji);
+      await expect(page.locator('.appflowy-top-bar')).toBeVisible();
+      await openFirstPageAndTriggerAwareness(page);
+
+      const headerAvatarFallback = page
+        .locator('.appflowy-top-bar [data-slot="avatar"]')
+        .first()
+        .locator('[data-slot="avatar-fallback"]');
+
+      await expect(headerAvatarFallback).toContainText(emoji);
     }
   });
 });
