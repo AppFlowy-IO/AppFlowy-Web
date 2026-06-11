@@ -80,7 +80,7 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
 export async function createDocumentPageAndNavigate(page: Page): Promise<string> {
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
   await page.waitForTimeout(1000);
-  await page.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // Expand the ViewModal to full page view
@@ -95,11 +95,7 @@ export async function createDocumentPageAndNavigate(page: Page): Promise<string>
   return viewId;
 }
 
-export async function createPageAndAddContent(
-  page: Page,
-  pageName: string,
-  content: string[]
-): Promise<void> {
+export async function createPageAndAddContent(page: Page, pageName: string, content: string[]): Promise<void> {
   // Click new page button
   await PageSelectors.newPageButton(page).click();
   await page.waitForTimeout(1000);

@@ -6,13 +6,7 @@
  * URL utilities, and page management.
  */
 import { Page, expect } from '@playwright/test';
-import {
-  AddPageSelectors,
-  PageSelectors,
-  SpaceSelectors,
-  ModalSelectors,
-  SlashCommandSelectors,
-} from './selectors';
+import { AddPageSelectors, PageSelectors, SpaceSelectors, ModalSelectors, SlashCommandSelectors } from './selectors';
 import { getSlashMenuItemName } from './i18n-constants';
 
 /**
@@ -85,7 +79,7 @@ export async function navigateAwayToNewPage(page: Page): Promise<void> {
   await closeModalsIfOpen(page);
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
   await page.waitForTimeout(1000);
-  await page.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // Handle new page modal if it appears
@@ -125,7 +119,7 @@ export async function ensurePageExpandedByViewId(page: Page, viewId: string): Pr
 export async function createDocumentPageAndNavigate(page: Page): Promise<string> {
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
   await page.waitForTimeout(1000);
-  await page.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // Expand the ViewModal to full page view
@@ -142,11 +136,7 @@ export async function createDocumentPageAndNavigate(page: Page): Promise<string>
 /**
  * Inserts a linked database into the current document editor via the slash menu.
  */
-export async function insertLinkedDatabaseViaSlash(
-  page: Page,
-  docViewId: string,
-  dbName: string
-): Promise<void> {
+export async function insertLinkedDatabaseViaSlash(page: Page, docViewId: string, dbName: string): Promise<void> {
   const editor = page.locator(`#editor-${docViewId}`);
   await expect(editor).toBeVisible();
   await editor.click({ position: { x: 200, y: 100 }, force: true });
@@ -190,7 +180,7 @@ export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): P
   // Create a new page and expand to full-page view (same pattern as createDocumentPageAndNavigate)
   await AddPageSelectors.inlineAddButton(page).first().click({ force: true });
   await page.waitForTimeout(1000);
-  await page.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // Expand ViewModal to full-page view
@@ -218,7 +208,10 @@ export async function createPageAndInsertImage(page: Page, pngBuffer: Buffer): P
   await page.keyboard.type('image', { delay: 50 });
   await page.waitForTimeout(1000);
 
-  await page.locator('[data-testid^="slash-menu-"]').filter({ hasText: /^Image$/ }).click({ force: true });
+  await page
+    .locator('[data-testid^="slash-menu-"]')
+    .filter({ hasText: /^Image$/ })
+    .click({ force: true });
   await page.waitForTimeout(1000);
 
   // Upload image

@@ -256,7 +256,7 @@ export async function createChildDocumentUnder(
   await parentItem.locator('> div').first().getByTestId('inline-add-page').first().click({ force: true });
   const popover = page.getByTestId('view-actions-popover');
   await expect(popover).toBeVisible({ timeout: 10000 });
-  await popover.locator('[role="menuitem"]').first().click({ force: true });
+  await AddPageSelectors.addDocumentButton(page).click({ force: true });
   await page.waitForTimeout(1000);
 
   // The ViewModal dialog opens for the newly created child document.
@@ -283,11 +283,7 @@ export function databaseBlocks(editor: Locator): Locator {
 async function focusEditorForSlash(page: Page, editor: Locator): Promise<void> {
   let slateEditor = editor.locator('[data-slate-editor="true"]').first();
 
-  if (
-    !(await slateEditor
-      .isVisible({ timeout: 3000 })
-      .catch(() => false))
-  ) {
+  if (!(await slateEditor.isVisible({ timeout: 3000 }).catch(() => false))) {
     slateEditor = page.locator('[data-slate-editor="true"]').first();
   }
 
