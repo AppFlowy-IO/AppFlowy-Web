@@ -15,7 +15,7 @@ import {
   mergeLegacyRowDocIfExists,
 } from '@/application/services/js-services/cache';
 import { collabFullSyncBatch, createOrphanedView, checkIfCollabExists } from '@/application/services/js-services/http/http_api';
-import { withRetry } from '@/application/services/js-services/http/core';
+import { handleAPIError, withRetry } from '@/application/services/js-services/http/core';
 import { waitForDrain } from '@/application/sync-outbox';
 import { Types, YDatabase, YjsDatabaseKey, YjsEditorKey } from '@/application/types';
 import { applyYDoc } from '@/application/ydoc/apply';
@@ -28,6 +28,12 @@ import { SyncRefs } from './syncRefs';
 const BATCH_SYNC_DELAYS = [30_000, 30_000, 30_000];
 const WS_READY_STATE_OPEN = 1;
 const BACKGROUND_HTTP_SYNC_DELAY_MS = 5_000;
+// Loop-level pauses after withRetry exhausts, matching the desktop client
+// protocol (doc/context/api_collab_sync.md in AppFlowy-Cloud): the server
+// returning 429 means it is shedding load — keep the loop quiet for 10 minutes
+// instead of re-entering the 5s cadence. Other exhausted errors pause 5 minutes.
+const BACKGROUND_HTTP_SYNC_RATE_LIMIT_PAUSE_MS = 10 * 60 * 1000;
+const BACKGROUND_HTTP_SYNC_ERROR_PAUSE_MS = 5 * 60 * 1000;
 const BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS = 10 * 60 * 1000;
 const BACKGROUND_HTTP_SYNC_TYPES = new Set<Types>([
   Types.Document,
@@ -41,6 +47,7 @@ const EMPTY_YJS_UPDATE_MAX_BYTES = 2;
 interface BackgroundDirtyEdit {
   seq: number;
   editedAt: number;
+  retryRetainUntil?: number;
 }
 
 /**
@@ -89,6 +96,9 @@ export function useBatchSync(
   const backgroundHttpSyncInFlightRef = useRef(false);
   const backgroundDirtyEditsRef = useRef<Map<string, BackgroundDirtyEdit>>(new Map());
   const backgroundDirtySeqRef = useRef(0);
+  // Epoch ms until which the background loop must stay quiet after the server
+  // signalled busy (429/503) or a cycle exhausted its retries. 0 = not paused.
+  const backgroundHttpSyncPausedUntilRef = useRef(0);
   const wsReadyStateRef = useRef<number | undefined>(options?.wsReadyState);
   const workspaceIdRef = useRef<string | undefined>(options?.workspaceId);
   const runBackgroundHttpSyncRef = useRef<() => Promise<void>>(async () => undefined);
@@ -106,11 +116,16 @@ export function useBatchSync(
 
     if (!workspaceId || readyState === undefined || readyState === WS_READY_STATE_OPEN) return;
 
+    // Honour an active busy pause: local edits keep marking docs dirty, but
+    // the next request waits until the pause expires instead of every 5s.
+    const pauseRemainingMs = backgroundHttpSyncPausedUntilRef.current - Date.now();
+    const delayMs = Math.max(BACKGROUND_HTTP_SYNC_DELAY_MS, pauseRemainingMs);
+
     clearBackgroundHttpSyncTimer();
     backgroundHttpSyncTimerRef.current = setTimeout(() => {
       backgroundHttpSyncTimerRef.current = null;
       void runBackgroundHttpSyncRef.current();
-    }, BACKGROUND_HTTP_SYNC_DELAY_MS);
+    }, delayMs);
   }, [clearBackgroundHttpSyncTimer]);
 
   useEffect(() => {
@@ -242,7 +257,10 @@ export function useBatchSync(
 
     const now = Date.now();
     const dirtySnapshot = Array.from(backgroundDirtyEditsRef.current.entries()).filter(([objectId, dirty]) => {
-      if (now - dirty.editedAt <= BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS) return true;
+      const isRecentEdit = now - dirty.editedAt <= BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS;
+      const isRetainedForRetry = dirty.retryRetainUntil !== undefined && now <= dirty.retryRetainUntil;
+
+      if (isRecentEdit || isRetainedForRetry) return true;
 
       if (backgroundDirtyEditsRef.current.get(objectId)?.seq === dirty.seq) {
         backgroundDirtyEditsRef.current.delete(objectId);
@@ -280,6 +298,7 @@ export function useBatchSync(
         signal: controller.signal,
       });
 
+      backgroundHttpSyncPausedUntilRef.current = 0;
       applyFullSyncResults(results);
 
       for (const [objectId, dirty] of dirtySnapshot) {
@@ -294,7 +313,34 @@ export function useBatchSync(
       });
     } catch (error) {
       if (!controller.signal.aborted) {
-        Log.warn('[sync] background HTTP full-sync failed', { workspaceId, error });
+        // withRetry already consumed the per-request Retry-After delays; an
+        // error landing here means the server stayed busy (or kept failing)
+        // through every attempt, so back off at the loop level.
+        const normalized = handleAPIError(error);
+        const pauseMs =
+          normalized.code === 429 ? BACKGROUND_HTTP_SYNC_RATE_LIMIT_PAUSE_MS : BACKGROUND_HTTP_SYNC_ERROR_PAUSE_MS;
+        const pauseUntil = Date.now() + pauseMs;
+        const shouldRetainFailedDirtyEdits = normalized.code === 429 || normalized.code === -1 || normalized.code >= 500;
+
+        backgroundHttpSyncPausedUntilRef.current = pauseUntil;
+
+        if (shouldRetainFailedDirtyEdits) {
+          const retryRetainUntil = pauseUntil + BACKGROUND_HTTP_SYNC_RECENT_EDIT_WINDOW_MS;
+
+          for (const [objectId, dirty] of dirtySnapshot) {
+            const currentDirty = backgroundDirtyEditsRef.current.get(objectId);
+
+            if (itemIds.has(objectId) && currentDirty?.seq === dirty.seq) {
+              currentDirty.retryRetainUntil = retryRetainUntil;
+            }
+          }
+        }
+
+        Log.warn('[sync] background HTTP full-sync failed; pausing loop', {
+          workspaceId,
+          error,
+          pauseMs,
+        });
       }
     } finally {
       if (backgroundHttpSyncAbortRef.current === controller) {
