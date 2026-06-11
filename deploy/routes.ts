@@ -11,11 +11,27 @@ import { type RequestContext } from './server';
 
 type RouteHandler = (context: RequestContext) => Promise<Response | undefined>;
 
-const MARKETING_PATHS = ['/after-payment', '/login', '/as-template', '/app', '/accept-invitation', '/import'];
+// App routes served as the SPA shell. `/auth` covers the OAuth callback
+// (`/auth/callback#access_token=...`): it must never fall through to the
+// publish-view lookup, which would serve the fallback landing page and lose
+// the login tokens.
+const APP_PATHS = ['/after-payment', '/login', '/auth', '/as-template', '/app', '/accept-invitation', '/import'];
 
 // Static file paths that should be served from dist
 const STATIC_PATHS = ['/static/', '/af_icons/', '/covers/', '/.well-known/'];
 const STATIC_FILES = ['/appflowy.ico', '/appflowy.svg', '/og-image.png'];
+
+// Vite emits content-hashed filenames under /static/, so they can be cached
+// forever; other assets keep a short lifetime. HTML must always be
+// revalidated so browsers with a warm profile never run a stale app shell.
+const IMMUTABLE_CACHE_CONTROL = 'public, max-age=31536000, immutable';
+const STATIC_CACHE_CONTROL = 'public, max-age=3600';
+const HTML_CACHE_CONTROL = 'no-cache';
+
+// Matches whole path segments: '/auth' matches '/auth' and '/auth/callback'
+// but not a publish namespace like '/authors'.
+const matchesAppPath = (pathname: string, base: string) =>
+  pathname === base || pathname.startsWith(`${base}/`);
 
 const MIME_TYPES: Record<string, string> = {
   '.html': 'text/html',
@@ -80,9 +96,13 @@ const staticRoute = async ({ req, url }: RequestContext) => {
     const file = fs.readFileSync(filePath);
     const ext = path.extname(filePath);
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+    const cacheControl = url.pathname.startsWith('/static/') ? IMMUTABLE_CACHE_CONTROL : STATIC_CACHE_CONTROL;
 
     return new Response(file, {
-      headers: { 'Content-Type': contentType },
+      headers: {
+        'Content-Type': contentType,
+        'Cache-Control': cacheControl,
+      },
     });
   } catch {
     logger.warn(`Static file not found: ${filePath}`);
@@ -90,16 +110,19 @@ const staticRoute = async ({ req, url }: RequestContext) => {
   }
 };
 
-const marketingRoute = async ({ req, url }: RequestContext) => {
+const appRoute = async ({ req, url }: RequestContext) => {
   if (req.method !== 'GET') {
     return;
   }
 
-  if (MARKETING_PATHS.some(path => url.pathname.startsWith(path))) {
+  if (APP_PATHS.some(path => matchesAppPath(url.pathname, path))) {
     const html = renderMarketingPage(url.pathname);
 
     return new Response(html, {
-      headers: { 'Content-Type': 'text/html' },
+      headers: {
+        'Content-Type': 'text/html',
+        'Cache-Control': HTML_CACHE_CONTROL,
+      },
     });
   }
 };
@@ -205,7 +228,10 @@ const publishRoute = async ({ req, url, hostname }: RequestContext) => {
   });
 
   return new Response(html, {
-    headers: { 'Content-Type': 'text/html' },
+    headers: {
+      'Content-Type': 'text/html',
+      'Cache-Control': HTML_CACHE_CONTROL,
+    },
   });
 };
 
@@ -218,4 +244,4 @@ const methodNotAllowed = async ({ req }: RequestContext) => {
 
 const notFound = async () => new Response('Not Found', { status: 404 });
 
-export const routes: RouteHandler[] = [staticRoute, marketingRoute, publishRoute, methodNotAllowed, notFound];
+export const routes: RouteHandler[] = [staticRoute, appRoute, publishRoute, methodNotAllowed, notFound];
