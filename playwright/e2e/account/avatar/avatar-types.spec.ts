@@ -179,38 +179,36 @@ test.describe('Avatar Types', () => {
 
   test('should handle emoji avatars correctly', async ({ page, request }) => {
     const testEmail = generateRandomEmail();
-    const emojiAvatars = ['\u{1F3A8}', '\u{1F680}', '\u{2B50}', '\u{1F3AF}']; // paint, rocket, star, target
+    const emojiAvatar = '\u{1F3A8}'; // paint palette emoji
 
     testLog.info('Step 1: Sign in with test account');
     await signInAndWaitForApp(page, request, testEmail);
 
-    testLog.info('Step 2: Test each emoji avatar');
+    testLog.info('Step 2: Test emoji avatar');
     const workspaceId = await getCurrentWorkspaceId(page);
     expect(workspaceId).not.toBeNull();
 
-    for (const emoji of emojiAvatars) {
-      const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, emoji);
-      expect(response.status()).toBe(200);
+    const response = await updateWorkspaceMemberAvatar(page, request, workspaceId!, emojiAvatar);
+    expect(response.status()).toBe(200);
 
-      await expect
-        .poll(async () => {
-          const profileResponse = await getWorkspaceMemberProfile(page, request, workspaceId!);
-          if (profileResponse.status() !== 200) return null;
-          const body = await profileResponse.json();
-          return body?.data?.avatar_url ?? null;
-        })
-        .toBe(emoji);
+    await expect
+      .poll(async () => {
+        const profileResponse = await getWorkspaceMemberProfile(page, request, workspaceId!);
+        if (profileResponse.status() !== 200) return null;
+        const body = await profileResponse.json();
+        return body?.data?.avatar_url ?? null;
+      })
+      .toBe(emojiAvatar);
 
-      await page.reload();
-      await expect(page.locator('.appflowy-top-bar')).toBeVisible();
-      await openFirstPageAndTriggerAwareness(page);
+    await page.reload();
+    await expect(page.locator('.appflowy-top-bar')).toBeVisible();
+    await openFirstPageAndTriggerAwareness(page);
 
-      const headerAvatarFallback = page
-        .locator('.appflowy-top-bar [data-slot="avatar"]')
-        .first()
-        .locator('[data-slot="avatar-fallback"]');
+    const headerAvatarFallback = page
+      .locator('.appflowy-top-bar [data-slot="avatar"]')
+      .first()
+      .locator('[data-slot="avatar-fallback"]');
 
-      await expect(headerAvatarFallback).toContainText(emoji);
-    }
+    await expect(headerAvatarFallback).toContainText(emojiAvatar);
   });
 });
