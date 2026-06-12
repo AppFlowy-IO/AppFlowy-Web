@@ -402,6 +402,8 @@ export async function insertLinkedGridViaSlash(
 ): Promise<void> {
   const editor = editorForView(page, docViewId);
   await expect(editor).toBeVisible({ timeout: 15000 });
+  const initialBlockCount = await databaseBlocks(editor).count();
+  let lastError: unknown;
 
   // The database picker loads its list from the cached outline at open time.
   // If the outline hasn't propagated the renamed database yet, the picker will
@@ -435,8 +437,17 @@ export async function insertLinkedGridViaSlash(
         return;
       }
     } catch (e) {
-      if (attempt === 2) throw e;
-      // Fall through to cleanup + retry below
+      lastError = e;
+      // Fall through to success detection + cleanup below
+    }
+
+    if ((await databaseBlocks(editor).count()) > initialBlockCount) {
+      return;
+    }
+
+    if (attempt === 2) {
+      if (lastError) throw lastError;
+      break;
     }
 
     // Picker didn't appear or database not found — close any open popovers and
