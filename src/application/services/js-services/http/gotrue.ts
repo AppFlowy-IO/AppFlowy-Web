@@ -43,35 +43,62 @@ export function initGrantService(baseURL: string) {
   });
 }
 
+interface RefreshedToken {
+  access_token: string;
+  expires_at: number;
+  refresh_token: string;
+}
+
+// In-flight refreshes shared by concurrent callers with the same refresh token
+// (axios request interceptor, 401 retry handler, WebSocket reconnect). This
+// must be keyed by token: different sessions/tokens may refresh concurrently,
+// but duplicate requests for one rotating refresh token must join the same
+// promise or the later request can consume an already-used token.
+const refreshInFlightByToken = new Map<string, Promise<RefreshedToken>>();
+
 export async function refreshToken(refresh_token: string) {
-  Log.info('[Auth] refreshToken: requesting new token');
-  const response = await axiosInstance?.post<{
-    access_token: string;
-    expires_at: number;
-    refresh_token: string;
-  }>('/token?grant_type=refresh_token', {
-    refresh_token,
-  });
+  const inFlight = refreshInFlightByToken.get(refresh_token);
 
-  const newToken = response?.data;
-
-  if (newToken) {
-    Log.info('[Auth] refreshToken: success, saving token');
-    saveGoTrueAuth(JSON.stringify(newToken));
-  } else {
-    Log.error('[Auth] refreshToken: no token data in response');
-    return Promise.reject('Failed to refresh token');
+  if (inFlight) {
+    Log.debug('[Auth] refreshToken: joining in-flight refresh');
+    return inFlight;
   }
 
-  return newToken;
+  Log.info('[Auth] refreshToken: requesting new token');
+
+  const promise = (async (): Promise<RefreshedToken> => {
+    const response = await axiosInstance?.post<RefreshedToken>('/token?grant_type=refresh_token', {
+      refresh_token,
+    });
+
+    const newToken = response?.data;
+
+    if (newToken) {
+      Log.info('[Auth] refreshToken: success, saving token');
+      saveGoTrueAuth(JSON.stringify(newToken));
+    } else {
+      Log.error('[Auth] refreshToken: no token data in response');
+      return Promise.reject('Failed to refresh token');
+    }
+
+    return newToken;
+  })();
+
+  refreshInFlightByToken.set(refresh_token, promise);
+
+  try {
+    return await promise;
+  } finally {
+    if (refreshInFlightByToken.get(refresh_token) === promise) {
+      refreshInFlightByToken.delete(refresh_token);
+    }
+  }
 }
 
 function normalizeAuthFlowError(error: unknown, fallbackMessage: string, useErrorMessage: boolean) {
   const err = error as { message?: string; code?: number };
   const message =
-    useErrorMessage && typeof err?.message === 'string'
-      ? err.message.replace(/\s*\[.*\]$/, '')
-      : fallbackMessage;
+    useErrorMessage && typeof err?.message === 'string' ? err.message.replace(/\s*\[.*\]$/, '') : fallbackMessage;
 
   return {
     code: err?.code ?? -1,
@@ -155,7 +182,11 @@ export async function signInWithPassword(params: { email: string; password: stri
       message: e.response?.data?.message || 'Incorrect password. Please try again.',
     });
 
-    Log.error('[Auth] signInWithPassword: failed', { status: e.response?.status, code: error.code, message: error.message });
+    Log.error('[Auth] signInWithPassword: failed', {
+      status: e.response?.status,
+      code: error.code,
+      message: error.message,
+    });
 
     return Promise.reject({
       code: error.code,
@@ -244,7 +275,11 @@ export async function signUpWithPassword(params: { email: string; password: stri
       message: e.response?.data?.message || 'Failed to sign up with password.',
     });
 
-    Log.error('[Auth] signUpWithPassword: failed', { status: e.response?.status, code: error.code, message: error.message });
+    Log.error('[Auth] signUpWithPassword: failed', {
+      status: e.response?.status,
+      code: error.code,
+      message: error.message,
+    });
 
     return Promise.reject({
       code: error.code,
@@ -321,7 +356,10 @@ export async function changePassword(params: { password: string }) {
     return;
     // eslint-disable-next-line
   } catch (e: any) {
-    Log.error('[Auth] changePassword: failed', { status: e.response?.status, message: e.response?.data?.msg || e.message });
+    Log.error('[Auth] changePassword: failed', {
+      status: e.response?.status,
+      message: e.response?.data?.msg || e.message,
+    });
     emit(EventType.SESSION_INVALID);
     return Promise.reject({
       code: -1,
@@ -381,7 +419,11 @@ export async function signInOTP({
     }
     // eslint-disable-next-line
   } catch (e: any) {
-    Log.error('[Auth] signInOTP: failed', { status: e.response?.status, code: e.response?.data?.code, message: e.response?.data?.msg || e.message });
+    Log.error('[Auth] signInOTP: failed', {
+      status: e.response?.status,
+      code: e.response?.data?.code,
+      message: e.response?.data?.msg || e.message,
+    });
     return Promise.reject({
       code: e.response?.data?.code || e.response?.status,
       message: e.response?.data?.msg || e.message,
