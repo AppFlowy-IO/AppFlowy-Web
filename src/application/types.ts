@@ -1007,6 +1007,7 @@ export type AppendBreadcrumb = (view?: View) => void;
 export type CreateRow = (rowKey: string) => Promise<YDoc>;
 export interface LoadViewOptions {
   databaseId?: string | null;
+  forceFetch?: boolean;
 }
 
 export type LoadView = (

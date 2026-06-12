@@ -15,8 +15,10 @@ jest.mock('./logger', () => ({
   logger: mockLogger,
 }));
 
+const mockFetchPublishMetadata = jest.fn<() => Promise<unknown>>();
+
 jest.mock('./api', () => ({
-  fetchPublishMetadata: jest.fn(),
+  fetchPublishMetadata: (...args: unknown[]) => mockFetchPublishMetadata(...(args as [])),
 }));
 
 jest.mock('./html', () => ({
@@ -346,6 +348,82 @@ describe('routes - static file handling', () => {
 
       expect(response).toBeUndefined();
       expect(mockReadFileSync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cache headers', () => {
+    it('serves hashed /static/ assets as immutable', async () => {
+      mockReadFileSync.mockReturnValue(Buffer.from('console.log("test");'));
+
+      const context = createContext('/static/js/index-abc123.js');
+
+      const staticRoute = routes[0];
+      const response = await staticRoute(context);
+
+      expect(response).toBeDefined();
+      expect(response!.headers.get('Cache-Control')).toBe('public, max-age=31536000, immutable');
+    });
+
+    it('serves non-hashed static files with a short cache lifetime', async () => {
+      mockReadFileSync.mockReturnValue(Buffer.from('ICO data'));
+
+      const context = createContext('/appflowy.ico');
+
+      const staticRoute = routes[0];
+      const response = await staticRoute(context);
+
+      expect(response).toBeDefined();
+      expect(response!.headers.get('Cache-Control')).toBe('public, max-age=3600');
+    });
+  });
+
+  describe('app routes', () => {
+    const runRoutes = async (pathname: string) => {
+      let response: Response | undefined;
+      for (const route of routes) {
+        response = await route(createContext(pathname));
+        if (response) break;
+      }
+
+      return response;
+    };
+
+    it('serves the OAuth callback /auth/callback as the app shell, not a publish lookup', async () => {
+      const response = await runRoutes('/auth/callback');
+
+      expect(response).toBeDefined();
+      expect(response!.status).toBe(200);
+      expect(await response!.text()).toBe('<html>marketing</html>');
+      expect(response!.headers.get('Cache-Control')).toBe('no-cache');
+      expect(mockFetchPublishMetadata).not.toHaveBeenCalled();
+    });
+
+    it('serves /login as the app shell with no-cache', async () => {
+      const response = await runRoutes('/login');
+
+      expect(response).toBeDefined();
+      expect(await response!.text()).toBe('<html>marketing</html>');
+      expect(response!.headers.get('Cache-Control')).toBe('no-cache');
+      expect(mockFetchPublishMetadata).not.toHaveBeenCalled();
+    });
+
+    it('does not shadow publish namespaces sharing an app-path prefix (e.g. /authors)', async () => {
+      mockFetchPublishMetadata.mockResolvedValue({ code: 0, data: { view: {} } });
+
+      const response = await runRoutes('/authors/my-page');
+
+      expect(response).toBeDefined();
+      expect(await response!.text()).toBe('<html>publish</html>');
+      expect(mockFetchPublishMetadata).toHaveBeenCalledWith('authors', 'my-page');
+    });
+
+    it('serves publish pages with no-cache so stale shells are never reused', async () => {
+      mockFetchPublishMetadata.mockResolvedValue({ code: 0, data: { view: {} } });
+
+      const response = await runRoutes('/some-namespace/some-page');
+
+      expect(response).toBeDefined();
+      expect(response!.headers.get('Cache-Control')).toBe('no-cache');
     });
   });
 });

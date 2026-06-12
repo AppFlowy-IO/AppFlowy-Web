@@ -57,13 +57,13 @@ async function guestCanAccessSharedPage(
   request: APIRequestContext,
   guestAuthToken: string,
   workspaceId: string,
-  viewId: string,
+  viewId: string
 ): Promise<boolean> {
   const response = await request.get(`${TestConfig.apiUrl}/api/workspace/${workspaceId}/page-view/${viewId}`, {
     headers: { Authorization: `Bearer ${guestAuthToken}` },
     failOnStatusCode: false,
   });
-  const body = await response.json().catch(() => null) as { code?: number; data?: { view?: unknown } } | null;
+  const body = (await response.json().catch(() => null)) as { code?: number; data?: { view?: unknown } } | null;
 
   return response.ok() && body?.code === 0 && Boolean(body?.data?.view);
 }
@@ -73,7 +73,7 @@ async function joinSharedWorkspaceIfInviteCodeRequired(
   guestAuthToken: string,
   workspaceId: string,
   viewId: string,
-  guestEmail: string,
+  guestEmail: string
 ) {
   if (await guestCanAccessSharedPage(request, guestAuthToken, workspaceId, viewId)) {
     return;
@@ -81,11 +81,11 @@ async function joinSharedWorkspaceIfInviteCodeRequired(
 
   const codesResponse = await request.get(
     `${TestConfig.apiUrl}/api/sharing/workspace/${workspaceId}/view/${viewId}/guest-invite-codes`,
-    { headers: { Authorization: `Bearer ${guestAuthToken}` } },
+    { headers: { Authorization: `Bearer ${guestAuthToken}` } }
   );
   const codesData = await expectApiSuccess<{ codes: Array<{ code: string; email: string }> }>(
     codesResponse,
-    'List guest invite codes',
+    'List guest invite codes'
   );
   const inviteCode = codesData.codes.find((item) => item.email.toLowerCase() === guestEmail.toLowerCase())?.code;
 
@@ -98,16 +98,16 @@ async function joinSharedWorkspaceIfInviteCodeRequired(
     {
       headers: { Authorization: `Bearer ${guestAuthToken}`, 'Content-Type': 'application/json' },
       data: { code: inviteCode },
-    },
+    }
   );
 
   await expectApiSuccess(joinResponse, 'Join shared workspace by guest invite code');
 
   await expect
-    .poll(
-      () => guestCanAccessSharedPage(request, guestAuthToken, workspaceId, viewId),
-      { timeout: 30000, intervals: [1000, 2000, 3000] },
-    )
+    .poll(() => guestCanAccessSharedPage(request, guestAuthToken, workspaceId, viewId), {
+      timeout: 30000,
+      intervals: [1000, 2000, 3000],
+    })
     .toBe(true);
 }
 
@@ -131,9 +131,7 @@ async function createPageWithContent(page: Page, title: string, content: string)
   return viewId;
 }
 
-async function renameWorkspace(
-  request: APIRequestContext, authToken: string, workspaceId: string, newName: string,
-) {
+async function renameWorkspace(request: APIRequestContext, authToken: string, workspaceId: string, newName: string) {
   const response = await request.patch(`${TestConfig.apiUrl}/api/workspace`, {
     headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
     data: { workspace_id: workspaceId, workspace_name: newName },
@@ -141,9 +139,7 @@ async function renameWorkspace(
   if (!response.ok()) throw new Error(`Failed to rename workspace: ${response.status()}`);
 }
 
-async function renameUser(
-  request: APIRequestContext, authToken: string, newName: string,
-) {
+async function renameUser(request: APIRequestContext, authToken: string, newName: string) {
   const response = await request.post(`${TestConfig.apiUrl}/api/user/update`, {
     headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
     data: { name: newName },
@@ -152,16 +148,16 @@ async function renameUser(
 }
 
 async function shareViewWithGuest(
-  request: APIRequestContext, authToken: string,
-  workspaceId: string, viewId: string, guestEmail: string,
+  request: APIRequestContext,
+  authToken: string,
+  workspaceId: string,
+  viewId: string,
+  guestEmail: string
 ) {
-  const response = await request.put(
-    `${TestConfig.apiUrl}/api/sharing/workspace/${workspaceId}/view`,
-    {
-      headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
-      data: { view_id: viewId, emails: [guestEmail], access_level: 50, auto_confirm: true },
-    },
-  );
+  const response = await request.put(`${TestConfig.apiUrl}/api/sharing/workspace/${workspaceId}/view`, {
+    headers: { Authorization: `Bearer ${authToken}`, 'Content-Type': 'application/json' },
+    data: { view_id: viewId, emails: [guestEmail], access_level: 50, auto_confirm: true },
+  });
   await expectApiSuccess(response, 'Share view with guest');
 }
 
@@ -179,9 +175,9 @@ async function getUserProfile(request: APIRequestContext, authToken: string) {
 async function waitForEditorContent(page: Page, maxAttempts = 3): Promise<void> {
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      await expect(
-        page.locator('[data-testid="editor-content"], [data-testid="page-title-input"]').first()
-      ).toBeVisible({ timeout: 25000 });
+      await expect(page.locator('[data-testid="editor-content"], [data-testid="page-title-input"]').first()).toBeVisible(
+        { timeout: 25000 }
+      );
       return;
     } catch {
       testLog.info(`Content not visible yet, reloading (attempt ${attempt + 1}/${maxAttempts})`);
@@ -192,6 +188,27 @@ async function waitForEditorContent(page: Page, maxAttempts = 3): Promise<void> 
   throw new Error('Editor content never became visible after retries');
 }
 
+async function waitForSharedWorkspaceOutline(page: Page): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const fullWorkspaceVisible = await page
+          .locator('text=Annie Workspace B')
+          .first()
+          .isVisible()
+          .catch(() => false);
+        const sharedOutlineVisible = await PageSelectors.nameContaining(page, TEST_PAGE_NAME)
+          .first()
+          .isVisible()
+          .catch(() => false);
+
+        return fullWorkspaceVisible || sharedOutlineVisible;
+      },
+      { timeout: 30000, intervals: [500, 1000, 2000] }
+    )
+    .toBe(true);
+}
+
 // ── Setup: Annie creates and shares a page ───────────────────────────
 
 async function annieCreatesAndSharesPage(
@@ -199,7 +216,7 @@ async function annieCreatesAndSharesPage(
   request: APIRequestContext,
   ownerEmail: string,
   guestEmail: string,
-  guestAuthToken: string,
+  guestAuthToken: string
 ): Promise<{ ownerWorkspaceId: string; sharedViewId: string; directLink: string }> {
   const ownerContext = await browser.newContext();
   const ownerPage = await ownerContext.newPage();
@@ -227,13 +244,7 @@ async function annieCreatesAndSharesPage(
 
   await shareViewWithGuest(request, ownerToken, ownerWorkspaceId, sharedViewId, guestEmail);
   testLog.info(`Annie shared page with guest (auto_confirm=true)`);
-  await joinSharedWorkspaceIfInviteCodeRequired(
-    request,
-    guestAuthToken,
-    ownerWorkspaceId,
-    sharedViewId,
-    guestEmail,
-  );
+  await joinSharedWorkspaceIfInviteCodeRequired(request, guestAuthToken, ownerWorkspaceId, sharedViewId, guestEmail);
   testLog.info('Guest access to Annie workspace confirmed');
 
   const directLink = `/app/${ownerWorkspaceId}/${sharedViewId}`;
@@ -252,9 +263,7 @@ test.describe('Shared View Cross-Workspace Routing', () => {
     guestEmail = generateRandomEmail();
   });
 
-  test('should auto-switch workspace when guest opens a shared direct link', async ({
-    context, browser, request,
-  }) => {
+  test('should auto-switch workspace when guest opens a shared direct link', async ({ context, browser, request }) => {
     // Given: Nathan's account exists and Nathan is signed in to "Nathan Workspace A"
     await createUserAccount(request, guestEmail);
     await createUserAccount(request, ownerEmail);
@@ -279,7 +288,11 @@ test.describe('Shared View Cross-Workspace Routing', () => {
 
     // And: Annie creates a page in her workspace and shares it with Nathan
     const { ownerWorkspaceId, directLink } = await annieCreatesAndSharesPage(
-      browser, request, ownerEmail, guestEmail, guestToken,
+      browser,
+      request,
+      ownerEmail,
+      guestEmail,
+      guestToken
     );
     expect(ownerWorkspaceId).not.toBe(guestWorkspaceId);
     testLog.info(`Direct link to Annie's page: ${directLink}`);
@@ -297,13 +310,11 @@ test.describe('Shared View Cross-Workspace Routing', () => {
     await waitForEditorContent(guestPage);
     testLog.info('Shared page loaded successfully');
 
-    // Wait for the workspace auto-switch to fully settle. The app detects the
-    // URL workspace differs from the selected workspace and calls
-    // WorkspaceService.open() + loadUserWorkspaceInfo(), which can re-render
-    // the page. Wait for the sidebar to show the correct workspace name as a
-    // signal that the switch is complete.
-    await expect(guestPage.locator('text=Annie Workspace B').first()).toBeVisible({ timeout: 30000 });
-    testLog.info('Workspace switch settled');
+    // Wait for the workspace auto-switch to fully settle. Depending on the
+    // guest outline response, the sidebar may show Annie's full workspace or a
+    // "Shared with me" outline containing the shared page.
+    await waitForSharedWorkspaceOutline(guestPage);
+    testLog.info('Workspace switch outline settled');
 
     // And: Nathan can edit the document in Annie's workspace
     const contentText = guestPage.locator('text=This page is shared across workspaces');
@@ -312,7 +323,7 @@ test.describe('Shared View Cross-Workspace Routing', () => {
     await guestPage.keyboard.press('End');
     await guestPage.keyboard.press('Enter');
     await guestPage.keyboard.press('Enter');
-    await guestPage.keyboard.type('Nathan was here - editing in Annie\'s workspace!', { delay: 30 });
+    await guestPage.keyboard.type("Nathan was here - editing in Annie's workspace!", { delay: 30 });
     await guestPage.waitForTimeout(2000);
     testLog.info('Nathan typed content in the shared document');
 
@@ -324,9 +335,7 @@ test.describe('Shared View Cross-Workspace Routing', () => {
     await guestPage.close();
   });
 
-  test('should open shared link in new tab with correct workspace', async ({
-    context, browser, request,
-  }) => {
+  test('should open shared link in new tab with correct workspace', async ({ context, browser, request }) => {
     // Given: Nathan is signed in to "Nathan Workspace A"
     await createUserAccount(request, guestEmail);
     await createUserAccount(request, ownerEmail);
@@ -345,7 +354,11 @@ test.describe('Shared View Cross-Workspace Routing', () => {
 
     // And: Annie creates a page and shares it with Nathan
     const { ownerWorkspaceId, directLink } = await annieCreatesAndSharesPage(
-      browser, request, ownerEmail, guestEmail, guestToken,
+      browser,
+      request,
+      ownerEmail,
+      guestEmail,
+      guestToken
     );
     expect(guestWorkspaceId).not.toBe(ownerWorkspaceId);
     testLog.info(`Annie's direct link: ${directLink}`);
@@ -369,9 +382,7 @@ test.describe('Shared View Cross-Workspace Routing', () => {
     await guestPage.close();
   });
 
-  test('should not load page when guest navigates with wrong workspace URL', async ({
-    context, browser, request,
-  }) => {
+  test('should not load page when guest navigates with wrong workspace URL', async ({ context, browser, request }) => {
     // Given: Nathan is signed in to "Nathan Workspace A"
     await createUserAccount(request, guestEmail);
     await createUserAccount(request, ownerEmail);
@@ -388,9 +399,7 @@ test.describe('Shared View Cross-Workspace Routing', () => {
     await renameUser(request, guestToken, 'Nathan');
 
     // And: Annie creates a page and shares it with Nathan
-    const { sharedViewId } = await annieCreatesAndSharesPage(
-      browser, request, ownerEmail, guestEmail, guestToken,
-    );
+    const { sharedViewId } = await annieCreatesAndSharesPage(browser, request, ownerEmail, guestEmail, guestToken);
 
     // When: Nathan navigates using his OWN workspace ID with the shared view ID
     // (this simulates the bug — wrong workspace + correct view ID)
@@ -402,11 +411,15 @@ test.describe('Shared View Cross-Workspace Routing', () => {
     // Then: the page should show an error or not load normally
     const hasError = await guestPage
       .locator('[data-testid="error-page"], [data-testid="not-found"]')
-      .count().then((c) => c > 0).catch(() => false);
+      .count()
+      .then((c) => c > 0)
+      .catch(() => false);
 
     const hasNormalContent = await guestPage
       .locator('[data-testid="editor-content"], [data-testid="page-title-input"]')
-      .first().isVisible({ timeout: 3000 }).catch(() => false);
+      .first()
+      .isVisible({ timeout: 3000 })
+      .catch(() => false);
 
     testLog.info(`Error page: ${hasError}, Normal content: ${hasNormalContent}`);
     expect(hasError || !hasNormalContent).toBeTruthy();
