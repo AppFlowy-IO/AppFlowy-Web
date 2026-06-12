@@ -4,15 +4,15 @@ import { createContext, useContext } from 'react';
 import { Awareness } from 'y-protocols/awareness';
 
 import { SyncContext } from '@/application/services/js-services/sync-protocol';
-import { AppflowyWebSocketType } from '@/components/ws/useAppflowyWebSocket';
-import { BroadcastChannelType } from '@/components/ws/useBroadcastChannel';
 import { RegisterSyncContext } from '@/components/ws/useSync';
 
 // Internal context for synchronization layer
 // This context is only used within the app provider layers
+// Note: the WebSocket/BroadcastChannel transports are deliberately NOT exposed
+// here — their identity changes whenever a message arrives, which would
+// re-render every consumer per message. Message routing happens in useSync,
+// which receives the transports directly in AppSyncLayer.
 export interface SyncInternalContextType {
-  webSocket: AppflowyWebSocketType; // WebSocket connection from useAppflowyWebSocket
-  broadcastChannel: BroadcastChannelType; // BroadcastChannel from useBroadcastChannel
   registerSyncContext: (params: RegisterSyncContext) => SyncContext;
   revertCollabVersion: (viewId: string, version: string) => Promise<void>;
   eventEmitter: EventEmitter;
