@@ -4,6 +4,8 @@ import { useCallback, useMemo } from 'react';
 
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks';
 import { cn } from '@/lib/utils';
+import { Column } from '@/application/database-yjs';
+import CardField from '@/components/database/components/field/CardField';
 
 import { EventIconButton } from './EventIconButton';
 
@@ -14,9 +16,10 @@ interface WeekTimedEventProps {
   showLeftIndicator?: boolean;
   className?: string;
   rowId: string;
+  showFields?: Column[];
 }
 
-export function WeekTimedEvent({ event, eventInfo, onClick, className, rowId }: WeekTimedEventProps) {
+export function WeekTimedEvent({ event, eventInfo, onClick, className, rowId, showFields }: WeekTimedEventProps) {
   const { formatTimeDisplay } = useTimeFormat();
   const isEventStart = eventInfo.isStart;
   const isEventEnd = eventInfo.isEnd;
@@ -94,7 +97,7 @@ export function WeekTimedEvent({ event, eventInfo, onClick, className, rowId }: 
                 : undefined
             }
           >
-            <span className='w-fit'>{getDisplayContent()}</span>
+            <span className='w-fit font-semibold'>{getDisplayContent()}</span>
             {moreThanHalfHour ? '' : ','}
           </span>
         </div>
@@ -107,9 +110,20 @@ export function WeekTimedEvent({ event, eventInfo, onClick, className, rowId }: 
             </span>
           )}
         </div>
+        {moreThanHalfHour && showFields && showFields.length > 0 && (
+          <div className='event-properties mt-1 flex flex-col gap-1 w-full overflow-hidden px-1 pb-1'>
+            {showFields.map((field) => (
+              <CardField
+                key={field.fieldId}
+                rowId={rowId}
+                fieldId={field.fieldId}
+              />
+            ))}
+          </div>
+        )}
       </div>
     );
-  }, [event.end, event.start, rowId, getDisplayContent, isEventStart, formatTimeDisplay, isRange]);
+  }, [event.end, event.start, rowId, getDisplayContent, isEventStart, formatTimeDisplay, isRange, showFields]);
 
   const isShortEvent = event.end && dayjs(event.end).diff(dayjs(event.start), 'minute') < 30;
   const isCompactLayout = !event.end || isShortEvent;

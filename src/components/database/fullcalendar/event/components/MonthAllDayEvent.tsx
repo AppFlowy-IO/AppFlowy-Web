@@ -2,6 +2,8 @@ import { EventApi, EventContentArg } from '@fullcalendar/core';
 import { useCallback } from 'react';
 
 import { cn } from '@/lib/utils';
+import { Column } from '@/application/database-yjs';
+import CardField from '@/components/database/components/field/CardField';
 
 import { EventIconButton } from './EventIconButton';
 
@@ -12,6 +14,7 @@ interface MonthAllDayEventProps {
   showLeftIndicator?: boolean;
   className?: string;
   rowId: string;
+  showFields?: Column[];
 }
 
 export function MonthAllDayEvent({
@@ -21,6 +24,7 @@ export function MonthAllDayEvent({
   showLeftIndicator = true,
   className,
   rowId,
+  showFields,
 }: MonthAllDayEventProps) {
   const isEventStart = eventInfo.isStart;
   const isEventEnd = eventInfo.isEnd;
@@ -113,8 +117,19 @@ export function MonthAllDayEvent({
         <div className='event-inner flex h-full max-h-full w-full flex-1 flex-col justify-center overflow-hidden'>
           <div className='flex h-full items-center gap-1 truncate'>
             <EventIconButton rowId={rowId} />
-            <span className='min-w-[28px] flex-1 truncate'>{getDisplayContent()}</span>
+            <span className='min-w-[28px] flex-1 truncate font-semibold'>{getDisplayContent()}</span>
           </div>
+          {showFields && showFields.length > 0 && (
+            <div className='event-properties mt-1 flex flex-col gap-1 w-full overflow-hidden px-1 pb-1'>
+              {showFields.map((field) => (
+                <CardField
+                  key={field.fieldId}
+                  rowId={rowId}
+                  fieldId={field.fieldId}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

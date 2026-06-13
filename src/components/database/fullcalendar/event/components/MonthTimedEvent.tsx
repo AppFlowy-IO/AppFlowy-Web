@@ -3,6 +3,8 @@ import dayjs from 'dayjs';
 
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks';
 import { cn } from '@/lib/utils';
+import { Column } from '@/application/database-yjs';
+import CardField from '@/components/database/components/field/CardField';
 
 import { EventIconButton } from './EventIconButton';
 
@@ -13,9 +15,10 @@ interface MonthTimedEventProps {
   showLeftIndicator?: boolean;
   className?: string;
   rowId: string;
+  showFields?: Column[];
 }
 
-export function MonthTimedEvent({ event, onClick, showLeftIndicator = true, className, rowId }: MonthTimedEventProps) {
+export function MonthTimedEvent({ event, onClick, showLeftIndicator = true, className, rowId, showFields }: MonthTimedEventProps) {
   const { formatTimeDisplay } = useTimeFormat();
   const handleClick = () => {
     onClick?.(event);
@@ -48,9 +51,20 @@ export function MonthTimedEvent({ event, onClick, showLeftIndicator = true, clas
             )}
             <div className='flex w-full items-center gap-1 truncate'>
               <EventIconButton className='event-time-icon' rowId={rowId} />
-              <span className='min-w-full flex-1 truncate'>{event.title || 'Untitled'}</span>
+              <span className='min-w-full flex-1 truncate font-semibold'>{event.title || 'Untitled'}</span>
             </div>
           </div>
+          {showFields && showFields.length > 0 && (
+            <div className='event-properties mt-1 flex flex-col gap-1 w-full overflow-hidden px-1 pb-1'>
+              {showFields.map((field) => (
+                <CardField
+                  key={field.fieldId}
+                  rowId={rowId}
+                  fieldId={field.fieldId}
+                />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>
