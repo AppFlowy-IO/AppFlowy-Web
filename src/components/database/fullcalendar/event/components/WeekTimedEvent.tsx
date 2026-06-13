@@ -5,7 +5,7 @@ import { useCallback, useMemo } from 'react';
 import { useTimeFormat } from '@/components/database/fullcalendar/hooks';
 import { cn } from '@/lib/utils';
 import { Column } from '@/application/database-yjs';
-import CardField from '@/components/database/components/field/CardField';
+import { EventPropertiesList } from './EventPropertiesList';
 
 import { EventIconButton } from './EventIconButton';
 
@@ -110,17 +110,7 @@ export function WeekTimedEvent({ event, eventInfo, onClick, className, rowId, sh
             </span>
           )}
         </div>
-        {moreThanHalfHour && showFields && showFields.length > 0 && (
-          <div className='event-properties mt-1 flex flex-col gap-1 w-full overflow-hidden px-1 pb-1'>
-            {showFields.map((field) => (
-              <CardField
-                key={field.fieldId}
-                rowId={rowId}
-                fieldId={field.fieldId}
-              />
-            ))}
-          </div>
-        )}
+        <EventPropertiesList rowId={rowId} showFields={moreThanHalfHour ? showFields : undefined} />
       </div>
     );
   }, [event.end, event.start, rowId, getDisplayContent, isEventStart, formatTimeDisplay, isRange, showFields]);
