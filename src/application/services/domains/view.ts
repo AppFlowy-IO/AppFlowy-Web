@@ -1,5 +1,6 @@
 export {
   getAppOutline as getOutline,
+  getViewNavigation as getNavigation,
   getViews as getMultiple,
   getAppFavorites as getFavorites,
   getAppRecent as getRecent,

@@ -16,7 +16,7 @@ import {
   reorderChildrenInOutline,
   updateViewInOutline,
 } from '@/components/_shared/outline/mergeOutline';
-import { findView, findViewByLayout } from '@/components/_shared/outline/utils';
+import { findShareWithMeSpace, findView, findViewByLayout } from '@/components/_shared/outline/utils';
 import {
   limitSidebarOutlineExpandedViewIds,
   type SidebarOutlineRevalidationResult,
@@ -56,6 +56,130 @@ function buildViewIndex(views: View[]): Map<string, View> {
 
   walk(views);
   return index;
+}
+
+function collectViewPath(root: View, targetViewId: string): View[] | null {
+  const path: View[] = [];
+
+  const walk = (view: View): boolean => {
+    path.push(view);
+
+    if (view.view_id === targetViewId) {
+      return true;
+    }
+
+    for (const child of view.children ?? []) {
+      if (walk(child)) {
+        return true;
+      }
+    }
+
+    path.pop();
+    return false;
+  };
+
+  return walk(root) ? path : null;
+}
+
+function replaceViewInOutline(outline: View[], replacement: View): { outline: View[]; replaced: boolean } {
+  let replaced = false;
+
+  const nextOutline = outline.map((view) => {
+    if (view.view_id === replacement.view_id) {
+      replaced = true;
+      return replacement;
+    }
+
+    if (view.children && view.children.length > 0) {
+      const childResult = replaceViewInOutline(view.children, replacement);
+
+      if (childResult.replaced) {
+        replaced = true;
+        return { ...view, children: childResult.outline };
+      }
+    }
+
+    return view;
+  });
+
+  return { outline: replaced ? nextOutline : outline, replaced };
+}
+
+function upsertSiblingView(siblings: View[], replacement: View): View[] {
+  const index = siblings.findIndex((view) => view.view_id === replacement.view_id);
+
+  if (index === -1) {
+    return [...siblings, replacement];
+  }
+
+  const next = [...siblings];
+
+  next[index] = replacement;
+  return next;
+}
+
+function shouldAttachNavigationRootToShareWithMe(outline: View[], navigationRoot: View): boolean {
+  if (!findShareWithMeSpace(outline)) return false;
+  if (navigationRoot.extra?.is_hidden_space) return false;
+
+  return navigationRoot.access_level !== undefined || navigationRoot.is_private;
+}
+
+function upsertNavigationRoot(outline: View[], navigationRoot: View): View[] {
+  const replaced = replaceViewInOutline(outline, navigationRoot);
+
+  if (replaced.replaced) {
+    return replaced.outline;
+  }
+
+  if (shouldAttachNavigationRootToShareWithMe(outline, navigationRoot)) {
+    return outline.map((view) => {
+      if (!view.extra?.is_hidden_space) return view;
+
+      return {
+        ...view,
+        children: upsertSiblingView(view.children ?? [], navigationRoot),
+        has_children: true,
+      };
+    });
+  }
+
+  return upsertSiblingView(outline, navigationRoot);
+}
+
+function mergeNavigationView(
+  view: View,
+  targetViewId: string,
+  cachedById: Map<string, View>,
+  loadedViewIds: Set<string>
+): View {
+  const cached = cachedById.get(view.view_id);
+  const navigationChildren = view.children ?? [];
+  const preserveCachedChildren =
+    navigationChildren.length === 0 &&
+    cached?.children &&
+    cached.children.length > 0 &&
+    (view.view_id === targetViewId || loadedViewIds.has(view.view_id));
+
+  return {
+    ...cached,
+    ...view,
+    children: preserveCachedChildren
+      ? cached.children
+      : navigationChildren.map((child) => mergeNavigationView(child, targetViewId, cachedById, loadedViewIds)),
+  };
+}
+
+export function mergeNavigationTreeIntoOutline(
+  outline: View[],
+  navigationRoot: View,
+  targetViewId: string,
+  loadedViewIds: Set<string>
+): View[] {
+  const cachedById = buildViewIndex(outline);
+  const mergedRoot = mergeNavigationView(navigationRoot, targetViewId, cachedById, loadedViewIds);
+
+  return upsertNavigationRoot(outline, mergedRoot);
 }
 
 export function preserveLoadedChildren(
@@ -647,6 +771,55 @@ export function useWorkspaceData() {
       setLoadedViewIdsRevision((r) => r + 1);
     },
     [stableOutlineRef, currentWorkspaceId]
+  );
+
+  const ensureViewVisibleInOutline = useCallback(
+    async (viewId: string): Promise<string[]> => {
+      if (!currentWorkspaceId) return [];
+
+      const workspaceId = currentWorkspaceId;
+      const workspaceRevision = workspaceRevisionRef.current;
+      const navigationRoot = await ViewService.getNavigation(workspaceId, viewId, 0);
+      const path = collectViewPath(navigationRoot, viewId);
+
+      if (!path || isStaleWorkspaceRequest(workspaceId, workspaceRevision)) {
+        return [];
+      }
+
+      updateLastFolderRid(parseFolderRid(navigationRoot.folder_rid));
+
+      const nextOutline = mergeNavigationTreeIntoOutline(
+        stableOutlineRef.current,
+        navigationRoot,
+        viewId,
+        loadedViewIdsRef.current
+      );
+
+      if (nextOutline !== stableOutlineRef.current) {
+        stableOutlineRef.current = nextOutline;
+        setOutline(nextOutline);
+        if (eventEmitter) {
+          eventEmitter.emit(APP_EVENTS.OUTLINE_LOADED, nextOutline || []);
+        }
+      }
+
+      const ancestorIds = path.slice(0, -1).map((view) => view.view_id);
+      let loadedChanged = false;
+
+      for (const ancestorId of ancestorIds) {
+        if (!loadedViewIdsRef.current.has(ancestorId)) {
+          loadedViewIdsRef.current.add(ancestorId);
+          loadedChanged = true;
+        }
+      }
+
+      if (loadedChanged) {
+        setLoadedViewIdsRevision((r) => r + 1);
+      }
+
+      return ancestorIds;
+    },
+    [currentWorkspaceId, eventEmitter, isStaleWorkspaceRequest, updateLastFolderRid]
   );
 
   const markCachedFolderSubtreesStale = useCallback(
@@ -1368,6 +1541,7 @@ export function useWorkspaceData() {
     loadViewChildren,
     loadViewChildrenBatch,
     markViewChildrenStale,
+    ensureViewVisibleInOutline,
     revalidateSidebarOutline,
   };
 }

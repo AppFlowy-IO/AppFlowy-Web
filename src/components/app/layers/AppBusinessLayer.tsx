@@ -106,6 +106,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     loadViewChildren,
     loadViewChildrenBatch,
     markViewChildrenStale,
+    ensureViewVisibleInOutline,
     revalidateSidebarOutline,
   } = useWorkspaceData();
 
@@ -497,6 +498,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
       loadViewChildren,
       loadViewChildrenBatch,
       markViewChildrenStale,
+      ensureViewVisibleInOutline,
       revalidateSidebarOutline,
       loadFavoriteViews,
       loadRecentViews,
@@ -509,7 +511,7 @@ export const AppBusinessLayer: FC<AppBusinessLayerProps> = ({ children }) => {
     }),
     [
       outline, favoriteViews, recentViews, trashList, loadedViewIds,
-      loadViewChildren, loadViewChildrenBatch, markViewChildrenStale, revalidateSidebarOutline,
+      loadViewChildren, loadViewChildrenBatch, markViewChildrenStale, ensureViewVisibleInOutline, revalidateSidebarOutline,
       loadFavoriteViews, loadRecentViews, loadTrash, loadViews,
       refreshOutline, loadDatabaseRelations, getMentionUser, loadMentionableUsers,
     ]

@@ -328,6 +328,17 @@ export function useMarkViewChildrenStale() {
   return context.markViewChildrenStale;
 }
 
+/** Hydrate missing parent/sibling context for a view and return ancestor IDs to expand. */
+export function useEnsureViewVisibleInOutline() {
+  const context = useContext(AppOutlineContext);
+
+  if (!context) {
+    throw new Error('useEnsureViewVisibleInOutline must be used within an AppProvider');
+  }
+
+  return context.ensureViewVisibleInOutline;
+}
+
 /** Revalidate the root sidebar outline and refresh currently expanded sidebar subtrees. */
 export function useRevalidateSidebarOutline() {
   const context = useContext(AppOutlineContext);

@@ -37,6 +37,7 @@ jest.mock('@/application/services/domains', () => ({
     get: jest.fn(),
     getDatabaseRelations: jest.fn(),
     getMultiple: jest.fn(),
+    getNavigation: jest.fn(),
     getOutline: jest.fn(),
     getTrash: jest.fn(),
     invalidateCache: jest.fn(),
@@ -136,7 +137,73 @@ describe('useWorkspaceData sidebar outline revalidation', () => {
     (AccessService.getShareWithMe as jest.Mock).mockResolvedValue(null);
     (ViewService.getDatabaseRelations as jest.Mock).mockResolvedValue({});
     (ViewService.getMultiple as jest.Mock).mockResolvedValue([]);
+    (ViewService.getNavigation as jest.Mock).mockResolvedValue(createView('navigation-root'));
     (ViewService.getTrash as jest.Mock).mockResolvedValue([]);
+  });
+
+  it('hydrates missing selected view path from navigation context', async () => {
+    const eventEmitter = new EventEmitter();
+    const spaceId = 'space-id';
+    const rootId = 'root-id';
+    const parentId = 'parent-id';
+    const targetId = 'target-id';
+    const targetSiblingId = 'target-sibling-id';
+    const rootSiblingId = 'root-sibling-id';
+
+    const initialSpace = createView(spaceId, {
+      extra: { is_space: true },
+      children: [],
+      has_children: true,
+    });
+    const navigationTree = createView(spaceId, {
+      extra: { is_space: true },
+      children: [
+        createView(rootId, {
+          children: [
+            createView(parentId, {
+              children: [createView(targetId), createView(targetSiblingId)],
+              has_children: true,
+            }),
+          ],
+          has_children: true,
+        }),
+        createView(rootSiblingId, { has_children: true }),
+      ],
+      has_children: true,
+    });
+
+    (ViewService.getOutline as jest.Mock).mockResolvedValue({
+      outline: [initialSpace],
+      folderRid: '1-1',
+    });
+    (ViewService.getNavigation as jest.Mock).mockResolvedValue(navigationTree);
+
+    const { result } = renderHook(() => useWorkspaceData(), {
+      wrapper: createWrapper(eventEmitter),
+    });
+
+    await waitFor(() => {
+      expect(result.current.outline?.map((view) => view.view_id)).toEqual([spaceId]);
+    });
+
+    let ancestors: string[] = [];
+
+    await act(async () => {
+      ancestors = (await result.current.ensureViewVisibleInOutline?.(targetId)) ?? [];
+    });
+
+    expect(ViewService.getNavigation).toHaveBeenCalledWith(workspaceId, targetId, 0);
+    expect(ancestors).toEqual([spaceId, rootId, parentId]);
+    expect(result.current.loadedViewIds?.has(spaceId)).toBe(true);
+    expect(result.current.loadedViewIds?.has(rootId)).toBe(true);
+    expect(result.current.loadedViewIds?.has(parentId)).toBe(true);
+
+    const space = result.current.outline?.[0];
+    const root = space?.children.find((view) => view.view_id === rootId);
+    const parent = root?.children.find((view) => view.view_id === parentId);
+
+    expect(space?.children.map((view) => view.view_id)).toEqual([rootId, rootSiblingId]);
+    expect(parent?.children.map((view) => view.view_id)).toEqual([targetId, targetSiblingId]);
   });
 
   it('skips revalidation when the root folder rid is unchanged', async () => {
