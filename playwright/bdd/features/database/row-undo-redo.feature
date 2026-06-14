@@ -42,6 +42,16 @@ Feature: Database row undo redo
     When I trigger database row redo
     Then the added database row is present
 
+  Scenario: Database row reorder supports undo and redo
+    Given a seeded grid database is ready for complex undo redo
+    Then the first visible database row is "Alpha"
+    When I move the last database row to the top for undo redo
+    Then the first visible database row is "Gamma"
+    When I trigger database row undo
+    Then the first visible database row is "Alpha"
+    When I trigger database row redo
+    Then the first visible database row is "Gamma"
+
   Scenario: Relation cell changes are not captured by row undo
     Given a grid database relation cell is ready for undo redo
     When I link the relation cell to "Target Row"
@@ -188,6 +198,23 @@ Feature: Database row undo redo
     When I trigger database row redo
     Then the first grid cell is "Zulu"
 
+  Scenario: Row reorder and row edit undo across database and row docs
+    Given a seeded grid database is ready for complex undo redo
+    When I move the last database row to the top for undo redo
+    And I set the first grid cell directly to "Alpha Edited"
+    Then the first visible database row is "Gamma"
+    And the first grid cell is "Alpha Edited"
+    When I trigger database row undo
+    Then the first grid cell is "Alpha"
+    And the first visible database row is "Gamma"
+    When I trigger database row undo
+    Then the first visible database row is "Alpha"
+    When I trigger database row redo
+    Then the first visible database row is "Gamma"
+    When I trigger database row redo
+    Then the first grid cell is "Alpha Edited"
+    And the first visible database row is "Gamma"
+
   Scenario: Added row and row cell edits undo across database and row docs
     Given a seeded grid database is ready for complex undo redo
     When I add a direct database row for complex undo redo
@@ -240,6 +267,20 @@ Feature: Database row undo redo
     Then the undo redo field "Ordered Field" exists
     When I trigger database row redo
     Then the second grid cell is "Second Edit"
+
+  Scenario: Repeated row edits on the same row preserve undo order
+    Given a seeded grid database is ready for complex undo redo
+    When I set the first grid cell directly to "First Edit"
+    And I set the first grid cell directly to "Second Edit"
+    Then the first grid cell is "Second Edit"
+    When I trigger database row undo
+    Then the first grid cell is "First Edit"
+    When I trigger database row undo
+    Then the first grid cell is "Alpha"
+    When I trigger database row redo
+    Then the first grid cell is "First Edit"
+    When I trigger database row redo
+    Then the first grid cell is "Second Edit"
 
   Scenario: Relation database operation does not pollute undo history
     Given a seeded grid database is ready for complex undo redo

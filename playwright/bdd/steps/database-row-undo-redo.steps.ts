@@ -26,6 +26,7 @@ interface RowUndoRedoState {
   relationFieldId?: string;
   sourceRowId?: string;
   nextRowId?: string;
+  thirdRowId?: string;
   initialRowIds?: string[];
   addedRowId?: string;
   targetRowId?: string;
@@ -72,6 +73,7 @@ Given('a grid database is ready for cell undo redo', async ({ page, request }) =
     primaryFieldId,
     sourceRowId: rowIds[0],
     nextRowId: rowIds[1],
+    thirdRowId: rowIds[2],
   });
 });
 
@@ -112,10 +114,12 @@ Given('a seeded grid database is ready for complex undo redo', async ({ page, re
     primaryFieldId,
     sourceRowId: rowIds[0],
     nextRowId: rowIds[1],
+    thirdRowId: rowIds[2],
   });
 
   await expect.poll(() => getRowCellText(page, rowIds[0], primaryFieldId), { timeout: 15000 }).toBe('Alpha');
   await expect.poll(() => getRowCellText(page, rowIds[1], primaryFieldId), { timeout: 15000 }).toBe('Beta');
+  await expect.poll(() => getRowCellText(page, rowIds[2], primaryFieldId), { timeout: 15000 }).toBe('Gamma');
 });
 
 Given('a text field named {string} exists for undo redo', async ({ page }, fieldName: string) => {
@@ -342,6 +346,13 @@ When('I add a direct database row for complex undo redo', async ({ page }) => {
   state.addedRowId = await addDatabaseRowWithHistory(page);
 });
 
+When('I move the last database row to the top for undo redo', async ({ page }) => {
+  const state = getState(page);
+
+  await moveLastDatabaseRowToTopWithHistory(page);
+  await expectFirstVisibleRow(page, requireStateValue(state.thirdRowId, 'third row id'), 'Gamma');
+});
+
 When('I set the added row primary cell to {string}', async ({ page }, text: string) => {
   const state = getState(page);
   const primaryFieldId = requireStateValue(state.primaryFieldId, 'primary field id');
@@ -380,6 +391,7 @@ Then('the first grid cell is {string}', async ({ page }, text: string) => {
   const sourceRowId = requireStateValue(state.sourceRowId, 'source row id');
 
   await expect.poll(() => getRowCellText(page, sourceRowId, primaryFieldId), { timeout: 15000 }).toBe(text);
+  await expectGridCellText(page, sourceRowId, primaryFieldId, text);
 });
 
 Then('the second grid cell is {string}', async ({ page }, text: string) => {
@@ -388,6 +400,7 @@ Then('the second grid cell is {string}', async ({ page }, text: string) => {
   const nextRowId = requireStateValue(state.nextRowId, 'next row id');
 
   await expect.poll(() => getRowCellText(page, nextRowId, primaryFieldId), { timeout: 15000 }).toBe(text);
+  await expectGridCellText(page, nextRowId, primaryFieldId, text);
 });
 
 Then('the added database row is present', async ({ page }) => {
@@ -397,6 +410,7 @@ Then('the added database row is present', async ({ page }) => {
   await expect
     .poll(async () => (await getCurrentDatabaseInfo(page)).rowIds.includes(addedRowId), { timeout: 15000 })
     .toBe(true);
+  await expect(DatabaseGridSelectors.rowById(page, addedRowId)).toBeVisible({ timeout: 15000 });
 });
 
 Then('the added database row is removed', async ({ page }) => {
@@ -406,6 +420,7 @@ Then('the added database row is removed', async ({ page }) => {
   await expect
     .poll(async () => (await getCurrentDatabaseInfo(page)).rowIds.includes(addedRowId), { timeout: 15000 })
     .toBe(false);
+  await expect(DatabaseGridSelectors.rowById(page, addedRowId)).toHaveCount(0);
 });
 
 Then('the relation cell still links to {string}', async ({ page }, _rowName: string) => {
@@ -430,6 +445,7 @@ Then('the undo redo field {string} exists', async ({ page }, fieldName: string) 
       name: fieldName,
     });
   await expect(GridFieldSelectors.fieldHeader(page, fieldId).last()).toBeVisible({ timeout: 15000 });
+  await expect(GridFieldSelectors.fieldHeader(page, fieldId).last()).toContainText(fieldName, { timeout: 15000 });
 });
 
 Then('the undo redo field {string} is removed', async ({ page }, _fieldName: string) => {
@@ -441,6 +457,7 @@ Then('the undo redo field {string} is removed', async ({ page }, _fieldName: str
     .toMatchObject({
       exists: false,
     });
+  await expect(GridFieldSelectors.fieldHeader(page, fieldId)).toHaveCount(0);
 });
 
 Then('the undo redo field is named {string}', async ({ page }, fieldName: string) => {
@@ -453,6 +470,8 @@ Then('the undo redo field is named {string}', async ({ page }, fieldName: string
       exists: true,
       name: fieldName,
     });
+  await expect(GridFieldSelectors.fieldHeader(page, fieldId).last()).toBeVisible({ timeout: 15000 });
+  await expect(GridFieldSelectors.fieldHeader(page, fieldId).last()).toContainText(fieldName, { timeout: 15000 });
 });
 
 Then('the undo redo field type is text', async ({ page }) => {
@@ -479,6 +498,7 @@ Then('the first row value in the undo redo field is {string}', async ({ page }, 
   const sourceRowId = requireStateValue(state.sourceRowId, 'source row id');
 
   await expect.poll(() => getRowCellText(page, sourceRowId, fieldId), { timeout: 15000 }).toBe(text);
+  await expectGridCellText(page, sourceRowId, fieldId, text);
 });
 
 Then('the added row value in the undo redo field is {string}', async ({ page }, text: string) => {
@@ -487,6 +507,14 @@ Then('the added row value in the undo redo field is {string}', async ({ page }, 
   const addedRowId = requireStateValue(state.addedRowId, 'added row id');
 
   await expect.poll(() => getRowCellText(page, addedRowId, fieldId), { timeout: 15000 }).toBe(text);
+  await expectGridCellText(page, addedRowId, fieldId, text);
+});
+
+Then('the first visible database row is {string}', async ({ page }, text: string) => {
+  const state = getState(page);
+  const rowId = rowIdForSeededText(state, text);
+
+  await expectFirstVisibleRow(page, rowId, text);
 });
 
 Then('the database has {int} filter with content {string}', async ({ page }, count: number, content: string) => {
@@ -541,6 +569,7 @@ Then('the added row primary cell is {string}', async ({ page }, text: string) =>
   const addedRowId = requireStateValue(state.addedRowId, 'added row id');
 
   await expect.poll(() => getRowCellText(page, addedRowId, primaryFieldId), { timeout: 15000 }).toBe(text);
+  await expectGridCellText(page, addedRowId, primaryFieldId, text);
 });
 
 Then('the skipped relation field {string} exists', async ({ page }, fieldName: string) => {
@@ -1069,6 +1098,32 @@ async function addDatabaseRowWithHistory(page: Page): Promise<string> {
   return rowId;
 }
 
+async function moveLastDatabaseRowToTopWithHistory(page: Page) {
+  await page.evaluate(() => {
+    const ctx = (window as any).__TEST_DATABASE_CONTEXT__;
+    const history = (window as any).__TEST_DATABASE_HISTORY__;
+    const doc = ctx.databaseDoc;
+    const database = doc.getMap('data').get('database');
+    const view = database.get('views').get(ctx.activeViewId);
+    const rowOrders = view.get('row_orders');
+    const currentOrders = rowOrders.toArray();
+
+    if (currentOrders.length < 2) {
+      throw new Error('Need at least two row orders to reorder rows');
+    }
+
+    const nextOrders = currentOrders.slice();
+    const [lastOrder] = nextOrders.splice(nextOrders.length - 1, 1);
+
+    nextOrders.unshift(lastOrder);
+
+    history.runDatabaseAction(doc, { type: 'database.reorder-row' }, () => {
+      rowOrders.delete(0, rowOrders.length);
+      rowOrders.push(nextOrders);
+    });
+  });
+}
+
 async function setRowCellWithHistory(page: Page, rowId: string, fieldId: string, text: string) {
   await page.evaluate(
     async ({ rowId, fieldId, text }) => {
@@ -1132,6 +1187,45 @@ async function setRowCellWithHistory(page: Page, rowId: string, fieldId: string,
   );
 
   await expect.poll(() => getRowCellText(page, rowId, fieldId), { timeout: 15000 }).toBe(text);
+}
+
+async function expectGridCellText(page: Page, rowId: string, fieldId: string, text: string) {
+  const cell = DatabaseGridSelectors.cellByIds(page, rowId, fieldId);
+
+  await expect(cell).toBeVisible({ timeout: 15000 });
+  await cell.scrollIntoViewIfNeeded();
+
+  const activeEditor = cell.locator('textarea:visible').first();
+
+  if ((await activeEditor.count()) > 0) {
+    await expect(activeEditor).toHaveValue(text, { timeout: 15000 });
+    return;
+  }
+
+  await expect(cell.locator('.text-cell').first()).toHaveText(text, { timeout: 15000 });
+}
+
+async function expectFirstVisibleRow(page: Page, rowId: string, primaryCellText: string) {
+  const firstRow = DatabaseGridSelectors.dataRows(page).first();
+  const state = getState(page);
+  const primaryFieldId = requireStateValue(state.primaryFieldId, 'primary field id');
+
+  await expect(firstRow).toHaveAttribute('data-testid', `grid-row-${rowId}`, { timeout: 15000 });
+  await expect.poll(() => getRowCellText(page, rowId, primaryFieldId), { timeout: 15000 }).toBe(primaryCellText);
+  await expectGridCellText(page, rowId, primaryFieldId, primaryCellText);
+}
+
+function rowIdForSeededText(state: RowUndoRedoState, text: string): string {
+  switch (text) {
+    case 'Alpha':
+      return requireStateValue(state.sourceRowId, 'source row id');
+    case 'Beta':
+      return requireStateValue(state.nextRowId, 'next row id');
+    case 'Gamma':
+      return requireStateValue(state.thirdRowId, 'third row id');
+    default:
+      throw new Error(`No seeded row id is mapped for "${text}"`);
+  }
 }
 
 async function createSkippedRelationField(page: Page, fieldName: string): Promise<string> {
